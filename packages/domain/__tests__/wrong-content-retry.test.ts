@@ -977,7 +977,7 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
       }),
     ).toEqual(new Map([['new-ivy\u0000439', WRONG_CONTENT_RETRY_HOLD]]));
   });
-  it('does not adopt a late same-title foreign GRAB after a rejected retry POST', async () => {
+  it('excludes a late foreign GRAB after a rejected retry, including ledger proof outside the native lookback', async () => {
     const s = await setup(),
       plan = await selected(s.input);
     s.state.grabUncertain = true;
@@ -1019,6 +1019,45 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
         ],
       }),
     ).toEqual(new Map());
+    const foreignGrabs = s.state.history.filter((record) => record.downloadId === 'later-foreign');
+    await ingestLedgerEvents({
+      db: t.db,
+      source: 'sonarr',
+      events: foreignGrabs.map((record) => ({
+        source: 'sonarr' as const,
+        sourceEventId: String(record.id),
+        mediaItemId: itemId,
+        eventType: 'grabbed' as const,
+        occurredAt: new Date(record.date),
+        payload: {
+          downloadId: record.downloadId,
+          sourceTitle: record.sourceTitle,
+          episodeId: record.episodeId,
+          seriesId: record.seriesId,
+        },
+      })),
+    });
+    // The parent is still active after 25 hours, but native failedSince's 24-hour GRAB lookback
+    // has omitted this earlier foreign download. Its real ledger GUID/time proves it outside the call.
+    expect(
+      await deferredWrongContentFailures({
+        db: t.db,
+        failures: [
+          {
+            downloadId: 'later-foreign',
+            parentId: 439,
+            title: RIGHT,
+            failedAt: new Date(Date.parse(date) + 25 * 3600000),
+          },
+          {
+            downloadId: 'missing-proof',
+            parentId: 439,
+            title: RIGHT,
+            failedAt: new Date(Date.parse(date) + 25 * 3600000),
+          },
+        ],
+      }),
+    ).toEqual(new Map([['missing-proof\u0000439', WRONG_CONTENT_RETRY_UNRESOLVED_HOLD]]));
     await expect(
       planOwnedSonarrImport({
         db: t.db,

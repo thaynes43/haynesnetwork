@@ -721,6 +721,8 @@ do not edit)", "must not contain" terms only, no tags.
     an explicit unresolved-proof reason; this is not positive download ownership or permission to import or replay.
     Other series, release titles and downloads outside a known call window continue through their ordinary policy
     in the same run. One unresolved repair must not abort the entire Sonarr failed-download pass.
+    If the native GRAB lookback omits an older download, check available ledger GRAB identity and time before
+    treating its failure as potentially matching. Known evidence outside the intent/call window excludes that hold.
     Read old production intents from their recorded `release` or `title` field, including the single-release legacy
     Carry, so a newer receipt does not erase the original download's ownership.
     A fast native import may complete that same Fix before its HTTP response evidence is saved. Factual post-call

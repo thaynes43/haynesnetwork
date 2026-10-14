@@ -339,30 +339,6 @@ export async function deferredWrongContentFailures(input: {
       if (e instanceof FixRefusedError) continue;
       throw e;
     }
-    for (const failure of input.failures) {
-      if (!failure.downloadId || failure.parentId !== p.item.arrItemId) continue;
-      const native = failure.grabbedHistory;
-      const key = `${failure.downloadId}\u0000${failure.parentId}`;
-      if (
-        !held.has(key) &&
-        p.unresolvedIntents.some((i) => {
-          const at = native ? Date.parse(native.date) : 0;
-          return (
-            i.title === failure.title &&
-            failure.failedAt.getTime() >= i.since &&
-            (!native ||
-              (Number.isInteger(native.id) &&
-                native.id > 0 &&
-                native.downloadId === failure.downloadId &&
-                native.title === i.title &&
-                at >= i.since &&
-                at <= failure.failedAt.getTime() &&
-                (i.until === null || at <= i.until)))
-          );
-        })
-      )
-        held.set(key, WRONG_CONTENT_RETRY_UNRESOLVED_HOLD);
-    }
     const grabs = await exec
       .select()
       .from(ledgerEvents)
@@ -376,11 +352,48 @@ export async function deferredWrongContentFailures(input: {
             sql`, `,
           )})`,
           sql`${ledgerEvents.payload}->>'sourceTitle' IN (${sql.join(
-            p.ownershipBindings.map((b) => sql`${b.title}`),
+            [...new Set([...p.ownershipBindings, ...p.unresolvedIntents].map((b) => b.title))].map(
+              (title) => sql`${title}`,
+            ),
             sql`, `,
           )})`,
         ),
       );
+    for (const failure of input.failures) {
+      if (!failure.downloadId || failure.parentId !== p.item.arrItemId) continue;
+      const native = failure.grabbedHistory;
+      const key = `${failure.downloadId}\u0000${failure.parentId}`;
+      if (
+        !held.has(key) &&
+        p.unresolvedIntents.some((i) => {
+          const at = native ? Date.parse(native.date) : 0;
+          const ledgerGrabs = grabs.filter(
+            (g) => g.payload.downloadId === failure.downloadId && g.payload.sourceTitle === i.title,
+          );
+          return (
+            i.title === failure.title &&
+            failure.failedAt.getTime() >= i.since &&
+            ((!native &&
+              (!ledgerGrabs.length ||
+                ledgerGrabs.some(
+                  (g) =>
+                    g.occurredAt.getTime() >= i.since &&
+                    g.occurredAt <= failure.failedAt &&
+                    (i.until === null || g.occurredAt.getTime() <= i.until),
+                ))) ||
+              (native &&
+                Number.isInteger(native.id) &&
+                native.id > 0 &&
+                native.downloadId === failure.downloadId &&
+                native.title === i.title &&
+                at >= i.since &&
+                at <= failure.failedAt.getTime() &&
+                (i.until === null || at <= i.until)))
+          );
+        })
+      )
+        held.set(key, WRONG_CONTENT_RETRY_UNRESOLVED_HOLD);
+    }
     for (const failure of input.failures) {
       if (!failure.downloadId || failure.parentId !== p.item.arrItemId) continue;
       const native = failure.grabbedHistory;
