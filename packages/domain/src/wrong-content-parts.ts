@@ -460,7 +460,11 @@ function importedPart(
     return null;
   return { targets, history: imports.map(sanitizedHistory) };
 }
-function assertOtherParts(s: Awaited<ReturnType<typeof sample>>, target: WrongContentSelectedPart) {
+function assertOtherParts(
+  s: Awaited<ReturnType<typeof sample>>,
+  target: WrongContentSelectedPart,
+  readOnlyAdoption = false,
+) {
   for (const part of s.selection.parts.filter((p) => p.id !== target.id)) {
     const occupied = s.episodes.some(
       (e) => part.episodeIds.includes(e.id) && (e.hasFile || (e.episodeFileId ?? 0) > 0),
@@ -481,7 +485,16 @@ function assertOtherParts(s: Awaited<ReturnType<typeof sample>>, target: WrongCo
               a.downloadId === binding.downloadId &&
               a.ok === true,
           );
-      if (!proof || !audit || partHash(audit.targets) !== partHash(proof.targets)) refuse();
+      if (!proof) refuse();
+      if (audit) {
+        if (partHash(audit.targets) !== partHash(proof.targets)) refuse();
+      } else if (
+        !readOnlyAdoption ||
+        s.fix.actionsTaken.some(
+          (a) => a.step === 'owned_import_intent' && a.downloadId === binding.downloadId,
+        )
+      )
+        refuse();
     } else {
       if (intents.length && !binding) refuse();
       if (
@@ -571,7 +584,9 @@ async function planPart(
   } else if (own) state = imports ? 'adopt' : 'observe';
   if (state === 'ready' && s.fix.status === 'completed') refuse();
   if (state === 'ready' && s.bindings.unresolved.length) refuse();
-  assertOtherParts(s, part);
+  // Native imports can finish both parts before either factual read-back is audited. Only adoption
+  // writes that fact; every command that can change media still requires the other part's saved audit.
+  assertOtherParts(s, part, state === 'adopt');
   const targets = partBoundary(s.episodes, s.files, part.episodeIds);
   if (state === 'ready' && targets.some((t) => t.fileId > 0)) refuse();
   const records = s.queue.filter((q) => q.downloadId === input.failedDownloadId);

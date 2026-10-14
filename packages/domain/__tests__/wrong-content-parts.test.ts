@@ -112,6 +112,7 @@ function world() {
     foreign: false,
     removeUnknown: false,
     candidates: [] as Array<Record<string, unknown>>,
+    httpWrites: [] as Array<{ method: string; path: string }>,
   };
   const json = (value: unknown, status = 200) =>
     new Response(JSON.stringify(value), {
@@ -128,6 +129,7 @@ function world() {
     const u = new URL(String(input)),
       method = init.method ?? 'GET',
       body = init.body ? JSON.parse(String(init.body)) : null;
+    if (!['GET', 'HEAD'].includes(method)) state.httpWrites.push({ method, path: u.pathname });
     if (method === 'GET' && u.pathname.endsWith('/manualimport')) return json(state.candidates);
     if (method === 'GET' && u.pathname.endsWith('/command')) return json([]);
     if (method === 'GET' && u.pathname.endsWith('/episode')) return json(state.episodes);
@@ -253,7 +255,7 @@ function world() {
         data: { message: 'Duplicate NZB' },
       });
   };
-  return { state, arr, plex: plex.plex, importPair, fail };
+  return { state, arr, plex: plex.plex, plexCalls: plex.calls, importPair, fail };
 }
 describe('multipart original-parent recovery', () => {
   let t: TestDb, itemId: string;
@@ -570,6 +572,15 @@ describe('multipart original-parent recovery', () => {
     w.fail('dl-two-2');
     const [carry] = await t.db.select().from(watchCarries),
       parts = readWrongContentPartSelection(carry!.detail)!.parts;
+    await expect(
+      planWrongContentRetry({
+        db: t.db,
+        arr: w.arr,
+        actor: staff,
+        fixRequestId: r.fixRequestId,
+        failedDownloadId: 'dl-two-2',
+      }),
+    ).rejects.toThrow();
     const adopt = {
       db: t.db,
       arr: w.arr,
@@ -599,6 +610,136 @@ describe('multipart original-parent recovery', () => {
     expect(w.state.deletes).toEqual([123]);
     w.importPair('dl-replacement-3', [3, 4], 802);
     expect((await ingest(w)).completed[0]?.fixRequestId).toBe(r.fixRequestId);
+  });
+  it.each(['search_triggered', 'completed'] as const)(
+    'factually adopts both already native-imported parts on a %s parent without any media write',
+    async (status) => {
+      const w = world(),
+        r = await start(w);
+      w.importPair('dl-one-1', [1, 2], 801);
+      w.importPair('dl-two-2', [3, 4], 802);
+      if (status === 'completed')
+        expect((await ingest(w)).completed[0]?.fixRequestId).toBe(r.fixRequestId);
+      const [carry] = await t.db.select().from(watchCarries),
+        parts = readWrongContentPartSelection(carry!.detail)!.parts,
+        writes = structuredClone(w.state.httpWrites),
+        plexCalls = structuredClone(w.plexCalls);
+      for (const part of parts) {
+        const input = {
+            db: t.db,
+            arr: w.arr,
+            actor: staff,
+            fixRequestId: r.fixRequestId,
+            partId: part.id,
+          },
+          plan = await planWrongContentPartResume(input);
+        expect(plan.state).toBe('adopt');
+        expect(plan.sourceImport!.targets.map((x) => x.episodeId)).toEqual(part.episodeIds);
+        expect(
+          (await runWrongContentPartResume({ ...input, digest: plan.digest, evidence })).outcome,
+        ).toBe('imported');
+      }
+      const [fix] = await t.db.select().from(fixRequests),
+        audits = fix!.actionsTaken.filter((a) => a.step === 'wrong_content_part_import_read_back');
+      expect(fix!.status).toBe(status);
+      expect(audits.map((a) => a.downloadId)).toEqual(['dl-one-1', 'dl-two-2']);
+      expect(audits.every((a) => a.ok === true && a.evidence === evidence)).toBe(true);
+      expect(fix!.actionsTaken.some((a) => a.step.startsWith('owned_import'))).toBe(false);
+      expect(w.state.httpWrites).toEqual(writes);
+      expect(w.plexCalls).toEqual(plexCalls);
+      expect(w.state.deletes).toEqual([123]);
+      expect(w.state.calls).toHaveLength(2);
+    },
+  );
+  it.each(['foreign_guid', 'partial_history', 'partial_file', 'unsettled_import'] as const)(
+    'refuses other-part %s evidence before native adoption',
+    async (changed) => {
+      const w = world(),
+        r = await start(w);
+      w.importPair('dl-one-1', [1, 2], 801);
+      w.importPair('dl-two-2', [3, 4], 802);
+      if (changed === 'foreign_guid')
+        for (const h of w.state.history.filter(
+          (h) => h.eventType === 'downloadFolderImported' && h.downloadId === 'dl-two-2',
+        ))
+          h.downloadId = 'foreign';
+      if (changed === 'partial_history') w.state.history.pop();
+      if (changed === 'partial_file') {
+        w.state.episodes[3]!.episodeFileId = 0;
+        w.state.episodes[3]!.hasFile = false;
+      }
+      if (changed === 'unsettled_import')
+        await fixWriters.appendFixActions({
+          db: t.db,
+          fixRequestId: r.fixRequestId,
+          actions: [
+            { step: 'owned_import_intent', at: new Date().toISOString(), downloadId: 'dl-two-2' },
+          ],
+        });
+      const [carry] = await t.db.select().from(watchCarries),
+        part = readWrongContentPartSelection(carry!.detail)!.parts[0]!,
+        writes = structuredClone(w.state.httpWrites);
+      await expect(
+        planWrongContentPartResume({
+          db: t.db,
+          arr: w.arr,
+          actor: staff,
+          fixRequestId: r.fixRequestId,
+          partId: part.id,
+        }),
+      ).rejects.toThrow();
+      expect(w.state.httpWrites).toEqual(writes);
+      const [fix] = await t.db.select().from(fixRequests);
+      expect(fix!.actionsTaken.some((a) => a.step === 'wrong_content_part_import_read_back')).toBe(
+        false,
+      );
+    },
+  );
+  it.each(['size', 'relativePath'] as const)(
+    'refuses a changed previously audited other-part %s boundary during native adoption',
+    async (field) => {
+      const w = world(),
+        r = await start(w);
+      w.importPair('dl-one-1', [1, 2], 801);
+      w.importPair('dl-two-2', [3, 4], 802);
+      const [carry] = await t.db.select().from(watchCarries),
+        parts = readWrongContentPartSelection(carry!.detail)!.parts,
+        first = {
+          db: t.db,
+          arr: w.arr,
+          actor: staff,
+          fixRequestId: r.fixRequestId,
+          partId: parts[0]!.id,
+        },
+        plan = await planWrongContentPartResume(first);
+      await runWrongContentPartResume({ ...first, digest: plan.digest, evidence });
+      const f = w.state.files.find((f) => f.id === 801)!;
+      if (field === 'size') f.size++;
+      else f.relativePath = 'Season 1/changed.mkv';
+      await expect(
+        planWrongContentPartResume({ ...first, partId: parts[1]!.id }),
+      ).rejects.toThrow();
+    },
+  );
+  it('refuses a fresh native-adoption digest after the unaudited other-part bytes change', async () => {
+    const w = world(),
+      r = await start(w);
+    w.importPair('dl-one-1', [1, 2], 801);
+    w.importPair('dl-two-2', [3, 4], 802);
+    const [carry] = await t.db.select().from(watchCarries),
+      part = readWrongContentPartSelection(carry!.detail)!.parts[0]!,
+      input = { db: t.db, arr: w.arr, actor: staff, fixRequestId: r.fixRequestId, partId: part.id },
+      plan = await planWrongContentPartResume(input),
+      writes = structuredClone(w.state.httpWrites);
+    w.state.files.find((f) => f.id === 802)!.size++;
+    await expect(
+      runWrongContentPartResume({ ...input, digest: plan.digest, evidence }),
+    ).rejects.toThrow('Read a fresh plan');
+    expect(w.state.httpWrites).toEqual(writes);
+    const [fix] = await t.db.select().from(fixRequests);
+    expect(fix!.actionsTaken.some((a) => a.step === 'wrong_content_part_import_read_back')).toBe(
+      false,
+    );
   });
   it('refuses a foreign occupied other part and a stale imported-file boundary before retry', async () => {
     const w = world(),

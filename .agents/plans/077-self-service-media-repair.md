@@ -742,6 +742,10 @@ names, never deleting a file, after a watch-state check on every Plex server and
   verified parent's native series and exact dispatched title. The hold grants no queue-GUID ownership or replay;
   proved attempts still require exact GUID/series/title, and never-dispatched parts retain normal janitor policy.
   Private recovery CLI validation names the actual part/retry command and selector.
+- **Final preparation correction:** when both selected parts have natively imported before either adoption audit,
+  read-only factual adoption may protect the other positively bound whole native part from fresh exact GUID,
+  episode/file/name/byte evidence. Existing audits remain immutable boundary checks, and unsettled import claims
+  still refuse; retry/GRAB/import writes retain their completed-part-audit guard. No ManualImport intent is invented.
 - **Completion and policy:** keep generic normal episode/time matching and the original full-slot obligation.
   Runtime finish separately proves every actual GUID, native import, file/bytes, English/story, ledger event and
   strict Plex/Carry state. Extend per-part owned-import and janitor bindings without changing janitor modes or
@@ -751,7 +755,9 @@ names, never deleting a file, after a watch-state check on every Plex server and
   pre-claim lookup failure and exact queue-janitor ownership. The private CLI suite passed 25 cases. Domain and sync
   typechecks and changed-file lint passed. Advisory follow-through added three unresolved queue-dispatch cases;
   all five focused hold cases and the 25 CLI cases passed again with corrected messages. Hard rule 4 and the
-  domain writer README are updated in this change.
+  domain writer README are updated in this change. The final native-adoption correction passed all 34 multipart
+  cases, including both-native adoption on open and normally completed parents with zero media writes, foreign/
+  partial/unsettled refusals, unchanged retry-audit guards and stale name/byte/digest refusals.
 - **Next:** root review and required PR checks, followed by a signed release and verified live deployment. Tests
   ran under nice 19 with one worker only. No CPU burners or wide/looped parallel
   tests on this shared production node. Mickey E13 to E16 remains last, after all twenty-three initial slots and a fresh

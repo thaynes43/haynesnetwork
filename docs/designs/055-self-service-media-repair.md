@@ -794,6 +794,10 @@ do not edit)", "must not contain" terms only, no tags.
     attempts, or imported from its exact positively bound selected
     GUID with immutable parent-audited native import IDs, whole-part episode/file IDs, names and source bytes.
     A native auto-import may be adopted only after the same evidence is recorded, without replaying ManualImport.
+    If both parts natively import before either factual adoption audit exists, read-only adoption may protect the
+    other part from its fresh positive same-parent GUID, complete native episode/file coverage, name and bytes.
+    An existing other-part audit must still match that exact boundary; adoption cannot excuse stale evidence or
+    an unsettled owned-import claim. Retry, GRAB and import writes continue to require the completed-part audit.
     Staff ratifies actual English and all intended stories; a filename or HTTP receipt alone is not that proof.
     An unsettled import claim, foreign file or changed original/destination identity refuses. All episodes outside
     the retry target, including imported other parts and the completed prefix, are protected in the fresh digest
