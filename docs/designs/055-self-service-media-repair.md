@@ -698,7 +698,8 @@ do not edit)", "must not contain" terms only, no tags.
     grab retains its own bounded receipt binding for the janitor. A retry also records its actual HTTP call start
     and returned end separately from the canonical receipt audit, with the unique native download GUID when
     available. An uncertain retry is owned only inside that factual call window and actual GUID binding; intent
-    alone never creates an indefinite title match. Both the janitor and owned-import helper consume this proof,
+    alone never creates an indefinite title match. Retry GRAB time must fall from the floored second of actual
+    call start through the exact returned end, with no future grace period. Both the janitor and owned-import helper consume this proof,
     keeping earlier and later same-title foreign grabs outside the continuation. If no post-call fact can save,
     staff must observe the unresolved command; no import handle or title-only ownership is manufactured.
     Hold rows keep the janitor's existing once-per-failure policy. The owned-import

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import {
   fixRequests,
@@ -92,6 +92,7 @@ function stub() {
     grabAcceptedButError: false,
     newGrabWrongTargets: false,
     afterDelete: null as null | (() => void),
+    afterGrab: null as null | (() => void),
     rejections: [] as string[],
     writes: [] as Array<{ path: string; body: unknown }>,
     pages: [] as string[],
@@ -216,6 +217,7 @@ function stub() {
           date: new Date().toISOString(),
           data: {},
         });
+      state.afterGrab?.();
       return state.grabAcceptedButError
         ? json({ message: 'accepted but response lost' }, 503)
         : json({});
@@ -745,6 +747,85 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
     ).rejects.toThrow('not the exact retry GRAB');
     expect(s.state.writes.filter((w) => w.path.endsWith('/release'))).toHaveLength(1);
   });
+  it.each([false, true])(
+    'excludes next-second foreign history after an uncertain retry (accepted=%s)',
+    async (accepted) => {
+      const s = await setup(),
+        plan = await selected(s.input);
+      const base = Math.floor(Date.now() / 1000) * 1000 + 1525;
+      const future = new Date(Math.floor(base / 1000) * 1000 + 1000).toISOString();
+      const addForeign = () => {
+        for (const episodeId of [37187, 37188])
+          s.state.history.push({
+            ...s.state.history[0]!,
+            id: 88000 + episodeId,
+            eventType: 'grabbed',
+            episodeId,
+            downloadId: 'next-second-foreign',
+            sourceTitle: RIGHT,
+            date: future,
+          });
+      };
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(base);
+      try {
+        s.state.grabUncertain = true;
+        s.state.grabAcceptedButError = accepted;
+        // The next history read can already see an independent event after our returned command.
+        s.state.afterGrab = addForeign;
+        await runWrongContentRetry({
+          ...s.input,
+          digest: plan.digest,
+          key: plan.candidates[0]!.key,
+          evidence,
+          conflictEvidence: 'Physical source proves wrong S3 pair.',
+        });
+        if (!accepted) addForeign();
+        const [parent] = await t.db.select().from(fixRequests);
+        const call = parent!.actionsTaken.find(
+          (a) => a.step === 'wrong_content_retry_grab_call_result',
+        )!;
+        expect(Date.parse(String(call.finishedAt))).toBe(base);
+        expect(call.downloadId).toBe(accepted ? 'new-ivy' : null);
+        expect(
+          (call.grabbedHistory as Array<{ downloadId: string }>).some(
+            (h) => h.downloadId === 'next-second-foreign',
+          ),
+        ).toBe(false);
+        const owned = {
+          db: t.db,
+          arr: s.arr,
+          actor,
+          parent: { kind: 'fix' as const, id: s.fixRequestId },
+        };
+        if (accepted)
+          expect(
+            (await planOwnedSonarrImport({ ...owned, downloadId: 'new-ivy' })).targetEpisodeIds,
+          ).toEqual([37187, 37188]);
+        await expect(
+          planOwnedSonarrImport({ ...owned, downloadId: 'next-second-foreign' }),
+        ).rejects.toThrow('not the exact retry GRAB');
+        const downloads = accepted ? ['new-ivy', 'next-second-foreign'] : ['next-second-foreign'];
+        expect(
+          await deferredWrongContentFailures({
+            db: t.db,
+            failures: downloads.map((downloadId) => {
+              const h = s.state.history.find((h) => h.downloadId === downloadId)!;
+              return {
+                downloadId,
+                parentId: 439,
+                title: RIGHT,
+                failedAt: new Date(base + 10000),
+                grabbedHistory: { id: h.id, date: h.date, title: RIGHT, downloadId },
+              };
+            }),
+          }),
+        ).toEqual(new Set(accepted ? ['new-ivy\u0000439'] : []));
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
   it('refuses NEW wrong-raw GRAB history before import or foreign adoption', async () => {
     const s = await setup(),
       plan = await selected(s.input);

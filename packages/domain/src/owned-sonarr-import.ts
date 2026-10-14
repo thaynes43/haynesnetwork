@@ -475,7 +475,7 @@ async function buildPlan(input: OwnedSonarrImportInput): Promise<InternalPlan> {
       h.eventType === 'grabbed' &&
       h.sourceTitle === chosen.title && h.downloadId && h.date &&
       Date.parse(h.date) >= Math.floor(start / 1000) * 1000 &&
-      Date.parse(h.date) <= Math.floor(end / 1000) * 1000 + 1999);
+      Date.parse(h.date) <= end);
     const downloads = [...new Set(bounded.map((h) => h.downloadId))];
     if (downloads.length !== 1 || downloads[0] !== input.downloadId ||
       (typeof call.downloadId === 'string' && call.downloadId !== input.downloadId) ||

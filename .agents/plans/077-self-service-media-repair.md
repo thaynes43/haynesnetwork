@@ -634,7 +634,7 @@ names, never deleting a file, after a watch-state check on every Plex server and
       that proof in both janitor and owned import. Missing proof fails evaluation closed; an indefinite intent or
       parent creation time never owns a later foreign grab. No-conflict recovery emits no removal audit; queue
       disappearance after an uncertain discard is observation, with no claim of executed success. CLI reasons
-      come only from fixed local domain errors. Twenty recovery cases and 27 existing owned-import cases passed;
+      come only from fixed local domain errors. Twenty-two recovery cases and 27 existing owned-import cases passed;
       nine existing janitor retry/real-client cases and 24 CLI cases passed, with domain/sync typechecks and targeted
       lint. No live recovery has run from this implementation.
     - **Held** (#928 and OC-056 list them with reasons):

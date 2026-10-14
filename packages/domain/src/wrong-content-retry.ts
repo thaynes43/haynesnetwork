@@ -182,8 +182,9 @@ async function parent(db: DbClient | undefined, id: string, lock = false, interl
       return [];
     }
     if (!call && !receipt) return [];
-    const until =
-      Math.floor(Date.parse(String(call?.finishedAt ?? receipt!.at)) / 1000) * 1000 + 1999;
+    const until = call
+      ? Date.parse(String(call.finishedAt))
+      : Math.floor(Date.parse(receipt!.at) / 1000) * 1000 + 1999;
     if (retry && typeof call?.downloadId !== 'string') {
       unresolvedIntents.push({ title, since, until });
       return [];
@@ -269,11 +270,10 @@ export async function deferredWrongContentFailures(input: {
         (failure) =>
           failure.parentId === p.item.arrItemId &&
           p.unresolvedIntents.some((i) => {
-            const at = failure.grabbedHistory
-              ? Date.parse(failure.grabbedHistory.date)
-              : null;
+            const at = failure.grabbedHistory ? Date.parse(failure.grabbedHistory.date) : null;
             return (
-              i.title === failure.title && failure.failedAt.getTime() >= i.since &&
+              i.title === failure.title &&
+              failure.failedAt.getTime() >= i.since &&
               (at === null || (at >= i.since && (i.until === null || at <= i.until)))
             );
           }),
@@ -801,7 +801,7 @@ export async function runWrongContentRetry(
           h.downloadId &&
           h.episodeId &&
           Date.parse(h.date) >= Math.floor(Date.parse(startedAt) / 1000) * 1000 &&
-          Date.parse(h.date) <= Math.floor(Date.parse(finishedAt) / 1000) * 1000 + 1999,
+          Date.parse(h.date) <= Date.parse(finishedAt),
       )
       .map((h) => ({ id: h.id, date: h.date, downloadId: h.downloadId!, episodeId: h.episodeId! }));
   } catch {
