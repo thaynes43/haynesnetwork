@@ -150,6 +150,13 @@ v0.125.2 image. Startup adopted only the freshly revalidated eleven-slot prefix,
 control, and next selected E13. Its deadline is 10:36:31Z; no new replacement starts after 10:21:31Z. The predecessor
 image exception during the earlier rollout is historical, not a current running workload.
 
+E13, Ignorance Is Blissey, then passed: file 80027/1573820910, actual import 66866, English AAC track 4,
+both Plex copies and captured contexts, S20E102 correct-copy marks and protected E24 file 33843/1171596257.
+Root checked the young-character flashback and Team Rocket with the Center food pile against the canonical food-supply
+story. This is scene-based inference, without an observed title card. Fix `a5d2c26b-fc5c-4de3-9113-da316964932b`
+completed normally; read-only event proof was already completed at 05:46:06Z. Finish serial 5 was accepted at
+05:46:41Z only after all read-backs, then E14 began. Private account IDs stay in the runtime audit packet.
+
 Mickey's initial slots E1/E2, E3/E4 and E5/E6 are physically verified and normally completed, with literal cards,
 English, full paired imports, actual queue cleanup and strict per-account Plex proof. The next slot, E7/E8, is held.
 Append the final per-slot proof before merging this note; a grab or prepared script does not establish completion.
