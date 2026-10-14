@@ -3,7 +3,7 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import { startPostgres } from '@hnet/test-utils';
+import { startPostgres, trackPoolClose } from '@hnet/test-utils';
 import { runMigrations } from '@hnet/db/migrate';
 import * as schema from '@hnet/db/schema';
 
@@ -28,6 +28,7 @@ import * as schema from '@hnet/db/schema';
 
 let started: Awaited<ReturnType<typeof startPostgres>>;
 const pools: Pool[] = [];
+const closePools: Array<() => Promise<void>> = [];
 
 // Global budget: 4 requests / 60s per (ip, path). Small so the combined limit is easy to hit.
 const MAX = 4;
@@ -37,7 +38,7 @@ const BUCKET_KEY = `${CLIENT_IP}|/ok`; // createRateLimitKey(ip, path); path is 
 /** Build a standalone Better Auth instance over its own pool against the shared DB (a "replica"). */
 function makeReplica(connectionString: string) {
   const pool = new Pool({ connectionString });
-  pool.on('error', () => {}); // swallow late teardown FATALs on the throwaway pool (helpers.ts note)
+  closePools.push(trackPoolClose(pool));
   pools.push(pool);
   const db = drizzle(pool, { schema });
   return betterAuth({
@@ -99,7 +100,7 @@ beforeAll(async () => {
 }, 180_000);
 
 afterAll(async () => {
-  await Promise.all(pools.map((p) => p.end()));
+  await Promise.all(closePools.map((close) => close()));
   await started.stop();
 });
 

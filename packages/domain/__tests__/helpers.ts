@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import { startPostgres } from '@hnet/test-utils';
+import { startPostgres, trackPoolClose } from '@hnet/test-utils';
 import { runMigrations } from '@hnet/db/migrate';
 import * as schema from '@hnet/db/schema';
 import type { Database } from '@hnet/db';
@@ -26,17 +26,13 @@ export async function bootMigratedDb(): Promise<TestDb> {
   const started = await startPostgres();
   await runMigrations({ databaseUrl: started.connectionString });
   const pool = new Pool({ connectionString: started.connectionString });
-  // 57P01 teardown-flake hardening (CI protocol note, 2026-07-11): as the embedded PG shuts down it can
-  // deliver a late FATAL 57P01 to an idle pool client; pg emits it as an 'error' event, and with no
-  // listener vitest flags an UNHANDLED error and fails an otherwise-green run. Swallow ONLY pool-level
-  // errors on the throwaway test pool (queries still reject normally).
-  pool.on('error', () => {});
+  const closePool = trackPoolClose(pool);
   const db = drizzle(pool, { schema }) as Database;
   return {
     db,
     pool,
     stop: async () => {
-      await pool.end();
+      await closePool();
       await started.stop();
     },
   };

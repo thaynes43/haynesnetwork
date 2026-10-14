@@ -57,7 +57,7 @@ If all five pass you are clear to open the PR. Conventional-commit PR titles
 vitest config** — configs are per package (`packages/*/vitest.config.ts` and
 `apps/web/vitest.config.ts`). `apps/web` includes only `lib/__tests__/**/*.test.ts`;
 packages include `__tests__/**/*.test.ts`. Packages with no tests run
-`vitest run --passWithNoTests` (e.g. `@hnet/test-utils`).
+`vitest run --passWithNoTests`.
 
 DB-touching layers boot a **real embedded Postgres 16** — never SQLite/MySQL (hard rule 1,
 ADR-010). The binary is pinned to `16.14.0-beta.17` (`embedded-postgres` in
@@ -67,12 +67,18 @@ calls `startPostgres()` → a throwaway data dir + free localhost port
 `@hnet/db` migrations before the test body and tears the server down after (also on
 failure).
 
+For a test-owned connection pool, call `trackPoolClose(pool)` from `@hnet/test-utils/postgres` before the first query.
+Keep the returned cleanup function and await it before stopping embedded PostgreSQL. It observes public `connect`
+and `remove` events and waits for both the pool's end promise and every observed connection's actual close, including
+a pending connection that opens during cleanup. Cleanup has a 15-second bound and leaves genuine errors visible.
+`pool.end()` alone may finish before its idle clients' sockets close.
+
 What to expect:
 
 - **First run is slow** and the DB-heavy suites use long hooks: `hookTimeout: 180_000`,
-  `testTimeout: 60_000` (the `beforeAll` does `initdb` + `start` + migrate). Timeouts here
-  usually mean a slow/cold machine or a wedged prior PG process, not a real failure — just
-  re-run. CI caches the binary (ADR-010 C-05).
+  `testTimeout: 60_000` (the `beforeAll` does `initdb` + `start` + migrate). Inspect the failed stage before retrying
+  a timeout. CI caches the binary (ADR-010 C-05). In the shared dev pod, run only affected cases under nice 19 with
+  one worker; use deferred events or fake timers to check timing defects, with no load reproduction or test loops.
 - **The `./postgres` subpath import gotcha:** import the DB lifecycle from
   `@hnet/test-utils/postgres`, NOT the package index, from anything that runs under a CJS
   TS loader (Playwright's transform, tsx subprocesses). The index barrel re-exports
