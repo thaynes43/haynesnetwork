@@ -43,6 +43,11 @@ paired-file audio previews match the real physical Plex tracks. A corrected sign
 started at 05:36:31Z after actual predecessor deletion and full read-only revalidation of the E12 checkpoint. Retained finished Job pods are historical evidence. Read the newer
 [runtime proof](2026-10-14-self-service-repair-runtime-proof.md) for exact current state.
 
+At 07:25Z, [978](https://github.com/thaynes43/haynesnetwork/pull/978) and
+[release 980](https://github.com/thaynes43/haynesnetwork/pull/980) have merged, all four required checks passed, and
+v0.125.3's exact GHCR digest and actual successful cosign verification are independently confirmed. Its deployment
+is in progress. Do not treat a prepared continuation as deployed or launched.
+
 ## Resume steps, in order
 
 1. **Complete:** [#965](https://github.com/thaynes43/haynesnetwork/pull/965) and
@@ -58,17 +63,19 @@ started at 05:36:31Z after actual predecessor deletion and full read-only revali
 3. **Asked, answer pending:** Q-12 (DESIGN-055) was sent through the owner's question tool after the live check,
    recommending Seerr web push. Email and web push were read back off, so reporters currently see the comment
    only when opening their issue. Do not change delivery without the ruling; continue the independent repairs.
-4. **In progress, 2026-10-14 05:58Z:** do not rerun any original batch. Signed v0.125.1 deployed
+4. **In progress, 2026-10-14 07:25Z:** do not rerun any original batch. Signed v0.125.1 deployed
    [#970](https://github.com/thaynes43/haynesnetwork/pull/970) and
    [#972](https://github.com/thaynes43/haynesnetwork/pull/972); the original owned downloads resumed under their
    existing parents and verified Carries. See the [runtime proof](2026-10-14-self-service-repair-runtime-proof.md).
    - Ben E12 is complete: file 79992/709759175, English and literal Adventures in Babysitting card. Ben E10's
      correct but Arabic-only first import was replaced through the existing Language Replace writer; final
      80009/454603103 is the reboot Animo Farm story with English and both-server proof. Its Fix completed normally.
-   - Pokemon E1 to E7 and E9 to E14 completed normally with actual whole imports, physical English/story and
-     per-account Plex proof. The old finite Job was deleted only at a verified idle checkpoint. Its corrected
-     continuation adopted the sealed, freshly revalidated prefix, verified E13/E14 and now works E15. Never replay completed
-     replacements. The active Job is `frontend/pokemon-owned-cont-v1252-20261014-0530`, UID
+   - Pokemon E1 to E7 and E9 to E19 completed normally with actual whole imports, physical English/story and
+     per-account Plex proof. Fresh strict audit includes both owners, every captured affected account and complete
+     nonempty physical coverage. The corrected continuation adopted the sealed, freshly revalidated prefix without
+     replay. Current E20 is in progress; finish it, then hold at the verified idle checkpoint before E21 to install
+     actual write-time reserve guards through a cold successor. Require actual predecessor Job/Pod absence and
+     fresh full post-deletion proof. The active Job is `frontend/pokemon-owned-cont-v1252-20261014-0530`, UID
      `adcad698-99a1-4b2d-9092-50c8f6e1ba29`, deadline 2026-10-14T10:36:31Z; start no new replacement after
      10:21:31Z. Keep its reviewed signed helper pinned until it finishes.
    - Mickey E1/E2, E3/E4 and E5/E6 are complete with actual paired imports, literal cards, English and strict Plex
@@ -76,7 +83,9 @@ started at 05:36:31Z after actual predecessor deletion and full read-only revali
      Janitor re-search fetched physically wrong Season 3 stories. P4 decision 39 specifies an audited retry under the
      same Fix/Carry and a janitor hold, before implementation. Do not import that wrong source, borrow a member actor,
      delete again or create a second Carry. A distinct iVy English offer exists in the proper replacing-mode plan;
-     live recovery still needs its shipped writer, a fresh exact plan and whole-story proof before import.
+     live recovery still needs verified v0.125.3 deployment, a fresh exact plan, actual declaration covering its finite
+     lifetime and whole-story proof before import. The reviewed cold controller refuses late transport writes, missing
+     captured accounts, incomplete physical coverage and unbounded history. Its prepared envelope is not launch evidence.
    - Pokémon E8 and E31 remain untouched. Two bounded NZB reads found only obfuscated split-archive and parity
      subjects; correct story, release group and English are unproved. Do not describe this as no release existing.
    Use the audited `owned-import-plan` / `owned-import-run` on the existing parent and exact download. A native

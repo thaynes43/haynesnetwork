@@ -1,5 +1,38 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-14 07:25Z: signed v0.125.3 deploying; Pokemon through E19; cold worker guards corrected
+
+- [PLAN-077](plans/077-self-service-media-repair.md) remains active. The audited same-Fix recovery and scoped
+  janitor hold merged in [978](https://github.com/thaynes43/haynesnetwork/pull/978), then
+  [release 980](https://github.com/thaynes43/haynesnetwork/pull/980) merged after all four required checks.
+  v0.125.3's exact GHCR digest and explicit cosign verification passed independent read-only checks. Deployment is
+  in progress; serving production was last verified on v0.125.2. See the
+  [runtime proof](context/2026-10-14-self-service-repair-runtime-proof.md).
+- Pokemon S3 E1 to E7 and E9 to E19 completed normally with actual imports, physical English/story proof and
+  protected-file checks. A fresh strict audit checked both Plex servers, every captured affected account, complete
+  physical item coverage and unchanged correct-copy marks. Every replacement is unmarked. Current E20 is in progress;
+  finish it, then hold the verified idle checkpoint before E21. Never replay a completed replacement.
+- The old finite worker lacks a write-time deadline reserve check. Its corrected cold successor must check each
+  actual Arr/Plex write, including mutating GETs and neutral queue cleanup. Require the old Job and Pod actually gone,
+  fresh full post-deletion proof, signed v0.125.3 verified live and real scoped activity coverage before launch.
+  The frozen running worker has not been patched. Its current UID remains `adcad698-99a1-4b2d-9092-50c8f6e1ba29`.
+- Mickey's first three paired slots remain complete. E7/E8 recovery reuses the original NULL-requester Fix
+  `d26e411f-7b47-42e4-a363-2633de493d64` and verified Carry. Never import the proved wrong janitor source, delete again,
+  borrow a member actor or create a second Carry. The cold continuation's deadline, captured-account/physical coverage
+  and bounded-history guards passed independent review. Its prepared envelope is still unlaunchable: it needs actual
+  signed deployment, fresh exact retry/source evidence and a new declaration covering its finite lifetime. Original
+  terminal-worker serial 5 and later reconciled serial 20 are distinct provenance. E13 to E16 still run last.
+- Ben E10/E12 remain complete. Pokemon E8/E31 retain their wrong files because correct story/group/English are
+  unproved; this is not evidence that no source exists. Never use Saon or credit old-content marks onto replacements.
+- P7 remains on as user 19; protected Seerr issues 1 to 4 are unchanged and the removed owned fixture is excluded from
+  member evidence. Q-12 remains asked and unanswered, with email and web push off. The requested receipt page was
+  delivered; it did not authorize any Seerr notification setting change. P8 remains staff working practice, and only
+  the owner judges readiness.
+- OC-056 stays held until **2026-10-15T20:10Z** and closed blocking Fixes. Paw Patrol ordering comes first inside a
+  verified Watch Carry, then regenerate the season plan and preserve Runaway Stargazer. Final owed evidence follows
+  the repairs and formal dated hold. Root declaration `act-051827-491938` expires 11:18:27Z; it does not cover a fresh
+  six-hour continuation launched now. Root supplies actual successor coverage and ends each declaration after work.
+
 ## 2026-10-14 05:58Z: v0.125.2 verified live; Pokemon through E14; Mickey retry under review
 
 - [PLAN-077](plans/077-self-service-media-repair.md) remains active. Signed
