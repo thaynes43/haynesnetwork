@@ -1,5 +1,13 @@
 # Mickey final S01E13–16 carry review
 
+**Update, 2026-10-14 11:21Z:** D40's original-part/failed-part recovery and both-native factual adoption are merged
+in [987](https://github.com/thaynes43/haynesnetwork/pull/987), with all four checks and renewed review passed.
+[Release 988](https://github.com/thaynes43/haynesnetwork/pull/988), v0.125.4, is merged; cosign and both registry artifacts were subsequently verified at 11:25/11:26Z.
+Deployment verification remains pending. Fifteen initial slots are fully proved. The separate final-only
+proposal is prepared disabled, with future captures/digest/expiry blank. This does not authorize execution. Preserve
+the proposed mapping below and refresh it after every initial finishes on the signed deployed source.
+
+
 Read-only snapshot: 2026-10-14T09:03:37.285Z. Execution remains held until all 23 initial packet slots finish and the driver approves a fresh final plan and mapping.
 
 ## Original file and proven destination

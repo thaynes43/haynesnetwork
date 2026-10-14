@@ -22,7 +22,28 @@
   hardware-transcodes; P1 triage).
 - **Validation:** each phase's live check below, then P8's owner review.
 
-**Latest repair update, 2026-10-14 10:42Z:** Pokemon E24/E26 completed normally and passed finishes 23/29; twenty-four approved slots are complete.
+**Latest repair update, 2026-10-14 11:21Z:** Pokemon E28/E29 passed finishes 36/43; twenty-six approved replacements are complete, six remain, with E8/E31
+held. E30 replacement 44 was delivered once at 11:18:05.361Z and is in progress. Mickey E29/E30, E31/E32,
+E33/E34 and E35/E36 passed finishes 74/80/85/90; fifteen initial slots are complete and E37 is in progress.
+These four pairs imported natively, with no ManualImport, regrab or invented owned-import intent. Source/English,
+whole native files, original normal completion, strict captured-account marks and protected identities passed.
+[PR 987](https://github.com/thaynes43/haynesnetwork/pull/987) merged as
+`6f431991d1e2dc167166a253203236b5e1255d8e` at 11:08:27Z after all four required checks and renewed reviews
+without findings. It includes conservative unresolved-queue holds, accurate private diagnostics and read-only
+adoption when both parts natively import before either audit. [Release 988](https://github.com/thaynes43/haynesnetwork/pull/988),
+v0.125.4, merged as `ab8181c36b00d389dbdb05db534b0a10845b6178` at 11:20:44Z after all four required checks.
+Publisher [38555912857](https://github.com/thaynes43/haynesnetwork/actions/runs/38555912857) subsequently
+verified cosign on attempt 1 at 11:25:00.644Z. Root independently fetched matching image and signature manifests
+at 11:26:10Z, both HTTP 200; exact digests are recorded in the runtime proof. Deployment remains pending. Signed v0.125.3 and both immutable initial workers remain
+live. Final Mickey E13 to E16 runs last after every initial slot, fresh root mapping and verified signed D40 deployment.
+The prepared final-only envelope is disabled and contains no future capture, expiry, signed digest or prefix proof.
+See the [runtime proof](../context/2026-10-14-self-service-repair-runtime-proof.md) and
+[completed-slot table](../context/2026-10-14-pokemon-completed-slot-proof.md). Actual cutoffs and declaration remain
+unchanged. Q-12 is asked and unanswered; OC-056 remains held until 2026-10-15T20:10Z and closed blocking Fixes,
+with Paw Patrol ordering inside its verified Carry first. Final owed evidence follows the repairs and formal hold.
+P8 stays staff practice, with readiness judged by the owner.
+
+**Earlier repair update, 2026-10-14 10:42Z:** Pokemon E24/E26 completed normally and passed finishes 23/29; twenty-four approved slots are complete.
 E28 is in progress, with its distinct S03E28 to S20E28 same-content mapping retained. Eight approved replacements
 remain, with E8/E31 held. Mickey E21/E22, E23/E24 and E25/E26 passed finishes 56/62/68; eleven initial slots are
 complete. E29/E30 has natively imported under its original download and awaits physical story/English ratification;
