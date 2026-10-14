@@ -1,5 +1,31 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-14 01:25Z: owned imports corrected; release v0.125.1 pending; never replay the old batches
+
+- [PLAN-077](plans/077-self-service-media-repair.md) stays active. Production remains v0.125.0; P7 is on as user 19,
+  with the deleted owned Ghost fixture verified and excluded from real-report evidence. Q-12 is asked and unanswered;
+  Seerr email and web push stay off. Read the [cold-start note](context/2026-10-13-self-service-repair-codex-handoff.md).
+- [#970](https://github.com/thaynes43/haynesnetwork/pull/970) rejects ambiguous episode titles in Language Replace.
+  [#972](https://github.com/thaynes43/haynesnetwork/pull/972) adds audited owned-download checks and whole-target imports,
+  neutral queue cleanup after actual import proof, full-slot Fix completion and member guidance. Both merged after
+  all four required checks passed. [Release #971](https://github.com/thaynes43/haynesnetwork/pull/971), v0.125.1,
+  contains both fixes; its updated head is still being checked. Do not run the prepared media helpers until its
+  signed image is deployed and verified on all three pins, active pods and CronJob templates.
+- The original batches stopped safely. Ben E12 is correct and physically English. Ben E10 is the correct story but
+  Arabic only; the fresh English Language Replace is prepared. Mickey's first slot cleared only E1/E2; its correct
+  completed download is held by native numbering that claims E1 to E4. E3/E4's wrong file remains untouched.
+  Pokémon's first slot cleared only E1; its correct completed download is held under raw E12 numbering. E12's wrong
+  file remains untouched. These owned downloads and parents must be resumed, never re-grabbed or replayed.
+- Pokémon E8 and E31 stay held: two bounded NZB reads found only obfuscated split archives and parity subjects.
+  Correct story, group and English are unproved. This is not evidence that no release exists. Never pick Saon.
+- The verified old-content carries are Ben E10/E12, Mickey E1/E2 and Pokémon E1. Complete per-slot physical story,
+  English, immutable file, protected-file, Plex visibility and account mark proof before advancing. Mickey E13 to E16
+  still run last, after new E7/E8 content is proved. The owner alone judges readiness; staff use the tools first.
+- Active media declaration: `act-005117-418778`, scoped to frontend, media, downloads, Plex, Sonarr, SABnzbd and
+  HaynesTower, expires 2026-10-14T02:51:17Z. Root owns renewal and early end. Only stop owned Jobs or processes.
+- OC-056 remains held until **2026-10-15T20:10Z** and closed Fixes. Paw Patrol's TVDB airing ordering switch must
+  finish in a verified Watch Carry before regenerating its season plan. Preserve the only Runaway Stargazer file.
+
 ## 2026-10-13 23:20Z: Codex takeover, v0.125.0 deployed and P7 on; #928 replacements underway
 
 - [PLAN-077](plans/077-self-service-media-repair.md) remains active. Read the updated
