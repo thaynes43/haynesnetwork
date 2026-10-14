@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.125.4](https://github.com/thaynes43/haynesnetwork/compare/v0.125.3...v0.125.4) (2026-10-14)
+
+
+### Bug Fixes
+
+* recover selected multipart replacements on their original Fix ([#987](https://github.com/thaynes43/haynesnetwork/issues/987)) ([6f43199](https://github.com/thaynes43/haynesnetwork/commit/6f431991d1e2dc167166a253203236b5e1255d8e))
+
 ## [0.125.3](https://github.com/thaynes43/haynesnetwork/compare/v0.125.2...v0.125.3) (2026-10-14)
 
 
