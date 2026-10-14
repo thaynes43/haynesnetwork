@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-14 (P6 decision 15 paired-file track hints). Before that 2026-10-14 (P4 decision 38 owned-import follow-through and D-12 staff guidance). Before that 2026-10-13 (P4 decision 38, the coordinator's ruling on #928: the staff Wrong-Content Replace). Before that 2026-10-13 (P7 decisions 1-10 after D-11: the Seerr Issue bridge as built, the bridge user, the `seerr_issue_bridge` setting, the comment's wording, one write per issue and kind, the exact link, when the resolve happens; Q-12 raised). Before that 2026-10-13 (P6 decision 14 scoped to the audit's flagged shows, ADR-115). Before that 2026-10-13 (P4 decisions 35 to 37, issue #928's evidence: a placement may change the episode count, a second parking episode for a second open cycle, the Second-Copy Fix takes a multi-episode copy). Before that 2026-10-13 (P6 decision 14 and Q-03 amended: the owner's ruling on #955, "English if present", for staff defaults). Before that 2026-10-13 (P6 decision 3: a server's item is the one in a library of the title's own kind, PR #954; P6's live status and sweep in PLAN-077). Before that 2026-10-13 (P6 decision 13: the Language Replace never takes another post of the file's own release; decision 2: Plex lists a show's own track languages first). Before that 2026-10-13 (P4 decisions 26 to 34, ADR-114, the owner's ruling on issue #928 "Carry marks, then move": the Watch Carry, the Plex ordering switch inside it, and a two-episode file through the parking episode; decisions 10, 20, 21 and 23 amended). Before that 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
+- **Last updated:** 2026-10-14 (P4 decision 39 failed-grab staff continuation). Before that 2026-10-14 (P6 decision 15 paired-file track hints). Before that 2026-10-14 (P4 decision 38 owned-import follow-through and D-12 staff guidance). Before that 2026-10-13 (P4 decision 38, the coordinator's ruling on #928: the staff Wrong-Content Replace). Before that 2026-10-13 (P7 decisions 1-10 after D-11: the Seerr Issue bridge as built, the bridge user, the `seerr_issue_bridge` setting, the comment's wording, one write per issue and kind, the exact link, when the resolve happens; Q-12 raised). Before that 2026-10-13 (P6 decision 14 scoped to the audit's flagged shows, ADR-115). Before that 2026-10-13 (P4 decisions 35 to 37, issue #928's evidence: a placement may change the episode count, a second parking episode for a second open cycle, the Second-Copy Fix takes a multi-episode copy). Before that 2026-10-13 (P6 decision 14 and Q-03 amended: the owner's ruling on #955, "English if present", for staff defaults). Before that 2026-10-13 (P6 decision 3: a server's item is the one in a library of the title's own kind, PR #954; P6's live status and sweep in PLAN-077). Before that 2026-10-13 (P6 decision 13: the Language Replace never takes another post of the file's own release; decision 2: Plex lists a show's own track languages first). Before that 2026-10-13 (P4 decisions 26 to 34, ADR-114, the owner's ruling on issue #928 "Carry marks, then move": the Watch Carry, the Plex ordering switch inside it, and a two-episode file through the parking episode; decisions 10, 20, 21 and 23 amended). Before that 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
   missing, is a pick for all of them). Before that 2026-10-13 (P4 decision 25, issue #928: the staff Second-Copy Fix). Before that 2026-10-13 (P5 decision 15: another movie's release is refused; P5 decisions 1-14 after D-06: the Release Pick as built, the season list narrowed to the episode, Q-07's override half resolved, the Release List, the open check per episode, the follow-through). Before that 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence; amended by ADR-113, mislabelled-name terms), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
@@ -662,6 +662,44 @@ do not edit)", "must not contain" terms only, no tags.
     verified versioned carry has a later actual import ledger event. The first part alone cannot close the parent and
     strand its remaining owned download. Missing, ambiguous or malformed slot metadata keeps that Fix open; ordinary
     episode/season Fix matching is unchanged. The normal matcher records all matched episode/event IDs in completion.
+
+39. **Continue a failed staff replacement on its original repair (live finding, 2026-10-14).** Mickey's S1 E7/E8
+    replacement was rejected by SABnzbd as Duplicate NZB after the original file had been removed and its Watch Carry
+    verified. Automatic failed-download retry then grabbed another copy of the same wrong stories. Ordinary P5
+    discovery omitted the correctly named multipart alternatives that P4's replacing mode can judge. A staff recovery
+    must keep the original Fix and verified version-1 Carry, with no repeated deletion, new Carry or parallel request.
+    Plan and run derive the complete intended slot from those stored records. They require a null-requester
+    Wrong-Content Replace, its latest successful recorded grab followed by genuine failure history for that same
+    download, no owned import claim or actual import, empty intended episodes and unchanged protected files. A raw
+    numbering mismatch never changes the intended scope. The fresh digest binds those identities and the selected
+    whole-slot release. Reuse P4's exact named-title classification and its narrowly defined renumbering override;
+    every other hard refusal, source/group guard, quality rule and budget remains in force.
+
+    A conflicting replacement download may be abandoned only when its exact live queue/source identity belongs to
+    this media and slot and its titles/content are positively proved wrong. Record that single-download intent and
+    result on the original Fix through the domain writer: blocklist it, skip redownload, leave the download-client
+    files, and send no search. Re-read the queue, empty slot and protected files before the next grab. Record the new
+    grab intent before calling the existing release writer, then its actual receipt. A claimed or uncertain removal
+    or grab is observed or refused; it is never replayed. No caller-supplied episode IDs or public staff override
+    grants authority. The normal parent-owned Import Check and whole-slot ledger completion handle the new download.
+    Failure keeps truthful waiting evidence on that parent; it does not manufacture completion or resolve a report.
+
+    The failed-download janitor must defer automatic re-search for a failed grab bound to an active, verified
+    Wrong-Content Replace. Match the stored download and Carry scope rather than reparsed queue episode numbers.
+    Record the hold without changing class enforcement settings or spending the loop guard's search budget.
+    Unrelated downloads retain their normal policy. This avoids an automatic search racing the explicit recovery.
+    Staff attribution stays null and explicit; a database role lookup never substitutes for authenticated user action.
+
+    **Implementation:** `planWrongContentRetry` and `runWrongContentRetry` expose only the private staff
+    `replace-retry-plan` / `replace-retry-run` CLI. A plan takes `--parent fix:<id>`, optional
+    `--discard-download <id>`, and the selected `--key`; run also requires its fresh `--digest`, `--evidence`,
+    and `--conflict-evidence` when discarding. The failure proof reads one history page of at most 200 rows;
+    missing anchors refuse. Short database claims contain no HTTP calls. Each old or new recorded whole-slot
+    grab retains its own bounded receipt binding for the janitor, including an uncertain new receipt proved by
+    actual native GRAB history. Hold rows keep the janitor's existing once-per-failure policy. The owned-import
+    runner still requires actual new GRAB episode coverage to equal the stored intended slot; it refuses a newly
+    reparsed grab rather than importing into protected episodes. Accepted commands whose response or audit is
+    lost retain their durable intent and require observation, never a second release POST.
 
 ### D-06 Release Pick
 

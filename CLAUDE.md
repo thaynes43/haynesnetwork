@@ -154,6 +154,13 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    their audited watch state, and unverified deletions keep the carry open until a fresh read-back. Marks from the
    wrong content go only to its evidenced copies, or are audited as dropped after confirmed removal, never onto the
    replacement. Through `@hnet/arr/write` and `@hnet/plex/write` from `packages/domain` only.
+   **DESIGN-055 P4 decision 39 adds a bounded staff failed-grab retry** (`wrong-content-retry.ts`): only the same
+   null-requester Fix and its verified version-1 Carry, deriving the entire original slot and binding the latest
+   recorded grab to genuine failed-download history. It may abandon one positively proved wrong queue source
+   (blocklist, skip redownload, preserve client files, no search), then grab a fresh allowed whole-slot release with
+   intent/receipt audits on that parent. No repeated library deletion, new Carry or parallel request; uncertain
+   writes are never replayed. The failed-download janitor records a hold for that active verified replacement by
+   download GUID and Carry scope. All writes remain through `@hnet/arr/write` from `packages/domain` only.
    **ADR-109 adds the language-aware Wrong language** (C-02, C-07; DESIGN-055 D-08, PLAN-077 P6). **The Audio
    Preference**, a Plex write: a show's preferred audio language (`PUT /library/metadata/{key}/prefs?audioLanguage=`),
    on every Plex server that carries the show, only when the person's file already has the wanted audio and that

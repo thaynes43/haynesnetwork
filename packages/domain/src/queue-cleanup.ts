@@ -48,6 +48,7 @@ import {
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { setAppSetting } from './app-settings';
 import { resolveDb } from './db-client';
+import { deferredWrongContentFailures, WRONG_CONTENT_RETRY_HOLD } from './wrong-content-retry';
 import { QueueCleanupConfigInvalidError } from './errors';
 import {
   JANITOR_BLOCK_KINDS,
@@ -723,6 +724,8 @@ export interface QueueCleanupFailedDownload {
   parentId: number;
   /** The *arr grabbed the same target again after this failure (any search, RSS, or a person). */
   regrabbed: boolean;
+  /** Actual same-download GRAB already read with failures; no ledger-sync timing dependency. */
+  grabbedHistory?: { id: number; downloadId: string; title: string; date: string };
 }
 
 /** D-24 (ADR-098) — the failed-download surface of one *arr. Read-only, except `search`. */
@@ -965,7 +968,31 @@ export function buildQueueCleanupClients(clients: {
           );
           return failed
             .filter((r) => r.eventType === 'downloadFailed')
-            .map((r) => toFailedDownload(r, r.episodeId, r.seriesId, lastGrab))
+            .map((r) => {
+              const f = toFailedDownload(r, r.episodeId, r.seriesId, lastGrab);
+              if (!f) return null;
+              const bound = grabbed
+                .filter(
+                  (g) =>
+                    g.eventType === 'grabbed' &&
+                    g.seriesId === r.seriesId &&
+                    g.downloadId === r.downloadId &&
+                    g.sourceTitle === r.sourceTitle &&
+                    Date.parse(g.date) <= Date.parse(r.date),
+                )
+                .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))[0];
+              return bound && bound.downloadId && bound.sourceTitle
+                ? {
+                    ...f,
+                    grabbedHistory: {
+                      id: bound.id,
+                      downloadId: bound.downloadId,
+                      title: bound.sourceTitle,
+                      date: bound.date,
+                    },
+                  }
+                : f;
+            })
             .filter((f): f is QueueCleanupFailedDownload => f !== null);
         },
         async monitored(failures) {
@@ -2314,6 +2341,36 @@ async function retryFailedDownloads(ctx: {
     .sort((a, b) => a.failedAt.getTime() - b.failedAt.getTime() || a.historyId - b.historyId);
   if (fresh.length === 0) return out;
 
+  // D-055 P4 decision 39: a verified replacement owns its actual GRAB download, even when Sonarr reparses
+  // its failure onto other episode numbers. The hold records the configured mode and spends no search budget.
+  let ownedHolds: Set<string>;
+  try {
+    ownedHolds =
+      instance === 'sonarr'
+        ? await deferredWrongContentFailures({ db, failures: fresh })
+        : new Set();
+  } catch (err) {
+    warn('replacement ownership read failed', err);
+    return out;
+  }
+  const retryable = fresh.filter((f) => {
+    if (!ownedHolds.has(`${f.downloadId ?? ''}\u0000${f.parentId}`)) return true;
+    out.rows.push({
+      instance,
+      queueItemId: null,
+      downloadId: f.downloadId,
+      title: f.title,
+      targetId: f.targetId,
+      actionClass: 'bad_release',
+      mode,
+      action: 'none',
+      outcome: 'observed',
+      reason: WRONG_CONTENT_RETRY_HOLD,
+    });
+    return false;
+  });
+  if (retryable.length === 0) return out;
+
   let arrRetries: boolean;
   try {
     arrRetries = await source.redownloadFailed();
@@ -2328,7 +2385,7 @@ async function retryFailedDownloads(ctx: {
       prior = await priorJanitorTries(
         db,
         instance,
-        distinctIds(fresh.map((f) => f.targetId)),
+        distinctIds(retryable.map((f) => f.targetId)),
         new Date(now.getTime() - QUEUE_CLEANUP_LOOP_WINDOW_MS),
       );
     } catch (err) {
@@ -2337,7 +2394,7 @@ async function retryFailedDownloads(ctx: {
     }
   }
 
-  for (const group of groupQueueRecordsByDownload(fresh)) {
+  for (const group of groupQueueRecordsByDownload(retryable)) {
     const results = new Map<QueueCleanupFailedDownload, RecordResult>();
     for (const f of group) results.set(f, result('none'));
     let open = acting
