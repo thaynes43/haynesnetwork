@@ -83,6 +83,15 @@ capability when a hand repair is needed. There is no readiness counter or defaul
   missing files. Owed observations retain known failures and future/member waits. These prove the runners executed,
   not that a dated or first-member observation has passed; the final step-6 snapshot still follows the media work.
 
+- Subsequent v0.125.4 artifact proof: publisher [38555912857](https://github.com/thaynes43/haynesnetwork/actions/runs/38555912857),
+  exact release commit `ab8181c36b00d389dbdb05db534b0a10845b6178`, job 115824866506, completed successfully.
+  Its actual cosign verification step 11 succeeded on attempt 1 at 11:25:00.644Z for digest
+  `sha256:5522d758426a317b42fec609fbe02f8f27cdc042f03b133833002f8ccb2f881f`, with the repo-workflow identity
+  regexp and GitHub OIDC issuer, verified transparency claims and trusted certificates. Root independently fetched
+  v0.125.4 and its digest-pinned signature at 11:26:10.253Z: both HTTP 200, matching returned/body hashes. Signature
+  manifest is `sha256:f4faf47c28acaecc3a19be71e0a847678c46a2e19c7faf62e1b8ad953d91cba2`. This authorizes the
+  three manifest-pin change; it does not claim live deployment. Immutable initial workers remain on v0.125.3.
+
 ## P7 and notifications
 
 P7 comment and resolve remain on as user 19. Owned Ghost fixture 5 received one invitation and one outcome/resolve,
@@ -546,6 +555,67 @@ Focused local checks passed. Review found that queue enforcement must conservati
 GRAB on its exact native series/dispatched title without inventing GUID ownership; private parser messages also
 need their actual flag/command names. These findings are being corrected before renewed review and required
 checks. Final multipart E13 to E16 remains held until that signed fix is deployed and all initial slots finish.
+
+Pokemon E28's single IMPORT34 then verified full native event 67001 and file 80053/1478614008 for 49226 on its
+original download. Normal event `ee636b7c-492f-4499-a930-75f1666ef898` was recorded at 10:45:03.544Z; first
+completed observation was 10:46:41.781Z. Source/library measure 1920 by 1080 with English AAC4 and equal viewed
+300s PNG. Both Plex servers' four complete nonempty owner/captured contexts passed current-zero/correct-copy
+marks, owners selecting English and preferences unset. Distinct S20E28 copy 34113/209560051 and protected raw
+E39 34503/150918956 remained unchanged. Finish 36 passed at 10:50:12.051Z; checkpoint SHA
+`3beb91643d2d4556bc4ffc48f9d608e1eb7a732f76618fc23ccf0e7507fc583c` preserves twenty-five approved completions.
+The earlier E28 source-helper completions do not prove serial starts; that limitation was recorded, and all later
+E29 samples waited for actual completion before the next started.
+
+Pokemon E29's single IMPORT41 was delivered at 11:05:10.883Z after fresh plan 40 and exact source/protected checks.
+Actual file 80056/1477524293, native import 67016 and whole 49227 bind Fix
+`0ff7cb78-cf1c-4c33-baa0-9bc32d3c2b94`, verified Carry `1a4781b0-de89-4339-b145-4189ec85727e` and original
+download `f751078a-727c-43f1-a998-81cc72acb022`. Observation 42 verified that command without replay. Root viewed
+300s forest/trainer and 900s black-haired blue-collared guest/gray straps/wooden-slat scenes. These support the
+[A Farfetch'd Tale](https://bulbapedia.bulbagarden.net/wiki/EP145) inference with its
+[one-episode guest](https://bulbapedia.bulbagarden.net/wiki/Sylvester_(EP145)); no Farfetch'd, literal episode card,
+unseen action or wooden-object purpose was claimed. Source/library measure 1920 by 1080 with English AAC4 and
+matching 900s PNG. Normal event `11b96cd0-9314-4890-bda9-e72862ac03aa` was recorded at 11:15:03.215Z; first
+completed observation was 11:15:27.277Z. Four complete nonempty Plex contexts passed current-zero/correct-copy
+marks, English for owners and unset preferences. Distinct S20E29 copy 34143/187676829 and protected raw E40
+34579/184582512 remained unchanged. Finish 43 passed at 11:17:10.644Z; checkpoint SHA
+`60b35d5532273d3f52192da3867d75180d9921c012f51007468e3b817a61174e` preserves twenty-six completions. E30
+replacement 44 was delivered once at 11:18:05.361Z; source ratification/import/normal/final proof are pending at
+this snapshot. Preserve its distinct S20E30 mapping and never replay an already submitted command.
+
+Mickey's next four pairs imported natively. Explicit native adoption controls 73/79/84/89 recorded actual observed
+results, with no ManualImport, regrab, owned-import intent or queue cleanup. Root viewed both literal cards for each
+pair; actual measured files are 1920 by 1080 with English AAC7, and source/library SHA agrees.
+
+| Slot | Accepted full finish | File / bytes / SHA | Whole native imports / original download | Original Fix / verified Carry / normal completed event | Actual Plex keys |
+| --- | --- | --- | --- | --- | --- |
+| 29 | 2026-10-14T10:47:48.611Z | 80052/1451468663<br>`6978863fd47ff93b94e4214e0af2b431e6e76d7378af9b60d17f35a17f6cf68e` | 66999/67000<br>`b193b63e-bb92-48ae-b48b-197fdf3a7e01` | Fix `1f81619d-8939-4285-8971-b67a2b9c7b31`<br>Carry `e83431fe-5754-4656-b4bc-50a2d4264752`<br>event `846437b4-38f1-4178-89b9-65bdf8f848c1` | 58507/556287 |
+| 31 | 2026-10-14T10:56:26.824Z | 80054/1449008566<br>`98cdbb75baff438de88d4f56a460e6728b9d525f21f4c0560598bfe8eaeb2f6a` | 67006/67007<br>`3672b4c6-95b2-494c-accf-0f5621c11cc5` | Fix `f42ca203-e7ff-4e43-9e5a-7d157dced5a7`<br>Carry `56c69636-5d17-4e37-baea-336b836ec90e`<br>event `49fbb173-16a9-4bd0-9936-2a7c360cc3bb` | 58508/556291 |
+| 33+34 | 2026-10-14T11:04:48.204Z | 80055/1422068449<br>`e0ac549866841ad4be505f581452ea0774befa7faa3a9ffd8b7e18a555b5214d` | 67014/67015<br>`140af96f-0a43-40e9-90b7-5e7f0f28dc71` | Fix `2b5f8c56-6ded-419b-a226-cca91bdda123`<br>Carry `cac066b7-c68d-4502-9c64-3e8f3da6fd0b`<br>event `e707018c-a64f-4f68-b70b-82d236c8977e` | 58509/556292 |
+| 35+36 | 2026-10-14T11:16:55.598Z | 80057/1537356210<br>`3a03fffa2e23883e5c305623d867b9f2f6c8ac1afd226ec9eefe1b73cab2bf46` | 67021/67022<br>`b9f965e6-ac61-4bb4-aacb-4c5924f94c03` | Fix `78b7a280-c49b-4f03-83f7-1285a2d3a56c`<br>Carry `bc1dd372-5a96-4922-aea3-12267289c67b`<br>event `565cebfa-e549-4c1c-9bb2-80fe1cc9c287` | 58511/556294 |
+
+Each actual single Plex item covers its independently proved pair. All owners/every captured account passed strict
+new current-zero, correct-copy marks and protected identities, including final 65359. E29/E30 and E33/E34 completed
+naturally; settlement was read-only. E31/E32 and E35/E36 used only two real native rows from one 200-row page and
+the original normal matcher, with the cursor unchanged. E33/E34's two original files cover only one Sonarr episode
+each, not a four-episode original; exact distinct mappings 33 to S3E65/E66 and 34 to S3E67/E68 were preserved.
+E35/E36 likewise retained source prefixes 35 to S3E69/E70 and 36 to S3E71/E72. No original scope was reduced to
+fit the single-key worker. Fifteen initial slots are complete; E37 is next. Earlier missing/failed card samples are
+retained as misses; the physical observation 'Mouse vs. Machine' has no exclamation, stored separately from the
+canonical Sonarr label.
+
+[987](https://github.com/thaynes43/haynesnetwork/pull/987) merged at 11:08:27Z as
+`6f431991d1e2dc167166a253203236b5e1255d8e` after all four required checks on `0117ef55` and renewed reviews
+without findings. It fixes the actual unsupported both-native-parts adoption interlock in addition to the two
+advisory findings. Read-only adoption may protect another fresh positively bound whole native part before its
+audit exists; existing audited names/bytes and unsettled imports still refuse. All media-writing recovery retains
+its audit boundary. The final multipart suite passed 34 focused cases, including natural completion and adoption
+on open/completed parents with zero HTTP/Plex writes. Legacy regression, private CLI, types/lint and CI passed.
+[Release 988](https://github.com/thaynes43/haynesnetwork/pull/988) merged at 11:20:44Z as
+`ab8181c36b00d389dbdb05db534b0a10845b6178` after all four required checks. Actual publisher
+[38555912857](https://github.com/thaynes43/haynesnetwork/actions/runs/38555912857) subsequently completed its actual cosign verification on attempt 1, and root fetched both matching registry
+artifacts at 11:26Z (details above). Manifest deployment remains pending. Signed v0.125.3 remains live. The final-only cold proposal
+is disabled with no future proof/timestamps filled. It must not load into the current worker or bypass the initial
+completion, fresh mapping, exact reviewed hash and signed live-source checks. Final E13 to E16 remains last.
 
 Pokemon E8 and E31 retain their wrong files. Two bounded NZB reads found only obfuscated split archives and parity
 subjects. Correct story, release group and English remain unproved; that does not establish that no release exists.

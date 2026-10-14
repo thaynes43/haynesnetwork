@@ -1,5 +1,30 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-14 11:21Z: multipart recovery merged; v0.125.4 publishing; later native repairs proved
+
+- [987](https://github.com/thaynes43/haynesnetwork/pull/987) merged at 11:08:27Z after all four required checks
+  and renewed reviews without findings. D40 retains one original Fix/Carry/full-slot obligation, exact parts and
+  factual receipts. Unresolved queue holds grant no GUID ownership. Both native parts can be factually adopted
+  without ManualImport, while existing audits, foreign/partial files and unsettled claims retain strict checks.
+- [Release 988](https://github.com/thaynes43/haynesnetwork/pull/988), v0.125.4, merged at 11:20:44Z after all four
+  checks. [Publisher 38555912857](https://github.com/thaynes43/haynesnetwork/actions/runs/38555912857) subsequently
+  verified cosign on attempt 1 at 11:25Z; root fetched both matching registry manifests at 11:26Z. The exact signed
+  image is `sha256:5522d758426a317b42fec609fbe02f8f27cdc042f03b133833002f8ccb2f881f`. Deployment is pending. Signed
+  v0.125.3 and both immutable initial workers are still live; do not replace their code or extend their envelopes.
+- Pokemon E28/E29 passed finishes 36/43. Twenty-six approved slots are complete; six remain plus held E8/E31.
+  E30 replacement 44 was delivered once at 11:18:05.361Z; do not replay it. Same-number S20E28/E29/E30 copies
+  are distinct seasons/files. Full new identities are in the [completed table](context/2026-10-14-pokemon-completed-slot-proof.md).
+- Mickey E29/E30, E31/E32, E33/E34 and E35/E36 passed finishes 74/80/85/90 after native imports, actual viewed
+  cards/English, whole-file SHA, original normal completion, strict marks and unchanged protected files. Fifteen
+  initial slots are complete; E37 is in progress. No ManualImport or owned intent was invented for native results.
+- Final E13 to E16 still runs last after all initial slots and fresh mapping on the signed deployed fix. A separate
+  cold final-only proposal is disabled, with future evidence/timestamps blank; it is not launch approval. Exact
+  current evidence is in the [runtime record](context/2026-10-14-self-service-repair-runtime-proof.md).
+  Q-12 is unanswered. OC-056 stays held until 2026-10-15T20:10Z and closed blocking Fixes, with Paw ordering
+  inside its verified Carry first. Final owed evidence follows the repairs and formal hold. P8 is staff practice;
+  readiness remains the owner's judgment.
+
+
 ## 2026-10-14 10:42Z: Pokemon through E26; Mickey through E25/E26; multipart recovery PR in review
 
 - Pokemon E24/E26 completed normally and passed finishes 23/29. Twenty-four approved slots are complete;
