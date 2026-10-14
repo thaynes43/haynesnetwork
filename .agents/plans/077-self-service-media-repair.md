@@ -635,7 +635,11 @@ names, never deleting a file, after a watch-state check on every Plex server and
       parent creation time never owns a later foreign grab. No-conflict recovery emits no removal audit; queue
       disappearance after an uncertain discard is observation, with no claim of executed success. CLI reasons
       come only from fixed local domain errors. Actual post-command audits preserve normal native completion;
-      completed parents cannot claim another command. Twenty-four recovery cases and 27 existing owned-import cases passed;
+      completed parents cannot claim another command. Each retry claim is bound to its failed actual GRAB attempt
+      and download GUID. A later verified terminal failure can receive a distinct reviewed attempt on the same
+      parent/Carry, including an accepted-but-503 call proved by native history; no canonical200 is invented.
+      Earlier uncertain commands remain observe-only, read-backs are attempt scoped, and protected identities
+      persist across attempts. Twenty-eight recovery cases and 27 existing owned-import cases passed together;
       nine existing janitor retry/real-client cases and 24 CLI cases passed, with domain/sync typechecks and targeted
       lint. No live recovery has run from this implementation.
     - **Held** (#928 and OC-056 list them with reasons):

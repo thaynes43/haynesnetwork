@@ -127,9 +127,16 @@ async function parent(db: DbClient | undefined, id: string, lock = false, interl
     .reverse()
     .find((a) => a.step === 'release_grab' && a.ok === true && typeof a.release === 'string');
   if (!grab) refuse('The parent has no successful recorded grab.');
-  const intent = [...fix.actionsTaken]
+  const grabIndex = fix.actionsTaken.indexOf(grab);
+  const intent = fix.actionsTaken
+    .slice(0, grabIndex)
     .reverse()
-    .find((a) => a.step === 'grab_intent' && titleOf(a) === grab.release);
+    .find(
+      (a) =>
+        a.step === 'grab_intent' &&
+        titleOf(a) === grab.release &&
+        (a.attemptId ?? null) === (grab.attemptId ?? null),
+    );
   const legacy = Array.isArray(carry.detail.releases) ? carry.detail.releases : [];
   const intended = intent
     ? ids(intent.episodeIds)
@@ -146,6 +153,63 @@ async function parent(db: DbClient | undefined, id: string, lock = false, interl
   )
     refuse('An import was already claimed; observe it instead of retrying.');
   const receiptUntil = Math.floor(Date.parse(grab.at) / 1000) * 1000 + 1999;
+  let anchor = {
+    title: String(grab.release),
+    attemptId: typeof grab.attemptId === 'string' ? grab.attemptId : null,
+    downloadId: null as string | null,
+    start: intent?.at ?? fix.createdAt.toISOString(),
+    end: receiptUntil,
+    source: 'receipt' as 'receipt' | 'native_call',
+    httpAccepted: true,
+  };
+  const actualCall = [...fix.actionsTaken]
+    .reverse()
+    .find(
+      (a) =>
+        a.step === 'wrong_content_retry_grab_call_result' &&
+        typeof a.downloadId === 'string' &&
+        typeof a.title === 'string' &&
+        (fix.actionsTaken.indexOf(a) > grabIndex || a.attemptId === grab.attemptId),
+    );
+  if (actualCall) {
+    const ownIntent = fix.actionsTaken.find(
+      (a) =>
+        a.step === 'wrong_content_retry_grab_intent' &&
+        a.attemptId === actualCall.attemptId &&
+        a.title === actualCall.title &&
+        same(ids(a.episodeIds), slot),
+    );
+    const start = Date.parse(String(actualCall.startedAt)),
+      end = Date.parse(String(actualCall.finishedAt));
+    const native = Array.isArray(actualCall.grabbedHistory)
+      ? actualCall.grabbedHistory.map(object)
+      : [];
+    if (
+      !ownIntent ||
+      !Number.isFinite(start) ||
+      !Number.isFinite(end) ||
+      end < start ||
+      !same(ids(actualCall.targetEpisodeIds), slot) ||
+      !same(ids(native.map((h) => h.episodeId)), slot) ||
+      native.some(
+        (h) =>
+          h.downloadId !== actualCall.downloadId ||
+          Date.parse(String(h.date)) < Math.floor(start / 1000) * 1000 ||
+          Date.parse(String(h.date)) > end,
+      )
+    )
+      refuse('The actual retry GRAB proof cannot be verified. Observe its recorded attempt.');
+    anchor = {
+      title: String(actualCall.title),
+      attemptId: String(actualCall.attemptId),
+      downloadId: String(actualCall.downloadId),
+      start: String(actualCall.startedAt),
+      end,
+      source: 'native_call',
+      httpAccepted: actualCall.accepted === true,
+    };
+  } else if (!interlock && typeof grab.attemptId === 'string')
+    refuse('The retry has no saved actual GRAB identity. Observe its recorded attempt.');
   // A newer retry does not surrender the older owned failure to an automatic search.
   // Each completed receipt bounds its own intent; an uncertain intent needs actual GRAB proof below.
   const unresolvedIntents: Array<{ title: string; since: number; until: number | null }> = [];
@@ -214,14 +278,12 @@ async function parent(db: DbClient | undefined, id: string, lock = false, interl
   return {
     ownershipBindings,
     unresolvedIntents,
-    receiptUntil,
+    anchor,
     fix,
     carry,
     item,
     files,
     slot,
-    grab,
-    since: intent?.at ?? fix.createdAt.toISOString(),
     fingerprint: hash({ fix, carry, item }),
   };
 }
@@ -356,6 +418,9 @@ export interface WrongContentRetryPlan {
   seriesId: number;
   targetEpisodeIds: number[];
   failedDownloadId: string;
+  failedGrabAttemptId: string | null;
+  failedGrabHistoryIds: number[];
+  failedGrabHttpAccepted: boolean;
   failedHistoryIds: number[];
   protectedFiles: Boundary;
   conflict: null | {
@@ -383,8 +448,9 @@ async function build(input: WrongContentRetryInput) {
   if (!(await getRepairGuideRemedies(input.db)).release_pick)
     refuse('Release picking is turned off.');
   const p = await parent(input.db, input.fixRequestId);
-  const claims = p.fix.actionsTaken.filter((a) => a.step.startsWith('wrong_content_retry_'));
-  const claim = claims.find((a) => a.step === 'wrong_content_retry_intent');
+  const claims = p.fix.actionsTaken.filter((a) => a.step === 'wrong_content_retry_intent');
+  if (claims.some((a) => typeof a.failedDownloadId !== 'string' || typeof a.attemptId !== 'string'))
+    refuse('The stored retry attempt scope cannot be verified. Observe its recorded commands.');
   const resolved = await readReleasePickTarget({
     db: input.db,
     arr: input.arr,
@@ -426,22 +492,32 @@ async function build(input: WrongContentRetryInput) {
     (h) =>
       h.seriesId === p.item.arrItemId &&
       h.eventType === 'grabbed' &&
-      h.sourceTitle === p.grab.release &&
+      h.sourceTitle === p.anchor.title &&
       h.date &&
-      Date.parse(h.date) >= Math.floor(Date.parse(p.since) / 1000) * 1000 &&
-      Date.parse(h.date) <= p.receiptUntil,
+      Date.parse(h.date) >= Math.floor(Date.parse(p.anchor.start) / 1000) * 1000 &&
+      Date.parse(h.date) <= p.anchor.end,
   );
   const latestDate = Math.max(...grabbed.map((h) => Date.parse(h.date!)));
   const downloads = [...new Set(grabbed.map((h) => h.downloadId).filter((d): d is string => !!d))];
   if (downloads.length !== 1)
     refuse('The bounded history does not identify one latest recorded grab.');
   const failedDownloadId = downloads[0]!;
+  if (
+    (p.anchor.downloadId && p.anchor.downloadId !== failedDownloadId) ||
+    (p.anchor.source === 'native_call' && !same(ids(grabbed.map((h) => h.episodeId)), p.slot))
+  )
+    refuse('The current native GRAB does not match its recorded whole-slot attempt.');
+  const claim = claims.find(
+    (a) =>
+      a.failedDownloadId === failedDownloadId &&
+      (a.failedGrabAttemptId ?? null) === p.anchor.attemptId,
+  );
   const failed = page.records.filter(
     (h) =>
       h.eventType === 'downloadFailed' &&
       h.seriesId === p.item.arrItemId &&
       h.downloadId === failedDownloadId &&
-      h.sourceTitle === p.grab.release &&
+      h.sourceTitle === p.anchor.title &&
       h.date &&
       Date.parse(h.date) >= latestDate &&
       h.data?.message !== 'Manually marked as failed',
@@ -505,7 +581,7 @@ async function build(input: WrongContentRetryInput) {
   const affecting = queue.filter((q) => p.slot.includes(q.episodeId ?? -1));
   let conflict: WrongContentRetryPlan['conflict'] = null;
   const savedConflict = object(claim?.conflict);
-  if (claim && hash(protectedFiles) !== hash(claim.protectedFiles))
+  if (claims.some((a) => hash(protectedFiles) !== hash(a.protectedFiles)))
     refuse('Protected files changed during the recorded recovery.');
   if (input.conflictingDownloadId) {
     const records = queue.filter((q) => q.downloadId === input.conflictingDownloadId);
@@ -590,6 +666,9 @@ async function build(input: WrongContentRetryInput) {
     seriesId: p.item.arrItemId,
     targetEpisodeIds: p.slot,
     failedDownloadId,
+    failedGrabAttemptId: p.anchor.attemptId,
+    failedGrabHistoryIds: grabbed.map((h) => h.id).sort((a, b) => a - b),
+    failedGrabHttpAccepted: p.anchor.httpAccepted,
     failedHistoryIds: failed.map((h) => h.id).sort((a, b) => a - b),
     protectedFiles,
     conflict,
@@ -629,7 +708,9 @@ export async function runWrongContentRetry(
     if (
       typeof discard.downloadId === 'string' &&
       plan.conflict === null &&
-      !p.fix.actionsTaken.some((a) => a.step === 'wrong_content_retry_remove_read_back')
+      !p.fix.actionsTaken.some(
+        (a) => a.step === 'wrong_content_retry_remove_read_back' && a.attemptId === claim.attemptId,
+      )
     )
       await appendFixActions({
         db: input.db,
@@ -676,6 +757,9 @@ export async function runWrongContentRetry(
     actor: 'staff',
     requesterId: null,
     failedDownloadId: plan.failedDownloadId,
+    failedGrabAttemptId: plan.failedGrabAttemptId,
+    failedGrabHistoryIds: plan.failedGrabHistoryIds,
+    failedGrabHttpAccepted: plan.failedGrabHttpAccepted,
     failedHistoryIds: plan.failedHistoryIds,
     targetEpisodeIds: p.slot,
     protectedFiles: plan.protectedFiles,
@@ -692,7 +776,24 @@ export async function runWrongContentRetry(
     const locked = await parent(tx, p.fix.id, true);
     if (locked.fingerprint !== p.fingerprint)
       changed('The owning repair changed before its claim.');
-    await appendFixActions({ db: tx, fixRequestId: p.fix.id, actions: [claimAction] });
+    await appendFixActions({
+      db: tx,
+      fixRequestId: p.fix.id,
+      actions: [
+        {
+          step: 'wrong_content_retry_failed_grab_observed',
+          at: at(),
+          attemptId,
+          downloadId: plan.failedDownloadId,
+          grabbedAttemptId: plan.failedGrabAttemptId,
+          grabbedHistoryIds: plan.failedGrabHistoryIds,
+          failedHistoryIds: plan.failedHistoryIds,
+          targetEpisodeIds: p.slot,
+          httpAccepted: plan.failedGrabHttpAccepted,
+        },
+        claimAction,
+      ],
+    });
   });
   if (plan.conflict) {
     const options = { removeFromClient: false, blocklist: true, skipRedownload: true };

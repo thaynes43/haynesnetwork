@@ -722,8 +722,17 @@ do not edit)", "must not contain" terms only, no tags.
     audits may append to the completed parent under the existing claimed attempt; they preserve its lifecycle and
     cannot authorize another command. New claims still require the original open, verified repair. Test this race
     through actual native-history ingestion and normal whole-slot completion rather than forcing a database status.
-    Actual post-command call/result evidence may append after normal whole-slot import completion, preserving
-    that completed lifecycle. Prewrite claims still require an open parent; no completed repair starts a new command.
+    **Retry attempts follow actual failed downloads.** A durable claim is scoped to the positively identified
+    failed GRAB attempt and download GUID, rather than to the first retry ever made on this parent. A later
+    genuinely failed owned download may receive a fresh reviewed attempt on the same Fix and Carry. Its saved
+    actual call/GUID window, unique whole-slot native GRAB and later genuine same-GUID failure must prove the
+    exact attempt; all protected identities remain unchanged and no import, library claim or queue remains for
+    that failed download. A truthful accepted-but-503 call can qualify through this native proof without inventing
+    a canonical HTTP200 receipt. Missing or ambiguous call facts keep the existing attempt observe-only.
+    Preserve every earlier claim and outcome; never replay their removal or grab. Read-back and source/conflict
+    fingerprints belong to the selected attempt, and a newer attempt cannot silently reset the protected-file
+    boundary. Repeated release titles require the actual GUID and call window to identify the owned continuation.
+    The janitor keeps its existing enforcement modes and search budgets throughout.
 
 ### D-06 Release Pick
 

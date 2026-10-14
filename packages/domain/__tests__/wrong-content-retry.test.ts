@@ -87,6 +87,8 @@ function stub() {
     download: 'f707',
     removed: false,
     retryGrabbed: false,
+    grabOrdinal: 0,
+    releaseGuid: 'distinct-ivy',
     deleteUncertain: false,
     grabUncertain: false,
     grabAcceptedButError: false,
@@ -131,7 +133,7 @@ function stub() {
       if (u.pathname.endsWith('/release'))
         return json([
           {
-            guid: 'distinct-ivy',
+            guid: state.releaseGuid,
             indexerId: 1,
             indexer: 'Fixture',
             title: RIGHT,
@@ -206,15 +208,16 @@ function stub() {
       if (state.grabUncertain && !state.grabAcceptedButError)
         return json({ message: 'uncertain GRAB' }, 503);
       state.retryGrabbed = true;
+      state.grabOrdinal += 1;
       state.removed = false;
-      state.download = 'new-ivy';
+      state.download = state.grabOrdinal === 1 ? 'new-ivy' : `new-ivy-${state.grabOrdinal}`;
       state.queueTitle = RIGHT;
       state.candidateSize = 682447000;
       for (const episodeId of state.newGrabWrongTargets
         ? [37193, 37194, 37195, 37196]
         : body.episodeIds)
         state.history.unshift({
-          id: 67000 + episodeId,
+          id: 67000 + episodeId + (state.grabOrdinal - 1) * 200000,
           seriesId: 439,
           eventType: 'grabbed',
           episodeId,
@@ -411,6 +414,190 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
     const p = await planWrongContentRetry(input);
     return p.candidates.length ? planWrongContentRetry({ ...input, key: p.candidates[0]!.key }) : p;
   }
+  function failDownloadedPair(s: ReturnType<typeof stub>) {
+    const grabs = s.state.history.filter(
+      (h) => h.eventType === 'grabbed' && h.downloadId === s.state.download,
+    );
+    for (const h of grabs)
+      s.state.history.unshift({
+        ...h,
+        id: h.id + 990000,
+        eventType: 'downloadFailed',
+        date: new Date().toISOString(),
+        data: { message: 'Download failed' },
+      });
+    s.state.removed = true;
+  }
+  it.each([false, true])(
+    'allows a fresh same-parent attempt after the actual retry download genuinely fails (first response uncertain=%s)',
+    async (uncertain) => {
+      const s = await setup(),
+        first = await selected(s.input);
+      s.state.grabAcceptedButError = uncertain;
+      await runWrongContentRetry({
+        ...s.input,
+        digest: first.digest,
+        key: first.candidates[0]!.key,
+        evidence,
+        conflictEvidence: 'Physical source proves wrong S3 pair.',
+      });
+      const [before] = await t.db.select().from(fixRequests);
+      const call = before!.actionsTaken.find(
+        (a) => a.step === 'wrong_content_retry_grab_call_result',
+      )!;
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(Date.parse(String(call.finishedAt)) + 5000);
+      try {
+        failDownloadedPair(s);
+        vi.setSystemTime(Date.parse(String(call.finishedAt)) + 10000);
+        s.state.releaseGuid = 'another-source-same-correct-title';
+        s.state.grabAcceptedButError = false;
+        const input = { ...s.input, conflictingDownloadId: undefined },
+          next = await selected(input);
+        expect(next.state).toBe('ready');
+        expect(next.failedDownloadId).toBe('new-ivy');
+        expect(next.failedGrabAttemptId).toBe(call.attemptId);
+        expect(next.failedGrabHttpAccepted).toBe(!uncertain);
+        expect(next.candidates[0]!.key).not.toBe(first.candidates[0]!.key);
+        await runWrongContentRetry({
+          ...input,
+          digest: next.digest,
+          key: next.candidates[0]!.key,
+          evidence,
+        });
+        const [parent] = await t.db.select().from(fixRequests);
+        const claims = parent!.actionsTaken.filter((a) => a.step === 'wrong_content_retry_intent');
+        expect(claims.map((a) => a.failedDownloadId)).toEqual(['301dc', 'new-ivy']);
+        expect(claims[1]!.failedGrabAttemptId).toBe(call.attemptId);
+        expect(
+          parent!.actionsTaken.filter(
+            (a) => a.step === 'release_grab' && a.release === RIGHT && a.ok === true,
+          ),
+        ).toHaveLength(uncertain ? 1 : 2);
+        expect(
+          parent!.actionsTaken.filter((a) => a.step === 'wrong_content_retry_failed_grab_observed'),
+        ).toHaveLength(2);
+        expect(
+          (
+            await planOwnedSonarrImport({
+              db: t.db,
+              arr: s.arr,
+              actor,
+              parent: { kind: 'fix', id: s.fixRequestId },
+              downloadId: 'new-ivy-2',
+            })
+          ).targetEpisodeIds,
+        ).toEqual([37187, 37188]);
+        await expect(
+          runWrongContentRetry({
+            ...input,
+            digest: next.digest,
+            key: next.candidates[0]!.key,
+            evidence,
+          }),
+        ).rejects.toThrow('no genuine failure');
+        expect(s.state.writes.map((w) => w.path)).toEqual([
+          '/api/v3/queue/1000',
+          '/api/v3/release',
+          '/api/v3/release',
+        ]);
+        expect(await t.db.select().from(fixRequests)).toHaveLength(1);
+        expect(await t.db.select().from(watchCarries)).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it('keeps protected-file guarantees across a later failed-download attempt', async () => {
+    const s = await setup(),
+      first = await selected(s.input);
+    await runWrongContentRetry({
+      ...s.input,
+      digest: first.digest,
+      key: first.candidates[0]!.key,
+      evidence,
+      conflictEvidence: 'Physical source proves wrong S3 pair.',
+    });
+    failDownloadedPair(s);
+    s.state.files.find((f) => f.id === 65359)!.size += 1;
+    await expect(
+      planWrongContentRetry({ ...s.input, conflictingDownloadId: undefined }),
+    ).rejects.toThrow('Protected files changed');
+    expect(s.state.writes.filter((w) => w.path.endsWith('/release'))).toHaveLength(1);
+  });
+  it('observes a second-attempt uncertain discard on its own audit without replaying either attempt', async () => {
+    const s = await setup(),
+      first = await selected(s.input);
+    await runWrongContentRetry({
+      ...s.input,
+      digest: first.digest,
+      key: first.candidates[0]!.key,
+      evidence,
+      conflictEvidence: 'Physical source proves wrong S3 pair.',
+    });
+    const [before] = await t.db.select().from(fixRequests);
+    const call = before!.actionsTaken.find(
+      (a) => a.step === 'wrong_content_retry_grab_call_result',
+    )!;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.parse(String(call.finishedAt)) + 5000);
+    try {
+      failDownloadedPair(s);
+      vi.setSystemTime(Date.parse(String(call.finishedAt)) + 10000);
+      s.state.download = 'foreign-second';
+      s.state.queueTitle = WRONG;
+      s.state.candidateSize = 1560855497;
+      s.state.removed = false;
+      for (const episodeId of [37187, 37188])
+        s.state.history.push({
+          ...s.state.history[0]!,
+          id: 950000 + episodeId,
+          eventType: 'grabbed',
+          episodeId,
+          downloadId: s.state.download,
+          sourceTitle: WRONG,
+          date: new Date().toISOString(),
+          data: {},
+        });
+      s.state.releaseGuid = 'second-correct-source';
+      s.state.deleteUncertain = true;
+      const input = { ...s.input, conflictingDownloadId: 'foreign-second' },
+        next = await selected(input);
+      await runWrongContentRetry({
+        ...input,
+        digest: next.digest,
+        key: next.candidates[0]!.key,
+        evidence,
+        conflictEvidence: 'Physical source proves the second wrong S3 pair.',
+      });
+      const observed = await selected({ ...input, key: next.candidates[0]!.key });
+      expect(observed.state).toBe('observe');
+      await runWrongContentRetry({
+        ...input,
+        digest: observed.digest,
+        key: next.candidates[0]!.key,
+        evidence,
+      });
+      const [parent] = await t.db.select().from(fixRequests);
+      const readbacks = parent!.actionsTaken.filter(
+        (a) => a.step === 'wrong_content_retry_remove_read_back',
+      );
+      expect(readbacks).toHaveLength(2);
+      expect(readbacks[1]).toMatchObject({
+        downloadId: 'foreign-second',
+        observationOnly: true,
+        commandOutcome: 'unknown',
+      });
+      expect(readbacks[1]!.attemptId).not.toBe(readbacks[0]!.attemptId);
+      expect(s.state.writes.map((w) => w.path)).toEqual([
+        '/api/v3/queue/1000',
+        '/api/v3/release',
+        '/api/v3/queue/1000',
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('binds the actual failed download despite raw numbers, discards once without search, and imports through the original parent', async () => {
     const s = await setup(),
       plan = await selected(s.input);
@@ -530,6 +717,8 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
           step: 'wrong_content_retry_intent',
           at: new Date().toISOString(),
           attemptId: 'interrupted-no-conflict',
+          failedDownloadId: '301dc',
+          failedGrabAttemptId: null,
           conflict: null,
           protectedFiles: plan.protectedFiles,
         },
@@ -598,13 +787,17 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
         })
       ).outcome,
     ).toBe('observe');
-    const observe = await planWrongContentRetry({ ...s.input, key: plan.candidates[0]!.key });
-    await runWrongContentRetry({
-      ...s.input,
-      digest: observe.digest,
-      key: plan.candidates[0]!.key,
-      evidence,
-    });
+    await expect(
+      planWrongContentRetry({ ...s.input, key: plan.candidates[0]!.key }),
+    ).rejects.toThrow('no genuine failure');
+    await expect(
+      runWrongContentRetry({
+        ...s.input,
+        digest: plan.digest,
+        key: plan.candidates[0]!.key,
+        evidence,
+      }),
+    ).rejects.toThrow('no genuine failure');
     expect(s.state.writes.filter((w) => w.path.endsWith('/release'))).toHaveLength(1);
     const owned = {
       db: t.db,
