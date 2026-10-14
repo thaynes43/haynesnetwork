@@ -10,11 +10,11 @@
 //     both as the bridge user, once; /admin/seerr shows both replies.
 // The `import_check` remedy and the bridge are switched on through their admin cards for this file only and off again
 // afterwards; the stub is reset and its issues emptied (every report marked removed), so no later spec sees them.
-import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { test as base, expect, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 import { signIn } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
+import { createOwnedProcessRunner } from './support/owned-process';
 import {
   STUB_SEERR_BRIDGE_USER_ID,
   STUB_SERIES_TVDB_ID,
@@ -27,7 +27,23 @@ import {
 let NEW_REPORT = 906;
 const env = () => readRuntimeEnv();
 
-const test = base.extend<Record<never, never>, { adminContext: BrowserContext; adminPage: Page }>({
+const test = base.extend<{ seerrSync: () => Promise<void> }, { adminContext: BrowserContext; adminPage: Page }>({
+  seerrSync: [async ({}, provide) => {
+    const runner = createOwnedProcessRunner({
+      command: process.execPath,
+      args: [
+        '--import', require.resolve('tsx'),
+        join(process.cwd(), '..', '..', 'packages', 'sync', 'src', 'scripts', 'sync.ts'), '--mode=seerr-issues',
+      ],
+      env: { ...process.env, ...env() },
+      label: 'seerr-issues sync',
+    });
+    try {
+      await provide(() => runner.run());
+    } finally {
+      await runner.dispose();
+    }
+  }, { timeout: 5_000, title: 'Seerr sync runner' }],
   adminContext: [async ({ browser }, provide) => {
     const context = await browser.newContext({ baseURL: env().BETTER_AUTH_URL });
     try {
@@ -58,38 +74,6 @@ async function seerrWrites(): Promise<RecordedArrWrite[]> {
   const res = await fetch(`${env().STUB_ARR_URL}/_stub/calls`);
   const { calls } = (await res.json()) as { calls: RecordedArrWrite[] };
   return calls.filter((c) => c.path.startsWith('/issue/'));
-}
-
-/** One run of the real `seerr-issues` sync mode (the mirror, then the bridge pass) against the stubs. */
-async function syncSeerrIssues(): Promise<void> {
-  // Keep the worker's browser messages and HTTP connection-close events moving while the script runs.
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(
-      join(process.cwd(), 'node_modules', '.bin', 'tsx'),
-      [join(process.cwd(), '..', '..', 'packages', 'sync', 'src', 'scripts', 'sync.ts'), '--mode=seerr-issues'],
-      { env: { ...process.env, ...env() }, stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-    const outputLimit = 64 * 1024;
-    let stdout: Buffer = Buffer.alloc(0);
-    let stderr: Buffer = Buffer.alloc(0);
-    const retain = (output: Buffer, chunk: Buffer): Buffer =>
-      output.length === outputLimit ? output : Buffer.concat([output, chunk.subarray(0, outputLimit - output.length)]);
-    child.stdout.on('data', (chunk: Buffer) => { stdout = retain(stdout, chunk); });
-    child.stderr.on('data', (chunk: Buffer) => { stderr = retain(stderr, chunk); });
-    const deadline = setTimeout(() => {
-      child.kill('SIGKILL');
-      reject(new Error(`seerr-issues sync exceeded 30 seconds:\n${stdout.toString()}\n${stderr.toString()}`));
-    }, 30_000);
-    child.once('error', (error) => {
-      clearTimeout(deadline);
-      reject(error);
-    });
-    child.once('close', (code, signal) => {
-      clearTimeout(deadline);
-      if (code === 0) resolve();
-      else reject(new Error(`seerr-issues sync failed (exit ${String(code)}, signal ${String(signal)}):\n${stdout.toString()}\n${stderr.toString()}`));
-    });
-  });
 }
 
 /** Switch the `import_check` remedy through the admin card (audited, one Save). */
@@ -171,9 +155,9 @@ test.describe('the Seerr Issue bridge (ADR-111 C-03 / DESIGN-055 D-10, PLAN-077 
   });
 
   // Independent of admin fixture setup: a failed sign-in cannot skip clearing the stub reports and queue.
-  test.afterAll(async () => {
+  test.afterAll(async ({ seerrSync }) => {
     await test.step('Clear the report fixtures', () => stubArr('/_stub/seerr-issues', { issues: [] }));
-    await test.step('Sync the removed reports', () => syncSeerrIssues());
+    await test.step('Sync the removed reports', () => seerrSync());
     await test.step('Reset the download fixtures', () => stubArr('/_stub/reset'));
   });
 
@@ -184,6 +168,7 @@ test.describe('the Seerr Issue bridge (ADR-111 C-03 / DESIGN-055 D-10, PLAN-077 
 
   test('an admin turns the replies on; a new report gets exactly one comment, as the bridge user (AC-43)', async ({
     adminPage: page,
+    seerrSync,
   }, testInfo) => {
     NEW_REPORT = 906 + testInfo.retry;
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -207,7 +192,7 @@ test.describe('the Seerr Issue bridge (ADR-111 C-03 / DESIGN-055 D-10, PLAN-077 
       comments: [{ id: 9906, message: 'Episode 10 is missing', createdAt: now, updatedAt: now }],
     };
     await stubArr('/_stub/seerr-issues', { issues: [...seerrIssueFixture(), fresh] });
-    await syncSeerrIssues();
+    await seerrSync();
 
     const writes = await seerrWrites();
     expect(writes.map((w) => [w.method, w.path, w.actingUser])).toEqual([
@@ -221,13 +206,14 @@ test.describe('the Seerr Issue bridge (ADR-111 C-03 / DESIGN-055 D-10, PLAN-077 
     expect(message).not.toMatch(/[—–]/);
 
     // The next run (or a webhook) posts nothing more.
-    await syncSeerrIssues();
+    await seerrSync();
     expect(await seerrWrites()).toHaveLength(1);
   });
 
   test('the repair the report started completes, and the bridge resolves the report with its note, once', async ({
     page,
     adminPage,
+    seerrSync,
   }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await signIn(page, 'member');
@@ -242,7 +228,7 @@ test.describe('the Seerr Issue bridge (ADR-111 C-03 / DESIGN-055 D-10, PLAN-077 
     await expect(dialog).toContainText('Found a finished download and imported it.', { timeout: 30_000 });
     await dialog.getByRole('button', { name: 'Done' }).click();
 
-    await syncSeerrIssues();
+    await seerrSync();
     const writes = await seerrWrites();
     expect(writes.map((w) => [w.path, w.actingUser])).toEqual([
       [`/issue/${NEW_REPORT}/comment`, String(STUB_SEERR_BRIDGE_USER_ID)],
@@ -253,7 +239,7 @@ test.describe('the Seerr Issue bridge (ADR-111 C-03 / DESIGN-055 D-10, PLAN-077 
       "Fixed on haynesnetwork.com: Force Search found the stuck download for S01E10 and imported it.\n\nIf something still isn't right, use Reopen with Comment and staff will take a look.",
     );
     expect(writes[2]!.body).toBeUndefined();
-    await syncSeerrIssues();
+    await seerrSync();
     expect(await seerrWrites()).toHaveLength(3);
 
     // The admin view shows both replies on the (now resolved) report.

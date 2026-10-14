@@ -29,11 +29,34 @@ its role in this particular transport error is not proven. Replace all five sync
 processes, preserving exit, signal and spawn failures. Retain at most 64 KiB from each output stream and kill only
 the owned child if its 30-second deadline expires. Name issue removal, issue sync and stub reset separately.
 
+[PR #977's advisory review](https://github.com/thaynes43/haynesnetwork/pull/977#issuecomment-6160669999) identified
+that killing the tsx CLI wrapper could orphan its actual Node process. Launch `process.execPath` directly with
+`--import` and the installed tsx loader instead. The installed loader supports Node 22 used by CI; a direct import
+probe also passed on the pod's Node 24 runtime. A test-scoped runner yields before commands start, owns an
+AbortController and refuses launches once disposed. Its teardown cancels any active command and waits for the
+actual child `close` event. Each command keeps the 30-second deadline. Cancellation sends TERM, then KILL after one
+second if closure has not arrived; the fixture has a separate five-second cleanup budget. Spawn, output, exit and
+signal failures remain visible. The independent cleanup hook receives its own runner scope. The installed runner
+tears down test fixtures before `afterAll` and tears down each hook's test fixtures before the next hook.
+
+Keep the configured test budgets. The old local `beforeAll` budget was 30 seconds, just like the current local test;
+both are 60 seconds in CI. Authentication now has a separate fixture budget and happens once. The observed first
+case took 9.5 and 12.5 seconds. Scoped child cancellation addresses a test timing out before its command deadline
+without a blanket timeout increase. The original stalled UI action remains unknown.
+
 After the async change, one focused run of `seerr-bridge.spec.ts` passed both cases in 2.0 minutes, including the
 independent cleanup phases and both managed settings restorations. It used nice 19, one worker and one CPU affinity
 with the local dev server, embedded PostgreSQL 16 and stubs. Web typecheck, changed-file ESLint and the whitespace
 check passed. No owned test processes remained and the local test port was closed afterwards. This successful run
 does not identify the original stalled UI action or prove the cause of the earlier socket error.
 
+The revised ownership change passed nine deterministic fake-timer/deferred-close tests. These cover closure after
+exit, scoped cancellation, the command deadline, refusal after disposal, spawn/output failures, nonzero exit and
+signal failures, and bounded output. One focused browser run passed both cases in 1.8 minutes; the cases took 9.7
+and 19.6 seconds, within the existing local budgets. Web typecheck, changed-file ESLint and whitespace checks passed.
+The browser run again used nice 19, one worker, one CPU affinity, the local dev server, PostgreSQL 16 and stubs.
+No owned test processes remained and the local test port was closed afterwards.
+
 No load reproduction, busy loops, unchanged retries or wide local suite were used. Only processes started for this
-verification were managed. The coordinator reviews the final PR and holds its merge until release PR #975 merges.
+verification were managed. Release PR #975 merged at 04:14 UTC, so its earlier merge hold is lifted. The coordinator
+owns final review and merge. The original UI stall and the earlier socket error's cause remain unproven.
