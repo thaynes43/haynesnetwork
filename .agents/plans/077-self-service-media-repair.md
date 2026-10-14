@@ -596,8 +596,10 @@ names, never deleting a file, after a watch-state check on every Plex server and
       from server context and exact grab history; no public parent IDs, parallel request or bypass of
       another owner's guard. Its audit records the confirmed plan, not a claim that physical probes were performed.
       A GET-only preview keeps the raw refusal and exposes `needsTargetCheck`; the canonical **Check and import** action
-      explains the selected-target evaluation before any import. Exact downloading parents show `on_its_way`. After
-      verified owned import, neutral queue forget clears only that completed misnumbered download, without client
+      explains the selected-target evaluation before any import. Exact downloading parents show `on_its_way`. In
+      discovery, ordinary and other-owner matching open parents retain read-only queue/staff status; missing grab history
+      never falls through to a new search/import. An executable continuation still requires the exact owned parent anchor.
+      After verified owned import, neutral queue forget clears only that completed misnumbered download, without client
       deletion, blocklist or search, on its parent audit trail. Actual import ingestion still completes the parent.
     - **Held** (#928 and OC-056 list them with reasons):
       - Waiting for open Fix requests to close (48 hours): Bubble Guppies S5, whose only parking episodes are the

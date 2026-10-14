@@ -639,6 +639,15 @@ do not edit)", "must not contain" terms only, no tags.
     the actual import claim, so a rejected evaluation never pretends a command is in flight.
     An exact owned grab that is still downloading returns `waiting` (the existing `on_its_way` UI), including when its
     native queue numbers differ from the intended episodes. It neither opens another request nor sends a search/import.
+    Discovery distinguishes an executable owned import from read-only request status. An ordinary Fix/repair or another
+    person's open parent still owns its matching episode/season: a positively associated downloading queue shows
+    `on_its_way`; a blocked or unanchored request shows the existing staff state. A missing grab-history anchor never
+    permits a new search or import. Only a fully validated owned parent and exact history can expose an import handle;
+    read-only status does not grant ownership or bypass another open request.
+    The public plan marks this read-only case `activeRequest: true`, retaining any native queue evidence. Waiting uses
+    **A repair is already running** and **A repair is already open for this episode. Its progress will update when the
+    download is confirmed.** Staff uses **This repair needs staff** and **A repair is already open for {targetLabel}.
+    Staff can check its progress and the download.** These states expose no import/search action or executable parent ID.
     Sonarr's manual-import service marks a tracked download Imported only when the imported episode count reaches its
     parsed remote episode count. The queue service emits one row for each of those remote episodes. Mickey's parsed four
     episodes therefore cannot settle from the intended two-episode import alone. After exact owned download/time/import

@@ -143,6 +143,11 @@ export interface OwnedSonarrImportInput {
   downloadId: string;
   actor: OwnedImportActor;
 }
+/** An existing request blocks another write but does not grant a continuation handle. */
+export interface OwnedSonarrImportDiscoveryStatus {
+  state: 'waiting' | 'staff';
+  downloadId: string | null;
+}
 type Episode = Awaited<ReturnType<ArrClientBundle['read']['sonarr']['listEpisodes']>>[number];
 type EpisodeFile = Awaited<
   ReturnType<ArrClientBundle['read']['sonarr']['listEpisodeFileReleases']>
@@ -1069,11 +1074,17 @@ export async function findOwnedSonarrImport(input: {
   mediaItemId: string;
   targetEpisodeId: number;
   actor: OwnedImportActor;
-}): Promise<OwnedSonarrImportInput | null> {
+}): Promise<OwnedSonarrImportInput | OwnedSonarrImportDiscoveryStatus | null> {
   const db = resolveDb(input.db);
   const [item] = await db.select().from(mediaItems).where(eq(mediaItems.id, input.mediaItemId));
   if (!item || item.arrKind !== 'sonarr') return null;
-  const parents: OwnedImportParent[] = [];
+  const parents: Array<{
+    parent: OwnedImportParent;
+    eligible: boolean;
+    requesterId: string | null;
+    createdAt: Date;
+    titles: string[];
+  }> = [];
   const fs = await db
     .select()
     .from(fixRequests)
@@ -1116,8 +1127,25 @@ export async function findOwnedSonarrImport(input: {
       f.targetScope === 'item' ||
       (f.targetScope === 'season' && f.targetSeason === target.seasonNumber);
     if (!matches) continue;
-    if (f.reason !== 'wrong_content') refuse('Another Fix owns these episodes.');
-    parents.push({ kind: 'fix', id: f.id });
+    parents.push({
+      parent: { kind: 'fix', id: f.id },
+      eligible:
+        f.reason === 'wrong_content' &&
+        f.pathTaken === 'delete_search' &&
+        f.targetScope === 'episode' &&
+        f.actionsTaken.some((a) => a.step === 'wrong_content_replace'),
+      requesterId: f.requesterId,
+      createdAt: f.createdAt,
+      titles: f.actionsTaken
+        .filter(
+          (a) =>
+            a.step === 'grab_intent' ||
+            ((a.step === 'grab' || a.step === 'release_grab') &&
+              (a.ok === true || a.uncertain === true)),
+        )
+        .map(titleOf)
+        .filter((v): v is string => v !== null),
+    });
   }
   for (const r of rs) {
     const matches =
@@ -1125,15 +1153,84 @@ export async function findOwnedSonarrImport(input: {
         ? r.targetChildIds.includes(target.id)
         : r.seasonNumber === target.seasonNumber;
     if (!matches) continue;
-    if (r.kind !== 'release_pick') refuse('Another repair owns these episodes.');
-    parents.push({ kind: 'release_pick', id: r.id });
+    parents.push({
+      parent: { kind: 'release_pick', id: r.id },
+      eligible: r.kind === 'release_pick' && r.scope === 'episode',
+      requesterId: r.requesterId,
+      createdAt: r.createdAt,
+      titles: r.actionsTaken
+        .filter(
+          (a) =>
+            a.step === 'grab_intent' ||
+            (a.step === 'grab' && (a.ok === true || a.uncertain === true)),
+        )
+        .map(titleOf)
+        .filter((v): v is string => v !== null),
+    });
   }
   if (!parents.length) return null;
-  const history = await input.arr.read.sonarr.getSeriesReleaseHistory(item.arrItemId);
+  const [history, queue] = await Promise.all([
+    input.arr.read.sonarr.getSeriesReleaseHistory(item.arrItemId),
+    input.arr.read.sonarr.getQueue(item.arrItemId),
+  ]);
+  // Status is read-only: an ordinary/foreign/missing-anchor request must not become an unguarded new search.
+  const relevantQueue = queue.filter(
+    (r) =>
+      (r.seriesId == null || r.seriesId === item.arrItemId) &&
+      (r.episodeId === target.id ||
+        parents.some(
+          (p) =>
+            (r.title != null &&
+              p.titles.includes(r.title) &&
+              (!r.added ||
+                Date.parse(r.added) >= Math.floor(p.createdAt.getTime() / 1000) * 1000)) ||
+            history.some(
+              (h) =>
+                h.eventType === 'grabbed' &&
+                h.episodeId === target.id &&
+                h.downloadId &&
+                h.downloadId === r.downloadId &&
+                h.date &&
+                Date.parse(h.date) >= Math.floor(p.createdAt.getTime() / 1000) * 1000,
+            ),
+        )),
+  );
+  const status = (): OwnedSonarrImportDiscoveryStatus => {
+    const waiting = relevantQueue.find((r) => {
+      const state = (r.trackedDownloadState ?? '').toLowerCase();
+      return (
+        (r.status ?? '').toLowerCase() !== 'failed' &&
+        (r.trackedDownloadStatus ?? '').toLowerCase() !== 'error' &&
+        ![
+          'failed',
+          'failedpending',
+          'downloadfailed',
+          'importfailed',
+          'importblocked',
+          'importpending',
+        ].includes(state)
+      );
+    });
+    return {
+      state: waiting ? 'waiting' : 'staff',
+      downloadId: waiting?.downloadId ?? relevantQueue[0]?.downloadId ?? null,
+    };
+  };
+  const owned = (p: (typeof parents)[number]) =>
+    input.actor.kind === 'staff'
+      ? p.requesterId === null
+      : input.actor.isAdmin || p.requesterId === input.actor.userId;
+  if (parents.length !== 1 || !parents[0]!.eligible || !owned(parents[0]!)) return status();
   const found: OwnedSonarrImportInput[] = [];
-  for (const parent of parents) {
+  for (const { parent } of parents) {
     const base = { db: input.db, arr: input.arr, actor: input.actor, parent, downloadId: '' };
-    const p = await loadParent(base);
+    let p: ParentState;
+    try {
+      p = await loadParent(base);
+    } catch (error) {
+      if (error instanceof FixRefusedError) return status();
+      throw error;
+    }
     const downloads = [
       ...new Set(
         history
@@ -1152,8 +1249,6 @@ export async function findOwnedSonarrImport(input: {
     ];
     for (const downloadId of downloads) if (downloadId) found.push({ ...base, downloadId });
   }
-  if (found.length > 1)
-    refuse('More than one owned download matches this request; staff must inspect it.');
-  if (!found.length) refuse('The open request has no exact grabbed download to continue.');
+  if (found.length !== 1) return status();
   return found[0]!;
 }

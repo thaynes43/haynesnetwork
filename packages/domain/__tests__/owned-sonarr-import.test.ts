@@ -102,6 +102,7 @@ function stub(mickey = false) {
     commandThrows: false,
     queueRemoved: false,
     queueStatus: 'completed',
+    queueTrackedState: null as string | null,
     keepForeignQueue: false,
     changeProtectedAfterImport: false,
     afterImport: null as null | (() => Promise<void>),
@@ -141,7 +142,9 @@ function stub(mickey = false) {
                   downloadId,
                   title,
                   status: state.queueStatus,
-                  trackedDownloadState: 'importPending',
+                  trackedDownloadState:
+                    state.queueTrackedState ??
+                    (state.queueStatus === 'completed' ? 'importPending' : 'downloading'),
                   trackedDownloadStatus: 'warning',
                   statusMessages: [],
                 }))),
@@ -295,6 +298,7 @@ describe('parent-owned Sonarr Import Check (bounded, single worker)', () => {
           status: 'search_triggered',
           pathTaken: 'delete_search',
           actionsTaken: [
+            { step: 'wrong_content_replace', at: new Date().toISOString() },
             { step: 'release_grab', at: new Date().toISOString(), ok: true, release: s.title },
           ],
         })
@@ -396,7 +400,7 @@ describe('parent-owned Sonarr Import Check (bounded, single worker)', () => {
       mediaItemId: itemIds[549]!,
       targetEpisodeId: 49199,
     });
-    expect(discovered!.parent).toEqual(s.input.parent);
+    expect(discovered).toMatchObject({ parent: s.input.parent });
     const plan = await planOwnedSonarrImport(s.input);
     expect(
       (await runOwnedSonarrImport({ ...s.input, digest: plan.digest, evidence })).verified,
@@ -635,14 +639,14 @@ describe('parent-owned Sonarr Import Check (bounded, single worker)', () => {
     await expect(planOwnedSonarrImport({ ...s.input, actor })).rejects.toThrow(
       /another request owner/,
     );
-    await expect(
-      findOwnedSonarrImport({
+    expect(
+      await findOwnedSonarrImport({
         ...s.input,
         actor,
         mediaItemId: itemIds[549]!,
         targetEpisodeId: 49199,
       }),
-    ).rejects.toThrow(/another request owner/);
+    ).toEqual({ state: 'staff', downloadId: s.downloadId });
     expect(
       await findOwnedSonarrImport({
         ...s.input,
@@ -657,6 +661,95 @@ describe('parent-owned Sonarr Import Check (bounded, single worker)', () => {
     await expect(planOwnedSonarrImport({ ...s.input, downloadId: 'unowned' })).rejects.toThrow(
       /exact grab/,
     );
+    expect(s.state.writes).toEqual([]);
+  });
+  it.each(['wrong_language', 'wrong_content'] as const)(
+    'ordinary %s Fix discovery reports its downloading status without an import handle',
+    async (reason) => {
+      const s = await setup();
+      await t.db.update(fixRequests).set({
+        reason,
+        requesterId: userId,
+        actionsTaken: [
+          { step: 'release_grab', at: new Date().toISOString(), ok: true, release: s.title },
+        ],
+      });
+      s.state.queueStatus = 'downloading';
+      const discovered = await findOwnedSonarrImport({
+        ...s.input,
+        actor: { kind: 'user', userId, isAdmin: false },
+        mediaItemId: itemIds[549]!,
+        targetEpisodeId: 49199,
+      });
+      expect(discovered).toEqual({ state: 'waiting', downloadId: s.downloadId });
+      expect(s.state.writes).toEqual([]);
+    },
+  );
+  it('an ordinary import repair remains read-only and cannot fall through to another write', async () => {
+    const s = await setup(stub(), 'release_pick');
+    await t.db.update(repairRequests).set({ kind: 'import_download' });
+    s.state.queueStatus = 'downloading';
+    expect(
+      await findOwnedSonarrImport({
+        ...s.input,
+        mediaItemId: itemIds[549]!,
+        targetEpisodeId: 49199,
+      }),
+    ).toEqual({ state: 'waiting', downloadId: s.downloadId });
+    s.state.queueStatus = 'completed';
+    s.state.queueTrackedState = 'importing';
+    expect(
+      await findOwnedSonarrImport({
+        ...s.input,
+        mediaItemId: itemIds[549]!,
+        targetEpisodeId: 49199,
+      }),
+    ).toEqual({ state: 'waiting', downloadId: s.downloadId });
+    s.state.queueRemoved = true;
+    expect(
+      await findOwnedSonarrImport({
+        ...s.input,
+        mediaItemId: itemIds[549]!,
+        targetEpisodeId: 49199,
+      }),
+    ).toEqual({ state: 'staff', downloadId: null });
+    expect(s.state.writes).toEqual([]);
+  });
+  it('a foreign downloading Release Pick shows queue progress without granting ownership', async () => {
+    const s = await setup(stub(), 'release_pick');
+    s.state.queueStatus = 'downloading';
+    expect(
+      await findOwnedSonarrImport({
+        ...s.input,
+        actor,
+        mediaItemId: itemIds[549]!,
+        targetEpisodeId: 49199,
+      }),
+    ).toEqual({ state: 'waiting', downloadId: s.downloadId });
+    await expect(planOwnedSonarrImport({ ...s.input, actor })).rejects.toThrow(
+      /another request owner/,
+    );
+    expect(s.state.writes).toEqual([]);
+  });
+  it('missing exact grab history reports waiting or staff, never a continuation or absent request', async () => {
+    const s = await setup(stub(), 'release_pick');
+    s.state.history = [];
+    s.state.queueStatus = 'downloading';
+    expect(
+      await findOwnedSonarrImport({
+        ...s.input,
+        mediaItemId: itemIds[549]!,
+        targetEpisodeId: 49199,
+      }),
+    ).toEqual({ state: 'waiting', downloadId: s.downloadId });
+    s.state.queueRemoved = true;
+    expect(
+      await findOwnedSonarrImport({
+        ...s.input,
+        mediaItemId: itemIds[549]!,
+        targetEpisodeId: 49199,
+      }),
+    ).toEqual({ state: 'staff', downloadId: null });
     expect(s.state.writes).toEqual([]);
   });
   it('refuses an extra GRAB episode and a grab predating the parent', async () => {
