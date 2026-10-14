@@ -67,6 +67,21 @@ capability when a hand repair is needed. There is no readiness counter or defaul
   `sha256:33c81b2479780344cc2ae91801221e6d25156c4a7d6e74e59379fbfd22053d15`. Both returned HTTP 200.
   Deployment is in progress. These artifact checks do not establish live deployment or authorize the prepared
   Mickey continuation.
+- [haynes-ops 3922](https://github.com/thaynes43/haynes-ops/pull/3922) subsequently merged at 07:30:14Z as
+  `9734a9463d8bd5fa03a71c94e16a4c96d0d7fe76` after both required checks. The source and all three Flux
+  Kustomizations applied it; the HelmRelease is Ready. All three apps and migrators use the exact signed v0.125.3
+  digest, all migrators exited zero, and all twenty-four frontend plus both downloads CronJob templates pin v0.125.3.
+  Internal health on all three replicas and the public ingress returned 200/ok. The migration journal remains at
+  107 with matching baked 0105 to 0107 hashes; deployed retry, owned-import and queue-cleanup source hashes match
+  the reviewed main tree. The actual deployment report merged in
+  [haynes-ops 3924](https://github.com/thaynes43/haynes-ops/pull/3924), `d7948aecd113096411d0b20959a0452ed81da916`,
+  at 07:45:00Z after both required checks and an advisory review without findings.
+- Bounded v0.125.3 Books Census Job `61f9eefe-5ef1-4aef-9798-c5d41118334b` completed at 07:40:43Z;
+  owed-checks Job `ca7ecebe-8d32-4c8b-9f0a-ef251870aa9b` completed at 07:41:20Z. Root independently checked
+  their native Complete conditions, exact Pod UIDs, signed image IDs and zero exits. Both used nice 19, a 500m CPU
+  limit and worker node talosw03. Census still finds sixteen wrong files and nine holds, with zero unreadable or
+  missing files. Owed observations retain known failures and future/member waits. These prove the runners executed,
+  not that a dated or first-member observation has passed; the final step-6 snapshot still follows the media work.
 
 ## P7 and notifications
 
@@ -192,6 +207,12 @@ actual event `b6bb88d5-8c37-4542-a35a-b75fce5cdd1f`. Marill, its parasol-carryin
 corroborate the story; no title card or unseen crying was claimed. Both Plex copies, S20E105 marks and the source/
 copy identities passed. No quality upgrade or household preference write occurred.
 
+E16's empty per-slot protected-file list is expected for this native import. The approved SRS release names E16,
+and actual GRAB 66874 and import 66875 target only episode 49214. There is no separate unselected raw neighbor.
+The full thirty-four source/copy preflight ran first, and the native observer refused extra grabbed episodes or
+extra current-file coverage. Its two observations recorded unchanged protected state at 06:13:20Z and 06:18:58Z.
+Later explicitly approved replacements can change their own source identities; this is a historical per-slot check.
+
 E17, Tanks a Lot!, passed: file 80031/1516961341, actual 1920 by 1080 video, English track 4 and import 66878.
 The purple tracked tank, Sentret family and vehicle wedged on the cliff corroborate the canonical story; no title
 card or unseen controls were claimed. Both Plex copies and S20E106 marks passed; protected E28 file
@@ -228,6 +249,31 @@ predecessor Job/Pod absence, fresh full post-deletion read-only proof, signed v0
 and physical coverage, bounded underlying history, and a real activity declaration covering its finite lifetime.
 Do not hotpatch the worker, replay a completed replacement or relabel a prepared envelope as live evidence.
 
+E20, Chikorita's Big Upset, then passed: file 80035/1582434735, actual 1920 by 1080 video, English AAC track 4 and
+import 66889. Root viewed Raticate biting Chikorita and the later standoff while its trainer holds a Poké Ball;
+these corroborate the canonical overview without claiming an episode card or unseen motive. Original Fix
+`f6499f83-2abc-42d2-b81f-17ad0c11ac10`, verified Carry `2ecf1f07-78e6-49e4-9781-89ccda770756`, completed normally
+from actual event `0d6cc7af-e0c3-4bdf-9bae-e0d5fa2df2e6`. The old story maps only to proved S20E109, file
+35675/761401091. Both servers and every captured account passed strict physical coverage, current-zero and
+correct-copy mark checks. Held raw E31 file 34210/920982569 stayed unchanged. Finish serial 39 was accepted at
+07:30:49Z; actual idle proof at 07:31:24Z found nineteen verified slots, no pending parent/download or next control.
+The immutable checkpoint SHA is `34ffb14696bef28fdeaed3bc44995398572ba36f62fab1ed33c5c2a165606ad2`.
+No E21 replacement was admitted. The [completed-slot proof](2026-10-14-pokemon-completed-slot-proof.md) records
+full Fix, Carry and normal-completion event UUIDs, exact files/imports, correct-copy destinations and content evidence.
+
+The held v0.125.2 predecessor was then stopped with its exact Job UID precondition. Native deletion was accepted
+at 07:38:07Z; actual Job and Pod GETs returned NotFound at 07:38:26Z. Root independently confirmed both absent at
+07:40:24Z. Gone-proof SHA `21ad720eb5ca8754bcdfd1fd2a269c435205ad9f057b78ca138a6ef91f987bc2` retains the original
+after-E20 checkpoint hash and accepted finish time, plus actual request/response/server timestamps. An earlier
+timeout-flag attempt never reached the API and was not counted as an accepted delete. Only this owned Job stopped;
+Mickey's terminal predecessor remains preserved. Fresh full post-deletion proof precedes any cold successor.
+
+Native adoption is also being narrowed to the original audited grab window, full-slot scope and unique GUID.
+Parent creation time alone cannot attribute a later foreign same-title download. Read-only retrospective proof
+confirms E16's real GRAB 66874 at 06:11:32Z lies between its exact `grab_intent` at 06:11:31.851Z and successful
+`release_grab` receipt at 06:12:17.374Z, with target 49214 and the already recorded native import 66875. No new claim,
+mark change or import replay was used. The corrected cold worker must retain its actual current-zero predicate.
+
 Mickey's initial slots E1/E2, E3/E4 and E5/E6 are physically verified and normally completed, with literal cards,
 English, full paired imports, actual queue cleanup and strict per-account Plex proof. The next slot, E7/E8, is held.
 This is an interim verified checkpoint. Merge each additional repair's full per-slot proof into this record before
@@ -254,6 +300,24 @@ An uncertain removal or grab is observed or refused, never repeated. The janitor
 search owned by this active verified repair without spending its loop budget. This recovery waits for final review,
 a signed deployment and a fresh exact live plan. No borrowed member identity, second delete or new Carry is allowed.
 
+The fresh deployed v0.125.3 plan was ready: exact original Fix and Carry, failed download and native grab/failure
+anchors, whole targets 37187/37188 and 179 protected files. Root reviewed the distinct iVy English/Romanian offer,
+key `de801bbbf5384ede`, size 682447000, with digest
+`1b07bfb991bba22f07a29a4450931ec79ea838021ab0d3fbf209231a2e70b34c`. Only the previously allowed low-score and
+renumbering reasons were overridden. The exact foreign source retained size 1560855497 and prior physical
+wrong-story proof SHA `95eabf559fec223253c48c8b0c8cb1c8a3574deb208fce0ef5f92119c9176313`.
+
+The first reviewed cold Job, UID `8ad2f439-73af-41b9-b304-b76be1dc5cba`, started at 07:52:05Z on signed
+v0.125.3, then refused startup at 07:52:19Z. Pod UID `78516472-dccc-47b7-88ce-d4eb203225a1` exited one before any
+control was accepted. No retry, library, queue or Plex write occurred; the terminal Job/Pod remain preserved.
+Its completed-prefix guard incorrectly expected `fileId` in a normal ledger event. Production intentionally
+stores the native source-event ID, episode and download there, not file ID. Fresh read-only checks prove all three
+completed pairs retain the correct normal events, current files and verified Carries, and pending E7/E8 still has
+zero retry/import claims. The cold guard fix must join that real ledger identity to bounded native import history
+and immutable audited whole-slot file IDs/bytes, keeping all current-file, English, physical/account and mark checks.
+Never invent a payload field or force completion. A new reviewed cold successor needs both predecessors actually
+terminal, fresh evidence and actual declaration coverage; the failed worker is not patched or replayed.
+
 Pokemon E8 and E31 retain their wrong files. Two bounded NZB reads found only obfuscated split archives and parity
 subjects. Correct story, release group and English remain unproved; that does not establish that no release exists.
 Never use Saon. Mickey E13 to E16 remain held until new E7/E8 content is proved and a fresh same-content mapping is
@@ -272,5 +336,10 @@ finish in a verified Watch Carry before its season plan is regenerated. Preserve
 The later archive-week and first-member-use observations remain pending; staff repairs and the removed bridge
 fixture do not satisfy member-use checks. The final step-6 evidence belongs here after the current repairs.
 
-Root activity `act-051827-491938` covers the scoped rollout and media work until 2026-10-14T11:18:27Z. The preceding declaration ended at 05:18Z after its successor was active. Root must end
-it after verification or renew it before expiry while actual work continues. Only owned Jobs/processes may be stopped.
+Root activity `act-051827-491938` covered the scoped rollout and media work, with an original expiry of
+2026-10-14T11:18:27Z. Its preceding declaration ended at 05:18Z after that successor was active.
+
+At 07:37:58Z root declared `act-073758-527071`, covering frontend, media, downloads, Plex, PlexOps, Sonarr, SABnzbd
+and HaynesTower until 2026-10-14T14:37:58Z. The old declaration ended at 07:40Z after its successor was active and
+the old Pokemon Job/Pod were confirmed gone. Fresh six-hour Mickey and five-hour Pokemon envelopes must fit this
+actual coverage, including their shutdown margin. Root ends the current declaration after work completes.
