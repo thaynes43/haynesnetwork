@@ -34,9 +34,13 @@ Before that becomes the default, the platform must reliably fix the kinds of pro
 | P5 | Release Pick, including two-episode releases | Live |
 | P6 | Language-aware Wrong language (Audio Preference, Language Replace) | Live |
 | P7 | Seerr bridge: bot comments once per issue, resolves on completed repair | **Live and on in v0.125.0**, checked 2026-10-13 23:09Z |
-| P8 | Working practice per ADR-112 | Not started; keep it lightweight |
+| P8 | Working practice per ADR-112 | Admin guidance live in v0.125.1; practice only, owner readiness decision pending |
 
-Production runs **v0.125.0** as of 2026-10-13 23:09Z. All three web replicas, every active frontend app pod and all 26 app CronJob templates use it; migrations 0105 to 0107 and the bounded verification Jobs passed. Retained finished Job pods are historical evidence.
+Production v0.125.1 is verified as of 2026-10-14 02:11Z. All three web replicas, active app pods and all 26 app
+CronJob templates used its signed image; migrations 0105 to 0107 and the bounded verification Jobs passed.
+[v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975) is signed at 04:26Z and awaits deployment. Its rollout
+must preserve the active, deliberately pinned v0.125.1 media continuation. Retained finished Job pods are historical
+evidence. Read the newer [runtime proof](2026-10-14-self-service-repair-runtime-proof.md) for exact current state.
 
 ## Resume steps, in order
 
@@ -53,29 +57,31 @@ Production runs **v0.125.0** as of 2026-10-13 23:09Z. All three web replicas, ev
 3. **Asked, answer pending:** Q-12 (DESIGN-055) was sent through the owner's question tool after the live check,
    recommending Seerr web push. Email and web push were read back off, so reporters currently see the comment
    only when opening their issue. Do not change delivery without the ruling; continue the independent repairs.
-4. **In progress, 2026-10-14 01:25Z:** the initial Jobs stopped after their verified first carries. Do not rerun
-   any original batch. Production is still v0.125.0. [#970](https://github.com/thaynes43/haynesnetwork/pull/970)
-   and [#972](https://github.com/thaynes43/haynesnetwork/pull/972) are merged; release
-   [#971](https://github.com/thaynes43/haynesnetwork/pull/971), v0.125.1, contains both and awaits current-head checks.
-   Verify its image plus signature, deploy all three pins and verify live before resuming these exact parents:
-   - Ben E12: file 79992, 709759175 bytes, English audio and Adventures in Babysitting title card verified. Ben E10:
-     file 79991, 342394594 bytes, correct Animo Farm story but Arabic only. The reviewed P6 English candidate is
-     `d1937044088c21f3`; regenerate and verify the full Language Replace plan before the existing writer runs.
-   - Mickey E1/E2: Fix `634962cc-05dc-4cb9-bcf6-eea6116a2adb`, verified carry
-     `f96bd984-8e9d-47d4-969d-a55bd1436ab6`, owned download `c2b268d1-9a61-4bc1-8653-7fd81724b64c`.
-     Only E1/E2 were cleared. Native numbering claims E1 to E4; protected E3/E4 file 24800 remains unchanged.
-   - Pokémon E1: Fix `ac29d8ad-fd56-439f-810d-51a86e170ae3`, verified carry
-     `3ada7188-899c-4865-b698-4a6fe098a4cb`, owned download `7d744369-583d-4764-a8d2-87bfd4535cb7`.
-     Only E1 was cleared. The completed T0Bi source is 1563438952 bytes, with Hindi, Telugu, Tamil and English audio.
-     Suicune, Professor Elm and Totodile establish the classic Johto story; no literal title card was observed.
-     Native numbering claims E12; protected E12 file 33229 remains unchanged.
+4. **In progress, 2026-10-14 04:26Z:** do not rerun any original batch. Signed v0.125.1 deployed
+   [#970](https://github.com/thaynes43/haynesnetwork/pull/970) and
+   [#972](https://github.com/thaynes43/haynesnetwork/pull/972); the original owned downloads resumed under their
+   existing parents and verified Carries. See the [runtime proof](2026-10-14-self-service-repair-runtime-proof.md).
+   - Ben E12 is complete: file 79992/709759175, English and literal Adventures in Babysitting card. Ben E10's
+     correct but Arabic-only first import was replaced through the existing Language Replace writer; final
+     80009/454603103 is the reboot Animo Farm story with English and both-server proof. Its Fix completed normally.
+   - Pokemon E1 to E7 completed normally with actual whole imports, physical English/story and per-account Plex
+     proof. The old finite Job was deleted only at a verified idle checkpoint. Its continuation adopted the sealed,
+     freshly revalidated prefix and next works E9. Never replay the seven completed replacements. The active Job is
+     `frontend/pokemon-owned-cont-v1251-20261014-0415`, UID `ba9e6537-1546-47e5-bcfc-3488270913b7`, deadline
+     2026-10-14T09:14:16Z. Keep its reviewed signed helper pinned until it finishes.
+   - Mickey E1/E2, E3/E4 and E5/E6 are complete with actual paired imports, literal cards, English and strict Plex
+     proof. E7/E8 failed as Duplicate NZB after the verified Carry and old-file removal. No import was claimed.
+     Janitor re-search fetched physically wrong Season 3 stories. P4 decision 39 specifies an audited retry under the
+     same Fix/Carry and a janitor hold, before implementation. Do not import that wrong source, borrow a member actor,
+     delete again or create a second Carry. A distinct iVy English offer exists in the proper replacing-mode plan;
+     live recovery still needs its shipped writer, a fresh exact plan and whole-story proof before import.
    - Pokémon E8 and E31 remain untouched. Two bounded NZB reads found only obfuscated split-archive and parity
      subjects; correct story, release group and English are unproved. Do not describe this as no release existing.
    Use the audited `owned-import-plan` / `owned-import-run` on the existing parent and exact download. A native
    import is adopted only through actual history, full-target file and physical proof, with no invented command.
    Verify actual English, story, file identity, unchanged protected files, both Plex servers and per-account carry
    marks before the next individually approved replacement. Fresh plans must still match the exact approved source.
-   Current activity is `act-005117-418778`, expiry 2026-10-14T02:51:17Z; root renews and ends it. Long work runs
+   Current activity is `act-034019-464174`, expiry 2026-10-14T09:40:19Z; root renews and ends it. Long work runs
    as bounded, CPU-limited worker Jobs. Preserve logs and merge per-slot proof to main in the same session.
    - Ben 10 (2016), tvdb 318145: S1 E10 and E12 hold Ben 10 (2005) episodes.
    - Pokémon, tvdb 76703: S3 E01-24, E26, E28-34, E36 and E38 hold Pokémon Horizons. Never pick the Saon x265
@@ -99,7 +105,8 @@ Production runs **v0.125.0** as of 2026-10-13 23:09Z. All three web replicas, ev
    OC-051 (first real queue-aware Force Search), OC-052 (first real Seerr issue after P3), OC-053 (first person's
    re-map, and a week of hourly Title Checks), OC-054 (first person's Release Pick), OC-055 (first person's Wrong
    language) and OC-056. Issue #853 tracks overdue owed checks.
-7. **P8.** Write the working practice into the docs and the admin view only. No counters.
+7. **P8.** The staff lead is live in the admin view from v0.125.1. Record its linked working practice and the final
+   owed evidence in the docs; no counters or readiness gate. The owner has not ruled that self-service is the default.
 8. **The Title Check has 155 open flags.** #928 holds the list of held items and why each is held:
    - Mecha Builders S1: no free episode to park on.
    - Alaskan Bush People S4: Plex's own data keeps the old numbering.

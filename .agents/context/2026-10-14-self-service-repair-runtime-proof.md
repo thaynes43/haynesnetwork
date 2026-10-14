@@ -24,6 +24,18 @@ capability when a hand repair is needed. There is no readiness counter or defaul
 - Migration journal has 107 rows; baked 0105/0106/0107 hashes match, each migrator exited zero, and public/internal
   health returned 200/ok. Bounded Books Census and owed-checks Jobs completed natively with exit zero on that digest.
   Census findings and owed waits/failures remain recorded observations, not repaired state.
+- Paired-file Audio Preference hints were corrected in [974](https://github.com/thaynes43/haynesnetwork/pull/974).
+  The second episode now resolves the same physical Plex item, with exact file name, bytes and full Sonarr coverage
+  independently checked. Missing, stale or ambiguous physical matches retain the generic link.
+- [976](https://github.com/thaynes43/haynesnetwork/pull/976) fixes PostgreSQL test teardown at the real client socket
+  boundary. All assertions had passed before the old teardown stopped PostgreSQL early. Public connect/remove events
+  now track clients through actual closure; genuine failures remain visible. All four required checks passed.
+- [Release 975](https://github.com/thaynes43/haynesnetwork/pull/975), v0.125.2, merged as
+  `531df0efed0fba9695341cb46b1f4e861d4b7aa0` at 04:14:03Z. Publisher
+  [38510333350](https://github.com/thaynes43/haynesnetwork/actions/runs/38510333350) explicitly verified cosign on
+  attempt 1; image and signature manifests returned HTTP 200 with matching body digests at 04:26Z. The verified
+  image is `sha256:b57e1a6a3a5f37151b9f193c01356169ca94b4cc4eddf68bc3589bd7f4654981`.
+  Deployment and the live paired-file hint check are pending in this interim record.
 
 ## P7 and notifications
 
@@ -68,8 +80,44 @@ alone never prove a new play; changed marks require playback evidence tied to th
 
 ## Continuing slots and held sources
 
-Remaining approved Pokemon and Mickey slots are still running as of this interim record. Append the final per-slot
-proof before merging this note; do not claim those slots completed from a grab or a prepared script.
+Pokemon E1 to E7 are physically verified and their original Fixes completed normally. Later proof includes the actual
+English track, both Plex copies, the new slot's unmarked state, the old story's correct-copy marks and protected files.
+E3 is A Sappy Ending (80012/1541428706); E4 is Roll On, Pokemon! (80014/1589568449); E5 is Illusion Confusion
+(80016/1541624177); E6 is Flower Power (80017/1550397917); E7 is Spinarak Attack (80021/1523071195). These story
+identities use observed scenes and canonical synopsis evidence, not invented title cards.
+
+The first finite worker was stopped only at an idle, verified prefix. Its exact UID and successful deletion are bound
+to the saved checkpoint; a fresh read-only revalidation at 04:09Z checked the completed parents, full Carries, files,
+protected identities, Plex copies and marks. Continuation `frontend/pokemon-owned-cont-v1251-20261014-0415`, UID
+`ba9e6537-1546-47e5-bcfc-3488270913b7`, started at 04:14:16Z on a worker node with a 500m CPU limit. It verified
+the sealed seed and worker hashes and adopted E1 to E7 before its first new control. Next is E9; E8 stays held.
+The continuation intentionally uses the verified v0.125.1 helper, with a finite deadline of 09:14:16Z. Its running
+image must be reported honestly during the v0.125.2 rollout. It is not restarted to make an inventory look uniform.
+
+Mickey's initial slots E1/E2, E3/E4 and E5/E6 are physically verified and normally completed, with literal cards,
+English, full paired imports, actual queue cleanup and strict per-account Plex proof. The next slot, E7/E8, is held.
+Append the final per-slot proof before merging this note; a grab or prepared script does not establish completion.
+
+### Mickey E7/E8 failed-download recovery
+
+Original Fix `d26e411f-7b47-42e4-a363-2633de493d64` has verified version-1 Carry
+`76419c02-7b27-41e7-afba-baac49a21d24`. The old file was removed only after its one existing mark was verified on
+the correct same-content copy. The chosen release then failed with Duplicate NZB: actual grab records 66838/66839,
+failure records 66840/66841, download `301dc257-aa97-4ee6-8f3d-89b04da1c4f4`. No import was claimed or observed.
+The worker exited at 03:11:59Z on a truthful refusal; the original Fix remains pending and E7/E8 are empty.
+
+The janitor's failed-download search subsequently grabbed a different download. Physical subtitle and scene checks
+proved that source contains Mickey's Monstrous Truck and Minnie's Vacation Home, the old Season 3 stories, despite
+its E7/E8 file label. It must not be imported as the correct replacement. Original E13 to E16 and completed-prefix
+files remain unchanged. A normal Release Pick with no offers did not establish absence: the proper replacing-mode
+classifier found fresh named alternatives, including a distinct iVy encoding with English.
+
+DESIGN-055 P4 decision 39 and PLAN-077 were written before implementation. Recovery must reuse this original Fix
+and Carry, preserve the already carried marks, and bind an actual new grab and whole-slot import. It may abandon
+only the exact proved wrong queue item, with blocklist on, client removal off, redownload skipped and no search.
+An uncertain removal or grab is observed or refused, never repeated. The janitor must defer another failed-download
+search owned by this active verified repair without spending its loop budget. This recovery waits for final review,
+a signed deployment and a fresh exact live plan. No borrowed member identity, second delete or new Carry is allowed.
 
 Pokemon E8 and E31 retain their wrong files. Two bounded NZB reads found only obfuscated split archives and parity
 subjects. Correct story, release group and English remain unproved; that does not establish that no release exists.
@@ -89,5 +137,5 @@ finish in a verified Watch Carry before its season plan is regenerated. Preserve
 The later archive-week and first-member-use observations remain pending; staff repairs and the removed bridge
 fixture do not satisfy member-use checks. The final step-6 evidence belongs here after the current repairs.
 
-Root activity `act-015216-436898` covers the scoped rollout and media work until 2026-10-14T04:52:16Z. Root must end
+Root activity `act-034019-464174` covers the scoped rollout and media work until 2026-10-14T09:40:19Z. Root must end
 it after verification or renew it before expiry while actual work continues. Only owned Jobs/processes may be stopped.

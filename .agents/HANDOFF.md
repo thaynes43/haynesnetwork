@@ -1,5 +1,35 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-14 04:26Z: v0.125.2 signed; Pokemon continuation running; Mickey recovery needs its audited retry
+
+- [PLAN-077](plans/077-self-service-media-repair.md) remains active. Production v0.125.1 is verified; signed
+  [v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975) awaits the three-pin rollout and the live paired-file
+  hint check. It includes [974](https://github.com/thaynes43/haynesnetwork/pull/974) and the proved PostgreSQL
+  fixture teardown fix [976](https://github.com/thaynes43/haynesnetwork/pull/976), each with all required checks green.
+  Read the [runtime proof](context/2026-10-14-self-service-repair-runtime-proof.md) and
+  [cold-start note](context/2026-10-13-self-service-repair-codex-handoff.md).
+- Ben S1 E10 and E12 are correct, physically English and verified on both Plex servers. Pokemon S3 E1 to E7
+  completed normally with per-file, story, English, protected-file and account-state proof. Its finite continuation
+  `frontend/pokemon-owned-cont-v1251-20261014-0415` started at 04:14:16Z, adopted only that verified prefix and moves
+  next to E9. It intentionally retains the signed v0.125.1 helper while web and CronJob templates roll forward.
+  Do not replay completed slots or stop it merely to report a uniform image inventory.
+- Mickey's E1/E2, E3/E4 and E5/E6 are verified and completed. E7/E8's original correct download failed as a Duplicate
+  NZB after its verified Carry and old-file removal. The janitor's later download physically contains the old wrong
+  stories and must not be imported. Fresh replacing-mode offers include a distinct English iVy release; absence of
+  ordinary Release Pick offers was not a no-source conclusion. P4 decision 39 documents a same-Fix audited retry and
+  janitor interlock before code. Further recovery writes wait for that fix's signed deployment and exact plan review.
+- Pokemon E8 and E31 retain their wrong files: group, correct story and English remain unproved. Never choose Saon.
+  Mickey E13 to E16 still run last, after the new E7/E8 content and all initial slots have been proved. Carried marks
+  on old stories never credit a replacement. Final per-slot proof must reach main with the program notes.
+- P7 comment and resolve remain on as user 19; protected Seerr issues 1 to 4 remain unchanged. The removed Ghost
+  smoke fixture is excluded from real-report evidence. Q-12 is asked and unanswered; email and web push remain off.
+  P8's admin guidance is live as staff working practice. The owner alone judges readiness, with no counter or gate.
+- OC-056 is held until **2026-10-15T20:10Z** and closed blocking Fixes. Paw Patrol's tvdbAiring ordering switch
+  comes first inside a verified Watch Carry, then regenerate its season plan and preserve Runaway Stargazer.
+  Final step-6 owed evidence still follows the current repairs; staff work is not first-member use.
+- Root declaration `act-034019-464174` expires 2026-10-14T09:40:19Z. The continuation deadline is 09:14:16Z;
+  reserve time for a safe idle checkpoint rather than starting a replacement near expiry. Only owned processes stop.
+
 ## 2026-10-14 01:25Z: owned imports corrected; release v0.125.1 pending; never replay the old batches
 
 - [PLAN-077](plans/077-self-service-media-repair.md) stays active. Production remains v0.125.0; P7 is on as user 19,
