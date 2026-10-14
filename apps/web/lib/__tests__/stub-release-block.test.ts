@@ -19,7 +19,7 @@ import {
   releaseBlockArrClientsFromEnv,
   type DomainLogger,
 } from '@hnet/domain';
-import { startPostgres, type StartedPostgres } from '@hnet/test-utils/postgres';
+import { startPostgres, trackPoolClose, type StartedPostgres } from '@hnet/test-utils/postgres';
 import { composeRuntimeEnv } from '../../e2e/support/env';
 import {
   STUB_MOVIE_ID,
@@ -98,15 +98,15 @@ describe('stub Maintainerr — the pool flags a rule PUT stored (D-16)', () => {
 
 describe('stub Radarr and Sonarr — one release profile each (D-25da)', () => {
   let pg: StartedPostgres;
+  let closePool: () => Promise<void>;
   beforeAll(async () => {
     pg = await startPostgres();
     await runMigrations({ databaseUrl: pg.connectionString });
     process.env.DATABASE_URL = pg.connectionString; // the domain's lazy client (db omitted below)
+    closePool = trackPoolClose(getPool());
   }, 120_000);
   afterAll(async () => {
-    await getPool()
-      .end()
-      .catch(() => {});
+    await closePool?.();
     await pg?.stop();
   });
 

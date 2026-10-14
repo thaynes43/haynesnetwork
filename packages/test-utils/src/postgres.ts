@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import EmbeddedPostgres from 'embedded-postgres';
 
+export { trackPoolClose } from './postgres-pool';
+
 /**
  * ADR-010 / CLAUDE.md hard rule 1: tests run against a REAL embedded Postgres 16 binary
  * (no Docker in this WSL distro, never SQLite/MySQL substitution). This replaces the
