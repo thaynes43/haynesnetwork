@@ -396,6 +396,56 @@ exact Job/Pod UID, source-hash and write-cutoff checks. Do not resubmit that imp
 actual result; normal completion, imported library identity and strict account/Plex proof remain pending in this
 snapshot. Source ratification and control delivery are not completion evidence.
 
+The scheduled pipeline then completed E21 normally at 09:15:03.843Z, from actual ledger event
+`703630ce-80f2-4af8-85b1-abf1e0a28155`, native import 66911 at 09:05:05Z and the same download. No task ingestion
+or status write was used. Imported file 80039/1469914845 covers precisely episode 49219. Its measured resolution
+and English AAC stream match the source; the actual imported 300s frame has the same PNG hash as the viewed source.
+Fresh strict proof at 09:24Z covers both servers, owners and every captured affected account, four nonempty
+physical contexts: current plays/resume are zero, correct-copy marks are preserved and preferences remain unset.
+Protected raw E32 file 34245/1104231692 stayed unchanged. Finish 6 was accepted at 09:25:50.193Z. The actual
+accepted checkpoint SHA is `fc894427474ce6969f718a67ddf15c39a353e7b6a2661d016f5f2aa5054102e0`; twenty approved
+slots are complete, with twelve approved replacements still to run and E8/E31 held. The current next slot is E22.
+
+Mickey E9/E10's one owned import 30 was accepted at 09:11:49Z after root viewed both literal cards at 60s and
+691.58s. Its actual source/library file is 80040/1463744854, with English AAC stream 7, 1920 by 1080 and SHA
+`faaf59120ec0365a55d43498b5feaced169de1c2e5f2e0a85a0f76f3e0c2a1cf`. Whole episodes 37189/37190 imported as
+native events 66912/66913 on download `2205c47d-0158-48be-bfb4-ee8171f1421c`. Fix
+`607fe1c2-aed2-4bdb-9976-f794722c9595` completed naturally via event `246d23c8-c916-4845-849c-8eb05437f12c`;
+Carry `5cd1086c-d8c3-4c96-b94c-66e0e33fd6a1` remains verified. Both servers expose actual index-9 items,
+keys 58497/556275, covering the whole physical pair. Owner/every-captured-account current-zero and correct S3-copy
+marks passed, and all protected files including final 65359 stayed unchanged. Finish 32 passed at 09:17:21.448Z.
+
+Mickey E11/E12's approved 720p fallback has correct literal cards but one physically untagged AAC stream 0.
+Root viewed It's Wiki Wiki Time! at 60s and Happy Hula Helpers! at 691.8s. Actual source is 579915208 bytes,
+1280 by 720, 1351.595s, SHA `5fbacf1eaa3d7a23fa9315dab8f65dd7cab6f556531e6215afdbe585b8ea3c11`.
+Two actual 12s dialogue samples at 120s and 800s were processed serially by the already loaded internal speech
+service. Both detected English without a forced language or silence; no model installation, external upload or
+root listening was claimed. Proof SHA is `1fe66bc2e66f372345e557fdf5c782d279dcf069daa691951e2b7c77ad0b32b2`.
+The physical language tag remains null. One owned import 36 was accepted at 09:29:49Z under original Fix
+`e3d6aa5f-6fd9-477a-9300-b020c6472132`, verified Carry `7e1132fc-4588-44c2-a9e7-53ae31ef6e94`, exact download
+`17559d59-24db-459b-979f-8f4a221e005c` and whole targets 37191/37192. Do not resubmit it. Actual library identity,
+normal completion and every Plex context's sole/selected audio still need verification. An absent English metadata
+label must not be forged into a positive metadata check or bypassed by editing the running worker.
+
+Actual checks at 09:34Z then proved library file 80041/579915208 covers exactly 37191/37192, with the same measured
+SHA as the speech-checked source. Native imports 66924/66925 both occurred at 09:29:49Z on the original download.
+The physical AAC stream's tag stayed null. Every required actual Plex context naturally returned one default
+English track, position 1, without any language or preference write. Both servers' actual index-11 items,
+keys 58498/556276, cover the physical pair. Strict owner/captured-account current-zero and correct S3-copy marks
+passed, with protected final file 65359 unchanged. Fix completion event is `21f75679-60c3-40d6-ac2c-c3d4cb50b5f0`,
+from native source 66924. Finish 38 passed at 09:34:58.909Z under the unchanged frozen guards. No successor Job or
+proof-guard change was needed. Six initial slots are complete; the next initial slot is E17/E18.
+
+Final Mickey E13 to E16 remains held until every initial slot finishes and its complete plan/mapping is refreshed.
+The [proposed final review](2026-10-14-mickey-final13-16-carry-review.md) binds original whole file 65359 to actual
+new same-content pair 80038, with marks going to the existing correct copy and zero old state on new replacements.
+The existing API supports two selected releases whose disjoint union covers all four original episodes, under one
+Fix, Carry and deletion. A concrete recovery gap remains if one part fails: the current writer fails the parent,
+while D-39 accepts only a whole-slot failed grab. A docs-first prospective recovery change is being prepared before
+the final run; root approved its concrete decision-40 architecture for implementation at 09:36Z. The proposed
+release choices are not an execution approval, and the new recovery still needs tests, required PR checks, a signed
+release and live verification.
+
 Pokemon E8 and E31 retain their wrong files. Two bounded NZB reads found only obfuscated split archives and parity
 subjects. Correct story, release group and English remain unproved; that does not establish that no release exists.
 Never use Saon. Mickey E13 to E16 remain held until new E7/E8 content is proved and a fresh same-content mapping is

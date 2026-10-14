@@ -36,6 +36,19 @@ Before that becomes the default, the platform must reliably fix the kinds of pro
 | P7 | Seerr bridge: bot comments once per issue, resolves on completed repair | **Live and on in v0.125.0**, checked 2026-10-13 23:09Z |
 | P8 | Working practice per ADR-112 | Admin guidance live in v0.125.1; practice only, owner readiness decision pending |
 
+**Latest repair state, 2026-10-14 09:37Z:** Pokemon E21 is normally complete and finish 6 passed; E22 is in
+progress. Mickey E9/E10 is normally complete and finish 32 passed. E11/E12's sole untagged AAC track has positive
+English dialogue evidence from two bounded internal speech checks, and both literal cards were viewed. Import 36
+was accepted once at 09:29:49Z; actual library, native imports 66924/66925 and normal completion then passed.
+Actual Plex contexts naturally exposed one default English track, without a metadata or preference write.
+Finish 38 passed at 09:34:58.909Z under unchanged strict guards; E17/E18 is next. Never replay the import, forge its
+metadata language or bypass a failed strict finish. Final E13 to E16 remains
+last; its [proposed mapping](2026-10-14-mickey-final13-16-carry-review.md) uses the proved new E7/E8 copy. A
+docs-first recovery change for a failed part in the supported two-release path was reviewed and authorized for
+implementation at 09:36Z, with tests, required checks and a verified signed release still ahead. The exact
+[runtime record](2026-10-14-self-service-repair-runtime-proof.md) and
+[completed-slot proof](2026-10-14-pokemon-completed-slot-proof.md) take precedence over the older snapshot below.
+
 Production [v0.125.3](https://github.com/thaynes43/haynesnetwork/pull/980) is verified as of 2026-10-14 09:06Z,
 deployed by [haynes-ops 3922](https://github.com/thaynes43/haynes-ops/pull/3922), with its actual report merged in
 [3924](https://github.com/thaynes43/haynes-ops/pull/3924). All three web replicas and migrators, twenty-four frontend
