@@ -1,5 +1,22 @@
 {
-  "format": "json",
+  "format": {
+    "additionalProperties": false,
+    "properties": {
+      "decision": {
+        "enum": [
+          "match",
+          "mismatch",
+          "abstain"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "decision"
+    ],
+    "type": "object"
+  },
+  "initial_metadata_format": "json",
   "installed": {
     "capabilities": [
       "completion",
@@ -27,6 +44,7 @@
     "size": 17741872154
   },
   "keep_alive": "2m",
+  "metadata_correction": "Format derived from immutable first request; original response/request traces unchanged.",
   "options": {
     "num_ctx": 4096,
     "num_predict": 256,

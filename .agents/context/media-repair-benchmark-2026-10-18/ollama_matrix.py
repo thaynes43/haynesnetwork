@@ -141,7 +141,7 @@ def main():
     shown, show_receipt = api('/api/show',{'model':args.model})
     assert shown and not shown.get('error'), 'Model details unavailable'
     bench.write_json(args.out/'model.json',{'installed':installed,'show':show_receipt,'options':dict(OPTIONS,stop=['<|eot|>']) if (args.serving_stop or args.corrected_serving) else OPTIONS,
-                     'think':False,'format':'json','keep_alive':'2m','timeout_seconds':60})
+                     'think':False,'format':json.loads((bench.ROOT/'toolkit-schema.json').read_text()) if (args.tool_assisted or args.corrected_serving) else 'json','keep_alive':'2m','timeout_seconds':60})
     assert installed.get('details',{}).get('quantization_level') == 'Q4_K_M', 'Unexpected quantization'
     cases=bench.load_cases()
     if args.tool_assisted:
