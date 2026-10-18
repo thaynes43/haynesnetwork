@@ -1,0 +1,32 @@
+{
+  "exit_code": 0,
+  "stdout_bytes": 943,
+  "stderr": "",
+  "bytes_read": 491746,
+  "quota_exhausted": false,
+  "requests": 3,
+  "wall_seconds": 0.5300929030054249,
+  "source_unchanged": true,
+  "argv": [
+    "nice",
+    "-n",
+    "19",
+    "ffprobe",
+    "-v",
+    "error",
+    "-threads",
+    "1",
+    "-probesize",
+    "5000000",
+    "-analyzeduration",
+    "2000000",
+    "-show_entries",
+    "format=format_name,duration,size:stream=index,codec_name,codec_type,profile,pix_fmt,width,height,channels:stream_tags=language",
+    "-of",
+    "json",
+    "http://127.0.0.1:38701/sample"
+  ],
+  "source": "/data/haynestower/Media/TV Shows/Pok\u00e9mon/Season 3/Pok\u00e9mon (1997) - S03E34 - Hour of the Houndour [WEBRip-480p][AAC 2.0][x264]-SRS.mkv",
+  "private_artifact": "p-probe-0-0.bin",
+  "sha256": "71bdcaf07a7503277c092c108c63c7ebecba63042a6ee870802d8f9903110ae9"
+}

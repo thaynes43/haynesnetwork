@@ -16,6 +16,13 @@
   monitoring, deployment or any next saga epic. Existing #991/#992 holds remain.
 
 
+## 2026-10-18: first bounded AV diagnostic checkpoint
+
+- EPUB selection PR999 merged7a32eb20 before canonical Saga43 story128 pickup. [AV report](context/media-repair-av-2026-10-18/REPORT.md) separates actual current TV/movie content, bounded decode and hypothetical direct-play compatibility. Sole owner/fresh branch agent/media-repair-av-1018, no AV interleaving.
+- Existing FFmpeg8.1.2, <=8MiB source reads/op,25s/threads1/nice19; current PokemonE34/Mickey paired45–46 and one post-fix Zom100 path. Fresh Mickey62s first-story title proved, E46 unverified. Clean4s primary ranges; earlier quota read errors are not source corruption. Source partial fingerprints/size/mtime preserved, no full/historical-byte continuity claim.
+- Both exact models accepted actual PNG probes; native video/audio unverified. Four matched image/text cases plus one separate response-array serving correction: Qwen identity/decode/compat2/4,4/4,4/4; corrected Muse3/4,1/4,4/4 with false mismatch on known-good card. Baseline errors retained; no semantic gain or adoption claim. Full media/wire images private, own models unloaded/final idle, no live changes/downloads/restarts.
+- Deliver through required current-head CI/review/merge and final earned128 receipt, then stop. No further sources/tuning or broader issue992/PLAN077/Seerr resumption; PR receipts are on the story PR.
+
 ## 2026-10-18: model-driven EPUB candidate selection
 
 - [Bounded selection report](context/media-repair-selection-2026-10-18/REPORT.md): three contrived arrangements from the existing actual pair, hidden evaluator truth, actual model-requested inspection tools, frozen equivalent protocols. Sole owner/fresh branch agent/media-repair-selection-1018, existing Saga43 stories reused.

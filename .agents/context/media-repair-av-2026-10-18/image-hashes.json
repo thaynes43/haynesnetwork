@@ -1,0 +1,22 @@
+{
+  "a01": {
+    "artifact": "m-frame-62-0.bin",
+    "sha256": "7288f799bf1e98c53157edec032261768e34c12d96cabc60b87622c7dda42cec",
+    "bytes": 316357
+  },
+  "a02": {
+    "artifact": "m-frame-62-0.bin",
+    "sha256": "7288f799bf1e98c53157edec032261768e34c12d96cabc60b87622c7dda42cec",
+    "bytes": 316357
+  },
+  "a03": {
+    "artifact": "p-frame-600-0.bin",
+    "sha256": "4d59f221a7fd5bedc16d9f2a30d7fbe55516525c8366bbcb385b8082c9d0e2b2",
+    "bytes": 302665
+  },
+  "a04": {
+    "artifact": "z-frame-180-0.bin",
+    "sha256": "8089f8a93fb47d2a370e312e2bc4fe91751a5d98b673a54a9227efb7eb883e20",
+    "bytes": 181499
+  }
+}

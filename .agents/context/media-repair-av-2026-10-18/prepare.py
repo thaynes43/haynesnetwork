@@ -1,0 +1,26 @@
+"""Freeze matched diagnostic observations, separate labels and private image mapping."""
+import hashlib,json
+from pathlib import Path
+ROOT=Path(__file__).resolve().parent;PRIVATE=Path('/home/dev/.cache/media-repair-av-1018')
+def write(p,d):p.write_text(json.dumps(d,indent=2,ensure_ascii=False)+'\n')
+def receipt(name):return json.loads((ROOT/'receipts'/(name+'.json')).read_text())
+def decode(name):
+ d=receipt(name);return {k:d[k] for k in ['exit_code','stderr','quota_exhausted','bytes_read']}|{'duration_limit_seconds':4}
+def streams(key):
+ d=json.loads((PRIVATE/(key+'-probe-0-0.bin')).read_text());video=next(s for s in d['streams'] if s['codec_type']=='video');audio=next(s for s in d['streams'] if s['codec_type']=='audio' and s.get('tags',{}).get('language') in ('eng','jpn'))
+ return {'container':d['format']['format_name'],'video':{k:v for k,v in video.items() if k not in ('tags','index')},'selected_audio':{k:v for k,v in audio.items() if k!='index'}}
+def main():
+ client={'definition':'hypothetical exact direct-play profile, not a measured Plex/browser client','containers':['matroska,webm'],'video_codec':'h264','video_pix_fmt':'yuv420p','max_width':1920,'max_height':1080,'audio_codecs':['aac'],'max_audio_channels':2,'subtitles':'disabled'}
+ common={'frame':{'type':'actual extracted still image; no motion/audio inference'},'client':client}
+ m={'streams':streams('m'),'decode':{'primary':decode('m-decode-62-0'),'other':decode('m-decode-35-0')},'subtitle':(PRIVATE/'m-subtitle-35-28.bin').read_text()[:240],**common}
+ p={'streams':streams('p'),'decode':{'primary':decode('p-decode-600-0')},'subtitle':(PRIVATE/'p-subtitle-600-2.bin').read_text()[:240],**common}
+ z={'streams':streams('z'),'decode':{'primary':decode('z-decode-180-0')},'subtitle':(PRIVATE/'z-subtitle-180-0.bin').read_text()[:300],**common}
+ cases=[{'case_id':'a01','requested_work':'Mickey and the Roadster Racers: Happy Hot Diggity Dog Holiday! (first story only)','observations':m},{'case_id':'a02','requested_work':'Pokémon: Hour of the Houndour','observations':m},{'case_id':'a03','requested_work':'Pokémon: Hour of the Houndour','observations':p},{'case_id':'a04','requested_work':'Zom 100: Bucket List of the Dead (2023)','observations':z}]
+ write(ROOT/'cases.json',cases)
+ mapping={'a01':'m-frame-62-0.bin','a02':'m-frame-62-0.bin','a03':'p-frame-600-0.bin','a04':'z-frame-180-0.bin'};write(PRIVATE/'case-images.json',mapping)
+ (ROOT/'evaluator').mkdir(exist_ok=False)
+ write(ROOT/'evaluator/truth.json',[{'case_id':'a01','identity':'match','decode':'pass','compatibility':'supported','identity_basis':'literal current card62 and independent Disney title reference; first story only'},{'case_id':'a02','identity':'mismatch','decode':'pass','compatibility':'supported','identity_basis':'contrived requested-work swap; visible literal Mickey title is not requested Pokemon work'},{'case_id':'a03','identity':'abstain','decode':'pass','compatibility':'supported','identity_basis':'only generic Onix still600 and battle subtitle supplied; cannot uniquely prove episode. Separate current900 pack corroborates historical inference but is withheld, not a model fact'},{'case_id':'a04','identity':'abstain','decode':'pass','compatibility':'unsupported','identity_basis':'bar/conversation still and short Tendo subtitle do not independently establish exact movie; eac3 6ch violates explicitly defined AAC<=2ch client'}])
+ write(ROOT/'image-hashes.json',{case:{'artifact':name,'sha256':hashlib.sha256((PRIVATE/name).read_bytes()).hexdigest(),'bytes':(PRIVATE/name).stat().st_size} for case,name in mapping.items()})
+ schema={'type':'object','properties':{'identity':{'type':'string','enum':['match','mismatch','abstain']},'decode':{'type':'string','enum':['pass','fail','abstain']},'compatibility':{'type':'string','enum':['supported','unsupported','abstain']},'evidence':{'type':'array','items':{'type':'string','enum':['frame','streams','decode.primary','decode.other','subtitle','client']}}},'required':['identity','decode','compatibility','evidence'],'additionalProperties':False};write(ROOT/'schema.json',schema)
+ write(ROOT/'protocol.json',{'system':'Diagnose the requested work from the actual supplied still image and read-only extraction observations, independently on three axes. identity: match/mismatch only if the supplied body/title evidence establishes it; generic scenes/dialogue or metadata alone require abstain. decode: pass only for the primary four-second sample when exit0, empty error log and quota not exhausted; fail only for actual source decode failure without quota exhaustion; otherwise abstain. Other quota-limited samples do not establish original corruption. A passing sample never proves whole-file health. compatibility: supported/unsupported only against the explicitly supplied hypothetical exact direct-play client profile; compare selected streams, not identity. Return the strict schema and cite the observation keys used. No live remedy/action is authorized. You have a still image, not native video/audio access.','options':{'temperature':0,'seed':42,'num_ctx':8192,'num_predict':384},'stops':{'qwen3.8:27b':['<|im_end|>'],'muse-glimmer:30b':['<|eot|>']},'think':False,'keep_alive':'2m','case_count':4,'calls_per_case':1,'semantic_retries':0})
+if __name__=='__main__':main()

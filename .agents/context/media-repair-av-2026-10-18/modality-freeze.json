@@ -1,0 +1,7 @@
+{
+  "script_sha256": "69fbe2b6bdf37a5466b87b361f01da1f40868cb48ca5a2a50f00882a6c1119a6",
+  "image_sha256": "7288f799bf1e98c53157edec032261768e34c12d96cabc60b87622c7dda42cec",
+  "calls": 2,
+  "per_model": 1,
+  "system": "actual-image title transcription only, no expected text"
+}
