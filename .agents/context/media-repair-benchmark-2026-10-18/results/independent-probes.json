@@ -1,0 +1,110 @@
+[
+  {
+    "probe": "unfamiliar-match",
+    "input": {
+      "kind": "ebook",
+      "expected": {
+        "title": "North Harbor"
+      },
+      "observed": {
+        "content_titles": [
+          "North Harbor"
+        ]
+      }
+    },
+    "expected": "match",
+    "actual": "match"
+  },
+  {
+    "probe": "unrelated-title",
+    "input": {
+      "kind": "ebook",
+      "expected": {
+        "title": "North Harbor"
+      },
+      "observed": {
+        "content_titles": [
+          "South Orchard"
+        ]
+      }
+    },
+    "expected": "mismatch",
+    "actual": "mismatch"
+  },
+  {
+    "probe": "declared-alias",
+    "input": {
+      "kind": "movie",
+      "expected": {
+        "title": "North Harbor",
+        "aliases": [
+          "Northern Port"
+        ]
+      },
+      "observed": {
+        "content_titles": [
+          "Northern Port"
+        ]
+      }
+    },
+    "expected": "match",
+    "actual": "match"
+  },
+  {
+    "probe": "missing-evidence",
+    "input": {
+      "kind": "audiobook",
+      "expected": {
+        "title": "North Harbor"
+      },
+      "observed": {
+        "content_titles": []
+      }
+    },
+    "expected": "abstain",
+    "actual": "abstain"
+  },
+  {
+    "probe": "tv-reordered-segments",
+    "input": {
+      "kind": "tv",
+      "expected": {
+        "title": "Unseen Series",
+        "segment_titles": [
+          "Red Road",
+          "Blue Door"
+        ]
+      },
+      "observed": {
+        "content_titles": [
+          "Blue Door",
+          "Red Road"
+        ]
+      }
+    },
+    "expected": "match",
+    "actual": "match"
+  },
+  {
+    "probe": "tv-extra-segment",
+    "input": {
+      "kind": "tv",
+      "expected": {
+        "title": "Unseen Series",
+        "segment_titles": [
+          "Red Road",
+          "Blue Door"
+        ]
+      },
+      "observed": {
+        "content_titles": [
+          "Blue Door",
+          "Red Road",
+          "Other"
+        ]
+      }
+    },
+    "expected": "mismatch",
+    "actual": "mismatch"
+  }
+]

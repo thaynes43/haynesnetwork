@@ -1,5 +1,25 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-18: bounded Media Repair benchmark; other repair work stays paused
+
+- Tom explicitly authorized the isolated historical benchmark in existing Saga43;
+  [scope, protocol and receipts](context/media-repair-benchmark-2026-10-18/README.md).
+  Sole owner `01a14fc4-44b7-79b3-b7f9-95f4276da250`, branch
+  `agent/haynesnetwork-1018-120622`. Reuses existing tracker #64/#69/#61/#62/#65/#67/#68/#63.
+- Eleven documentary cases (five mismatches/six controls), four held out by family;
+  corpus and final model payload hashes frozen. Offline filename baseline 6/11,
+  evidence rules 11/11, five contract tests and six independent probes pass.
+  These are deterministic rules on reconstructed observations, not LLM or actual
+  media decoding/repair results. Fixture original bytes are preserved.
+- Subsequent owner authorization allows only official `qwen3.8:27b` and
+  `muse-glimmer:30b` downloads and serial bounded comparison on verified Prime
+  card A. Both pulls/checksums must complete before inference timing. No model
+  inference score is claimed at this preparation checkpoint; final receipts and
+  the story PR carry the actual ending state. No download of unrelated variants.
+- The benchmark exception does not resume PLAN-077, the Seerr bot, live repairs,
+  monitoring, deployment or any next saga epic. Existing #991/#992 holds remain.
+
+
 ## 2026-10-14: voice-call vision amendment saved; all execution remains paused
 
 - [Shared platform vision](context/2026-10-14-haynes-os-vision.md): tentative
