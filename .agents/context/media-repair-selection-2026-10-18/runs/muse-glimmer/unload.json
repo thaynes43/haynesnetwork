@@ -1,0 +1,7 @@
+{
+  "wall_seconds": 0.12599573098123074,
+  "exit_code": 0,
+  "stderr": "",
+  "http_status": 200,
+  "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-18T17:36:52.54577673Z\",\"response\":\"\",\"done\":true,\"done_reason\":\"unload\"}"
+}

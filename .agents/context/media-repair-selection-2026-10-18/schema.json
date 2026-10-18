@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "inspect",
+        "select",
+        "abstain"
+      ]
+    },
+    "candidate_id": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 12
+    }
+  },
+  "required": [
+    "action",
+    "candidate_id",
+    "evidence"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,520 @@
+{
+  "case_id": "r01",
+  "model": "muse-glimmer:30b",
+  "turns": [
+    {
+      "request": {
+        "model": "muse-glimmer:30b",
+        "stream": false,
+        "think": false,
+        "keep_alive": "2m",
+        "format": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "inspect",
+                "select",
+                "abstain"
+              ]
+            },
+            "candidate_id": {
+              "type": "string"
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 12
+            }
+          },
+          "required": [
+            "action",
+            "candidate_id",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "temperature": 0,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 256,
+          "stop": [
+            "<|eot|>"
+          ]
+        },
+        "messages": [
+          {
+            "role": "system",
+            "content": "Choose an intact document containing the requested literary work from opaque candidates. You have the actual read-only inspect tool: return action inspect with candidate_id and evidence [] to inspect one candidate. The next user message gives real tool observations. Inspect candidates as needed, at most three inspections. Metadata can be misleading; actual narrative body matters, and a sequel is a different work. Require structural integrity and body evidence before selecting. Return action select with the candidate ID and evidence references such as o2.integrity and o2.body from returned observations. If none is an evidenced valid candidate, return action abstain, candidate_id empty string, and evidence references supporting rejection. Never invent IDs or observations. No filename/path or external tool access. Every response must follow the strict action schema. You have at most four turns, including final action; do not inspect on the final turn."
+          },
+          {
+            "role": "user",
+            "content": "{\"candidate_ids\": [\"v7\", \"k4\", \"n2\"], \"case_id\": \"r01\", \"expected\": {\"author\": \"L. M. Montgomery\", \"title\": \"Anne of Green Gables\"}}"
+          }
+        ]
+      },
+      "response": {
+        "model": "muse-glimmer:30b",
+        "created_at": "2026-10-18T17:36:33.441374036Z",
+        "message": {
+          "role": "assistant",
+          "content": "{\"action\":\"inspect\",\"candidate_id\":\"v7\",\"evidence\":[\"o2.integrity\",\"o2.body\"]}"
+        },
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 5587775191,
+        "load_duration": 4672308186,
+        "prompt_eval_count": 247,
+        "prompt_eval_cached_count": 0,
+        "prompt_eval_duration": 293892000,
+        "eval_count": 24,
+        "eval_duration": 613546000
+      },
+      "receipt": {
+        "wall_seconds": 5.717973810154945,
+        "exit_code": 0,
+        "stderr": "",
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-18T17:36:33.441374036Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"action\\\":\\\"inspect\\\",\\\"candidate_id\\\":\\\"v7\\\",\\\"evidence\\\":[\\\"o2.integrity\\\",\\\"o2.body\\\"]}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":5587775191,\"load_duration\":4672308186,\"prompt_eval_count\":247,\"prompt_eval_cached_count\":0,\"prompt_eval_duration\":293892000,\"eval_count\":24,\"eval_duration\":613546000}"
+      },
+      "before": {
+        "compute_processes": "",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T17:36:27.711140+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n36424343552\nusage_usec 1625494168\nuser_usec 1404682922\nsystem_usec 220811245\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5682992 kB\nMemAvailable:   121411424 kB\n",
+        "stderr": ""
+      },
+      "after": {
+        "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 8175, /usr/lib/ollama/llama-server, 17706 MiB",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T17:36:33.685866+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17718 MiB, 6408 MiB, 67 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 8175, /usr/lib/ollama/llama-server, 17706 MiB\n37730840576\nusage_usec 1655550166\nuser_usec 1431449559\nsystem_usec 224100607\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         4266012 kB\nMemAvailable:   119994492 kB\n",
+        "stderr": ""
+      }
+    },
+    {
+      "request": {
+        "model": "muse-glimmer:30b",
+        "stream": false,
+        "think": false,
+        "keep_alive": "2m",
+        "format": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "inspect",
+                "select",
+                "abstain"
+              ]
+            },
+            "candidate_id": {
+              "type": "string"
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 12
+            }
+          },
+          "required": [
+            "action",
+            "candidate_id",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "temperature": 0,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 256,
+          "stop": [
+            "<|eot|>"
+          ]
+        },
+        "messages": [
+          {
+            "role": "system",
+            "content": "Choose an intact document containing the requested literary work from opaque candidates. You have the actual read-only inspect tool: return action inspect with candidate_id and evidence [] to inspect one candidate. The next user message gives real tool observations. Inspect candidates as needed, at most three inspections. Metadata can be misleading; actual narrative body matters, and a sequel is a different work. Require structural integrity and body evidence before selecting. Return action select with the candidate ID and evidence references such as o2.integrity and o2.body from returned observations. If none is an evidenced valid candidate, return action abstain, candidate_id empty string, and evidence references supporting rejection. Never invent IDs or observations. No filename/path or external tool access. Every response must follow the strict action schema. You have at most four turns, including final action; do not inspect on the final turn."
+          },
+          {
+            "role": "user",
+            "content": "{\"candidate_ids\": [\"v7\", \"k4\", \"n2\"], \"case_id\": \"r01\", \"expected\": {\"author\": \"L. M. Montgomery\", \"title\": \"Anne of Green Gables\"}}"
+          },
+          {
+            "role": "assistant",
+            "content": "{\"action\":\"inspect\",\"candidate_id\":\"v7\",\"evidence\":[\"o2.integrity\",\"o2.body\"]}"
+          },
+          {
+            "role": "user",
+            "content": "{\"tool_result\": {\"body\": {\"ending\": \"affectionate heart. \\\"Tell dear Rebecca Dew I'll never forget her and that I'm coming back to see you all every summer.\\\" \\\"We have memories of you that nothing can take away,\\\" sobbed Aunt Chatty. \\\"Nothing,\\\" said Aunt Kate, emphatically. But as Anne drove away from Windy Poplars the last message from it was a large white bath-towel fluttering frantically from the tower window. Rebecca Dew was waving it. THE END\", \"middle\": \"windows of The Evergreens as she drove away from Windy Poplars . . . an Elizabeth with tears in her eyes who felt as if everything that made life worth living had gone out of her life for the time being and that she was the very Lizziest of Lizzies. But when the livery sleigh vanished from her sight around the corner of Spook's Lane Elizabeth went and knelt down\", \"opening\": \"WindyPop book 1 (Letter from Anne Shirley, B.A., Principal of Summerside High School, to Gilbert Blythe, medical student at Redmond College, Kingsport.) \\\"Windy Poplars, \\\"Spook's Lane, \\\"S'side, P. E. I., \\\"Monday, September 12th. \\\"DEAREST: \\\"Isn't that an address! Did you ever hear anything so delicious? Windy Poplars is the name of my new home and I love it. I also love Spook's Lane, which has no legal existence. It should be Trent Street but it is never called Trent Street except on the rare occasions when it is mentioned in the Weekly Courier . . . and then people look at each other and say, 'Where on earth is that?' Spook's Lane it is . . . although for what reason I cannot tell you. I have already asked Rebecca Dew about it, but all she can say is that\"}, \"candidate_id\": \"v7\", \"integrity\": {\"package_manifest_spine_xhtml\": \"pass\", \"spine_items\": 53, \"zip_crc\": \"pass\"}, \"metadata\": {\"creators\": [\"L. M. Montgomery\"], \"titles\": [\"Anne of Windy Poplars\"]}, \"observation_id\": \"o1\"}, \"turns_remaining\": 3}"
+          }
+        ]
+      },
+      "response": {
+        "model": "muse-glimmer:30b",
+        "created_at": "2026-10-18T17:36:35.242368843Z",
+        "message": {
+          "role": "assistant",
+          "content": "{\"action\":\"inspect\",\"candidate_id\":\"k4\",\"evidence\":[\"o2.integrity\",\"o2.body\"]}"
+        },
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 990225850,
+        "load_duration": 639204,
+        "prompt_eval_count": 765,
+        "prompt_eval_cached_count": 242,
+        "prompt_eval_duration": 420825000,
+        "eval_count": 24,
+        "eval_duration": 555220000
+      },
+      "receipt": {
+        "wall_seconds": 1.095231947954744,
+        "exit_code": 0,
+        "stderr": "",
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-18T17:36:35.242368843Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"action\\\":\\\"inspect\\\",\\\"candidate_id\\\":\\\"k4\\\",\\\"evidence\\\":[\\\"o2.integrity\\\",\\\"o2.body\\\"]}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":990225850,\"load_duration\":639204,\"prompt_eval_count\":765,\"prompt_eval_cached_count\":242,\"prompt_eval_duration\":420825000,\"eval_count\":24,\"eval_duration\":555220000}"
+      },
+      "before": {
+        "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 8175, /usr/lib/ollama/llama-server, 17706 MiB",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T17:36:34.135810+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17718 MiB, 6408 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 8175, /usr/lib/ollama/llama-server, 17706 MiB\n37730226176\nusage_usec 1655659140\nuser_usec 1431489832\nsystem_usec 224169308\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         4225716 kB\nMemAvailable:   119954220 kB\n",
+        "stderr": ""
+      },
+      "after": {
+        "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 8175, /usr/lib/ollama/llama-server, 17710 MiB",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T17:36:35.511442+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17722 MiB, 6404 MiB, 74 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 8175, /usr/lib/ollama/llama-server, 17710 MiB\n37773545472\nusage_usec 1675456766\nuser_usec 1450938173\nsystem_usec 224518593\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         4198736 kB\nMemAvailable:   119927248 kB\n",
+        "stderr": ""
+      }
+    },
+    {
+      "request": {
+        "model": "muse-glimmer:30b",
+        "stream": false,
+        "think": false,
+        "keep_alive": "2m",
+        "format": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "inspect",
+                "select",
+                "abstain"
+              ]
+            },
+            "candidate_id": {
+              "type": "string"
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 12
+            }
+          },
+          "required": [
+            "action",
+            "candidate_id",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "temperature": 0,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 256,
+          "stop": [
+            "<|eot|>"
+          ]
+        },
+        "messages": [
+          {
+            "role": "system",
+            "content": "Choose an intact document containing the requested literary work from opaque candidates. You have the actual read-only inspect tool: return action inspect with candidate_id and evidence [] to inspect one candidate. The next user message gives real tool observations. Inspect candidates as needed, at most three inspections. Metadata can be misleading; actual narrative body matters, and a sequel is a different work. Require structural integrity and body evidence before selecting. Return action select with the candidate ID and evidence references such as o2.integrity and o2.body from returned observations. If none is an evidenced valid candidate, return action abstain, candidate_id empty string, and evidence references supporting rejection. Never invent IDs or observations. No filename/path or external tool access. Every response must follow the strict action schema. You have at most four turns, including final action; do not inspect on the final turn."
+          },
+          {
+            "role": "user",
+            "content": "{\"candidate_ids\": [\"v7\", \"k4\", \"n2\"], \"case_id\": \"r01\", \"expected\": {\"author\": \"L. M. Montgomery\", \"title\": \"Anne of Green Gables\"}}"
+          },
+          {
+            "role": "assistant",
+            "content": "{\"action\":\"inspect\",\"candidate_id\":\"v7\",\"evidence\":[\"o2.integrity\",\"o2.body\"]}"
+          },
+          {
+            "role": "user",
+            "content": "{\"tool_result\": {\"body\": {\"ending\": \"affectionate heart. \\\"Tell dear Rebecca Dew I'll never forget her and that I'm coming back to see you all every summer.\\\" \\\"We have memories of you that nothing can take away,\\\" sobbed Aunt Chatty. \\\"Nothing,\\\" said Aunt Kate, emphatically. But as Anne drove away from Windy Poplars the last message from it was a large white bath-towel fluttering frantically from the tower window. Rebecca Dew was waving it. THE END\", \"middle\": \"windows of The Evergreens as she drove away from Windy Poplars . . . an Elizabeth with tears in her eyes who felt as if everything that made life worth living had gone out of her life for the time being and that she was the very Lizziest of Lizzies. But when the livery sleigh vanished from her sight around the corner of Spook's Lane Elizabeth went and knelt down\", \"opening\": \"WindyPop book 1 (Letter from Anne Shirley, B.A., Principal of Summerside High School, to Gilbert Blythe, medical student at Redmond College, Kingsport.) \\\"Windy Poplars, \\\"Spook's Lane, \\\"S'side, P. E. I., \\\"Monday, September 12th. \\\"DEAREST: \\\"Isn't that an address! Did you ever hear anything so delicious? Windy Poplars is the name of my new home and I love it. I also love Spook's Lane, which has no legal existence. It should be Trent Street but it is never called Trent Street except on the rare occasions when it is mentioned in the Weekly Courier . . . and then people look at each other and say, 'Where on earth is that?' Spook's Lane it is . . . although for what reason I cannot tell you. I have already asked Rebecca Dew about it, but all she can say is that\"}, \"candidate_id\": \"v7\", \"integrity\": {\"package_manifest_spine_xhtml\": \"pass\", \"spine_items\": 53, \"zip_crc\": \"pass\"}, \"metadata\": {\"creators\": [\"L. M. Montgomery\"], \"titles\": [\"Anne of Windy Poplars\"]}, \"observation_id\": \"o1\"}, \"turns_remaining\": 3}"
+          },
+          {
+            "role": "assistant",
+            "content": "{\"action\":\"inspect\",\"candidate_id\":\"k4\",\"evidence\":[\"o2.integrity\",\"o2.body\"]}"
+          },
+          {
+            "role": "user",
+            "content": "{\"tool_result\": {\"body\": {\"ending\": \"before her feet was to be narrow she knew that flowers of quiet happiness would bloom along it. The joy of sincere work and worthy aspiration and congenial friendship were to be hers; nothing could rob her of her birthright of fancy or her ideal world of dreams. And there was always the bend in the road! \\\"'God's in his heaven, all's right with the world,'\\\" whispered Anne softly. softly.\", \"middle\": \"to Green Gables\\u2014the beautiful capricious, reluctant Canadian spring, lingering along through April and May in a succession of sweet, fresh, chilly days, with pink sunsets and miracles of resurrection and growth. The maples in Lover's Lane were red budded and little curly ferns pushed up around the Dryad's Bubble. Away up in the barrens, behind Mr. Silas Sloane's place, the Mayflowers blossomed out, pink and white stars of sweetness under\", \"opening\": \"Anne of Green Gables, by Lucy Maud Montgomery CHAPTER I. Mrs. Rachel Lynde is Surprised Mrs. Rachel Lynde lived just where the Avonlea main road dipped down into a little hollow, fringed with alders and ladies' eardrops and traversed by a brook that had its source away back in the woods of the old Cuthbert place; it was reputed to be an intricate, headlong brook in its earlier course through those woods, with dark secrets of pool and cascade; but by the time it reached Lynde's Hollow it was a quiet, well-conducted little stream, for not even a brook could run past Mrs. Rachel Lynde's door without due regard for decency and decorum; it probably was conscious that Mrs. Rachel was sitting at her window, keeping a sharp eye on everything that passed, from brooks and children up, and that\"}, \"candidate_id\": \"k4\", \"integrity\": {\"package_manifest_spine_xhtml\": \"pass\", \"spine_items\": 42, \"zip_crc\": \"pass\"}, \"metadata\": {\"creators\": [\"L. M. Montgomery\"], \"titles\": [\"Anne of Green Gables\"]}, \"observation_id\": \"o2\"}, \"turns_remaining\": 2}"
+          }
+        ]
+      },
+      "response": {
+        "model": "muse-glimmer:30b",
+        "created_at": "2026-10-18T17:36:37.054732847Z",
+        "message": {
+          "role": "assistant",
+          "content": "{\"action\":\"inspect\",\"candidate_id\":\"n2\",\"evidence\":[\"o2.integrity\",\"o2.body\"]}"
+        },
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 975413279,
+        "load_duration": 642835,
+        "prompt_eval_count": 1272,
+        "prompt_eval_cached_count": 760,
+        "prompt_eval_duration": 401388000,
+        "eval_count": 24,
+        "eval_duration": 553900000
+      },
+      "receipt": {
+        "wall_seconds": 1.0975258969701827,
+        "exit_code": 0,
+        "stderr": "",
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-18T17:36:37.054732847Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"action\\\":\\\"inspect\\\",\\\"candidate_id\\\":\\\"n2\\\",\\\"evidence\\\":[\\\"o2.integrity\\\",\\\"o2.body\\\"]}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":975413279,\"load_duration\":642835,\"prompt_eval_count\":1272,\"prompt_eval_cached_count\":760,\"prompt_eval_duration\":401388000,\"eval_count\":24,\"eval_duration\":553900000}"
+      },
+      "before": {
+        "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 8175, /usr/lib/ollama/llama-server, 17710 MiB",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T17:36:35.945845+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17722 MiB, 6404 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 8175, /usr/lib/ollama/llama-server, 17710 MiB\n37774921728\nusage_usec 1675564456\nuser_usec 1450987482\nsystem_usec 224576973\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         4175144 kB\nMemAvailable:   119903660 kB\n",
+        "stderr": ""
+      },
+      "after": {
+        "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 8175, /usr/lib/ollama/llama-server, 17712 MiB",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T17:36:37.306500+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17724 MiB, 6402 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 8175, /usr/lib/ollama/llama-server, 17712 MiB\n37855477760\nusage_usec 1694568064\nuser_usec 1469732252\nsystem_usec 224835812\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         4090712 kB\nMemAvailable:   119819228 kB\n",
+        "stderr": ""
+      }
+    },
+    {
+      "request": {
+        "model": "muse-glimmer:30b",
+        "stream": false,
+        "think": false,
+        "keep_alive": "2m",
+        "format": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "inspect",
+                "select",
+                "abstain"
+              ]
+            },
+            "candidate_id": {
+              "type": "string"
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 12
+            }
+          },
+          "required": [
+            "action",
+            "candidate_id",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "temperature": 0,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 256,
+          "stop": [
+            "<|eot|>"
+          ]
+        },
+        "messages": [
+          {
+            "role": "system",
+            "content": "Choose an intact document containing the requested literary work from opaque candidates. You have the actual read-only inspect tool: return action inspect with candidate_id and evidence [] to inspect one candidate. The next user message gives real tool observations. Inspect candidates as needed, at most three inspections. Metadata can be misleading; actual narrative body matters, and a sequel is a different work. Require structural integrity and body evidence before selecting. Return action select with the candidate ID and evidence references such as o2.integrity and o2.body from returned observations. If none is an evidenced valid candidate, return action abstain, candidate_id empty string, and evidence references supporting rejection. Never invent IDs or observations. No filename/path or external tool access. Every response must follow the strict action schema. You have at most four turns, including final action; do not inspect on the final turn."
+          },
+          {
+            "role": "user",
+            "content": "{\"candidate_ids\": [\"v7\", \"k4\", \"n2\"], \"case_id\": \"r01\", \"expected\": {\"author\": \"L. M. Montgomery\", \"title\": \"Anne of Green Gables\"}}"
+          },
+          {
+            "role": "assistant",
+            "content": "{\"action\":\"inspect\",\"candidate_id\":\"v7\",\"evidence\":[\"o2.integrity\",\"o2.body\"]}"
+          },
+          {
+            "role": "user",
+            "content": "{\"tool_result\": {\"body\": {\"ending\": \"affectionate heart. \\\"Tell dear Rebecca Dew I'll never forget her and that I'm coming back to see you all every summer.\\\" \\\"We have memories of you that nothing can take away,\\\" sobbed Aunt Chatty. \\\"Nothing,\\\" said Aunt Kate, emphatically. But as Anne drove away from Windy Poplars the last message from it was a large white bath-towel fluttering frantically from the tower window. Rebecca Dew was waving it. THE END\", \"middle\": \"windows of The Evergreens as she drove away from Windy Poplars . . . an Elizabeth with tears in her eyes who felt as if everything that made life worth living had gone out of her life for the time being and that she was the very Lizziest of Lizzies. But when the livery sleigh vanished from her sight around the corner of Spook's Lane Elizabeth went and knelt down\", \"opening\": \"WindyPop book 1 (Letter from Anne Shirley, B.A., Principal of Summerside High School, to Gilbert Blythe, medical student at Redmond College, Kingsport.) \\\"Windy Poplars, \\\"Spook's Lane, \\\"S'side, P. E. I., \\\"Monday, September 12th. \\\"DEAREST: \\\"Isn't that an address! Did you ever hear anything so delicious? Windy Poplars is the name of my new home and I love it. I also love Spook's Lane, which has no legal existence. It should be Trent Street but it is never called Trent Street except on the rare occasions when it is mentioned in the Weekly Courier . . . and then people look at each other and say, 'Where on earth is that?' Spook's Lane it is . . . although for what reason I cannot tell you. I have already asked Rebecca Dew about it, but all she can say is that\"}, \"candidate_id\": \"v7\", \"integrity\": {\"package_manifest_spine_xhtml\": \"pass\", \"spine_items\": 53, \"zip_crc\": \"pass\"}, \"metadata\": {\"creators\": [\"L. M. Montgomery\"], \"titles\": [\"Anne of Windy Poplars\"]}, \"observation_id\": \"o1\"}, \"turns_remaining\": 3}"
+          },
+          {
+            "role": "assistant",
+            "content": "{\"action\":\"inspect\",\"candidate_id\":\"k4\",\"evidence\":[\"o2.integrity\",\"o2.body\"]}"
+          },
+          {
+            "role": "user",
+            "content": "{\"tool_result\": {\"body\": {\"ending\": \"before her feet was to be narrow she knew that flowers of quiet happiness would bloom along it. The joy of sincere work and worthy aspiration and congenial friendship were to be hers; nothing could rob her of her birthright of fancy or her ideal world of dreams. And there was always the bend in the road! \\\"'God's in his heaven, all's right with the world,'\\\" whispered Anne softly. softly.\", \"middle\": \"to Green Gables\\u2014the beautiful capricious, reluctant Canadian spring, lingering along through April and May in a succession of sweet, fresh, chilly days, with pink sunsets and miracles of resurrection and growth. The maples in Lover's Lane were red budded and little curly ferns pushed up around the Dryad's Bubble. Away up in the barrens, behind Mr. Silas Sloane's place, the Mayflowers blossomed out, pink and white stars of sweetness under\", \"opening\": \"Anne of Green Gables, by Lucy Maud Montgomery CHAPTER I. Mrs. Rachel Lynde is Surprised Mrs. Rachel Lynde lived just where the Avonlea main road dipped down into a little hollow, fringed with alders and ladies' eardrops and traversed by a brook that had its source away back in the woods of the old Cuthbert place; it was reputed to be an intricate, headlong brook in its earlier course through those woods, with dark secrets of pool and cascade; but by the time it reached Lynde's Hollow it was a quiet, well-conducted little stream, for not even a brook could run past Mrs. Rachel Lynde's door without due regard for decency and decorum; it probably was conscious that Mrs. Rachel was sitting at her window, keeping a sharp eye on everything that passed, from brooks and children up, and that\"}, \"candidate_id\": \"k4\", \"integrity\": {\"package_manifest_spine_xhtml\": \"pass\", \"spine_items\": 42, \"zip_crc\": \"pass\"}, \"metadata\": {\"creators\": [\"L. M. Montgomery\"], \"titles\": [\"Anne of Green Gables\"]}, \"observation_id\": \"o2\"}, \"turns_remaining\": 2}"
+          },
+          {
+            "role": "assistant",
+            "content": "{\"action\":\"inspect\",\"candidate_id\":\"n2\",\"evidence\":[\"o2.integrity\",\"o2.body\"]}"
+          },
+          {
+            "role": "user",
+            "content": "{\"tool_result\": {\"candidate_id\": \"n2\", \"integrity\": {\"package_manifest_spine_xhtml\": \"unverified\", \"zip_crc\": \"fail_or_unreadable\"}, \"observation_id\": \"o3\"}, \"turns_remaining\": 1}"
+          }
+        ]
+      },
+      "response": {
+        "model": "muse-glimmer:30b",
+        "created_at": "2026-10-18T17:36:38.558659088Z",
+        "message": {
+          "role": "assistant",
+          "content": "{\"action\":\"select\",\"candidate_id\":\"k4\",\"evidence\":[\"o2.integrity\",\"o2.body\"]}"
+        },
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 744992309,
+        "load_duration": 2686838,
+        "prompt_eval_count": 1360,
+        "prompt_eval_cached_count": 1267,
+        "prompt_eval_duration": 160628000,
+        "eval_count": 24,
+        "eval_duration": 553127000
+      },
+      "receipt": {
+        "wall_seconds": 0.8754985011182725,
+        "exit_code": 0,
+        "stderr": "",
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-18T17:36:38.558659088Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"action\\\":\\\"select\\\",\\\"candidate_id\\\":\\\"k4\\\",\\\"evidence\\\":[\\\"o2.integrity\\\",\\\"o2.body\\\"]}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":744992309,\"load_duration\":2686838,\"prompt_eval_count\":1360,\"prompt_eval_cached_count\":1267,\"prompt_eval_duration\":160628000,\"eval_count\":24,\"eval_duration\":553127000}"
+      },
+      "before": {
+        "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 8175, /usr/lib/ollama/llama-server, 17712 MiB",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T17:36:37.682957+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17724 MiB, 6402 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 8175, /usr/lib/ollama/llama-server, 17712 MiB\n37855342592\nusage_usec 1694676425\nuser_usec 1469787373\nsystem_usec 224889051\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         4078404 kB\nMemAvailable:   119806924 kB\n",
+        "stderr": ""
+      },
+      "after": {
+        "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 8175, /usr/lib/ollama/llama-server, 17714 MiB",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T17:36:38.821429+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17726 MiB, 6400 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 8175, /usr/lib/ollama/llama-server, 17714 MiB\n37953679360\nusage_usec 1714011832\nuser_usec 1488956887\nsystem_usec 225054945\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         3939964 kB\nMemAvailable:   119668508 kB\n",
+        "stderr": ""
+      }
+    }
+  ],
+  "observations": [
+    {
+      "observation_id": "o1",
+      "candidate_id": "v7",
+      "integrity": {
+        "zip_crc": "pass",
+        "package_manifest_spine_xhtml": "pass",
+        "spine_items": 53
+      },
+      "metadata": {
+        "titles": [
+          "Anne of Windy Poplars"
+        ],
+        "creators": [
+          "L. M. Montgomery"
+        ]
+      },
+      "body": {
+        "opening": "WindyPop book 1 (Letter from Anne Shirley, B.A., Principal of Summerside High School, to Gilbert Blythe, medical student at Redmond College, Kingsport.) \"Windy Poplars, \"Spook's Lane, \"S'side, P. E. I., \"Monday, September 12th. \"DEAREST: \"Isn't that an address! Did you ever hear anything so delicious? Windy Poplars is the name of my new home and I love it. I also love Spook's Lane, which has no legal existence. It should be Trent Street but it is never called Trent Street except on the rare occasions when it is mentioned in the Weekly Courier . . . and then people look at each other and say, 'Where on earth is that?' Spook's Lane it is . . . although for what reason I cannot tell you. I have already asked Rebecca Dew about it, but all she can say is that",
+        "middle": "windows of The Evergreens as she drove away from Windy Poplars . . . an Elizabeth with tears in her eyes who felt as if everything that made life worth living had gone out of her life for the time being and that she was the very Lizziest of Lizzies. But when the livery sleigh vanished from her sight around the corner of Spook's Lane Elizabeth went and knelt down",
+        "ending": "affectionate heart. \"Tell dear Rebecca Dew I'll never forget her and that I'm coming back to see you all every summer.\" \"We have memories of you that nothing can take away,\" sobbed Aunt Chatty. \"Nothing,\" said Aunt Kate, emphatically. But as Anne drove away from Windy Poplars the last message from it was a large white bath-towel fluttering frantically from the tower window. Rebecca Dew was waving it. THE END"
+      }
+    },
+    {
+      "observation_id": "o2",
+      "candidate_id": "k4",
+      "integrity": {
+        "zip_crc": "pass",
+        "package_manifest_spine_xhtml": "pass",
+        "spine_items": 42
+      },
+      "metadata": {
+        "titles": [
+          "Anne of Green Gables"
+        ],
+        "creators": [
+          "L. M. Montgomery"
+        ]
+      },
+      "body": {
+        "opening": "Anne of Green Gables, by Lucy Maud Montgomery CHAPTER I. Mrs. Rachel Lynde is Surprised Mrs. Rachel Lynde lived just where the Avonlea main road dipped down into a little hollow, fringed with alders and ladies' eardrops and traversed by a brook that had its source away back in the woods of the old Cuthbert place; it was reputed to be an intricate, headlong brook in its earlier course through those woods, with dark secrets of pool and cascade; but by the time it reached Lynde's Hollow it was a quiet, well-conducted little stream, for not even a brook could run past Mrs. Rachel Lynde's door without due regard for decency and decorum; it probably was conscious that Mrs. Rachel was sitting at her window, keeping a sharp eye on everything that passed, from brooks and children up, and that",
+        "middle": "to Green Gables—the beautiful capricious, reluctant Canadian spring, lingering along through April and May in a succession of sweet, fresh, chilly days, with pink sunsets and miracles of resurrection and growth. The maples in Lover's Lane were red budded and little curly ferns pushed up around the Dryad's Bubble. Away up in the barrens, behind Mr. Silas Sloane's place, the Mayflowers blossomed out, pink and white stars of sweetness under",
+        "ending": "before her feet was to be narrow she knew that flowers of quiet happiness would bloom along it. The joy of sincere work and worthy aspiration and congenial friendship were to be hers; nothing could rob her of her birthright of fancy or her ideal world of dreams. And there was always the bend in the road! \"'God's in his heaven, all's right with the world,'\" whispered Anne softly. softly."
+      }
+    },
+    {
+      "observation_id": "o3",
+      "candidate_id": "n2",
+      "integrity": {
+        "zip_crc": "fail_or_unreadable",
+        "package_manifest_spine_xhtml": "unverified"
+      }
+    }
+  ],
+  "final": {
+    "action": "select",
+    "candidate_id": "k4",
+    "evidence": [
+      "o2.integrity",
+      "o2.body"
+    ]
+  },
+  "wall_seconds": 11.529293852858245,
+  "assessment": {
+    "correct_selection": true,
+    "correct_abstention": false,
+    "abstention": false,
+    "error": false,
+    "unsafe_categories": [],
+    "references_resolve": true,
+    "evidence_supported": true,
+    "selected": "k4"
+  },
+  "execution": {
+    "status": "verified_fixture_copy",
+    "independent_verification": {
+      "structurally_valid": true,
+      "expected_body": true,
+      "spine_items": 42,
+      "sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+[
+  {
+    "case_id": "r01",
+    "expected": {
+      "title": "Anne of Green Gables",
+      "author": "L. M. Montgomery"
+    },
+    "candidate_ids": [
+      "v7",
+      "k4",
+      "n2"
+    ]
+  },
+  {
+    "case_id": "r02",
+    "expected": {
+      "title": "Anne of Green Gables",
+      "author": "L. M. Montgomery"
+    },
+    "candidate_ids": [
+      "h6",
+      "q8",
+      "b3"
+    ]
+  },
+  {
+    "case_id": "r03",
+    "expected": {
+      "title": "Anne of Green Gables",
+      "author": "L. M. Montgomery"
+    },
+    "candidate_ids": [
+      "t5",
+      "a9",
+      "j1"
+    ]
+  }
+]

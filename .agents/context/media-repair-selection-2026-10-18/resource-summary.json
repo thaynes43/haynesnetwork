@@ -1,0 +1,108 @@
+[
+  {
+    "model": "muse-glimmer:30b",
+    "case_id": "r01",
+    "case_wall_seconds": 11.529293852858245,
+    "chat_wall_seconds": [
+      5.717973810154945,
+      1.095231947954744,
+      1.0975258969701827,
+      0.8754985011182725
+    ],
+    "max_observed_gpu_mib": 17726,
+    "max_observed_cgroup_ram_bytes": 37953679360,
+    "prompt_tokens": 3644,
+    "generated_tokens": 96,
+    "server_load_ns": 4676277063,
+    "server_prompt_ns": 1276733000,
+    "server_eval_ns": 2275793000
+  },
+  {
+    "model": "muse-glimmer:30b",
+    "case_id": "r02",
+    "case_wall_seconds": 6.8561050039716065,
+    "chat_wall_seconds": [
+      1.036768889054656,
+      0.7999017769470811,
+      1.1079577687196434,
+      1.0905278585851192
+    ],
+    "max_observed_gpu_mib": 17726,
+    "max_observed_cgroup_ram_bytes": 38193197056,
+    "prompt_tokens": 2791,
+    "generated_tokens": 96,
+    "server_load_ns": 2628007,
+    "server_prompt_ns": 1192576000,
+    "server_eval_ns": 2193250999
+  },
+  {
+    "model": "muse-glimmer:30b",
+    "case_id": "r03",
+    "case_wall_seconds": 6.65345689561218,
+    "chat_wall_seconds": [
+      1.0018008281476796,
+      1.0656777448020875,
+      0.8418148872442544,
+      1.1134293940849602
+    ],
+    "max_observed_gpu_mib": 17726,
+    "max_observed_cgroup_ram_bytes": 38477189120,
+    "prompt_tokens": 3230,
+    "generated_tokens": 96,
+    "server_load_ns": 2974681,
+    "server_prompt_ns": 1220720000,
+    "server_eval_ns": 2196152000
+  },
+  {
+    "model": "qwen3.8:27b",
+    "case_id": "r01",
+    "case_wall_seconds": 9.483821997884661,
+    "chat_wall_seconds": [
+      5.491324617061764,
+      0.8902350999414921,
+      0.9944192147813737
+    ],
+    "max_observed_gpu_mib": 18674,
+    "max_observed_cgroup_ram_bytes": 38740373504,
+    "prompt_tokens": 2258,
+    "generated_tokens": 72,
+    "server_load_ns": 4687077180,
+    "server_prompt_ns": 1497068999,
+    "server_eval_ns": 805344000
+  },
+  {
+    "model": "qwen3.8:27b",
+    "case_id": "r02",
+    "case_wall_seconds": 4.733839617110789,
+    "chat_wall_seconds": [
+      1.1361559168435633,
+      0.5921769961714745,
+      1.0039746197871864
+    ],
+    "max_observed_gpu_mib": 18674,
+    "max_observed_cgroup_ram_bytes": 39767654400,
+    "prompt_tokens": 1408,
+    "generated_tokens": 70,
+    "server_load_ns": 2720364,
+    "server_prompt_ns": 1124260000,
+    "server_eval_ns": 735347000
+  },
+  {
+    "model": "qwen3.8:27b",
+    "case_id": "r03",
+    "case_wall_seconds": 6.349232237320393,
+    "chat_wall_seconds": [
+      1.1038129650987685,
+      0.8602996370755136,
+      0.5707038263790309,
+      1.0118795298039913
+    ],
+    "max_observed_gpu_mib": 18674,
+    "max_observed_cgroup_ram_bytes": 41089773568,
+    "prompt_tokens": 3196,
+    "generated_tokens": 97,
+    "server_load_ns": 2494534,
+    "server_prompt_ns": 1647987998,
+    "server_eval_ns": 945629000
+  }
+]

@@ -1,0 +1,17 @@
+{
+  "prerequisite": "PR998 9ed8462d; independent primary-text proof in prior IDENTITY.md",
+  "arrangements": "All three contrived, not new historical cases",
+  "derived_title": "Wrong-work body and all entries preserved except title in content.opf; repackaged isolated copy only",
+  "derived_damage": "First2048 bytes of correct-work EPUB, central directory missing",
+  "original_pristine_hashes": [
+    "c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc",
+    "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa"
+  ],
+  "fixtures": {
+    "base-1.epub": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa",
+    "base-0.epub": "c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc",
+    "derived-title.epub": "6a64109c380d82204785005cb200bbd7fe2ce3f95c34ed8d407d9ca3a8920392",
+    "derived-damage.epub": "f6f0c5ef5a2b342f026201dfeb63acbbe003e6336bd6bdf9d23f84c84897a1b8"
+  },
+  "mapping_sha256": "75f6919c49f7c745253c8853f425cf5455430ad714ee1baeebb48e0dbe501b98"
+}

@@ -1,0 +1,372 @@
+{
+  "case_id": "r02",
+  "model": "qwen3.8:27b",
+  "turns": [
+    {
+      "request": {
+        "model": "qwen3.8:27b",
+        "stream": false,
+        "think": false,
+        "keep_alive": "2m",
+        "format": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "inspect",
+                "select",
+                "abstain"
+              ]
+            },
+            "candidate_id": {
+              "type": "string"
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 12
+            }
+          },
+          "required": [
+            "action",
+            "candidate_id",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "temperature": 0,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 256,
+          "stop": [
+            "<|im_end|>"
+          ]
+        },
+        "messages": [
+          {
+            "role": "system",
+            "content": "Choose an intact document containing the requested literary work from opaque candidates. You have the actual read-only inspect tool: return action inspect with candidate_id and evidence [] to inspect one candidate. The next user message gives real tool observations. Inspect candidates as needed, at most three inspections. Metadata can be misleading; actual narrative body matters, and a sequel is a different work. Require structural integrity and body evidence before selecting. Return action select with the candidate ID and evidence references such as o2.integrity and o2.body from returned observations. If none is an evidenced valid candidate, return action abstain, candidate_id empty string, and evidence references supporting rejection. Never invent IDs or observations. No filename/path or external tool access. Every response must follow the strict action schema. You have at most four turns, including final action; do not inspect on the final turn."
+          },
+          {
+            "role": "user",
+            "content": "{\"candidate_ids\": [\"h6\", \"q8\", \"b3\"], \"case_id\": \"r02\", \"expected\": {\"author\": \"L. M. Montgomery\", \"title\": \"Anne of Green Gables\"}}"
+          }
+        ]
+      },
+      "response": {
+        "model": "qwen3.8:27b",
+        "created_at": "2026-10-18T17:36:01.802787809Z",
+        "message": {
+          "role": "assistant",
+          "content": "{\"action\": \"inspect\", \"candidate_id\": \"h6\", \"evidence\": []}"
+        },
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 982233327,
+        "load_duration": 603803,
+        "prompt_eval_count": 238,
+        "prompt_eval_cached_count": 0,
+        "prompt_eval_duration": 326722000,
+        "eval_count": 21,
+        "eval_duration": 199307000
+      },
+      "receipt": {
+        "wall_seconds": 1.1361559168435633,
+        "exit_code": 0,
+        "stderr": "",
+        "http_status": 200,
+        "raw_body": "{\"model\":\"qwen3.8:27b\",\"created_at\":\"2026-10-18T17:36:01.802787809Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"action\\\": \\\"inspect\\\", \\\"candidate_id\\\": \\\"h6\\\", \\\"evidence\\\": []}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":982233327,\"load_duration\":603803,\"prompt_eval_count\":238,\"prompt_eval_cached_count\":0,\"prompt_eval_duration\":326722000,\"eval_count\":21,\"eval_duration\":199307000}"
+      },
+      "before": {
+        "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 7331, /usr/lib/ollama/llama-server, 18662 MiB",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T17:36:00.666727+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 18674 MiB, 5452 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 7331, /usr/lib/ollama/llama-server, 18662 MiB\n38739550208\nusage_usec 1521746036\nuser_usec 1305591173\nsystem_usec 216154862\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         2029496 kB\nMemAvailable:   118795044 kB\n",
+        "stderr": ""
+      },
+      "after": {
+        "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 7331, /usr/lib/ollama/llama-server, 18662 MiB",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T17:36:02.107328+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 18674 MiB, 5452 MiB, 22 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 7331, /usr/lib/ollama/llama-server, 18662 MiB\n39138152448\nusage_usec 1537236151\nuser_usec 1320523134\nsystem_usec 216713017\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         1338136 kB\nMemAvailable:   118109544 kB\n",
+        "stderr": ""
+      }
+    },
+    {
+      "request": {
+        "model": "qwen3.8:27b",
+        "stream": false,
+        "think": false,
+        "keep_alive": "2m",
+        "format": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "inspect",
+                "select",
+                "abstain"
+              ]
+            },
+            "candidate_id": {
+              "type": "string"
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 12
+            }
+          },
+          "required": [
+            "action",
+            "candidate_id",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "temperature": 0,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 256,
+          "stop": [
+            "<|im_end|>"
+          ]
+        },
+        "messages": [
+          {
+            "role": "system",
+            "content": "Choose an intact document containing the requested literary work from opaque candidates. You have the actual read-only inspect tool: return action inspect with candidate_id and evidence [] to inspect one candidate. The next user message gives real tool observations. Inspect candidates as needed, at most three inspections. Metadata can be misleading; actual narrative body matters, and a sequel is a different work. Require structural integrity and body evidence before selecting. Return action select with the candidate ID and evidence references such as o2.integrity and o2.body from returned observations. If none is an evidenced valid candidate, return action abstain, candidate_id empty string, and evidence references supporting rejection. Never invent IDs or observations. No filename/path or external tool access. Every response must follow the strict action schema. You have at most four turns, including final action; do not inspect on the final turn."
+          },
+          {
+            "role": "user",
+            "content": "{\"candidate_ids\": [\"h6\", \"q8\", \"b3\"], \"case_id\": \"r02\", \"expected\": {\"author\": \"L. M. Montgomery\", \"title\": \"Anne of Green Gables\"}}"
+          },
+          {
+            "role": "assistant",
+            "content": "{\"action\": \"inspect\", \"candidate_id\": \"h6\", \"evidence\": []}"
+          },
+          {
+            "role": "user",
+            "content": "{\"tool_result\": {\"candidate_id\": \"h6\", \"integrity\": {\"package_manifest_spine_xhtml\": \"unverified\", \"zip_crc\": \"fail_or_unreadable\"}, \"observation_id\": \"o1\"}, \"turns_remaining\": 3}"
+          }
+        ]
+      },
+      "response": {
+        "model": "qwen3.8:27b",
+        "created_at": "2026-10-18T17:36:03.093154238Z",
+        "message": {
+          "role": "assistant",
+          "content": "{\"action\": \"inspect\", \"candidate_id\": \"q8\", \"evidence\": []}"
+        },
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 464592608,
+        "load_duration": 1525407,
+        "prompt_eval_count": 327,
+        "prompt_eval_cached_count": 258,
+        "prompt_eval_duration": 265199000,
+        "eval_count": 21,
+        "eval_duration": 194333000
+      },
+      "receipt": {
+        "wall_seconds": 0.5921769961714745,
+        "exit_code": 0,
+        "stderr": "",
+        "http_status": 200,
+        "raw_body": "{\"model\":\"qwen3.8:27b\",\"created_at\":\"2026-10-18T17:36:03.093154238Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"action\\\": \\\"inspect\\\", \\\"candidate_id\\\": \\\"q8\\\", \\\"evidence\\\": []}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":464592608,\"load_duration\":1525407,\"prompt_eval_count\":327,\"prompt_eval_cached_count\":258,\"prompt_eval_duration\":265199000,\"eval_count\":21,\"eval_duration\":194333000}"
+      },
+      "before": {
+        "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 7331, /usr/lib/ollama/llama-server, 18662 MiB",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T17:36:02.492016+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 18674 MiB, 5452 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 7331, /usr/lib/ollama/llama-server, 18662 MiB\n39139594240\nusage_usec 1537350838\nuser_usec 1320561853\nsystem_usec 216788984\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         1241020 kB\nMemAvailable:   118015184 kB\n",
+        "stderr": ""
+      },
+      "after": {
+        "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 7331, /usr/lib/ollama/llama-server, 18662 MiB",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T17:36:03.376636+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 18674 MiB, 5452 MiB, 19 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 7331, /usr/lib/ollama/llama-server, 18662 MiB\n39452409856\nusage_usec 1549934894\nuser_usec 1332889120\nsystem_usec 217045774\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         1012672 kB\nMemAvailable:   117789380 kB\n",
+        "stderr": ""
+      }
+    },
+    {
+      "request": {
+        "model": "qwen3.8:27b",
+        "stream": false,
+        "think": false,
+        "keep_alive": "2m",
+        "format": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "inspect",
+                "select",
+                "abstain"
+              ]
+            },
+            "candidate_id": {
+              "type": "string"
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 12
+            }
+          },
+          "required": [
+            "action",
+            "candidate_id",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "temperature": 0,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 256,
+          "stop": [
+            "<|im_end|>"
+          ]
+        },
+        "messages": [
+          {
+            "role": "system",
+            "content": "Choose an intact document containing the requested literary work from opaque candidates. You have the actual read-only inspect tool: return action inspect with candidate_id and evidence [] to inspect one candidate. The next user message gives real tool observations. Inspect candidates as needed, at most three inspections. Metadata can be misleading; actual narrative body matters, and a sequel is a different work. Require structural integrity and body evidence before selecting. Return action select with the candidate ID and evidence references such as o2.integrity and o2.body from returned observations. If none is an evidenced valid candidate, return action abstain, candidate_id empty string, and evidence references supporting rejection. Never invent IDs or observations. No filename/path or external tool access. Every response must follow the strict action schema. You have at most four turns, including final action; do not inspect on the final turn."
+          },
+          {
+            "role": "user",
+            "content": "{\"candidate_ids\": [\"h6\", \"q8\", \"b3\"], \"case_id\": \"r02\", \"expected\": {\"author\": \"L. M. Montgomery\", \"title\": \"Anne of Green Gables\"}}"
+          },
+          {
+            "role": "assistant",
+            "content": "{\"action\": \"inspect\", \"candidate_id\": \"h6\", \"evidence\": []}"
+          },
+          {
+            "role": "user",
+            "content": "{\"tool_result\": {\"candidate_id\": \"h6\", \"integrity\": {\"package_manifest_spine_xhtml\": \"unverified\", \"zip_crc\": \"fail_or_unreadable\"}, \"observation_id\": \"o1\"}, \"turns_remaining\": 3}"
+          },
+          {
+            "role": "assistant",
+            "content": "{\"action\": \"inspect\", \"candidate_id\": \"q8\", \"evidence\": []}"
+          },
+          {
+            "role": "user",
+            "content": "{\"tool_result\": {\"body\": {\"ending\": \"affectionate heart. \\\"Tell dear Rebecca Dew I'll never forget her and that I'm coming back to see you all every summer.\\\" \\\"We have memories of you that nothing can take away,\\\" sobbed Aunt Chatty. \\\"Nothing,\\\" said Aunt Kate, emphatically. But as Anne drove away from Windy Poplars the last message from it was a large white bath-towel fluttering frantically from the tower window. Rebecca Dew was waving it. THE END\", \"middle\": \"windows of The Evergreens as she drove away from Windy Poplars . . . an Elizabeth with tears in her eyes who felt as if everything that made life worth living had gone out of her life for the time being and that she was the very Lizziest of Lizzies. But when the livery sleigh vanished from her sight around the corner of Spook's Lane Elizabeth went and knelt down\", \"opening\": \"WindyPop book 1 (Letter from Anne Shirley, B.A., Principal of Summerside High School, to Gilbert Blythe, medical student at Redmond College, Kingsport.) \\\"Windy Poplars, \\\"Spook's Lane, \\\"S'side, P. E. I., \\\"Monday, September 12th. \\\"DEAREST: \\\"Isn't that an address! Did you ever hear anything so delicious? Windy Poplars is the name of my new home and I love it. I also love Spook's Lane, which has no legal existence. It should be Trent Street but it is never called Trent Street except on the rare occasions when it is mentioned in the Weekly Courier . . . and then people look at each other and say, 'Where on earth is that?' Spook's Lane it is . . . although for what reason I cannot tell you. I have already asked Rebecca Dew about it, but all she can say is that\"}, \"candidate_id\": \"q8\", \"integrity\": {\"package_manifest_spine_xhtml\": \"pass\", \"spine_items\": 53, \"zip_crc\": \"pass\"}, \"metadata\": {\"creators\": [\"L. M. Montgomery\"], \"titles\": [\"Anne of Green Gables\"]}, \"observation_id\": \"o2\"}, \"turns_remaining\": 2}"
+          }
+        ]
+      },
+      "response": {
+        "model": "qwen3.8:27b",
+        "created_at": "2026-10-18T17:36:04.809308249Z",
+        "message": {
+          "role": "assistant",
+          "content": "{\"action\": \"abstain\", \"candidate_id\": \"\", \"evidence\": [\"o2.body\", \"o2.metadata\"]}"
+        },
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 879943725,
+        "load_duration": 591154,
+        "prompt_eval_count": 843,
+        "prompt_eval_cached_count": 347,
+        "prompt_eval_duration": 532339000,
+        "eval_count": 28,
+        "eval_duration": 341707000
+      },
+      "receipt": {
+        "wall_seconds": 1.0039746197871864,
+        "exit_code": 0,
+        "stderr": "",
+        "http_status": 200,
+        "raw_body": "{\"model\":\"qwen3.8:27b\",\"created_at\":\"2026-10-18T17:36:04.809308249Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"action\\\": \\\"abstain\\\", \\\"candidate_id\\\": \\\"\\\", \\\"evidence\\\": [\\\"o2.body\\\", \\\"o2.metadata\\\"]}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":879943725,\"load_duration\":591154,\"prompt_eval_count\":843,\"prompt_eval_cached_count\":347,\"prompt_eval_duration\":532339000,\"eval_count\":28,\"eval_duration\":341707000}"
+      },
+      "before": {
+        "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 7331, /usr/lib/ollama/llama-server, 18662 MiB",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T17:36:03.794608+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 18674 MiB, 5452 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 7331, /usr/lib/ollama/llama-server, 18662 MiB\n39452905472\nusage_usec 1550044490\nuser_usec 1332945846\nsystem_usec 217098643\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:          990032 kB\nMemAvailable:   117768152 kB\n",
+        "stderr": ""
+      },
+      "after": {
+        "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 7331, /usr/lib/ollama/llama-server, 18662 MiB",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T17:36:05.057523+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 18674 MiB, 5452 MiB, 39 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 7331, /usr/lib/ollama/llama-server, 18662 MiB\n39767654400\nusage_usec 1564339533\nuser_usec 1346837922\nsystem_usec 217501610\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:          942360 kB\nMemAvailable:   117720428 kB\n",
+        "stderr": ""
+      }
+    }
+  ],
+  "observations": [
+    {
+      "observation_id": "o1",
+      "candidate_id": "h6",
+      "integrity": {
+        "zip_crc": "fail_or_unreadable",
+        "package_manifest_spine_xhtml": "unverified"
+      }
+    },
+    {
+      "observation_id": "o2",
+      "candidate_id": "q8",
+      "integrity": {
+        "zip_crc": "pass",
+        "package_manifest_spine_xhtml": "pass",
+        "spine_items": 53
+      },
+      "metadata": {
+        "titles": [
+          "Anne of Green Gables"
+        ],
+        "creators": [
+          "L. M. Montgomery"
+        ]
+      },
+      "body": {
+        "opening": "WindyPop book 1 (Letter from Anne Shirley, B.A., Principal of Summerside High School, to Gilbert Blythe, medical student at Redmond College, Kingsport.) \"Windy Poplars, \"Spook's Lane, \"S'side, P. E. I., \"Monday, September 12th. \"DEAREST: \"Isn't that an address! Did you ever hear anything so delicious? Windy Poplars is the name of my new home and I love it. I also love Spook's Lane, which has no legal existence. It should be Trent Street but it is never called Trent Street except on the rare occasions when it is mentioned in the Weekly Courier . . . and then people look at each other and say, 'Where on earth is that?' Spook's Lane it is . . . although for what reason I cannot tell you. I have already asked Rebecca Dew about it, but all she can say is that",
+        "middle": "windows of The Evergreens as she drove away from Windy Poplars . . . an Elizabeth with tears in her eyes who felt as if everything that made life worth living had gone out of her life for the time being and that she was the very Lizziest of Lizzies. But when the livery sleigh vanished from her sight around the corner of Spook's Lane Elizabeth went and knelt down",
+        "ending": "affectionate heart. \"Tell dear Rebecca Dew I'll never forget her and that I'm coming back to see you all every summer.\" \"We have memories of you that nothing can take away,\" sobbed Aunt Chatty. \"Nothing,\" said Aunt Kate, emphatically. But as Anne drove away from Windy Poplars the last message from it was a large white bath-towel fluttering frantically from the tower window. Rebecca Dew was waving it. THE END"
+      }
+    }
+  ],
+  "final": {
+    "action": "abstain",
+    "candidate_id": "",
+    "evidence": [
+      "o2.body",
+      "o2.metadata"
+    ]
+  },
+  "wall_seconds": 4.733839617110789,
+  "assessment": {
+    "correct_selection": false,
+    "correct_abstention": false,
+    "abstention": true,
+    "error": false,
+    "unsafe_categories": [],
+    "references_resolve": true,
+    "evidence_supported": false,
+    "selected": null
+  },
+  "execution": {
+    "status": "no_selection"
+  }
+}
