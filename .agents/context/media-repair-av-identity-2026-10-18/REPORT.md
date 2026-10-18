@@ -45,7 +45,7 @@ MickeyE46's second title/content, whole-file health, current/historical whole-so
 
 ## Cost, timing and checks
 
-Exactly14 new chat calls:2 extraction-only OCR calls plus12 diagnostic calls (3 cases ×2 arms ×2 exact models). The2 cached Mickey OCR calls were incurred and recorded in PR1000 and are not counted again as new/free inference. A fresh cache miss would need OCR work; no claim of cost-free extraction. New Pokémon OCR: Qwen6.103s/355 prompt/10 output tokens; Muse5.689s/490 prompt/6 output tokens. No paid external inference, token/energy/cash or driving-subscription cost was metered.
+Exactly14 new chat calls:2 extraction-only OCR calls plus12 diagnostic calls (3 cases ×2 arms ×2 exact models). The2 cached Mickey OCR calls were incurred and recorded in PR1000 and are not counted again as new/free inference. A fresh cache miss would need OCR work; no claim of cost-free extraction. New Pokémon OCR: Qwen6.103s/355 prompt/10 output tokens; Muse5.689s/490 prompt/6 output tokens. No paid external inference API was used. Energy/cash and driving-subscription usage were not metered; served model token counts are recorded below.
 
 | Run | HTTP seconds a01/a02/a03 | Prompt / generated tokens | Max sampled GPU MiB | Max sampled cgroup RAM bytes |
 |---|---|---|---|---|
