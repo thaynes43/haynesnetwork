@@ -1,0 +1,40 @@
+{
+  "a01": {
+    "image_sha256": "7288f799bf1e98c53157edec032261768e34c12d96cabc60b87622c7dda42cec",
+    "readings": [
+      {
+        "origin": "cached_PR1000",
+        "model": "qwen3.8",
+        "request_sha256": "e60d2852c13c960b8cd207219e037eb51cb816ae2c6f076ec0da5ff451419691",
+        "response_file_sha256": "44fed0b9955030bab8d8cde98e2a279be8eb73fecf900b2f44030156c92bdf2f",
+        "raw_text": "Happy Hot Diggity\nDog Holiday!"
+      },
+      {
+        "origin": "cached_PR1000",
+        "model": "muse-glimmer",
+        "request_sha256": "dc0fad4dc1682ebd864570a3447677038704c629a20a8c61f761c3ffa6e476cb",
+        "response_file_sha256": "8b4fdb5539ac25f834c5d32dd2a5c5849b3d504993098664e75ecdb0b122408e",
+        "raw_text": "Happy Hot Diggity Dog Holiday!"
+      }
+    ]
+  },
+  "a03": {
+    "image_sha256": "4d59f221a7fd5bedc16d9f2a30d7fbe55516525c8366bbcb385b8082c9d0e2b2",
+    "readings": [
+      {
+        "origin": "new_transcription_only",
+        "model": "qwen3.8",
+        "request_sha256": "c378c4985562abfe2b329718591938a1e3a32de5dfb7352652d7b350dc7b06ed",
+        "response_file_sha256": "36511cc73306f1c313c4b91eb2112d4ad2547ddf7c71de8c144506f1ae10dc3a",
+        "raw_text": ""
+      },
+      {
+        "origin": "new_transcription_only",
+        "model": "muse-glimmer",
+        "request_sha256": "ebf63dd2ffe352933b3e69e12c333c49dbbc76b42d2f4ccd48d17fd2e2ecd39f",
+        "response_file_sha256": "ee5c6829c6d265001fcc14d0336a595c8b582a79b5eba02cba1c24bce0cc7279",
+        "raw_text": ""
+      }
+    ]
+  }
+}

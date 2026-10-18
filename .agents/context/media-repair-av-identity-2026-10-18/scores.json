@@ -1,0 +1,418 @@
+[
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": false,
+      "decode": false,
+      "compatibility": true
+    },
+    "abstentions": [
+      "decode"
+    ],
+    "unsupported_assertions": [
+      "identity:mismatch"
+    ],
+    "references_resolve": true,
+    "citation_coverage": true,
+    "false_mismatch": true,
+    "identity_covered": true,
+    "variant": "baseline",
+    "model": "muse-glimmer:30b",
+    "case_id": "a01",
+    "proposal": {
+      "identity": "mismatch",
+      "decode": "abstain",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "streams",
+        "decode.primary",
+        "decode.other",
+        "client",
+        "subtitle"
+      ]
+    },
+    "wall_seconds": 7.3315827418118715,
+    "prompt_tokens": 1039,
+    "generated_tokens": 47
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": false,
+      "compatibility": true
+    },
+    "abstentions": [
+      "decode"
+    ],
+    "unsupported_assertions": [],
+    "references_resolve": true,
+    "citation_coverage": true,
+    "false_mismatch": false,
+    "identity_covered": true,
+    "variant": "baseline",
+    "model": "muse-glimmer:30b",
+    "case_id": "a02",
+    "proposal": {
+      "identity": "mismatch",
+      "decode": "abstain",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "streams",
+        "subtitle",
+        "decode.primary",
+        "decode.other",
+        "client"
+      ]
+    },
+    "wall_seconds": 2.3170446497388184,
+    "prompt_tokens": 1029,
+    "generated_tokens": 47
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": false,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity",
+      "decode"
+    ],
+    "unsupported_assertions": [],
+    "references_resolve": true,
+    "citation_coverage": true,
+    "false_mismatch": false,
+    "identity_covered": false,
+    "variant": "baseline",
+    "model": "muse-glimmer:30b",
+    "case_id": "a03",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "abstain",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "streams",
+        "decode.primary",
+        "client",
+        "subtitle",
+        "subtitle"
+      ]
+    },
+    "wall_seconds": 2.4320642449893057,
+    "prompt_tokens": 899,
+    "generated_tokens": 47
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": false,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsupported_assertions": [],
+    "references_resolve": true,
+    "citation_coverage": true,
+    "false_mismatch": false,
+    "identity_covered": false,
+    "variant": "baseline",
+    "model": "qwen3.8:27b",
+    "case_id": "a01",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "subtitle",
+        "decode.primary",
+        "streams",
+        "client"
+      ]
+    },
+    "wall_seconds": 7.016334699932486,
+    "prompt_tokens": 1037,
+    "generated_tokens": 67
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": false,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsupported_assertions": [],
+    "references_resolve": true,
+    "citation_coverage": true,
+    "false_mismatch": false,
+    "identity_covered": false,
+    "variant": "baseline",
+    "model": "qwen3.8:27b",
+    "case_id": "a02",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "subtitle",
+        "decode.primary",
+        "streams",
+        "client"
+      ]
+    },
+    "wall_seconds": 2.2478294312022626,
+    "prompt_tokens": 1029,
+    "generated_tokens": 67
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsupported_assertions": [],
+    "references_resolve": true,
+    "citation_coverage": false,
+    "false_mismatch": false,
+    "identity_covered": false,
+    "variant": "baseline",
+    "model": "qwen3.8:27b",
+    "case_id": "a03",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "streams",
+        "decode.primary",
+        "client",
+        "subtitle"
+      ]
+    },
+    "wall_seconds": 2.1700027151964605,
+    "prompt_tokens": 831,
+    "generated_tokens": 62
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": false,
+      "compatibility": true
+    },
+    "abstentions": [
+      "decode"
+    ],
+    "unsupported_assertions": [],
+    "references_resolve": true,
+    "citation_coverage": true,
+    "false_mismatch": false,
+    "identity_covered": true,
+    "variant": "tool",
+    "model": "muse-glimmer:30b",
+    "case_id": "a01",
+    "proposal": {
+      "identity": "match",
+      "decode": "abstain",
+      "compatibility": "supported",
+      "evidence": [
+        "ocr",
+        "streams",
+        "client",
+        "decode.primary",
+        "decode.other",
+        "frame"
+      ]
+    },
+    "wall_seconds": 2.38279331009835,
+    "prompt_tokens": 1061,
+    "generated_tokens": 45
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": false,
+      "compatibility": true
+    },
+    "abstentions": [
+      "decode"
+    ],
+    "unsupported_assertions": [],
+    "references_resolve": true,
+    "citation_coverage": true,
+    "false_mismatch": false,
+    "identity_covered": true,
+    "variant": "tool",
+    "model": "muse-glimmer:30b",
+    "case_id": "a02",
+    "proposal": {
+      "identity": "mismatch",
+      "decode": "abstain",
+      "compatibility": "supported",
+      "evidence": [
+        "ocr",
+        "streams",
+        "client",
+        "decode.primary",
+        "decode.other",
+        "frame"
+      ]
+    },
+    "wall_seconds": 2.4683050471358,
+    "prompt_tokens": 1051,
+    "generated_tokens": 46
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsupported_assertions": [],
+    "references_resolve": true,
+    "citation_coverage": true,
+    "false_mismatch": false,
+    "identity_covered": false,
+    "variant": "tool",
+    "model": "muse-glimmer:30b",
+    "case_id": "a03",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "streams",
+        "decode.primary",
+        "client",
+        "subtitle",
+        "ocr"
+      ]
+    },
+    "wall_seconds": 2.4499287670478225,
+    "prompt_tokens": 913,
+    "generated_tokens": 45
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": false,
+      "decode": false,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity",
+      "decode"
+    ],
+    "unsupported_assertions": [],
+    "references_resolve": true,
+    "citation_coverage": true,
+    "false_mismatch": false,
+    "identity_covered": false,
+    "variant": "tool",
+    "model": "qwen3.8:27b",
+    "case_id": "a01",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "abstain",
+      "compatibility": "supported",
+      "evidence": [
+        "ocr",
+        "frame",
+        "decode.primary",
+        "streams",
+        "client"
+      ]
+    },
+    "wall_seconds": 2.379400328733027,
+    "prompt_tokens": 1060,
+    "generated_tokens": 69
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": false,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsupported_assertions": [],
+    "references_resolve": true,
+    "citation_coverage": true,
+    "false_mismatch": false,
+    "identity_covered": false,
+    "variant": "tool",
+    "model": "qwen3.8:27b",
+    "case_id": "a02",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "ocr",
+        "frame",
+        "decode.primary",
+        "streams",
+        "client"
+      ]
+    },
+    "wall_seconds": 2.388284521177411,
+    "prompt_tokens": 1052,
+    "generated_tokens": 67
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsupported_assertions": [],
+    "references_resolve": true,
+    "citation_coverage": false,
+    "false_mismatch": false,
+    "identity_covered": false,
+    "variant": "tool",
+    "model": "qwen3.8:27b",
+    "case_id": "a03",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "streams",
+        "decode.primary",
+        "client",
+        "subtitle"
+      ]
+    },
+    "wall_seconds": 2.277621132787317,
+    "prompt_tokens": 846,
+    "generated_tokens": 62
+  }
+]

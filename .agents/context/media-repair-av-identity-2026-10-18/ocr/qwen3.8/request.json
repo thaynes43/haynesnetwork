@@ -1,0 +1,44 @@
+{
+  "request_without_image_bytes": {
+    "model": "qwen3.8:27b",
+    "stream": false,
+    "think": false,
+    "keep_alive": "2m",
+    "format": {
+      "type": "object",
+      "properties": {
+        "visible_text": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "visible_text"
+      ],
+      "additionalProperties": false
+    },
+    "options": {
+      "temperature": 0,
+      "seed": 42,
+      "num_ctx": 8192,
+      "num_predict": 128,
+      "stop": [
+        "<|im_end|>"
+      ]
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "Transcribe only readable text literally visible in this image. If there is no readable text, return an empty string. Do not name objects, infer the episode, or guess. Return only the schema object.",
+        "images": [
+          {
+            "artifact": "p-frame-600-0.bin",
+            "sha256": "4d59f221a7fd5bedc16d9f2a30d7fbe55516525c8366bbcb385b8082c9d0e2b2",
+            "bytes": 302665
+          }
+        ]
+      }
+    ]
+  },
+  "full_request_sha256": "c378c4985562abfe2b329718591938a1e3a32de5dfb7352652d7b350dc7b06ed"
+}

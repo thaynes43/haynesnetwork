@@ -1,0 +1,7 @@
+{
+  "wall_seconds": 0.09891047002747655,
+  "exit_code": 0,
+  "stderr": "",
+  "http_status": 200,
+  "raw_body": "{\"model\":\"qwen3.8:27b\",\"created_at\":\"2026-10-18T18:18:39.095495328Z\",\"response\":\"\",\"done\":true,\"done_reason\":\"unload\"}"
+}

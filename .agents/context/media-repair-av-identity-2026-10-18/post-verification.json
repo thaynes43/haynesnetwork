@@ -1,0 +1,80 @@
+{
+  "checks": [
+    {
+      "model": "qwen3.8",
+      "variant": "baseline",
+      "case_id": "a01",
+      "wire_and_image_hash_match": true
+    },
+    {
+      "model": "muse-glimmer",
+      "variant": "baseline",
+      "case_id": "a01",
+      "wire_and_image_hash_match": true
+    },
+    {
+      "model": "qwen3.8",
+      "variant": "baseline",
+      "case_id": "a02",
+      "wire_and_image_hash_match": true
+    },
+    {
+      "model": "muse-glimmer",
+      "variant": "baseline",
+      "case_id": "a02",
+      "wire_and_image_hash_match": true
+    },
+    {
+      "model": "qwen3.8",
+      "variant": "baseline",
+      "case_id": "a03",
+      "wire_and_image_hash_match": true
+    },
+    {
+      "model": "muse-glimmer",
+      "variant": "baseline",
+      "case_id": "a03",
+      "wire_and_image_hash_match": true
+    },
+    {
+      "model": "qwen3.8",
+      "variant": "tool",
+      "case_id": "a01",
+      "wire_and_image_hash_match": true
+    },
+    {
+      "model": "muse-glimmer",
+      "variant": "tool",
+      "case_id": "a01",
+      "wire_and_image_hash_match": true
+    },
+    {
+      "model": "qwen3.8",
+      "variant": "tool",
+      "case_id": "a02",
+      "wire_and_image_hash_match": true
+    },
+    {
+      "model": "muse-glimmer",
+      "variant": "tool",
+      "case_id": "a02",
+      "wire_and_image_hash_match": true
+    },
+    {
+      "model": "qwen3.8",
+      "variant": "tool",
+      "case_id": "a03",
+      "wire_and_image_hash_match": true
+    },
+    {
+      "model": "muse-glimmer",
+      "variant": "tool",
+      "case_id": "a03",
+      "wire_and_image_hash_match": true
+    }
+  ],
+  "both_frozen_manifests_match": true,
+  "prior_cases_truth_and_images_unchanged": true,
+  "only_tool_delta_is_ocr_observation": true,
+  "original_media_opened": false
+}

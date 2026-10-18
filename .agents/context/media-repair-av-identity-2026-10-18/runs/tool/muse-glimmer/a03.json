@@ -1,0 +1,130 @@
+{
+  "model": "muse-glimmer:30b",
+  "variant": "tool",
+  "case_id": "a03",
+  "request_without_image_bytes": {
+    "model": "muse-glimmer:30b",
+    "stream": false,
+    "think": false,
+    "keep_alive": "2m",
+    "format": {
+      "type": "object",
+      "properties": {
+        "identity": {
+          "type": "string",
+          "enum": [
+            "match",
+            "mismatch",
+            "abstain"
+          ]
+        },
+        "decode": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "abstain"
+          ]
+        },
+        "compatibility": {
+          "type": "string",
+          "enum": [
+            "supported",
+            "unsupported",
+            "abstain"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "frame",
+              "streams",
+              "decode.primary",
+              "decode.other",
+              "subtitle",
+              "client",
+              "ocr"
+            ]
+          },
+          "maxItems": 6
+        }
+      },
+      "required": [
+        "identity",
+        "decode",
+        "compatibility",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "options": {
+      "temperature": 0,
+      "seed": 42,
+      "num_ctx": 8192,
+      "num_predict": 384,
+      "stop": [
+        "<|eot|>"
+      ]
+    },
+    "messages": [
+      {
+        "role": "system",
+        "content": "Diagnose the requested work from the actual supplied still image and read-only extraction observations, independently on three axes. identity: match/mismatch only if the supplied body/title evidence establishes it; generic scenes/dialogue or metadata alone require abstain. decode: pass only for the primary four-second sample when exit0, empty error log and quota not exhausted; fail only for actual source decode failure without quota exhaustion; otherwise abstain. Other quota-limited samples do not establish original corruption. A passing sample never proves whole-file health. compatibility: supported/unsupported only against the explicitly supplied hypothetical exact direct-play client profile; compare selected streams, not identity. Return the strict schema and cite the observation keys used. No live remedy/action is authorized. You have a still image, not native video/audio access."
+      },
+      {
+        "role": "user",
+        "content": "{\"case_id\": \"a03\", \"observations\": {\"client\": {\"audio_codecs\": [\"aac\"], \"containers\": [\"matroska,webm\"], \"definition\": \"hypothetical exact direct-play profile, not a measured Plex/browser client\", \"max_audio_channels\": 2, \"max_height\": 1080, \"max_width\": 1920, \"subtitles\": \"disabled\", \"video_codec\": \"h264\", \"video_pix_fmt\": \"yuv420p\"}, \"decode\": {\"primary\": {\"bytes_read\": 3666249, \"duration_limit_seconds\": 4, \"exit_code\": 0, \"quota_exhausted\": false, \"stderr\": \"\"}}, \"frame\": {\"type\": \"actual extracted still image; no motion/audio inference\"}, \"ocr\": {\"status\": \"agreement\", \"text\": \"\"}, \"streams\": {\"container\": \"matroska,webm\", \"selected_audio\": {\"channels\": 2, \"codec_name\": \"aac\", \"codec_type\": \"audio\", \"profile\": \"HE-AAC\", \"tags\": {\"language\": \"eng\"}}, \"video\": {\"codec_name\": \"h264\", \"codec_type\": \"video\", \"height\": 480, \"pix_fmt\": \"yuv420p\", \"profile\": \"High\", \"width\": 640}}, \"subtitle\": \"1\\n00:00:03,273 --> 00:00:05,435\\nPikachu,\\nuse your Thunder Shock now!\\n\\n\"}, \"requested_work\": \"Pok\\u00e9mon: Hour of the Houndour\"}",
+        "images": [
+          {
+            "artifact": "p-frame-600-0.bin",
+            "sha256": "4d59f221a7fd5bedc16d9f2a30d7fbe55516525c8366bbcb385b8082c9d0e2b2",
+            "bytes": 302665
+          }
+        ]
+      }
+    ]
+  },
+  "full_request_sha256": "41967bf28f20ea99b7b6bb1aa7c3ddcf1dcd1a66740125b8d136e46b02c0eb27",
+  "response": {
+    "model": "muse-glimmer:30b",
+    "created_at": "2026-10-18T18:19:24.526600934Z",
+    "message": {
+      "role": "assistant",
+      "content": "{\"identity\": \"abstain\", \"decode\": \"pass\", \"compatibility\": \"supported\", \"evidence\": [\"frame\", \"streams\", \"decode.primary\", \"client\", \"subtitle\", \"ocr\"] }"
+    },
+    "done": true,
+    "done_reason": "stop",
+    "total_duration": 2342691064,
+    "load_duration": 7612999,
+    "prompt_eval_count": 913,
+    "prompt_eval_cached_count": 12,
+    "prompt_eval_duration": 866811000,
+    "eval_count": 45,
+    "eval_duration": 1378327000
+  },
+  "receipt": {
+    "wall_seconds": 2.4499287670478225,
+    "exit_code": 0,
+    "stderr": "",
+    "http_status": 200,
+    "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-18T18:19:24.526600934Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"identity\\\": \\\"abstain\\\", \\\"decode\\\": \\\"pass\\\", \\\"compatibility\\\": \\\"supported\\\", \\\"evidence\\\": [\\\"frame\\\", \\\"streams\\\", \\\"decode.primary\\\", \\\"client\\\", \\\"subtitle\\\", \\\"ocr\\\"] }\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":2342691064,\"load_duration\":7612999,\"prompt_eval_count\":913,\"prompt_eval_cached_count\":12,\"prompt_eval_duration\":866811000,\"eval_count\":45,\"eval_duration\":1378327000}"
+  },
+  "before": {
+    "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 12726, /usr/lib/ollama/llama-server, 17764 MiB",
+    "compute_query_exit": 0,
+    "at": "2026-10-18T18:19:22.117112+00:00",
+    "exit_code": 0,
+    "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17776 MiB, 6350 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 12726, /usr/lib/ollama/llama-server, 17764 MiB\n38315020288\nusage_usec 3491838318\nuser_usec 3202397452\nsystem_usec 289440865\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         3055180 kB\nMemAvailable:   119105304 kB\n",
+    "stderr": ""
+  },
+  "after": {
+    "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 12726, /usr/lib/ollama/llama-server, 17764 MiB",
+    "compute_query_exit": 0,
+    "at": "2026-10-18T18:19:24.862811+00:00",
+    "exit_code": 0,
+    "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17776 MiB, 6350 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 12726, /usr/lib/ollama/llama-server, 17764 MiB\n38337335296\nusage_usec 3542621492\nuser_usec 3252834147\nsystem_usec 289787345\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         2973496 kB\nMemAvailable:   119023648 kB\n",
+    "stderr": ""
+  }
+}

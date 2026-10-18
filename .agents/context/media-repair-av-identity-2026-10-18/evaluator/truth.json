@@ -1,0 +1,23 @@
+[
+  {
+    "case_id": "a01",
+    "identity": "match",
+    "decode": "pass",
+    "compatibility": "supported",
+    "identity_basis": "literal current card62 and independent Disney title reference; first story only"
+  },
+  {
+    "case_id": "a02",
+    "identity": "mismatch",
+    "decode": "pass",
+    "compatibility": "supported",
+    "identity_basis": "contrived requested-work swap; visible literal Mickey title is not requested Pokemon work"
+  },
+  {
+    "case_id": "a03",
+    "identity": "abstain",
+    "decode": "pass",
+    "compatibility": "supported",
+    "identity_basis": "only generic Onix still600 and battle subtitle supplied; cannot uniquely prove episode. Separate current900 pack corroborates historical inference but is withheld, not a model fact"
+  }
+]
