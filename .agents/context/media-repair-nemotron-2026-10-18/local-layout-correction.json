@@ -1,0 +1,9 @@
+{
+  "reason": "Legacy manifest copied, canonical v2 relative link omitted; first temporary daemon tags empty; no startup/inference issued. First daemon stopped, zombie parent and closed port verified. Correct only isolated layout by cp-P exact existing relative symlink; unchanged verified bytes. Second temporary daemon activation, first model-load opportunity; no original daemon restart.",
+  "command": "set -e; test \"$(awk '{print $3}' /proc/19859/stat)\" = Z; if (exec 3<>/dev/tcp/127.0.0.1/11435) 2>/dev/null; then exit 4; fi; test \"$(readlink /models/manifests-v2/ollama.com/library/nemotron-3.5-bolt/74b-a9b)\" = ../../../../blobs/sha256-d6d3deeca27134af015d1ab4d57ee655dd6d624dbef4f5dfd18f4b54f76bb554; mkdir -p /tmp/media-repair-nemotron-1018-local/models/manifests-v2/ollama.com/library/nemotron-3.5-bolt; cp -P /models/manifests-v2/ollama.com/library/nemotron-3.5-bolt/74b-a9b /tmp/media-repair-nemotron-1018-local/models/manifests-v2/ollama.com/library/nemotron-3.5-bolt/74b-a9b; readlink /tmp/media-repair-nemotron-1018-local/models/manifests-v2/ollama.com/library/nemotron-3.5-bolt/74b-a9b; sha256sum /tmp/media-repair-nemotron-1018-local/models/manifests-v2/ollama.com/library/nemotron-3.5-bolt/74b-a9b",
+  "stdout": "../../../../blobs/sha256-d6d3deeca27134af015d1ab4d57ee655dd6d624dbef4f5dfd18f4b54f76bb554\nd6d3deeca27134af015d1ab4d57ee655dd6d624dbef4f5dfd18f4b54f76bb554  /tmp/media-repair-nemotron-1018-local/models/manifests-v2/ollama.com/library/nemotron-3.5-bolt/74b-a9b\n",
+  "stderr": "",
+  "exit_code": 0,
+  "prior_load_calls": 4,
+  "semantic_answers": 0
+}

@@ -1,0 +1,7 @@
+{
+  "at": "2026-10-18T22:04:03.126544+00:00",
+  "reason": "Controlled end of measured remote IO leg for explicitly authorized local comparison; not timeout/foreign/OOM/no-progress",
+  "exit_code": 0,
+  "stdout": "OWN_CLIENT 15052 bash -c printf 'CLIENT_PID=%s\\n' \"$$\" >&2; body=$(cat); exec 3<>/dev/tcp/127.0.0.1/11434; printf '%s\\r\\n' 'POST /api/generate HTTP/1.1' 'Host: localhost' 'Content-Type: application/json' 'Connection: close' 'Content-Length: 197' '' >&3; printf '%s' \"$body\" >&3; trap 'kill \"$reader\" 2>/dev/null; exit 143' TERM INT; cat <&3 & reader=$!; wait \"$reader\" media-repair-p2-nemotron-3.5-bolt \n",
+  "stderr": ""
+}

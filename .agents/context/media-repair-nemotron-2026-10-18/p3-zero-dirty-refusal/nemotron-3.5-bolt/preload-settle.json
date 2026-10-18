@@ -1,0 +1,206 @@
+[
+  {
+    "resources": {
+      "snapshot": {
+        "compute_processes": "",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T22:14:38.136669+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51247149056\nusage_usec 3748769136\nuser_usec 3315479954\nsystem_usec 433289181\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5182260 kB\nMemAvailable:   121687276 kB\n",
+        "stderr": ""
+      },
+      "extra": "anon 341159936\nfile 50754228224\nkernel 148328448\nkernel_stack 950272\npagetables 4341760\nsec_pagetables 0\npercpu 9240\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 2404352\nfile_dirty 20480\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 169234432\nactive_anon 171618304\ninactive_file 35525943296\nactive_file 15228293120\nunevictable 0\nslab_reclaimable 141867936\nslab_unreclaimable 1073088\nslab 142941024\nworkingset_refault_anon 0\nworkingset_refault_file 6266068\nworkingset_activate_anon 0\nworkingset_activate_file 3554342\nworkingset_restore_anon 0\nworkingset_restore_file 6\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 18756864\npgsteal 18756864\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 18749264\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 18749264\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 33037487\npgmajfault 1923\npgrefill 8812460\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 5481\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n",
+      "extra_exit": 0
+    },
+    "resident": {
+      "models": []
+    }
+  },
+  {
+    "resources": {
+      "snapshot": {
+        "compute_processes": "",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T22:14:43.709971+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51247169536\nusage_usec 3748915000\nuser_usec 3315548984\nsystem_usec 433366015\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5179164 kB\nMemAvailable:   121684248 kB\n",
+        "stderr": ""
+      },
+      "extra": "anon 340824064\nfile 50754228224\nkernel 148262912\nkernel_stack 950272\npagetables 4292608\nsec_pagetables 0\npercpu 9240\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 2400256\nfile_dirty 20480\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 169234432\nactive_anon 171421696\ninactive_file 35525943296\nactive_file 15228293120\nunevictable 0\nslab_reclaimable 141861920\nslab_unreclaimable 1060752\nslab 142922672\nworkingset_refault_anon 0\nworkingset_refault_file 6266068\nworkingset_activate_anon 0\nworkingset_activate_file 3554342\nworkingset_restore_anon 0\nworkingset_restore_file 6\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 18756864\npgsteal 18756864\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 18749264\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 18749264\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 33056609\npgmajfault 1923\npgrefill 8812460\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 5481\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n",
+      "extra_exit": 0
+    },
+    "resident": {
+      "models": []
+    }
+  },
+  {
+    "resources": {
+      "snapshot": {
+        "compute_processes": "",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T22:14:49.230329+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51247915008\nusage_usec 3749061822\nuser_usec 3315614576\nsystem_usec 433447245\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5221480 kB\nMemAvailable:   121726580 kB\n",
+        "stderr": ""
+      },
+      "extra": "anon 340824064\nfile 50754228224\nkernel 148312064\nkernel_stack 950272\npagetables 4325376\nsec_pagetables 0\npercpu 9240\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 2359296\nfile_dirty 20480\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 169234432\nactive_anon 171413504\ninactive_file 35525943296\nactive_file 15228293120\nunevictable 0\nslab_reclaimable 141871704\nslab_unreclaimable 1069432\nslab 142941136\nworkingset_refault_anon 0\nworkingset_refault_file 6266068\nworkingset_activate_anon 0\nworkingset_activate_file 3554342\nworkingset_restore_anon 0\nworkingset_restore_file 6\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 18756864\npgsteal 18756864\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 18749264\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 18749264\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 33075763\npgmajfault 1923\npgrefill 8812460\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 5481\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n",
+      "extra_exit": 0
+    },
+    "resident": {
+      "models": []
+    }
+  },
+  {
+    "resources": {
+      "snapshot": {
+        "compute_processes": "",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T22:14:54.720104+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51247415296\nusage_usec 3749212796\nuser_usec 3315688436\nsystem_usec 433524359\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5261148 kB\nMemAvailable:   121759384 kB\n",
+        "stderr": ""
+      },
+      "extra": "anon 340819968\nfile 50754228224\nkernel 148332544\nkernel_stack 950272\npagetables 4337664\nsec_pagetables 0\npercpu 9912\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 2342912\nfile_dirty 20480\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 169234432\nactive_anon 171315200\ninactive_file 35525943296\nactive_file 15228293120\nunevictable 0\nslab_reclaimable 141870584\nslab_unreclaimable 1074624\nslab 142945208\nworkingset_refault_anon 0\nworkingset_refault_file 6266068\nworkingset_activate_anon 0\nworkingset_activate_file 3554342\nworkingset_restore_anon 0\nworkingset_restore_file 6\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 18756864\npgsteal 18756864\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 18749264\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 18749264\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 33094930\npgmajfault 1923\npgrefill 8812460\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 5481\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n",
+      "extra_exit": 0
+    },
+    "resident": {
+      "models": []
+    }
+  },
+  {
+    "resources": {
+      "snapshot": {
+        "compute_processes": "",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T22:15:00.289310+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51247009792\nusage_usec 3749362906\nuser_usec 3315745217\nsystem_usec 433617689\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5281340 kB\nMemAvailable:   121779816 kB\n",
+        "stderr": ""
+      },
+      "extra": "anon 340828160\nfile 50754228224\nkernel 148295680\nkernel_stack 950272\npagetables 4317184\nsec_pagetables 0\npercpu 8568\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 2342912\nfile_dirty 20480\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 169234432\nactive_anon 171335680\ninactive_file 35525943296\nactive_file 15228293120\nunevictable 0\nslab_reclaimable 141872464\nslab_unreclaimable 1066056\nslab 142938520\nworkingset_refault_anon 0\nworkingset_refault_file 6266068\nworkingset_activate_anon 0\nworkingset_activate_file 3554342\nworkingset_restore_anon 0\nworkingset_restore_file 6\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 18756864\npgsteal 18756864\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 18749264\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 18749264\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 33113981\npgmajfault 1923\npgrefill 8812460\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 5481\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n",
+      "extra_exit": 0
+    },
+    "resident": {
+      "models": []
+    }
+  },
+  {
+    "resources": {
+      "snapshot": {
+        "compute_processes": "",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T22:15:05.872874+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51247357952\nusage_usec 3749510633\nuser_usec 3315797251\nsystem_usec 433713381\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         4928120 kB\nMemAvailable:   121445816 kB\n",
+        "stderr": ""
+      },
+      "extra": "anon 341159936\nfile 50754228224\nkernel 148328448\nkernel_stack 950272\npagetables 4354048\nsec_pagetables 0\npercpu 8568\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 2396160\nfile_dirty 4096\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 169234432\nactive_anon 171778048\ninactive_file 35525943296\nactive_file 15228293120\nunevictable 0\nslab_reclaimable 141870184\nslab_unreclaimable 1063656\nslab 142933840\nworkingset_refault_anon 0\nworkingset_refault_file 6266068\nworkingset_activate_anon 0\nworkingset_activate_file 3554342\nworkingset_restore_anon 0\nworkingset_restore_file 6\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 18756864\npgsteal 18756864\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 18749264\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 18749264\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 33133120\npgmajfault 1923\npgrefill 8812460\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 5481\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n",
+      "extra_exit": 0
+    },
+    "resident": {
+      "models": []
+    }
+  },
+  {
+    "resources": {
+      "snapshot": {
+        "compute_processes": "",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T22:15:11.407444+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51246559232\nusage_usec 3749663075\nuser_usec 3315860358\nsystem_usec 433802717\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5058820 kB\nMemAvailable:   121571376 kB\n",
+        "stderr": ""
+      },
+      "extra": "anon 340897792\nfile 50754228224\nkernel 148340736\nkernel_stack 950272\npagetables 4354048\nsec_pagetables 0\npercpu 8568\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 2359296\nfile_dirty 4096\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 169234432\nactive_anon 171544576\ninactive_file 35525943296\nactive_file 15228293120\nunevictable 0\nslab_reclaimable 141870224\nslab_unreclaimable 1063472\nslab 142933696\nworkingset_refault_anon 0\nworkingset_refault_file 6266068\nworkingset_activate_anon 0\nworkingset_activate_file 3554342\nworkingset_restore_anon 0\nworkingset_restore_file 6\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 18756864\npgsteal 18756864\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 18749264\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 18749264\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 33152086\npgmajfault 1923\npgrefill 8812460\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 5481\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n",
+      "extra_exit": 0
+    },
+    "resident": {
+      "models": []
+    }
+  },
+  {
+    "resources": {
+      "snapshot": {
+        "compute_processes": "",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T22:15:16.922106+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51246567424\nusage_usec 3749809942\nuser_usec 3315915648\nsystem_usec 433894294\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5136184 kB\nMemAvailable:   121648896 kB\n",
+        "stderr": ""
+      },
+      "extra": "anon 340881408\nfile 50754228224\nkernel 148291584\nkernel_stack 950272\npagetables 4317184\nsec_pagetables 0\npercpu 8568\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 2347008\nfile_dirty 4096\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 169234432\nactive_anon 171429888\ninactive_file 35525943296\nactive_file 15228293120\nunevictable 0\nslab_reclaimable 141870184\nslab_unreclaimable 1062640\nslab 142932824\nworkingset_refault_anon 0\nworkingset_refault_file 6266068\nworkingset_activate_anon 0\nworkingset_activate_file 3554342\nworkingset_restore_anon 0\nworkingset_restore_file 6\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 18756864\npgsteal 18756864\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 18749264\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 18749264\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 33171018\npgmajfault 1923\npgrefill 8812460\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 5481\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n",
+      "extra_exit": 0
+    },
+    "resident": {
+      "models": []
+    }
+  },
+  {
+    "resources": {
+      "snapshot": {
+        "compute_processes": "",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T22:15:22.416456+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51246551040\nusage_usec 3749957727\nuser_usec 3315982613\nsystem_usec 433975113\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5119576 kB\nMemAvailable:   121632312 kB\n",
+        "stderr": ""
+      },
+      "extra": "anon 340897792\nfile 50754228224\nkernel 148336640\nkernel_stack 950272\npagetables 4358144\nsec_pagetables 0\npercpu 9240\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 2392064\nfile_dirty 4096\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 169234432\nactive_anon 171429888\ninactive_file 35525943296\nactive_file 15228293120\nunevictable 0\nslab_reclaimable 141870184\nslab_unreclaimable 1064512\nslab 142934696\nworkingset_refault_anon 0\nworkingset_refault_file 6266068\nworkingset_activate_anon 0\nworkingset_activate_file 3554342\nworkingset_restore_anon 0\nworkingset_restore_file 6\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 18756864\npgsteal 18756864\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 18749264\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 18749264\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 33189954\npgmajfault 1923\npgrefill 8812460\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 5481\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n",
+      "extra_exit": 0
+    },
+    "resident": {
+      "models": []
+    }
+  },
+  {
+    "resources": {
+      "snapshot": {
+        "compute_processes": "",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T22:15:27.964910+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51243331584\nusage_usec 3750106829\nuser_usec 3316065569\nsystem_usec 434041259\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5120352 kB\nMemAvailable:   121632900 kB\n",
+        "stderr": ""
+      },
+      "extra": "anon 340889600\nfile 50754228224\nkernel 148324352\nkernel_stack 950272\npagetables 4345856\nsec_pagetables 0\npercpu 8568\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 2306048\nfile_dirty 4096\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 169234432\nactive_anon 171458560\ninactive_file 35525943296\nactive_file 15228293120\nunevictable 0\nslab_reclaimable 141870184\nslab_unreclaimable 1064696\nslab 142934880\nworkingset_refault_anon 0\nworkingset_refault_file 6266068\nworkingset_activate_anon 0\nworkingset_activate_file 3554342\nworkingset_restore_anon 0\nworkingset_restore_file 6\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 18756864\npgsteal 18756864\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 18749264\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 18749264\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 33208969\npgmajfault 1923\npgrefill 8812460\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 5481\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n",
+      "extra_exit": 0
+    },
+    "resident": {
+      "models": []
+    }
+  },
+  {
+    "resources": {
+      "snapshot": {
+        "compute_processes": "",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T22:15:33.492912+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51243012096\nusage_usec 3750257225\nuser_usec 3316138454\nsystem_usec 434118770\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5085920 kB\nMemAvailable:   121598568 kB\n",
+        "stderr": ""
+      },
+      "extra": "anon 340889600\nfile 50754228224\nkernel 148320256\nkernel_stack 950272\npagetables 4337664\nsec_pagetables 0\npercpu 8568\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 2293760\nfile_dirty 4096\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 169234432\nactive_anon 171401216\ninactive_file 35525943296\nactive_file 15228293120\nunevictable 0\nslab_reclaimable 141870584\nslab_unreclaimable 1065808\nslab 142936392\nworkingset_refault_anon 0\nworkingset_refault_file 6266068\nworkingset_activate_anon 0\nworkingset_activate_file 3554342\nworkingset_restore_anon 0\nworkingset_restore_file 6\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 18756864\npgsteal 18756864\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 18749264\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 18749264\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 33227891\npgmajfault 1923\npgrefill 8812460\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 5481\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n",
+      "extra_exit": 0
+    },
+    "resident": {
+      "models": []
+    }
+  },
+  {
+    "resources": {
+      "snapshot": {
+        "compute_processes": "",
+        "compute_query_exit": 0,
+        "at": "2026-10-18T22:15:39.005884+00:00",
+        "exit_code": 0,
+        "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51246190592\nusage_usec 3750405051\nuser_usec 3316201825\nsystem_usec 434203226\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5128708 kB\nMemAvailable:   121641364 kB\n",
+        "stderr": ""
+      },
+      "extra": "anon 340889600\nfile 50754228224\nkernel 148295680\nkernel_stack 950272\npagetables 4317184\nsec_pagetables 0\npercpu 8568\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 2289664\nfile_dirty 4096\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 169234432\nactive_anon 171470848\ninactive_file 35525943296\nactive_file 15228293120\nunevictable 0\nslab_reclaimable 141872264\nslab_unreclaimable 1067664\nslab 142939928\nworkingset_refault_anon 0\nworkingset_refault_file 6266068\nworkingset_activate_anon 0\nworkingset_activate_file 3554342\nworkingset_restore_anon 0\nworkingset_restore_file 6\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 18756864\npgsteal 18756864\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 18749264\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 18749264\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 33246925\npgmajfault 1923\npgrefill 8812460\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 5481\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n",
+      "extra_exit": 0
+    },
+    "resident": {
+      "models": []
+    }
+  }
+]

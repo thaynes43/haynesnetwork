@@ -1,0 +1,5 @@
+{
+  "reason": "Startup_diagnostic_failed_no_retry",
+  "model": "qwen3.8:27b",
+  "calls": 20
+}

@@ -1,0 +1,53 @@
+[
+  {
+    "model": "nemotron-3.5-bolt:74b-a9b",
+    "status": "partial_or_not_run",
+    "planned": 13,
+    "attempted": 0,
+    "completed_runtime": 0,
+    "documentary": null,
+    "av": [],
+    "semantic_interpretation": "Partial/runtime failures are not model semantic zero; all attempts retained.",
+    "wall_seconds": [],
+    "prompt_tokens": 0,
+    "generated_tokens": 0,
+    "cpu_cgroup_seconds": 0.0,
+    "max_sampled_gpu_mib": null,
+    "max_sampled_cgroup_bytes": null,
+    "resource_caveat": "Endpoint samples, not peaks; CPU counters include probes. Partial48-layeroffload and first-load cache differ."
+  },
+  {
+    "model": "qwen3.8:27b",
+    "status": "partial_or_not_run",
+    "planned": 13,
+    "attempted": 0,
+    "completed_runtime": 0,
+    "documentary": null,
+    "av": [],
+    "semantic_interpretation": "Partial/runtime failures are not model semantic zero; all attempts retained.",
+    "wall_seconds": [],
+    "prompt_tokens": 0,
+    "generated_tokens": 0,
+    "cpu_cgroup_seconds": 0.0,
+    "max_sampled_gpu_mib": null,
+    "max_sampled_cgroup_bytes": null,
+    "resource_caveat": "Endpoint samples, not peaks; CPU counters include probes. Partial48-layeroffload and first-load cache differ."
+  },
+  {
+    "model": "muse-glimmer:30b",
+    "status": "partial_or_not_run",
+    "planned": 13,
+    "attempted": 0,
+    "completed_runtime": 0,
+    "documentary": null,
+    "av": [],
+    "semantic_interpretation": "Partial/runtime failures are not model semantic zero; all attempts retained.",
+    "wall_seconds": [],
+    "prompt_tokens": 0,
+    "generated_tokens": 0,
+    "cpu_cgroup_seconds": 0.0,
+    "max_sampled_gpu_mib": null,
+    "max_sampled_cgroup_bytes": null,
+    "resource_caveat": "Endpoint samples, not peaks; CPU counters include probes. Partial48-layeroffload and first-load cache differ."
+  }
+]

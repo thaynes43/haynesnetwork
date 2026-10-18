@@ -1,0 +1,72 @@
+{
+  "phase": "P4",
+  "cases": [
+    {
+      "case_id": "a01",
+      "original_packet_sha256": "d5fe060bcbc6a7a3508b6cce2b846813a148f3e537a40a41bbe947f0d9e0eafe",
+      "matches_frozen_packet_schema_system_options": true
+    },
+    {
+      "case_id": "a02",
+      "original_packet_sha256": "e9caec548608021873bac6cfd9882048fe91f7f328d78971fc5e04f0d023ccc6",
+      "matches_frozen_packet_schema_system_options": true
+    },
+    {
+      "case_id": "a03",
+      "original_packet_sha256": "066002302c6db963256e58ae5be59ed66d1adaef682f7ce70e347b2403028ea1",
+      "matches_frozen_packet_schema_system_options": true
+    },
+    {
+      "case_id": "c01",
+      "original_packet_sha256": "38ec662f7ed0e2edd855a9d633c678987feadeb2322d0c925a4747c279b65277",
+      "matches_frozen_packet_schema_system_options": true
+    },
+    {
+      "case_id": "c02",
+      "original_packet_sha256": "6a385d5bab83ecf07edd4ca28e7cb318cd91ff65feef7cabedd1bb334d9a2bae",
+      "matches_frozen_packet_schema_system_options": true
+    },
+    {
+      "case_id": "c03",
+      "original_packet_sha256": "d894ee23817125ff5b5e0a9294610f56ab1683575d23ad8db4de878c54417d54",
+      "matches_frozen_packet_schema_system_options": true
+    },
+    {
+      "case_id": "c04",
+      "original_packet_sha256": "ee3a05e03bd15d54af9b7614f6083b6d0f0ad5108b134af898e2a61140345a69",
+      "matches_frozen_packet_schema_system_options": true
+    },
+    {
+      "case_id": "c05",
+      "original_packet_sha256": "7105b79aa9aec2c60e03a05bdd05d7bab3c7fd4a6386e9bf758318757f3cd1b2",
+      "matches_frozen_packet_schema_system_options": true
+    },
+    {
+      "case_id": "c06",
+      "original_packet_sha256": "0c684871ee8fa3db9c8ac916a70fc770cf358fd0878dc8b6ed36096b8cf23d21",
+      "matches_frozen_packet_schema_system_options": true
+    },
+    {
+      "case_id": "c07",
+      "original_packet_sha256": "7017478ccb8678eb93463dc1e0db09135f129364f0783450bba2b6be4600f321",
+      "matches_frozen_packet_schema_system_options": true
+    },
+    {
+      "case_id": "c08",
+      "original_packet_sha256": "e7a91f7037e0cb6f5b28a299454ed464f4ba8aa79e3e8c8b51cc1c223f517ac7",
+      "matches_frozen_packet_schema_system_options": true
+    },
+    {
+      "case_id": "c09",
+      "original_packet_sha256": "1298ddf16e5797f8e38dfb90d12d333dcc415a97b2ef6bbc135f8ddc8c13bd81",
+      "matches_frozen_packet_schema_system_options": true
+    },
+    {
+      "case_id": "c10",
+      "original_packet_sha256": "6781a38d115e95549be17e00c47c80886020e86be8fff2a760ce18856ea8c21a",
+      "matches_frozen_packet_schema_system_options": true
+    }
+  ],
+  "model_visible_evaluator_labels": false,
+  "unrun_controls_not_claimed_matched_completed": true
+}

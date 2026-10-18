@@ -1,0 +1,13 @@
+{
+  "frozen_at": "2026-10-18T22:17:10.443157+00:00",
+  "authorization": "NEMOTRON-DIRTY-ACCOUNTING.md",
+  "prior_load_calls": 4,
+  "local_load_calls": 0,
+  "prior_zero_dirty_refusals_preserved": true,
+  "excluded_clean_file": "max(0,active_file+inactive_file-file_dirty-file_writeback-shmem-unevictable)",
+  "charged_idle": "max(current-excluded_clean_file,anon+kernel+shmem+unevictable+file_dirty+file_writeback)",
+  "idle_ceiling_bytes": 8589934592,
+  "runtime_host_available_min_bytes": 53687091200,
+  "unchanged": "actual48GiBcgroup,40GiBnoninactive load,21500MiBGPU,OOM0,PSI/progress/ownership,deadline22:25",
+  "protocol_note": "Corrected preflight metric, not unchanged protocol or prior gate passing; semantic inputs/options unchanged; no output exists."
+}

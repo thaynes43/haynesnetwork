@@ -1,4 +1,4 @@
-# Bolt startup diagnosis — read-only, no additional load
+# Bolt startup diagnosis — historical read-only checkpoint at21:47UTC
 
 **Known blocker: cold tensor loading never reached ready before the client deadline. Likely bottleneck: the weight-loading/storage path; actual resident fit and inference compatibility remain untested.** No repeated pull/load, cache flush, upgrade, restart, foreign eviction or media access was performed for this diagnosis.
 
@@ -13,3 +13,7 @@
 **Smallest next step:** a separately bounded startup/IO experiment on these same verified bytes. First capture per-loader read progress/IO wait during one cold load; give cold startup a separately declared finite allowance based on measured progress, keeping60s semantic requests and all resource gates. If slow remote IO is confirmed, stage an isolated copy of this exact package on already available fast local storage and compare one bounded startup, without new model downloads or production reconfiguration. Merely increasing inference timeout, buying a larger GPU, upgrading Ollama or stripping components is not justified by this evidence. A longer timeout alone may help but is not an established fix.
 
 **Actual user action needed:** authorize that fresh bounded investigation (and, only if desired, exact-package local staging after read-only capacity/ownership verification). No credentials, runtime upgrade or memory relaxation is currently indicated. It is a proposal, not work performed or newly assumed authorized here. Current46-request ceiling remains consumed2 (P0chat1/P1load-only1); no completed answer/semantic or fit score. Finish PR1002 delivery and stop.
+
+## Superseding authorization and later evidence
+
+The action proposal above was subsequently authorized by NEMOTRON-IO.md, NEMOTRON-IO-CACHE.md and NEMOTRON-LOCAL.md. It is not a current permission gap. Corrected P2 probes verified own PID/core identity, ongoing NFS reads and folio IO wait; the parent-authorized controlled cancellation ended that remote leg before the serial exact local copy. See REPORT.md and final-trial-status.json for the actual later ending state, all attempts and isolated-copy outcome. No model incompatibility, OOM, resident fit or semantic conclusion follows from this historical checkpoint.

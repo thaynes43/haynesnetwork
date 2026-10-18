@@ -1,0 +1,5 @@
+{
+  "reason": "Canonical tag now verified; model driver refused before any load due20480 dirty bytes from local daemon metadata/log initialization. Preserve preflight and second temporary daemon cleanup. Add same bounded passive clean-cache settling inside driver; no flush/resource relaxation or model request retry. All4 prior load attempts unchanged; no semantic outputs. Final controller activation is layout/idle correction, first local model load only if gates pass.",
+  "prior_load_calls": 4,
+  "semantic_answers": 0
+}

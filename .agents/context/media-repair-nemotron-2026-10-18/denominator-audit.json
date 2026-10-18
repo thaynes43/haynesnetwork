@@ -1,0 +1,33 @@
+{
+  "checked_at": "2026-10-18T22:21:39.101976+00:00",
+  "original_documentary_length": 11,
+  "original_documentary_ids": [
+    "c01",
+    "c02",
+    "c03",
+    "c04",
+    "c05",
+    "c06",
+    "c07",
+    "c08",
+    "c09",
+    "c10",
+    "c11"
+  ],
+  "original_heldout_ids": [
+    "c07",
+    "c08",
+    "c09",
+    "c10"
+  ],
+  "original_av_length": 3,
+  "P1_P2_planned_total": 14,
+  "P3_P4_documentary_selected": 10,
+  "P3_P4_av_selected": 3,
+  "P3_P4_planned_total": 13,
+  "excluded_original_id": "c11",
+  "exclusion": "development alias control, pre-inference budget selection; original source unchanged",
+  "P3_frozen_at": "2026-10-18T22:07:45.137832+00:00",
+  "P3_subset_reason": "First10documentary packets in original frozenorder + all3AV/OCR packets; skip only finaldocumentary c11 development control to reserve startup failures/comparison within46totalcalls and deadline. Selected before ANYsemantic answer. All4originalheldout rows retained; no payload/label change.",
+  "first_semantic_answer_at": "2026-10-18T22:21:02.436779+00:00"
+}
