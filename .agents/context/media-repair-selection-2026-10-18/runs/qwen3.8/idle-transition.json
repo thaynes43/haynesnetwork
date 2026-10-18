@@ -1,0 +1,17 @@
+{
+  "resources": {
+    "compute_processes": "",
+    "compute_query_exit": 0,
+    "at": "2026-10-18T17:36:26.137182+00:00",
+    "exit_code": 0,
+    "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n36421001216\nusage_usec 1625107735\nuser_usec 1404520472\nsystem_usec 220587262\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5761176 kB\nMemAvailable:   121489584 kB\n",
+    "stderr": ""
+  },
+  "residents": {
+    "wall_seconds": 0.11638534581288695,
+    "exit_code": 0,
+    "stderr": "",
+    "http_status": 200,
+    "raw_body": "{\"models\":[]}"
+  }
+}

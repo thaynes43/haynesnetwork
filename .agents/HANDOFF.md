@@ -16,6 +16,12 @@
   monitoring, deployment or any next saga epic. Existing #991/#992 holds remain.
 
 
+## 2026-10-18: model-driven EPUB candidate selection
+
+- [Bounded selection report](context/media-repair-selection-2026-10-18/REPORT.md): three contrived arrangements from the existing actual pair, hidden evaluator truth, actual model-requested inspection tools, frozen equivalent protocols. Sole owner/fresh branch agent/media-repair-selection-1018, existing Saga43 stories reused.
+- Qwen: one correct selection, one excess abstention, correct no-valid abstention. Muse: two correct selections plus one unsafe wrong-work choice in the no-valid control, preserved and blocked. Three actual selected EPUB copies independently verified; originals/pristines/fixtures unchanged. No live writes/downloads/restarts or further EPUB tuning. Required CI/review/merge state belongs to the story PR.
+- Explicit ordered follow-on: AV-NEXT.md plus AV-STORY.md under /home/dev/work/orders/media-repair-benchmark-1018; canonical tracker story #128. Start only AFTER this selection increment lands. No AV interleaving or wider issue992/PLAN077/Seerr resumption; the narrow AV read-only/fixture authorization is separate.
+
 ## 2026-10-18: one actual EPUB pair checkpoint
 
 - [Actual-content result](context/media-repair-actual-epub-2026-10-18/REPORT.md), separate from PR997's frozen documentary corpus. Sole owner, fresh branch agent/media-repair-actual-epub-1018, existing Saga43 stories. Recovered historical-path Windy Poplars versus correct Green Gables EPUB; independent primary-text content proof and complete ZIP/manifest/spine read-back. Originals and pristine/derived bytes unchanged.

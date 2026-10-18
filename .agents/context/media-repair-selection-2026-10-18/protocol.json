@@ -1,0 +1,23 @@
+{
+  "system": "Choose an intact document containing the requested literary work from opaque candidates. You have the actual read-only inspect tool: return action inspect with candidate_id and evidence [] to inspect one candidate. The next user message gives real tool observations. Inspect candidates as needed, at most three inspections. Metadata can be misleading; actual narrative body matters, and a sequel is a different work. Require structural integrity and body evidence before selecting. Return action select with the candidate ID and evidence references such as o2.integrity and o2.body from returned observations. If none is an evidenced valid candidate, return action abstain, candidate_id empty string, and evidence references supporting rejection. Never invent IDs or observations. No filename/path or external tool access. Every response must follow the strict action schema. You have at most four turns, including final action; do not inspect on the final turn.",
+  "options": {
+    "temperature": 0,
+    "seed": 42,
+    "num_ctx": 8192,
+    "num_predict": 256
+  },
+  "stops": {
+    "qwen3.8:27b": [
+      "<|im_end|>"
+    ],
+    "muse-glimmer:30b": [
+      "<|eot|>"
+    ]
+  },
+  "max_turns": 4,
+  "max_tools": 3,
+  "case_seconds": 180,
+  "remote_call_seconds": 60,
+  "think": false,
+  "keep_alive": "2m"
+}

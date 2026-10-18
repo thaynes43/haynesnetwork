@@ -1,0 +1,17 @@
+{
+  "cases.json": "1afb46b1d812880764bb54303f9d39d39f04c85452aea8c336f9c65116833f5a",
+  "schema.json": "654bc8bd68f60105d0979fe7a470fca5f9c546cb05b60ea95bc86587859a43d7",
+  "protocol.json": "f2afada13841b6262a98b71a8bcfdcca97ff33351ffb0a1631dfd653b75f725a",
+  "evaluator/truth.json": "7d0a9d2df4d665a589d6f866fe48d06db0fcc3a65c733a948ece8d06247bc93f",
+  "evaluator/provenance.json": "c0cfcce289ebd2d0c719ae2181d3f9abd4fc6441d99ea397df1e57f2b625dde3",
+  "prepare.py": "b8b4531e005dcac929b25ea7c2c717a7582628b4556d31d457e35c864d6bafd0",
+  "tools.py": "20eef804ec500ff823afebd4f13570f819790a46c70b622841946d38f0d8bec2",
+  "evaluate.py": "a7b52fd00fd99eb83db8643c343263a1f9396d5882e58edabc35bfcd7bf682ee",
+  "run.py": "9272f37154190af5467966d7a8d059cb351eb715d0dbf6f21f165785ba0e5e3c",
+  "test_selection.py": "be548d2d53d19804eca86a60c82b49f42f0bb6cda203b353b398abe7f9334183",
+  "freeze.py": "78b4ed56b4a3ffbbb3499b838ba6127c07aa0a6c2b4697afd1a367373762c0c6",
+  "../media-repair-actual-epub-2026-10-18/epub.py": "9bba46ca885b0f234fd0e5c4ba772df115e0de66dc0fd3613b5db0c8eede9260",
+  "../media-repair-benchmark-2026-10-18/ollama_matrix.py": "2ae24749fa37abde763b10c61dc9520b3c987f1f4e488d5461e4426076f7877c",
+  "../media-repair-benchmark-2026-10-18/bench.py": "a0d647ff15472e17cbf5c37d99ab5b6ff879ddd3cef15e89788cdbeb30429802",
+  "../media-repair-benchmark-2026-10-18/toolkit.py": "b9478c660b9c5517faec3974c5457545625617095430ab5a66041f41f6a0f1ab"
+}

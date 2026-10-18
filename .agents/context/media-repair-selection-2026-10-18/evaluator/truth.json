@@ -1,0 +1,87 @@
+[
+  {
+    "case_id": "r01",
+    "valid_ids": [
+      "k4"
+    ],
+    "candidates": {
+      "v7": {
+        "sha256": "c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc",
+        "actual_work": "Anne of Windy Poplars",
+        "structurally_valid": true,
+        "derived": false,
+        "construction": "base-0.epub"
+      },
+      "k4": {
+        "sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa",
+        "actual_work": "Anne of Green Gables",
+        "structurally_valid": true,
+        "derived": false,
+        "construction": "base-1.epub"
+      },
+      "n2": {
+        "sha256": "f6f0c5ef5a2b342f026201dfeb63acbbe003e6336bd6bdf9d23f84c84897a1b8",
+        "actual_work": null,
+        "structurally_valid": false,
+        "derived": true,
+        "construction": "derived-damage.epub"
+      }
+    }
+  },
+  {
+    "case_id": "r02",
+    "valid_ids": [
+      "b3"
+    ],
+    "candidates": {
+      "h6": {
+        "sha256": "f6f0c5ef5a2b342f026201dfeb63acbbe003e6336bd6bdf9d23f84c84897a1b8",
+        "actual_work": null,
+        "structurally_valid": false,
+        "derived": true,
+        "construction": "derived-damage.epub"
+      },
+      "q8": {
+        "sha256": "6a64109c380d82204785005cb200bbd7fe2ce3f95c34ed8d407d9ca3a8920392",
+        "actual_work": "Anne of Windy Poplars",
+        "structurally_valid": true,
+        "derived": true,
+        "construction": "derived-title.epub"
+      },
+      "b3": {
+        "sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa",
+        "actual_work": "Anne of Green Gables",
+        "structurally_valid": true,
+        "derived": false,
+        "construction": "base-1.epub"
+      }
+    }
+  },
+  {
+    "case_id": "r03",
+    "valid_ids": [],
+    "candidates": {
+      "t5": {
+        "sha256": "6a64109c380d82204785005cb200bbd7fe2ce3f95c34ed8d407d9ca3a8920392",
+        "actual_work": "Anne of Windy Poplars",
+        "structurally_valid": true,
+        "derived": true,
+        "construction": "derived-title.epub"
+      },
+      "a9": {
+        "sha256": "f6f0c5ef5a2b342f026201dfeb63acbbe003e6336bd6bdf9d23f84c84897a1b8",
+        "actual_work": null,
+        "structurally_valid": false,
+        "derived": true,
+        "construction": "derived-damage.epub"
+      },
+      "j1": {
+        "sha256": "c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc",
+        "actual_work": "Anne of Windy Poplars",
+        "structurally_valid": true,
+        "derived": false,
+        "construction": "base-0.epub"
+      }
+    }
+  }
+]
