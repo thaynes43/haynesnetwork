@@ -1,0 +1,215 @@
+[
+  {
+    "error": true,
+    "axis_correct": {},
+    "abstentions": [],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": false,
+    "evidence_axis_coverage": false,
+    "model": "muse-glimmer:30b",
+    "case_id": "a01",
+    "proposal": null,
+    "wall_seconds": 15.289324877783656,
+    "prompt_tokens": 1039,
+    "generated_tokens": 384
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": false,
+      "compatibility": true
+    },
+    "abstentions": [
+      "decode"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "model": "muse-glimmer:30b",
+    "case_id": "a02",
+    "proposal": {
+      "identity": "mismatch",
+      "decode": "abstain",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "streams",
+        "subtitle",
+        "decode.primary",
+        "decode.other",
+        "client"
+      ]
+    },
+    "wall_seconds": 2.3779615769162774,
+    "prompt_tokens": 1029,
+    "generated_tokens": 47
+  },
+  {
+    "error": true,
+    "axis_correct": {},
+    "abstentions": [],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": false,
+    "evidence_axis_coverage": false,
+    "model": "muse-glimmer:30b",
+    "case_id": "a03",
+    "proposal": null,
+    "wall_seconds": 10.384940082207322,
+    "prompt_tokens": 899,
+    "generated_tokens": 384
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "model": "muse-glimmer:30b",
+    "case_id": "a04",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "unsupported",
+      "evidence": [
+        "frame",
+        "streams",
+        "client",
+        "decode.primary",
+        "subtitle"
+      ]
+    },
+    "wall_seconds": 2.190885240212083,
+    "prompt_tokens": 885,
+    "generated_tokens": 41
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": false,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "model": "qwen3.8:27b",
+    "case_id": "a01",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "subtitle",
+        "decode.primary",
+        "streams",
+        "client"
+      ]
+    },
+    "wall_seconds": 6.96578216413036,
+    "prompt_tokens": 1037,
+    "generated_tokens": 67
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": false,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "model": "qwen3.8:27b",
+    "case_id": "a02",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "subtitle",
+        "decode.primary",
+        "streams",
+        "client"
+      ]
+    },
+    "wall_seconds": 2.2594805220142007,
+    "prompt_tokens": 1029,
+    "generated_tokens": 67
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": false,
+    "model": "qwen3.8:27b",
+    "case_id": "a03",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "streams",
+        "decode.primary",
+        "client",
+        "subtitle"
+      ]
+    },
+    "wall_seconds": 2.1221644510515034,
+    "prompt_tokens": 831,
+    "generated_tokens": 62
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "model": "qwen3.8:27b",
+    "case_id": "a04",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "unsupported",
+      "evidence": [
+        "streams",
+        "decode.primary",
+        "client",
+        "frame"
+      ]
+    },
+    "wall_seconds": 2.0948494230397046,
+    "prompt_tokens": 856,
+    "generated_tokens": 62
+  }
+]

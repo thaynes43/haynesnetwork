@@ -1,0 +1,60 @@
+{
+  "sources": [
+    {
+      "source": "/data/haynestower/Media/TV Shows/Pok\u00e9mon/Season 3/Pok\u00e9mon (1997) - S03E34 - Hour of the Houndour [WEBRip-480p][AAC 2.0][x264]-SRS.mkv",
+      "before": {
+        "size": 839928932,
+        "mtime_ns": 1608229594553297600,
+        "head_1m_sha256": "f1a157721162e1da31e448290ab9f56a96ddfbe8b1ac768ee47892a1665ef351",
+        "tail_1m_sha256": "e8549f76188055952fa88e7677db1969b91e79d0ad9ccefd72f929b7bba95adc",
+        "partial_fingerprint_only": true
+      },
+      "after": {
+        "size": 839928932,
+        "mtime_ns": 1608229594553297600,
+        "head_1m_sha256": "f1a157721162e1da31e448290ab9f56a96ddfbe8b1ac768ee47892a1665ef351",
+        "tail_1m_sha256": "e8549f76188055952fa88e7677db1969b91e79d0ad9ccefd72f929b7bba95adc",
+        "partial_fingerprint_only": true
+      },
+      "sample_fingerprints_size_mtime_unchanged": true
+    },
+    {
+      "source": "/data/haynestower/Media/TV Shows/Mickey Mouse - Mixed-Up Adventures/Season 1/Mickey Mouse - Mixed-Up Adventures (2017) - S01E45-46 - Happy Hot Diggity Dog Holiday and Happy Holiday Helpers [DSNP WEBDL-1080p][AAC 2.0][x264]-AndreMor.mkv",
+      "before": {
+        "size": 1455149536,
+        "mtime_ns": 1771193374000000000,
+        "head_1m_sha256": "f68af6d7aa36a6b3b434521a1d2700b544139c6ea39723169258c255f95d622d",
+        "tail_1m_sha256": "97c0521be502b1042f9f09eb614e34364b85fc98b7ddf45256cabcd6e94403bf",
+        "partial_fingerprint_only": true
+      },
+      "after": {
+        "size": 1455149536,
+        "mtime_ns": 1771193374000000000,
+        "head_1m_sha256": "f68af6d7aa36a6b3b434521a1d2700b544139c6ea39723169258c255f95d622d",
+        "tail_1m_sha256": "97c0521be502b1042f9f09eb614e34364b85fc98b7ddf45256cabcd6e94403bf",
+        "partial_fingerprint_only": true
+      },
+      "sample_fingerprints_size_mtime_unchanged": true
+    },
+    {
+      "source": "/data/haynestower/Media/Movies/Zom 100 Bucket List of the Dead (2023)/Zom 100 Bucket List of the Dead (2023) {tmdb-1070514} [NF][WEBDL-1080p][EAC3 Atmos 5.1][x264]-OzONE.mkv",
+      "before": {
+        "size": 5555730978,
+        "mtime_ns": 1745707580000000000,
+        "head_1m_sha256": "a3feb10a8f1c9da720140eed85faf6ceb5de7947f72bd1794d2e578abb91844a",
+        "tail_1m_sha256": "dc1ce18358d5afbd3791a78f901b68323ba257f413fadc2c33abfa4a3726e5cb",
+        "partial_fingerprint_only": true
+      },
+      "after": {
+        "size": 5555730978,
+        "mtime_ns": 1745707580000000000,
+        "head_1m_sha256": "a3feb10a8f1c9da720140eed85faf6ceb5de7947f72bd1794d2e578abb91844a",
+        "tail_1m_sha256": "dc1ce18358d5afbd3791a78f901b68323ba257f413fadc2c33abfa4a3726e5cb",
+        "partial_fingerprint_only": true
+      },
+      "sample_fingerprints_size_mtime_unchanged": true
+    }
+  ],
+  "all_frozen_images_and_protocols_match": true,
+  "full_source_sha256_measured": false
+}

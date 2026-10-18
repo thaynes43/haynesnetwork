@@ -1,0 +1,32 @@
+{
+  "exit_code": 0,
+  "stdout_bytes": 8033,
+  "stderr": "",
+  "bytes_read": 371934,
+  "quota_exhausted": false,
+  "requests": 3,
+  "wall_seconds": 0.5308158870320767,
+  "source_unchanged": true,
+  "argv": [
+    "nice",
+    "-n",
+    "19",
+    "ffprobe",
+    "-v",
+    "error",
+    "-threads",
+    "1",
+    "-probesize",
+    "5000000",
+    "-analyzeduration",
+    "2000000",
+    "-show_entries",
+    "format=format_name,duration,size:stream=index,codec_name,codec_type,profile,pix_fmt,width,height,channels:stream_tags=language",
+    "-of",
+    "json",
+    "http://127.0.0.1:38867/sample"
+  ],
+  "source": "/data/haynestower/Media/TV Shows/Mickey Mouse - Mixed-Up Adventures/Season 1/Mickey Mouse - Mixed-Up Adventures (2017) - S01E45-46 - Happy Hot Diggity Dog Holiday and Happy Holiday Helpers [DSNP WEBDL-1080p][AAC 2.0][x264]-AndreMor.mkv",
+  "private_artifact": "m-probe-0-0.bin",
+  "sha256": "ee7b066ec2ffddfdbd5de9f0bcad8cb40c931eb95968fe67a81f14203a74cab7"
+}

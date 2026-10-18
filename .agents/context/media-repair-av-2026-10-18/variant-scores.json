@@ -1,0 +1,579 @@
+[
+  {
+    "error": true,
+    "axis_correct": {},
+    "abstentions": [],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": false,
+    "evidence_axis_coverage": false,
+    "variant": "runs",
+    "model": "muse-glimmer:30b",
+    "case_id": "a01",
+    "proposal": null,
+    "wall_seconds": 15.289324877783656,
+    "prompt_tokens": 1039,
+    "generated_tokens": 384,
+    "done_reason": "length",
+    "server_load_ns": 4645760377,
+    "server_prompt_ns": 1065678000,
+    "server_eval_ns": 9445222000,
+    "max_observed_gpu_mib": 17762,
+    "max_observed_cgroup_ram_bytes": 38052065280
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": false,
+      "compatibility": true
+    },
+    "abstentions": [
+      "decode"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "variant": "runs",
+    "model": "muse-glimmer:30b",
+    "case_id": "a02",
+    "proposal": {
+      "identity": "mismatch",
+      "decode": "abstain",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "streams",
+        "subtitle",
+        "decode.primary",
+        "decode.other",
+        "client"
+      ]
+    },
+    "wall_seconds": 2.3779615769162774,
+    "prompt_tokens": 1029,
+    "generated_tokens": 47,
+    "done_reason": "stop",
+    "server_load_ns": 7605125,
+    "server_prompt_ns": 886529000,
+    "server_eval_ns": 1275273000,
+    "max_observed_gpu_mib": 17762,
+    "max_observed_cgroup_ram_bytes": 38183952384
+  },
+  {
+    "error": true,
+    "axis_correct": {},
+    "abstentions": [],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": false,
+    "evidence_axis_coverage": false,
+    "variant": "runs",
+    "model": "muse-glimmer:30b",
+    "case_id": "a03",
+    "proposal": null,
+    "wall_seconds": 10.384940082207322,
+    "prompt_tokens": 899,
+    "generated_tokens": 384,
+    "done_reason": "length",
+    "server_load_ns": 8357857,
+    "server_prompt_ns": 874102000,
+    "server_eval_ns": 9305580000,
+    "max_observed_gpu_mib": 17762,
+    "max_observed_cgroup_ram_bytes": 38307713024
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "variant": "runs",
+    "model": "muse-glimmer:30b",
+    "case_id": "a04",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "unsupported",
+      "evidence": [
+        "frame",
+        "streams",
+        "client",
+        "decode.primary",
+        "subtitle"
+      ]
+    },
+    "wall_seconds": 2.190885240212083,
+    "prompt_tokens": 885,
+    "generated_tokens": 41,
+    "done_reason": "stop",
+    "server_load_ns": 5887836,
+    "server_prompt_ns": 834025000,
+    "server_eval_ns": 1164334000,
+    "max_observed_gpu_mib": 17762,
+    "max_observed_cgroup_ram_bytes": 38423367680
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": false,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "variant": "runs",
+    "model": "qwen3.8:27b",
+    "case_id": "a01",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "subtitle",
+        "decode.primary",
+        "streams",
+        "client"
+      ]
+    },
+    "wall_seconds": 6.96578216413036,
+    "prompt_tokens": 1037,
+    "generated_tokens": 67,
+    "done_reason": "stop",
+    "server_load_ns": 4748381218,
+    "server_prompt_ns": 1318931000,
+    "server_eval_ns": 767175000,
+    "max_observed_gpu_mib": 18714,
+    "max_observed_cgroup_ram_bytes": 38547935232
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": false,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "variant": "runs",
+    "model": "qwen3.8:27b",
+    "case_id": "a02",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "subtitle",
+        "decode.primary",
+        "streams",
+        "client"
+      ]
+    },
+    "wall_seconds": 2.2594805220142007,
+    "prompt_tokens": 1029,
+    "generated_tokens": 67,
+    "done_reason": "stop",
+    "server_load_ns": 8335663,
+    "server_prompt_ns": 1007486000,
+    "server_eval_ns": 847947000,
+    "max_observed_gpu_mib": 18728,
+    "max_observed_cgroup_ram_bytes": 39123726336
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": false,
+    "variant": "runs",
+    "model": "qwen3.8:27b",
+    "case_id": "a03",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "streams",
+        "decode.primary",
+        "client",
+        "subtitle"
+      ]
+    },
+    "wall_seconds": 2.1221644510515034,
+    "prompt_tokens": 831,
+    "generated_tokens": 62,
+    "done_reason": "stop",
+    "server_load_ns": 7025049,
+    "server_prompt_ns": 920455000,
+    "server_eval_ns": 826356000,
+    "max_observed_gpu_mib": 18734,
+    "max_observed_cgroup_ram_bytes": 39710203904
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "variant": "runs",
+    "model": "qwen3.8:27b",
+    "case_id": "a04",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "unsupported",
+      "evidence": [
+        "streams",
+        "decode.primary",
+        "client",
+        "frame"
+      ]
+    },
+    "wall_seconds": 2.0948494230397046,
+    "prompt_tokens": 856,
+    "generated_tokens": 62,
+    "done_reason": "stop",
+    "server_load_ns": 4263093,
+    "server_prompt_ns": 899530000,
+    "server_eval_ns": 832913000,
+    "max_observed_gpu_mib": 18734,
+    "max_observed_cgroup_ram_bytes": 40250707968
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": false,
+      "decode": false,
+      "compatibility": true
+    },
+    "abstentions": [
+      "decode"
+    ],
+    "unsafe_or_unsupported": [
+      "identity:mismatch"
+    ],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "variant": "runs-bounded",
+    "model": "muse-glimmer:30b",
+    "case_id": "a01",
+    "proposal": {
+      "identity": "mismatch",
+      "decode": "abstain",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "streams",
+        "decode.primary",
+        "decode.other",
+        "client",
+        "subtitle"
+      ]
+    },
+    "wall_seconds": 7.217208048328757,
+    "prompt_tokens": 1039,
+    "generated_tokens": 47,
+    "done_reason": "stop",
+    "server_load_ns": 4643372703,
+    "server_prompt_ns": 1107431000,
+    "server_eval_ns": 1331273000,
+    "max_observed_gpu_mib": 17762,
+    "max_observed_cgroup_ram_bytes": 38055096320
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": false,
+      "compatibility": true
+    },
+    "abstentions": [
+      "decode"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "variant": "runs-bounded",
+    "model": "muse-glimmer:30b",
+    "case_id": "a02",
+    "proposal": {
+      "identity": "mismatch",
+      "decode": "abstain",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "streams",
+        "subtitle",
+        "decode.primary",
+        "decode.other",
+        "client"
+      ]
+    },
+    "wall_seconds": 2.343275791965425,
+    "prompt_tokens": 1029,
+    "generated_tokens": 47,
+    "done_reason": "stop",
+    "server_load_ns": 7422903,
+    "server_prompt_ns": 883017000,
+    "server_eval_ns": 1222250000,
+    "max_observed_gpu_mib": 17776,
+    "max_observed_cgroup_ram_bytes": 38179700736
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": false,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity",
+      "decode"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "variant": "runs-bounded",
+    "model": "muse-glimmer:30b",
+    "case_id": "a03",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "abstain",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "streams",
+        "decode.primary",
+        "client",
+        "subtitle",
+        "subtitle"
+      ]
+    },
+    "wall_seconds": 2.4671048671007156,
+    "prompt_tokens": 899,
+    "generated_tokens": 47,
+    "done_reason": "stop",
+    "server_load_ns": 7111156,
+    "server_prompt_ns": 879549000,
+    "server_eval_ns": 1376417000,
+    "max_observed_gpu_mib": 17776,
+    "max_observed_cgroup_ram_bytes": 38307115008
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "variant": "runs-bounded",
+    "model": "muse-glimmer:30b",
+    "case_id": "a04",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "unsupported",
+      "evidence": [
+        "frame",
+        "streams",
+        "client",
+        "decode.primary",
+        "subtitle"
+      ]
+    },
+    "wall_seconds": 2.1972165619954467,
+    "prompt_tokens": 885,
+    "generated_tokens": 41,
+    "done_reason": "stop",
+    "server_load_ns": 4837890,
+    "server_prompt_ns": 833833000,
+    "server_eval_ns": 1159273000,
+    "max_observed_gpu_mib": 17776,
+    "max_observed_cgroup_ram_bytes": 38402760704
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": false,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "variant": "runs-bounded",
+    "model": "qwen3.8:27b",
+    "case_id": "a01",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "subtitle",
+        "decode.primary",
+        "streams",
+        "client"
+      ]
+    },
+    "wall_seconds": 7.066885008942336,
+    "prompt_tokens": 1037,
+    "generated_tokens": 67,
+    "done_reason": "stop",
+    "server_load_ns": 4803666886,
+    "server_prompt_ns": 1361166000,
+    "server_eval_ns": 780819000,
+    "max_observed_gpu_mib": 18714,
+    "max_observed_cgroup_ram_bytes": 38544941056
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": false,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "variant": "runs-bounded",
+    "model": "qwen3.8:27b",
+    "case_id": "a02",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "frame",
+        "subtitle",
+        "decode.primary",
+        "streams",
+        "client"
+      ]
+    },
+    "wall_seconds": 2.2738456302322447,
+    "prompt_tokens": 1029,
+    "generated_tokens": 67,
+    "done_reason": "stop",
+    "server_load_ns": 8471161,
+    "server_prompt_ns": 1017868000,
+    "server_eval_ns": 850917000,
+    "max_observed_gpu_mib": 18728,
+    "max_observed_cgroup_ram_bytes": 39122649088
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": false,
+    "variant": "runs-bounded",
+    "model": "qwen3.8:27b",
+    "case_id": "a03",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "supported",
+      "evidence": [
+        "streams",
+        "decode.primary",
+        "client",
+        "subtitle"
+      ]
+    },
+    "wall_seconds": 2.219518050085753,
+    "prompt_tokens": 831,
+    "generated_tokens": 62,
+    "done_reason": "stop",
+    "server_load_ns": 7151345,
+    "server_prompt_ns": 938150000,
+    "server_eval_ns": 901353000,
+    "max_observed_gpu_mib": 18734,
+    "max_observed_cgroup_ram_bytes": 39708303360
+  },
+  {
+    "error": false,
+    "axis_correct": {
+      "identity": true,
+      "decode": true,
+      "compatibility": true
+    },
+    "abstentions": [
+      "identity"
+    ],
+    "unsafe_or_unsupported": [],
+    "evidence_resolves": true,
+    "evidence_axis_coverage": true,
+    "variant": "runs-bounded",
+    "model": "qwen3.8:27b",
+    "case_id": "a04",
+    "proposal": {
+      "identity": "abstain",
+      "decode": "pass",
+      "compatibility": "unsupported",
+      "evidence": [
+        "streams",
+        "decode.primary",
+        "client",
+        "frame"
+      ]
+    },
+    "wall_seconds": 2.119394845329225,
+    "prompt_tokens": 856,
+    "generated_tokens": 62,
+    "done_reason": "stop",
+    "server_load_ns": 4369899,
+    "server_prompt_ns": 929742000,
+    "server_eval_ns": 807714000,
+    "max_observed_gpu_mib": 18734,
+    "max_observed_cgroup_ram_bytes": 40249401344
+  }
+]

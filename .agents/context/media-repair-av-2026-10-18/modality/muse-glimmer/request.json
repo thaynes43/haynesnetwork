@@ -1,0 +1,43 @@
+{
+  "request_without_image_bytes": {
+    "model": "muse-glimmer:30b",
+    "stream": false,
+    "think": false,
+    "keep_alive": "2m",
+    "format": {
+      "type": "object",
+      "properties": {
+        "visible_text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "visible_text"
+      ],
+      "additionalProperties": false
+    },
+    "options": {
+      "temperature": 0,
+      "seed": 42,
+      "num_ctx": 8192,
+      "num_predict": 128,
+      "stop": [
+        "<|eot|>"
+      ]
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "Transcribe the visible title text in this image. Return the schema object only.",
+        "images": [
+          {
+            "sha256": "7288f799bf1e98c53157edec032261768e34c12d96cabc60b87622c7dda42cec",
+            "bytes": 316357,
+            "private_artifact": "m-frame-62-0.bin"
+          }
+        ]
+      }
+    ]
+  },
+  "full_request_sha256": "dc0fad4dc1682ebd864570a3447677038704c629a20a8c61f761c3ffa6e476cb"
+}

@@ -1,0 +1,15 @@
+{
+  "cases.json": "c6e9c7d546c6dc94710a2dd0b457247f48c14eae2d7bdefbd27861012e9d5361",
+  "evaluator/truth.json": "d00b7f6d065477d46f19b43479a86d8438c63954eda2a7cc355414c5b2bbe35c",
+  "image-hashes.json": "71dc795ed1af007472ec96372bcb50f501e162e0aeb5cd5b381321201ce654ac",
+  "protocol.json": "1fcb67a8baeeafa40c38758c561246b2d9fd9dee2f8c0fe9d9c9c54ac98b2df0",
+  "schema.json": "244eb0c647f51f20e387a4340f3e931246a55deca2f7a0b82ea19ecd4437c3a6",
+  "sample_remote.py": "d21b90a87e8affc80eb711d5a7399a6d725f06f75af5881cbc235fb6a20007b3",
+  "extract.py": "c67f32265189b63b7360ef99a633fec4ebdaa7c5e00f9157d624d26326e695ec",
+  "prepare.py": "ec861630f3e5baa58e1d72293d0503dac61790244aa3e3657c9dbd885bf4b1a4",
+  "run.py": "7009db8b7dfc40a3bde7aa3f9d74d4cf8947a4c3bd96e8dfac87ea611606abfb",
+  "score.py": "a8ef5db214ce8dd9600945130052823fad85b71a4ab8be57761d45351a389832",
+  "modality.py": "69fbe2b6bdf37a5466b87b361f01da1f40868cb48ca5a2a50f00882a6c1119a6",
+  "freeze.py": "0dd8232e33e74cfd4667d752dca1ef0e1fa94d6e2ac4978533185a1b74d285be",
+  "../media-repair-benchmark-2026-10-18/ollama_matrix.py": "2ae24749fa37abde763b10c61dc9520b3c987f1f4e488d5461e4426076f7877c"
+}

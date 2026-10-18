@@ -1,0 +1,232 @@
+[
+  {
+    "case_id": "a01",
+    "requested_work": "Mickey and the Roadster Racers: Happy Hot Diggity Dog Holiday! (first story only)",
+    "observations": {
+      "streams": {
+        "container": "matroska,webm",
+        "video": {
+          "codec_name": "h264",
+          "profile": "High",
+          "codec_type": "video",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p"
+        },
+        "selected_audio": {
+          "codec_name": "aac",
+          "profile": "LC",
+          "codec_type": "audio",
+          "channels": 2,
+          "tags": {
+            "language": "eng"
+          }
+        }
+      },
+      "decode": {
+        "primary": {
+          "exit_code": 0,
+          "stderr": "",
+          "quota_exhausted": false,
+          "bytes_read": 5828827,
+          "duration_limit_seconds": 4
+        },
+        "other": {
+          "exit_code": 0,
+          "stderr": "[http @ 0x7f5d44555ec0] Stream ends prematurely at 48529108, should be 1455149536\n[in#0/matroska,webm @ 0x7f5d4454f340] Read error\n[http @ 0x7f5d44555ec0] Stream ends prematurely at 48529108, should be 1455149536\n    Last message repeated 1 times\n[in#0/matroska,webm @ 0x7f5d3e678b00] Error during demuxing: I/O error\n",
+          "quota_exhausted": true,
+          "bytes_read": 8388608,
+          "duration_limit_seconds": 4
+        }
+      },
+      "subtitle": "1\n00:00:00,000 --> 00:00:02,919\n<i>♪ We're gonna tear up the road ♪</i>\n\n2\n00:00:02,920 --> 00:00:05,630\n<i>- ♪ Spin out the wheels ♪</i>\n- Yippie!\n\n",
+      "frame": {
+        "type": "actual extracted still image; no motion/audio inference"
+      },
+      "client": {
+        "definition": "hypothetical exact direct-play profile, not a measured Plex/browser client",
+        "containers": [
+          "matroska,webm"
+        ],
+        "video_codec": "h264",
+        "video_pix_fmt": "yuv420p",
+        "max_width": 1920,
+        "max_height": 1080,
+        "audio_codecs": [
+          "aac"
+        ],
+        "max_audio_channels": 2,
+        "subtitles": "disabled"
+      }
+    }
+  },
+  {
+    "case_id": "a02",
+    "requested_work": "Pokémon: Hour of the Houndour",
+    "observations": {
+      "streams": {
+        "container": "matroska,webm",
+        "video": {
+          "codec_name": "h264",
+          "profile": "High",
+          "codec_type": "video",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p"
+        },
+        "selected_audio": {
+          "codec_name": "aac",
+          "profile": "LC",
+          "codec_type": "audio",
+          "channels": 2,
+          "tags": {
+            "language": "eng"
+          }
+        }
+      },
+      "decode": {
+        "primary": {
+          "exit_code": 0,
+          "stderr": "",
+          "quota_exhausted": false,
+          "bytes_read": 5828827,
+          "duration_limit_seconds": 4
+        },
+        "other": {
+          "exit_code": 0,
+          "stderr": "[http @ 0x7f5d44555ec0] Stream ends prematurely at 48529108, should be 1455149536\n[in#0/matroska,webm @ 0x7f5d4454f340] Read error\n[http @ 0x7f5d44555ec0] Stream ends prematurely at 48529108, should be 1455149536\n    Last message repeated 1 times\n[in#0/matroska,webm @ 0x7f5d3e678b00] Error during demuxing: I/O error\n",
+          "quota_exhausted": true,
+          "bytes_read": 8388608,
+          "duration_limit_seconds": 4
+        }
+      },
+      "subtitle": "1\n00:00:00,000 --> 00:00:02,919\n<i>♪ We're gonna tear up the road ♪</i>\n\n2\n00:00:02,920 --> 00:00:05,630\n<i>- ♪ Spin out the wheels ♪</i>\n- Yippie!\n\n",
+      "frame": {
+        "type": "actual extracted still image; no motion/audio inference"
+      },
+      "client": {
+        "definition": "hypothetical exact direct-play profile, not a measured Plex/browser client",
+        "containers": [
+          "matroska,webm"
+        ],
+        "video_codec": "h264",
+        "video_pix_fmt": "yuv420p",
+        "max_width": 1920,
+        "max_height": 1080,
+        "audio_codecs": [
+          "aac"
+        ],
+        "max_audio_channels": 2,
+        "subtitles": "disabled"
+      }
+    }
+  },
+  {
+    "case_id": "a03",
+    "requested_work": "Pokémon: Hour of the Houndour",
+    "observations": {
+      "streams": {
+        "container": "matroska,webm",
+        "video": {
+          "codec_name": "h264",
+          "profile": "High",
+          "codec_type": "video",
+          "width": 640,
+          "height": 480,
+          "pix_fmt": "yuv420p"
+        },
+        "selected_audio": {
+          "codec_name": "aac",
+          "profile": "HE-AAC",
+          "codec_type": "audio",
+          "channels": 2,
+          "tags": {
+            "language": "eng"
+          }
+        }
+      },
+      "decode": {
+        "primary": {
+          "exit_code": 0,
+          "stderr": "",
+          "quota_exhausted": false,
+          "bytes_read": 3666249,
+          "duration_limit_seconds": 4
+        }
+      },
+      "subtitle": "1\n00:00:03,273 --> 00:00:05,435\nPikachu,\nuse your Thunder Shock now!\n\n",
+      "frame": {
+        "type": "actual extracted still image; no motion/audio inference"
+      },
+      "client": {
+        "definition": "hypothetical exact direct-play profile, not a measured Plex/browser client",
+        "containers": [
+          "matroska,webm"
+        ],
+        "video_codec": "h264",
+        "video_pix_fmt": "yuv420p",
+        "max_width": 1920,
+        "max_height": 1080,
+        "audio_codecs": [
+          "aac"
+        ],
+        "max_audio_channels": 2,
+        "subtitles": "disabled"
+      }
+    }
+  },
+  {
+    "case_id": "a04",
+    "requested_work": "Zom 100: Bucket List of the Dead (2023)",
+    "observations": {
+      "streams": {
+        "container": "matroska,webm",
+        "video": {
+          "codec_name": "h264",
+          "profile": "Main",
+          "codec_type": "video",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p"
+        },
+        "selected_audio": {
+          "codec_name": "eac3",
+          "profile": "Dolby Digital Plus + Dolby Atmos",
+          "codec_type": "audio",
+          "channels": 6,
+          "tags": {
+            "language": "jpn"
+          }
+        }
+      },
+      "decode": {
+        "primary": {
+          "exit_code": 0,
+          "stderr": "",
+          "quota_exhausted": false,
+          "bytes_read": 6592732,
+          "duration_limit_seconds": 4
+        }
+      },
+      "subtitle": "1\n00:00:00,000 --> 00:00:02,000\n- Ridiculous!\n- He's basically a god.\n\n2\n00:00:02,084 --> 00:00:03,750\nGive me a break, will you?\n\n3\n00:00:03,834 --> 00:00:06,834\n- Hey, Tendo. Sorry, I've got to head out.\n- Sure.\n\n",
+      "frame": {
+        "type": "actual extracted still image; no motion/audio inference"
+      },
+      "client": {
+        "definition": "hypothetical exact direct-play profile, not a measured Plex/browser client",
+        "containers": [
+          "matroska,webm"
+        ],
+        "video_codec": "h264",
+        "video_pix_fmt": "yuv420p",
+        "max_width": 1920,
+        "max_height": 1080,
+        "audio_codecs": [
+          "aac"
+        ],
+        "max_audio_channels": 2,
+        "subtitles": "disabled"
+      }
+    }
+  }
+]

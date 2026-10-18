@@ -1,0 +1,32 @@
+{
+  "exit_code": 0,
+  "stdout_bytes": 8343,
+  "stderr": "",
+  "bytes_read": 406430,
+  "quota_exhausted": false,
+  "requests": 3,
+  "wall_seconds": 0.5324967799824663,
+  "source_unchanged": true,
+  "argv": [
+    "nice",
+    "-n",
+    "19",
+    "ffprobe",
+    "-v",
+    "error",
+    "-threads",
+    "1",
+    "-probesize",
+    "5000000",
+    "-analyzeduration",
+    "2000000",
+    "-show_entries",
+    "format=format_name,duration,size:stream=index,codec_name,codec_type,profile,pix_fmt,width,height,channels:stream_tags=language",
+    "-of",
+    "json",
+    "http://127.0.0.1:38019/sample"
+  ],
+  "source": "/data/haynestower/Media/Movies/Zom 100 Bucket List of the Dead (2023)/Zom 100 Bucket List of the Dead (2023) {tmdb-1070514} [NF][WEBDL-1080p][EAC3 Atmos 5.1][x264]-OzONE.mkv",
+  "private_artifact": "z-probe-0-0.bin",
+  "sha256": "c52b60dec6a0c6eaf12a9700da48adbc39728181435ab95035e1937827fa2749"
+}

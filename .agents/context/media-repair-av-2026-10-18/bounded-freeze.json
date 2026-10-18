@@ -1,0 +1,10 @@
+{
+  "schema-bounded.json": "14cda355b6b58a04087972388f581693af4ffd6e391f345b091c91b1b95a4cf5",
+  "run_bounded.py": "58d68da9f3d148b7d0e228b8d8d1f1cb70cbd9bd8953c0b1788d6e96d4947664",
+  "cases.json": "c6e9c7d546c6dc94710a2dd0b457247f48c14eae2d7bdefbd27861012e9d5361",
+  "evaluator/truth.json": "d00b7f6d065477d46f19b43479a86d8438c63954eda2a7cc355414c5b2bbe35c",
+  "image-hashes.json": "71dc795ed1af007472ec96372bcb50f501e162e0aeb5cd5b381321201ce654ac",
+  "protocol.json": "1fcb67a8baeeafa40c38758c561246b2d9fd9dee2f8c0fe9d9c9c54ac98b2df0",
+  "score.py": "a8ef5db214ce8dd9600945130052823fad85b71a4ab8be57761d45351a389832",
+  "freeze.json": "829440d1383bbd0e7c67bb801277d8be886b569654f1122382dba84870cb5dbd"
+}
