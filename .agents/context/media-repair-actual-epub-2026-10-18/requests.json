@@ -1,0 +1,20 @@
+[
+  {
+    "expected": {
+      "title": "Anne of Green Gables",
+      "author": "L. M. Montgomery"
+    },
+    "document": {
+      "opening_body_excerpt": "(Letter from Anne Shirley, B.A., Principal of Summerside High School, to Gilbert Blythe, medical student at Redmond College, Kingsport.) \"Windy Poplars, \"Spook's Lane, \"S'side, P. E. I., \"Monday, September 12th. \"DEAREST: \"Isn't that an address! Did you ever hear anything so delicious? Windy Poplars is the name of my new home and I love it. I also love Spook's Lane, which has no legal existence. It should be Trent Street but it is never called Trent Street except on the rare occasions when it is mentioned in the Weekly Courier . . . and then people look at each other and say, 'Where on earth is that?' Spook's Lane it is . . . although for what reason I cannot tell you. I have already asked Rebecca Dew about it, but all she can say is that it has always"
+    }
+  },
+  {
+    "expected": {
+      "title": "Anne of Green Gables",
+      "author": "L. M. Montgomery"
+    },
+    "document": {
+      "opening_body_excerpt": "CHAPTER I. Mrs. Rachel Lynde is Surprised Mrs. Rachel Lynde lived just where the Avonlea main road dipped down into a little hollow, fringed with alders and ladies' eardrops and traversed by a brook that had its source away back in the woods of the old Cuthbert place; it was reputed to be an intricate, headlong brook in its earlier course through those woods, with dark secrets of pool and cascade; but by the time it reached Lynde's Hollow it was a quiet, well-conducted little stream, for not even a brook could run past Mrs. Rachel Lynde's door without due regard for decency and decorum; it probably was conscious that Mrs. Rachel was sitting at her window, keeping a sharp eye on everything that passed, from brooks and children up, and that if she noticed anything odd or out of"
+    }
+  }
+]

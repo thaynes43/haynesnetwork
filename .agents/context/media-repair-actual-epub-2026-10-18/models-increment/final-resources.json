@@ -1,0 +1,8 @@
+{
+  "compute_processes": "",
+  "compute_query_exit": 0,
+  "at": "2026-10-18T17:15:59.797587+00:00",
+  "exit_code": 0,
+  "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17461 MiB, 6664 MiB, 1 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 6907, [No data], 17454 MiB\n37258604544\nusage_usec 1463654243\nuser_usec 1253230357\nsystem_usec 210423886\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         3832300 kB\nMemAvailable:   120548980 kB\n",
+  "stderr": ""
+}

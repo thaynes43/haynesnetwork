@@ -1,0 +1,20 @@
+{
+  "rows": [
+    {
+      "initial_candidate": 0,
+      "reference_changed": true,
+      "resolved_sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa",
+      "resolved_structure_valid": true,
+      "independent_body_identity_pass": true
+    },
+    {
+      "initial_candidate": 1,
+      "reference_changed": false,
+      "resolved_sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa",
+      "resolved_structure_valid": true,
+      "independent_body_identity_pass": true
+    }
+  ],
+  "pristine_and_derived_bytes_unchanged": true,
+  "scope": "isolated reference selection; no book bytes rewritten; deterministic content selector, not LLM candidate choice"
+}

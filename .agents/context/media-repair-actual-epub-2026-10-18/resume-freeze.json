@@ -1,0 +1,5 @@
+{
+  "reason": "Qwen unload API completed before GPU compute process fully exited. Preflight stopped before Muse call; fresh read-only recheck idle. Resume only uncalled Muse rows; unchanged evidence/options/schema.",
+  "runner_sha256": "6b9e0c356017b11aa0554030bfeeeeef3220a6c1c42155c6aa4bee7e6643a4df",
+  "prior_increment_freeze_sha256": "1c9ba0dd3c3fc80dc457b3bf2df7f4a1780c3d154e72698ad216be1ee44f3417"
+}

@@ -1,0 +1,36 @@
+[
+  {
+    "source": "/data/cephfs-hdd/data/media/books/quarantine/crossvolume-2026-10-05/EBooks/L.M. Montgomery/Anne of Green Gables/Anne of Green Gables - L.M. Montgomery.epub",
+    "after_repair": {
+      "bytes": 390182,
+      "sha256": "c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc",
+      "mtime_ns": 1791196755420717140
+    },
+    "unchanged": true
+  },
+  {
+    "source": "/data/cephfs-hdd/data/media/books/EBooks/L.M. Montgomery/Anne of Green Gables - Collection/L.M. Montgomery - Anne of Green Gables - Collection.epub",
+    "after_repair": {
+      "bytes": 343250,
+      "sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa",
+      "mtime_ns": 1791434759597256697
+    },
+    "unchanged": true
+  },
+  {
+    "row": 0,
+    "independent_xml_readback": true,
+    "ordered_spine_items": 42,
+    "resolved_sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa",
+    "work": "Anne of Green Gables",
+    "crc_ok": true
+  },
+  {
+    "row": 1,
+    "independent_xml_readback": true,
+    "ordered_spine_items": 42,
+    "resolved_sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa",
+    "work": "Anne of Green Gables",
+    "crc_ok": true
+  }
+]

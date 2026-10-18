@@ -16,6 +16,13 @@
   monitoring, deployment or any next saga epic. Existing #991/#992 holds remain.
 
 
+## 2026-10-18: one actual EPUB pair checkpoint
+
+- [Actual-content result](context/media-repair-actual-epub-2026-10-18/REPORT.md), separate from PR997's frozen documentary corpus. Sole owner, fresh branch agent/media-repair-actual-epub-1018, existing Saga43 stories. Recovered historical-path Windy Poplars versus correct Green Gables EPUB; independent primary-text content proof and complete ZIP/manifest/spine read-back. Originals and pristine/derived bytes unchanged.
+- Equivalent strict protocols: Qwen mismatch+match; Muse abstain+match, both before/after one bounded body-extraction increment. Eight serial calls; no gain earned, no ranking/adoption claim. Isolated deterministic reference selection resolves an actual intact correct EPUB; no LLM candidate-choice or Muse automatic repair claim. Final GPU idle, no downloads/live writes/restarts/deployments.
+- Bounded increment ends at PR/checks/review/merge delivery; no additional pairs or inference. Existing PLAN077/Seerr and wider saga holds remain. PR receipts are on the story PR.
+
+
 ## 2026-10-14: voice-call vision amendment saved; all execution remains paused
 
 - [Shared platform vision](context/2026-10-14-haynes-os-vision.md): tentative
