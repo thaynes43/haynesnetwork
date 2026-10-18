@@ -1,0 +1,5 @@
+{
+  "reason": "Transport_or_runtime_failure_no_retry",
+  "model": "nemotron-3.5-bolt:74b-a9b",
+  "case_id": "c01"
+}

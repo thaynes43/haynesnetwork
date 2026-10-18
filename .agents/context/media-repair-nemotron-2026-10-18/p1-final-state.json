@@ -1,0 +1,35 @@
+{
+  "at": "2026-10-18T21:37:57.682643+00:00",
+  "resident": {
+    "models": []
+  },
+  "resident_receipt": {
+    "wall_seconds": 0.11583151295781136,
+    "exit_code": 0,
+    "stderr": "",
+    "http_status": 200,
+    "raw_body": "{\"models\":[]}"
+  },
+  "resources": {
+    "snapshot": {
+      "compute_processes": "",
+      "compute_query_exit": 0,
+      "at": "2026-10-18T21:37:57.627647+00:00",
+      "exit_code": 0,
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51309342720\nusage_usec 3694564597\nuser_usec 3294708983\nsystem_usec 399855614\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5376808 kB\nMemAvailable:   121700848 kB\n",
+      "stderr": ""
+    },
+    "extra": "anon 177328128\nfile 51004444672\nkernel 125788160\nkernel_stack 638976\npagetables 2482176\nsec_pagetables 0\npercpu 5712\nsock 0\nvmalloc 32768\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 1908736\nfile_dirty 0\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 10485760\nshmem_thp 0\ninactive_anon 0\nactive_anon 177135616\ninactive_file 42580516864\nactive_file 8423931904\nunevictable 0\nslab_reclaimable 121882856\nslab_unreclaimable 713824\nslab 122596680\nworkingset_refault_anon 0\nworkingset_refault_file 2213212\nworkingset_activate_anon 0\nworkingset_activate_file 1964355\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 8551105\npgsteal 8551105\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 8543505\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 8543505\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 28953380\npgmajfault 302\npgrefill 8631939\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 2168\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \n",
+    "extra_exit": 0
+  },
+  "values": {
+    "gpu_used_mib": 1,
+    "gpu_free_mib": 24124,
+    "cgroup_current": 51309342720,
+    "cgroup_noninactive": 8728825856,
+    "host_available": 124621668352,
+    "oom_kill": 0,
+    "oom": 0
+  },
+  "server_tail": "print_info: causal attn           = 1\nprint_info: pooling type          = -1\nprint_info: rope type             = -1\nprint_info: rope scaling          = linear\nprint_info: freq_base_train       = 10000.0\nprint_info: freq_scale_train      = 1\nprint_info: n_ctx_orig_yarn       = 262144\nprint_info: rope_yarn_log_mul     = 0.0000\nprint_info: rope_finetuned        = unknown\nprint_info: ssm_d_conv            = 4\nprint_info: ssm_d_inner           = 8192\nprint_info: ssm_d_state           = 128\nprint_info: ssm_dt_rank           = 128\nprint_info: ssm_n_group           = 8\nprint_info: ssm_dt_b_c_rms        = 0\nprint_info: model type            = 75B.A9B\nprint_info: model params          = 74.04 B\nprint_info: general.name          = Hf Packed 6226\nprint_info: f_embedding_scale     = 0.000000\nprint_info: f_residual_scale      = 0.000000\nprint_info: f_attention_scale     = 0.000000\nprint_info: n_ff_shexp            = 5376\nprint_info: vocab type            = BPE\nprint_info: n_vocab               = 131072\nprint_info: n_merges              = 269443\nprint_info: BOS token             = 1 '<s>'\nprint_info: EOS token             = 11 '<|im_end|>'\nprint_info: EOT token             = 11 '<|im_end|>'\nprint_info: UNK token             = 0 '<unk>'\nprint_info: PAD token             = 11 '<|im_end|>'\nprint_info: LF token              = 1010 '\u010a'\nprint_info: EOG token             = 2 '</s>'\nprint_info: EOG token             = 11 '<|im_end|>'\nprint_info: max token length      = 150\nload_tensors: loading model tensors, this can take a while... (load_mode = mmap)\n[GIN] 2026/10/18 - 17:33:06 | 200 |       10.29\u00b5s |     10.42.0.112 | GET      \"/\"\n[GIN] 2026/10/18 - 17:34:06 | 200 |        9.36\u00b5s |     10.42.0.112 | GET      \"/\"\n[GIN] 2026/10/18 - 17:35:06 | 200 |       9.841\u00b5s |     10.42.0.112 | GET      \"/\"\n[GIN] 2026/10/18 - 17:36:06 | 200 |       9.631\u00b5s |     10.42.0.112 | GET      \"/\"\n[GIN] 2026/10/18 - 17:37:06 | 200 |         8.9\u00b5s |     10.42.0.112 | GET      \"/\"\ntime=2026-10-18T17:37:51.727-04:00 level=WARN source=llama_server.go:1342 msg=\"client connection closed before llama-server finished loading, aborting load\"\ntime=2026-10-18T17:37:51.727-04:00 level=INFO source=sched.go:692 msg=\"Load failed\" model=/models/blobs/sha256-91d63363e782c8a3d5f4be42816eba8e0d42dd2530bd07a7d0d2dc440599af75 error=\"timed out waiting for llama-server to start: context canceled\"\n[GIN] 2026/10/18 - 17:37:52 | 499 |          5m0s |       127.0.0.1 | POST     \"/api/generate\"\ntime=2026-10-18T17:37:52.072-04:00 level=ERROR source=llama_server.go:1058 msg=\"llama-server terminated\" error=\"signal: killed\" exit=unknown\n[GIN] 2026/10/18 - 17:37:57 | 200 |      25.322\u00b5s |       127.0.0.1 | GET      \"/api/ps\"\n"
+}

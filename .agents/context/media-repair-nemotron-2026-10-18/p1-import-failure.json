@@ -1,0 +1,6 @@
+{
+  "error": "ModuleNotFoundError before any HTTP: moved startup helper import after existing runtime sys.path initialization",
+  "initial_driver_sha256": "ad9a45ccb445c63aafb7ab3a7caad428a853141fe9eedc1fe33e41e332e182f4",
+  "http_requests": 0,
+  "startup_attempts": 0
+}

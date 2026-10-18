@@ -1,0 +1,5 @@
+{
+  "reason": "Startup_diagnostic_failed_no_retry",
+  "model": "nemotron-3.5-bolt:74b-a9b",
+  "calls": 2
+}

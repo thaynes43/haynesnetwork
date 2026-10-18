@@ -1,0 +1,24 @@
+{
+  "at": "2026-10-18T21:34:09.263613+00:00",
+  "resources": {
+    "snapshot": {
+      "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 14165, /usr/lib/ollama/llama-server, 256 MiB",
+      "compute_query_exit": 0,
+      "at": "2026-10-18T21:34:09.263441+00:00",
+      "exit_code": 0,
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 266 MiB, 23860 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 14165, /usr/lib/ollama/llama-server, 256 MiB\n51513716736\nusage_usec 3692400554\nuser_usec 3294113551\nsystem_usec 398287003\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5722508 kB\nMemAvailable:   121467020 kB\n",
+      "stderr": ""
+    },
+    "extra": "anon 367251456\nfile 51017449472\nkernel 148283392\nkernel_stack 1441792\npagetables 9670656\nsec_pagetables 0\npercpu 9912\nsock 0\nvmalloc 49152\nshmem 8392704\nzswap 0\nzswapped 0\nfile_mapped 2888183808\nfile_dirty 0\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 10485760\nshmem_thp 0\ninactive_anon 0\nactive_anon 375459840\ninactive_file 47764312064\nactive_file 3244752896\nunevictable 0\nslab_reclaimable 133638664\nslab_unreclaimable 1328448\nslab 134967112\nworkingset_refault_anon 0\nworkingset_refault_file 948764\nworkingset_activate_anon 0\nworkingset_activate_file 699907\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 7285530\npgsteal 7285530\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 7277930\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 7277930\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 28872661\npgmajfault 302\npgrefill 8631747\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 1756\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \n/usr/lib/ollama/llama-server --model /models/blobs/sha256-91d63363e782c8a3d5f4be42816eba8e0d42dd2530bd07a7d0d2dc440599af75 --port 42865 --host 127.0.0.1 --no-webui --offline -c 4096 -np 1 --log-verbosity 4 --no-log-prefix --no-log-timestamps --no-jinja --chat-template chatml --mmproj /models/blobs/sha256-0ee891eadc7bf0cae6289b249c74eb1ef420534351f6ef8b64d49f0ca6a926b0 --no-mmproj-offload --spec-type draft-dflash --spec-draft-n-max 7 --spec-draft-model /models/blobs/sha256-080e1ea41c9562a7804dbf30c6fbd4d17e216c6b8ff666f88e6edb1816010194 --flash-attn auto -b 128 -ub 128 -ngl 48 -t 2 --context-shift --keep 4 \n",
+    "extra_exit": 0
+  },
+  "values": {
+    "gpu_used_mib": 266,
+    "gpu_free_mib": 23860,
+    "cgroup_current": 51513716736,
+    "cgroup_noninactive": 3749404672,
+    "host_available": 124382228480,
+    "oom_kill": 0,
+    "oom": 0
+  }
+}

@@ -68,7 +68,9 @@ def main():
     suites.verify(read(ROOT / 'suites.json'))
     protocol = read(ROOT / 'text-protocol.json')
     assert protocol['options']['num_thread'] == 2
-    assert read(ROOT / 'pull-exit.json')['exit_code'] == 0
+    completion = read(ROOT / 'original-pull-completion.json')
+    assert completion['status'] == 'original_server_pull_committed_after_client_timeout'
+    assert completion['pull_invocations'] == 1 and not completion['second_pull_sent']
     assert read(ROOT / 'checksums.json')['verified_all_layers_and_config']
     out = ROOT / 'text-runs'
     out.mkdir(exist_ok=False)
