@@ -1,0 +1,16 @@
+{
+  "at": "2026-10-18T16:50:42.868361+00:00",
+  "development_basis": "Plain READY probe consumed its reasoning budget; schema READY probe returned correct object plus literal <|eot|>; c01 schema+tool+request-stop probe yielded clean mismatch.",
+  "change": "Per-request options.stop=[<|eot|>] only, with already frozen schema/tool; no service/template/model modification.",
+  "evaluation": "Four frozen held-out cases only; c01 development probe retained separately. No semantic tuning on held-out errors.",
+  "official_sources": [
+    "https://huggingface.co/meta-models/Muse-Glimmer-30B/blob/main/chat_template.jinja",
+    "https://github.com/ollama/ollama/commit/7ce88bd686cf6a7307ae66677dc5a44c0bbf31a3",
+    "https://docs.ollama.com/capabilities/structured-outputs"
+  ],
+  "release_ancestry": {
+    "v0.40.6_ahead_of_renderer_fix_commits": 276,
+    "behind": 0
+  },
+  "root_cause_status": "Compatibility symptom and request-level remedy measured; exact internal renderer/stop bug not independently proved."
+}

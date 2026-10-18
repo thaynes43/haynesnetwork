@@ -1,0 +1,14 @@
+{
+  "attempted": 11,
+  "corpus_sha256": "39fe6a985bea4c4ac31a6d497db132a846269f04c86381259ddaa56a023946a7",
+  "digest": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+  "model": "qwen3.8:27b",
+  "model_triggered_reference_repair": {
+    "actual_media_repair": "not_run",
+    "attempted": 11,
+    "correct": 10,
+    "oracle_candidate_selector": "deterministic_v1_evidence_tool",
+    "originals_preserved": true
+  },
+  "stop": null
+}

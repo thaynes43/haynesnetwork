@@ -1,5 +1,6 @@
 {
   "corpus.jsonl": "39fe6a985bea4c4ac31a6d497db132a846269f04c86381259ddaa56a023946a7",
   "prompt.txt": "c879a6d31fc12169aaf6c6267b4eab50fcd062101771bcccce402b129ca6c685",
-  "results/requests.jsonl": "70f0d644e6627faad7ff114ae46948baed6d52c4b22ba65ddb0ff9871dd1bd1f"
+  "results/requests.jsonl": "70f0d644e6627faad7ff114ae46948baed6d52c4b22ba65ddb0ff9871dd1bd1f",
+  "inference-config.json": "b8402ce9b506983194dc3c207c10476cd75a4c6976f2607daccd7ade08a8ef8f"
 }

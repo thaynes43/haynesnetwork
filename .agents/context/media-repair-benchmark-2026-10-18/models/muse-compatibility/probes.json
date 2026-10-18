@@ -1,0 +1,86 @@
+[
+  {
+    "probe": 1,
+    "request": {
+      "keep_alive": "2m",
+      "messages": [
+        {
+          "content": "Reply with exactly READY and nothing else.",
+          "role": "user"
+        }
+      ],
+      "model": "muse-glimmer:30b",
+      "options": {
+        "num_ctx": 4096,
+        "num_predict": 64,
+        "seed": 42,
+        "temperature": 0
+      },
+      "stream": false
+    },
+    "resources": {
+      "at": "2026-10-18T16:49:09.309076+00:00",
+      "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 3899, /usr/lib/ollama/llama-server, 17442 MiB",
+      "compute_query_exit": 0,
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17452 MiB, 6674 MiB, 21 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 3899, /usr/lib/ollama/llama-server, 17442 MiB\n37613838336\nusage_usec 1081512308\nuser_usec 907126332\nsystem_usec 174385975\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         3239136 kB\nMemAvailable:   119892904 kB\n"
+    },
+    "response": {
+      "exit_code": 0,
+      "http_status": 200,
+      "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-18T16:49:09.06545244Z\",\"message\":{\"role\":\"assistant\",\"content\":\"\",\"thinking\":\"Reply with exactly READY and nothing else.\\n\\nWe need to reply with exactly READY and nothing else.\\n\\nThe user says Reply with exactly READY and nothing else.\\n\\nSo output READY\\n\\nNo extra whitespace? Probably exactly READY. Might be newline? Safer to output just READY.\\n\\nFollow instruction\"},\"done\":true,\"done_reason\":\"length\",\"total_duration\":6394339829,\"load_duration\":4791471031,\"prompt_eval_count\":65,\"prompt_eval_cached_count\":0,\"prompt_eval_duration\":133080999,\"eval_count\":64,\"eval_duration\":1454468000}",
+      "stderr": "",
+      "wall_seconds": 6.517656578216702
+    }
+  },
+  {
+    "probe": 2,
+    "request": {
+      "format": {
+        "additionalProperties": false,
+        "properties": {
+          "ready": {
+            "const": "READY",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ready"
+        ],
+        "type": "object"
+      },
+      "keep_alive": "2m",
+      "messages": [
+        {
+          "content": "Return an object whose ready field is READY.",
+          "role": "user"
+        }
+      ],
+      "model": "muse-glimmer:30b",
+      "options": {
+        "num_ctx": 4096,
+        "num_predict": 64,
+        "seed": 42,
+        "temperature": 0
+      },
+      "stream": false,
+      "think": false
+    },
+    "resources": {
+      "at": "2026-10-18T16:49:09.945963+00:00",
+      "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 3899, /usr/lib/ollama/llama-server, 17442 MiB",
+      "compute_query_exit": 0,
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17452 MiB, 6674 MiB, 24 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 3899, /usr/lib/ollama/llama-server, 17442 MiB\n37648994304\nusage_usec 1091324964\nuser_usec 916849232\nsystem_usec 174475731\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         3161716 kB\nMemAvailable:   119815488 kB\n"
+    },
+    "response": {
+      "exit_code": 0,
+      "http_status": 200,
+      "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-18T16:49:09.694686849Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"ready\\\":\\\"READY\\\"}\\u003c|eot|\\u003e\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":273475677,\"load_duration\":619389,\"prompt_eval_count\":66,\"prompt_eval_cached_count\":0,\"prompt_eval_duration\":109769000,\"eval_count\":6,\"eval_duration\":149106000}",
+      "stderr": "",
+      "wall_seconds": 0.381431438960135
+    }
+  }
+]

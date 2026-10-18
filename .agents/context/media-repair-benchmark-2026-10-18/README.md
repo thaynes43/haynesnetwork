@@ -225,3 +225,43 @@ Tom additionally requires both authorized pulls **and checksum verification** to
 finish before timing either inference matrix. This run follows that serial-I/O
 condition; no matrix is started during a download. Cold first-call load time is
 included in each model's raw receipt and reported separately from warm calls.
+
+
+### Observed registry-wrapper detail
+
+The first provenance assertion expected the installed local file's bytes to hash
+to the API digest. Live Qwen uses a resolved wrapper containing an MLX/llama.cpp
+registry index plus the original selected manifest. The wrapper hash differs,
+while the **original registry manifest** hashes exactly to the API ID (which has
+no `sha256:` prefix). The verifier now checks that original blob's full hash,
+its NVIDIA/llama.cpp index binding, identical config and every served data-layer
+hash/size. Both wrapper and original remain in the receipt. This is a verified
+representation correction before inference, not a model replacement or ignored
+integrity failure. [Ollama's tags API](https://docs.ollama.com/api/tags) documents
+the digest/quantization fields; the wrapper structure is directly observed in
+`runtime/qwen-provenance/`, not inferred from that API documentation.
+
+
+Baseline progress output seals the four held-out decisions. Raw receipts are
+persisted, but the operator inspects development failures first and records the
+minimal increment (or no-change decision) before opening the held-out aggregate.
+The model itself never receives split membership. No held-out model response is
+used to tune prompts, extraction or candidate selection.
+
+## Final measured checkpoint
+
+[REPORT.md](REPORT.md) and `model-summary.json` distinguish original baselines,
+identity-tool/schema variants, development compatibility probes and corrected
+serving. The original offline summary's unmeasured-model field is historical;
+actual model scores are in the later model receipts. Muse's installed `ggml`
+GGUF path was independently verified; a registry need not carry Qwen's explicit
+`runner` field. No MLX substitution occurred.
+
+Variant reproduction adds these flags to the exact-model command above:
+`--tool-assisted` for c01 plus four held-out rows;
+`--tool-assisted --serving-stop` for the separately corrected four held-out rows;
+`--corrected-serving` for all eleven original rows with strict schema/end-token
+framing correction **and no identity tool**. Every variant uses a new output
+directory. Development compatibility probes preserve exact request bodies under
+`models/muse-compatibility/`; their constants are diagnostic instructions, never
+media truth labels. No further model iteration is authorized by these commands.

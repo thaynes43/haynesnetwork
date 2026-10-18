@@ -11,11 +11,7 @@
   evidence rules 11/11, five contract tests and six independent probes pass.
   These are deterministic rules on reconstructed observations, not LLM or actual
   media decoding/repair results. Fixture original bytes are preserved.
-- Subsequent owner authorization allows only official `qwen3.8:27b` and
-  `muse-glimmer:30b` downloads and serial bounded comparison on verified Prime
-  card A. Both pulls/checksums must complete before inference timing. No model
-  inference score is claimed at this preparation checkpoint; final receipts and
-  the story PR carry the actual ending state. No download of unrelated variants.
+- Exact-model downloads and serial measurements completed; [report](context/media-repair-benchmark-2026-10-18/REPORT.md). Qwen baseline10/11 (one abstention), held-out4/4. Muse baseline11 protocol errors; a development-probed per-request schema/end-token correction, with no identity tool, passed the full frozen11/11. Qwen tool-assisted subset5/5. All fixture originals preserved; actual media decoding/repair unmeasured. Both exact models remain installed; own resident models unloaded. PR/CI/merge state belongs to the story PR/checkpoint, not a readiness claim.
 - The benchmark exception does not resume PLAN-077, the Seerr bot, live repairs,
   monitoring, deployment or any next saga epic. Existing #991/#992 holds remain.
 

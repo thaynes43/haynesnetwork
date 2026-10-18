@@ -1,0 +1,36 @@
+{
+  "at": "2026-10-18T16:53:41.955678+00:00",
+  "installed_tags": [
+    "muse-glimmer:30b",
+    "qwen3.8:27b",
+    "gpt-oss:latest",
+    "nomic-embed-text:latest",
+    "llama3.1:8b",
+    "huihui_ai/gemma3-abliterated:27b",
+    "huihui_ai/gemma3-abliterated:12b",
+    "huihui_ai/gemma3-abliterated:latest",
+    "r1-1776:latest",
+    "dolphin-llama3:latest",
+    "phi4-reasoning:latest",
+    "llama4:latest",
+    "dolphin3:latest",
+    "llama2-uncensored:latest",
+    "phi4:latest",
+    "gemma3:27b",
+    "llama3.3:latest",
+    "llama3.2:latest",
+    "deepseek-r1:latest"
+  ],
+  "live_media_mutations": 0,
+  "resident": {
+    "models": []
+  },
+  "resources": {
+    "at": "2026-10-18T16:53:42.240539+00:00",
+    "compute_processes": "",
+    "compute_query_exit": 0,
+    "exit_code": 0,
+    "stderr": "",
+    "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n36427542528\nusage_usec 1331215356\nuser_usec 1139657769\nsystem_usec 191557587\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         4661816 kB\nMemAvailable:   121329628 kB\n"
+  }
+}
