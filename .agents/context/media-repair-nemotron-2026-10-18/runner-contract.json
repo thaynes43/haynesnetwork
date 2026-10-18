@@ -1,0 +1,9 @@
+{
+  "observed": "OLLAMA_NUM_PARALLEL and OLLAMA_MAX_LOADED_MODELS unset in Prime; no global changes. Supported runner help: --threads-batch defaults to --threads; --spec-draft-threads defaults to --threads and --spec-draft-threads-batch defaults to --threads-draft. Versioned API/launcher mapping verified. Actual engine command/residency retained per measured row.",
+  "sources": [
+    "https://raw.githubusercontent.com/ollama/ollama/v0.40.6/api/types.go",
+    "https://raw.githubusercontent.com/ollama/ollama/v0.40.6/llm/llama_server.go",
+    "https://raw.githubusercontent.com/ollama/ollama/v0.40.6/model/renderers/nemotron3nano.go",
+    "https://raw.githubusercontent.com/ollama/ollama/v0.40.6/envconfig/config.go"
+  ]
+}
