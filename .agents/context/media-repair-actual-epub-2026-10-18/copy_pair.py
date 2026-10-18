@@ -1,7 +1,7 @@
 import subprocess,pathlib,json,hashlib,sys,os
 root=pathlib.Path('/home/dev/.cache/media-repair-actual-epub-1018');root.mkdir(mode=0o700,exist_ok=False)
 paths=['/data/cephfs-hdd/data/media/books/quarantine/crossvolume-2026-10-05/EBooks/L.M. Montgomery/Anne of Green Gables/Anne of Green Gables - L.M. Montgomery.epub','/data/cephfs-hdd/data/media/books/EBooks/L.M. Montgomery/Anne of Green Gables - Collection/L.M. Montgomery - Anne of Green Gables - Collection.epub']
-prefix=['kubectl','-n','downloads','exec','lazylibrarian-565f8b89b9-htmcq','-c','app','--','python3','-c']
+prefix=['kubectl','-n','downloads','exec','deploy/lazylibrarian','-c','app','--','python3','-c']
 receipts=[]
 for i,p in enumerate(paths):
  cmd='import pathlib,hashlib,json; p=pathlib.Path(__import__("sys").argv[1]); s=p.stat(); assert s.st_size<=8388608; print(json.dumps(dict(bytes=s.st_size,sha256=hashlib.sha256(p.read_bytes()).hexdigest(),mtime_ns=s.st_mtime_ns)))'
