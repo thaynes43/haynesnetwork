@@ -1,0 +1,24 @@
+{
+  "at": "2026-10-18T22:04:17.156367+00:00",
+  "resident": {
+    "models": []
+  },
+  "resources": {
+    "snapshot": {
+      "compute_processes": "",
+      "compute_query_exit": 0,
+      "at": "2026-10-18T22:04:17.046120+00:00",
+      "exit_code": 0,
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51296829440\nusage_usec 3712193649\nuser_usec 3300209816\nsystem_usec 411983833\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5275172 kB\nMemAvailable:   121965892 kB\n",
+      "stderr": ""
+    },
+    "extra": "anon 177553408\nfile 51005837312\nkernel 110219264\nkernel_stack 638976\npagetables 2400256\nsec_pagetables 0\npercpu 6384\nsock 0\nvmalloc 32768\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 1912832\nfile_dirty 0\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 8388608\nshmem_thp 0\ninactive_anon 173133824\nactive_anon 4182016\ninactive_file 35978473472\nactive_file 15027367936\nunevictable 0\nslab_reclaimable 106361576\nslab_unreclaimable 744560\nslab 107106136\nworkingset_refault_anon 0\nworkingset_refault_file 3893820\nworkingset_activate_anon 0\nworkingset_activate_file 3554339\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 10231373\npgsteal 10231373\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 10223773\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 10223773\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 30904351\npgmajfault 307\npgrefill 8812441\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 2706\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \n",
+    "extra_exit": 0
+  },
+  "cache_idle": true,
+  "locality_capacity_port_ownership": "/usr/bin/setsid\n/usr/bin/timeout\nFilesystem     Type       1B-blocks         Used    Available Use% Mounted on\noverlay        overlay 547177447424 242501144576 304676302848  45% /\n0 1777 directory\n",
+  "exit_code": 0,
+  "stderr": "",
+  "source_digest_proof": "checksums.json/original-pull-completion.json; copy SHA will verify the exact read bytes again, without duplicate source scan",
+  "absolute_deadline_utc": "2026-10-18T22:25:00+00:00"
+}

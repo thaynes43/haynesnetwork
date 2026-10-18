@@ -1,0 +1,13 @@
+{
+  "run_p3.py": "76f88a1b3c3956dee095eb84febe2a5e35dc3183aeab8a1d2dd61d97705cf266",
+  "local_api.py": "093ca41f999e136e3afae8713e06b40bd4cbc91bd083d872f66fd3659b48a73d",
+  "io_startup_local.py": "2a17a6ec8ead6c4230aa7a7b82cd267956dfbfcc3b990108c2e076f9d06f99a2",
+  "io_probe_local.sh": "6039732b614b399c69346fcda42ed4eb8c534446ab7400d529ae9b4a47a5d1d2",
+  "p3-protocol.json": "dd4f68d88a14fc8df09fd7dc669b5f421a949b5d52ec8fafe62095d62c02ca81",
+  "text-cases.json": "8d4418f57db3b0d566c6807f832d65dde3ab3f37dd2d98a465b23975c9eb3c64",
+  "suites.json": "04cf8f90c1a1e12cd7d8a74c2934d3ca4814cb42b49f610236bdd3447723bd79",
+  "checksums.json": "29217426cbaf1911cf6465031c92ed397b762e51e4c97e6f583c84683df62406",
+  "original-pull-completion.json": "29217426cbaf1911cf6465031c92ed397b762e51e4c97e6f583c84683df62406",
+  "finish_local.py": "b36f386bef0dc0452ef3d753911ea769d4ee3cb78691de782077ecbc26a66cdc",
+  "score_p3.py": "80c5cfa2aef51d4d6292a90136bd3c4b3c4f9b11b8dc8176b3e64b78049fe62c"
+}

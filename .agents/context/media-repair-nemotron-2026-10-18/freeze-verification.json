@@ -1,0 +1,44 @@
+{
+  "checked": [
+    "p1-freeze.json",
+    "p2-corrected-freeze.json",
+    "p2-first-freeze.json",
+    "p2-freeze.json",
+    "p3-freeze.json",
+    "p3-freeze.pre-dirty-accounting.json",
+    "p3-freeze.pre-driver-settle.json",
+    "p3-freeze.pre-settle.json",
+    "p4-freeze.json",
+    "suite-freeze.json",
+    "text-freeze-before-server-completion.json",
+    "text-freeze.json"
+  ],
+  "archive_resolution": {
+    "suite-freeze.json": {
+      "README.md": "README.suite-frozen.md"
+    },
+    "text-freeze-before-server-completion.json": {
+      "run_text.py": "run_text.pre-server-completion.py"
+    },
+    "p2-freeze.json": {
+      "io_startup.py": "io_startup.p2-first.py"
+    },
+    "p2-first-freeze.json": {
+      "io_startup.py": "io_startup.p2-first.py"
+    },
+    "p3-freeze.pre-settle.json": {
+      "finish_local.py": "finish_local.pre-settle.py",
+      "run_p3.py": "run_p3.pre-settle.py",
+      "io_startup_local.py": "io_startup_local.pre-dirty-accounting.py"
+    },
+    "p3-freeze.pre-driver-settle.json": {
+      "run_p3.py": "run_p3.pre-settle.py",
+      "io_startup_local.py": "io_startup_local.pre-dirty-accounting.py"
+    },
+    "p3-freeze.pre-dirty-accounting.json": {
+      "run_p3.py": "run_p3.pre-dirty-accounting.py",
+      "io_startup_local.py": "io_startup_local.pre-dirty-accounting.py"
+    }
+  },
+  "mismatches": []
+}

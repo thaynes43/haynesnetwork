@@ -1,0 +1,17 @@
+{
+  "resources": {
+    "snapshot": {
+      "compute_processes": "",
+      "compute_query_exit": 0,
+      "at": "2026-10-18T22:17:16.026651+00:00",
+      "exit_code": 0,
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51238055936\nusage_usec 3755179958\nuser_usec 3317024881\nsystem_usec 438155076\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5263896 kB\nMemAvailable:   121763116 kB\n",
+      "stderr": ""
+    },
+    "extra": "anon 341798912\nfile 50741645312\nkernel 148344832\nkernel_stack 966656\npagetables 4329472\nsec_pagetables 0\npercpu 8568\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 2363392\nfile_dirty 20480\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 169234432\nactive_anon 172240896\ninactive_file 35513360384\nactive_file 15228293120\nunevictable 0\nslab_reclaimable 141871480\nslab_unreclaimable 1089736\nslab 142961216\nworkingset_refault_anon 0\nworkingset_refault_file 6266068\nworkingset_activate_anon 0\nworkingset_activate_file 3554342\nworkingset_restore_anon 0\nworkingset_restore_file 6\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 18759936\npgsteal 18759936\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 18752336\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 18752336\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 33790334\npgmajfault 1923\npgrefill 8812460\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 5482\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n",
+    "extra_exit": 0
+  },
+  "resident": {
+    "models": []
+  }
+}

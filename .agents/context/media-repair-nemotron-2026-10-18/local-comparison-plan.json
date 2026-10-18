@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-18T22:00:53.459645+00:00",
+  "status": "Prepared_conditional_local_comparison_not_executed",
+  "locality": "Prime container overlay on node;304658997248bytesfree observed, physical disk backing/speed not verified. NFS original separate mount.",
+  "original_modelstore": "/models unchanged",
+  "proposed_owned_directory": "/tmp/media-repair-nemotron-1018-local (exclusive creation0700; refuse preexisting ownership conflict)",
+  "copy": "Same exact model/config/projector/drafter/license/params/manifest content-addressed bytes only, no download; copy serial under nice19, hash local files and compare official digests before load; preserve originals.",
+  "isolated_runtime_command": [
+    "env",
+    "OLLAMA_MODELS=/tmp/media-repair-nemotron-1018-local/models",
+    "OLLAMA_HOST=127.0.0.1:11435",
+    "OLLAMA_NUM_PARALLEL=1",
+    "ollama",
+    "serve"
+  ],
+  "isolation": "Existing same Ollama0.40.6 binary; per-process environment only, loopback listener only, no Service/ingress/restart/globalsetting/credentials. Original daemon continues idle. One GPUowner at a time; terminate own temporary process group after own unload.",
+  "authority_gap": "Earlier NEMOTRON.md says existing Prime local API and do not build proxy/servers. Latest conditionallocalcopy authorizes staging, but temporary loopback server interpretation needs explicit clarification before this runtime action. No new protected cluster/runtime setting changes proposed.",
+  "absolute_deadline_utc": "2026-10-18T22:25:00+00:00",
+  "model_calls_so_far": 4,
+  "semantic_outputs": 0
+}

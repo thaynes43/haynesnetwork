@@ -1,0 +1,225 @@
+[
+  {
+    "model": "nemotron-3.5-bolt:74b-a9b",
+    "status": "complete",
+    "planned": 13,
+    "attempted": 13,
+    "completed_runtime": 13,
+    "documentary": {
+      "all": {
+        "n": 10,
+        "positives": 5,
+        "negatives": 5,
+        "confusion": {
+          "tp": 5,
+          "tn": 5,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "coverage": 1.0
+      },
+      "development": {
+        "n": 6,
+        "positives": 3,
+        "negatives": 3,
+        "confusion": {
+          "tp": 3,
+          "tn": 3,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "coverage": 1.0
+      },
+      "held_out": {
+        "n": 4,
+        "positives": 2,
+        "negatives": 2,
+        "confusion": {
+          "tp": 2,
+          "tn": 2,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "coverage": 1.0
+      }
+    },
+    "av": [
+      {
+        "case_id": "a01",
+        "assessment": {
+          "error": false,
+          "axis_correct": {
+            "identity": false,
+            "decode": true,
+            "compatibility": true
+          },
+          "abstentions": [],
+          "unsupported_assertions": [
+            "identity:mismatch"
+          ],
+          "references_resolve": true,
+          "citation_coverage": false,
+          "false_mismatch": true,
+          "identity_covered": true
+        },
+        "proposal": {
+          "identity": "mismatch",
+          "decode": "pass",
+          "compatibility": "supported",
+          "evidence": [
+            "ocr",
+            "streams",
+            "decode.primary",
+            "decode.other"
+          ]
+        }
+      },
+      {
+        "case_id": "a02",
+        "assessment": {
+          "error": false,
+          "axis_correct": {
+            "identity": true,
+            "decode": true,
+            "compatibility": true
+          },
+          "abstentions": [],
+          "unsupported_assertions": [],
+          "references_resolve": true,
+          "citation_coverage": true,
+          "false_mismatch": false,
+          "identity_covered": true
+        },
+        "proposal": {
+          "identity": "mismatch",
+          "decode": "pass",
+          "compatibility": "supported",
+          "evidence": [
+            "ocr",
+            "decode.primary",
+            "streams",
+            "client"
+          ]
+        }
+      },
+      {
+        "case_id": "a03",
+        "assessment": {
+          "error": false,
+          "axis_correct": {
+            "identity": false,
+            "decode": true,
+            "compatibility": true
+          },
+          "abstentions": [],
+          "unsupported_assertions": [
+            "identity:mismatch"
+          ],
+          "references_resolve": true,
+          "citation_coverage": true,
+          "false_mismatch": false,
+          "identity_covered": true
+        },
+        "proposal": {
+          "identity": "mismatch",
+          "decode": "pass",
+          "compatibility": "supported",
+          "evidence": [
+            "client",
+            "decode.primary",
+            "streams",
+            "subtitle",
+            "ocr",
+            "client"
+          ]
+        }
+      }
+    ],
+    "semantic_interpretation": "Partial/runtime failures are not model semantic zero; all attempts retained.",
+    "wall_seconds": [
+      15.671671451069415,
+      16.092064558062702,
+      16.71641726233065,
+      20.13565979572013,
+      5.0177265726961195,
+      3.8015364538878202,
+      4.0389310154132545,
+      2.085379619151354,
+      4.847430981695652,
+      2.0644078222103417,
+      2.08562592882663,
+      4.796037249732763,
+      4.126855248119682
+    ],
+    "prompt_tokens": 4774,
+    "generated_tokens": 249,
+    "cpu_cgroup_seconds": 174.376647,
+    "max_sampled_gpu_mib": 15114,
+    "max_sampled_cgroup_bytes": 51523870720,
+    "resource_caveat": "Endpoint samples, not peaks; CPU counters include probes. Partial48-layeroffload and first-load cache differ."
+  },
+  {
+    "model": "qwen3.8:27b",
+    "status": "partial_or_not_run",
+    "planned": 13,
+    "attempted": 0,
+    "completed_runtime": 0,
+    "documentary": null,
+    "av": [],
+    "semantic_interpretation": "Partial/runtime failures are not model semantic zero; all attempts retained.",
+    "wall_seconds": [],
+    "prompt_tokens": 0,
+    "generated_tokens": 0,
+    "cpu_cgroup_seconds": 0.0,
+    "max_sampled_gpu_mib": null,
+    "max_sampled_cgroup_bytes": null,
+    "resource_caveat": "Endpoint samples, not peaks; CPU counters include probes. Partial48-layeroffload and first-load cache differ."
+  },
+  {
+    "model": "muse-glimmer:30b",
+    "status": "partial_or_not_run",
+    "planned": 13,
+    "attempted": 0,
+    "completed_runtime": 0,
+    "documentary": null,
+    "av": [],
+    "semantic_interpretation": "Partial/runtime failures are not model semantic zero; all attempts retained.",
+    "wall_seconds": [],
+    "prompt_tokens": 0,
+    "generated_tokens": 0,
+    "cpu_cgroup_seconds": 0.0,
+    "max_sampled_gpu_mib": null,
+    "max_sampled_cgroup_bytes": null,
+    "resource_caveat": "Endpoint samples, not peaks; CPU counters include probes. Partial48-layeroffload and first-load cache differ."
+  }
+]

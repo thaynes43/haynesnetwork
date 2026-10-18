@@ -1,0 +1,8 @@
+{
+  "api_digest": "d6d3deeca27134af015d1ab4d57ee655dd6d624dbef4f5dfd18f4b54f76bb554",
+  "wrapper_sha256": "8ce7b13016282a15b5896af32503c5ae4cd1a1a164c2a46f66ead64fea6feb1f",
+  "all_local_blobs_exact_sha256": true,
+  "same_version": "0.40.6",
+  "modelstore": "/tmp/media-repair-nemotron-1018-local/models/",
+  "large_hash_basis": "local-copy-result.json actual SHA256 for each copied blob"
+}

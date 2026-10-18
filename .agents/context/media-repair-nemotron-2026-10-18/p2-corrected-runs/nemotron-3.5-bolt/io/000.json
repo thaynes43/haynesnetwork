@@ -1,0 +1,39 @@
+{
+  "at": "2026-10-18T21:58:46.048724+00:00",
+  "resources": {
+    "snapshot": {
+      "compute_processes": "",
+      "compute_query_exit": 0,
+      "at": "2026-10-18T21:58:45.819754+00:00",
+      "exit_code": 0,
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n50931998720\nusage_usec 3700516611\nuser_usec 3296836998\nsystem_usec 403679613\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5384996 kB\nMemAvailable:   121679596 kB\n",
+      "stderr": ""
+    },
+    "extra": "anon 280862720\nfile 50596286464\nkernel 126595072\nkernel_stack 753664\npagetables 3366912\nsec_pagetables 0\npercpu 9912\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 2080768\nfile_dirty 0\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 10485760\nshmem_thp 0\ninactive_anon 0\nactive_anon 280489984\ninactive_file 41953730560\nactive_file 8642560000\nunevictable 0\nslab_reclaimable 121429016\nslab_unreclaimable 933144\nslab 122362160\nworkingset_refault_anon 0\nworkingset_refault_file 2266588\nworkingset_activate_anon 0\nworkingset_activate_file 2017731\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 8704129\npgsteal 8704129\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 8696529\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 8696529\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 29731172\npgmajfault 302\npgrefill 8631939\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 2218\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \n/usr/lib/ollama/llama-server --port 62778 --host 127.0.0.1 --no-webui --offline --verbose \n",
+    "extra_exit": 0
+  },
+  "values": {
+    "gpu_used_mib": 1,
+    "gpu_free_mib": 24124,
+    "cgroup_current": 50931998720,
+    "cgroup_noninactive": 8978268160,
+    "host_available": 124599906304,
+    "oom_kill": 0,
+    "oom": 0
+  },
+  "probe_exit": 0,
+  "probe": "anon 292343808\nfile 50604675072\nkernel 128942080\nkernel_stack 786432\npagetables 3567616\nsec_pagetables 0\npercpu 9912\nsock 0\nvmalloc 49152\nshmem 8392704\nzswap 0\nzswapped 0\nfile_mapped 12484608\nfile_dirty 0\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 10485760\nshmem_thp 0\ninactive_anon 0\nactive_anon 300490752\ninactive_file 41953730560\nactive_file 8642560000\nunevictable 0\nslab_reclaimable 121457104\nslab_unreclaimable 936064\nslab 122393168\nworkingset_refault_anon 0\nworkingset_refault_file 2266588\nworkingset_activate_anon 0\nworkingset_activate_file 2017731\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 8704129\npgsteal 8704129\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 8696529\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 8696529\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 29780124\npgmajfault 302\npgrefill 8631939\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 2218\noom 0\noom_kill 0\noom_group_kill 0\nsome avg10=0.00 avg60=0.00 avg300=0.00 total=1407174\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1407174\nLOADER 15077\n/usr/lib/ollama/llama-server --list-devices --offline --verbose \nrchar: 63142\nwchar: 95\nsyscr: 92\nsyscw: 11\nread_bytes: 0\nwrite_bytes: 0\ncancelled_write_bytes: 0\n0378880028 14110 23\n00400000-7ffe6c60c000 ---p 00000000 00:00 0                              [rollup]\nRss:              265108 kB\nPss:              261071 kB\nPss_Dirty:        122344 kB\nPss_Anon:         112056 kB\nPss_File:         140823 kB\nPss_Shmem:          8192 kB\nShared_Clean:       6312 kB\nShared_Dirty:          0 kB\nPrivate_Clean:    136452 kB\nPrivate_Dirty:    122344 kB\nReferenced:       265108 kB\nAnonymous:        112056 kB\nKSM:                   0 kB\nLazyFree:              0 kB\nAnonHugePages:         0 kB\nShmemPmdMapped:        0 kB\nFilePmdMapped:         0 kB\nShared_Hugetlb:        0 kB\nPrivate_Hugetlb:       0 kB\nSwap:                  0 kB\nSwapPss:               0 kB\nLocked:                0 kB\n\nWAIT /proc/15077/task/15077/wchan 0\nWAIT /proc/15077/task/15079/wchan __futex_wait\nWAIT /proc/15077/task/15080/wchan __futex_wait\nWAIT /proc/15077/task/15086/wchan do_sys_poll\nWAIT /proc/15077/task/15094/wchan __futex_wait\nWAIT /proc/15077/task/15095/wchan do_sys_poll\n",
+  "resident": {
+    "models": []
+  },
+  "resident_receipt": {
+    "wall_seconds": 0.0905907116830349,
+    "exit_code": 0,
+    "stderr": "",
+    "http_status": 200,
+    "raw_body": "{\"models\":[]}"
+  },
+  "io_progress_counter": 63142,
+  "seconds_since_io_progress": 0.09084214922040701,
+  "memory_full_pressure_streak": 0
+}

@@ -1,0 +1,9 @@
+{
+  "at": "2026-10-18T22:13:09.292865+00:00",
+  "pid_pgid": "19859",
+  "launch_stdout": "19859\n19859 (timeout) S 19853 19859 19859 0 -1 4194560 171 0 0 0 0 0 0 0 20 0 1 0 50837795 2781184 328 18446744073709551615 93914507067392 93914507085457 140722324272624 0 0 0 0 3145728 90119 1 0 0 17 38 0 0 0 0 0 93914507098736 93914507100760 93915556876288 140722324274315 140722324274453 140722324274453 140722324275175 0\ntimeout 711 env OLLAMA_MODELS=/tmp/media-repair-nemotron-1018-local/models OLLAMA_HOST=127.0.0.1:11435 OLLAMA_NUM_PARALLEL=1 ollama serve \n",
+  "launch_stderr": "",
+  "deadline": "2026-10-18T22:25:00+00:00",
+  "physical_gpu_pod": "Same Prime3090/pod; process-only modelstore/host/parallel settings; original daemon not restarted/reconfigured.",
+  "capacity_port_owner": "Filesystem     Type       1B-blocks         Used    Available Use% Mounted on\noverlay        overlay 547177447424 267253231616 279924215808  49% /\n"
+}

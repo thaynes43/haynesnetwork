@@ -1,0 +1,39 @@
+{
+  "at": "2026-10-18T21:56:05.496122+00:00",
+  "resources": {
+    "snapshot": {
+      "compute_processes": "",
+      "compute_query_exit": 0,
+      "at": "2026-10-18T21:56:05.308487+00:00",
+      "exit_code": 0,
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n51336331264\nusage_usec 3696277215\nuser_usec 3295387209\nsystem_usec 400890006\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5068812 kB\nMemAvailable:   121762404 kB\n",
+      "stderr": ""
+    },
+    "extra": "anon 278261760\nfile 51004444672\nkernel 127074304\nkernel_stack 753664\npagetables 3354624\nsec_pagetables 0\npercpu 10584\nsock 0\nvmalloc 49152\nshmem 4096\nzswap 0\nzswapped 0\nfile_mapped 1953792\nfile_dirty 0\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 10485760\nshmem_thp 0\ninactive_anon 0\nactive_anon 277733376\ninactive_file 42580516864\nactive_file 8423931904\nunevictable 0\nslab_reclaimable 121921552\nslab_unreclaimable 939480\nslab 122861032\nworkingset_refault_anon 0\nworkingset_refault_file 2213212\nworkingset_activate_anon 0\nworkingset_activate_file 1964355\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 8551105\npgsteal 8551105\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 8543505\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 8543505\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 29176123\npgmajfault 302\npgrefill 8631939\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 2168\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \n/usr/lib/ollama/llama-server --port 50244 --host 127.0.0.1 --no-webui --offline --verbose \n",
+    "extra_exit": 0
+  },
+  "values": {
+    "gpu_used_mib": 1,
+    "gpu_free_mib": 24124,
+    "cgroup_current": 51336331264,
+    "cgroup_noninactive": 8755814400,
+    "host_available": 124684701696,
+    "oom_kill": 0,
+    "oom": 0
+  },
+  "probe_exit": 0,
+  "probe": "",
+  "resident": {
+    "models": []
+  },
+  "resident_receipt": {
+    "wall_seconds": 0.0913411770015955,
+    "exit_code": 0,
+    "stderr": "",
+    "http_status": 200,
+    "raw_body": "{\"models\":[]}"
+  },
+  "io_progress_counter": 0,
+  "seconds_since_io_progress": 0.09161297418177128,
+  "memory_full_pressure_streak": 0
+}

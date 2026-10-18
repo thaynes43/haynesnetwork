@@ -1,0 +1,1048 @@
+{
+  "documentary": {
+    "qwen": {
+      "all": {
+        "n": 11,
+        "positives": 5,
+        "negatives": 6,
+        "confusion": {
+          "tp": 4,
+          "tn": 6,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 1,
+          "errors": 0,
+          "positive_abstentions": 1,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 0.9090909090909091,
+        "precision": 1.0,
+        "recall": 0.8,
+        "false_positive_rate": 0.0,
+        "coverage": 0.9090909090909091
+      },
+      "development": {
+        "n": 7,
+        "positives": 3,
+        "negatives": 4,
+        "confusion": {
+          "tp": 2,
+          "tn": 4,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 1,
+          "errors": 0,
+          "positive_abstentions": 1,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 0.8571428571428571,
+        "precision": 1.0,
+        "recall": 0.6666666666666666,
+        "false_positive_rate": 0.0,
+        "coverage": 0.8571428571428571
+      },
+      "held_out": {
+        "n": 4,
+        "positives": 2,
+        "negatives": 2,
+        "confusion": {
+          "tp": 2,
+          "tn": 2,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "coverage": 1.0
+      }
+    },
+    "muse": {
+      "all": {
+        "n": 11,
+        "positives": 5,
+        "negatives": 6,
+        "confusion": {
+          "tp": 0,
+          "tn": 0,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 11,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 5,
+          "negative_errors": 6
+        },
+        "accuracy": 0.0,
+        "precision": null,
+        "recall": 0.0,
+        "false_positive_rate": 0.0,
+        "coverage": 0.0
+      },
+      "development": {
+        "n": 7,
+        "positives": 3,
+        "negatives": 4,
+        "confusion": {
+          "tp": 0,
+          "tn": 0,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 7,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 3,
+          "negative_errors": 4
+        },
+        "accuracy": 0.0,
+        "precision": null,
+        "recall": 0.0,
+        "false_positive_rate": 0.0,
+        "coverage": 0.0
+      },
+      "held_out": {
+        "n": 4,
+        "positives": 2,
+        "negatives": 2,
+        "confusion": {
+          "tp": 0,
+          "tn": 0,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 4,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 2,
+          "negative_errors": 2
+        },
+        "accuracy": 0.0,
+        "precision": null,
+        "recall": 0.0,
+        "false_positive_rate": 0.0,
+        "coverage": 0.0
+      }
+    },
+    "qwen-assisted": {
+      "all": {
+        "n": 5,
+        "positives": 3,
+        "negatives": 2,
+        "confusion": {
+          "tp": 3,
+          "tn": 2,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "coverage": 1.0
+      },
+      "development": {
+        "n": 1,
+        "positives": 1,
+        "negatives": 0,
+        "confusion": {
+          "tp": 1,
+          "tn": 0,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": null,
+        "coverage": 1.0
+      },
+      "held_out": {
+        "n": 4,
+        "positives": 2,
+        "negatives": 2,
+        "confusion": {
+          "tp": 2,
+          "tn": 2,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "coverage": 1.0
+      }
+    },
+    "muse-assisted": {
+      "all": {
+        "n": 5,
+        "positives": 3,
+        "negatives": 2,
+        "confusion": {
+          "tp": 0,
+          "tn": 0,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 5,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 3,
+          "negative_errors": 2
+        },
+        "accuracy": 0.0,
+        "precision": null,
+        "recall": 0.0,
+        "false_positive_rate": 0.0,
+        "coverage": 0.0
+      },
+      "development": {
+        "n": 1,
+        "positives": 1,
+        "negatives": 0,
+        "confusion": {
+          "tp": 0,
+          "tn": 0,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 1,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 1,
+          "negative_errors": 0
+        },
+        "accuracy": 0.0,
+        "precision": null,
+        "recall": 0.0,
+        "false_positive_rate": null,
+        "coverage": 0.0
+      },
+      "held_out": {
+        "n": 4,
+        "positives": 2,
+        "negatives": 2,
+        "confusion": {
+          "tp": 0,
+          "tn": 0,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 4,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 2,
+          "negative_errors": 2
+        },
+        "accuracy": 0.0,
+        "precision": null,
+        "recall": 0.0,
+        "false_positive_rate": 0.0,
+        "coverage": 0.0
+      }
+    },
+    "muse-corrected": {
+      "all": {
+        "n": 4,
+        "positives": 2,
+        "negatives": 2,
+        "confusion": {
+          "tp": 2,
+          "tn": 2,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "coverage": 1.0
+      },
+      "development": {
+        "n": 0,
+        "positives": 0,
+        "negatives": 0,
+        "confusion": {
+          "tp": 0,
+          "tn": 0,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "false_positive_rate": null,
+        "coverage": null
+      },
+      "held_out": {
+        "n": 4,
+        "positives": 2,
+        "negatives": 2,
+        "confusion": {
+          "tp": 2,
+          "tn": 2,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "coverage": 1.0
+      }
+    },
+    "muse-serving-full": {
+      "all": {
+        "n": 11,
+        "positives": 5,
+        "negatives": 6,
+        "confusion": {
+          "tp": 5,
+          "tn": 6,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "coverage": 1.0
+      },
+      "development": {
+        "n": 7,
+        "positives": 3,
+        "negatives": 4,
+        "confusion": {
+          "tp": 3,
+          "tn": 4,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "coverage": 1.0
+      },
+      "held_out": {
+        "n": 4,
+        "positives": 2,
+        "negatives": 2,
+        "confusion": {
+          "tp": 2,
+          "tn": 2,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "coverage": 1.0
+      }
+    }
+  },
+  "epub-selection": [
+    {
+      "model": "qwen3.8",
+      "case_id": "r01",
+      "proposal": {
+        "action": "select",
+        "candidate_id": "k4",
+        "evidence": [
+          "o2.integrity",
+          "o2.body"
+        ]
+      },
+      "assessment": {
+        "correct_selection": true,
+        "correct_abstention": false,
+        "abstention": false,
+        "error": false,
+        "unsafe_categories": [],
+        "references_resolve": true,
+        "evidence_supported": true,
+        "selected": "k4"
+      },
+      "recorded_execution": {
+        "status": "verified_fixture_copy",
+        "independent_verification": {
+          "structurally_valid": true,
+          "expected_body": true,
+          "spine_items": 42,
+          "sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa"
+        }
+      }
+    },
+    {
+      "model": "qwen3.8",
+      "case_id": "r02",
+      "proposal": {
+        "action": "abstain",
+        "candidate_id": "",
+        "evidence": [
+          "o2.body",
+          "o2.metadata"
+        ]
+      },
+      "assessment": {
+        "correct_selection": false,
+        "correct_abstention": false,
+        "abstention": true,
+        "error": false,
+        "unsafe_categories": [],
+        "references_resolve": true,
+        "evidence_supported": false,
+        "selected": null
+      },
+      "recorded_execution": {
+        "status": "no_selection"
+      }
+    },
+    {
+      "model": "qwen3.8",
+      "case_id": "r03",
+      "proposal": {
+        "action": "abstain",
+        "candidate_id": "",
+        "evidence": [
+          "o1.body",
+          "o2.integrity",
+          "o3.body"
+        ]
+      },
+      "assessment": {
+        "correct_selection": false,
+        "correct_abstention": true,
+        "abstention": true,
+        "error": false,
+        "unsafe_categories": [],
+        "references_resolve": true,
+        "evidence_supported": false,
+        "selected": null
+      },
+      "recorded_execution": {
+        "status": "no_selection"
+      }
+    },
+    {
+      "model": "muse-glimmer",
+      "case_id": "r01",
+      "proposal": {
+        "action": "select",
+        "candidate_id": "k4",
+        "evidence": [
+          "o2.integrity",
+          "o2.body"
+        ]
+      },
+      "assessment": {
+        "correct_selection": true,
+        "correct_abstention": false,
+        "abstention": false,
+        "error": false,
+        "unsafe_categories": [],
+        "references_resolve": true,
+        "evidence_supported": true,
+        "selected": "k4"
+      },
+      "recorded_execution": {
+        "status": "verified_fixture_copy",
+        "independent_verification": {
+          "structurally_valid": true,
+          "expected_body": true,
+          "spine_items": 42,
+          "sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa"
+        }
+      }
+    },
+    {
+      "model": "muse-glimmer",
+      "case_id": "r02",
+      "proposal": {
+        "action": "select",
+        "candidate_id": "b3",
+        "evidence": [
+          "o3.integrity",
+          "o3.body"
+        ]
+      },
+      "assessment": {
+        "correct_selection": true,
+        "correct_abstention": false,
+        "abstention": false,
+        "error": false,
+        "unsafe_categories": [],
+        "references_resolve": true,
+        "evidence_supported": true,
+        "selected": "b3"
+      },
+      "recorded_execution": {
+        "status": "verified_fixture_copy",
+        "independent_verification": {
+          "structurally_valid": true,
+          "expected_body": true,
+          "spine_items": 42,
+          "sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa"
+        }
+      }
+    },
+    {
+      "model": "muse-glimmer",
+      "case_id": "r03",
+      "proposal": {
+        "action": "select",
+        "candidate_id": "t5",
+        "evidence": [
+          "o1.integrity",
+          "o1.body"
+        ]
+      },
+      "assessment": {
+        "correct_selection": false,
+        "correct_abstention": false,
+        "abstention": false,
+        "error": false,
+        "unsafe_categories": [
+          "wrong_work",
+          "choice_despite_no_valid"
+        ],
+        "references_resolve": true,
+        "evidence_supported": true,
+        "selected": "t5"
+      },
+      "recorded_execution": {
+        "status": "blocked",
+        "reason": "unsafe_or_unsupported_proposal"
+      }
+    }
+  ],
+  "av-ocr": [
+    {
+      "model": "qwen3.8",
+      "variant": "baseline",
+      "case_id": "a01",
+      "assessment": {
+        "error": false,
+        "axis_correct": {
+          "identity": false,
+          "decode": true,
+          "compatibility": true
+        },
+        "abstentions": [
+          "identity"
+        ],
+        "unsupported_assertions": [],
+        "references_resolve": true,
+        "citation_coverage": true,
+        "false_mismatch": false,
+        "identity_covered": false
+      }
+    },
+    {
+      "model": "qwen3.8",
+      "variant": "baseline",
+      "case_id": "a02",
+      "assessment": {
+        "error": false,
+        "axis_correct": {
+          "identity": false,
+          "decode": true,
+          "compatibility": true
+        },
+        "abstentions": [
+          "identity"
+        ],
+        "unsupported_assertions": [],
+        "references_resolve": true,
+        "citation_coverage": true,
+        "false_mismatch": false,
+        "identity_covered": false
+      }
+    },
+    {
+      "model": "qwen3.8",
+      "variant": "baseline",
+      "case_id": "a03",
+      "assessment": {
+        "error": false,
+        "axis_correct": {
+          "identity": true,
+          "decode": true,
+          "compatibility": true
+        },
+        "abstentions": [
+          "identity"
+        ],
+        "unsupported_assertions": [],
+        "references_resolve": true,
+        "citation_coverage": false,
+        "false_mismatch": false,
+        "identity_covered": false
+      }
+    },
+    {
+      "model": "muse-glimmer",
+      "variant": "baseline",
+      "case_id": "a01",
+      "assessment": {
+        "error": false,
+        "axis_correct": {
+          "identity": false,
+          "decode": false,
+          "compatibility": true
+        },
+        "abstentions": [
+          "decode"
+        ],
+        "unsupported_assertions": [
+          "identity:mismatch"
+        ],
+        "references_resolve": true,
+        "citation_coverage": true,
+        "false_mismatch": true,
+        "identity_covered": true
+      }
+    },
+    {
+      "model": "muse-glimmer",
+      "variant": "baseline",
+      "case_id": "a02",
+      "assessment": {
+        "error": false,
+        "axis_correct": {
+          "identity": true,
+          "decode": false,
+          "compatibility": true
+        },
+        "abstentions": [
+          "decode"
+        ],
+        "unsupported_assertions": [],
+        "references_resolve": true,
+        "citation_coverage": true,
+        "false_mismatch": false,
+        "identity_covered": true
+      }
+    },
+    {
+      "model": "muse-glimmer",
+      "variant": "baseline",
+      "case_id": "a03",
+      "assessment": {
+        "error": false,
+        "axis_correct": {
+          "identity": true,
+          "decode": false,
+          "compatibility": true
+        },
+        "abstentions": [
+          "identity",
+          "decode"
+        ],
+        "unsupported_assertions": [],
+        "references_resolve": true,
+        "citation_coverage": true,
+        "false_mismatch": false,
+        "identity_covered": false
+      }
+    },
+    {
+      "model": "qwen3.8",
+      "variant": "tool",
+      "case_id": "a01",
+      "assessment": {
+        "error": false,
+        "axis_correct": {
+          "identity": false,
+          "decode": false,
+          "compatibility": true
+        },
+        "abstentions": [
+          "identity",
+          "decode"
+        ],
+        "unsupported_assertions": [],
+        "references_resolve": true,
+        "citation_coverage": true,
+        "false_mismatch": false,
+        "identity_covered": false
+      }
+    },
+    {
+      "model": "qwen3.8",
+      "variant": "tool",
+      "case_id": "a02",
+      "assessment": {
+        "error": false,
+        "axis_correct": {
+          "identity": false,
+          "decode": true,
+          "compatibility": true
+        },
+        "abstentions": [
+          "identity"
+        ],
+        "unsupported_assertions": [],
+        "references_resolve": true,
+        "citation_coverage": true,
+        "false_mismatch": false,
+        "identity_covered": false
+      }
+    },
+    {
+      "model": "qwen3.8",
+      "variant": "tool",
+      "case_id": "a03",
+      "assessment": {
+        "error": false,
+        "axis_correct": {
+          "identity": true,
+          "decode": true,
+          "compatibility": true
+        },
+        "abstentions": [
+          "identity"
+        ],
+        "unsupported_assertions": [],
+        "references_resolve": true,
+        "citation_coverage": false,
+        "false_mismatch": false,
+        "identity_covered": false
+      }
+    },
+    {
+      "model": "muse-glimmer",
+      "variant": "tool",
+      "case_id": "a01",
+      "assessment": {
+        "error": false,
+        "axis_correct": {
+          "identity": true,
+          "decode": false,
+          "compatibility": true
+        },
+        "abstentions": [
+          "decode"
+        ],
+        "unsupported_assertions": [],
+        "references_resolve": true,
+        "citation_coverage": true,
+        "false_mismatch": false,
+        "identity_covered": true
+      }
+    },
+    {
+      "model": "muse-glimmer",
+      "variant": "tool",
+      "case_id": "a02",
+      "assessment": {
+        "error": false,
+        "axis_correct": {
+          "identity": true,
+          "decode": false,
+          "compatibility": true
+        },
+        "abstentions": [
+          "decode"
+        ],
+        "unsupported_assertions": [],
+        "references_resolve": true,
+        "citation_coverage": true,
+        "false_mismatch": false,
+        "identity_covered": true
+      }
+    },
+    {
+      "model": "muse-glimmer",
+      "variant": "tool",
+      "case_id": "a03",
+      "assessment": {
+        "error": false,
+        "axis_correct": {
+          "identity": true,
+          "decode": true,
+          "compatibility": true
+        },
+        "abstentions": [
+          "identity"
+        ],
+        "unsupported_assertions": [],
+        "references_resolve": true,
+        "citation_coverage": true,
+        "false_mismatch": false,
+        "identity_covered": false
+      }
+    }
+  ],
+  "schema-regressions": {
+    "documentary_baseline": {
+      "all": {
+        "n": 11,
+        "positives": 5,
+        "negatives": 6,
+        "confusion": {
+          "tp": 0,
+          "tn": 0,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 11,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 5,
+          "negative_errors": 6
+        },
+        "accuracy": 0.0,
+        "precision": null,
+        "recall": 0.0,
+        "false_positive_rate": 0.0,
+        "coverage": 0.0
+      },
+      "development": {
+        "n": 7,
+        "positives": 3,
+        "negatives": 4,
+        "confusion": {
+          "tp": 0,
+          "tn": 0,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 7,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 3,
+          "negative_errors": 4
+        },
+        "accuracy": 0.0,
+        "precision": null,
+        "recall": 0.0,
+        "false_positive_rate": 0.0,
+        "coverage": 0.0
+      },
+      "held_out": {
+        "n": 4,
+        "positives": 2,
+        "negatives": 2,
+        "confusion": {
+          "tp": 0,
+          "tn": 0,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 4,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 2,
+          "negative_errors": 2
+        },
+        "accuracy": 0.0,
+        "precision": null,
+        "recall": 0.0,
+        "false_positive_rate": 0.0,
+        "coverage": 0.0
+      }
+    },
+    "documentary_serving_corrected": {
+      "all": {
+        "n": 11,
+        "positives": 5,
+        "negatives": 6,
+        "confusion": {
+          "tp": 5,
+          "tn": 6,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "coverage": 1.0
+      },
+      "development": {
+        "n": 7,
+        "positives": 3,
+        "negatives": 4,
+        "confusion": {
+          "tp": 3,
+          "tn": 4,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "coverage": 1.0
+      },
+      "held_out": {
+        "n": 4,
+        "positives": 2,
+        "negatives": 2,
+        "confusion": {
+          "tp": 2,
+          "tn": 2,
+          "fp": 0,
+          "fn": 0,
+          "abstentions": 0,
+          "errors": 0,
+          "positive_abstentions": 0,
+          "negative_abstentions": 0,
+          "positive_errors": 0,
+          "negative_errors": 0
+        },
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "coverage": 1.0
+      }
+    },
+    "av": [
+      {
+        "case_id": "a01",
+        "variant": "runs",
+        "assessment": {
+          "error": true,
+          "axis_correct": {},
+          "abstentions": [],
+          "unsafe_or_unsupported": [],
+          "evidence_resolves": false,
+          "evidence_axis_coverage": false
+        }
+      },
+      {
+        "case_id": "a01",
+        "variant": "runs-bounded",
+        "assessment": {
+          "error": false,
+          "axis_correct": {
+            "identity": false,
+            "decode": false,
+            "compatibility": true
+          },
+          "abstentions": [
+            "decode"
+          ],
+          "unsafe_or_unsupported": [
+            "identity:mismatch"
+          ],
+          "evidence_resolves": true,
+          "evidence_axis_coverage": true
+        }
+      },
+      {
+        "case_id": "a03",
+        "variant": "runs",
+        "assessment": {
+          "error": true,
+          "axis_correct": {},
+          "abstentions": [],
+          "unsafe_or_unsupported": [],
+          "evidence_resolves": false,
+          "evidence_axis_coverage": false
+        }
+      },
+      {
+        "case_id": "a03",
+        "variant": "runs-bounded",
+        "assessment": {
+          "error": false,
+          "axis_correct": {
+            "identity": true,
+            "decode": false,
+            "compatibility": true
+          },
+          "abstentions": [
+            "identity",
+            "decode"
+          ],
+          "unsafe_or_unsupported": [],
+          "evidence_resolves": true,
+          "evidence_axis_coverage": true
+        }
+      }
+    ]
+  }
+}

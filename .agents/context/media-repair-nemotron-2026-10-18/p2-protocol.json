@@ -1,0 +1,118 @@
+{
+  "frozen_at": "2026-10-18T21:55:04.779341+00:00",
+  "models": [
+    "nemotron-3.5-bolt:74b-a9b",
+    "qwen3.8:27b",
+    "muse-glimmer:30b"
+  ],
+  "options": {
+    "temperature": 0,
+    "seed": 42,
+    "num_ctx": 4096,
+    "num_predict": 256,
+    "num_batch": 128,
+    "num_gpu": 48,
+    "num_thread": 2
+  },
+  "stops": {
+    "nemotron-3.5-bolt:74b-a9b": [
+      "<|im_end|>"
+    ],
+    "qwen3.8:27b": [
+      "<|im_end|>"
+    ],
+    "muse-glimmer:30b": [
+      "<|eot|>"
+    ]
+  },
+  "think": false,
+  "stream": false,
+  "keep_alive": "2m",
+  "timeout_seconds": 60,
+  "case_count": 14,
+  "max_measured_calls": 42,
+  "semantic_retries": 0,
+  "documentary_system": "Classify whether the observed media evidence corresponds to the expected item.\nUse only the supplied evidence. A filename or catalog title can disagree with the\ninternal content. Declared alternate titles can name the same item. For a TV file,\ncompare all supplied segment titles with the expected segment titles. If evidence\nis missing or insufficient, abstain. Do not infer that a file is corrupt or wrong\nsolely because its filename differs. Do not access any evaluator labels, source\nannotations, other cases, or external services. Return exactly one JSON object:\n{\"decision\":\"match\"} or {\"decision\":\"mismatch\"} or {\"decision\":\"abstain\"}.\n",
+  "av_system": "Diagnose the requested work from the supplied text-only read-only extraction observations and cached OCR, independently on three axes. identity: match/mismatch only if the supplied body/title evidence establishes it; generic scenes/dialogue or metadata alone require abstain. decode: pass only for the primary four-second sample when exit0, empty error log and quota not exhausted; fail only for actual source decode failure without quota exhaustion; otherwise abstain. Other quota-limited samples do not establish original corruption. A passing sample never proves whole-file health. compatibility: supported/unsupported only against the explicitly supplied hypothetical exact direct-play client profile; compare selected streams, not identity. Return the strict schema and cite the observation keys used. No live remedy/action is authorized. You have only text observations, including model-generated OCR consensus, not an image or native video/audio. OCR is not independent gold; generic scenes/dialogue or empty OCR cannot uniquely identify an episode.",
+  "documentary_schema": {
+    "additionalProperties": false,
+    "properties": {
+      "decision": {
+        "enum": [
+          "match",
+          "mismatch",
+          "abstain"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "decision"
+    ],
+    "type": "object"
+  },
+  "av_schema": {
+    "type": "object",
+    "properties": {
+      "identity": {
+        "type": "string",
+        "enum": [
+          "match",
+          "mismatch",
+          "abstain"
+        ]
+      },
+      "decode": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "abstain"
+        ]
+      },
+      "compatibility": {
+        "type": "string",
+        "enum": [
+          "supported",
+          "unsupported",
+          "abstain"
+        ]
+      },
+      "evidence": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "streams",
+            "decode.primary",
+            "decode.other",
+            "subtitle",
+            "client",
+            "ocr"
+          ]
+        },
+        "maxItems": 6
+      }
+    },
+    "required": [
+      "identity",
+      "decode",
+      "compatibility",
+      "evidence"
+    ],
+    "additionalProperties": false
+  },
+  "modality": "TEXT ONLY: same documentary payloads; AV exactly original observations except removed frame descriptor and no image bytes. Same cached OCR/subtitles; no invented transcript.",
+  "protocol": "P2_instrumented_IO",
+  "startup_timeout_seconds": 1200,
+  "max_total_requests_including_P0": 47,
+  "execution_deadline_utc": "2026-10-18T22:25:00+00:00",
+  "startup_allowance_per_model": 1,
+  "case_timeout_seconds": 60,
+  "P0_preserved": "text-runs/nemotron-3.5-bolt/c01.json",
+  "conditional_local_comparison_ceiling": 48,
+  "prior_requests": 2,
+  "cache_metric": "P2-only idle subtract clean active_file as well as inactive_file; retain8GiBceiling; P0/P1falseidlemetric preserved",
+  "stop_no_io_progress_seconds": 120,
+  "stop_memory_full_PSI_avg10": 10
+}

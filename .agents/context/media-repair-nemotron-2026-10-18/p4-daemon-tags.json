@@ -1,0 +1,40 @@
+{
+  "tags": {
+    "models": [
+      {
+        "name": "nemotron-3.5-bolt:74b-a9b",
+        "model": "nemotron-3.5-bolt:74b-a9b",
+        "modified_at": "2026-10-18T18:13:56.266574125-04:00",
+        "size": 24750264767,
+        "digest": "d6d3deeca27134af015d1ab4d57ee655dd6d624dbef4f5dfd18f4b54f76bb554",
+        "details": {
+          "parent_model": "nemotron-3.5-bolt:74b-a9b-iq2",
+          "format": "gguf",
+          "family": "nemotron_h_moe",
+          "families": [
+            "nemotron_h_moe"
+          ],
+          "parameter_size": "74.0B",
+          "quantization_level": "IQ2_XXS",
+          "context_length": 262144,
+          "embedding_length": 4096,
+          "runner": "llamacpp"
+        },
+        "capabilities": [
+          "completion",
+          "vision",
+          "tools",
+          "thinking"
+        ]
+      }
+    ]
+  },
+  "receipt": {
+    "wall_seconds": 3.6012854711152613,
+    "exit_code": 0,
+    "stderr": "",
+    "http_status": 200,
+    "raw_body": "{\"models\":[{\"name\":\"nemotron-3.5-bolt:74b-a9b\",\"model\":\"nemotron-3.5-bolt:74b-a9b\",\"modified_at\":\"2026-10-18T18:13:56.266574125-04:00\",\"size\":24750264767,\"digest\":\"d6d3deeca27134af015d1ab4d57ee655dd6d624dbef4f5dfd18f4b54f76bb554\",\"details\":{\"parent_model\":\"nemotron-3.5-bolt:74b-a9b-iq2\",\"format\":\"gguf\",\"family\":\"nemotron_h_moe\",\"families\":[\"nemotron_h_moe\"],\"parameter_size\":\"74.0B\",\"quantization_level\":\"IQ2_XXS\",\"context_length\":262144,\"embedding_length\":4096,\"runner\":\"llamacpp\"},\"capabilities\":[\"completion\",\"vision\",\"tools\",\"thinking\"]}]}"
+  },
+  "at": "2026-10-18T22:20:22.982223+00:00"
+}

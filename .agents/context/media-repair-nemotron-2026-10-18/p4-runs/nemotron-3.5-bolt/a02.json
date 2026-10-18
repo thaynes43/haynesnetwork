@@ -1,0 +1,173 @@
+{
+  "model": "nemotron-3.5-bolt:74b-a9b",
+  "kind": "av",
+  "case_id": "a02",
+  "request": {
+    "model": "nemotron-3.5-bolt:74b-a9b",
+    "stream": false,
+    "think": false,
+    "keep_alive": "2m",
+    "format": {
+      "type": "object",
+      "properties": {
+        "identity": {
+          "type": "string",
+          "enum": [
+            "match",
+            "mismatch",
+            "abstain"
+          ]
+        },
+        "decode": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "abstain"
+          ]
+        },
+        "compatibility": {
+          "type": "string",
+          "enum": [
+            "supported",
+            "unsupported",
+            "abstain"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "streams",
+              "decode.primary",
+              "decode.other",
+              "subtitle",
+              "client",
+              "ocr"
+            ]
+          },
+          "maxItems": 6
+        }
+      },
+      "required": [
+        "identity",
+        "decode",
+        "compatibility",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "options": {
+      "temperature": 0,
+      "seed": 42,
+      "num_ctx": 4096,
+      "num_predict": 256,
+      "num_batch": 128,
+      "num_gpu": 48,
+      "num_thread": 2,
+      "stop": [
+        "<|im_end|>"
+      ]
+    },
+    "messages": [
+      {
+        "role": "system",
+        "content": "Diagnose the requested work from the supplied text-only read-only extraction observations and cached OCR, independently on three axes. identity: match/mismatch only if the supplied body/title evidence establishes it; generic scenes/dialogue or metadata alone require abstain. decode: pass only for the primary four-second sample when exit0, empty error log and quota not exhausted; fail only for actual source decode failure without quota exhaustion; otherwise abstain. Other quota-limited samples do not establish original corruption. A passing sample never proves whole-file health. compatibility: supported/unsupported only against the explicitly supplied hypothetical exact direct-play client profile; compare selected streams, not identity. Return the strict schema and cite the observation keys used. No live remedy/action is authorized. You have only text observations, including model-generated OCR consensus, not an image or native video/audio. OCR is not independent gold; generic scenes/dialogue or empty OCR cannot uniquely identify an episode."
+      },
+      {
+        "role": "user",
+        "content": "{\"case_id\": \"a02\", \"observations\": {\"client\": {\"audio_codecs\": [\"aac\"], \"containers\": [\"matroska,webm\"], \"definition\": \"hypothetical exact direct-play profile, not a measured Plex/browser client\", \"max_audio_channels\": 2, \"max_height\": 1080, \"max_width\": 1920, \"subtitles\": \"disabled\", \"video_codec\": \"h264\", \"video_pix_fmt\": \"yuv420p\"}, \"decode\": {\"other\": {\"bytes_read\": 8388608, \"duration_limit_seconds\": 4, \"exit_code\": 0, \"quota_exhausted\": true, \"stderr\": \"[http @ 0x7f5d44555ec0] Stream ends prematurely at 48529108, should be 1455149536\\n[in#0/matroska,webm @ 0x7f5d4454f340] Read error\\n[http @ 0x7f5d44555ec0] Stream ends prematurely at 48529108, should be 1455149536\\n    Last message repeated 1 times\\n[in#0/matroska,webm @ 0x7f5d3e678b00] Error during demuxing: I/O error\\n\"}, \"primary\": {\"bytes_read\": 5828827, \"duration_limit_seconds\": 4, \"exit_code\": 0, \"quota_exhausted\": false, \"stderr\": \"\"}}, \"ocr\": {\"status\": \"agreement\", \"text\": \"Happy Hot Diggity Dog Holiday!\"}, \"streams\": {\"container\": \"matroska,webm\", \"selected_audio\": {\"channels\": 2, \"codec_name\": \"aac\", \"codec_type\": \"audio\", \"profile\": \"LC\", \"tags\": {\"language\": \"eng\"}}, \"video\": {\"codec_name\": \"h264\", \"codec_type\": \"video\", \"height\": 1080, \"pix_fmt\": \"yuv420p\", \"profile\": \"High\", \"width\": 1920}}, \"subtitle\": \"1\\n00:00:00,000 --> 00:00:02,919\\n<i>\\u266a We're gonna tear up the road \\u266a</i>\\n\\n2\\n00:00:02,920 --> 00:00:05,630\\n<i>- \\u266a Spin out the wheels \\u266a</i>\\n- Yippie!\\n\\n\"}, \"requested_work\": \"Pok\\u00e9mon: Hour of the Houndour\"}"
+      }
+    ]
+  },
+  "response": {
+    "model": "nemotron-3.5-bolt:74b-a9b",
+    "created_at": "2026-10-18T22:22:17.131932418Z",
+    "message": {
+      "role": "assistant",
+      "content": "{\n  \"identity\": \"mismatch\",\n  \"decode\": \"pass\",\n  \"compatibility\": \"supported\",\n  \"evidence\": [\n    \"ocr\",\n    \"decode.primary\",\n    \"streams\",\n    \"client\"\n  ]\n}"
+    },
+    "done": true,
+    "done_reason": "stop",
+    "total_duration": 15986324146,
+    "load_duration": 804194,
+    "prompt_eval_count": 873,
+    "prompt_eval_cached_count": 0,
+    "prompt_eval_duration": 5502147000,
+    "eval_count": 53,
+    "eval_duration": 10247823000
+  },
+  "receipt": {
+    "wall_seconds": 16.092064558062702,
+    "exit_code": 0,
+    "stderr": "",
+    "http_status": 200,
+    "raw_body": "{\"model\":\"nemotron-3.5-bolt:74b-a9b\",\"created_at\":\"2026-10-18T22:22:17.131932418Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"identity\\\": \\\"mismatch\\\",\\n  \\\"decode\\\": \\\"pass\\\",\\n  \\\"compatibility\\\": \\\"supported\\\",\\n  \\\"evidence\\\": [\\n    \\\"ocr\\\",\\n    \\\"decode.primary\\\",\\n    \\\"streams\\\",\\n    \\\"client\\\"\\n  ]\\n}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":15986324146,\"load_duration\":804194,\"prompt_eval_count\":873,\"prompt_eval_cached_count\":0,\"prompt_eval_duration\":5502147000,\"eval_count\":53,\"eval_duration\":10247823000}"
+  },
+  "before": {
+    "snapshot": {
+      "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 22592, /usr/lib/ollama/llama-server, 15104 MiB",
+      "compute_query_exit": 0,
+      "at": "2026-10-18T22:22:01.046013+00:00",
+      "exit_code": 0,
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 15114 MiB, 9012 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 22592, /usr/lib/ollama/llama-server, 15104 MiB\n50540457984\nusage_usec 3896247398\nuser_usec 3442434493\nsystem_usec 453812904\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5955180 kB\nMemAvailable:   116458288 kB\n",
+      "stderr": ""
+    },
+    "extra": "anon 5609963520\nfile 44720820224\nkernel 206123008\nkernel_stack 1753088\npagetables 59146240\nsec_pagetables 0\npercpu 9240\nsock 0\nvmalloc 49152\nshmem 107413504\nzswap 0\nzswapped 0\nfile_mapped 22029815808\nfile_dirty 3420160\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 367001600\nshmem_thp 0\ninactive_anon 169234432\nactive_anon 5548027904\ninactive_file 28786454528\nactive_file 15826964480\nunevictable 0\nslab_reclaimable 141351080\nslab_unreclaimable 1676648\nslab 143027728\nworkingset_refault_anon 0\nworkingset_refault_file 6405227\nworkingset_activate_anon 0\nworkingset_activate_file 3681894\nworkingset_restore_anon 0\nworkingset_restore_file 11613\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 20429731\npgsteal 20429723\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 20422131\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 20422123\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 38921581\npgmajfault 1945\npgrefill 13862395\npgactivate 192\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 6508\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n/usr/lib/ollama/llama-server --model /tmp/media-repair-nemotron-1018-local/models/blobs/sha256-91d63363e782c8a3d5f4be42816eba8e0d42dd2530bd07a7d0d2dc440599af75 --port 38153 --host 127.0.0.1 --no-webui --offline -c 4096 -np 1 --log-verbosity 4 --no-log-prefix --no-log-timestamps --no-jinja --chat-template chatml --mmproj /tmp/media-repair-nemotron-1018-local/models/blobs/sha256-0ee891eadc7bf0cae6289b249c74eb1ef420534351f6ef8b64d49f0ca6a926b0 --no-mmproj-offload --spec-type draft-dflash --spec-draft-n-max 7 --spec-draft-model /tmp/media-repair-nemotron-1018-local/models/blobs/sha256-080e1ea41c9562a7804dbf30c6fbd4d17e216c6b8ff666f88e6edb1816010194 --flash-attn auto -b 128 -ub 128 -ngl 48 -t 2 --context-shift --keep 4 \n",
+    "extra_exit": 0
+  },
+  "after": {
+    "snapshot": {
+      "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 22592, /usr/lib/ollama/llama-server, 15104 MiB",
+      "compute_query_exit": 0,
+      "at": "2026-10-18T22:22:17.562320+00:00",
+      "exit_code": 0,
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 15114 MiB, 9012 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 22592, /usr/lib/ollama/llama-server, 15104 MiB\n51064307712\nusage_usec 3927417091\nuser_usec 3473190749\nsystem_usec 454226342\nnice_usec 10931163\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         5392388 kB\nMemAvailable:   115908948 kB\n",
+      "stderr": ""
+    },
+    "extra": "anon 6134059008\nfile 44720828416\nkernel 207183872\nkernel_stack 1753088\npagetables 60211200\nsec_pagetables 0\npercpu 9240\nsock 0\nvmalloc 49152\nshmem 107413504\nzswap 0\nzswapped 0\nfile_mapped 22029815808\nfile_dirty 0\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 367001600\nshmem_thp 0\ninactive_anon 168996864\nactive_anon 6072328192\ninactive_file 28786462720\nactive_file 15826964480\nunevictable 0\nslab_reclaimable 141351480\nslab_unreclaimable 1671752\nslab 143023232\nworkingset_refault_anon 0\nworkingset_refault_file 6405227\nworkingset_activate_anon 0\nworkingset_activate_file 3681894\nworkingset_restore_anon 0\nworkingset_restore_file 11613\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 20429731\npgsteal 20429723\npswpin 0\npswpout 0\npgscan_kswapd 7600\npgscan_direct 20422131\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 7600\npgsteal_direct 20422123\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 39153494\npgmajfault 1945\npgrefill 13862395\npgactivate 192\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nlow 0\nhigh 0\nmax 6508\noom 0\noom_kill 0\noom_group_kill 0\n/bin/ollama serve \nollama serve \n/usr/lib/ollama/llama-server --model /tmp/media-repair-nemotron-1018-local/models/blobs/sha256-91d63363e782c8a3d5f4be42816eba8e0d42dd2530bd07a7d0d2dc440599af75 --port 38153 --host 127.0.0.1 --no-webui --offline -c 4096 -np 1 --log-verbosity 4 --no-log-prefix --no-log-timestamps --no-jinja --chat-template chatml --mmproj /tmp/media-repair-nemotron-1018-local/models/blobs/sha256-0ee891eadc7bf0cae6289b249c74eb1ef420534351f6ef8b64d49f0ca6a926b0 --no-mmproj-offload --spec-type draft-dflash --spec-draft-n-max 7 --spec-draft-model /tmp/media-repair-nemotron-1018-local/models/blobs/sha256-080e1ea41c9562a7804dbf30c6fbd4d17e216c6b8ff666f88e6edb1816010194 --flash-attn auto -b 128 -ub 128 -ngl 48 -t 2 --context-shift --keep 4 \n",
+    "extra_exit": 0
+  },
+  "observed": {
+    "gpu_used_mib": 15114,
+    "gpu_free_mib": 9012,
+    "cgroup_current": 51064307712,
+    "cgroup_noninactive": 22277844992,
+    "host_available": 118690762752,
+    "oom_kill": 0,
+    "oom": 0
+  },
+  "resident": {
+    "models": [
+      {
+        "name": "nemotron-3.5-bolt:74b-a9b",
+        "model": "nemotron-3.5-bolt:74b-a9b",
+        "size": 2270146067,
+        "digest": "d6d3deeca27134af015d1ab4d57ee655dd6d624dbef4f5dfd18f4b54f76bb554",
+        "details": {
+          "parent_model": "",
+          "format": "gguf",
+          "family": "nemotron_h_moe",
+          "families": [
+            "nemotron_h_moe"
+          ],
+          "parameter_size": "74.0B",
+          "quantization_level": "IQ2_XXS"
+        },
+        "expires_at": "2026-10-18T18:24:17.132087202-04:00",
+        "size_vram": 2270146067,
+        "context_length": 4096,
+        "runner": "llamacpp"
+      }
+    ]
+  },
+  "resident_receipt": {
+    "wall_seconds": 0.11139982612803578,
+    "exit_code": 0,
+    "stderr": "",
+    "http_status": 200,
+    "raw_body": "{\"models\":[{\"name\":\"nemotron-3.5-bolt:74b-a9b\",\"model\":\"nemotron-3.5-bolt:74b-a9b\",\"size\":2270146067,\"digest\":\"d6d3deeca27134af015d1ab4d57ee655dd6d624dbef4f5dfd18f4b54f76bb554\",\"details\":{\"parent_model\":\"\",\"format\":\"gguf\",\"family\":\"nemotron_h_moe\",\"families\":[\"nemotron_h_moe\"],\"parameter_size\":\"74.0B\",\"quantization_level\":\"IQ2_XXS\"},\"expires_at\":\"2026-10-18T18:24:17.132087202-04:00\",\"size_vram\":2270146067,\"context_length\":4096,\"runner\":\"llamacpp\"}]}"
+  },
+  "at": "2026-10-18T22:22:17.673965+00:00"
+}

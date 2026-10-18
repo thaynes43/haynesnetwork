@@ -1,0 +1,21 @@
+{
+  "model": "nemotron-3.5-bolt:74b-a9b",
+  "documentary_completed": 10,
+  "documentary_correct": 10,
+  "heldout_completed": 4,
+  "AV_completed": 3,
+  "AV_correct_by_axis": {
+    "identity": 1,
+    "decode": 3,
+    "compatibility": 3
+  },
+  "false_mismatch": 1,
+  "unsupported_identity_assertions": 2,
+  "wall_seconds_min_median_max": [
+    2.0644078222103417,
+    4.796037249732763,
+    20.13565979572013
+  ],
+  "schema_errors": 0,
+  "denominators": "Selected10documentary+3AV; original11documentary/4heldout preserved. Qwen/Muse0cases; no fairthreeway."
+}

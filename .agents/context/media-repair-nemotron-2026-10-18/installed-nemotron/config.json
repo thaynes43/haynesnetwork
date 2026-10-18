@@ -1,0 +1,1 @@
+{"model_format":"gguf","model_family":"nemotron_h_moe","model_families":["nemotron_h_moe"],"model_type":"74.0B","file_type":"IQ2_XXS","renderer":"nemotron-3.5-super","parser":"nemotron-3-nano","requires":"0.40.5","draft":{"model_format":"gguf","architecture":"dflash"}}

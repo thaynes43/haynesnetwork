@@ -1,0 +1,6 @@
+{
+  "at": "2026-10-18T22:13 UTC",
+  "reason": "First controller refused prelaunch with file_dirty16384; no daemon or load issued. Bounded passive settle up to60s, unchanged clean gate; no flush, no resource relaxation. Preserve original controller/freeze. Also fail shell prerequisite checks immediately.",
+  "prior_load_calls": 4,
+  "semantic_answers": 0
+}

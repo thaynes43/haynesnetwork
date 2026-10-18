@@ -1,0 +1,25 @@
+{
+  "at": "2026-10-18T21:52:08.032988+00:00",
+  "phase": "P2_proposed_before_execution",
+  "prior_requests": 2,
+  "proposed_startup_seconds": 1200,
+  "justification": "24.750GB package / approximately28MB per second original checksum reader = approximately884seconds;1200seconds permits overhead. No guaranteed same rate for loader.",
+  "absolute_deadline_utc": "2026-10-18T22:25:00+00:00",
+  "additional_remote_startup_attempts_max": 1,
+  "conditional_local_comparison_max": 1,
+  "original_request_ceiling_note": "Prior46ceiling gains one newly authorized longer diagnostic:47; conditional local comparison would add1 only if safe and unprotected:48. No requests executed under P2 yet.",
+  "fixed_runtime_gates": {
+    "gpu_max_sampled_mib": 21500,
+    "cgroup_noninactive_max_bytes": 42949672960,
+    "host_available_min_bytes": 51539607552,
+    "num_thread": 2,
+    "num_ctx": 4096,
+    "num_batch": 128,
+    "num_gpu": 48,
+    "oom_events_allowed": 0
+  },
+  "initial_gate_issue": "Prior idle current-minus-inactive_file<=8GiB now fails at8.13GiB due7.85GiBactive_file, anon+kernel285MiB; no foreign model/compute. Preserve raw failed gate; no loader launched.",
+  "proposed_idle_accounting": "Keep8GiB numeric ceiling but use current-minus-inactive_file-minus-active_file to distinguish clean reclaimable file cache from anonymous/kernel/unevictable memory; require zero dirty/writeback,foreignowner,OOM and same physical runtime ceilings. This changes original metric, pending explicit clarification under prior no-relaxed-resource-gates instruction.",
+  "instrumentation": "At15second intervals read loader PID/cmdline,wchan,state,stat/io,smaps_rollup,cgroup CPU/memory/reclaim/OOM,GPU and host memory. Track exact-modelopenFD positions. No weights benchmark/read loop/cache flush. Stop if OOM or gates exceed; stop after120s no new read progress/stage progress; no blind reload.",
+  "semantic_cases": "Only after safe readiness use unchanged frozen text evidence/prompt/schema/options with60s semantic cap and shared separated startup for all3; respect absolute deadline and report partial denominators."
+}

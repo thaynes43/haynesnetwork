@@ -1,0 +1,307 @@
+pulling manifest ⠋ pulling manifest ⠙ pulling manifest ⠹ pulling manifest ⠸ pulling manifest ⠼ pulling manifest ⠴ pulling manifest ⠦ pulling manifest ⠧ pulling manifest ⠇ pulling manifest ⠏ pulling manifest ⠋ pulling manifest ⠙ pulling manifest ⠹ pulling manifest ⠸ pulling manifest ⠼ pulling manifest ⠴ pulling manifest
+pulling 91d63363e782:   0% ▕                  ▏ 849 KB/ 22 GB                  pulling manifest
+pulling 91d63363e782:   1% ▕                  ▏ 120 MB/ 22 GB   95 MB/s   3m49spulling manifest
+pulling 91d63363e782:   2% ▕                  ▏ 338 MB/ 22 GB   92 MB/s   3m53spulling manifest
+pulling 91d63363e782:   3% ▕                  ▏ 551 MB/ 22 GB   86 MB/s    4m8spulling manifest
+pulling 91d63363e782:   4% ▕                  ▏ 771 MB/ 22 GB   79 MB/s   4m26spulling manifest
+pulling 91d63363e782:   5% ▕                  ▏ 992 MB/ 22 GB   67 MB/s   5m11spulling manifest
+pulling 91d63363e782:   6% ▕                  ▏ 1.2 GB/ 22 GB   64 MB/s   5m21spulling manifest
+pulling 91d63363e782:   7% ▕█                 ▏ 1.4 GB/ 22 GB   67 MB/s    5m5spulling manifest
+pulling 91d63363e782:   8% ▕█                 ▏ 1.7 GB/ 22 GB   68 MB/s   4m56spulling manifest
+pulling 91d63363e782:   9% ▕█                 ▏ 1.9 GB/ 22 GB   69 MB/s   4m48spulling manifest
+pulling 91d63363e782:  10% ▕█                 ▏ 2.1 GB/ 22 GB   69 MB/s   4m44spulling manifest
+pulling 91d63363e782:  11% ▕█                 ▏ 2.3 GB/ 22 GB   69 MB/s   4m44spulling manifest
+pulling 91d63363e782:  12% ▕██                ▏ 2.5 GB/ 22 GB   69 MB/s   4m41spulling manifest
+pulling 91d63363e782:  13% ▕██                ▏ 2.8 GB/ 22 GB   68 MB/s   4m41spulling manifest
+pulling 91d63363e782:  14% ▕██                ▏ 3.0 GB/ 22 GB   67 MB/s   4m40spulling manifest
+pulling 91d63363e782:  15% ▕██                ▏ 3.2 GB/ 22 GB   66 MB/s   4m41spulling manifest
+pulling 91d63363e782:  16% ▕██                ▏ 3.4 GB/ 22 GB   66 MB/s   4m37spulling manifest
+pulling 91d63363e782:  17% ▕██                ▏ 3.6 GB/ 22 GB   67 MB/s   4m31spulling manifest
+pulling 91d63363e782:  18% ▕███               ▏ 3.9 GB/ 22 GB  3.5 MB/s   1h27mpulling manifest
+pulling 91d63363e782:  19% ▕███               ▏ 4.1 GB/ 22 GB   28 MB/s  10m20spulling manifest
+pulling 91d63363e782:  20% ▕███               ▏ 4.3 GB/ 22 GB   50 MB/s   5m52spulling manifest
+pulling 91d63363e782:  21% ▕███               ▏ 4.5 GB/ 22 GB   67 MB/s   4m19spulling manifest
+pulling 91d63363e782:  22% ▕███               ▏ 4.7 GB/ 22 GB   67 MB/s   4m17spulling manifest
+pulling 91d63363e782:  23% ▕████              ▏ 5.0 GB/ 22 GB   65 MB/s   4m20spulling manifest
+pulling 91d63363e782:  24% ▕████              ▏ 5.2 GB/ 22 GB   64 MB/s   4m21spulling manifest
+pulling 91d63363e782:  25% ▕████              ▏ 5.4 GB/ 22 GB   61 MB/s   4m32spulling manifest
+pulling 91d63363e782:  26% ▕████              ▏ 5.6 GB/ 22 GB   20 MB/s   13m4spulling manifest
+pulling 91d63363e782:  27% ▕████              ▏ 5.8 GB/ 22 GB   22 MB/s  11m57spulling manifest
+pulling 91d63363e782:  28% ▕████              ▏ 6.1 GB/ 22 GB   45 MB/s   5m47spulling manifest
+pulling 91d63363e782:  29% ▕█████             ▏ 6.3 GB/ 22 GB   68 MB/s   3m49spulling manifest
+pulling 91d63363e782:  30% ▕█████             ▏ 6.5 GB/ 22 GB   68 MB/s   3m46spulling manifest
+pulling 91d63363e782:  31% ▕█████             ▏ 6.7 GB/ 22 GB   66 MB/s   3m49spulling manifest
+pulling 91d63363e782:  32% ▕█████             ▏ 6.9 GB/ 22 GB   69 MB/s   3m35spulling manifest
+pulling 91d63363e782:  33% ▕█████             ▏ 7.2 GB/ 22 GB   68 MB/s   3m35spulling manifest
+pulling 91d63363e782:  34% ▕██████            ▏ 7.4 GB/ 22 GB   15 MB/s  15m52spulling manifest
+pulling 91d63363e782:  35% ▕██████            ▏ 7.6 GB/ 22 GB   27 MB/s   8m44spulling manifest
+pulling 91d63363e782:  36% ▕██████            ▏ 7.8 GB/ 22 GB   44 MB/s   5m20spulling manifest
+pulling 91d63363e782:  37% ▕██████            ▏ 8.0 GB/ 22 GB   48 MB/s   4m48spulling manifest
+pulling 91d63363e782:  38% ▕██████            ▏ 8.3 GB/ 22 GB   51 MB/s   4m28spulling manifest
+pulling 91d63363e782:  39% ▕██████            ▏ 8.5 GB/ 22 GB   52 MB/s   4m20spulling manifest
+pulling 91d63363e782:  40% ▕███████           ▏ 8.7 GB/ 22 GB   49 MB/s   4m26spulling manifest
+pulling 91d63363e782:  41% ▕███████           ▏ 8.9 GB/ 22 GB   50 MB/s   4m18spulling manifest
+pulling 91d63363e782:  42% ▕███████           ▏ 9.1 GB/ 22 GB   49 MB/s   4m18spulling manifest
+pulling 91d63363e782:  43% ▕███████           ▏ 9.4 GB/ 22 GB   60 MB/s   3m30spulling manifest
+pulling 91d63363e782:  44% ▕███████           ▏ 9.6 GB/ 22 GB   65 MB/s    3m8spulling manifest
+pulling 91d63363e782:  45% ▕████████          ▏ 9.8 GB/ 22 GB   66 MB/s    3m4spulling manifest
+pulling 91d63363e782:  46% ▕████████          ▏  10 GB/ 22 GB   64 MB/s    3m7spulling manifest
+pulling 91d63363e782:  47% ▕████████          ▏  10 GB/ 22 GB   64 MB/s    3m3spulling manifest
+pulling 91d63363e782:  48% ▕████████          ▏  10 GB/ 22 GB   63 MB/s    3m0spulling manifest
+pulling 91d63363e782:  49% ▕████████          ▏  10 GB/ 22 GB   64 MB/s   2m55spulling manifest
+pulling 91d63363e782:  50% ▕████████          ▏  10 GB/ 22 GB   18 MB/s   9m57spulling manifest
+pulling 91d63363e782:  51% ▕█████████         ▏  11 GB/ 22 GB   26 MB/s   6m54spulling manifest
+pulling 91d63363e782:  52% ▕█████████         ▏  11 GB/ 22 GB   49 MB/s   3m35spulling manifest
+pulling 91d63363e782:  53% ▕█████████         ▏  11 GB/ 22 GB   49 MB/s   3m31spulling manifest
+pulling 91d63363e782:  54% ▕█████████         ▏  11 GB/ 22 GB   51 MB/s   3m19spulling manifest
+pulling 91d63363e782:  55% ▕█████████         ▏  12 GB/ 22 GB   55 MB/s    3m0spulling manifest
+pulling 91d63363e782:  56% ▕█████████         ▏  12 GB/ 22 GB   49 MB/s   3m18spulling manifest
+pulling 91d63363e782:  57% ▕██████████        ▏  12 GB/ 22 GB   49 MB/s   3m11spulling manifest
+pulling 91d63363e782:  58% ▕██████████        ▏  12 GB/ 22 GB   38 MB/s    4m3spulling manifest
+pulling 91d63363e782:  59% ▕██████████        ▏  12 GB/ 22 GB   32 MB/s   4m38spulling manifest
+pulling 91d63363e782:  60% ▕██████████        ▏  13 GB/ 22 GB   50 MB/s   2m54spulling manifest
+pulling 91d63363e782:  61% ▕██████████        ▏  13 GB/ 22 GB   57 MB/s   2m32spulling manifest
+pulling 91d63363e782:  62% ▕███████████       ▏  13 GB/ 22 GB   54 MB/s   2m36spulling manifest
+pulling 91d63363e782:  63% ▕███████████       ▏  13 GB/ 22 GB   58 MB/s   2m20spulling manifest
+pulling 91d63363e782:  64% ▕███████████       ▏  13 GB/ 22 GB   63 MB/s    2m5spulling manifest
+pulling 91d63363e782:  65% ▕███████████       ▏  14 GB/ 22 GB   65 MB/s   1m59spulling manifest
+pulling 91d63363e782:  66% ▕███████████       ▏  14 GB/ 22 GB  2.5 MB/s  50m25spulling manifest
+pulling 91d63363e782:  67% ▕███████████       ▏  14 GB/ 22 GB   20 MB/s   5m59spulling manifest
+pulling 91d63363e782:  68% ▕████████████      ▏  14 GB/ 22 GB   46 MB/s   2m35spulling manifest
+pulling 91d63363e782:  69% ▕████████████      ▏  15 GB/ 22 GB   58 MB/s   1m57spulling manifest
+pulling 91d63363e782:  70% ▕████████████      ▏  15 GB/ 22 GB   58 MB/s   1m54spulling manifest
+pulling 91d63363e782:  71% ▕████████████      ▏  15 GB/ 22 GB   66 MB/s   1m37spulling manifest
+pulling 91d63363e782:  72% ▕████████████      ▏  15 GB/ 22 GB   15 MB/s   6m34spulling manifest
+pulling 91d63363e782:  73% ▕█████████████     ▏  15 GB/ 22 GB   37 MB/s   2m43spulling manifest
+pulling 91d63363e782:  74% ▕█████████████     ▏  16 GB/ 22 GB   56 MB/s   1m43spulling manifest
+pulling 91d63363e782:  75% ▕█████████████     ▏  16 GB/ 22 GB   65 MB/s   1m25spulling manifest
+pulling 91d63363e782:  76% ▕█████████████     ▏  16 GB/ 22 GB   61 MB/s   1m27spulling manifest
+pulling 91d63363e782:  77% ▕█████████████     ▏  16 GB/ 22 GB   68 MB/s   1m15spulling manifest
+pulling 91d63363e782:  78% ▕█████████████     ▏  17 GB/ 22 GB   69 MB/s   1m11spulling manifest
+pulling 91d63363e782:  79% ▕██████████████    ▏  17 GB/ 22 GB   69 MB/s    1m8spulling manifest
+pulling 91d63363e782:  80% ▕██████████████    ▏  17 GB/ 22 GB   70 MB/s    1m3spulling manifest
+pulling 91d63363e782:  81% ▕██████████████    ▏  17 GB/ 22 GB   22 MB/s   3m14spulling manifest
+pulling 91d63363e782:  82% ▕██████████████    ▏  17 GB/ 22 GB   27 MB/s   2m27spulling manifest
+pulling 91d63363e782:  83% ▕██████████████    ▏  18 GB/ 22 GB   57 MB/s    1m7spulling manifest
+pulling 91d63363e782:  84% ▕███████████████   ▏  18 GB/ 22 GB   59 MB/s    1m1spulling manifest
+pulling 91d63363e782:  85% ▕███████████████   ▏  18 GB/ 22 GB   54 MB/s    1m2spulling manifest
+pulling 91d63363e782:  86% ▕███████████████   ▏  18 GB/ 22 GB   47 MB/s    1m7spulling manifest
+pulling 91d63363e782:  87% ▕███████████████   ▏  19 GB/ 22 GB   48 MB/s    1m1spulling manifest
+pulling 91d63363e782:  88% ▕███████████████   ▏  19 GB/ 22 GB   55 MB/s     49spulling manifest
+pulling 91d63363e782:  89% ▕███████████████   ▏  19 GB/ 22 GB   59 MB/s     42spulling manifest
+pulling 91d63363e782:  90% ▕████████████████  ▏  19 GB/ 22 GB   58 MB/s     39spulling manifest
+pulling 91d63363e782:  91% ▕████████████████  ▏  19 GB/ 22 GB   53 MB/s     39spulling manifest
+pulling 91d63363e782:  92% ▕████████████████  ▏  20 GB/ 22 GB   54 MB/s     34spulling manifest
+pulling 91d63363e782:  93% ▕████████████████  ▏  20 GB/ 22 GB   56 MB/s     28spulling manifest
+pulling 91d63363e782:  94% ▕████████████████  ▏  20 GB/ 22 GB   54 MB/s     26spulling manifest
+pulling 91d63363e782:  95% ▕█████████████████ ▏  20 GB/ 22 GB   52 MB/s     22spulling manifest
+pulling 91d63363e782:  96% ▕█████████████████ ▏  21 GB/ 22 GB   38 MB/s     25spulling manifest
+pulling 91d63363e782:  97% ▕█████████████████ ▏  21 GB/ 22 GB   43 MB/s     17spulling manifest
+pulling 91d63363e782:  98% ▕█████████████████ ▏  21 GB/ 22 GB   59 MB/s      9spulling manifest
+pulling 91d63363e782:  99% ▕█████████████████ ▏  21 GB/ 22 GB   60 MB/s      5spulling manifest
+pulling 91d63363e782: 100% ▕█████████████████ ▏  21 GB/ 22 GB   63 MB/s      1spulling manifest
+pulling 0ee891eadc7b:   0% ▕                  ▏ 358 KB/1.7 GB                  pulling manifest
+pulling 0ee891eadc7b:   1% ▕                  ▏  24 MB/1.7 GB                  pulling manifest
+pulling 0ee891eadc7b:   2% ▕                  ▏  40 MB/1.7 GB                  pulling manifest
+pulling 0ee891eadc7b:   3% ▕                  ▏  55 MB/1.7 GB                  pulling manifest
+pulling 0ee891eadc7b:   4% ▕                  ▏  74 MB/1.7 GB                  pulling manifest
+pulling 0ee891eadc7b:   5% ▕                  ▏  81 MB/1.7 GB                  pulling manifest
+pulling 0ee891eadc7b:   6% ▕█                 ▏ 106 MB/1.7 GB  105 MB/s     15spulling manifest
+pulling 0ee891eadc7b:   7% ▕█                 ▏ 123 MB/1.7 GB  105 MB/s     15spulling manifest
+pulling 0ee891eadc7b:   8% ▕█                 ▏ 133 MB/1.7 GB  105 MB/s     15spulling manifest
+pulling 0ee891eadc7b:   9% ▕█                 ▏ 148 MB/1.7 GB  105 MB/s     15spulling manifest
+pulling 0ee891eadc7b:  10% ▕█                 ▏ 165 MB/1.7 GB  105 MB/s     14spulling manifest
+pulling 0ee891eadc7b:  11% ▕█                 ▏ 187 MB/1.7 GB  105 MB/s     14spulling manifest
+pulling 0ee891eadc7b:  12% ▕██                ▏ 202 MB/1.7 GB   98 MB/s     15spulling manifest
+pulling 0ee891eadc7b:  13% ▕██                ▏ 218 MB/1.7 GB   98 MB/s     15spulling manifest
+pulling 0ee891eadc7b:  14% ▕██                ▏ 241 MB/1.7 GB   98 MB/s     15spulling manifest
+pulling 0ee891eadc7b:  15% ▕██                ▏ 255 MB/1.7 GB   98 MB/s     15spulling manifest
+pulling 0ee891eadc7b:  16% ▕██                ▏ 270 MB/1.7 GB   98 MB/s     14spulling manifest
+pulling 0ee891eadc7b:  17% ▕███               ▏ 292 MB/1.7 GB   95 MB/s     15spulling manifest
+pulling 0ee891eadc7b:  18% ▕███               ▏ 309 MB/1.7 GB   95 MB/s     14spulling manifest
+pulling 0ee891eadc7b:  19% ▕███               ▏ 325 MB/1.7 GB   95 MB/s     14spulling manifest
+pulling 0ee891eadc7b:  20% ▕███               ▏ 346 MB/1.7 GB   95 MB/s     14spulling manifest
+pulling 0ee891eadc7b:  21% ▕███               ▏ 362 MB/1.7 GB   95 MB/s     14spulling manifest
+pulling 0ee891eadc7b:  22% ▕███               ▏ 372 MB/1.7 GB   95 MB/s     14spulling manifest
+pulling 0ee891eadc7b:  23% ▕████              ▏ 396 MB/1.7 GB   94 MB/s     14spulling manifest
+pulling 0ee891eadc7b:  24% ▕████              ▏ 410 MB/1.7 GB   94 MB/s     14spulling manifest
+pulling 0ee891eadc7b:  25% ▕████              ▏ 435 MB/1.7 GB   94 MB/s     13spulling manifest
+pulling 0ee891eadc7b:  26% ▕████              ▏ 444 MB/1.7 GB   94 MB/s     13spulling manifest
+pulling 0ee891eadc7b:  27% ▕████              ▏ 468 MB/1.7 GB   91 MB/s     13spulling manifest
+pulling 0ee891eadc7b:  28% ▕█████             ▏ 483 MB/1.7 GB   91 MB/s     13spulling manifest
+pulling 0ee891eadc7b:  29% ▕█████             ▏ 498 MB/1.7 GB   91 MB/s     13spulling manifest
+pulling 0ee891eadc7b:  30% ▕█████             ▏ 518 MB/1.7 GB   91 MB/s     13spulling manifest
+pulling 0ee891eadc7b:  31% ▕█████             ▏ 534 MB/1.7 GB   91 MB/s     13spulling manifest
+pulling 0ee891eadc7b:  32% ▕█████             ▏ 550 MB/1.7 GB   90 MB/s     13spulling manifest
+pulling 0ee891eadc7b:  33% ▕█████             ▏ 570 MB/1.7 GB   90 MB/s     12spulling manifest
+pulling 0ee891eadc7b:  34% ▕██████            ▏ 585 MB/1.7 GB   90 MB/s     12spulling manifest
+pulling 0ee891eadc7b:  35% ▕██████            ▏ 600 MB/1.7 GB   90 MB/s     12spulling manifest
+pulling 0ee891eadc7b:  36% ▕██████            ▏ 621 MB/1.7 GB   90 MB/s     12spulling manifest
+pulling 0ee891eadc7b:  37% ▕██████            ▏ 636 MB/1.7 GB   90 MB/s     12spulling manifest
+pulling 0ee891eadc7b:  38% ▕██████            ▏ 651 MB/1.7 GB   90 MB/s     11spulling manifest
+pulling 0ee891eadc7b:  39% ▕██████            ▏ 671 MB/1.7 GB   90 MB/s     11spulling manifest
+pulling 0ee891eadc7b:  40% ▕███████           ▏ 685 MB/1.7 GB   90 MB/s     11spulling manifest
+pulling 0ee891eadc7b:  41% ▕███████           ▏ 707 MB/1.7 GB   90 MB/s     11spulling manifest
+pulling 0ee891eadc7b:  42% ▕███████           ▏ 726 MB/1.7 GB   88 MB/s     11spulling manifest
+pulling 0ee891eadc7b:  43% ▕███████           ▏ 739 MB/1.7 GB   88 MB/s     11spulling manifest
+pulling 0ee891eadc7b:  44% ▕███████           ▏ 756 MB/1.7 GB   88 MB/s     11spulling manifest
+pulling 0ee891eadc7b:  45% ▕████████          ▏ 778 MB/1.7 GB   88 MB/s     10spulling manifest
+pulling 0ee891eadc7b:  46% ▕████████          ▏ 791 MB/1.7 GB   86 MB/s     10spulling manifest
+pulling 0ee891eadc7b:  47% ▕████████          ▏ 810 MB/1.7 GB   86 MB/s     10spulling manifest
+pulling 0ee891eadc7b:  48% ▕████████          ▏ 823 MB/1.7 GB   86 MB/s     10spulling manifest
+pulling 0ee891eadc7b:  49% ▕████████          ▏ 844 MB/1.7 GB   86 MB/s     10spulling manifest
+pulling 0ee891eadc7b:  50% ▕████████          ▏ 861 MB/1.7 GB   83 MB/s     10spulling manifest
+pulling 0ee891eadc7b:  51% ▕█████████         ▏ 884 MB/1.7 GB   83 MB/s     10spulling manifest
+pulling 0ee891eadc7b:  52% ▕█████████         ▏ 896 MB/1.7 GB   83 MB/s     10spulling manifest
+pulling 0ee891eadc7b:  53% ▕█████████         ▏ 916 MB/1.7 GB   83 MB/s      9spulling manifest
+pulling 0ee891eadc7b:  54% ▕█████████         ▏ 928 MB/1.7 GB   80 MB/s      9spulling manifest
+pulling 0ee891eadc7b:  55% ▕█████████         ▏ 948 MB/1.7 GB   80 MB/s      9spulling manifest
+pulling 0ee891eadc7b:  56% ▕██████████        ▏ 965 MB/1.7 GB   80 MB/s      9spulling manifest
+pulling 0ee891eadc7b:  57% ▕██████████        ▏ 984 MB/1.7 GB   80 MB/s      9spulling manifest
+pulling 0ee891eadc7b:  58% ▕██████████        ▏ 997 MB/1.7 GB   78 MB/s      9spulling manifest
+pulling 0ee891eadc7b:  59% ▕██████████        ▏ 1.0 GB/1.7 GB   78 MB/s      9spulling manifest
+pulling 0ee891eadc7b:  60% ▕██████████        ▏ 1.0 GB/1.7 GB   78 MB/s      8spulling manifest
+pulling 0ee891eadc7b:  61% ▕██████████        ▏ 1.1 GB/1.7 GB   78 MB/s      8spulling manifest
+pulling 0ee891eadc7b:  62% ▕███████████       ▏ 1.1 GB/1.7 GB   76 MB/s      8spulling manifest
+pulling 0ee891eadc7b:  63% ▕███████████       ▏ 1.1 GB/1.7 GB   76 MB/s      8spulling manifest
+pulling 0ee891eadc7b:  64% ▕███████████       ▏ 1.1 GB/1.7 GB   76 MB/s      8spulling manifest
+pulling 0ee891eadc7b:  65% ▕███████████       ▏ 1.1 GB/1.7 GB   76 MB/s      8spulling manifest
+pulling 0ee891eadc7b:  66% ▕███████████       ▏ 1.1 GB/1.7 GB   75 MB/s      7spulling manifest
+pulling 0ee891eadc7b:  67% ▕███████████       ▏ 1.2 GB/1.7 GB   75 MB/s      7spulling manifest
+pulling 0ee891eadc7b:  68% ▕████████████      ▏ 1.2 GB/1.7 GB   75 MB/s      7spulling manifest
+pulling 0ee891eadc7b:  69% ▕████████████      ▏ 1.2 GB/1.7 GB   75 MB/s      7spulling manifest
+pulling 0ee891eadc7b:  70% ▕████████████      ▏ 1.2 GB/1.7 GB   72 MB/s      7spulling manifest
+pulling 0ee891eadc7b:  71% ▕████████████      ▏ 1.2 GB/1.7 GB   72 MB/s      7spulling manifest
+pulling 0ee891eadc7b:  72% ▕████████████      ▏ 1.2 GB/1.7 GB   72 MB/s      6spulling manifest
+pulling 0ee891eadc7b:  73% ▕█████████████     ▏ 1.3 GB/1.7 GB   72 MB/s      6spulling manifest
+pulling 0ee891eadc7b:  74% ▕█████████████     ▏ 1.3 GB/1.7 GB   70 MB/s      6spulling manifest
+pulling 0ee891eadc7b:  75% ▕█████████████     ▏ 1.3 GB/1.7 GB   70 MB/s      6spulling manifest
+pulling 0ee891eadc7b:  76% ▕█████████████     ▏ 1.3 GB/1.7 GB   70 MB/s      5spulling manifest
+pulling 0ee891eadc7b:  77% ▕█████████████     ▏ 1.3 GB/1.7 GB   70 MB/s      5spulling manifest
+pulling 0ee891eadc7b:  78% ▕█████████████     ▏ 1.3 GB/1.7 GB   69 MB/s      5spulling manifest
+pulling 0ee891eadc7b:  79% ▕██████████████    ▏ 1.4 GB/1.7 GB   69 MB/s      5spulling manifest
+pulling 0ee891eadc7b:  80% ▕██████████████    ▏ 1.4 GB/1.7 GB   69 MB/s      5spulling manifest
+pulling 0ee891eadc7b:  81% ▕██████████████    ▏ 1.4 GB/1.7 GB   69 MB/s      4spulling manifest
+pulling 0ee891eadc7b:  82% ▕██████████████    ▏ 1.4 GB/1.7 GB   69 MB/s      4spulling manifest
+pulling 0ee891eadc7b:  83% ▕██████████████    ▏ 1.4 GB/1.7 GB   69 MB/s      4spulling manifest
+pulling 0ee891eadc7b:  84% ▕███████████████   ▏ 1.5 GB/1.7 GB   69 MB/s      3spulling manifest
+pulling 0ee891eadc7b:  85% ▕███████████████   ▏ 1.5 GB/1.7 GB   69 MB/s      3spulling manifest
+pulling 0ee891eadc7b:  86% ▕███████████████   ▏ 1.5 GB/1.7 GB   69 MB/s      3spulling manifest
+pulling 0ee891eadc7b:  87% ▕███████████████   ▏ 1.5 GB/1.7 GB   69 MB/s      3spulling manifest
+pulling 0ee891eadc7b:  88% ▕███████████████   ▏ 1.5 GB/1.7 GB   69 MB/s      3spulling manifest
+pulling 0ee891eadc7b:  89% ▕███████████████   ▏ 1.5 GB/1.7 GB   69 MB/s      2spulling manifest
+pulling 0ee891eadc7b:  90% ▕████████████████  ▏ 1.6 GB/1.7 GB   69 MB/s      2spulling manifest
+pulling 0ee891eadc7b:  91% ▕████████████████  ▏ 1.6 GB/1.7 GB   69 MB/s      2spulling manifest
+pulling 0ee891eadc7b:  92% ▕████████████████  ▏ 1.6 GB/1.7 GB   69 MB/s      2spulling manifest
+pulling 0ee891eadc7b:  93% ▕████████████████  ▏ 1.6 GB/1.7 GB   69 MB/s      1spulling manifest
+pulling 0ee891eadc7b:  94% ▕████████████████  ▏ 1.6 GB/1.7 GB   69 MB/s      1spulling manifest
+pulling 0ee891eadc7b:  95% ▕█████████████████ ▏ 1.6 GB/1.7 GB   69 MB/s      1spulling manifest
+pulling 0ee891eadc7b:  96% ▕█████████████████ ▏ 1.7 GB/1.7 GB   69 MB/s      1spulling manifest
+pulling 0ee891eadc7b:  97% ▕█████████████████ ▏ 1.7 GB/1.7 GB   69 MB/s      0spulling manifest
+pulling 0ee891eadc7b:  98% ▕█████████████████ ▏ 1.7 GB/1.7 GB   69 MB/s      0spulling manifest
+pulling 0ee891eadc7b:  99% ▕█████████████████ ▏ 1.7 GB/1.7 GB   69 MB/s      0spulling manifest
+pulling 0ee891eadc7b: 100% ▕█████████████████ ▏ 1.7 GB/1.7 GB   69 MB/s      0spulling manifest
+pulling 080e1ea41c95:   0% ▕                  ▏ 541 KB/998 MB                  pulling manifest
+pulling 080e1ea41c95:   1% ▕                  ▏  13 MB/998 MB                  pulling manifest
+pulling 080e1ea41c95:   2% ▕                  ▏  20 MB/998 MB                  pulling manifest
+pulling 080e1ea41c95:   3% ▕                  ▏  26 MB/998 MB                  pulling manifest
+pulling 080e1ea41c95:   4% ▕                  ▏  36 MB/998 MB                  pulling manifest
+pulling 080e1ea41c95:   5% ▕                  ▏  47 MB/998 MB                  pulling manifest
+pulling 080e1ea41c95:   6% ▕█                 ▏  63 MB/998 MB                  pulling manifest
+pulling 080e1ea41c95:   7% ▕█                 ▏  74 MB/998 MB                  pulling manifest
+pulling 080e1ea41c95:   8% ▕█                 ▏  79 MB/998 MB   79 MB/s     11spulling manifest
+pulling 080e1ea41c95:   9% ▕█                 ▏  90 MB/998 MB   79 MB/s     11spulling manifest
+pulling 080e1ea41c95:  10% ▕█                 ▏ 100 MB/998 MB   79 MB/s     11spulling manifest
+pulling 080e1ea41c95:  11% ▕█                 ▏ 105 MB/998 MB   79 MB/s     11spulling manifest
+pulling 080e1ea41c95:  12% ▕██                ▏ 115 MB/998 MB   79 MB/s     11spulling manifest
+pulling 080e1ea41c95:  13% ▕██                ▏ 129 MB/998 MB   79 MB/s     10spulling manifest
+pulling 080e1ea41c95:  14% ▕██                ▏ 139 MB/998 MB   79 MB/s     10spulling manifest
+pulling 080e1ea41c95:  15% ▕██                ▏ 148 MB/998 MB   79 MB/s     10spulling manifest
+pulling 080e1ea41c95:  17% ▕██                ▏ 165 MB/998 MB   82 MB/s     10spulling manifest
+pulling 080e1ea41c95:  18% ▕███               ▏ 180 MB/998 MB   82 MB/s      9spulling manifest
+pulling 080e1ea41c95:  19% ▕███               ▏ 188 MB/998 MB   82 MB/s      9spulling manifest
+pulling 080e1ea41c95:  20% ▕███               ▏ 198 MB/998 MB   82 MB/s      9spulling manifest
+pulling 080e1ea41c95:  21% ▕███               ▏ 213 MB/998 MB   82 MB/s      9spulling manifest
+pulling 080e1ea41c95:  22% ▕████              ▏ 222 MB/998 MB   82 MB/s      9spulling manifest
+pulling 080e1ea41c95:  23% ▕████              ▏ 226 MB/998 MB   82 MB/s      9spulling manifest
+pulling 080e1ea41c95:  24% ▕████              ▏ 235 MB/998 MB   82 MB/s      9spulling manifest
+pulling 080e1ea41c95:  25% ▕████              ▏ 244 MB/998 MB   81 MB/s      9spulling manifest
+pulling 080e1ea41c95:  26% ▕████              ▏ 257 MB/998 MB   81 MB/s      9spulling manifest
+pulling 080e1ea41c95:  27% ▕████              ▏ 267 MB/998 MB   81 MB/s      8spulling manifest
+pulling 080e1ea41c95:  28% ▕█████             ▏ 279 MB/998 MB   81 MB/s      8spulling manifest
+pulling 080e1ea41c95:  29% ▕█████             ▏ 289 MB/998 MB   81 MB/s      8spulling manifest
+pulling 080e1ea41c95:  30% ▕█████             ▏ 294 MB/998 MB   81 MB/s      8spulling manifest
+pulling 080e1ea41c95:  31% ▕█████             ▏ 313 MB/998 MB   81 MB/s      8spulling manifest
+pulling 080e1ea41c95:  32% ▕█████             ▏ 317 MB/998 MB   81 MB/s      8spulling manifest
+pulling 080e1ea41c95:  33% ▕█████             ▏ 327 MB/998 MB   80 MB/s      8spulling manifest
+pulling 080e1ea41c95:  34% ▕██████            ▏ 336 MB/998 MB   80 MB/s      8spulling manifest
+pulling 080e1ea41c95:  35% ▕██████            ▏ 350 MB/998 MB   80 MB/s      8spulling manifest
+pulling 080e1ea41c95:  36% ▕██████            ▏ 358 MB/998 MB   80 MB/s      7spulling manifest
+pulling 080e1ea41c95:  37% ▕██████            ▏ 372 MB/998 MB   80 MB/s      7spulling manifest
+pulling 080e1ea41c95:  38% ▕██████            ▏ 381 MB/998 MB   80 MB/s      7spulling manifest
+pulling 080e1ea41c95:  39% ▕██████            ▏ 386 MB/998 MB   80 MB/s      7spulling manifest
+pulling 080e1ea41c95:  40% ▕███████           ▏ 394 MB/998 MB   80 MB/s      7spulling manifest
+pulling 080e1ea41c95:  41% ▕███████           ▏ 407 MB/998 MB   79 MB/s      7spulling manifest
+pulling 080e1ea41c95:  42% ▕███████           ▏ 421 MB/998 MB   79 MB/s      7spulling manifest
+pulling 080e1ea41c95:  43% ▕███████           ▏ 426 MB/998 MB   79 MB/s      7spulling manifest
+pulling 080e1ea41c95:  44% ▕███████           ▏ 440 MB/998 MB   79 MB/s      6spulling manifest
+pulling 080e1ea41c95:  45% ▕████████          ▏ 445 MB/998 MB   79 MB/s      6spulling manifest
+pulling 080e1ea41c95:  46% ▕████████          ▏ 462 MB/998 MB   79 MB/s      6spulling manifest
+pulling 080e1ea41c95:  47% ▕████████          ▏ 467 MB/998 MB   77 MB/s      6spulling manifest
+pulling 080e1ea41c95:  48% ▕████████          ▏ 474 MB/998 MB   77 MB/s      6spulling manifest
+pulling 080e1ea41c95:  49% ▕████████          ▏ 486 MB/998 MB   77 MB/s      6spulling manifest
+pulling 080e1ea41c95:  50% ▕████████          ▏ 494 MB/998 MB   77 MB/s      6spulling manifest
+pulling 080e1ea41c95:  51% ▕█████████         ▏ 505 MB/998 MB   77 MB/s      6spulling manifest
+pulling 080e1ea41c95:  52% ▕█████████         ▏ 521 MB/998 MB   77 MB/s      6spulling manifest
+pulling 080e1ea41c95:  53% ▕█████████         ▏ 524 MB/998 MB   77 MB/s      6spulling manifest
+pulling 080e1ea41c95:  54% ▕█████████         ▏ 538 MB/998 MB   75 MB/s      6spulling manifest
+pulling 080e1ea41c95:  55% ▕█████████         ▏ 548 MB/998 MB   75 MB/s      5spulling manifest
+pulling 080e1ea41c95:  56% ▕██████████        ▏ 555 MB/998 MB   75 MB/s      5spulling manifest
+pulling 080e1ea41c95:  57% ▕██████████        ▏ 565 MB/998 MB   75 MB/s      5spulling manifest
+pulling 080e1ea41c95:  58% ▕██████████        ▏ 577 MB/998 MB   75 MB/s      5spulling manifest
+pulling 080e1ea41c95:  59% ▕██████████        ▏ 585 MB/998 MB   75 MB/s      5spulling manifest
+pulling 080e1ea41c95:  60% ▕██████████        ▏ 596 MB/998 MB   74 MB/s      5spulling manifest
+pulling 080e1ea41c95:  61% ▕██████████        ▏ 604 MB/998 MB   74 MB/s      5spulling manifest
+pulling 080e1ea41c95:  62% ▕███████████       ▏ 615 MB/998 MB   74 MB/s      5spulling manifest
+pulling 080e1ea41c95:  63% ▕███████████       ▏ 624 MB/998 MB   74 MB/s      5spulling manifest
+pulling 080e1ea41c95:  64% ▕███████████       ▏ 635 MB/998 MB   74 MB/s      4spulling manifest
+pulling 080e1ea41c95:  65% ▕███████████       ▏ 644 MB/998 MB   74 MB/s      4spulling manifest
+pulling 080e1ea41c95:  66% ▕███████████       ▏ 653 MB/998 MB   74 MB/s      4spulling manifest
+pulling 080e1ea41c95:  67% ▕████████████      ▏ 667 MB/998 MB   72 MB/s      4spulling manifest
+pulling 080e1ea41c95:  68% ▕████████████      ▏ 679 MB/998 MB   72 MB/s      4spulling manifest
+pulling 080e1ea41c95:  69% ▕████████████      ▏ 685 MB/998 MB   72 MB/s      4spulling manifest
+pulling 080e1ea41c95:  70% ▕████████████      ▏ 696 MB/998 MB   72 MB/s      4spulling manifest
+pulling 080e1ea41c95:  71% ▕████████████      ▏ 703 MB/998 MB   72 MB/s      4spulling manifest
+pulling 080e1ea41c95:  72% ▕████████████      ▏ 714 MB/998 MB   72 MB/s      3spulling manifest
+pulling 080e1ea41c95:  73% ▕█████████████     ▏ 725 MB/998 MB   70 MB/s      3spulling manifest
+pulling 080e1ea41c95:  74% ▕█████████████     ▏ 734 MB/998 MB   70 MB/s      3spulling manifest
+pulling 080e1ea41c95:  75% ▕█████████████     ▏ 746 MB/998 MB   70 MB/s      3spulling manifest
+pulling 080e1ea41c95:  76% ▕█████████████     ▏ 754 MB/998 MB   70 MB/s      3spulling manifest
+pulling 080e1ea41c95:  77% ▕█████████████     ▏ 766 MB/998 MB   70 MB/s      3spulling manifest
+pulling 080e1ea41c95:  78% ▕██████████████    ▏ 780 MB/998 MB   70 MB/s      3spulling manifest
+pulling 080e1ea41c95:  79% ▕██████████████    ▏ 784 MB/998 MB   68 MB/s      3spulling manifest
+pulling 080e1ea41c95:  80% ▕██████████████    ▏ 800 MB/998 MB   68 MB/s      2spulling manifest
+pulling 080e1ea41c95:  81% ▕██████████████    ▏ 804 MB/998 MB   68 MB/s      2spulling manifest
+pulling 080e1ea41c95:  82% ▕██████████████    ▏ 819 MB/998 MB   68 MB/s      2spulling manifest
+pulling 080e1ea41c95:  83% ▕██████████████    ▏ 823 MB/998 MB   68 MB/s      2spulling manifest
+pulling 080e1ea41c95:  84% ▕███████████████   ▏ 841 MB/998 MB   68 MB/s      2spulling manifest
+pulling 080e1ea41c95:  85% ▕███████████████   ▏ 845 MB/998 MB   68 MB/s      2spulling manifest
+pulling 080e1ea41c95:  86% ▕███████████████   ▏ 853 MB/998 MB   67 MB/s      2spulling manifest
+pulling 080e1ea41c95:  87% ▕███████████████   ▏ 872 MB/998 MB   67 MB/s      1spulling manifest
+pulling 080e1ea41c95:  88% ▕███████████████   ▏ 880 MB/998 MB   67 MB/s      1spulling manifest
+pulling 080e1ea41c95:  89% ▕███████████████   ▏ 884 MB/998 MB   67 MB/s      1spulling manifest
+pulling 080e1ea41c95:  90% ▕████████████████  ▏ 898 MB/998 MB   67 MB/s      1spulling manifest
+pulling 080e1ea41c95:  91% ▕████████████████  ▏ 907 MB/998 MB   67 MB/s      1spulling manifest
+pulling 080e1ea41c95:  92% ▕████████████████  ▏ 915 MB/998 MB   65 MB/s      1spulling manifest
+pulling 080e1ea41c95:  93% ▕████████████████  ▏ 928 MB/998 MB   65 MB/s      1spulling manifest
+pulling 080e1ea41c95:  94% ▕████████████████  ▏ 937 MB/998 MB   65 MB/s      0spulling manifest
+pulling 080e1ea41c95:  95% ▕█████████████████ ▏ 948 MB/998 MB   65 MB/s      0spulling manifest
+pulling 080e1ea41c95:  96% ▕█████████████████ ▏ 956 MB/998 MB   65 MB/s      0spulling manifest
+pulling 080e1ea41c95:  97% ▕█████████████████ ▏ 968 MB/998 MB   65 MB/s      0spulling manifest
+pulling 080e1ea41c95:  98% ▕█████████████████ ▏ 975 MB/998 MB   65 MB/s      0spulling manifest
+pulling 080e1ea41c95:  99% ▕█████████████████ ▏ 987 MB/998 MB   64 MB/s      0spulling manifest
+pulling 080e1ea41c95: 100% ▕█████████████████ ▏ 994 MB/998 MB   64 MB/s      0spulling manifest
+pulling bf6afc09321c: 100% ▕██████████████████▏ 2.6 KB                         pulling manifest
+pulling 4a3e6daa0812: 100% ▕██████████████████▏   53 B
+pulling bdc72596f81b: 100% ▕██████████████████▏  270 B
+verifying sha256 digest ⠋ pulling manifest
