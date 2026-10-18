@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": [
+        "match",
+        "mismatch",
+        "abstain"
+      ]
+    }
+  },
+  "required": [
+    "decision"
+  ],
+  "additionalProperties": false
+}

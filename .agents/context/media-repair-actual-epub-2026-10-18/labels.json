@@ -1,0 +1,12 @@
+[
+  {
+    "row": 0,
+    "expected_decision": "mismatch",
+    "actual_work": "Anne of Windy Poplars"
+  },
+  {
+    "row": 1,
+    "expected_decision": "match",
+    "actual_work": "Anne of Green Gables"
+  }
+]

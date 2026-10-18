@@ -1,0 +1,30 @@
+[
+  {
+    "source": "/data/cephfs-hdd/data/media/books/quarantine/crossvolume-2026-10-05/EBooks/L.M. Montgomery/Anne of Green Gables/Anne of Green Gables - L.M. Montgomery.epub",
+    "copy": "/home/dev/.cache/media-repair-actual-epub-1018/pristine-0.epub",
+    "before": {
+      "bytes": 390182,
+      "sha256": "c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc",
+      "mtime_ns": 1791196755420717140
+    },
+    "after_copy": {
+      "bytes": 390182,
+      "sha256": "c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc",
+      "mtime_ns": 1791196755420717140
+    }
+  },
+  {
+    "source": "/data/cephfs-hdd/data/media/books/EBooks/L.M. Montgomery/Anne of Green Gables - Collection/L.M. Montgomery - Anne of Green Gables - Collection.epub",
+    "copy": "/home/dev/.cache/media-repair-actual-epub-1018/pristine-1.epub",
+    "before": {
+      "bytes": 343250,
+      "sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa",
+      "mtime_ns": 1791434759597256697
+    },
+    "after_copy": {
+      "bytes": 343250,
+      "sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa",
+      "mtime_ns": 1791434759597256697
+    }
+  }
+]

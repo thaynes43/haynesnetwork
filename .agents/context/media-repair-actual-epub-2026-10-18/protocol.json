@@ -1,0 +1,20 @@
+{
+  "system": "Decide whether the supplied document body belongs to the expected literary work. A sequel by the same author is a different work. Judge actual narrative content, not a shared character alone. An omnibus containing the expected work can match. If evidence is insufficient, abstain. Return only the schema object.",
+  "options": {
+    "temperature": 0,
+    "seed": 42,
+    "num_ctx": 4096,
+    "num_predict": 256
+  },
+  "stops": {
+    "qwen3.8:27b": [
+      "<|im_end|>"
+    ],
+    "muse-glimmer:30b": [
+      "<|eot|>"
+    ]
+  },
+  "think": false,
+  "keep_alive": "2m",
+  "stream": false
+}

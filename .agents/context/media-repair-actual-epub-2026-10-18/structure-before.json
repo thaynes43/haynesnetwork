@@ -1,0 +1,24 @@
+[
+  {
+    "sha256": "c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc",
+    "bytes": 390182,
+    "zip_crc_ok": true,
+    "manifest_items": 60,
+    "spine_items": 53,
+    "opf": "content.opf",
+    "titles": [
+      "Anne of Windy Poplars"
+    ]
+  },
+  {
+    "sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa",
+    "bytes": 343250,
+    "zip_crc_ok": true,
+    "manifest_items": 46,
+    "spine_items": 42,
+    "opf": "content.opf",
+    "titles": [
+      "Anne of Green Gables"
+    ]
+  }
+]

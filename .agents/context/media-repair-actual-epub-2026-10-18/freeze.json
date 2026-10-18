@@ -1,0 +1,9 @@
+{
+  "requests.json": "efd37b06dcf8f28ea5054ba6fd64e509cfb0365186c732b858b0f91b300e1664",
+  "labels.json": "a2e6af98b326767f8fabafdc78f175347fa310f9c86cccc69679f876f3f963e0",
+  "schema.json": "29d0b451df94ba830a6cf34d2cff8a88ff5ccca47ea957d9d68f12b92f6150a0",
+  "protocol.json": "e1d8f11d655954db6e44ab028e12dd2162cec603ca89ce088bfecdbc58dc600c",
+  "epub.py": "9bba46ca885b0f234fd0e5c4ba772df115e0de66dc0fd3613b5db0c8eede9260",
+  "prepare.py": "5b2f1aa32d6dc2b05d21cbfe945c83b33bdbb10a5cccd3c6377fa6384a0c48d6",
+  "repair.py": "fb398d4af95bccca195680cd8db1a5142645c467cc65d146f90047a5f9ac7e18"
+}

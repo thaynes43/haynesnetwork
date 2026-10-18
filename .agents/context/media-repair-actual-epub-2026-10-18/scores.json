@@ -1,0 +1,134 @@
+[
+  {
+    "variant": "models",
+    "model": "qwen3.8",
+    "TP": 1,
+    "TN": 1,
+    "FP": 0,
+    "FN": 0,
+    "abstentions": 0,
+    "errors": 0,
+    "rows": [
+      {
+        "row": 0,
+        "decision": "mismatch",
+        "wall_seconds": 5.186257052235305,
+        "prompt_tokens": 306,
+        "generated_tokens": 13,
+        "load_ns": 4412586345,
+        "prompt_ns": 431386000,
+        "eval_ns": 234100000
+      },
+      {
+        "row": 1,
+        "decision": "match",
+        "wall_seconds": 0.8162294952198863,
+        "prompt_tokens": 292,
+        "generated_tokens": 12,
+        "load_ns": 724339,
+        "prompt_ns": 331769000,
+        "eval_ns": 203277000
+      }
+    ],
+    "max_observed_gpu_mib": 18112
+  },
+  {
+    "variant": "models",
+    "model": "muse-glimmer",
+    "TP": 0,
+    "TN": 1,
+    "FP": 0,
+    "FN": 0,
+    "abstentions": 1,
+    "errors": 0,
+    "rows": [
+      {
+        "row": 0,
+        "decision": "abstain",
+        "wall_seconds": 4.755291163921356,
+        "prompt_tokens": 316,
+        "generated_tokens": 8,
+        "load_ns": 4124238268,
+        "prompt_ns": 328397000,
+        "eval_ns": 194899000
+      },
+      {
+        "row": 1,
+        "decision": "match",
+        "wall_seconds": 0.5281250150874257,
+        "prompt_tokens": 305,
+        "generated_tokens": 6,
+        "load_ns": 714538,
+        "prompt_ns": 271632000,
+        "eval_ns": 148273000
+      }
+    ],
+    "max_observed_gpu_mib": 17454
+  },
+  {
+    "variant": "models-increment",
+    "model": "qwen3.8",
+    "TP": 1,
+    "TN": 1,
+    "FP": 0,
+    "FN": 0,
+    "abstentions": 0,
+    "errors": 0,
+    "rows": [
+      {
+        "row": 0,
+        "decision": "mismatch",
+        "wall_seconds": 5.589259083848447,
+        "prompt_tokens": 500,
+        "generated_tokens": 13,
+        "load_ns": 4619874233,
+        "prompt_ns": 549841000,
+        "eval_ns": 275114000
+      },
+      {
+        "row": 1,
+        "decision": "match",
+        "wall_seconds": 0.9050187836401165,
+        "prompt_tokens": 493,
+        "generated_tokens": 12,
+        "load_ns": 838873,
+        "prompt_ns": 459740000,
+        "eval_ns": 170959000
+      }
+    ],
+    "max_observed_gpu_mib": 18108
+  },
+  {
+    "variant": "models-increment",
+    "model": "muse-glimmer",
+    "TP": 0,
+    "TN": 1,
+    "FP": 0,
+    "FN": 0,
+    "abstentions": 1,
+    "errors": 0,
+    "rows": [
+      {
+        "row": 0,
+        "decision": "abstain",
+        "wall_seconds": 5.370897970627993,
+        "prompt_tokens": 515,
+        "generated_tokens": 8,
+        "load_ns": 4621589328,
+        "prompt_ns": 449833000,
+        "eval_ns": 188790000
+      },
+      {
+        "row": 1,
+        "decision": "match",
+        "wall_seconds": 0.6591675370000303,
+        "prompt_tokens": 507,
+        "generated_tokens": 6,
+        "load_ns": 548621,
+        "prompt_ns": 375380000,
+        "eval_ns": 145609000
+      }
+    ],
+    "max_observed_gpu_mib": 17464
+  }
+]

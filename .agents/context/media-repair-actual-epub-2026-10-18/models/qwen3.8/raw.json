@@ -1,0 +1,172 @@
+[
+  {
+    "row": 0,
+    "request": {
+      "model": "qwen3.8:27b",
+      "stream": false,
+      "think": false,
+      "keep_alive": "2m",
+      "format": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "match",
+              "mismatch",
+              "abstain"
+            ]
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "additionalProperties": false
+      },
+      "options": {
+        "temperature": 0,
+        "seed": 42,
+        "num_ctx": 4096,
+        "num_predict": 256,
+        "stop": [
+          "<|im_end|>"
+        ]
+      },
+      "messages": [
+        {
+          "role": "system",
+          "content": "Decide whether the supplied document body belongs to the expected literary work. A sequel by the same author is a different work. Judge actual narrative content, not a shared character alone. An omnibus containing the expected work can match. If evidence is insufficient, abstain. Return only the schema object."
+        },
+        {
+          "role": "user",
+          "content": "{\"document\": {\"opening_body_excerpt\": \"(Letter from Anne Shirley, B.A., Principal of Summerside High School, to Gilbert Blythe, medical student at Redmond College, Kingsport.) \\\"Windy Poplars, \\\"Spook's Lane, \\\"S'side, P. E. I., \\\"Monday, September 12th. \\\"DEAREST: \\\"Isn't that an address! Did you ever hear anything so delicious? Windy Poplars is the name of my new home and I love it. I also love Spook's Lane, which has no legal existence. It should be Trent Street but it is never called Trent Street except on the rare occasions when it is mentioned in the Weekly Courier . . . and then people look at each other and say, 'Where on earth is that?' Spook's Lane it is . . . although for what reason I cannot tell you. I have already asked Rebecca Dew about it, but all she can say is that it has always\"}, \"expected\": {\"author\": \"L. M. Montgomery\", \"title\": \"Anne of Green Gables\"}}"
+        }
+      ]
+    },
+    "response": {
+      "model": "qwen3.8:27b",
+      "created_at": "2026-10-18T17:14:42.973532236Z",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"decision\": \"mismatch\"\n}"
+      },
+      "done": true,
+      "done_reason": "stop",
+      "total_duration": 5081146026,
+      "load_duration": 4412586345,
+      "prompt_eval_count": 306,
+      "prompt_eval_cached_count": 0,
+      "prompt_eval_duration": 431386000,
+      "eval_count": 13,
+      "eval_duration": 234100000
+    },
+    "receipt": {
+      "wall_seconds": 5.186257052235305,
+      "exit_code": 0,
+      "stderr": "",
+      "http_status": 200,
+      "raw_body": "{\"model\":\"qwen3.8:27b\",\"created_at\":\"2026-10-18T17:14:42.973532236Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"decision\\\": \\\"mismatch\\\"\\n}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":5081146026,\"load_duration\":4412586345,\"prompt_eval_count\":306,\"prompt_eval_cached_count\":0,\"prompt_eval_duration\":431386000,\"eval_count\":13,\"eval_duration\":234100000}"
+    },
+    "before": {
+      "compute_processes": "",
+      "compute_query_exit": 0,
+      "at": "2026-10-18T17:14:37.732590+00:00",
+      "exit_code": 0,
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n36425961472\nusage_usec 1331811294\nuser_usec 1139928941\nsystem_usec 191882353\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         4947020 kB\nMemAvailable:   121666252 kB\n",
+      "stderr": ""
+    },
+    "after": {
+      "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 5813, /usr/lib/ollama/llama-server, 18102 MiB",
+      "compute_query_exit": 0,
+      "at": "2026-10-18T17:14:43.219316+00:00",
+      "exit_code": 0,
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 18112 MiB, 6014 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 5813, /usr/lib/ollama/llama-server, 18102 MiB\n37950394368\nusage_usec 1349429729\nuser_usec 1154134612\nsystem_usec 195295117\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         3329764 kB\nMemAvailable:   120049176 kB\n",
+      "stderr": ""
+    }
+  },
+  {
+    "row": 1,
+    "request": {
+      "model": "qwen3.8:27b",
+      "stream": false,
+      "think": false,
+      "keep_alive": "2m",
+      "format": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "match",
+              "mismatch",
+              "abstain"
+            ]
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "additionalProperties": false
+      },
+      "options": {
+        "temperature": 0,
+        "seed": 42,
+        "num_ctx": 4096,
+        "num_predict": 256,
+        "stop": [
+          "<|im_end|>"
+        ]
+      },
+      "messages": [
+        {
+          "role": "system",
+          "content": "Decide whether the supplied document body belongs to the expected literary work. A sequel by the same author is a different work. Judge actual narrative content, not a shared character alone. An omnibus containing the expected work can match. If evidence is insufficient, abstain. Return only the schema object."
+        },
+        {
+          "role": "user",
+          "content": "{\"document\": {\"opening_body_excerpt\": \"CHAPTER I. Mrs. Rachel Lynde is Surprised Mrs. Rachel Lynde lived just where the Avonlea main road dipped down into a little hollow, fringed with alders and ladies' eardrops and traversed by a brook that had its source away back in the woods of the old Cuthbert place; it was reputed to be an intricate, headlong brook in its earlier course through those woods, with dark secrets of pool and cascade; but by the time it reached Lynde's Hollow it was a quiet, well-conducted little stream, for not even a brook could run past Mrs. Rachel Lynde's door without due regard for decency and decorum; it probably was conscious that Mrs. Rachel was sitting at her window, keeping a sharp eye on everything that passed, from brooks and children up, and that if she noticed anything odd or out of\"}, \"expected\": {\"author\": \"L. M. Montgomery\", \"title\": \"Anne of Green Gables\"}}"
+        }
+      ]
+    },
+    "response": {
+      "model": "qwen3.8:27b",
+      "created_at": "2026-10-18T17:14:44.494885676Z",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"decision\": \"match\"\n}"
+      },
+      "done": true,
+      "done_reason": "stop",
+      "total_duration": 692616167,
+      "load_duration": 724339,
+      "prompt_eval_count": 292,
+      "prompt_eval_cached_count": 0,
+      "prompt_eval_duration": 331769000,
+      "eval_count": 12,
+      "eval_duration": 203277000
+    },
+    "receipt": {
+      "wall_seconds": 0.8162294952198863,
+      "exit_code": 0,
+      "stderr": "",
+      "http_status": 200,
+      "raw_body": "{\"model\":\"qwen3.8:27b\",\"created_at\":\"2026-10-18T17:14:44.494885676Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"decision\\\": \\\"match\\\"\\n}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":692616167,\"load_duration\":724339,\"prompt_eval_count\":292,\"prompt_eval_cached_count\":0,\"prompt_eval_duration\":331769000,\"eval_count\":12,\"eval_duration\":203277000}"
+    },
+    "before": {
+      "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 5813, /usr/lib/ollama/llama-server, 18102 MiB",
+      "compute_query_exit": 0,
+      "at": "2026-10-18T17:14:43.637954+00:00",
+      "exit_code": 0,
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 18112 MiB, 6014 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 5813, /usr/lib/ollama/llama-server, 18102 MiB\n37949685760\nusage_usec 1349539961\nuser_usec 1154186697\nsystem_usec 195353263\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         3316284 kB\nMemAvailable:   120035712 kB\n",
+      "stderr": ""
+    },
+    "after": {
+      "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 5813, /usr/lib/ollama/llama-server, 18102 MiB",
+      "compute_query_exit": 0,
+      "at": "2026-10-18T17:14:44.755682+00:00",
+      "exit_code": 0,
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 18112 MiB, 6014 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 5813, /usr/lib/ollama/llama-server, 18102 MiB\n38284357632\nusage_usec 1365465427\nuser_usec 1169693442\nsystem_usec 195771985\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         2915200 kB\nMemAvailable:   119634632 kB\n",
+      "stderr": ""
+    }
+  }
+]
