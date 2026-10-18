@@ -1,0 +1,194 @@
+[
+  {
+    "variant": "baseline",
+    "model": "qwen3.8:27b",
+    "n": 3,
+    "axis_correct": {
+      "identity": 1,
+      "decode": 3,
+      "compatibility": 3
+    },
+    "identity_non_abstain": 0,
+    "identity_abstentions": 3,
+    "false_mismatch_on_matched_control": 0,
+    "matched_control_denominator": 1,
+    "unsupported_assertion_cases": 0,
+    "errors": 0,
+    "references_resolve": 3,
+    "citation_coverage": 2,
+    "wall_seconds": [
+      7.016334699932486,
+      2.2478294312022626,
+      2.1700027151964605
+    ],
+    "prompt_tokens": 2897,
+    "generated_tokens": 196,
+    "max_observed_gpu_mib": 18734,
+    "max_observed_cgroup_ram_bytes": 39709593600,
+    "server_timing": [
+      {
+        "load_duration": 4718219030,
+        "prompt_eval_duration": 1374715000,
+        "eval_duration": 769036000,
+        "done_reason": "stop"
+      },
+      {
+        "load_duration": 7374092,
+        "prompt_eval_duration": 1032079999,
+        "eval_duration": 832643000,
+        "done_reason": "stop"
+      },
+      {
+        "load_duration": 6996444,
+        "prompt_eval_duration": 940673000,
+        "eval_duration": 856009000,
+        "done_reason": "stop"
+      }
+    ],
+    "native_tool_call_proposals": 0
+  },
+  {
+    "variant": "baseline",
+    "model": "muse-glimmer:30b",
+    "n": 3,
+    "axis_correct": {
+      "identity": 2,
+      "decode": 0,
+      "compatibility": 3
+    },
+    "identity_non_abstain": 2,
+    "identity_abstentions": 1,
+    "false_mismatch_on_matched_control": 1,
+    "matched_control_denominator": 1,
+    "unsupported_assertion_cases": 1,
+    "errors": 0,
+    "references_resolve": 3,
+    "citation_coverage": 3,
+    "wall_seconds": [
+      7.3315827418118715,
+      2.3170446497388184,
+      2.4320642449893057
+    ],
+    "prompt_tokens": 2967,
+    "generated_tokens": 141,
+    "max_observed_gpu_mib": 17776,
+    "max_observed_cgroup_ram_bytes": 38292426752,
+    "server_timing": [
+      {
+        "load_duration": 4735748505,
+        "prompt_eval_duration": 1097712000,
+        "eval_duration": 1332875000,
+        "done_reason": "stop"
+      },
+      {
+        "load_duration": 7476336,
+        "prompt_eval_duration": 871108000,
+        "eval_duration": 1254582000,
+        "done_reason": "stop"
+      },
+      {
+        "load_duration": 7392112,
+        "prompt_eval_duration": 848863000,
+        "eval_duration": 1370640000,
+        "done_reason": "stop"
+      }
+    ],
+    "native_tool_call_proposals": 0
+  },
+  {
+    "variant": "tool",
+    "model": "qwen3.8:27b",
+    "n": 3,
+    "axis_correct": {
+      "identity": 1,
+      "decode": 2,
+      "compatibility": 3
+    },
+    "identity_non_abstain": 0,
+    "identity_abstentions": 3,
+    "false_mismatch_on_matched_control": 0,
+    "matched_control_denominator": 1,
+    "unsupported_assertion_cases": 0,
+    "errors": 0,
+    "references_resolve": 3,
+    "citation_coverage": 2,
+    "wall_seconds": [
+      2.379400328733027,
+      2.388284521177411,
+      2.277621132787317
+    ],
+    "prompt_tokens": 2958,
+    "generated_tokens": 198,
+    "max_observed_gpu_mib": 18734,
+    "max_observed_cgroup_ram_bytes": 40053362688,
+    "server_timing": [
+      {
+        "load_duration": 8009419,
+        "prompt_eval_duration": 1108101000,
+        "eval_duration": 825400000,
+        "done_reason": "stop"
+      },
+      {
+        "load_duration": 7618029,
+        "prompt_eval_duration": 1073637000,
+        "eval_duration": 808282000,
+        "done_reason": "stop"
+      },
+      {
+        "load_duration": 6770548,
+        "prompt_eval_duration": 927147000,
+        "eval_duration": 840625000,
+        "done_reason": "stop"
+      }
+    ],
+    "native_tool_call_proposals": 0
+  },
+  {
+    "variant": "tool",
+    "model": "muse-glimmer:30b",
+    "n": 3,
+    "axis_correct": {
+      "identity": 3,
+      "decode": 1,
+      "compatibility": 3
+    },
+    "identity_non_abstain": 2,
+    "identity_abstentions": 1,
+    "false_mismatch_on_matched_control": 0,
+    "matched_control_denominator": 1,
+    "unsupported_assertion_cases": 0,
+    "errors": 0,
+    "references_resolve": 3,
+    "citation_coverage": 3,
+    "wall_seconds": [
+      2.38279331009835,
+      2.4683050471358,
+      2.4499287670478225
+    ],
+    "prompt_tokens": 3025,
+    "generated_tokens": 136,
+    "max_observed_gpu_mib": 17776,
+    "max_observed_cgroup_ram_bytes": 38337335296,
+    "server_timing": [
+      {
+        "load_duration": 7415433,
+        "prompt_eval_duration": 938598000,
+        "eval_duration": 1236649000,
+        "done_reason": "stop"
+      },
+      {
+        "load_duration": 8119871,
+        "prompt_eval_duration": 965651000,
+        "eval_duration": 1305967000,
+        "done_reason": "stop"
+      },
+      {
+        "load_duration": 7612999,
+        "prompt_eval_duration": 866811000,
+        "eval_duration": 1378327000,
+        "done_reason": "stop"
+      }
+    ],
+    "native_tool_call_proposals": 0
+  }
+]

@@ -1,0 +1,7 @@
+{
+  "source_commit": "e08460866f2bc971a0a8a30f1012607b63c5d016",
+  "case_selection": "Three prior development cases; movie omitted. a02 remains contrived requested-work swap; a03 insufficient exact-episode evidence. No new incident/media claim.",
+  "identity_labels": "Unchanged prior independent manual title-card/primary-reference labels, never derived from new model decisions.",
+  "ocr_limit": "Native-model OCR, with cached first-card transcriptions from both tested models; not an independent deterministic OCR engine. Consensus is not guaranteed truth.",
+  "prior_frame_hashes_sha256": "71dc795ed1af007472ec96372bcb50f501e162e0aeb5cd5b381321201ce654ac"
+}

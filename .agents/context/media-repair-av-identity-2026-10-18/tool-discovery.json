@@ -1,0 +1,30 @@
+[
+  {
+    "argv": [
+      "bash",
+      "-c",
+      "command -v tesseract"
+    ],
+    "exit_code": 1,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "kubectl",
+      "-n",
+      "media",
+      "exec",
+      "deploy/bazarr",
+      "-c",
+      "app",
+      "--",
+      "sh",
+      "-c",
+      "command -v tesseract"
+    ],
+    "exit_code": 127,
+    "stdout": "",
+    "stderr": "command terminated with exit code 127\n"
+  }
+]

@@ -16,6 +16,12 @@
   monitoring, deployment or any next saga epic. Existing #991/#992 holds remain.
 
 
+## 2026-10-18: one discriminative AV OCR increment
+
+- [Identity-tool report](context/media-repair-av-identity-2026-10-18/REPORT.md), existing Saga43/#128, sole owner/fresh branch agent/media-repair-av-identity-1018 after PR1000 e0846086. Prior artifacts unchanged; zero new original reads/frames/downloads/live repairs. Target-agnostic native OCR consensus from byte-bound actual-image transcriptions, not identity labels or a case-specific answer rule. Tesseract absent, no installation.
+- Three matched existing cases: Muse identity2/3→3/3, false mismatch1/1→0/1 at unchanged2/3 coverage; Qwen1/3→1/3 with all identity abstentions and a new decode abstention. No serving change between arms;14 new calls (2 OCR+12 diagnostic), no tuning/replay. Six serial tests/freezes/private wire/image checks pass; GPU idle.
+- Remaining exact Pokemon evidence missing: generic Onix frame/short battle subtitle, no readable title (both OCR empty); need an actual card or independently matchable transcript. E46, whole-file health, real-client/native video/audio/ASR unverified; no wider issue992/PLAN077/Seerr resumption or model/adoption/safety generalization. Deliver through current-head CI/review/merge and earned128 outcome, then stop.
+
 ## 2026-10-18: first bounded AV diagnostic checkpoint
 
 - EPUB selection PR999 merged7a32eb20 before canonical Saga43 story128 pickup. [AV report](context/media-repair-av-2026-10-18/REPORT.md) separates actual current TV/movie content, bounded decode and hypothetical direct-play compatibility. Sole owner/fresh branch agent/media-repair-av-1018, no AV interleaving.

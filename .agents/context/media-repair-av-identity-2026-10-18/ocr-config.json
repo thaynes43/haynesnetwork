@@ -1,0 +1,26 @@
+{
+  "new_case_id": "a03",
+  "prompt": "Transcribe only readable text literally visible in this image. If there is no readable text, return an empty string. Do not name objects, infer the episode, or guess. Return only the schema object.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "visible_text": {
+        "type": "string",
+        "maxLength": 256
+      }
+    },
+    "required": [
+      "visible_text"
+    ],
+    "additionalProperties": false
+  },
+  "options": {
+    "temperature": 0,
+    "seed": 42,
+    "num_ctx": 8192,
+    "num_predict": 128
+  },
+  "new_calls": 2,
+  "cached_title_calls": 2,
+  "consensus_rule": "exact equality after whitespace normalization, no title/target matching"
+}

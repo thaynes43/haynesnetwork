@@ -1,0 +1,34 @@
+{
+  "response": {
+    "model": "muse-glimmer:30b",
+    "created_at": "2026-10-18T18:18:11.264723641Z",
+    "message": {
+      "role": "assistant",
+      "content": "{\"visible_text\":\"\"}"
+    },
+    "done": true,
+    "done_reason": "stop",
+    "total_duration": 5556566185,
+    "load_duration": 4594369272,
+    "prompt_eval_count": 490,
+    "prompt_eval_cached_count": 0,
+    "prompt_eval_duration": 749997000,
+    "eval_count": 6,
+    "eval_duration": 152687000
+  },
+  "receipt": {
+    "wall_seconds": 5.689125988632441,
+    "exit_code": 0,
+    "stderr": "",
+    "http_status": 200,
+    "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-18T18:18:11.264723641Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"visible_text\\\":\\\"\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":5556566185,\"load_duration\":4594369272,\"prompt_eval_count\":490,\"prompt_eval_cached_count\":0,\"prompt_eval_duration\":749997000,\"eval_count\":6,\"eval_duration\":152687000}"
+  },
+  "after": {
+    "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 11845, /usr/lib/ollama/llama-server, 17744 MiB",
+    "compute_query_exit": 0,
+    "at": "2026-10-18T18:18:11.583328+00:00",
+    "exit_code": 0,
+    "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17756 MiB, 6370 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 11845, /usr/lib/ollama/llama-server, 17744 MiB\n38020812800\nusage_usec 3029287198\nuser_usec 2755979916\nsystem_usec 273307282\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         3195904 kB\nMemAvailable:   119595184 kB\n",
+    "stderr": ""
+  }
+}

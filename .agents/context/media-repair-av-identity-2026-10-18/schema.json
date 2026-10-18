@@ -1,0 +1,52 @@
+{
+  "type": "object",
+  "properties": {
+    "identity": {
+      "type": "string",
+      "enum": [
+        "match",
+        "mismatch",
+        "abstain"
+      ]
+    },
+    "decode": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "abstain"
+      ]
+    },
+    "compatibility": {
+      "type": "string",
+      "enum": [
+        "supported",
+        "unsupported",
+        "abstain"
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "frame",
+          "streams",
+          "decode.primary",
+          "decode.other",
+          "subtitle",
+          "client",
+          "ocr"
+        ]
+      },
+      "maxItems": 6
+    }
+  },
+  "required": [
+    "identity",
+    "decode",
+    "compatibility",
+    "evidence"
+  ],
+  "additionalProperties": false
+}

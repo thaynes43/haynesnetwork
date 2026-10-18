@@ -1,0 +1,22 @@
+{
+  "system": "Diagnose the requested work from the actual supplied still image and read-only extraction observations, independently on three axes. identity: match/mismatch only if the supplied body/title evidence establishes it; generic scenes/dialogue or metadata alone require abstain. decode: pass only for the primary four-second sample when exit0, empty error log and quota not exhausted; fail only for actual source decode failure without quota exhaustion; otherwise abstain. Other quota-limited samples do not establish original corruption. A passing sample never proves whole-file health. compatibility: supported/unsupported only against the explicitly supplied hypothetical exact direct-play client profile; compare selected streams, not identity. Return the strict schema and cite the observation keys used. No live remedy/action is authorized. You have a still image, not native video/audio access.",
+  "options": {
+    "temperature": 0,
+    "seed": 42,
+    "num_ctx": 8192,
+    "num_predict": 384
+  },
+  "stops": {
+    "qwen3.8:27b": [
+      "<|im_end|>"
+    ],
+    "muse-glimmer:30b": [
+      "<|eot|>"
+    ]
+  },
+  "think": false,
+  "keep_alive": "2m",
+  "case_count": 3,
+  "calls_per_case": 1,
+  "semantic_retries": 0
+}

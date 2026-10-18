@@ -1,0 +1,44 @@
+{
+  "request_without_image_bytes": {
+    "model": "muse-glimmer:30b",
+    "stream": false,
+    "think": false,
+    "keep_alive": "2m",
+    "format": {
+      "type": "object",
+      "properties": {
+        "visible_text": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "visible_text"
+      ],
+      "additionalProperties": false
+    },
+    "options": {
+      "temperature": 0,
+      "seed": 42,
+      "num_ctx": 8192,
+      "num_predict": 128,
+      "stop": [
+        "<|eot|>"
+      ]
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "Transcribe only readable text literally visible in this image. If there is no readable text, return an empty string. Do not name objects, infer the episode, or guess. Return only the schema object.",
+        "images": [
+          {
+            "artifact": "p-frame-600-0.bin",
+            "sha256": "4d59f221a7fd5bedc16d9f2a30d7fbe55516525c8366bbcb385b8082c9d0e2b2",
+            "bytes": 302665
+          }
+        ]
+      }
+    ]
+  },
+  "full_request_sha256": "ebf63dd2ffe352933b3e69e12c333c49dbbc76b42d2f4ccd48d17fd2e2ecd39f"
+}
