@@ -1,0 +1,17 @@
+{
+  "receipt": {
+    "exit_code": 0,
+    "http_status": 200,
+    "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-18T16:52:13.831687545Z\",\"response\":\"\",\"done\":true,\"done_reason\":\"unload\"}",
+    "stderr": "",
+    "wall_seconds": 0.12355823582038283
+  },
+  "resources": {
+    "at": "2026-10-18T16:52:14.242944+00:00",
+    "compute_processes": "",
+    "compute_query_exit": 0,
+    "exit_code": 0,
+    "stderr": "",
+    "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17457 MiB, 6668 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 4859, [No data], 17450 MiB\n37256994816\nusage_usec 1330069413\nuser_usec 1139527242\nsystem_usec 190542171\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         3364692 kB\nMemAvailable:   120047176 kB\n"
+  }
+}

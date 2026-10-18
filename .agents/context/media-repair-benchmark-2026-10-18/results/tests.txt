@@ -1,0 +1,10 @@
+test_absent_and_duplicate_repair_candidates_abstain_preserving_bytes (test_bench.BenchmarkContract.test_absent_and_duplicate_repair_candidates_abstain_preserving_bytes) ... ok
+test_detector_payload_has_no_evaluator_fields (test_bench.BenchmarkContract.test_detector_payload_has_no_evaluator_fields) ... ok
+test_incomplete_content_abstains (test_bench.BenchmarkContract.test_incomplete_content_abstains) ... ok
+test_missing_and_abstained_results_stay_in_denominator (test_bench.BenchmarkContract.test_missing_and_abstained_results_stay_in_denominator) ... ok
+test_repair_oracle_is_independent_of_detector (test_bench.BenchmarkContract.test_repair_oracle_is_independent_of_detector) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.002s
+
+OK

@@ -1,0 +1,52 @@
+{
+  "command": [
+    "kubectl",
+    "-n",
+    "ai",
+    "exec",
+    "ollama-prime-bc7bc7856-zgzjb",
+    "-c",
+    "app",
+    "--",
+    "ollama",
+    "pull",
+    "qwen3.8:27b"
+  ],
+  "exit_code": 0,
+  "observed_result": "verifying sha256 digest; writing manifest; success",
+  "completed_observed_at": "2026-10-18T16:31:03Z",
+  "full_pull_wall_seconds": null,
+  "note": "Interactive pull wall time not instrumented; server log start16:18:39UTC, completion observed16:31:03UTC.",
+  "installed": {
+    "name": "qwen3.8:27b",
+    "model": "qwen3.8:27b",
+    "modified_at": "2026-10-18T12:30:30.498658543-04:00",
+    "size": 17741872154,
+    "digest": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+    "details": {
+      "parent_model": "qwen3.8:27b-q4_K_M",
+      "format": "gguf",
+      "family": "qwen35",
+      "families": [
+        "qwen35"
+      ],
+      "parameter_size": "27.3B",
+      "quantization_level": "Q4_K_M",
+      "context_length": 262144,
+      "embedding_length": 5120,
+      "runner": "llamacpp"
+    },
+    "capabilities": [
+      "completion",
+      "vision",
+      "tools",
+      "thinking"
+    ]
+  },
+  "provenance": {
+    "api_registry_digest": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+    "installed_wrapper_sha256": "b45285c1cc1fafaf0272e840a7b799cb11e1b4597c2dc47a2dc58a61942f408c",
+    "registry_sha256": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+    "served_layers_verified": true
+  }
+}

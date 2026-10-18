@@ -1,0 +1,16 @@
+{
+  "at": "2026-10-18T16:47:37.910953+00:00",
+  "toolkit_sha256": "b9478c660b9c5517faec3974c5457545625617095430ab5a66041f41f6a0f1ab",
+  "basis": "Qwen development c01 abstention; Muse seven development replies are echoes without a decision, first two inspected and contain literal <|eot|>. No held-out model response or aggregate inspected.",
+  "evaluation": [
+    "c01",
+    "c07",
+    "c08",
+    "c09",
+    "c10"
+  ],
+  "method": "Derived exact-work/alias consistency; no labels, case IDs or candidate keys passed to tool",
+  "independent_probes": 6,
+  "schema_sha256": "0a7473ccac01fc815e84cd326ce3e440435d29078f5a2ca8a48cb87d21a239a0",
+  "increment": "Derived identity-consistency tool plus strict enum JSON schema; joint practical increment, not an attribution ablation. Baseline remains unchanged."
+}

@@ -1,0 +1,2 @@
+10.43.160.102
+[{"name":"http","port":11434,"protocol":"TCP","targetPort":11434}]

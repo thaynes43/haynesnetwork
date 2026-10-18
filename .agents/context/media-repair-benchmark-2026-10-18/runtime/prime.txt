@@ -1,0 +1,34 @@
+ollama version is 0.40.6
+NAME                                   ID              SIZE      MODIFIED
+gpt-oss:latest                         17052f91a42e    13 GB     2 months ago
+nomic-embed-text:latest                0a109f422b47    274 MB    3 months ago
+llama3.1:8b                            46e0c10c039e    4.9 GB    3 months ago
+huihui_ai/gemma3-abliterated:27b       c461fa5e0a6e    54 GB     17 months ago
+huihui_ai/gemma3-abliterated:12b       c645798009b2    24 GB     17 months ago
+huihui_ai/gemma3-abliterated:latest    b9620af37e65    8.6 GB    17 months ago
+r1-1776:latest                         140ea940f21d    42 GB     17 months ago
+dolphin-llama3:latest                  613f068e29f8    4.7 GB    17 months ago
+phi4-reasoning:latest                  47e2630ccbcd    11 GB     17 months ago
+llama4:latest                          b62dea0de67c    67 GB     17 months ago
+dolphin3:latest                        d5ab9ae8e1f2    4.9 GB    17 months ago
+llama2-uncensored:latest               44040b922233    3.8 GB    17 months ago
+phi4:latest                            ac896e5b8b34    9.1 GB    17 months ago
+gemma3:27b                             a418f5838eaf    17 GB     17 months ago
+llama3.3:latest                        a6eb4748fd29    42 GB     17 months ago
+llama3.2:latest                        a80c4f17acd5    2.0 GB    17 months ago
+deepseek-r1:latest                     0a8c26691023    4.7 GB    17 months ago
+NAME    ID    SIZE    PROCESSOR    CONTEXT    RUNNER    UNTIL
+name, uuid, pci.bus_id, memory.total [MiB], memory.used [MiB], memory.free [MiB], utilization.gpu [%]
+NVIDIA GeForce RTX 3090, GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 00000000:02:00.0, 24576 MiB, 1 MiB, 24124 MiB, 0 %
+gpu_uuid, pid, process_name, used_gpu_memory [MiB]
+MemTotal:       142070968 kB
+MemFree:        38758892 kB
+MemAvailable:   120860156 kB
+Buffers:           87396 kB
+Cached:         76715668 kB
+51539607552
+441372672
+Filesystem                                              Size  Used Avail Use% Mounted on
+gasha01.haynesnetwork:/hdd-nfs-repl/misc/ollama/models  154T   45T  110T  30% /models
+/dev/rbd1                                               3.9G   44K  3.9G   1% /root/.ollama
+overlay                                                 510G  226G  284G  45% /

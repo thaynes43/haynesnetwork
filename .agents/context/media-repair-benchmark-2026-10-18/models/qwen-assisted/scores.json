@@ -1,0 +1,68 @@
+{
+  "all": {
+    "accuracy": 1.0,
+    "confusion": {
+      "abstentions": 0,
+      "errors": 0,
+      "fn": 0,
+      "fp": 0,
+      "negative_abstentions": 0,
+      "negative_errors": 0,
+      "positive_abstentions": 0,
+      "positive_errors": 0,
+      "tn": 2,
+      "tp": 3
+    },
+    "coverage": 1.0,
+    "false_positive_rate": 0.0,
+    "n": 5,
+    "negatives": 2,
+    "positives": 3,
+    "precision": 1.0,
+    "recall": 1.0
+  },
+  "development": {
+    "accuracy": 1.0,
+    "confusion": {
+      "abstentions": 0,
+      "errors": 0,
+      "fn": 0,
+      "fp": 0,
+      "negative_abstentions": 0,
+      "negative_errors": 0,
+      "positive_abstentions": 0,
+      "positive_errors": 0,
+      "tn": 0,
+      "tp": 1
+    },
+    "coverage": 1.0,
+    "false_positive_rate": null,
+    "n": 1,
+    "negatives": 0,
+    "positives": 1,
+    "precision": 1.0,
+    "recall": 1.0
+  },
+  "held_out": {
+    "accuracy": 1.0,
+    "confusion": {
+      "abstentions": 0,
+      "errors": 0,
+      "fn": 0,
+      "fp": 0,
+      "negative_abstentions": 0,
+      "negative_errors": 0,
+      "positive_abstentions": 0,
+      "positive_errors": 0,
+      "tn": 2,
+      "tp": 2
+    },
+    "coverage": 1.0,
+    "false_positive_rate": 0.0,
+    "n": 4,
+    "negatives": 2,
+    "positives": 2,
+    "precision": 1.0,
+    "recall": 1.0
+  }
+}

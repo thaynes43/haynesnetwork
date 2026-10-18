@@ -1,0 +1,1 @@
+PASS: CLI raw-response parsing retains malformed and missing responses as 9 errors, one abstention, one TP in denominator11. Synthetic scoring-contract check only; no model inference.

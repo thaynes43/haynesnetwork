@@ -1,0 +1,65 @@
+# Issue #795 (2026-10-06): the Books Census's first live run lists 23 LazyLibrarian book files that are another book
+# (wrong_file), plus the Catwings audiobook's stale pointer (missing_file). Fixed under the cross-volume repair rules (the
+# #781 pattern, fix_781.py / fix_census_divergent.py); owner ruling 2026-10-06 "Yes, re-download all of them" for the
+# records with no right copy anywhere. Run INSIDE the LazyLibrarian pod:
+#   kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - < .agents/context/ll-library-audit/fix_census_795.py        # dry run
+#   kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - --go < .agents/context/ll-library-audit/fix_census_795.py   # apply
+# Content read first (2026-10-06 23:00-23:55Z, read-only): epub OPF dc:title + identifiers (zipfile), mobi/azw3 EXTH titles,
+# audio tags and durations (ffprobe in the Audiobookshelf pod), md5s, LazyLibrarian's books/wanted tables (mode=ro),
+# Audiobookshelf's database (read-only: no listening progress on any item touched here).
+#
+# Rule used for every wrong file: a book whose folder names it correctly (Outlander/ holds Outlander) stays where it is and
+# only the LazyLibrarian opf naming the wrong record is held (the library scan reads that opf before the file, the Divergent
+# precedent); a misfiled copy of a book held elsewhere is held `duplicate`; a misfiled only copy is re-homed under its own
+# title (the #782 precedent). Nothing is deleted.
+#
+# Re-point (the right book is already on disk), 14 records:
+#   ENRSDwAAQBAJ Nightflyers & Other Stories  -> its own folder's epub (OPF "Nightflyers & Other Stories", ISBN 9781250303844)
+#   laM7DwAAQBAJ Wild Cards I                  -> Wild Cards I/ (OPF "Wild Cards 01 - Wild Cards I", ISBN 978-1-4299-2645-4)
+#   H7XlVlTPqsIC A Crown of Swords (audio)     -> the 1996 unabridged m4b (album "[Wheel of Time, Book 7] A Crown of Swords",
+#                                                 30.4 h, 45 chapters). The folder held SEVEN copies in one Audiobookshelf item
+#                                                 (178 files, 241 h): the linked 43-track set is Winter's Heart (album tag,
+#                                                 29.1 h; Winter's Heart 4W5RQY_MiMEC has its own copy) and five more A Crown
+#                                                 of Swords copies (an identical m4b, a second m4b, 42-, 44- and 44-track mp3
+#                                                 sets, two loose parts). All but the kept m4b are held `duplicate`.
+#   i2fHDwAAQBAJ City of Illusions             -> the folder's azw3 (EXTH "City of Illusions", ISBN 9780060125691 = the
+#                                                 record's); the epub is the omnibus Worlds of Exile and Illusion (held
+#                                                 `duplicate`: Ruh5DQAAQBAJ has its own copy). The EPUB converter makes an epub.
+#   Obm7DmrDsroC The Tempest Tales             -> the right epub, copied from grab 2056's seeding torrent (OPF "The Tempest
+#                                                 Tales"); the folder's epub + mobi are The Further Tales of Tempest Landry,
+#                                                 re-homed under that title and linked to its record HXHWBQAAQBAJ (eBook was
+#                                                 Skipped with no file: now Open; nothing searched).
+#   wzxmQgAACAAJ The Science of Discworld II   -> The Science Of Discworld II - The Globe/ (OPF "The Science of Discworld II")
+#   IMlH63ZPShAC A Plague of Zombies           -> A Plague of Zombies/ (OPF, ISBN 978-0-345-54646-3)
+#   opCLDQAAQBAJ, zTCLswEACAAJ How We Learn    -> Benedict Carey/How We Learn/ (OPF "How We Learn"; twin records, one file)
+#   qKuOEAAAQBAJ Tales of the Unexpected       -> Tales of the Unexpected/ (OPF, ISBN 978-0-14-192901-9)
+#   lSybHLQbZ_kC Distinctions (eBook)          -> Distinctions - Prologue to Towers of Midnight/ (OPF "Prologue to Towers of
+#                                                 Midnight", ISBN 9781429957892 = the record's)
+#   23fZCwAAQBAJ Anne of Green Gables          -> Anne of Green Gables - Collection/ (OPF "Anne of Green Gables", 343 kB, the
+#                                                 twin record n1_9201PkZoC's file); the old file is Anne of Windy Poplars, md5
+#                                                 equal to Anne of Windy Poplars/'s copy: held `duplicate`.
+#   W4ZDugEACAAJ Magnus Chase 3                -> The Ship of the Dead/ (OPF, the twin 1BeXtAEACAAJ's file). The Hammer of Thor
+#                                                 epub it held is linked to A-ZVAQAACAAJ "Magnus Chase and the Hammer of Thor",
+#                                                 which was Wanted with no file (now Open; nothing searched).
+#   VKBoDwAAQBAJ The Expanse Origins #3        -> The Expanse Origins #3/ (OPF "The Expanse Origins #3 (of 4)"); #1, #2 and #4
+#                                                 each carried an opf naming #3: held.
+# Re-want (no right copy anywhere: library, Kavita, Audiobookshelf, seeding torrents, completed usenet), 4 records. The
+# pointer is blanked, the record queued (queueBook: Wanted, LazyLibrarian's normal backlog search does the rest), and the
+# release that delivered the wrong book is blocked with a Failed wanted row (the #755 pattern) where there is one:
+#   wDYhEAAAQBAJ Freed (eBook): the file is Fifty Shades Freed (grab 94, three copies of it now); held `duplicate`.
+#   OwTswUGVzVcC Warriors 3 (eBook): the file is Warriors (vol. 1) in Warriors 1/, which stays; its opf is held. No grab row.
+#   VNalCwAAQBAJ Partners (audio): the 102 tracks are Sparring Partners (tags, 10.0 h; grab 9567). Re-homed to Sparring
+#                Partners/, where Audiobookshelf's item already lists exactly these 102 chapters (no LL record for it); the
+#                folder's one leftover 14 s introduction track of a 2023 release is held.
+#   uaBUIGS551cC Redwall (audio): the m4b is Eulalia! (tags, 12.6 h) in Eulalia!/, which stays; its Redwall.opf is held.
+#                Redwall - Book One - The Wall/ is not Redwall either: 11 tracks of The Sable Queen (album "Redwall - 21",
+#                13.5 h) that Audiobookshelf shows as "Redwall"; re-homed to The Sable Queen/ with its Audiobookshelf
+#                metadata.json title corrected (original held). No grab row for Redwall's audiobook.
+# Census Holds instead (the file holds the record's book; .agents/books-census-holds.yaml): Sweet and Deadly, Roald Dahl's
+# Dirty Beasts (audio; its folder also carried the 15 tracks twice, md5-identical: the second set is held `duplicate`),
+# Wilderness (audio), Dean Koontz, Distinctions (audio), and the foreign_held Game of Thrones (audio: English).
+# missing_file QGPZEAAAQBAJ Wonderful Alexander and the Catwings (audio): no audio exists anywhere (the two grabs were PDFs);
+# the pointer is cleared the way LazyLibrarian shows a book it does not hold and does not want (AudioFile NULL,
+# AudioStatus Skipped). Nothing searched.
+# Undo, in this order: FIRST delete the copied Tempest Tales epub (its path is where the Further Tales epub came from, so a
+# move-back before that would land on it), then move each manifest dst back to src (rehome: dst -> src), drop the sort rows

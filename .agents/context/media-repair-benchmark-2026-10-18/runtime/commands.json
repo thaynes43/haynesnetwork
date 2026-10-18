@@ -1,0 +1,51 @@
+[
+  {
+    "name": "prime",
+    "at": "2026-10-18T16:15:53.051523+00:00",
+    "argv": [
+      "kubectl",
+      "-n",
+      "ai",
+      "exec",
+      "ollama-prime-bc7bc7856-zgzjb",
+      "-c",
+      "app",
+      "--",
+      "sh",
+      "-c",
+      "ollama --version; ollama list; ollama ps; nvidia-smi --query-gpu=name,uuid,pci.bus_id,memory.total,memory.used,memory.free,utilization.gpu --format=csv; nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_memory --format=csv; head -5 /proc/meminfo; cat /sys/fs/cgroup/memory.max; cat /sys/fs/cgroup/memory.current; df -h /models /root/.ollama /"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "service",
+    "at": "2026-10-18T16:15:53.647132+00:00",
+    "argv": [
+      "kubectl",
+      "-n",
+      "ai",
+      "get",
+      "svc",
+      "ollama-prime",
+      "-o",
+      "jsonpath={.spec.clusterIP}{\"\\n\"}{.spec.ports}{\"\\n\"}"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "endpoint",
+    "at": "2026-10-18T16:15:53.686824+00:00",
+    "argv": [
+      "kubectl",
+      "-n",
+      "ai",
+      "get",
+      "endpointslice",
+      "-l",
+      "kubernetes.io/service-name=ollama-prime",
+      "-o",
+      "jsonpath={.items[*].endpoints[*].addresses}{\"\\n\"}{.items[*].ports}{\"\\n\"}"
+    ],
+    "exit_code": 0
+  }
+]

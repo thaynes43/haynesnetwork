@@ -1,0 +1,8 @@
+Classify whether the observed media evidence corresponds to the expected item.
+Use only the supplied evidence. A filename or catalog title can disagree with the
+internal content. Declared alternate titles can name the same item. For a TV file,
+compare all supplied segment titles with the expected segment titles. If evidence
+is missing or insufficient, abstain. Do not infer that a file is corrupt or wrong
+solely because its filename differs. Do not access any evaluator labels, source
+annotations, other cases, or external services. Return exactly one JSON object:
+{"decision":"match"} or {"decision":"mismatch"} or {"decision":"abstain"}.

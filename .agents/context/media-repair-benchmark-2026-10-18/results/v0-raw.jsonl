@@ -1,0 +1,11 @@
+{"decision": "match", "latency_ns": 2098, "method": "v0", "request_id": "c01"}
+{"decision": "match", "latency_ns": 837, "method": "v0", "request_id": "c02"}
+{"decision": "match", "latency_ns": 679, "method": "v0", "request_id": "c03"}
+{"decision": "match", "latency_ns": 459, "method": "v0", "request_id": "c04"}
+{"decision": "mismatch", "latency_ns": 476, "method": "v0", "request_id": "c05"}
+{"decision": "match", "latency_ns": 586, "method": "v0", "request_id": "c06"}
+{"decision": "match", "latency_ns": 829, "method": "v0", "request_id": "c07"}
+{"decision": "match", "latency_ns": 3055, "method": "v0", "request_id": "c08"}
+{"decision": "match", "latency_ns": 2537, "method": "v0", "request_id": "c09"}
+{"decision": "match", "latency_ns": 520, "method": "v0", "request_id": "c10"}
+{"decision": "mismatch", "latency_ns": 676, "method": "v0", "request_id": "c11"}

@@ -1,0 +1,65 @@
+{
+  "at": "2026-10-18T16:50:00.303699+00:00",
+  "request": {
+    "format": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "enum": [
+            "match",
+            "mismatch",
+            "abstain"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision"
+      ],
+      "type": "object"
+    },
+    "keep_alive": "2m",
+    "messages": [
+      {
+        "content": "Classify whether the observed media evidence corresponds to the expected item.\nUse only the supplied evidence. A filename or catalog title can disagree with the\ninternal content. Declared alternate titles can name the same item. For a TV file,\ncompare all supplied segment titles with the expected segment titles. If evidence\nis missing or insufficient, abstain. Do not infer that a file is corrupt or wrong\nsolely because its filename differs. Do not access any evaluator labels, source\nannotations, other cases, or external services. Return exactly one JSON object:\n{\"decision\":\"match\"} or {\"decision\":\"mismatch\"} or {\"decision\":\"abstain\"}.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"evidence\": {\"expected\": {\"aliases\": [], \"title\": \"City of Illusions\"}, \"kind\": \"ebook\", \"observed\": {\"catalog_title\": \"City of Illusions\", \"content_titles\": [\"Worlds of Exile and Illusion\"]}}, \"request_id\": \"c01\"}",
+        "role": "user"
+      },
+      {
+        "content": "{\"evidence_scope\": \"Supplied documentary observations only; no media decoding.\", \"exact_identity_consistent\": false, \"normalized_expected\": [\"cityofillusions\"], \"normalized_observed\": [\"worldsofexileandillusion\"], \"policy\": \"One record expects its exact work or declared alias; containing it within a different collection is not the same work. For TV compare the complete reference segment set.\", \"tool\": \"inspect_internal_identity\"}",
+        "role": "user"
+      }
+    ],
+    "model": "muse-glimmer:30b",
+    "options": {
+      "num_ctx": 4096,
+      "num_predict": 256,
+      "seed": 42,
+      "stop": [
+        "<|eot|>"
+      ],
+      "temperature": 0
+    },
+    "stream": false,
+    "think": false
+  },
+  "request_id": "c01",
+  "resources": {
+    "at": "2026-10-18T16:50:00.577543+00:00",
+    "compute_processes": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 4120, /usr/lib/ollama/llama-server, 17444 MiB",
+    "compute_query_exit": 0,
+    "exit_code": 0,
+    "stderr": "",
+    "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 17454 MiB, 6672 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 4120, /usr/lib/ollama/llama-server, 17444 MiB\n37650599936\nusage_usec 1118789655\nuser_usec 940129696\nsystem_usec 178659959\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         3416468 kB\nMemAvailable:   120067008 kB\n"
+  },
+  "response": {
+    "exit_code": 0,
+    "http_status": 200,
+    "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-18T16:50:00.31050135Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"decision\\\":\\\"mismatch\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":5160271068,\"load_duration\":4639793369,\"prompt_eval_count\":314,\"prompt_eval_cached_count\":0,\"prompt_eval_duration\":325079000,\"eval_count\":7,\"eval_duration\":175332000}",
+    "stderr": "",
+    "wall_seconds": 5.286839331034571
+  }
+}

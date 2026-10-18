@@ -1,0 +1,68 @@
+{
+  "all": {
+    "accuracy": 0.9090909090909091,
+    "confusion": {
+      "abstentions": 1,
+      "errors": 0,
+      "fn": 0,
+      "fp": 0,
+      "negative_abstentions": 0,
+      "negative_errors": 0,
+      "positive_abstentions": 1,
+      "positive_errors": 0,
+      "tn": 6,
+      "tp": 4
+    },
+    "coverage": 0.9090909090909091,
+    "false_positive_rate": 0.0,
+    "n": 11,
+    "negatives": 6,
+    "positives": 5,
+    "precision": 1.0,
+    "recall": 0.8
+  },
+  "development": {
+    "accuracy": 0.8571428571428571,
+    "confusion": {
+      "abstentions": 1,
+      "errors": 0,
+      "fn": 0,
+      "fp": 0,
+      "negative_abstentions": 0,
+      "negative_errors": 0,
+      "positive_abstentions": 1,
+      "positive_errors": 0,
+      "tn": 4,
+      "tp": 2
+    },
+    "coverage": 0.8571428571428571,
+    "false_positive_rate": 0.0,
+    "n": 7,
+    "negatives": 4,
+    "positives": 3,
+    "precision": 1.0,
+    "recall": 0.6666666666666666
+  },
+  "held_out": {
+    "accuracy": 1.0,
+    "confusion": {
+      "abstentions": 0,
+      "errors": 0,
+      "fn": 0,
+      "fp": 0,
+      "negative_abstentions": 0,
+      "negative_errors": 0,
+      "positive_abstentions": 0,
+      "positive_errors": 0,
+      "tn": 2,
+      "tp": 2
+    },
+    "coverage": 1.0,
+    "false_positive_rate": 0.0,
+    "n": 4,
+    "negatives": 2,
+    "positives": 2,
+    "precision": 1.0,
+    "recall": 1.0
+  }
+}

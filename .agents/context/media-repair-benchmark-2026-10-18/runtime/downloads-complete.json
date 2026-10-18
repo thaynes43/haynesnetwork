@@ -1,0 +1,44 @@
+{
+  "at": "2026-10-18T16:44:39.725470+00:00",
+  "both_verified": true,
+  "muse_installed": {
+    "name": "muse-glimmer:30b",
+    "model": "muse-glimmer:30b",
+    "modified_at": "2026-10-18T12:43:33.999053054-04:00",
+    "size": 18157010252,
+    "digest": "de878ce33ad81d060001db1469a02eebe4d86f0ad58cfe52dc062fdcbe4464c1",
+    "details": {
+      "parent_model": "muse-glimmer:30b-q4_K_M",
+      "format": "gguf",
+      "family": "muse-glimmer",
+      "families": [
+        "muse-glimmer"
+      ],
+      "parameter_size": "27.9B",
+      "quantization_level": "Q4_K_M",
+      "context_length": 131072,
+      "embedding_length": 6656,
+      "runner": "ggml"
+    },
+    "capabilities": [
+      "completion",
+      "vision",
+      "tools",
+      "thinking"
+    ]
+  },
+  "muse_provenance": {
+    "api_registry_digest": "de878ce33ad81d060001db1469a02eebe4d86f0ad58cfe52dc062fdcbe4464c1",
+    "installed_wrapper_sha256": "47047bcde318d0d3b14b647bf85df60529b75195cf1400c43b892955fe6d3d47",
+    "registry_sha256": "de878ce33ad81d060001db1469a02eebe4d86f0ad58cfe52dc062fdcbe4464c1",
+    "served_layers_verified": true
+  },
+  "resources": {
+    "compute_processes": "",
+    "compute_query_exit": 0,
+    "at": "2026-10-18T16:44:40.012282+00:00",
+    "exit_code": 0,
+    "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\ngpu_uuid, pid, process_name, used_gpu_memory [MiB]\n36267241472\nusage_usec 253500912\nuser_usec 109870809\nsystem_usec 143630102\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\nMemTotal:       142070968 kB\nMemFree:         4145904 kB\nMemAvailable:   121397488 kB\n",
+    "stderr": ""
+  }
+}
