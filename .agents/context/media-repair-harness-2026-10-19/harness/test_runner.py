@@ -137,9 +137,10 @@ class EvidenceAndOutcome(unittest.TestCase):
         shown = R.resolve_evidence(case, ts.root)
         self.assertTrue(shown[0]['truncated'])
         self.assertLessEqual(len(shown[0]['output'].encode()), P.TOOL_OUTPUT_BYTES)
-        self.assertEqual(shown[1]['status'], 'error')
+        self.assertEqual(shown[1]['status'], 'unavailable')   # integrity failure: the content is withheld, not shown
         self.assertIn('mismatch', shown[1]['output'])
-        self.assertEqual(shown[2]['status'], 'error')
+        self.assertNotIn('xxxx', shown[1]['output'])
+        self.assertEqual(shown[2]['status'], 'unavailable')
         ts.cleanup()
 
     def test_outcome_step_runs_and_scores(self):

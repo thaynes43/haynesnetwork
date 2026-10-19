@@ -46,9 +46,9 @@ class EpubInspect(unittest.TestCase):
         self.assertEqual((out['status'], out['stage']), ('error', 'zip_open'))
         self.assertIn('BadZipFile', out['error'])
 
-    def test_no_fixture_is_error(self):
+    def test_no_fixture_is_unavailable(self):
         r = T.call_tool(ctx_for(th.make_case(), T.Fixture('none')), 'epub_inspect', {})
-        self.assertEqual(r['status'], 'error')
+        self.assertEqual(r['status'], 'unavailable')   # no media behind the case: the capability is absent, nothing ran
 
     def test_model_cannot_choose_a_path(self):
         r = T.call_tool(ctx_for(th.make_case(), local_fixture(FIX / 'td-right.epub')), 'epub_inspect', {'path': '/etc/passwd'})
@@ -59,8 +59,11 @@ class DispatchAndBounds(unittest.TestCase):
     def test_unknown_or_unoffered_tool(self):
         c = th.make_case(tools_available=['arr_lookup'])
         ctx = ctx_for(c, T.Fixture('none'))
-        self.assertEqual(T.call_tool(ctx, 'ffprobe', {})['status'], 'error')
-        self.assertEqual(T.call_tool(ctx, 'shell', {})['status'], 'error')
+        # absent capability = unavailable, and the call is flagged as a protocol violation for the runner to record
+        for name in ('ffprobe', 'shell'):
+            r = T.call_tool(ctx, name, {})
+            self.assertEqual((r['status'], r['protocol_violation']), ('unavailable', 'tool_not_offered'))
+        self.assertNotIn('shell', T.call_tool(ctx, 'shell', {})['output'])   # a model-chosen name is never echoed back
 
     def test_output_is_capped_at_8kib(self):
         big = {'app': 'sonarr', 'ids': {'x': 'y' * 20000}}
@@ -97,7 +100,7 @@ class MediaTools(unittest.TestCase):
         c = th.make_case()
         ctx = ctx_for(c, local_fixture(FIX / 'td-right.epub'), which=lambda name: None)
         r = T.call_tool(ctx, 'ffprobe', {})
-        self.assertEqual(r['status'], 'error')
+        self.assertEqual(r['status'], 'unavailable')   # the binary is absent: nothing ran
         self.assertIn('not installed', r['output'])
 
     def test_ffprobe_local_with_fake_binary_runs_niced(self):
@@ -179,7 +182,7 @@ class MediaTools(unittest.TestCase):
         mk = lambda backend: T.Context(th.make_case(), local_fixture(FIX / 'td-right.epub'), tempfile.mkdtemp(), runner=runner,
                                        which=lambda n: '/x/' + n, ocr_backend=backend)
         r = T.call_tool(mk(None), 'ocr', {'at': 1})
-        self.assertEqual(r['status'], 'error')
+        self.assertEqual(r['status'], 'unavailable')
         self.assertIn('no OCR backend', r['output'])
         same = json.loads(T.call_tool(mk(lambda b: ' Hello  World '), 'ocr', {'at': 1})['output'])
         self.assertTrue(same['consensus'])

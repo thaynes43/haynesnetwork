@@ -121,6 +121,21 @@ def find_leaks(case, text, extra_paths=()):
 
 
 REPAIR_PREFIX = 'Your last reply was rejected:'
+# Harness-authored text that is generic by construction (a validator error lists every allowed class and action, which are not
+# case-specific).  For these, only case-specific tokens count: case id and stem, family, fixture names, provenance, truth ref.
+# The class and action names are public protocol vocabulary.  Never put model- or case-derived free text into such a message.
+GENERIC_PREFIXES = (REPAIR_PREFIX,)
+GENERIC_KINDS = ('supported_action', 'truth_class')
+# Kinds that a static system prompt must never contain.  Stems and the truth reference are left out on purpose: a short
+# file stem such as `input` is an ordinary word.
+SYSTEM_KINDS = ('case_id', 'case_id_stem', 'fixture_name', 'provenance')
+
+
+def check_system(case, system, extra_paths=()):
+    """Guard for the static system prompt: it may name classes and actions, but never this case's id, file name or provenance."""
+    hits = sorted({kind for kind, rx in forbidden_tokens(case, extra_paths) if kind in SYSTEM_KINDS and rx.search(system or '')})
+    if hits:
+        raise LeakError('forbidden token(s) %s in the system prompt' % hits)
 
 
 def check_messages(case, messages, extra_paths=()):
@@ -131,11 +146,11 @@ def check_messages(case, messages, extra_paths=()):
             continue
         content = m.get('content', '')
         mine = toks
-        if content.startswith(REPAIR_PREFIX):
+        if content.startswith(GENERIC_PREFIXES):
             # The repair prompt quotes the validator's error, which lists every allowed action and class
             # (e.g. "action must be one of ... rename ..."). That generic enumeration is not a leak, and checking it
             # crashed two haiku cases on 2026-10-19 (G9). Everything case-specific is still checked.
-            mine = [(k, rx) for k, rx in toks if k not in ('supported_action', 'truth_class')]
+            mine = [(k, rx) for k, rx in toks if k not in GENERIC_KINDS]
         hits = sorted({kind for kind, rx in mine if rx.search(content)})
         if hits:
             raise LeakError('forbidden token(s) %s in model-bound message %d' % (hits, i + 1))

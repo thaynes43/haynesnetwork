@@ -78,12 +78,12 @@ class ReplayMode(unittest.TestCase):
     def test_audio_sample_has_no_replay(self):
         case, ctx = ctx_for('tv-corrupt-003')
         r = call(ctx, 'audio_sample', {'at': 0})
-        self.assertEqual(r['status'], 'error')
-        self.assertIn('no recorded replay', r['output'])
+        self.assertEqual(r['status'], 'unavailable')   # nothing was recorded and nothing ran: capability absent, not a failed tool
+        self.assertIn('no recorded', r['output'])
 
     def test_replay_off_and_force(self):
         case, ctx = ctx_for('tv-corrupt-003', replay='off')
-        self.assertEqual(call(ctx, 'ffprobe')['status'], 'error')
+        self.assertEqual(call(ctx, 'ffprobe')['status'], 'unavailable')
         self.assertIn('replay is disabled', call(ctx, 'ffprobe')['output'])
         case, ctx = ctx_for('tv-corrupt-003', replay='force', which=lambda n: '/usr/bin/' + n)
         self.assertEqual(call(ctx, 'ffprobe')['mode'], 'replay')
@@ -101,7 +101,7 @@ class ReplayMode(unittest.TestCase):
         case = load('tv-corrupt-003')
         ctx = T.Context(case, T.Fixture.from_case(case, tmp), tempfile.mkdtemp(), suite_dir=tmp, which=NO_BINARIES)
         r = call(ctx, 'ffprobe')
-        self.assertEqual(r['status'], 'error')
+        self.assertEqual(r['status'], 'unavailable')   # the recording cannot be used for these bytes; nothing ran
         self.assertIn('does not match the fixture', r['output'])
 
     def test_audiobook_inspect_from_replay(self):
@@ -132,8 +132,9 @@ class RealCases(unittest.TestCase):
         self.assertEqual(T.Fixture.from_case(case, SAMPLE).kind, 'pinned')
         ad = A.ScriptedAdapter('m', [th.tool_call('ffprobe'), th.decision('insufficient_evidence', 'escalate')])
         rec = R.run_case(case, 'sha', ad, SAMPLE, tempfile.mkdtemp(), which=NO_BINARIES)
-        self.assertEqual(rec['tool_calls'][0]['status'], 'error')
-        self.assertIn('pinned', rec['tool_calls'][0]['output'])
+        # a pinned row serves its recorded observation, labelled as such (replay), and says so
+        self.assertEqual((rec['tool_calls'][0]['status'], rec['tool_calls'][0]['mode']), ('ok', 'pinned_replay'))
+        self.assertIn('recorded observation', rec['tool_calls'][0]['output'])
         self.assertNotIn('error', rec)
         self.assertEqual(rec['fixture']['verified'], 'declared_only')
 

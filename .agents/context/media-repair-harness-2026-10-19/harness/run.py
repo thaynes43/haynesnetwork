@@ -90,14 +90,14 @@ def resolve_evidence(case, suite_dir, redactor=None):
             try:
                 data = p.read_bytes()
                 if out.get('sha256') and sha256_bytes(data) != out['sha256']:
-                    out, status = 'evidence file hash mismatch', 'error'
+                    out, status = 'evidence file failed its integrity check (hash mismatch); its content is not shown', 'unavailable'
                 else:
                     out = data.decode('utf-8', errors='replace')
             except OSError:
-                out, status = 'evidence file missing', 'error'
+                out, status = 'evidence file missing', 'unavailable'
         elif not isinstance(out, str):
             out = json.dumps(out, sort_keys=True, ensure_ascii=False)
-        res = T.ToolResult(status if status in ('ok', 'partial', 'error', 'timeout') else 'ok', out).bounded(redactor)
+        res = T.ToolResult(status if status in T.STATUSES else 'ok', out).bounded(redactor)
         shown.append({'id': e['id'], 'tool': e.get('tool'), 'args': e.get('args', {}), 'status': res['status'],
                       'output': res['output'], 'truncated': res['truncated']})
     return shown
@@ -132,6 +132,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     ev_ids = {e['id'] for e in evidence}
     turns, tool_calls = [], []
     repairs, forced, forced_reason, error = [], False, None, None
+    violations = []   # protocol violations (a tool call outside tools_available): answered with a tool result, never repaired
+    v2 = prompt_version == 'v2'
     decision = None
     load_s = 0.0
 
@@ -141,6 +143,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
 
     n_calls = 0
     try:
+        leakguard.check_system(case, system, ctx.forbidden_extra)  # the static prompt must not name this case (raises LeakError)
         while decision is None:
             if n_calls >= MAX_MODEL_CALLS:
                 force('model call limit reached without a decision')
@@ -151,20 +154,25 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                 comp = adapter.complete(system, messages, schema=schema) if schema is not None else adapter.complete(system, messages)
             except A.AdapterError as e:
                 error = {'kind': 'adapter_error', 'message': str(e)[:500]}
-                turns.append({'n': len(turns) + 1, 'error': str(e)[:500]})
+                turns.append({'n': len(turns) + 1, 'error': str(e)[:500], 'attempt': 'repair' if repairs else 'first', 'reply_valid': False,
+                              'failure_modes': ['adapter_error']})
                 force('model call failed: ' + str(e)[:200])
                 break
             load_s += comp.load_s
             obj, perr, diag = P.parse_reply(comp.text)
             kind, verrs = (None, [perr]) if perr else P.validate_turn(obj, case.get('tools_available'), prompt_version)
+            offered_bad = P.tool_not_offered(obj, case.get('tools_available')) if (v2 and kind == 'tool_call') else None
+            modes = P.failure_modes(comp.text, obj, verrs, diag) if kind is None else (['tool_not_offered'] if offered_bad is not None else [])
             turn = dict(comp.to_dict(), n=len(turns) + 1, raw_request=comp.raw_request, raw_response=comp.raw_response,
-                        parsed_type=kind, validation_errors=[e for e in verrs if e], **({'diagnostics': diag} if diag else {}))
+                        parsed_type=kind, validation_errors=[e for e in verrs if e], **({'diagnostics': diag} if diag else {}),
+                        attempt='repair' if repairs else 'first', reply_valid=(kind is not None and offered_bad is None), failure_modes=modes)
             turns.append(turn)
             if kind is None:
                 if not repairs:
                     err = '; '.join(e for e in verrs if e)[:300]
-                    repair_text = P.REPAIR_PROMPT.format(error=err)
-                    repairs.append({'after_turn': turn['n'], 'error': err, 'prompt': repair_text, 'salvageable_by': diag.get('salvageable_by', [])})
+                    repair_text = P.repair_prompt(err, modes) if v2 else P.REPAIR_PROMPT.format(error=err)
+                    repairs.append({'after_turn': turn['n'], 'error': err, 'prompt': repair_text, 'failure_modes': modes,
+                                    'salvageable_by': diag.get('salvageable_by', [])})
                     messages += [{'role': 'assistant', 'content': comp.text}, {'role': 'user', 'content': repair_text}]
                     continue
                 force('invalid output after the one repair prompt: ' + '; '.join(e for e in verrs if e)[:200])
@@ -180,10 +188,14 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                 break
             call_id = 't%d' % (len(tool_calls) + 1)
             res = T.call_tool(ctx, obj['tool'], obj['args'])
-            tool_calls.append({'id': call_id, 'turn': turn['n'], 'tool': obj['tool'], 'args': obj['args'], 'why': obj.get('why'), **res})
+            shown_tool = obj['tool'] if obj['tool'] in P.TOOLS else 'unknown_tool'  # model-chosen text is never echoed back
+            tool_calls.append({'id': call_id, 'turn': turn['n'], 'tool': str(obj['tool'])[:64], 'args': obj['args'], 'why': obj.get('why'), **res})
+            if res.get('protocol_violation'):
+                violations.append({'turn': turn['n'], 'call': call_id, 'kind': res['protocol_violation'], 'tool': str(obj['tool'])[:64],
+                                   'answered_with': res['status']})
             remaining = P.MAX_TOOL_CALLS - len(tool_calls)
             messages += [{'role': 'assistant', 'content': comp.text},
-                         {'role': 'user', 'content': result_message(call_id, obj['tool'], res, remaining) +
+                         {'role': 'user', 'content': result_message(call_id, shown_tool, res, remaining) +
                           ('' if remaining else '\n' + P.BUDGET_MESSAGE)}]
     except A.AbortRun:
         raise
@@ -191,7 +203,15 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
         error = {'kind': 'harness_crash', 'message': '%s: %s' % (type(e).__name__, e), 'leak_guard': isinstance(e, leakguard.LeakError), 'traceback': traceback.format_exc()[-1500:]}
         force('harness error: ' + type(e).__name__)
 
-    first_try_valid = (decision is not None and not forced and not repairs)
+    # First-try validity is strict and never repaired after the fact: every model reply up to the first repair prompt must have
+    # been schema-valid, no tool call may have left tools_available, and the case must have ended in a real decision.
+    # A repaired, forced, adapter-failed or violating case is not first-try valid, whatever its final decision looks like.
+    first_try_valid = (decision is not None and not forced and not repairs and not violations and all(t.get('reply_valid') for t in turns))
+    first_try = {'valid': first_try_valid, 'first_reply_valid': bool(turns and turns[0].get('reply_valid')),
+                 'failure_modes': sorted({m for t in turns if t.get('attempt') == 'first' for m in t.get('failure_modes', [])}),
+                 'repair_prompts': len(repairs), 'protocol_violations': len(violations),
+                 'valid_after_repair': bool(repairs and decision is not None and not forced),
+                 'note': 'any repair, forced decision or protocol violation means the first try was not valid; later attempts are recorded separately in turns[].attempt'}
     bad_refs = sorted(r for r in (decision or {}).get('evidence_refs', []) if r not in ev_ids and r not in {c['id'] for c in tool_calls})
     failed_refs = sorted(set((decision or {}).get('evidence_refs', [])) & {c['id'] for c in tool_calls if c['status'] in ('error', 'timeout') and c.get('injected')})
     non_ok_refs = sorted(set((decision or {}).get('evidence_refs', [])) & AU.non_ok_evidence_ids(case, tool_calls))
@@ -210,8 +230,9 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     response_models = sorted({str(t.get('response_model')) for t in turns if t.get('response_model')})
     action_audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version)
     action_audit['outcome_step'] = outcome
+    parts = AU.unverified_parts(case, tool_calls)
     record = {
-        'record_version': 1, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
+        'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
         'split': case.get('split'), 'started_at': started_at,
         'prompt': {'version': prompt['version'], 'sha256': prompt['sha256'], 'protocol': 'turn-' + prompt['version'],
                    'turn_schema_sha256': sha256_bytes(canonical(schema if schema is not None else P.TURN_SCHEMA).encode())},
@@ -219,8 +240,12 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
         'runtime_version': adapter.runtime_version, 'model_digest': adapter.model_digest,
         'model_digest_na_reason': adapter.digest_na_reason if not adapter.model_digest else None,
         'fixture': fixture_info, 'evidence_shown': [e['id'] for e in evidence],
+        'fixture_hashes': {'fixture': {k: fixture_info.get(k) for k in ('kind', 'declared_sha256', 'actual_sha256', 'verified')},
+                           'evidence_shown_sha256': {e['id']: sha256_bytes(str(e['output']).encode()) for e in evidence}},
         'turns': turns, 'tool_calls': tool_calls, 'tool_modes': sorted({c.get('mode') for c in tool_calls if c.get('mode')}), 'repair_prompts': repairs,
-        'decision': decision, 'forced': forced, 'forced_reason': forced_reason, 'first_try_valid': first_try_valid,
+        'decision': decision, 'forced': forced, 'forced_reason': forced_reason, 'first_try_valid': first_try_valid, 'first_try': first_try,
+        'final_decision_valid': decision is not None and not forced, 'protocol_violations': violations,
+        'unverified_parts': parts, 'decision_flags': AU.decision_flags(decision, parts),
         'bad_evidence_refs': bad_refs, 'refs_to_failed_tools': failed_refs, 'refs_to_non_ok_tools': non_ok_refs,
         'outcome': outcome, 'usage': usage,
         'wall': {'total_s': round(total, 3), 'load_s': round(load_s, 3), 'case_excl_load_s': round(max(0.0, total - load_s), 3),
@@ -242,19 +267,75 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
 
 def crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT):
     d = P.forced_decision('harness error before the run: ' + type(exc).__name__)
-    return {'record_version': 1, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
+    return {'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
             'split': case.get('split'), 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'prompt': {'version': prompt_version, 'sha256': P.get_prompt(prompt_version)['sha256'], 'protocol': 'turn-' + prompt_version, 'turn_schema_sha256': None},
             'requested_model': adapter.requested_model, 'response_model_ids': [], 'runtime_version': adapter.runtime_version,
             'model_digest': adapter.model_digest, 'model_digest_na_reason': adapter.digest_na_reason if not adapter.model_digest else None,
             'fixture': None, 'evidence_shown': [], 'turns': [], 'tool_calls': [], 'repair_prompts': [], 'decision': d, 'forced': True,
-            'forced_reason': d['reason'], 'first_try_valid': False, 'bad_evidence_refs': [], 'refs_to_failed_tools': [], 'refs_to_non_ok_tools': [], 'outcome': None,
+            'forced_reason': d['reason'], 'first_try_valid': False,
+            'first_try': {'valid': False, 'first_reply_valid': False, 'failure_modes': ['harness_error_before_run'], 'repair_prompts': 0, 'protocol_violations': 0,
+                          'valid_after_repair': False, 'note': 'the case never reached a model'},
+            'final_decision_valid': False, 'protocol_violations': [], 'unverified_parts': [], 'decision_flags': [], 'fixture_hashes': None,
+            'bad_evidence_refs': [], 'refs_to_failed_tools': [], 'refs_to_non_ok_tools': [], 'outcome': None,
             'usage': {'input_tokens': 0, 'output_tokens': 0, 'cost_usd': None, 'cost_reported': False},
             'wall': {'total_s': 0.0, 'load_s': 0.0, 'case_excl_load_s': 0.0, 'turn_s': [], 'tool_s': []}, 'injected_failure': case.get('inject_tool_failure'),
-            'action_audit': {'intent': {'class': d['class'], 'action': d['action'], 'target': None}, 'write_intent': False, 'executed': False,
-                             'note': 'recorded intent only; this harness never executes writes', 'audit': None, 'claimed_preconditions': [],
-                             'preconditions_checked': [], 'preconditions_unmet': False, 'unmet': [], 'outcome_step': None},
+            'action_audit': dict(AU.compute(case, d, [], forced=True, prompt_version=prompt_version), outcome_step=None),
             'error': {'kind': 'harness_crash', 'message': '%s: %s' % (type(exc).__name__, exc), 'traceback': traceback.format_exc()[-1500:]}}
+
+
+REQUIRED_RECORD_FIELDS = ('record_version', 'harness_version', 'harness_git_sha', 'case_id', 'case_sha256', 'prompt', 'requested_model', 'response_model_ids',
+                          'runtime_version', 'config_hash', 'fixture_hashes', 'turns', 'tool_calls', 'decision', 'forced', 'first_try_valid', 'first_try',
+                          'usage', 'wall', 'action_audit')
+
+
+def record_missing_fields(rec):
+    """Names of required run-record fields that are absent or empty-by-mistake (a record is 'complete' when this is []).
+    fixture_hashes may be None only for a record that never reached the model (crash_record); a response model id may be empty only
+    when the case never got a model reply."""
+    missing = [k for k in REQUIRED_RECORD_FIELDS if k not in rec]
+    if not missing:
+        if not (rec['prompt'] or {}).get('sha256') or not (rec['prompt'] or {}).get('version'):
+            missing.append('prompt.sha256')
+        if rec['harness_version'] != P.HARNESS_VERSION:
+            missing.append('harness_version(current)')
+        if not rec['harness_git_sha']:
+            missing.append('harness_git_sha')
+        if not rec['response_model_ids'] and any('error' not in t for t in rec['turns']):
+            missing.append('response_model_ids')
+        if (rec['action_audit'] or {}).get('executed') is not False:
+            missing.append('action_audit.executed')
+    return missing
+
+
+def summarize_run(records, manifest):
+    """Validity and completeness counts for a run.  No scoring: no pass rate, no gate, no label is read."""
+    n = len(records)
+    modes = {}
+    for r in records:
+        for m in (r.get('first_try') or {}).get('failure_modes', []):
+            modes[m] = modes.get(m, 0) + 1
+    walls = sorted(r['wall']['case_excl_load_s'] for r in records)
+    incomplete = {r['case_id']: record_missing_fields(r) for r in records if record_missing_fields(r)}
+    return {
+        'harness_version': P.HARNESS_VERSION, 'run_id': manifest.get('run_id'), 'harness_git': manifest.get('harness_git'),
+        'prompt': {'version': manifest['config']['prompt_version'], 'sha256': manifest['config']['system_prompt_sha256']},
+        'config_hash': manifest.get('config_hash'), 'requested_model': manifest.get('requested_model'),
+        'response_model_ids': sorted({m for r in records for m in r.get('response_model_ids', [])}),
+        'cases_planned': len(manifest.get('case_ids', [])), 'records_written': n, 'aborted': manifest.get('aborted'),
+        'validity': {'first_try_valid': sum(1 for r in records if r['first_try_valid']), 'final_decision_valid': sum(1 for r in records if r.get('final_decision_valid')),
+                     'repaired': sum(1 for r in records if r['repair_prompts']), 'forced': sum(1 for r in records if r['forced']),
+                     'protocol_violations': sum(len(r.get('protocol_violations', [])) for r in records),
+                     'crashes': sum(1 for r in records if (r.get('error') or {}).get('kind') == 'harness_crash'),
+                     'adapter_errors': sum(1 for r in records if (r.get('error') or {}).get('kind') == 'adapter_error'),
+                     'first_try_failure_modes': modes},
+        'records_complete': not incomplete, 'incomplete_records': incomplete,
+        'cost_usd': round(sum((r['usage'].get('cost_usd') or 0.0) for r in records), 6) if any(r['usage'].get('cost_reported') for r in records) else None,
+        'latency_s_per_case': {'min': walls[0] if walls else None, 'median': walls[len(walls) // 2] if walls else None, 'max': walls[-1] if walls else None},
+        'writes_executed': 0,
+        'statement': 'Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; '
+                     'this harness executed no write and changed no media, *arr, Plex or library state.',
+    }
 
 
 def build_adapter(args):
@@ -316,11 +397,12 @@ def main(argv=None):
         ocr_backend = T.ollama_ocr_backend(args.ocr_model, ot.api)
 
     prompt = P.get_prompt(args.prompt)
-    config = {'protocol': P.PROTOCOL_VERSION if args.prompt == 'v1' else 'turn-' + args.prompt, 'prompt_version': args.prompt, 'system_prompt_sha256': prompt['sha256'],
-              'turn_schema_sha256': sha256_bytes(canonical(P.TURN_SCHEMA).encode()), 'flat_schema_sha256': sha256_bytes(canonical(P.FLAT_TURN_SCHEMA).encode()), 'max_tool_calls': P.MAX_TOOL_CALLS,
+    config = {'harness_version': P.HARNESS_VERSION, 'protocol': P.PROTOCOL_VERSION if args.prompt == 'v1' else 'turn-' + args.prompt, 'prompt_version': args.prompt, 'system_prompt_sha256': prompt['sha256'],
+              'turn_schema_sha256': sha256_bytes(canonical(P.TURN_SCHEMA).encode()), 'flat_schema_sha256': sha256_bytes(canonical(P.FLAT_TURN_SCHEMA).encode()),
+              'turn_schema_v2_sha256': sha256_bytes(canonical(P.turn_schema('v2')).encode()), 'max_tool_calls': P.MAX_TOOL_CALLS,
               'tool_output_bytes': args.tool_output_bytes, 'tool_timeout_s': P.TOOL_TIMEOUT_S, 'ocr_model': args.ocr_model, 'replay': args.replay,
               'adapter_config': adapter.config()}
-    manifest = {'run_id': run_id, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'argv': sys.argv[1:] if argv is None else argv,
+    manifest = {'harness_version': P.HARNESS_VERSION, 'run_id': run_id, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'argv': sys.argv[1:] if argv is None else argv,
                 'harness_git': git_info(), 'config': config, 'config_hash': sha256_bytes(canonical(config).encode()),
                 'python': platform.python_version(), 'suite_dir': str(suite_dir),
                 'case_ids': [c['id'] for c, _ in cases], 'case_sha256': {c['id']: s for c, s in cases}}
@@ -366,6 +448,7 @@ def main(argv=None):
         manifest['ended_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         manifest['records_written'] = [r['case_id'] for r in records]
         (out / 'manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True, default=str) + '\n')
+        (out / 'run_summary.json').write_text(json.dumps(summarize_run(records, manifest), indent=2, sort_keys=True, default=str) + '\n')
     if aborted:
         print('ABORTED: ' + aborted, file=sys.stderr)
         return 3

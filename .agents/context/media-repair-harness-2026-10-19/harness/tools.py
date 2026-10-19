@@ -38,8 +38,15 @@ OCR_SCHEMA = {'type': 'object', 'properties': {'visible_text': {'type': 'string'
               'required': ['visible_text'], 'additionalProperties': False}
 
 
-# `unavailable`: no data exists for this call (no recorded replay, no live media, no backend).  Never an empty success,
-# and it leaves the checked part unverified exactly like an error does.
+# Status semantics (dev-c1), one rule for every tool:
+#   ok           the tool ran and returned the whole answer
+#   partial      the tool ran and returned a cut or incomplete answer
+#   error        the tool RAN (or its input was validated) and failed: a non-zero exit, a crash, bad arguments, a damaged file reported
+#                by the tool itself.  A finding about the media is an `error` result of a working tool.
+#   timeout      the tool ran and did not finish in time
+#   unavailable  the CAPABILITY is absent: the tool is not offered for the case, the binary, backend or fixture is missing, no
+#                recording exists to replay, or the recorded data cannot be used.  Nothing ran, so nothing was learned.
+# `unavailable` is never an empty success, and like error/timeout/partial it leaves the checked part UNVERIFIED (never healthy).
 STATUSES = ('ok', 'partial', 'error', 'timeout', 'unavailable')
 
 
@@ -167,7 +174,7 @@ def _need_media(ctx):
     if ctx.fixture.kind == 'none':
         return ToolResult('unavailable', 'no media fixture behind this case; the tool cannot run')
     if ctx.fixture.kind == 'local' and not Path(ctx.fixture.path).is_file():
-        return ToolResult('error', 'fixture file missing')
+        return ToolResult('unavailable', 'fixture file missing; the tool cannot run')
     return None
 
 
@@ -186,9 +193,9 @@ def _evidence_output(ctx, e):
         try:
             data = p.read_bytes()
         except OSError:
-            return 'evidence file missing', 'error'
+            return 'evidence file missing', 'unavailable'
         if out.get('sha256') and hashlib.sha256(data).hexdigest() != out['sha256']:
-            return 'evidence file hash mismatch', 'error'
+            return 'evidence file failed its integrity check (hash mismatch); its content is not shown', 'unavailable'
         out = data.decode('utf-8', errors='replace')
     if not isinstance(out, str):
         out = json.dumps(out, sort_keys=True, ensure_ascii=False)
@@ -269,7 +276,7 @@ def _pinned(tool, args, ctx):
 
 def _replay_record(ctx):
     """The recorded probe results for a local fixture (suite/fixtures/probes/<name>.json).
-    -> (record, None, None) or (None, reason, status) where status is `unavailable` (nothing recorded) or `error` (record unusable)."""
+    -> (record, None, None) or (None, reason, 'unavailable'): nothing recorded, or the recording does not match the fixture bytes (unusable data)."""
     if ctx.fixture.kind != 'local' or ctx.suite_dir is None:
         return None, 'no replay file applies', 'unavailable'
     p = Path(ctx.suite_dir) / 'fixtures' / 'probes' / (Path(ctx.fixture.path).name + '.json')
@@ -278,7 +285,7 @@ def _replay_record(ctx):
     rec = json.loads(p.read_text())
     actual = hashlib.sha256(Path(ctx.fixture.path).read_bytes()).hexdigest()
     if rec.get('sha256') and rec['sha256'] != actual:
-        return None, 'replay file does not match the fixture bytes (fixture changed since it was recorded)', 'error'
+        return None, 'replay file does not match the fixture bytes (fixture changed since it was recorded)', 'unavailable'
     return rec, None, None
 
 
@@ -292,7 +299,7 @@ def _backend(ctx, binary):
     if ctx.replay != 'force' and ctx.which(binary):
         return 'local'
     if ctx.replay == 'off':
-        return ToolResult('error', '%s is not installed in this environment and replay is disabled' % binary)
+        return ToolResult('unavailable', '%s is not installed in this environment and replay is disabled' % binary)
     rec, err, status = _replay_record(ctx)
     if rec is None:
         return ToolResult(status, '%s is not installed in this environment and %s' % (binary, err))
@@ -643,10 +650,10 @@ def _epub_stage(path):
 
 def tool_epub_inspect(args, ctx):
     if ctx.fixture.kind != 'local':
-        return ToolResult('unavailable' if ctx.fixture.kind == 'none' else 'error', 'no media fixture behind this case; the tool cannot run' if ctx.fixture.kind == 'none' else 'epub_inspect needs a local fixture')
+        return ToolResult('unavailable', 'no media fixture behind this case; the tool cannot run' if ctx.fixture.kind == 'none' else 'epub_inspect needs a local fixture; none is reachable for this case')
     path = ctx.fixture.path
     if not Path(path).is_file():
-        return ToolResult('error', 'fixture file missing')
+        return ToolResult('unavailable', 'fixture file missing; the tool cannot run')
     raw = Path(path).read_bytes()
     base = {'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
     staged = _epub_stage(path)
@@ -724,7 +731,9 @@ def call_tool(ctx, name, args):
     started = time.monotonic()
     inject = ctx.case.get('inject_tool_failure')
     if name not in REGISTRY or name not in ctx.case.get('tools_available', []):
-        res = ToolResult('error', 'tool %r is not available for this case' % name)
+        # the capability is absent for this case: `unavailable`, and the call itself is a protocol violation (recorded by the runner)
+        res = ToolResult('unavailable', 'tool %s is not offered for this case; nothing ran. Offered: %s' % (repr(name) if name in REGISTRY else 'requested', ', '.join(ctx.case.get('tools_available', [])) or 'none'),
+                         protocol_violation='tool_not_offered')
     elif inject and inject.get('tool') == name and inject.get('mode', 'error') in ('error', 'timeout'):
         res = _failure(inject['mode'], name, None)  # nothing is run: the failure is the whole result
     else:

@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 
+HARNESS_VERSION = 'dev-c1'  # recorded in every run record and manifest
 PROTOCOL_VERSION = 'v1'  # the v1 turn protocol (prompt v1); prompt v2 has its own, see PROMPT_VERSIONS
 PROMPT_VERSIONS = ('v1', 'v2')
 DEFAULT_PROMPT = 'v1'  # stays v1 until checkpoint 2c
@@ -193,6 +194,14 @@ def validate_audit(audit):
     return errs
 
 
+def tool_not_offered(obj, tools_available):
+    """The tool name of a (valid-shaped) tool call that the case does not offer, else None."""
+    if isinstance(obj, dict) and obj.get('type') == 'tool_call' and tools_available is not None \
+            and isinstance(obj.get('tool'), str) and obj['tool'] not in tools_available:
+        return obj['tool']
+    return None
+
+
 def validate_turn_v2(obj, tools_available=None):
     """Return (kind, errors) for turn protocol v2.  Same shapes as v1, plus: a write action needs a named target and an
     audit object whose target is that same target; an audit on none/escalate is tolerated if well formed and recorded."""
@@ -202,10 +211,10 @@ def validate_turn_v2(obj, tools_available=None):
     kind = obj.get('type')
     if kind == 'tool_call':
         errs += _key_errors(obj, ('type', 'tool', 'why', 'args'), 'tool_call')
-        if obj.get('tool') not in TOOLS:
-            errs.append('unknown tool %r' % (obj.get('tool'),))
-        elif tools_available is not None and obj.get('tool') not in tools_available:
-            errs.append('tool %r is not available for this case; available: %s' % (obj.get('tool'), list(tools_available)))
+        # A well-formed call to a tool the case does not offer is NOT an invalid reply: it is a protocol violation that the runner
+        # records and answers with an `unavailable` tool result (see tool_not_offered), so it needs no repair prompt.
+        if not (isinstance(obj.get('tool'), str) and obj['tool'].strip()):
+            errs.append('tool must be the name of a tool from tools_available')
         if not isinstance(obj.get('args'), dict):
             errs.append('args must be an object')
         if not isinstance(obj.get('why'), str) or len(obj.get('why', '')) > 200:
@@ -240,6 +249,76 @@ def validate_turn_v2(obj, tools_available=None):
                 errs.append('audit.target must equal target')
         return ('decision' if not errs else None), errs
     return None, ['"type" must be "tool_call" or "decision"']
+
+
+# ---- first-try failure modes (recorded on every rejected reply, generic) --------------------------------------------------
+# Observed on the checkpoint 1 baseline and the v2 drafts: a compound action string ("remap and rename"), a tool outside
+# tools_available, a stray `","}` close, a missing `type` key, keys copied from the tool-result envelope.  The modes are
+# diagnostics: a reply with any of them is invalid on the first try, and a later repaired reply never changes that.
+ENVELOPE_KEYS = ('status', 'output', 'truncated', 'tool_calls_remaining', 'id')
+REPAIR_HINTS = {
+    'compound_action': 'action must be exactly ONE value; if two different writes could be right, the action is escalate',
+    'missing_type': 'the first key must be "type":"tool_call" or "type":"decision"',
+    'envelope_keys_copied': 'do not copy fields of a tool result (status, output, truncated, tool_calls_remaining, id) into your reply',
+    'echoed_tool_result': 'a tool result is not a reply; reply with a tool_call or a decision',
+    'stray_comma_quote_close': 'close the last string with a single quote and then the brace, never with ","}',
+    'fence_wrapped': 'no markdown fence',
+    'prose_around_object': 'nothing before the opening brace or after the closing brace',
+    'stop_token': 'nothing after the closing brace',
+    'audit_missing': 'a write action needs the audit object as its last key',
+}
+
+
+def failure_modes(text, obj, errors, diag=None):
+    """Generic classification of a rejected reply -> sorted list of mode tags."""
+    modes = set()
+    diag = diag or {}
+    for tag in diag.get('salvageable_by') or []:
+        modes.add(tag.split(':')[0])
+    if diag.get('fence_wrapped'):
+        modes.add('fence_wrapped')
+    if obj is None:
+        if not (isinstance(text, str) and text.strip()):
+            modes.add('empty_reply')
+        elif not modes:
+            modes.add('not_json')
+        return sorted(modes)
+    if not isinstance(obj, dict):
+        modes.add('not_an_object')
+        return sorted(modes)
+    kind = obj.get('type')
+    if 'type' not in obj:
+        modes.add('missing_type')
+    elif kind == 'tool_result':
+        modes.add('echoed_tool_result')
+    elif kind not in ('tool_call', 'decision'):
+        modes.add('unknown_type')
+    if set(obj) & set(ENVELOPE_KEYS):
+        modes.add('envelope_keys_copied')
+    act = obj.get('action')
+    if kind == 'decision' or 'action' in obj:
+        if isinstance(act, str) and act not in ACTIONS:
+            named = [a for a in ACTIONS if a in act]
+            modes.add('compound_action' if len(named) >= 2 else 'unknown_action')
+        elif act is not None and not isinstance(act, str):
+            modes.add('unknown_action')
+        if obj.get('class') not in CLASSES:
+            modes.add('unknown_class')
+        if act in WRITE_ACTIONS:
+            if obj.get('audit') is None:
+                modes.add('audit_missing')
+            elif validate_audit(obj['audit']):
+                modes.add('audit_malformed')
+    if any('keys wrong' in e or 'keys must be' in e for e in errors or []):
+        modes.add('wrong_keys')
+    return sorted(modes)
+
+
+def repair_prompt(error, modes=()):
+    """The one repair prompt.  Generic text only: the validator error plus a fixed hint per failure mode."""
+    text = REPAIR_PROMPT.format(error=error)
+    hints = [REPAIR_HINTS[m] for m in modes if m in REPAIR_HINTS]
+    return text + (' Hints: ' + '; '.join(hints) + '.' if hints else '')
 
 
 def forced_decision(reason):
