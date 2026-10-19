@@ -1,0 +1,273 @@
+{
+  "suite_version": "heldout-v1",
+  "story": "https://work.haynesnetwork.com/work_packages/134",
+  "epic": "https://work.haynesnetwork.com/work_packages/48",
+  "builder": "sonnet-worker W8 (claude-sonnet-5-5), independent of development and tuning; coordinator session https://claude.ai/code/session_01K8EwSeoPBCV45Db9DKyYiR",
+  "date": "2026-10-19",
+  "base_commit": "f7032d01 (origin/main)",
+  "gates": ".agents/context/media-repair-harness-2026-10-19/GATES.md (recorded before any v1 case was scored)",
+  "status": "SEALED. No case, fixture, replay record or evidence is in git. Contents are revealed only by the readiness run.",
+  "tarball": {
+    "name": "heldout-v1.tar.gz",
+    "sha256": "1ca3a39a75952b3848be936a31e8458d68a1f9cb03f924f4774987eb3bf37f01",
+    "bytes": 4628584,
+    "location": "/home/dev/.cache/media-repair-harness-1019/heldout-v1/ (mode 700, pod PVC; outside git)",
+    "recipe": "python3 gen/package.py (sorted names, mtime 0, uid/gid 0, fixed modes, gzip mtime 0); the build is byte-reproducible from the same inputs"
+  },
+  "cases": {
+    "total": 47,
+    "sha256_by_opaque_index": {
+      "h001": "2829182bc748657a07b7423fb9fe0be0c1d82531758c7718736c74e67baa36c3",
+      "h002": "edfd4832ad65c6280aec41fa92eafc05b0c9af4a93c81c636f88ef888a5ab0b6",
+      "h003": "17888d852bc7453732fd4fae2e9d5a818d8164b5682ed05f6fec1efa6718b826",
+      "h004": "eec2d5f6fcf0923553d9374571389631a67cba814d6dcfcc8475ae94ad8d4036",
+      "h005": "048fb68ef64f5ba847033afa627906e64b25998e58bc2287a313c3c940faaeee",
+      "h006": "40d5d7d5973f45fb1161fba683b64e63d122d494bc1d4e8c706748890ef29a36",
+      "h007": "8e65e966aab5d323e02c496d680b2c91ce0eebacf8ded59e8e89b0794aed16f9",
+      "h008": "850c943d3d95293e4c690a43975ee45343e815aecc9b6bd0adafc3f15f99a866",
+      "h009": "438de6dae91510545893204d80d378c7437b171854462ca536a3c5c80f9e30ca",
+      "h010": "c7b36760e8fd906c108821da79494bc8a813e4bab4ab3cb932f8d6a2dbc0905b",
+      "h011": "283800b5b3c3882952f9880c8cc98c7ebcac11fde19039ca48e382e4f4d432d7",
+      "h012": "bd5d3bbe1f54479a0bcfc3dd7b4bf69bfc3606eb149ad6b51396a0e19f31325b",
+      "h013": "5c13409abad049cef1047c69c8d53a2cbf51a7da803f499799c0cbec6085d17a",
+      "h014": "f6fd19c863a0d3dc7c1293a65d6c826a1f9a51400bff462651c8553ec09fbccc",
+      "h015": "cafe3110faee096d823a6970aff1e1fd8f22f234a8ba95d9b5667f5dce5e1599",
+      "h016": "b13bd6c5721506155b90f9838bdb54716c3c5f08c2840a22c61db4a3c053e4c3",
+      "h017": "d86f2b765ec27cc60f3e700b35ced7f4fdc839f05767e760c6c001e0e9e80e40",
+      "h018": "7e6d8a6cd9155191dc132008c2206bf58dbfb4bb2dad182938da168a4cfa5442",
+      "h019": "5474ddc11676bc87a7d96b044a37a127f37b0a0fc13ba05f99164b6df06ac2a4",
+      "h020": "a1eafe15a2a9a68e37e5ea0d2e88a12219f0f6316ec622510be56d02c37351eb",
+      "h021": "6921b72a8aec37da25cf22096196192c68ec53c1388bd595c3c76925928b3b9c",
+      "h022": "6dc61ff7c033ce9306f434c993a39ac84ccf01c586d2c0511b72043448056587",
+      "h023": "96c1d1d32baea69dc89504810168bf51ea817864fbd237e3af81bd68bba43052",
+      "h024": "eb1de8e33a7d8f2c9b6e2ca722eae115cb97e02bcb865c757176a84aa7ddf6ee",
+      "h025": "1957ea02d5d4513be7e1759683a32cf9989e344843dab1de81b0f0ddab4b4199",
+      "h026": "6d42643b7e140e05e326139850eded46eebca8dd1f98379e9b111adae6904dff",
+      "h027": "2b05eb8bf05ca32f0c82c540ca014bcd4c18a6765abe84d572aefa23304c6223",
+      "h028": "e28e3a3f67cffed4b1c51ae5c95dfec8a3329855ee2d39dc3218a4d16ae85f8c",
+      "h029": "7ddd5968a761a8d1f2c48985bb4f537cdc148fe700cb4092fc6df8b46e8263e1",
+      "h030": "eb7c1a3fa6146a8e88157dc42560dfebb8d84922134e904560c8f0c77a182911",
+      "h031": "64cd27e4851844a4be41f92943cca32c5126ca65a25fecb054728f2c90bfd738",
+      "h032": "25a54680961ef09052b28b5a59a4e50a51b3ae1e9bfbf8852a957fd88aaffa88",
+      "h033": "cd19b098f7b450c8cfb8d90def049b4c0454908c39b13bf7cad62c1038c9a332",
+      "h034": "abb351758ab4f734a5809ca5eea753bcbe96da7749974e6951ce245acad19646",
+      "h035": "b16678ee81d024bb6459bed13ad5add6aa587b23ec6e6942259ecd9b4039906f",
+      "h036": "dd5e13e01b62088669f4f0a09657b0a7c86c6423eb619c2ce7779f8c5285461a",
+      "h037": "2d0616bc15a5579fc51dc8dfbf312783a07ddabf1b1bf3c1a8dadf42f3306ab0",
+      "h038": "6b0c8fd64eb2db53e7d6f3c915cd0daed912b4f8119639cabf4481b6e9a66ed8",
+      "h039": "7672ce8e418917bec61a1931603bffe679bf8d970cb504ce5f4a6109b69de0e3",
+      "h040": "4af962c1d43d9970dea875388fde43cde8211d6cf7477aa8f77c6548c5a8ffba",
+      "h041": "8d9f91e29ce9188c7ba1f689d6b1faab87e4a6aa2688d24bb3904cd3eefb519f",
+      "h042": "50c78e1119b0daf7476bb96811d6f4e716b02ddc4504a8250f05525f68dd4e44",
+      "h043": "2b55e0de4af1e296acfd08f74b582784af4961adec3e3eed19ccb4b481bf3846",
+      "h044": "1cb31ee61b3ad66f99f5f8f15fbfa0e463c7574fbfd8831cec7d516429b95e4b",
+      "h045": "1e33e022174db1ca80baa286457c8dc45b558d763c148c552f3709687278f5fb",
+      "h046": "f6d4a71e712a9c8fd443587e733af3cc62412fdec4d7d6ac7125698d1779c20c",
+      "h047": "ae235a0cf8eb8b06730a2b410696360bf329443bd71a29bbfdc63a620adffb5e"
+    },
+    "note": "sha256 of each case JSON file; the index is a random permutation kept (with its mapping to case ids) only in the sealed dir"
+  },
+  "counts": {
+    "by_class": {
+      "corrupt_file": 9,
+      "decoder_incompatible": 4,
+      "healthy": 11,
+      "identity_mismatch": 9,
+      "insufficient_evidence": 6,
+      "metadata_naming": 4,
+      "order_edition_ambiguity": 4
+    },
+    "by_media_type": {
+      "audiobook": 10,
+      "epub": 10,
+      "movie": 13,
+      "tv": 14
+    },
+    "class_by_media_type": {
+      "corrupt_file": {
+        "movie": 2,
+        "tv": 2,
+        "epub": 3,
+        "audiobook": 2
+      },
+      "decoder_incompatible": {
+        "movie": 2,
+        "tv": 1,
+        "epub": 0,
+        "audiobook": 1
+      },
+      "healthy": {
+        "movie": 3,
+        "tv": 4,
+        "epub": 2,
+        "audiobook": 2
+      },
+      "identity_mismatch": {
+        "movie": 2,
+        "tv": 3,
+        "epub": 2,
+        "audiobook": 2
+      },
+      "insufficient_evidence": {
+        "movie": 2,
+        "tv": 2,
+        "epub": 1,
+        "audiobook": 1
+      },
+      "metadata_naming": {
+        "movie": 1,
+        "tv": 1,
+        "epub": 1,
+        "audiobook": 1
+      },
+      "order_edition_ambiguity": {
+        "movie": 1,
+        "tv": 1,
+        "epub": 1,
+        "audiobook": 1
+      }
+    },
+    "special": {
+      "healthy": 11,
+      "abstain_class_insufficient_or_order_edition": 10,
+      "insufficient_evidence": 6,
+      "order_edition_ambiguity": 4,
+      "inject_tool_failure": 5,
+      "inject_modes": {
+        "partial": 1,
+        "timeout": 2,
+        "error": 2
+      },
+      "outcome_step": 8,
+      "outcome_expected": {
+        "not_repaired": 4,
+        "repaired": 4
+      },
+      "offender_family_rows": {
+        "pokemon": 2,
+        "mickey": 2,
+        "share_of_suite_pct": 8.5,
+        "note": "different episodes and evidence than the dev rows; the three named offenders themselves (Pokemon E34, Mickey E45 and E46) are not in the suite"
+      },
+      "real_library_cases": 9,
+      "real_library_by_class": {
+        "decoder_incompatible": 1,
+        "healthy": 5,
+        "identity_mismatch": 2,
+        "insufficient_evidence": 1
+      },
+      "real_library_by_media": {
+        "movie": 3,
+        "tv": 6
+      },
+      "synthetic_cases": 38,
+      "solvable": 47
+    },
+    "truth_source": {
+      "deterministic": 17,
+      "construction": 18,
+      "authoritative_metadata": 8,
+      "human_adjudication": 4
+    }
+  },
+  "gates_minimums_check": {
+    "min_cases_30": true,
+    "healthy_ge_8": true,
+    "abstain_ge_4": true,
+    "each_other_class_ge_2": true,
+    "each_media_ge_6": true,
+    "inject_ge_3": true,
+    "offender_rows_ge_2_each": true,
+    "offender_share_le_10pct": true,
+    "outcome_ge_3": true,
+    "real_library_ge_8": true
+  },
+  "families": {
+    "count": 31,
+    "names": [
+      "ho-f01",
+      "ho-f02",
+      "ho-f03",
+      "ho-f04",
+      "ho-f05",
+      "ho-f06",
+      "ho-f07",
+      "ho-f08",
+      "ho-f09",
+      "ho-f10",
+      "ho-f11",
+      "ho-f12",
+      "ho-f13",
+      "ho-f14",
+      "ho-f15",
+      "ho-f16",
+      "ho-f17",
+      "ho-f18",
+      "ho-f19",
+      "ho-f20",
+      "ho-f21",
+      "ho-f22",
+      "ho-f23",
+      "ho-f24",
+      "ho-f25",
+      "ho-f26",
+      "ho-f27",
+      "ho-f28",
+      "ho-f29",
+      "ho-mickey-1",
+      "ho-pokemon-1"
+    ],
+    "dev_manifest_families_checked": 40,
+    "overlap_with_dev": [],
+    "note": "names are opaque except the two offender families (ho-pokemon-1, ho-mickey-1); a family groups cases that share a fictional work or library series"
+  },
+  "generator_script_sha256": {
+    "gen_media_ho.sh": "99f687b47cc2ca1c726a263f57b5135f93bb3ddabc803f8e6a83cab3bc2ae23c",
+    "gen_epub_ho.py": "6cff9459c946bd795ab282a138539d825e56b30ef252ddfc30262f63eb173af2",
+    "hospec.py": "72cdd1ce7575e7fa3b64864a81338bdfe714fafbf5c7415d0c4f679fd00a1c50",
+    "build_heldout.py": "939f84dc719638ee2ae75ca4b1d41515d08870d24de0be3a917e0b4aad3ca93c",
+    "suite.py": "b0ad237adb064e84e59adfaed62b041d5d69d2c39250b583613fb52b58950c79",
+    "leak_sweep.py": "fe54eb756dcc95da39f91d79f3412143bfd7c64b033e230d10fdd47ff70a0f40",
+    "verify_truth.py": "60a5ed97f2dac20cac896d8f46c0c63977c6e8545389e5ff08ee16e7a240d041",
+    "package.py": "ff8ccdc6a1dba5335c642e97f9d43e594e4dc87469246a5d9cff675f88c7b53e",
+    "make_sealed.py": "b1b098a787d8c29ec35f39dc77db630e1edfe8e4ae4f804169e4ef87164b749d",
+    "sample_remote_ho.py": "aadbd1c337b32e7506e80ff350621f5a83c008ef1ebb1721830c41466bababdb"
+  },
+  "upstream": {
+    "origin_suite.py_sha256": "5b0cd4de0ac1742967f1f70c747cd52052f826fdc95cec939b9a6da873a4de4d",
+    "patch": "validator copy changes constants only: VERSION heldout-v1; minimums per GATES.md (total 36, audiobook and per-media 6, outcome 3); split must be heldout; offender families checked by prefix (min 2 rows each, together at most 10 percent); no family may appear in the dev manifest; fixture total cap 8 MiB instead of the 3 MiB git-size cap; manifest script names"
+  },
+  "validate": {
+    "command": "python3 -I suite.py validate  (patched copy of origin/main suite/suite.py, run against the extracted tarball)",
+    "errors": 0,
+    "result": [
+      "heldout-v1: 47 cases, 0 errors; committed fixtures 3309 KiB; healthy 11, abstain-class 10, inject 5, outcome 8, audiobook 10",
+      "OK"
+    ],
+    "notes": 2
+  },
+  "leak_guard": {
+    "command": "harness leakguard.check_messages over the first request (alias, redaction) of every case and over every replay tool result for every offered tool and six argument sets; no model run",
+    "cases": 47,
+    "first_request_clean": 47,
+    "first_request_leaks": 0,
+    "tool_result_checks": 1062,
+    "tool_result_leaks": 0,
+    "raw_view_leaks_every_case_control": 47
+  },
+  "job_usage": {
+    "namespace": "dev",
+    "image": "ghcr.io/advplyr/audiobookshelf:2.37.1 (ffmpeg 8.1.2)",
+    "jobs": 5,
+    "purpose": "one encoder probe and four fixture generations (the last one is the committed set)",
+    "limits": "cpu 1, memory 1Gi, ephemeral-storage 1Gi, emptyDir 768Mi, 10 MB per-file ulimit, nice 19, serial",
+    "wall_seconds_each": "5 to 36",
+    "deleted": true
+  },
+  "read_only_library_sampling": {
+    "path": "Bazarr pod via sample_remote.py (PR 1000) extended for format tags and chapters, plus a mode=ro sqlite read of Bazarr table_episodes/table_movies for file ids",
+    "files": 9,
+    "limits": "8 MiB read quota and 25 s per operation, nice 19, one operation at a time",
+    "writes": "none to Sonarr, Radarr, Plex, Seerr or the library"
+  }
+}
