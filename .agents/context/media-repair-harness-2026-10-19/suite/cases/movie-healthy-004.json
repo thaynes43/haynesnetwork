@@ -1,0 +1,91 @@
+{
+ "id": "movie-healthy-004",
+ "suite_version": "dev-v1",
+ "split": "dev",
+ "media_type": "movie",
+ "family": "qo-edition",
+ "truth": {
+  "class": "healthy",
+  "source": "authoritative_metadata",
+  "ref": "the 12 s file is longer than the 8 s theatrical runtime, but the library monitors the Extended Cut (12 s) and the card says EXTENDED CUT; settled by metadata; replay fixtures/probes/qo_ext.mkv.json sha256 ecd35a2363cd"
+ },
+ "supported_actions": [
+  "none"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Quiet Orbit (2019)",
+  "filename": "Quiet Orbit (2019) {edition-Extended Cut}.mkv",
+  "expected": {
+   "title": "Quiet Orbit",
+   "year": 2019,
+   "edition": "Extended Cut",
+   "runtime_s": 12,
+   "language": "en"
+  },
+  "arr": {
+   "app": "radarr",
+   "ids": {
+    "movieId": 990301,
+    "movieFileId": 990401,
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "16119c75d0ccb07e5fd50cff28ceecad70d05d83b8a9515f2c1dd9c85b059422",
+  "bytes": 131135,
+  "locator": "fixtures/media/qo_ext.mkv"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"chapters\":[],\"exit_code\":0,\"format\":{\"bit_rate\":\"87089\",\"duration\":\"12.046000\",\"format_name\":\"matroska,webm\",\"size\":\"131135\",\"tags\":{\"title\":\"Quiet Orbit\"}},\"stderr\":\"\",\"streams\":[{\"codec_name\":\"h264\",\"codec_type\":\"video\",\"height\":192,\"index\":0,\"pix_fmt\":\"yuv420p\",\"profile\":\"High\",\"tags\":{},\"width\":256},{\"channels\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"index\":1,\"profile\":\"LC\",\"sample_rate\":\"22050\",\"tags\":{}}]}"
+  },
+  {
+   "id": "e2",
+   "tool": "decode_sample",
+   "args": {
+    "ss": 0,
+    "t": 4
+   },
+   "status": "ok",
+   "output": "{\"exit_code\":0,\"frames\":40,\"out_time\":\"00:00:04.000000\",\"ss\":0,\"stderr\":\"\",\"t\":4}"
+  },
+  {
+   "id": "e3",
+   "tool": "ocr",
+   "args": {
+    "t": 1.0
+   },
+   "status": "ok",
+   "output": "QUIET ORBIT / EXTENDED CUT"
+  },
+  {
+   "id": "e4",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "radarr",
+    "movie": "Quiet Orbit"
+   },
+   "status": "ok",
+   "output": "{\"alternate_titles\":[\"Orbite Silencieuse\"],\"app\":\"radarr\",\"editions\":{\"Extended Cut\":{\"runtime_s\":12},\"Theatrical\":{\"runtime_s\":8}},\"file\":{\"relativePath\":\"Quiet Orbit (2019) {edition-Extended Cut}.mkv\",\"size\":131135},\"monitored_edition\":\"Extended Cut\",\"movie\":\"Quiet Orbit\",\"year\":2019}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "decode_sample",
+  "frame_sample",
+  "audio_sample",
+  "ocr",
+  "arr_lookup"
+ ],
+ "provenance": "new"
+}

@@ -1,0 +1,95 @@
+{
+ "id": "tv-identity-003",
+ "suite_version": "dev-v1",
+ "split": "dev",
+ "media_type": "tv",
+ "family": "hl-e03-as-e04",
+ "truth": {
+  "class": "identity_mismatch",
+  "source": "deterministic",
+  "ref": "the entry is E04 'Night Ferry' but the content (card, tags, chapters) is E03 'The Salt Wind'; wrong release for this entry; replay fixtures/probes/hl_e03.mkv.json sha256 8282a42362da"
+ },
+ "supported_actions": [
+  "blocklist_and_search"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Harbor Lights S01E04",
+  "filename": "Harbor Lights - S01E04 - Night Ferry.mkv",
+  "expected": {
+   "series": "Harbor Lights",
+   "season": 1,
+   "episode": 4,
+   "episode_title": "Night Ferry",
+   "runtime_s": 8,
+   "language": "en"
+  },
+  "arr": {
+   "app": "sonarr",
+   "ids": {
+    "seriesId": 990001,
+    "episodeId": 990104,
+    "episodeFileId": 990204,
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "533b1f8b2faf1d095d6b38f8d009c88f857d8ad09742671937fbc653ee0509b0",
+  "bytes": 89938,
+  "locator": "fixtures/media/hl_e03.mkv"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"chapters\":[{\"end\":\"2.000000\",\"start\":\"0.000000\",\"title\":\"Cold open\"},{\"end\":\"8.000000\",\"start\":\"2.000000\",\"title\":\"The Salt Wind\"}],\"exit_code\":0,\"format\":{\"bit_rate\":\"89423\",\"duration\":\"8.046000\",\"format_name\":\"matroska,webm\",\"size\":\"89938\",\"tags\":{\"episode_sort\":\"3\",\"season_number\":\"1\",\"show\":\"Harbor Lights\",\"title\":\"The Salt Wind\"}},\"stderr\":\"\",\"streams\":[{\"codec_name\":\"h264\",\"codec_type\":\"video\",\"height\":192,\"index\":0,\"pix_fmt\":\"yuv420p\",\"profile\":\"High\",\"tags\":{},\"width\":256},{\"channels\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"index\":1,\"profile\":\"LC\",\"sample_rate\":\"22050\",\"tags\":{}}]}"
+  },
+  {
+   "id": "e2",
+   "tool": "decode_sample",
+   "args": {
+    "ss": 0,
+    "t": 4
+   },
+   "status": "ok",
+   "output": "{\"exit_code\":0,\"frames\":40,\"out_time\":\"00:00:04.000000\",\"ss\":0,\"stderr\":\"\",\"t\":4}"
+  },
+  {
+   "id": "e3",
+   "tool": "ocr",
+   "args": {
+    "t": 1.0
+   },
+   "status": "ok",
+   "output": "HARBOR LIGHTS / S01E03 / THE SALT WIND"
+  },
+  {
+   "id": "e4",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "sonarr",
+    "series": "Harbor Lights",
+    "season": 1,
+    "episode": 4
+   },
+   "status": "ok",
+   "output": "{\"app\":\"sonarr\",\"episode\":{\"episode\":4,\"runtime_s\":8,\"season\":1,\"title\":\"Night Ferry\"},\"file\":{\"relativePath\":\"Harbor Lights - S01E04 - Night Ferry.mkv\",\"size\":89938},\"series\":\"Harbor Lights\",\"series_order\":\"aired\"}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "decode_sample",
+  "frame_sample",
+  "audio_sample",
+  "ocr",
+  "arr_lookup"
+ ],
+ "provenance": "new"
+}

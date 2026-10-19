@@ -1,0 +1,102 @@
+{
+ "bytes": 68192,
+ "decode_sample": {
+  "0": {
+   "exit_code": 0,
+   "frames": 40,
+   "out_time": "00:00:04.000000",
+   "ss": 0,
+   "stderr": "",
+   "t": 4
+  },
+  "12": {
+   "exit_code": 0,
+   "frames": 0,
+   "out_time": null,
+   "ss": 12,
+   "stderr": "",
+   "t": 4
+  },
+  "4": {
+   "exit_code": 0,
+   "frames": 20,
+   "out_time": "00:00:02.000000",
+   "ss": 4,
+   "stderr": "",
+   "t": 4
+  },
+  "8": {
+   "exit_code": 0,
+   "frames": 0,
+   "out_time": null,
+   "ss": 8,
+   "stderr": "",
+   "t": 4
+  },
+  "full": {
+   "exit_code": 0,
+   "frames": 60,
+   "out_time": "00:00:06.000000",
+   "stderr": ""
+  }
+ },
+ "ffprobe": {
+  "chapters": [
+   {
+    "end": "2.000000",
+    "start": "0.000000",
+    "title": "Cold open"
+   },
+   {
+    "end": "6.000000",
+    "start": "2.000000",
+    "title": "Gull Rock"
+   }
+  ],
+  "exit_code": 0,
+  "format": {
+   "bit_rate": "90230",
+   "duration": "6.046000",
+   "format_name": "matroska,webm",
+   "size": "68192",
+   "tags": {
+    "episode_sort": "6",
+    "season_number": "1",
+    "show": "Harbor Lights",
+    "title": "Gull Rock"
+   }
+  },
+  "stderr": "",
+  "streams": [
+   {
+    "codec_name": "h264",
+    "codec_type": "video",
+    "height": 192,
+    "index": 0,
+    "pix_fmt": "yuv420p10le",
+    "profile": "High 10",
+    "tags": {},
+    "width": 256
+   },
+   {
+    "channels": 1,
+    "codec_name": "aac",
+    "codec_type": "audio",
+    "index": 1,
+    "profile": "LC",
+    "sample_rate": "22050",
+    "tags": {}
+   }
+  ]
+ },
+ "fixture": "hl_e06_hi10.mkv",
+ "frame_text": [
+  {
+   "t0": 0,
+   "t1": 2,
+   "text": "HARBOR LIGHTS / S01E06 / GULL ROCK"
+  }
+ ],
+ "sha256": "87c7db22ac940d4a39f112880e9d54f681a9adc47150ef5233b7023dcaf08054",
+ "tool_version": "ffmpeg/ffprobe 8.1.2 (audiobookshelf 2.37.1 image)"
+}

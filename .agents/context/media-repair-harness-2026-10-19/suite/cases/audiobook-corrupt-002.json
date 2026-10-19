@@ -1,0 +1,66 @@
+{
+ "id": "audiobook-corrupt-002",
+ "suite_version": "dev-v1",
+ "split": "dev",
+ "media_type": "audiobook",
+ "family": "lr-corrupt",
+ "truth": {
+  "class": "corrupt_file",
+  "source": "deterministic",
+  "ref": "mp3 whose ID3 tags and chapters were written but no audio frames: ffprobe 'Failed to find two consecutive MPEG audio frames', exit 1 (zero-length audio); expected 20 s; replay fixtures/probes/lr_empty.mp3.json sha256 d3509871af26"
+ },
+ "supported_actions": [
+  "blocklist_and_search"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "The Lantern Road (audiobook)",
+  "filename": "The Lantern Road.mp3",
+  "expected": {
+   "title": "The Lantern Road",
+   "author": "Mira Tolland",
+   "narrator": "Ellis Marr",
+   "duration_s": 20,
+   "chapters": 4,
+   "language": "en"
+  },
+  "arr": {
+   "app": null,
+   "ids": {}
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "8e9b5e893d70370869eb2a6f022930c7535c3f8e2f8d0a6e2ba720a0f25a2192",
+  "bytes": 443,
+  "locator": "fixtures/media/lr_empty.mp3"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "error",
+   "output": "{\"exit_code\":1,\"stderr\":\"[mp3 @ 0x0] Failed to find two consecutive MPEG audio frames.\\nmedia/lr_empty.mp3: Invalid data found when processing input\"}"
+  },
+  {
+   "id": "e2",
+   "tool": "arr_lookup",
+   "args": {
+    "work": "The Lantern Road"
+   },
+   "status": "ok",
+   "output": "{\"app\":\"audiobook-metadata\",\"authors\":[\"Mira Tolland\"],\"chapter_titles\":[\"Opening Credits\",\"Chapter 1 Rain\",\"Chapter 2 Salt\",\"Chapter 3 Lanterns\"],\"narrators\":[\"Ellis Marr\"],\"runtime_s\":20,\"work\":\"The Lantern Road\"}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "audiobook_inspect",
+  "audio_sample",
+  "arr_lookup"
+ ],
+ "provenance": "new"
+}

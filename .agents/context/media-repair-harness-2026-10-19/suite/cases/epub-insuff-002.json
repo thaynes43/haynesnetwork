@@ -1,0 +1,62 @@
+{
+ "id": "epub-insuff-002",
+ "suite_version": "dev-v1",
+ "split": "dev",
+ "media_type": "epub",
+ "family": "lr-epub-french",
+ "truth": {
+  "class": "insufficient_evidence",
+  "source": "construction",
+  "ref": "OPF title 'La Route des Lanternes', language fr, same creator; the record lists no alias or translation, so whether this is the same work in translation (a different edition) cannot be shown from the evidence"
+ },
+ "supported_actions": [
+  "escalate"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "The Lantern Road",
+  "filename": "Mira Tolland - La Route des Lanternes.epub",
+  "expected": {
+   "title": "The Lantern Road",
+   "author": "Mira Tolland",
+   "language": "en"
+  },
+  "arr": {
+   "app": null,
+   "ids": {}
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "0bb960ef1ad5b1a36e32d96361f96586f8a585c703ab3146342544d9b40ca32a",
+  "bytes": 2186,
+  "locator": "fixtures/media/lr_french.epub"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "epub_inspect",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"bytes\":2186,\"dc_creator\":[\"Mira Tolland\"],\"dc_language\":[\"fr\"],\"dc_title\":[\"La Route des Lanternes\"],\"entries\":6,\"opf\":\"OEBPS/content.opf\",\"spine_characters\":486,\"spine_heads\":[\"Chapitre 1: La pluie Chapitre 1:\",\"Chapitre 2: Le sel Chapitre 2:\"],\"spine_items\":2,\"status\":\"ok\"}"
+  },
+  {
+   "id": "e2",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "readarr-like",
+    "work": "The Lantern Road"
+   },
+   "status": "ok",
+   "output": "{\"aliases\":[],\"app\":\"readarr-like\",\"authors\":[\"Mira Tolland\"],\"language\":\"en\",\"series\":\"Lantern Cycle\",\"series_position\":1,\"work\":\"The Lantern Road\"}"
+  }
+ ],
+ "tools_available": [
+  "epub_inspect",
+  "arr_lookup"
+ ],
+ "provenance": "new"
+}

@@ -1,0 +1,125 @@
+{
+ "bytes": 116257,
+ "decode_sample": {
+  "0": {
+   "exit_code": 0,
+   "frames": 40,
+   "out_time": "00:00:04.000000",
+   "ss": 0,
+   "stderr": "",
+   "t": 4
+  },
+  "12": {
+   "exit_code": 0,
+   "frames": 0,
+   "out_time": null,
+   "ss": 12,
+   "stderr": "",
+   "t": 4
+  },
+  "4": {
+   "exit_code": 0,
+   "frames": 40,
+   "out_time": "00:00:04.000000",
+   "ss": 4,
+   "stderr": "",
+   "t": 4
+  },
+  "8": {
+   "exit_code": 0,
+   "frames": 0,
+   "out_time": null,
+   "ss": 8,
+   "stderr": "",
+   "t": 4
+  },
+  "full": {
+   "exit_code": 0,
+   "frames": 80,
+   "out_time": "00:00:08.000000",
+   "stderr": ""
+  }
+ },
+ "ffprobe": {
+  "chapters": [
+   {
+    "end": "2.000000",
+    "start": "0.000000",
+    "title": "Cold open"
+   },
+   {
+    "end": "8.000000",
+    "start": "2.000000",
+    "title": "Low Tide"
+   }
+  ],
+  "exit_code": 0,
+  "format": {
+   "bit_rate": "115592",
+   "duration": "8.046000",
+   "format_name": "matroska,webm",
+   "size": "116257",
+   "tags": {
+    "episode_sort": "1",
+    "season_number": "1",
+    "show": "Harbor Lights",
+    "title": "Low Tide"
+   }
+  },
+  "stderr": "",
+  "streams": [
+   {
+    "codec_name": "h264",
+    "codec_type": "video",
+    "height": 192,
+    "index": 0,
+    "pix_fmt": "yuv420p",
+    "profile": "High",
+    "tags": {},
+    "width": 256
+   },
+   {
+    "channels": 1,
+    "codec_name": "aac",
+    "codec_type": "audio",
+    "index": 1,
+    "profile": "LC",
+    "sample_rate": "22050",
+    "tags": {
+     "language": "eng",
+     "title": "English 2.0"
+    }
+   },
+   {
+    "channels": 1,
+    "codec_name": "aac",
+    "codec_type": "audio",
+    "index": 2,
+    "profile": "LC",
+    "sample_rate": "22050",
+    "tags": {
+     "language": "eng",
+     "title": "Director commentary"
+    }
+   },
+   {
+    "codec_name": "subrip",
+    "codec_type": "subtitle",
+    "index": 3,
+    "tags": {
+     "language": "eng"
+    }
+   }
+  ]
+ },
+ "fixture": "hl_e01_multi.mkv",
+ "frame_text": [
+  {
+   "t0": 0,
+   "t1": 2,
+   "text": "HARBOR LIGHTS / S01E01 / LOW TIDE"
+  }
+ ],
+ "sha256": "6068caedb005ebdf3243454163045c6ccb0e2836879ac5b902ddad36c250fae9",
+ "tool_version": "ffmpeg/ffprobe 8.1.2 (audiobookshelf 2.37.1 image)"
+}

@@ -1,0 +1,98 @@
+{
+ "bytes": 80875,
+ "decode_sample": {
+  "0": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:04.000000",
+   "ss": 0,
+   "stderr": "",
+   "t": 4
+  },
+  "12": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:04.000000",
+   "ss": 12,
+   "stderr": "",
+   "t": 4
+  },
+  "4": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:04.000000",
+   "ss": 4,
+   "stderr": "",
+   "t": 4
+  },
+  "8": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:04.000000",
+   "ss": 8,
+   "stderr": "",
+   "t": 4
+  },
+  "full": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:20.000000",
+   "stderr": ""
+  }
+ },
+ "ffprobe": {
+  "chapters": [
+   {
+    "end": "5.000000",
+    "start": "0.000000",
+    "title": "Opening Credits"
+   },
+   {
+    "end": "10.000000",
+    "start": "5.000000",
+    "title": "Chapter 1 Rain"
+   },
+   {
+    "end": "15.000000",
+    "start": "10.000000",
+    "title": "Chapter 2 Salt"
+   },
+   {
+    "end": "20.000000",
+    "start": "15.000000",
+    "title": "Chapter 3 Lanterns"
+   }
+  ],
+  "exit_code": 0,
+  "format": {
+   "bit_rate": "32350",
+   "duration": "20.000000",
+   "format_name": "mp3",
+   "size": "80875",
+   "tags": {
+    "album": "The Lantern Road",
+    "artist": "Mira Tolland",
+    "composer": "Ellis Marr",
+    "date": "2019",
+    "genre": "Audiobook",
+    "title": "The Lantern Road"
+   }
+  },
+  "stderr": "",
+  "streams": [
+   {
+    "bit_rate": "32000",
+    "channels": 1,
+    "codec_name": "mp3",
+    "codec_type": "audio",
+    "index": 0,
+    "sample_rate": "22050",
+    "tags": {}
+   }
+  ]
+ },
+ "fixture": "lr.mp3",
+ "frame_text": "no text visible in any sampled frame (construction: no title card was drawn)",
+ "sha256": "9c4dadee81e2ed015b77a610f3cfa636c631793f967379585801711fecd65d14",
+ "tool_version": "ffmpeg/ffprobe 8.1.2 (audiobookshelf 2.37.1 image)"
+}

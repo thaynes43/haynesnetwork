@@ -1,0 +1,92 @@
+{
+ "id": "movie-decoder-001",
+ "suite_version": "dev-v1",
+ "split": "dev",
+ "media_type": "movie",
+ "family": "zom",
+ "truth": {
+  "class": "decoder_incompatible",
+  "source": "deterministic",
+  "ref": "deterministic comparison of ffprobe streams (eac3 6 channels) with the defined profile (aac, <=2 channels): refused by the profile although ffmpeg decodes it cleanly (primary range exit 0); profile is a test definition, not a real client"
+ },
+ "supported_actions": [
+  "convert"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Zom 100: Bucket List of the Dead (2023)",
+  "expected": {
+   "title": "Zom 100: Bucket List of the Dead",
+   "year": 2023,
+   "client_profile": {
+    "definition": "hypothetical exact direct-play profile, not a measured Plex/browser client",
+    "containers": [
+     "matroska,webm"
+    ],
+    "video_codec": "h264",
+    "video_pix_fmt": "yuv420p",
+    "max_width": 1920,
+    "max_height": 1080,
+    "audio_codecs": [
+     "aac"
+    ],
+    "max_audio_channels": 2,
+    "subtitles": "disabled"
+   }
+  },
+  "arr": {
+   "app": "radarr",
+   "ids": {
+    "movieId": 9830,
+    "movieFileId": 6337
+   }
+  },
+  "question": "Can the defined client direct-play this file?",
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "remote",
+  "sha256": "10f0b86d94f5f28cb55625df6b978e29b8b829db809ff051cdc09ab72f5f45e0",
+  "bytes": 5555730978,
+  "locator": "radarr movie 9830 file 6337 (5555730978 B); sha256 is of the pinned observation record cases.json a04, not of the media"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "remote"
+   },
+   "status": "ok",
+   "output": "{\"streams\":{\"container\":\"matroska,webm\",\"selected_audio\":{\"channels\":6,\"codec_name\":\"eac3\",\"codec_type\":\"audio\",\"profile\":\"Dolby Digital Plus + Dolby Atmos\",\"tags\":{\"language\":\"jpn\"}},\"video\":{\"codec_name\":\"h264\",\"codec_type\":\"video\",\"height\":1080,\"pix_fmt\":\"yuv420p\",\"profile\":\"Main\",\"width\":1920}}}"
+  },
+  {
+   "id": "e2",
+   "tool": "decode_sample",
+   "args": {
+    "ss": 0,
+    "t": 4
+   },
+   "status": "ok",
+   "output": "{\"bytes_read\":6592732,\"duration_limit_seconds\":4,\"exit_code\":0,\"quota_exhausted\":false,\"stderr\":\"\"}"
+  },
+  {
+   "id": "e3",
+   "tool": "prior_record",
+   "args": {
+    "what": "client profile"
+   },
+   "status": "ok",
+   "output": "{\"audio_codecs\":[\"aac\"],\"containers\":[\"matroska,webm\"],\"definition\":\"hypothetical exact direct-play profile, not a measured Plex/browser client\",\"max_audio_channels\":2,\"max_height\":1080,\"max_width\":1920,\"subtitles\":\"disabled\",\"video_codec\":\"h264\",\"video_pix_fmt\":\"yuv420p\"}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "decode_sample",
+  "frame_sample",
+  "audio_sample",
+  "ocr",
+  "arr_lookup"
+ ],
+ "provenance": "reused from .agents/context/media-repair-av-2026-10-18/cases.json@9285641a a04, re-framed from identity to the defined-profile compatibility axis it also recorded"
+}

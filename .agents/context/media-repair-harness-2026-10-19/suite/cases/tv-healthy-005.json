@@ -1,0 +1,86 @@
+{
+ "id": "tv-healthy-005",
+ "suite_version": "dev-v1",
+ "split": "dev",
+ "media_type": "tv",
+ "family": "hl-e01",
+ "truth": {
+  "class": "healthy",
+  "source": "construction",
+  "ref": "extra audio track (commentary) and a subtitle stream make the file look unusual; content, tags and chapters are E01 and decode is clean; replay fixtures/probes/hl_e01_multi.mkv.json sha256 3c35a9d3b080"
+ },
+ "supported_actions": [
+  "none"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Harbor Lights S01E01",
+  "filename": "Harbor Lights - S01E01 - Low Tide.mkv",
+  "expected": {
+   "series": "Harbor Lights",
+   "season": 1,
+   "episode": 1,
+   "episode_title": "Low Tide",
+   "runtime_s": 8,
+   "language": "en"
+  },
+  "arr": {
+   "app": "sonarr",
+   "ids": {
+    "seriesId": 990001,
+    "episodeId": 990101,
+    "episodeFileId": 990201,
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "6068caedb005ebdf3243454163045c6ccb0e2836879ac5b902ddad36c250fae9",
+  "bytes": 116257,
+  "locator": "fixtures/media/hl_e01_multi.mkv"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"chapters\":[{\"end\":\"2.000000\",\"start\":\"0.000000\",\"title\":\"Cold open\"},{\"end\":\"8.000000\",\"start\":\"2.000000\",\"title\":\"Low Tide\"}],\"exit_code\":0,\"format\":{\"bit_rate\":\"115592\",\"duration\":\"8.046000\",\"format_name\":\"matroska,webm\",\"size\":\"116257\",\"tags\":{\"episode_sort\":\"1\",\"season_number\":\"1\",\"show\":\"Harbor Lights\",\"title\":\"Low Tide\"}},\"stderr\":\"\",\"streams\":[{\"codec_name\":\"h264\",\"codec_type\":\"video\",\"height\":192,\"index\":0,\"pix_fmt\":\"yuv420p\",\"profile\":\"High\",\"tags\":{},\"width\":256},{\"channels\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"index\":1,\"profile\":\"LC\",\"sample_rate\":\"22050\",\"tags\":{\"language\":\"eng\",\"title\":\"English 2.0\"}},{\"channels\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"index\":2,\"profile\":\"LC\",\"sample_rate\":\"22050\",\"tags\":{\"language\":\"eng\",\"title\":\"Director commentary\"}},{\"codec_name\":\"subrip\",\"codec_type\":\"subtitle\",\"index\":3,\"tags\":{\"language\":\"eng\"}}]}"
+  },
+  {
+   "id": "e2",
+   "tool": "decode_sample",
+   "args": {
+    "ss": 0,
+    "t": 4
+   },
+   "status": "ok",
+   "output": "{\"exit_code\":0,\"frames\":40,\"out_time\":\"00:00:04.000000\",\"ss\":0,\"stderr\":\"\",\"t\":4}"
+  },
+  {
+   "id": "e3",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "sonarr",
+    "series": "Harbor Lights",
+    "season": 1,
+    "episode": 1
+   },
+   "status": "ok",
+   "output": "{\"app\":\"sonarr\",\"episode\":{\"episode\":1,\"runtime_s\":8,\"season\":1,\"title\":\"Low Tide\"},\"file\":{\"relativePath\":\"Harbor Lights - S01E01 - Low Tide.mkv\",\"size\":116257},\"series\":\"Harbor Lights\",\"series_order\":\"aired\"}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "decode_sample",
+  "frame_sample",
+  "audio_sample",
+  "ocr",
+  "arr_lookup"
+ ],
+ "provenance": "new"
+}

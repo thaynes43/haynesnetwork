@@ -1,0 +1,80 @@
+{
+ "bytes": 29481,
+ "decode_sample": {
+  "0": {
+   "exit_code": 0,
+   "frames": 40,
+   "out_time": "00:00:04.000000",
+   "ss": 0,
+   "stderr": "",
+   "t": 4
+  },
+  "12": {
+   "exit_code": 0,
+   "frames": 0,
+   "out_time": null,
+   "ss": 12,
+   "stderr": "",
+   "t": 4
+  },
+  "4": {
+   "exit_code": 0,
+   "frames": 20,
+   "out_time": "00:00:02.000000",
+   "ss": 4,
+   "stderr": "",
+   "t": 4
+  },
+  "8": {
+   "exit_code": 0,
+   "frames": 0,
+   "out_time": null,
+   "ss": 8,
+   "stderr": "",
+   "t": 4
+  },
+  "full": {
+   "exit_code": 0,
+   "frames": 60,
+   "out_time": "00:00:06.000000",
+   "stderr": ""
+  }
+ },
+ "ffprobe": {
+  "chapters": [],
+  "exit_code": 0,
+  "format": {
+   "bit_rate": "39308",
+   "duration": "6.000000",
+   "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+   "size": "29481",
+   "tags": {}
+  },
+  "stderr": "",
+  "streams": [
+   {
+    "bit_rate": "37193",
+    "codec_name": "h264",
+    "codec_type": "video",
+    "height": 192,
+    "index": 0,
+    "pix_fmt": "yuv420p",
+    "profile": "High",
+    "tags": {
+     "language": "und"
+    },
+    "width": 256
+   }
+  ]
+ },
+ "fixture": "qo_conv_noaudio.mp4",
+ "frame_text": [
+  {
+   "t0": 0,
+   "t1": 2,
+   "text": "QUIET ORBIT"
+  }
+ ],
+ "sha256": "124e3c967b3440f8c9413ac608f27050be3198ca53e5055aec11697d6fd31257",
+ "tool_version": "ffmpeg/ffprobe 8.1.2 (audiobookshelf 2.37.1 image)"
+}

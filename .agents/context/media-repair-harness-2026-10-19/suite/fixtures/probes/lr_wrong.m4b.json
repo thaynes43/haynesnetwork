@@ -1,0 +1,99 @@
+{
+ "bytes": 39164,
+ "decode_sample": {
+  "0": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:04.000000",
+   "ss": 0,
+   "stderr": "",
+   "t": 4
+  },
+  "12": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:00.027937",
+   "ss": 12,
+   "stderr": "",
+   "t": 4
+  },
+  "4": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:04.000000",
+   "ss": 4,
+   "stderr": "",
+   "t": 4
+  },
+  "8": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:04.000000",
+   "ss": 8,
+   "stderr": "",
+   "t": 4
+  },
+  "full": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:12.027937",
+   "stderr": ""
+  }
+ },
+ "ffprobe": {
+  "chapters": [
+   {
+    "end": "3.000000",
+    "start": "0.000000",
+    "title": "Prologue"
+   },
+   {
+    "end": "6.000000",
+    "start": "3.000000",
+    "title": "Chapter 1 Ashes"
+   },
+   {
+    "end": "9.000000",
+    "start": "6.000000",
+    "title": "Chapter 2 Embers"
+   },
+   {
+    "end": "12.000000",
+    "start": "9.000000",
+    "title": "Chapter 3 Ash Fall"
+   }
+  ],
+  "exit_code": 0,
+  "format": {
+   "bit_rate": "26109",
+   "duration": "12.000000",
+   "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+   "size": "39164",
+   "tags": {
+    "album": "The Lantern Road",
+    "artist": "Ellis Marr",
+    "date": "2016",
+    "title": "The Lantern Road"
+   }
+  },
+  "stderr": "",
+  "streams": [
+   {
+    "bit_rate": "24171",
+    "channels": 1,
+    "codec_name": "aac",
+    "codec_type": "audio",
+    "index": 0,
+    "profile": "LC",
+    "sample_rate": "22050",
+    "tags": {
+     "language": "und"
+    }
+   }
+  ]
+ },
+ "fixture": "lr_wrong.m4b",
+ "frame_text": "no text visible in any sampled frame (construction: no title card was drawn)",
+ "sha256": "f38ca615045d8e85476b8617f6e25e83222f8a5f1a9e8d8b5d06048c039614e8",
+ "tool_version": "ffmpeg/ffprobe 8.1.2 (audiobookshelf 2.37.1 image)"
+}

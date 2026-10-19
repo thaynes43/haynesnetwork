@@ -1,0 +1,51 @@
+{
+ "bytes": 0,
+ "decode_sample": {
+  "0": {
+   "exit_code": 183,
+   "frames": null,
+   "out_time": null,
+   "ss": 0,
+   "stderr": "[in#0 @ 0x0] EBML header parsing failed\n[in#0 @ 0x0] Error opening input: Invalid data found when processing input\nError opening input file media/qo_zero.mkv.\nError opening input files: Invalid data found when processing input",
+   "t": 4
+  },
+  "12": {
+   "exit_code": 183,
+   "frames": null,
+   "out_time": null,
+   "ss": 12,
+   "stderr": "[in#0 @ 0x0] EBML header parsing failed\n[in#0 @ 0x0] Error opening input: Invalid data found when processing input\nError opening input file media/qo_zero.mkv.\nError opening input files: Invalid data found when processing input",
+   "t": 4
+  },
+  "4": {
+   "exit_code": 183,
+   "frames": null,
+   "out_time": null,
+   "ss": 4,
+   "stderr": "[in#0 @ 0x0] EBML header parsing failed\n[in#0 @ 0x0] Error opening input: Invalid data found when processing input\nError opening input file media/qo_zero.mkv.\nError opening input files: Invalid data found when processing input",
+   "t": 4
+  },
+  "8": {
+   "exit_code": 183,
+   "frames": null,
+   "out_time": null,
+   "ss": 8,
+   "stderr": "[in#0 @ 0x0] EBML header parsing failed\n[in#0 @ 0x0] Error opening input: Invalid data found when processing input\nError opening input file media/qo_zero.mkv.\nError opening input files: Invalid data found when processing input",
+   "t": 4
+  },
+  "full": {
+   "exit_code": 183,
+   "frames": null,
+   "out_time": null,
+   "stderr": "[in#0 @ 0x0] EBML header parsing failed\n[in#0 @ 0x0] Error opening input: Invalid data found when processing input\nError opening input file media/qo_zero.mkv.\nError opening input files: Invalid data found when processing input"
+  }
+ },
+ "ffprobe": {
+  "exit_code": 1,
+  "stderr": "[matroska,webm @ 0x0] EBML header parsing failed\nmedia/qo_zero.mkv: Invalid data found when processing input"
+ },
+ "fixture": "qo_zero.mkv",
+ "frame_text": "no text visible in any sampled frame (construction: no title card was drawn)",
+ "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+ "tool_version": "ffmpeg/ffprobe 8.1.2 (audiobookshelf 2.37.1 image)"
+}

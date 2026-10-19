@@ -1,0 +1,88 @@
+{
+ "bytes": 120841,
+ "decode_sample": {
+  "0": {
+   "exit_code": 0,
+   "frames": 40,
+   "out_time": "00:00:04.000000",
+   "ss": 0,
+   "stderr": "",
+   "t": 4
+  },
+  "12": {
+   "exit_code": 0,
+   "frames": 0,
+   "out_time": null,
+   "ss": 12,
+   "stderr": "",
+   "t": 4
+  },
+  "4": {
+   "exit_code": 0,
+   "frames": 40,
+   "out_time": "00:00:04.000000",
+   "ss": 4,
+   "stderr": "",
+   "t": 4
+  },
+  "8": {
+   "exit_code": 0,
+   "frames": 30,
+   "out_time": "00:00:03.000000",
+   "ss": 8,
+   "stderr": "",
+   "t": 4
+  },
+  "full": {
+   "exit_code": 0,
+   "frames": 110,
+   "out_time": "00:00:11.000000",
+   "stderr": ""
+  }
+ },
+ "ffprobe": {
+  "chapters": [],
+  "exit_code": 0,
+  "format": {
+   "bit_rate": "87518",
+   "duration": "11.046000",
+   "format_name": "matroska,webm",
+   "size": "120841",
+   "tags": {
+    "title": "Paper Kingdom"
+   }
+  },
+  "stderr": "",
+  "streams": [
+   {
+    "codec_name": "h264",
+    "codec_type": "video",
+    "height": 192,
+    "index": 0,
+    "pix_fmt": "yuv420p",
+    "profile": "High",
+    "tags": {},
+    "width": 256
+   },
+   {
+    "channels": 1,
+    "codec_name": "aac",
+    "codec_type": "audio",
+    "index": 1,
+    "profile": "LC",
+    "sample_rate": "22050",
+    "tags": {}
+   }
+  ]
+ },
+ "fixture": "po_paper.mkv",
+ "frame_text": [
+  {
+   "t0": 0,
+   "t1": 2,
+   "text": "PAPER KINGDOM"
+  }
+ ],
+ "sha256": "60f4df0b9835b7d2c7ddd80b22331fd4257af916612b54fcf93a7c8f7e5d115a",
+ "tool_version": "ffmpeg/ffprobe 8.1.2 (audiobookshelf 2.37.1 image)"
+}
