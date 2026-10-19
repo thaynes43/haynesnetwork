@@ -1,0 +1,75 @@
+{
+  "aborted": null,
+  "adapter": "claude",
+  "argv": [
+    "--suite",
+    "testdata",
+    "--adapter",
+    "claude",
+    "--model",
+    "claude-haiku-5-5",
+    "--cases",
+    "td-epub-mismatch-001",
+    "--out",
+    "runs/smoke-claude-haiku-5-5"
+  ],
+  "case_ids": [
+    "td-epub-mismatch-001"
+  ],
+  "case_sha256": {
+    "td-epub-mismatch-001": "95a3e2bab62705ef2ae79005a5ce12eff60d0e6cea172b65b6c4172a62e04b0d"
+  },
+  "config": {
+    "adapter_config": {
+      "adapter": "claude",
+      "effort": null,
+      "flags": [
+        "--tools",
+        "",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--disable-slash-commands",
+        "--setting-sources",
+        "",
+        "--no-session-persistence"
+      ],
+      "max_budget_usd": 2.0,
+      "model": "claude-haiku-5-5",
+      "output_format": "json"
+    },
+    "max_tool_calls": 6,
+    "ocr_model": null,
+    "protocol": "v1",
+    "system_prompt_sha256": "88d1efc2244fd4c972b67301d5e9d5411ee4c0a1c76b6a184884be5e192351b4",
+    "tool_output_bytes": 8192,
+    "tool_timeout_s": 60,
+    "turn_schema_sha256": "4d976ba5fc8f82af307a7cfb4f168db248b08ffb5e7bf2a82d11b2b9ce28790b"
+  },
+  "config_hash": "692f04012a47206bd79e68a9455beb84c6974d00a5b78d69e834a85f927fc0ef",
+  "ended_at": "2026-10-19T21:02:18.145629+00:00",
+  "finish": {},
+  "harness_git": {
+    "branch": "agent/mrh-runner-1019",
+    "dirty": false,
+    "sha": "6d98d4300698b1678dfa97e02708f166b431a0c2"
+  },
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "preflight": {
+    "adapter": "claude",
+    "model_digest": null,
+    "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+    "requested_model": "claude-haiku-5-5",
+    "runtime_version": "2.1.299 (Claude Code)"
+  },
+  "python": "3.11.2",
+  "records_written": [
+    "td-epub-mismatch-001"
+  ],
+  "requested_model": "claude-haiku-5-5",
+  "run_id": "smoke-claude-haiku-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "started_at": "2026-10-19T21:02:13.354659+00:00",
+  "suite_dir": "testdata"
+}

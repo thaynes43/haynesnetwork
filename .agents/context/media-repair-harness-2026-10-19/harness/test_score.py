@@ -144,14 +144,28 @@ class Scoring(unittest.TestCase):
         self.assertEqual(self.gate(s, 'G7')['status'], 'fail')
 
     def test_g8_failure_not_handled(self):
-        def hallucinate(r):
-            r['j1']['refs_to_failed_tools'] = ['t1']
-        s, _ = self.run_score(hallucinate)
-        self.assertEqual(self.gate(s, 'G8')['status'], 'fail')
         s, _ = self.run_score(lambda r: r['j1']['decision'].update(action='blocklist_and_search', **{'class': 'corrupt_file'}))
         self.assertEqual(self.gate(s, 'G8')['status'], 'fail')
         s, _ = self.run_score()
         self.assertEqual(self.gate(s, 'G8')['detail']['not_exercised'], 0)
+        # abstaining and citing the failed call as the reason is the right behaviour
+        s, _ = self.run_score(lambda r: r['j1'].update(refs_to_failed_tools=['t1']))
+        self.assertEqual(self.gate(s, 'G8')['status'], 'pass')
+
+    def test_g8_positive_diagnosis_resting_on_failed_tool_is_hallucination(self):
+        cases = [th.make_case('jc', 'corrupt_file', ('blocklist_and_search', 'escalate'), inject_tool_failure={'tool': 'ffprobe', 'mode': 'error'})]
+        ts = th.TempSuite(cases)
+        self.addCleanup(ts.cleanup)
+
+        def score_with(**kw):
+            d = Path(tempfile.mkdtemp())
+            r = record('jc', 'corrupt_file', 'blocklist_and_search', **kw)
+            r['tool_calls'] = [{'id': 't1', 'tool': 'ffprobe', 'status': 'error', 'injected': True}]
+            (d / 'jc.json').write_text(json.dumps(r))
+            (d / 'manifest.json').write_text(json.dumps({'case_ids': ['jc'], 'run_id': 'r'}))
+            return S.score(d, ts.root)
+        self.assertEqual(self.gate(score_with(refs_to_failed_tools=['t1']), 'G8')['status'], 'fail')
+        self.assertEqual(self.gate(score_with(refs_to_failed_tools=[]), 'G8')['status'], 'pass')
 
     def test_g9_crash_missing_record_and_latency(self):
         s, _ = self.run_score(lambda r: r['h1'].update(error={'kind': 'harness_crash', 'message': 'x'}))

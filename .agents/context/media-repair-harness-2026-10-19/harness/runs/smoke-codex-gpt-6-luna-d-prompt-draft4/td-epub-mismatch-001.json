@@ -1,0 +1,186 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "blocklist_and_search",
+      "class": "identity_mismatch",
+      "target": "The Lantern Ledger - Ines Varga.epub"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": {
+      "check": "epub_title_is",
+      "correct": true,
+      "detail": "titles=['The Lantern Ledger']",
+      "expected": "repaired",
+      "observed": "repaired"
+    },
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "td-epub-mismatch-001",
+  "case_sha256": "95a3e2bab62705ef2ae79005a5ce12eff60d0e6cea172b65b6c4172a62e04b0d",
+  "config_hash": "c67e21d33555af39b9a1f4899bbc22fb31a485e00ac0d6e8d9e0149184e40c86",
+  "decision": {
+    "action": "blocklist_and_search",
+    "class": "identity_mismatch",
+    "confidence": 0.99,
+    "evidence_refs": [
+      "e1",
+      "t1"
+    ],
+    "reason": "The EPUB is valid and its embedded title and creator identify it as The Orchard Cartographer by Tomas Reyes, not the expected The Lantern Ledger by Ines Varga.",
+    "target": "The Lantern Ledger - Ines Varga.epub",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "a1a75ebd16e8dfb03ba67e5dfa794e1c300d2363f7247bcdf2f1f93cad5b2c59",
+    "bytes": 1352,
+    "declared_sha256": "a1a75ebd16e8dfb03ba67e5dfa794e1c300d2363f7247bcdf2f1f93cad5b2c59",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "6d98d4300698b1678dfa97e02708f166b431a0c2",
+  "injected_failure": null,
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; usage is taken from the event stream",
+  "outcome": {
+    "check": "epub_title_is",
+    "correct": true,
+    "detail": "titles=['The Lantern Ledger']",
+    "expected": "repaired",
+    "observed": "repaired"
+  },
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "gpt-6-luna",
+  "response_model_ids": [
+    "gpt-6-luna"
+  ],
+  "run_id": "smoke-codex-gpt-6-luna",
+  "runtime_version": "codex-cli 0.162.1",
+  "split": "dev",
+  "started_at": "2026-10-19T21:08:05.812334+00:00",
+  "suite_version": "harness-testdata-v1",
+  "tool_calls": [
+    {
+      "args": {},
+      "id": "t1",
+      "output": "{\"bytes\": 1352, \"creators\": [\"Tomas Reyes\"], \"identifiers\": [\"urn:test:orchard\"], \"languages\": [\"en\"], \"manifest_items\": 2, \"opf\": \"OEBPS/content.opf\", \"sha256\": \"a1a75ebd16e8dfb03ba67e5dfa794e1c300d2363f7247bcdf2f1f93cad5b2c59\", \"spine\": [{\"characters\": 86, \"entry\": \"OEBPS/c1.xhtml\", \"excerpt\": \"Chapter 1 A mapmaker is hired to chart an orchard that rearranges itself every autumn.\"}, {\"characters\": 102, \"entry\": \"OEBPS/c2.xhtml\", \"excerpt\": \"Chapter 2 He learns the trees move to follow the beekeeper, and the map becomes a record of her walks.\"}], \"spine_items\": 2, \"titles\": [\"The Orchard Cartographer\"], \"valid\": true, \"zip_crc_ok\": true}",
+      "status": "ok",
+      "tool": "epub_inspect",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.02,
+      "why": "Inspect the EPUB’s embedded title and author to verify its identity against the expected book."
+    }
+  ],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "native_tool_items": [],
+        "response_model_source": "codex rollout turn_context (client side)",
+        "thread_id": "01a155fe-3677-7971-abba-d5a42667bc4d"
+      },
+      "n": 1,
+      "native": {},
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "codex",
+          "exec",
+          "--json",
+          "-s",
+          "read-only",
+          "--skip-git-repo-check",
+          "--ignore-user-config",
+          "--ignore-rules",
+          "-m",
+          "gpt-6-luna",
+          "-C",
+          "/tmp/mrh-codex-0w9aytcq",
+          "-"
+        ],
+        "prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.\n\n---\n\n[CASE]\n{\"case_id\": \"td-epub-mismatch-001\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Ines Varga\", \"language\": \"en\", \"title\": \"The Lantern Ledger\"}, \"notes_for_model\": \"This EPUB was imported for the book above. Check that it is the right book.\", \"title\": \"The Lantern Ledger\"}, \"evidence\": [{\"args\": {}, \"id\": \"e1\", \"output\": \"imported as \\\"The Lantern Ledger - Ines Varga.epub\\\"\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": [\"epub_inspect\", \"arr_lookup\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else."
+      },
+      "raw_response": "{\"type\":\"thread.started\",\"thread_id\":\"01a155fe-3677-7971-abba-d5a42667bc4d\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"epub_inspect\\\",\\\"args\\\":{},\\\"why\\\":\\\"Inspect the EPUB’s embedded title and author to verify its identity against the expected book.\\\"}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":27816,\"cached_input_tokens\":11648,\"cache_write_input_tokens\":0,\"output_tokens\":52,\"reasoning_output_tokens\":9}}\n",
+      "response_model": "gpt-6-luna",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Inspect the EPUB’s embedded title and author to verify its identity against the expected book.\"}",
+      "usage": {
+        "cached_input_tokens": 11648,
+        "cost_usd": null,
+        "input_tokens": 27816,
+        "output_tokens": 52,
+        "reasoning_output_tokens": 9
+      },
+      "validation_errors": [],
+      "wall_s": 2.832
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "native_tool_items": [],
+        "response_model_source": "codex rollout turn_context (client side)",
+        "thread_id": "01a155fe-41a4-7d51-bbc8-ba45526094d6"
+      },
+      "n": 2,
+      "native": {},
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "codex",
+          "exec",
+          "--json",
+          "-s",
+          "read-only",
+          "--skip-git-repo-check",
+          "--ignore-user-config",
+          "--ignore-rules",
+          "-m",
+          "gpt-6-luna",
+          "-C",
+          "/tmp/mrh-codex-0w9aytcq",
+          "-"
+        ],
+        "prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.\n\n---\n\n[CASE]\n{\"case_id\": \"td-epub-mismatch-001\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Ines Varga\", \"language\": \"en\", \"title\": \"The Lantern Ledger\"}, \"notes_for_model\": \"This EPUB was imported for the book above. Check that it is the right book.\", \"title\": \"The Lantern Ledger\"}, \"evidence\": [{\"args\": {}, \"id\": \"e1\", \"output\": \"imported as \\\"The Lantern Ledger - Ines Varga.epub\\\"\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": [\"epub_inspect\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Inspect the EPUB’s embedded title and author to verify its identity against the expected book.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"epub_inspect\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"bytes\\\": 1352, \\\"creators\\\": [\\\"Tomas Reyes\\\"], \\\"identifiers\\\": [\\\"urn:test:orchard\\\"], \\\"languages\\\": [\\\"en\\\"], \\\"manifest_items\\\": 2, \\\"opf\\\": \\\"OEBPS/content.opf\\\", \\\"sha256\\\": \\\"a1a75ebd16e8dfb03ba67e5dfa794e1c300d2363f7247bcdf2f1f93cad5b2c59\\\", \\\"spine\\\": [{\\\"characters\\\": 86, \\\"entry\\\": \\\"OEBPS/c1.xhtml\\\", \\\"excerpt\\\": \\\"Chapter 1 A mapmaker is hired to chart an orchard that rearranges itself every autumn.\\\"}, {\\\"characters\\\": 102, \\\"entry\\\": \\\"OEBPS/c2.xhtml\\\", \\\"excerpt\\\": \\\"Chapter 2 He learns the trees move to follow the beekeeper, and the map becomes a record of her walks.\\\"}], \\\"spine_items\\\": 2, \\\"titles\\\": [\\\"The Orchard Cartographer\\\"], \\\"valid\\\": true, \\\"zip_crc_ok\\\": true}\", \"tool_calls_remaining\": 5}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else."
+      },
+      "raw_response": "{\"type\":\"thread.started\",\"thread_id\":\"01a155fe-41a4-7d51-bbc8-ba45526094d6\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"identity_mismatch\\\",\\\"action\\\":\\\"blocklist_and_search\\\",\\\"target\\\":\\\"The Lantern Ledger - Ines Varga.epub\\\",\\\"confidence\\\":0.99,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"t1\\\"],\\\"reason\\\":\\\"The EPUB is valid and its embedded title and creator identify it as The Orchard Cartographer by Tomas Reyes, not the expected The Lantern Ledger by Ines Varga.\\\"}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":28138,\"cached_input_tokens\":11648,\"cache_write_input_tokens\":0,\"output_tokens\":88,\"reasoning_output_tokens\":0}}\n",
+      "response_model": "gpt-6-luna",
+      "text": "{\"type\":\"decision\",\"class\":\"identity_mismatch\",\"action\":\"blocklist_and_search\",\"target\":\"The Lantern Ledger - Ines Varga.epub\",\"confidence\":0.99,\"evidence_refs\":[\"e1\",\"t1\"],\"reason\":\"The EPUB is valid and its embedded title and creator identify it as The Orchard Cartographer by Tomas Reyes, not the expected The Lantern Ledger by Ines Varga.\"}",
+      "usage": {
+        "cached_input_tokens": 11648,
+        "cost_usd": null,
+        "input_tokens": 28138,
+        "output_tokens": 88,
+        "reasoning_output_tokens": 0
+      },
+      "validation_errors": [],
+      "wall_s": 3.552
+    }
+  ],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 55954,
+    "output_tokens": 140
+  },
+  "wall": {
+    "case_excl_load_s": 6.413,
+    "load_s": 0.0,
+    "tool_s": [
+      0.02
+    ],
+    "total_s": 6.413,
+    "turn_s": [
+      2.832,
+      3.552
+    ]
+  }
+}

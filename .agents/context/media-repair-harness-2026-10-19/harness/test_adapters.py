@@ -124,6 +124,12 @@ class OllamaAdapterTests(unittest.TestCase):
         ad2.finish()
         self.assertFalse([c for c in fake2.calls if c[0] == '/api/generate' and c[1].get('keep_alive') == 0])
 
+    def test_aborted_preflight_keeps_what_it_saw(self):
+        ad = self.make(FakeOllama(residents=['someone-else:7b']))
+        with self.assertRaises(A.AbortRun):
+            ad.preflight()
+        self.assertEqual(ad.last_preflight['residents_before'], ['someone-else:7b'])
+
     def test_failed_load_does_not_unload_or_retry(self):
         fake = FakeOllama(gen_error=True)
         ad = self.make(fake)

@@ -1,0 +1,180 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "escalate",
+      "class": "insufficient_evidence",
+      "target": null
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "td-tv-noevidence-001",
+  "case_sha256": "678e64fc3cdcf5226504a41d47925589b660ba62492089c95c9212a1f09f2d62",
+  "config_hash": "3d6572e6c331d511a11a5a7fc968a857c07fbb5d214d7c7a6c2a3514b8c317d9",
+  "decision": {
+    "action": "escalate",
+    "class": "insufficient_evidence",
+    "confidence": 0.98,
+    "evidence_refs": [
+      "e1",
+      "t1"
+    ],
+    "reason": "ffprobe failed because the host was unavailable, and decode_sample timed out. The viewer's report alone cannot establish whether the episode is wrong or damaged.",
+    "target": null,
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "declared_sha256": null,
+    "kind": "none",
+    "verified": "n/a"
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "6d98d4300698b1678dfa97e02708f166b431a0c2",
+  "injected_failure": {
+    "mode": "timeout",
+    "tool": "decode_sample"
+  },
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; usage is taken from the event stream",
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [
+    "t1"
+  ],
+  "repair_prompts": [],
+  "requested_model": "gpt-6-luna",
+  "response_model_ids": [
+    "gpt-6-luna"
+  ],
+  "run_id": "testdata-gpt-6-luna",
+  "runtime_version": "codex-cli 0.162.1",
+  "split": "dev",
+  "started_at": "2026-10-19T21:09:57.904821+00:00",
+  "suite_version": "harness-testdata-v1",
+  "tool_calls": [
+    {
+      "args": {},
+      "id": "t1",
+      "injected": true,
+      "output": "injected failure: decode_sample exceeded the 60 s tool timeout (simulated)",
+      "status": "timeout",
+      "tool": "decode_sample",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.0,
+      "why": "Check whether a short sample can be decoded; ffprobe was unavailable."
+    }
+  ],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "native_tool_items": [
+          "web_search"
+        ],
+        "response_model_source": "codex rollout turn_context (client side)",
+        "thread_id": "01a155ff-ec5e-7451-96dd-54b33675088f"
+      },
+      "n": 1,
+      "native": {},
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "codex",
+          "exec",
+          "--json",
+          "-s",
+          "read-only",
+          "--skip-git-repo-check",
+          "--ignore-user-config",
+          "--ignore-rules",
+          "-m",
+          "gpt-6-luna",
+          "-C",
+          "/tmp/mrh-codex-mcfme0z7",
+          "-"
+        ],
+        "prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.\n\n---\n\n[CASE]\n{\"case_id\": \"td-tv-noevidence-001\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {}}, \"expected\": {\"episode\": 4, \"language\": \"en\", \"runtime_s\": 1320, \"season\": 1, \"series\": \"Example Show\"}, \"notes_for_model\": \"A viewer says this episode looks wrong.\", \"title\": \"Example Show\"}, \"evidence\": [{\"args\": {}, \"id\": \"e1\", \"output\": \"ffprobe: probe failed (host unavailable)\", \"status\": \"error\", \"tool\": \"ffprobe\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else."
+      },
+      "raw_response": "{\"type\":\"thread.started\",\"thread_id\":\"01a155ff-ec5e-7451-96dd-54b33675088f\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.started\",\"item\":{\"id\":\"item_0\",\"type\":\"web_search\",\"id\":\"exec-cce57fc1-8510-4787-bef4-9839ab095708\",\"query\":\"\",\"action\":{\"type\":\"other\"}}}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"web_search\",\"id\":\"exec-cce57fc1-8510-4787-bef4-9839ab095708\",\"query\":\"\",\"action\":{\"type\":\"other\"},\"results\":[]}}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_1\",\"type\":\"agent_message\",\"text\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"decode_sample\\\",\\\"args\\\":{},\\\"why\\\":\\\"Check whether a short sample can be decoded; ffprobe was unavailable.\\\"}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":55705,\"cached_input_tokens\":39296,\"cache_write_input_tokens\":0,\"output_tokens\":89,\"reasoning_output_tokens\":28}}\n",
+      "response_model": "gpt-6-luna",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{},\"why\":\"Check whether a short sample can be decoded; ffprobe was unavailable.\"}",
+      "usage": {
+        "cached_input_tokens": 39296,
+        "cost_usd": null,
+        "input_tokens": 55705,
+        "output_tokens": 89,
+        "reasoning_output_tokens": 28
+      },
+      "validation_errors": [],
+      "wall_s": 12.086
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "native_tool_items": [],
+        "response_model_source": "codex rollout turn_context (client side)",
+        "thread_id": "01a15600-1b99-7031-a2de-eb0576efaa45"
+      },
+      "n": 2,
+      "native": {},
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "codex",
+          "exec",
+          "--json",
+          "-s",
+          "read-only",
+          "--skip-git-repo-check",
+          "--ignore-user-config",
+          "--ignore-rules",
+          "-m",
+          "gpt-6-luna",
+          "-C",
+          "/tmp/mrh-codex-mcfme0z7",
+          "-"
+        ],
+        "prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.\n\n---\n\n[CASE]\n{\"case_id\": \"td-tv-noevidence-001\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {}}, \"expected\": {\"episode\": 4, \"language\": \"en\", \"runtime_s\": 1320, \"season\": 1, \"series\": \"Example Show\"}, \"notes_for_model\": \"A viewer says this episode looks wrong.\", \"title\": \"Example Show\"}, \"evidence\": [{\"args\": {}, \"id\": \"e1\", \"output\": \"ffprobe: probe failed (host unavailable)\", \"status\": \"error\", \"tool\": \"ffprobe\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{},\"why\":\"Check whether a short sample can be decoded; ffprobe was unavailable.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"decode_sample\", \"status\": \"timeout\", \"truncated\": false, \"output\": \"injected failure: decode_sample exceeded the 60 s tool timeout (simulated)\", \"tool_calls_remaining\": 5}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else."
+      },
+      "raw_response": "{\"type\":\"thread.started\",\"thread_id\":\"01a15600-1b99-7031-a2de-eb0576efaa45\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"insufficient_evidence\\\",\\\"action\\\":\\\"escalate\\\",\\\"target\\\":null,\\\"confidence\\\":0.98,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"t1\\\"],\\\"reason\\\":\\\"ffprobe failed because the host was unavailable, and decode_sample timed out. The viewer's report alone cannot establish whether the episode is wrong or damaged.\\\"}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":27928,\"cached_input_tokens\":11648,\"cache_write_input_tokens\":0,\"output_tokens\":76,\"reasoning_output_tokens\":0}}\n",
+      "response_model": "gpt-6-luna",
+      "text": "{\"type\":\"decision\",\"class\":\"insufficient_evidence\",\"action\":\"escalate\",\"target\":null,\"confidence\":0.98,\"evidence_refs\":[\"e1\",\"t1\"],\"reason\":\"ffprobe failed because the host was unavailable, and decode_sample timed out. The viewer's report alone cannot establish whether the episode is wrong or damaged.\"}",
+      "usage": {
+        "cached_input_tokens": 11648,
+        "cost_usd": null,
+        "input_tokens": 27928,
+        "output_tokens": 76,
+        "reasoning_output_tokens": 0
+      },
+      "validation_errors": [],
+      "wall_s": 3.329
+    }
+  ],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 83633,
+    "output_tokens": 165
+  },
+  "wall": {
+    "case_excl_load_s": 15.422,
+    "load_s": 0.0,
+    "tool_s": [
+      0.0
+    ],
+    "total_s": 15.422,
+    "turn_s": [
+      12.086,
+      3.329
+    ]
+  }
+}

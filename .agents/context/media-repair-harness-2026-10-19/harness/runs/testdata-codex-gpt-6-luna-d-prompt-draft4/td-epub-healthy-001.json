@@ -1,0 +1,174 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "none",
+      "class": "healthy",
+      "target": null
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "td-epub-healthy-001",
+  "case_sha256": "2e5cd3466a835fda36a15b04bd8aabf41a64a32b7ade82b7b123511a17233228",
+  "config_hash": "c67e21d33555af39b9a1f4899bbc22fb31a485e00ac0d6e8d9e0149184e40c86",
+  "decision": {
+    "action": "none",
+    "class": "healthy",
+    "confidence": 0.99,
+    "evidence_refs": [
+      "e1",
+      "t1"
+    ],
+    "reason": "The EPUB is valid, its ZIP CRC checks pass, and its internal title, creator, and language match the expected book.",
+    "target": null,
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "c81612f94791da592252c88f4cb008e470fefc9ac63c245d6218ec33a6a59b49",
+    "bytes": 1368,
+    "declared_sha256": "c81612f94791da592252c88f4cb008e470fefc9ac63c245d6218ec33a6a59b49",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "6d98d4300698b1678dfa97e02708f166b431a0c2",
+  "injected_failure": null,
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; usage is taken from the event stream",
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "gpt-6-luna",
+  "response_model_ids": [
+    "gpt-6-luna"
+  ],
+  "run_id": "testdata-codex-gpt-6-luna",
+  "runtime_version": "codex-cli 0.162.1",
+  "split": "dev",
+  "started_at": "2026-10-19T21:08:20.631782+00:00",
+  "suite_version": "harness-testdata-v1",
+  "tool_calls": [
+    {
+      "args": {},
+      "id": "t1",
+      "output": "{\"bytes\": 1368, \"creators\": [\"Ines Varga\"], \"identifiers\": [\"urn:test:ledger\"], \"languages\": [\"en\"], \"manifest_items\": 2, \"opf\": \"OEBPS/content.opf\", \"sha256\": \"c81612f94791da592252c88f4cb008e470fefc9ac63c245d6218ec33a6a59b49\", \"spine\": [{\"characters\": 108, \"entry\": \"OEBPS/c1.xhtml\", \"excerpt\": \"Chapter 1 A clerk in a harbour town keeps a ledger of lantern oil, and one night the numbers stop adding up.\"}, {\"characters\": 116, \"entry\": \"OEBPS/c2.xhtml\", \"excerpt\": \"Chapter 2 She follows the missing barrels to the old lighthouse, where the keeper has been selling oil to smugglers.\"}], \"spine_items\": 2, \"titles\": [\"The Lantern Ledger\"], \"valid\": true, \"zip_crc_ok\": true}",
+      "status": "ok",
+      "tool": "epub_inspect",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.004,
+      "why": "Check the EPUB’s internal title, author, and language against the expected book."
+    }
+  ],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "native_tool_items": [],
+        "response_model_source": "codex rollout turn_context (client side)",
+        "thread_id": "01a155fe-7066-71a1-90b8-0c6f0c1c3120"
+      },
+      "n": 1,
+      "native": {},
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "codex",
+          "exec",
+          "--json",
+          "-s",
+          "read-only",
+          "--skip-git-repo-check",
+          "--ignore-user-config",
+          "--ignore-rules",
+          "-m",
+          "gpt-6-luna",
+          "-C",
+          "/tmp/mrh-codex-vtct_m8g",
+          "-"
+        ],
+        "prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.\n\n---\n\n[CASE]\n{\"case_id\": \"td-epub-healthy-001\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Ines Varga\", \"language\": \"en\", \"title\": \"The Lantern Ledger\"}, \"notes_for_model\": \"This EPUB was imported for the book above. Check that it is the right book.\", \"title\": \"The Lantern Ledger\"}, \"evidence\": [{\"args\": {}, \"id\": \"e1\", \"output\": \"imported as \\\"The Lantern Ledger - Ines Varga.epub\\\"\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": [\"epub_inspect\", \"arr_lookup\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else."
+      },
+      "raw_response": "{\"type\":\"thread.started\",\"thread_id\":\"01a155fe-7066-71a1-90b8-0c6f0c1c3120\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"epub_inspect\\\",\\\"args\\\":{},\\\"why\\\":\\\"Check the EPUB’s internal title, author, and language against the expected book.\\\"}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":55691,\"cached_input_tokens\":39296,\"cache_write_input_tokens\":0,\"output_tokens\":101,\"reasoning_output_tokens\":20}}\n",
+      "response_model": "gpt-6-luna",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Check the EPUB’s internal title, author, and language against the expected book.\"}",
+      "usage": {
+        "cached_input_tokens": 39296,
+        "cost_usd": null,
+        "input_tokens": 55691,
+        "output_tokens": 101,
+        "reasoning_output_tokens": 20
+      },
+      "validation_errors": [],
+      "wall_s": 4.285
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "native_tool_items": [],
+        "response_model_source": "codex rollout turn_context (client side)",
+        "thread_id": "01a155fe-812f-7e73-8da2-9014a6f7ece7"
+      },
+      "n": 2,
+      "native": {},
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "codex",
+          "exec",
+          "--json",
+          "-s",
+          "read-only",
+          "--skip-git-repo-check",
+          "--ignore-user-config",
+          "--ignore-rules",
+          "-m",
+          "gpt-6-luna",
+          "-C",
+          "/tmp/mrh-codex-vtct_m8g",
+          "-"
+        ],
+        "prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.\n\n---\n\n[CASE]\n{\"case_id\": \"td-epub-healthy-001\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Ines Varga\", \"language\": \"en\", \"title\": \"The Lantern Ledger\"}, \"notes_for_model\": \"This EPUB was imported for the book above. Check that it is the right book.\", \"title\": \"The Lantern Ledger\"}, \"evidence\": [{\"args\": {}, \"id\": \"e1\", \"output\": \"imported as \\\"The Lantern Ledger - Ines Varga.epub\\\"\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": [\"epub_inspect\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Check the EPUB’s internal title, author, and language against the expected book.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"epub_inspect\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"bytes\\\": 1368, \\\"creators\\\": [\\\"Ines Varga\\\"], \\\"identifiers\\\": [\\\"urn:test:ledger\\\"], \\\"languages\\\": [\\\"en\\\"], \\\"manifest_items\\\": 2, \\\"opf\\\": \\\"OEBPS/content.opf\\\", \\\"sha256\\\": \\\"c81612f94791da592252c88f4cb008e470fefc9ac63c245d6218ec33a6a59b49\\\", \\\"spine\\\": [{\\\"characters\\\": 108, \\\"entry\\\": \\\"OEBPS/c1.xhtml\\\", \\\"excerpt\\\": \\\"Chapter 1 A clerk in a harbour town keeps a ledger of lantern oil, and one night the numbers stop adding up.\\\"}, {\\\"characters\\\": 116, \\\"entry\\\": \\\"OEBPS/c2.xhtml\\\", \\\"excerpt\\\": \\\"Chapter 2 She follows the missing barrels to the old lighthouse, where the keeper has been selling oil to smugglers.\\\"}], \\\"spine_items\\\": 2, \\\"titles\\\": [\\\"The Lantern Ledger\\\"], \\\"valid\\\": true, \\\"zip_crc_ok\\\": true}\", \"tool_calls_remaining\": 5}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else."
+      },
+      "raw_response": "{\"type\":\"thread.started\",\"thread_id\":\"01a155fe-812f-7e73-8da2-9014a6f7ece7\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"healthy\\\",\\\"action\\\":\\\"none\\\",\\\"target\\\":null,\\\"confidence\\\":0.99,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"t1\\\"],\\\"reason\\\":\\\"The EPUB is valid, its ZIP CRC checks pass, and its internal title, creator, and language match the expected book.\\\"}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":28136,\"cached_input_tokens\":11648,\"cache_write_input_tokens\":0,\"output_tokens\":66,\"reasoning_output_tokens\":0}}\n",
+      "response_model": "gpt-6-luna",
+      "text": "{\"type\":\"decision\",\"class\":\"healthy\",\"action\":\"none\",\"target\":null,\"confidence\":0.99,\"evidence_refs\":[\"e1\",\"t1\"],\"reason\":\"The EPUB is valid, its ZIP CRC checks pass, and its internal title, creator, and language match the expected book.\"}",
+      "usage": {
+        "cached_input_tokens": 11648,
+        "cost_usd": null,
+        "input_tokens": 28136,
+        "output_tokens": 66,
+        "reasoning_output_tokens": 0
+      },
+      "validation_errors": [],
+      "wall_s": 3.203
+    }
+  ],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 83827,
+    "output_tokens": 167
+  },
+  "wall": {
+    "case_excl_load_s": 7.5,
+    "load_s": 0.0,
+    "tool_s": [
+      0.004
+    ],
+    "total_s": 7.5,
+    "turn_s": [
+      4.285,
+      3.203
+    ]
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "aborted": "model load failed or timed out (137); not retrying, not unloading",
+  "argv": [
+    "--suite",
+    "testdata",
+    "--adapter",
+    "ollama",
+    "--model",
+    "qwen3.8:27b",
+    "--keep-alive",
+    "2m",
+    "--cases",
+    "td-epub-mismatch-001",
+    "--out",
+    "runs/smoke-ollama-qwen3.8-27b"
+  ],
+  "case_ids": [
+    "td-epub-mismatch-001"
+  ],
+  "case_sha256": {
+    "td-epub-mismatch-001": "95a3e2bab62705ef2ae79005a5ce12eff60d0e6cea172b65b6c4172a62e04b0d"
+  },
+  "config": {
+    "adapter_config": {
+      "adapter": "ollama",
+      "format": "TURN_SCHEMA(anyOf tool_call|decision)",
+      "keep_alive": "2m",
+      "model": "qwen3.8:27b",
+      "options": {
+        "num_ctx": 8192,
+        "num_predict": 384,
+        "seed": 42,
+        "temperature": 0
+      },
+      "stop": [
+        "<|im_end|>"
+      ],
+      "think": false
+    },
+    "max_tool_calls": 6,
+    "ocr_model": null,
+    "protocol": "v1",
+    "system_prompt_sha256": "928ae51d66ddf635b802cf46ce1f3813490962c274616924c605052374ffa378",
+    "tool_output_bytes": 8192,
+    "tool_timeout_s": 60,
+    "turn_schema_sha256": "4d976ba5fc8f82af307a7cfb4f168db248b08ffb5e7bf2a82d11b2b9ce28790b"
+  },
+  "config_hash": "f4665f4939c4fe0929548073ed06236bcb7f9e939a5734fba29da63cb27fcb6b",
+  "ended_at": "2026-10-19T21:04:45.785538+00:00",
+  "finish": {
+    "residents_after": null,
+    "resources_after": {
+      "at": "2026-10-19T21:04:45.785521+00:00",
+      "compute_processes": "",
+      "compute_query_exit": 1,
+      "exit_code": 1,
+      "stderr": "error: Internal error occurred: error executing command in container: failed to exec in container: failed to start exec \"1723872940fef2108f7d10bc45d17478be4d539821346c2062dde03304afa129\": OCI runtime exec failed: exec failed: cannot exec in a stopped container\n",
+      "stdout": ""
+    },
+    "unloaded": false
+  },
+  "harness_git": {
+    "branch": "agent/mrh-runner-1019",
+    "dirty": true,
+    "sha": "6d98d4300698b1678dfa97e02708f166b431a0c2"
+  },
+  "operator_note_added_after_run": {
+    "api_ps_after": {
+      "models": []
+    },
+    "cause": "not established. Either the cold NFS load of the 17.7 GB model coincided with a sandbox kill, or an unrelated node event did. Not retried; model not unloaded (nothing resident after restart); no further local runs were made.",
+    "gpu_after": "GPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %",
+    "harness_bug_found": "this manifest lacks the preflight block because AbortRun escaped before it was assigned; fixed in the next commit (adapter.last_preflight).",
+    "node_talosw01": "MemoryPressure False, DiskPressure False, Ready True at 17:03:19 EDT (last heartbeat before the event); no node events.",
+    "previous_container_log": "kubectl logs --previous ends at 17:04:06 EDT with \"load_tensors: loading model tensors, this can take a while... (load_mode = mmap)\" followed only by a 200 GET / probe; no error line, no panic.",
+    "what_happened": "Preflight saw /api/ps empty and no GPU compute owner (17:03:40 EDT). Warm-up load of qwen3.8:27b via /api/generate was issued once. About 65 s later (17:04:45 EDT) the kubectl exec returned 137 and the ollama-prime pod reported SandboxChanged / Killing app; the app container restarted (Restart Count 1, previous exit 137). memory.events oom_kill was not readable for the old container."
+  },
+  "python": "3.11.2",
+  "records_written": [],
+  "run_id": "smoke-ollama-qwen3.8-27b",
+  "started_at": "2026-10-19T21:03:42.071203+00:00",
+  "suite_dir": "testdata"
+}

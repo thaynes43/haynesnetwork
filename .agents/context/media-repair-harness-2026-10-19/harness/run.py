@@ -237,7 +237,8 @@ def build_adapter(args):
     model = args.model
     if args.adapter == 'ollama':
         return A.OllamaAdapter(model, options={'num_ctx': args.num_ctx, 'num_predict': args.num_predict}, keep_alive=args.keep_alive,
-                               stop=(args.stop.split(',') if args.stop is not None else None), do_warmup=not args.no_warmup)
+                               stop=(args.stop.split(',') if args.stop is not None else None), do_warmup=not args.no_warmup,
+                               schema=(P.FLAT_TURN_SCHEMA if args.ollama_schema == 'flat' else P.TURN_SCHEMA), schema_name=args.ollama_schema)
     if args.adapter == 'claude':
         return A.ClaudeAdapter(model, effort=args.effort, max_budget_usd=args.max_budget_usd)
     if args.adapter == 'codex':
@@ -262,6 +263,7 @@ def main(argv=None):
     ap.add_argument('--num-predict', type=int, default=384)
     ap.add_argument('--keep-alive', default='2m')
     ap.add_argument('--stop', help='comma separated stop tokens (ollama); default per model family')
+    ap.add_argument('--ollama-schema', choices=['anyof', 'flat'], default='anyof', help='format schema variant sent to Ollama')
     ap.add_argument('--no-warmup', action='store_true')
     ap.add_argument('--ocr-model', help='vision model on Prime for the ocr tool')
     ap.add_argument('--codex-record-session', action='store_true', help='codex: keep the rollout so the model id can be read back')
@@ -285,7 +287,7 @@ def main(argv=None):
         ocr_backend = T.ollama_ocr_backend(args.ocr_model, ot.api)
 
     config = {'protocol': P.PROTOCOL_VERSION, 'system_prompt_sha256': sha256_bytes(P.SYSTEM_PROMPT.encode()),
-              'turn_schema_sha256': sha256_bytes(canonical(P.TURN_SCHEMA).encode()), 'max_tool_calls': P.MAX_TOOL_CALLS,
+              'turn_schema_sha256': sha256_bytes(canonical(P.TURN_SCHEMA).encode()), 'flat_schema_sha256': sha256_bytes(canonical(P.FLAT_TURN_SCHEMA).encode()), 'max_tool_calls': P.MAX_TOOL_CALLS,
               'tool_output_bytes': P.TOOL_OUTPUT_BYTES, 'tool_timeout_s': P.TOOL_TIMEOUT_S, 'ocr_model': args.ocr_model,
               'adapter_config': adapter.config()}
     manifest = {'run_id': run_id, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'argv': sys.argv[1:] if argv is None else argv,
@@ -323,6 +325,8 @@ def main(argv=None):
             print('%s -> %s/%s%s %.1fs' % (case['id'], d['class'], d['action'], ' (forced)' if rec['forced'] else '', rec['wall']['total_s']), flush=True)
     except A.AbortRun as e:
         aborted = str(e)
+        manifest.setdefault('preflight', getattr(adapter, 'last_preflight', {}))
+        manifest.update(adapter.describe())
     finally:
         if audit:
             audit.close()

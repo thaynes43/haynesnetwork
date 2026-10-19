@@ -91,18 +91,20 @@ class OllamaAdapter(Adapter):
     name = 'ollama'
 
     def __init__(self, model, api=ot.api, snapshot=ot.snapshot, options=None, keep_alive='2m', stop=None,
-                 schema=TURN_SCHEMA, load_timeout=600, call_timeout=120, do_warmup=True):
+                 schema=TURN_SCHEMA, schema_name='anyof', load_timeout=600, call_timeout=120, do_warmup=True):
         super().__init__(model)
         self.api, self.snapshot = api, snapshot
         self.options = dict({'temperature': 0, 'seed': 42, 'num_ctx': 8192, 'num_predict': 384}, **(options or {}))
         self.keep_alive, self.stop = keep_alive, default_stop(model) if stop is None else stop
+        self.schema_name = schema_name
         self.schema, self.load_timeout, self.call_timeout, self.do_warmup = schema, load_timeout, call_timeout, do_warmup
         self.loaded_by_us = False
         self.model_info = {}
+        self.last_preflight = {}  # kept even when preflight aborts, so the run manifest shows why
 
     def config(self):
         return {'adapter': self.name, 'model': self.requested_model, 'options': self.options, 'stop': self.stop,
-                'think': False, 'keep_alive': self.keep_alive, 'format': 'TURN_SCHEMA(anyOf tool_call|decision)'}
+                'think': False, 'keep_alive': self.keep_alive, 'format': 'TURN_SCHEMA:' + self.schema_name}
 
     def _residents(self):
         ps, receipt = self.api('/api/ps')
@@ -117,7 +119,7 @@ class OllamaAdapter(Adapter):
             raise AbortRun('cannot read /api/tags: %s' % tr.get('exit_code'))
         residents = self._residents()
         snap = self.snapshot()
-        report = {'residents_before': residents, 'resources_before': snap}
+        report = self.last_preflight = {'residents_before': residents, 'resources_before': snap}
         foreign = [r for r in residents if r != self.requested_model]
         if foreign:
             raise AbortRun('GPU busy: model(s) %s resident that this run did not load; not evicting' % foreign)

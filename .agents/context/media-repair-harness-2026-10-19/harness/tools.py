@@ -374,6 +374,19 @@ def _epub_module():
     return _epub
 
 
+def _opf_fields(path, opf):
+    """Creators, languages and identifiers from the OPF (epub.py only reports titles)."""
+    import zipfile
+    import xml.etree.ElementTree as E
+    try:
+        with zipfile.ZipFile(path) as z:
+            pkg = E.fromstring(z.read(opf))
+    except Exception:  # noqa: BLE001 - epub.inspect already vouched for the OPF; stay defensive
+        return {}
+    pick = lambda name: [(x.text or '').strip() for x in pkg.iter() if x.tag.endswith('}' + name) and (x.text or '').strip()]
+    return {'creators': pick('creator'), 'languages': pick('language'), 'identifiers': pick('identifier')}
+
+
 def tool_epub_inspect(args, ctx):
     if ctx.fixture.kind != 'local':
         return ToolResult('error', 'epub_inspect needs a local fixture' if ctx.fixture.kind == 'remote' else 'no media fixture behind this case; tool cannot run')
@@ -388,7 +401,7 @@ def tool_epub_inspect(args, ctx):
         return ToolResult('ok', dict(base, valid=False, problem='%s: %s' % (type(e).__name__, str(e)[:300])))
     excerpt = int(_num(args, 'excerpt_chars', 200, 0, 600))
     spine = d['spine']
-    out = dict(base, valid=True, zip_crc_ok=d['zip_crc_ok'], opf=d['opf'], titles=d['titles'],
+    out = dict(base, valid=True, zip_crc_ok=d['zip_crc_ok'], opf=d['opf'], titles=d['titles'], **_opf_fields(path, d['opf']),
                manifest_items=d['manifest_items'], spine_items=d['spine_items'],
                spine=[{'entry': s['entry'], 'characters': s['characters'], 'excerpt': s['text'][:excerpt]} for s in spine[:12]])
     if len(spine) > 12:

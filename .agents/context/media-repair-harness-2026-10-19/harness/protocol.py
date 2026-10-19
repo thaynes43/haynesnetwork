@@ -41,14 +41,23 @@ TOOL_CALL_SCHEMA = {
     'additionalProperties': False,
 }
 TURN_SCHEMA = {'anyOf': [TOOL_CALL_SCHEMA, DECISION_SCHEMA]}
+# Fallback for grammar engines that mishandle anyOf / type arrays: one flat object, only `type` required.
+# The strict validator still enforces the exact key sets afterwards.
+FLAT_TURN_SCHEMA = {
+    'type': 'object',
+    'properties': dict({'type': {'enum': ['tool_call', 'decision']}, 'tool': TOOL_CALL_SCHEMA['properties']['tool'],
+                        'args': {'type': 'object'}, 'why': TOOL_CALL_SCHEMA['properties']['why']},
+                       **{k: v for k, v in DECISION_SCHEMA['properties'].items() if k != 'type'}),
+    'required': ['type'], 'additionalProperties': False,
+}
 
 SYSTEM_PROMPT = """You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.
 
 Every reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).
 
 1. Tool call:
-{"type":"tool_call","tool":"<name>","args":{...},"why":"<=200 chars"}
-You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.
+{"type":"tool_call","tool":"ffprobe","args":{},"why":"short reason"}
+(the tool name and args vary; args is an object, often {} or {"at":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.
 
 2. Final answer:
 {"type":"decision","class":"<class>","action":"<action>","target":"<file, release or episode reference, or null>","confidence":0.0,"evidence_refs":["e1","t2"],"reason":"<=400 chars"}
@@ -57,7 +66,10 @@ Classes: identity_mismatch (the content is a different work, episode or edition 
 
 Actions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).
 
+Output format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.
+
 Rules:
+- Keep reason to one or two sentences (the hard limit is 400 characters).
 - Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.
 - If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.
 - When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.
