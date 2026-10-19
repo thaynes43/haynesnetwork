@@ -1,0 +1,223 @@
+{
+ "fixture": "book/",
+ "label": "LIVE: collected by the real ffprobe/ffmpeg inside a CPU-limited batch Job on synthetic fixtures; not replay, not real library media",
+ "records": [
+  {
+   "bounds": {
+    "audiobook_segment_s": 3,
+    "audiobook_segments": 1,
+    "deadline_s": 120,
+    "max_files": 50,
+    "max_segments": 10,
+    "max_stderr_bytes": 65536,
+    "max_stdout_bytes": 1048576,
+    "stderr_excerpt_bytes": 1500,
+    "timeout_s": 20
+   },
+   "coverage": {
+    "not_verified": [
+     "audio outside the sampled segments",
+     "whether the chapter titles or tags describe the right book",
+     "2 non-audio file(s) in the folder were ignored"
+    ],
+    "verified": [
+     "chapters, durations and tags read from 2 of 2 part(s) via ffprobe",
+     "head, tail and 1 spread segment(s) of up to 3s decoded per part",
+     "tag consistency compared across parts (album, artist, album_artist, composer, genre, date)"
+    ]
+   },
+   "elapsed_s": 0.401,
+   "harness_tool": "audiobook_inspect",
+   "input": {
+    "count": 2,
+    "files": [
+     {
+      "bytes": 63809,
+      "head_1m_sha256": "e58d09870653a37c46d8266599477725ba5617306587e52c7068eedd478cab87",
+      "name": "part1.m4b",
+      "partial_fingerprint_only": true,
+      "tail_1m_sha256": "e58d09870653a37c46d8266599477725ba5617306587e52c7068eedd478cab87"
+     },
+     {
+      "bytes": 63894,
+      "head_1m_sha256": "813ff6c1fd74d3cc2be77d4b90e7a95ad349c77da721041ce4328d145f0592ee",
+      "name": "part2.m4b",
+      "partial_fingerprint_only": true,
+      "tail_1m_sha256": "813ff6c1fd74d3cc2be77d4b90e7a95ad349c77da721041ce4328d145f0592ee"
+     }
+    ],
+    "kind": "files",
+    "partial_fingerprint_only": true
+   },
+   "mode": "live",
+   "output": {
+    "files": [
+     {
+      "audio_streams": [
+       {
+        "channels": 1,
+        "codec": "aac",
+        "index": 0,
+        "language": "und",
+        "sample_rate": "22050"
+       }
+      ],
+      "bytes": 63809,
+      "chapter_count": 2,
+      "chapters": [
+       {
+        "end_s": 10.0,
+        "start_s": 0.0,
+        "title": "Chapter 1"
+       },
+       {
+        "end_s": 20.0,
+        "start_s": 10.0,
+        "title": "Chapter 2"
+       }
+      ],
+      "decode": {
+       "clean": true,
+       "decoded_s": 9.0,
+       "decoder_error_lines": 0,
+       "segments": [
+        {
+         "at_s": 0.0,
+         "decoded_s": 3.0,
+         "error_lines": 0,
+         "errors": [],
+         "state": "clean"
+        },
+        {
+         "at_s": 10.0,
+         "decoded_s": 3.0,
+         "error_lines": 0,
+         "errors": [],
+         "state": "clean"
+        },
+        {
+         "at_s": 17.0,
+         "decoded_s": 3.0,
+         "error_lines": 0,
+         "errors": [],
+         "state": "clean"
+        }
+       ],
+       "segments_clean": 3,
+       "segments_run": 3,
+       "segments_short": 0,
+       "segments_timeout": 0,
+       "segments_with_errors": 0
+      },
+      "duration_s": 20.0,
+      "format": "mov,mp4,m4a,3gp,3g2,mj2",
+      "name": "part1.m4b",
+      "tags": {
+       "album": "Synthetic Test Book",
+       "artist": "Test Author",
+       "composer": "Test Narrator",
+       "date": "2020",
+       "genre": "Audiobook",
+       "title": "Part 1",
+       "track": "1/2"
+      }
+     },
+     {
+      "audio_streams": [
+       {
+        "channels": 1,
+        "codec": "aac",
+        "index": 0,
+        "language": "und",
+        "sample_rate": "22050"
+       }
+      ],
+      "bytes": 63894,
+      "chapter_count": 2,
+      "chapters": [
+       {
+        "end_s": 10.0,
+        "start_s": 0.0,
+        "title": "Chapter 3"
+       },
+       {
+        "end_s": 20.0,
+        "start_s": 10.0,
+        "title": "Chapter 4"
+       }
+      ],
+      "decode": {
+       "clean": true,
+       "decoded_s": 9.0,
+       "decoder_error_lines": 0,
+       "segments": [
+        {
+         "at_s": 0.0,
+         "decoded_s": 3.0,
+         "error_lines": 0,
+         "errors": [],
+         "state": "clean"
+        },
+        {
+         "at_s": 10.0,
+         "decoded_s": 3.0,
+         "error_lines": 0,
+         "errors": [],
+         "state": "clean"
+        },
+        {
+         "at_s": 17.0,
+         "decoded_s": 3.0,
+         "error_lines": 0,
+         "errors": [],
+         "state": "clean"
+        }
+       ],
+       "segments_clean": 3,
+       "segments_run": 3,
+       "segments_short": 0,
+       "segments_timeout": 0,
+       "segments_with_errors": 0
+      },
+      "duration_s": 20.0,
+      "format": "mov,mp4,m4a,3gp,3g2,mj2",
+      "name": "part2.m4b",
+      "tags": {
+       "album": "Synthetic Test Book",
+       "artist": "Test Author",
+       "composer": "Test Narrator",
+       "date": "2020",
+       "genre": "Audiobook",
+       "title": "Part 2",
+       "track": "2/2"
+      }
+     }
+    ],
+    "findings": [],
+    "ignored_non_audio_files": 2,
+    "parts": 2,
+    "parts_probed": 2,
+    "tag_consistency": {
+     "checked_keys": [
+      "album",
+      "artist",
+      "album_artist",
+      "composer",
+      "genre",
+      "date"
+     ],
+     "consistent": true,
+     "inconsistent": {},
+     "missing_in": {},
+     "track_issue": null,
+     "track_note": null
+    },
+    "total_duration_s": 40.0
+   },
+   "status": "ok",
+   "stderr": "",
+   "tool": "audiobook",
+   "tool_version": "ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers; ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
+  }
+ ]
+}

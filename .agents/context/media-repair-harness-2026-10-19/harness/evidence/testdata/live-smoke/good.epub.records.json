@@ -1,0 +1,88 @@
+{
+ "fixture": "good.epub",
+ "label": "LIVE: collected by the real ffprobe/ffmpeg inside a CPU-limited batch Job on synthetic fixtures; not replay, not real library media",
+ "records": [
+  {
+   "bounds": {
+    "epub_max_member_bytes": 8388608,
+    "epub_max_members": 5000,
+    "epub_max_uncompressed_bytes": 134217728,
+    "epub_max_xhtml_docs": 200,
+    "stderr_excerpt_bytes": 1500
+   },
+   "coverage": {
+    "not_verified": [
+     "reading quality, typography and rendering: no reader was run",
+     "DRM or encryption: not looked for beyond a missing-member check",
+     "whether the content is the right book: only the declared metadata and structure were read"
+    ],
+    "verified": [
+     "zip central directory read; CRC-32 verified for 5 of 5 member(s)",
+     "container.xml and the package document (OPF) parse",
+     "all 2 manifest item(s) exist in the archive",
+     "2 of 2 spine document(s) parsed as XML; 95 characters of text seen"
+    ]
+   },
+   "elapsed_s": 0.005,
+   "harness_tool": "epub_inspect",
+   "input": {
+    "bytes": 1257,
+    "head_1m_sha256": "359ba6ef3066c5a4746c7a2a6b5ddc61d7144590ff9cd2ba3f521dda20ecd310",
+    "name": "good.epub",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "359ba6ef3066c5a4746c7a2a6b5ddc61d7144590ff9cd2ba3f521dda20ecd310"
+   },
+   "mode": "live",
+   "output": {
+    "crc_members_checked": 5,
+    "dc_creator": [
+     "Test Author"
+    ],
+    "dc_identifier": [
+     "urn:uuid:00000000-0000-4000-8000-000000000001"
+    ],
+    "dc_language": [
+     "en"
+    ],
+    "dc_title": [
+     "Synthetic Test Book"
+    ],
+    "entries": 5,
+    "epub_version": "3.0",
+    "findings": [],
+    "manifest_items": 2,
+    "mimetype": {
+     "content": "application/epub+zip",
+     "first_entry": true,
+     "present": true,
+     "stored_uncompressed": true
+    },
+    "opf": "OEBPS/content.opf",
+    "spine_characters": 95,
+    "spine_items": 2,
+    "stages_passed": [
+     "zip_open",
+     "zip_crc",
+     "opf_parse",
+     "manifest",
+     "spine"
+    ],
+    "uncompressed_bytes_declared": 1112,
+    "valid": true,
+    "xhtml": {
+     "parse_failed": [],
+     "parse_failed_count": 0,
+     "parsed_ok": 2,
+     "skipped_entity_declarations": 0,
+     "skipped_over_doc_cap": 0,
+     "skipped_over_size_cap": 0,
+     "spine_documents": 2
+    }
+   },
+   "status": "ok",
+   "stderr": "",
+   "tool": "epub",
+   "tool_version": "python 3.14.7 zipfile+xml.etree (stdlib)"
+  }
+ ]
+}

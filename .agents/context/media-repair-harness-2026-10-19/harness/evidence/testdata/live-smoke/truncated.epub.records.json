@@ -1,0 +1,49 @@
+{
+ "fixture": "truncated.epub",
+ "label": "LIVE: collected by the real ffprobe/ffmpeg inside a CPU-limited batch Job on synthetic fixtures; not replay, not real library media",
+ "records": [
+  {
+   "bounds": {
+    "epub_max_member_bytes": 8388608,
+    "epub_max_members": 5000,
+    "epub_max_uncompressed_bytes": 134217728,
+    "epub_max_xhtml_docs": 200,
+    "stderr_excerpt_bytes": 1500
+   },
+   "cause": "input",
+   "coverage": {
+    "not_verified": [
+     "stages after zip_open were not reached",
+     "reading quality, typography and rendering: no reader was run",
+     "DRM or encryption: not looked for beyond a missing-member check",
+     "whether the content is the right book: only the declared metadata and structure were read"
+    ],
+    "verified": [
+     "the check stopped at stage zip_open"
+    ]
+   },
+   "elapsed_s": 0.0,
+   "harness_tool": "epub_inspect",
+   "input": {
+    "bytes": 628,
+    "head_1m_sha256": "42c63cd125145f6ae0d0a6ce876abe65b634991593485efb6a85837e51c3bcfb",
+    "name": "truncated.epub",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "42c63cd125145f6ae0d0a6ce876abe65b634991593485efb6a85837e51c3bcfb"
+   },
+   "mode": "live",
+   "output": {
+    "error": "BadZipFile: File is not a zip file",
+    "findings": [],
+    "stage": "zip_open",
+    "stages_passed": [],
+    "valid": false
+   },
+   "reason": "zip_open: BadZipFile: File is not a zip file",
+   "status": "error",
+   "stderr": "",
+   "tool": "epub",
+   "tool_version": "python 3.14.7 zipfile+xml.etree (stdlib)"
+  }
+ ]
+}

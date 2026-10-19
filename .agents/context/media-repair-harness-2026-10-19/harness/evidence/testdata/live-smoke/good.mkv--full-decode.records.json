@@ -1,0 +1,122 @@
+{
+ "fixture": "good.mkv#full-decode",
+ "label": "LIVE: collected by the real ffprobe/ffmpeg inside a CPU-limited batch Job on synthetic fixtures; not replay, not real library media",
+ "records": [
+  {
+   "bounds": {
+    "deadline_s": 120,
+    "full_decode": true,
+    "full_max_bytes": 67108864,
+    "full_timeout_s": 60,
+    "max_segments": 10,
+    "max_stderr_bytes": 65536,
+    "max_stdout_bytes": 1048576,
+    "segment_s": 4,
+    "segments": 3,
+    "stderr_excerpt_bytes": 1500,
+    "timeout_s": 20
+   },
+   "coverage": {
+    "not_verified": [
+     "other video and audio streams, subtitles and data streams were not decoded"
+    ],
+    "verified": [
+     "4 segment(s) of up to 4s decoded (head, tail and 3 spread offsets); 16.0s decoded (133% of the duration)",
+     "full decode of the first video and first audio stream ran to the end (clean)"
+    ]
+   },
+   "elapsed_s": 0.396,
+   "harness_tool": "decode_sample",
+   "input": {
+    "bytes": 183096,
+    "head_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521",
+    "name": "good.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521"
+   },
+   "mode": "live",
+   "output": {
+    "clean": true,
+    "decoded_s": 15.982,
+    "decoder_error_lines": 0,
+    "duration_s": 12.046,
+    "findings": [],
+    "full": {
+     "at_s": null,
+     "decoded_s": 12.0,
+     "elapsed_s": 0.065,
+     "error_lines": 0,
+     "errors": [],
+     "exit_code": 0,
+     "frames": 120,
+     "performed": true,
+     "state": "clean",
+     "window_s": null
+    },
+    "sampled_fraction": 1.327,
+    "segments": [
+     {
+      "at_s": 0.0,
+      "decoded_s": 4.0,
+      "elapsed_s": 0.065,
+      "error_lines": 0,
+      "errors": [],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 40,
+      "state": "clean",
+      "window_s": 4
+     },
+     {
+      "at_s": 3.011,
+      "decoded_s": 4.0,
+      "elapsed_s": 0.065,
+      "error_lines": 0,
+      "errors": [],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 39,
+      "state": "clean",
+      "window_s": 4
+     },
+     {
+      "at_s": 6.023,
+      "decoded_s": 4.0,
+      "elapsed_s": 0.065,
+      "error_lines": 0,
+      "errors": [],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 39,
+      "state": "clean",
+      "window_s": 4
+     },
+     {
+      "at_s": 8.046,
+      "decoded_s": 3.982,
+      "elapsed_s": 0.065,
+      "error_lines": 0,
+      "errors": [],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 39,
+      "state": "clean",
+      "window_s": 4
+     }
+    ],
+    "segments_clean": 4,
+    "segments_planned": 4,
+    "segments_run": 4,
+    "segments_short": 0,
+    "segments_skipped_deadline": 0,
+    "segments_spawn_error": 0,
+    "segments_timeout": 0,
+    "segments_with_errors": 0
+   },
+   "status": "ok",
+   "stderr": "",
+   "tool": "decode",
+   "tool_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
+  }
+ ]
+}

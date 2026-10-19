@@ -1,0 +1,83 @@
+{
+ "fixture": "good.mkv#ffmpeg-hidden-from-PATH",
+ "label": "LIVE: collected by the real ffprobe/ffmpeg inside a CPU-limited batch Job on synthetic fixtures; not replay, not real library media",
+ "records": [
+  {
+   "bounds": {},
+   "coverage": {
+    "not_verified": [
+     "decoding of any sampled segment"
+    ],
+    "verified": []
+   },
+   "elapsed_s": 0.0,
+   "harness_tool": "decode_sample",
+   "input": {
+    "bytes": 183096,
+    "head_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521",
+    "name": "good.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521"
+   },
+   "mode": "live",
+   "output": {},
+   "reason": "ffmpeg not found on PATH",
+   "status": "unavailable",
+   "stderr": "",
+   "tool": "decode",
+   "tool_version": null
+  },
+  {
+   "bounds": {},
+   "coverage": {
+    "not_verified": [
+     "sampled frames",
+     "on-screen text"
+    ],
+    "verified": []
+   },
+   "elapsed_s": 0.0,
+   "harness_tool": "frame_sample",
+   "input": {
+    "bytes": 183096,
+    "head_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521",
+    "name": "good.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521"
+   },
+   "mode": "live",
+   "output": {},
+   "reason": "ffmpeg not found on PATH",
+   "status": "unavailable",
+   "stderr": "",
+   "tool": "frames",
+   "tool_version": null
+  },
+  {
+   "bounds": {},
+   "coverage": {
+    "not_verified": [
+     "per-segment levels and silence",
+     "audio stream language tags"
+    ],
+    "verified": []
+   },
+   "elapsed_s": 0.0,
+   "harness_tool": "audio_sample",
+   "input": {
+    "bytes": 183096,
+    "head_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521",
+    "name": "good.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521"
+   },
+   "mode": "live",
+   "output": {},
+   "reason": "ffmpeg not found on PATH",
+   "status": "unavailable",
+   "stderr": "",
+   "tool": "audio",
+   "tool_version": null
+  }
+ ]
+}

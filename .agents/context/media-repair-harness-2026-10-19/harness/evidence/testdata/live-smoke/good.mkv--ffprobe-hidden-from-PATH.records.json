@@ -1,0 +1,102 @@
+{
+ "fixture": "good.mkv#ffprobe-hidden-from-PATH",
+ "label": "LIVE: collected by the real ffprobe/ffmpeg inside a CPU-limited batch Job on synthetic fixtures; not replay, not real library media",
+ "records": [
+  {
+   "bounds": {},
+   "coverage": {
+    "not_verified": [
+     "container, streams, duration and tags"
+    ],
+    "verified": []
+   },
+   "elapsed_s": 0.0,
+   "harness_tool": "ffprobe",
+   "input": {
+    "bytes": 183096,
+    "head_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521",
+    "name": "good.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521"
+   },
+   "mode": "live",
+   "output": {},
+   "reason": "ffprobe not found on PATH",
+   "status": "unavailable",
+   "stderr": "",
+   "tool": "probe",
+   "tool_version": null
+  },
+  {
+   "bounds": {
+    "deadline_s": 120,
+    "full_decode": false,
+    "full_max_bytes": 67108864,
+    "full_timeout_s": 60,
+    "max_segments": 10,
+    "max_stderr_bytes": 65536,
+    "max_stdout_bytes": 1048576,
+    "segment_s": 4,
+    "segments": 3,
+    "stderr_excerpt_bytes": 1500,
+    "timeout_s": 20
+   },
+   "coverage": {
+    "not_verified": [
+     "the rest of the file was not decoded; a clean sample does not prove whole-file health",
+     "subtitle and data streams were not decoded",
+     "duration unknown (ffprobe not found on PATH): only the head was sampled"
+    ],
+    "verified": [
+     "1 segment(s) of up to 4s decoded (head, tail and 3 spread offsets); 4.0s decoded"
+    ]
+   },
+   "elapsed_s": 0.1,
+   "harness_tool": "decode_sample",
+   "input": {
+    "bytes": 183096,
+    "head_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521",
+    "name": "good.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521"
+   },
+   "mode": "live",
+   "output": {
+    "clean": true,
+    "decoded_s": 4.0,
+    "decoder_error_lines": 0,
+    "duration_s": null,
+    "findings": [],
+    "full": null,
+    "sampled_fraction": null,
+    "segments": [
+     {
+      "at_s": 0.0,
+      "decoded_s": 4.0,
+      "elapsed_s": 0.065,
+      "error_lines": 0,
+      "errors": [],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 40,
+      "state": "clean",
+      "window_s": 4
+     }
+    ],
+    "segments_clean": 1,
+    "segments_planned": 1,
+    "segments_run": 1,
+    "segments_short": 0,
+    "segments_skipped_deadline": 0,
+    "segments_spawn_error": 0,
+    "segments_timeout": 0,
+    "segments_with_errors": 0
+   },
+   "reason": "duration unknown (ffprobe not found on PATH): only the head was sampled",
+   "status": "partial",
+   "stderr": "",
+   "tool": "decode",
+   "tool_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
+  }
+ ]
+}

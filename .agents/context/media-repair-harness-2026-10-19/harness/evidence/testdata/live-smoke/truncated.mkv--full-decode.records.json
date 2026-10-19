@@ -1,0 +1,135 @@
+{
+ "fixture": "truncated.mkv#full-decode",
+ "label": "LIVE: collected by the real ffprobe/ffmpeg inside a CPU-limited batch Job on synthetic fixtures; not replay, not real library media",
+ "records": [
+  {
+   "bounds": {
+    "deadline_s": 120,
+    "full_decode": true,
+    "full_max_bytes": 67108864,
+    "full_timeout_s": 60,
+    "max_segments": 10,
+    "max_stderr_bytes": 65536,
+    "max_stdout_bytes": 1048576,
+    "segment_s": 4,
+    "segments": 3,
+    "stderr_excerpt_bytes": 1500,
+    "timeout_s": 20
+   },
+   "coverage": {
+    "not_verified": [
+     "other video and audio streams, subtitles and data streams were not decoded"
+    ],
+    "verified": [
+     "4 segment(s) of up to 4s decoded (head, tail and 3 spread offsets); 7.1s decoded (59% of the duration)",
+     "full decode of the first video and first audio stream ran to the end (errors)"
+    ]
+   },
+   "elapsed_s": 0.396,
+   "harness_tool": "decode_sample",
+   "input": {
+    "bytes": 100702,
+    "head_1m_sha256": "181cff79aad5cec5796b6b71a2ec75e99a2281f43629f9edefd2abb2fdedd47f",
+    "name": "truncated.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "181cff79aad5cec5796b6b71a2ec75e99a2281f43629f9edefd2abb2fdedd47f"
+   },
+   "mode": "live",
+   "output": {
+    "clean": false,
+    "decoded_s": 7.1,
+    "decoder_error_lines": 5,
+    "duration_s": 12.046,
+    "findings": [
+     "3 of 4 sampled segments produced decoder errors",
+     "full decode produced 1 error line(s)"
+    ],
+    "full": {
+     "at_s": null,
+     "decoded_s": 6.1,
+     "elapsed_s": 0.065,
+     "error_lines": 1,
+     "errors": [
+      "[in#0/matroska,webm @ 0x7ff52e530340] File ended prematurely"
+     ],
+     "exit_code": 0,
+     "frames": 61,
+     "performed": true,
+     "state": "errors",
+     "window_s": null
+    },
+    "sampled_fraction": 0.589,
+    "segments": [
+     {
+      "at_s": 0.0,
+      "decoded_s": 4.0,
+      "elapsed_s": 0.065,
+      "error_lines": 0,
+      "errors": [],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 40,
+      "state": "clean",
+      "window_s": 4
+     },
+     {
+      "at_s": 3.011,
+      "decoded_s": 3.1,
+      "elapsed_s": 0.066,
+      "error_lines": 1,
+      "errors": [
+       "[in#0/matroska,webm @ 0x7f37b9963340] File ended prematurely"
+      ],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 30,
+      "state": "errors",
+      "window_s": 4
+     },
+     {
+      "at_s": 6.023,
+      "decoded_s": null,
+      "elapsed_s": 0.033,
+      "error_lines": 2,
+      "errors": [
+       "[in#0/matroska,webm @ 0x7fb652d10340] File ended prematurely",
+       "Last message repeated 3 times"
+      ],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 0,
+      "state": "errors",
+      "window_s": 4
+     },
+     {
+      "at_s": 8.046,
+      "decoded_s": null,
+      "elapsed_s": 0.066,
+      "error_lines": 2,
+      "errors": [
+       "[in#0/matroska,webm @ 0x7f8eded44340] File ended prematurely",
+       "Last message repeated 3 times"
+      ],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 0,
+      "state": "errors",
+      "window_s": 4
+     }
+    ],
+    "segments_clean": 1,
+    "segments_planned": 4,
+    "segments_run": 4,
+    "segments_short": 0,
+    "segments_skipped_deadline": 0,
+    "segments_spawn_error": 0,
+    "segments_timeout": 0,
+    "segments_with_errors": 3
+   },
+   "status": "ok",
+   "stderr": "[in#0/matroska,webm @ 0x7f37b9963340] File ended prematurely\n[in#0/matroska,webm @ 0x7fb652d10340] File ended prematurely\nLast message repeated 3 times\n[in#0/matroska,webm @ 0x7f8eded44340] File ended prematurely\nLast message repeated 3 times",
+   "tool": "decode",
+   "tool_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
+  }
+ ]
+}
