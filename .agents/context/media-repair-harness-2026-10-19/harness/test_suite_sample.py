@@ -1,4 +1,4 @@
-"""Tests against real W3 suite cases (testdata/suite_sample, copied unmodified) incl. replay mode and optional keys."""
+"""Tests against real W3 suite cases (read in place from ../suite, merged in PR #1004) incl. replay mode and optional keys."""
 import json
 import shutil
 import tempfile
@@ -12,7 +12,7 @@ import run as R
 import th
 import tools as T
 
-SAMPLE = th.TESTDATA / 'suite_sample'
+SAMPLE = th.HERE.parent / 'suite'
 NO_BINARIES = lambda name: None
 
 

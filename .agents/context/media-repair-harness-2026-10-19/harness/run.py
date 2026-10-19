@@ -21,6 +21,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import adapters as A  # noqa: E402
+import leakguard  # noqa: E402
 import outcomes  # noqa: E402
 import protocol as P  # noqa: E402
 import tools as T  # noqa: E402
@@ -75,7 +76,7 @@ def load_cases(suite, ids=None, split=None):
     return cases
 
 
-def resolve_evidence(case, suite_dir):
+def resolve_evidence(case, suite_dir, redactor=None):
     """Pre-collected evidence as shown to the model (outputs bounded; refs verified against their sha256)."""
     shown = []
     for e in case.get('evidence', []):
@@ -94,7 +95,7 @@ def resolve_evidence(case, suite_dir):
                 out, status = 'evidence file missing', 'error'
         elif not isinstance(out, str):
             out = json.dumps(out, sort_keys=True, ensure_ascii=False)
-        res = T.ToolResult(status if status in ('ok', 'partial', 'error', 'timeout') else 'ok', out).bounded()
+        res = T.ToolResult(status if status in ('ok', 'partial', 'error', 'timeout') else 'ok', out).bounded(redactor)
         shown.append({'id': e['id'], 'tool': e.get('tool'), 'args': e.get('args', {}), 'status': res['status'],
                       'output': res['output'], 'truncated': res['truncated']})
     return shown
@@ -105,7 +106,7 @@ def result_message(call_id, tool, res, remaining):
                        'output': res['output'], 'tool_calls_remaining': remaining}, ensure_ascii=False)
 
 
-def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto'):
+def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto', run_id=''):
     """Run one case through the turn protocol.  Returns the run record (never raises for model/tool trouble)."""
     import shutil
     started_wall = time.monotonic()
@@ -114,8 +115,9 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     fixture_info = fixture.verify_local()
     ctx = T.Context(case, fixture, Path(scratch) / case['id'], runner=runner, which=which or shutil.which, ocr_backend=ocr_backend,
                     suite_dir=suite_dir, replay=replay)
-    evidence = resolve_evidence(case, suite_dir)
-    view = P.case_view(case, evidence)
+    evidence = resolve_evidence(case, suite_dir, ctx.redact)
+    model_alias = leakguard.alias(run_id, case['id'])
+    view = P.case_view(case, evidence, case_alias=model_alias)
     system = P.SYSTEM_PROMPT
     messages = [{'role': 'user', 'content': json.dumps(view, ensure_ascii=False, sort_keys=True)}]
     ev_ids = {e['id'] for e in evidence}
@@ -135,6 +137,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                 force('model call limit reached without a decision')
                 break
             n_calls += 1
+            leakguard.check_messages(case, messages, ctx.forbidden_extra)  # raises LeakError: harness error, the model is not called
             try:
                 comp = adapter.complete(system, messages)
             except A.AdapterError as e:
@@ -175,7 +178,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     except A.AbortRun:
         raise
     except Exception as e:  # noqa: BLE001 - harness fault: keep the run, mark it
-        error = {'kind': 'harness_crash', 'message': '%s: %s' % (type(e).__name__, e), 'traceback': traceback.format_exc()[-1500:]}
+        error = {'kind': 'harness_crash', 'message': '%s: %s' % (type(e).__name__, e), 'leak_guard': isinstance(e, leakguard.LeakError), 'traceback': traceback.format_exc()[-1500:]}
         force('harness error: ' + type(e).__name__)
 
     first_try_valid = (decision is not None and not forced and not repairs)
@@ -198,7 +201,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     record = {
         'record_version': 1, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
         'split': case.get('split'), 'started_at': started_at,
-        'requested_model': adapter.requested_model, 'response_model_ids': response_models,
+        'model_case_alias': model_alias, 'requested_model': adapter.requested_model, 'response_model_ids': response_models,
         'runtime_version': adapter.runtime_version, 'model_digest': adapter.model_digest,
         'model_digest_na_reason': adapter.digest_na_reason if not adapter.model_digest else None,
         'fixture': fixture_info, 'evidence_shown': [e['id'] for e in evidence],
@@ -243,7 +246,7 @@ def build_adapter(args):
     if args.adapter == 'claude':
         return A.ClaudeAdapter(model, effort=args.effort, max_budget_usd=args.max_budget_usd)
     if args.adapter == 'codex':
-        return A.CodexAdapter(model, effort=args.effort, record_session=args.codex_record_session)
+        return A.CodexAdapter(model, effort=args.effort, record_session=not args.codex_ephemeral)
     if args.adapter == 'scripted':
         return A.ScriptedAdapter(model, json.loads(Path(args.script).read_text()))
     raise SystemExit('unknown adapter')
@@ -268,7 +271,7 @@ def main(argv=None):
     ap.add_argument('--replay', choices=['auto', 'off', 'force'], default='auto', help='serve recorded ffprobe/decode/title-card results from <suite>/fixtures/probes when ffprobe/ffmpeg are missing (auto), never, or always')
     ap.add_argument('--no-warmup', action='store_true')
     ap.add_argument('--ocr-model', help='vision model on Prime for the ocr tool')
-    ap.add_argument('--codex-record-session', action='store_true', help='codex: keep the rollout so the model id can be read back')
+    ap.add_argument('--codex-ephemeral', action='store_true', help='codex: do not keep the rollout (then no response model id can be recorded and G10 fails)')
     ap.add_argument('--script', help='scripted adapter: JSON list of replies')
     args = ap.parse_args(argv)
 
@@ -311,7 +314,7 @@ def main(argv=None):
                 aborted = str(e)
                 break
             try:
-                rec = run_case(case, sha, adapter, suite_dir, scratch, ocr_backend=ocr_backend, replay=args.replay)
+                rec = run_case(case, sha, adapter, suite_dir, scratch, ocr_backend=ocr_backend, replay=args.replay, run_id=run_id)
             except A.AbortRun as e:
                 aborted = str(e)
                 break

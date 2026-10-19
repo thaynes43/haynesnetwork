@@ -70,6 +70,11 @@
     "dirty": true,
     "sha": "8fc5381cfee797865a5875c83b3529ae3c427783"
   },
+  "invalid": {
+    "reason": "truth leaked to the model: the raw case id (it encodes the class) and fixture file names in tool output were shown; superseded by the leak-guarded runs under runs/ with the \"-v2-\" prefix",
+    "recorded": "2026-10-19, PR #1005 review",
+    "status": "INVALID for scoring"
+  },
   "model_digest": null,
   "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
   "preflight": {

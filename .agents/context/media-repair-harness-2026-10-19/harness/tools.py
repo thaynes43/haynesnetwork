@@ -22,6 +22,8 @@ import time
 import wave
 import io
 import concurrent.futures
+
+import leakguard
 from pathlib import Path
 
 from protocol import TOOL_OUTPUT_BYTES, TOOL_TIMEOUT_S
@@ -41,8 +43,10 @@ class ToolResult:
         assert status in ('ok', 'partial', 'error', 'timeout')
         self.status, self.output, self.extra = status, output, extra
 
-    def bounded(self):
+    def bounded(self, redactor=None):
         text = self.output if isinstance(self.output, str) else json.dumps(self.output, sort_keys=True, ensure_ascii=False)
+        if redactor:
+            text = redactor(text)  # fixture names encode the answer; redact before bounding
         raw = text.encode('utf-8')
         truncated = len(raw) > TOOL_OUTPUT_BYTES
         if truncated:
@@ -103,6 +107,9 @@ class Context:
         self.case, self.fixture, self.scratch = case, fixture, Path(scratch)
         self.runner, self.which, self.ocr_backend = runner, which, ocr_backend
         self.suite_dir, self.replay, self.replay_rec = suite_dir, replay, None
+        extra = [fixture.path] if getattr(fixture, 'path', None) else []
+        self.redact = lambda text: leakguard.redact(text, case, extra)
+        self.forbidden_extra = extra
         self.frames, self.frame_t = {}, {}  # name -> path (None = virtual replay frame), name -> seconds
         self.scratch.mkdir(parents=True, exist_ok=True)
 
@@ -578,12 +585,12 @@ REGISTRY = {'ffprobe': tool_ffprobe, 'decode_sample': tool_decode_sample, 'frame
 
 def _failure(mode, tool, real_result):
     if mode == 'error':
-        return ToolResult('error', 'injected failure: %s could not run (simulated tool error)' % tool, injected=True, mode='injected')
+        return ToolResult('error', '%s failed: could not run' % tool, injected=True, mode='injected')
     if mode == 'timeout':
-        return ToolResult('timeout', 'injected failure: %s exceeded the %d s tool timeout (simulated)' % (tool, TOOL_TIMEOUT_S), injected=True, mode='injected')
+        return ToolResult('timeout', '%s exceeded the %d s tool timeout' % (tool, TOOL_TIMEOUT_S), injected=True, mode='injected')
     if mode == 'partial':
         text = real_result.output if isinstance(real_result.output, str) else json.dumps(real_result.output, sort_keys=True, ensure_ascii=False)
-        return ToolResult('partial', text[:max(1, len(text) // 2)] + ' ...[output cut off by injected partial failure]', injected=True, mode='injected')
+        return ToolResult('partial', text[:max(1, len(text) // 2)] + ' ...[output cut off]', injected=True, mode='injected')
     raise ValueError('unknown failure mode %r' % mode)
 
 
@@ -612,6 +619,6 @@ def call_tool(ctx, name, args):
             pool.shutdown(wait=False)
         if inject and inject.get('tool') == name:
             res = _failure(inject.get('mode', 'error'), name, res)
-    out = res.bounded()
+    out = res.bounded(ctx.redact)
     out['wall_s'] = round(time.monotonic() - started, 3)
     return out

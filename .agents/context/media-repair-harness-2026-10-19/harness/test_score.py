@@ -190,6 +190,18 @@ class Scoring(unittest.TestCase):
         s, _ = self.run_score(lambda r: r['h1']['turns'][0].pop('raw_response'))
         self.assertEqual(self.gate(s, 'G10')['status'], 'fail')
 
+    def test_g10_needs_an_actual_response_model_id(self):
+        # a non-empty 'not reported' note must not count (codex without a rollout)
+        def note_only(r):
+            r['h1']['response_model_ids'] = []
+            r['h1']['turns'][0]['meta'] = {'response_model_source': 'not_reported'}
+        s, _ = self.run_score(note_only)
+        g = self.gate(s, 'G10')
+        self.assertEqual(g['status'], 'fail')
+        self.assertIn('response_model_id', g['detail']['incomplete'][0]['missing'])
+        s, _ = self.run_score(lambda r: r['h1'].update(response_model_ids=['gpt-6-luna']))
+        self.assertEqual(self.gate(s, 'G10')['status'], 'pass')
+
     def test_gate_without_data_is_not_evaluated_so_overall_incomplete(self):
         cases = [th.make_case('only', 'healthy', ('none',))]
         ts = th.TempSuite(cases)

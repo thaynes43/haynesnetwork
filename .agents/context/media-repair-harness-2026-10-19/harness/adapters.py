@@ -259,7 +259,7 @@ class CodexAdapter(Adapter):
     name = 'codex'
     digest_na_reason = 'hosted API model: no weights digest; usage is taken from the event stream'
 
-    def __init__(self, model, effort=None, timeout=300, record_session=False, runner=subprocess.run):
+    def __init__(self, model, effort=None, timeout=300, record_session=True, runner=subprocess.run):
         super().__init__(model)
         self.effort, self.timeout, self.record_session, self.runner = effort, timeout, record_session, runner
         self.workdir = tempfile.mkdtemp(prefix='mrh-codex-')
@@ -314,7 +314,7 @@ def _rollout_model(thread_id):
     return None
 
 
-def parse_codex(raw, returncode, req, wall, record_session=False):
+def parse_codex(raw, returncode, req, wall, record_session=True):
     text, usage, native_tools, errors, thread = None, {}, [], [], None
     for line in raw.splitlines():
         try:
@@ -342,7 +342,7 @@ def parse_codex(raw, returncode, req, wall, record_session=False):
     model = _rollout_model(thread) if (record_session and thread) else None
     return Completion(text, req, raw, response_model=model, usage=usage, wall_s=wall,
                       meta={'thread_id': thread, 'native_tool_items': native_tools,
-                            'response_model_source': 'codex rollout turn_context (client side)' if model else 'not reported in the codex exec --json event stream'})
+                            'response_model_source': 'rollout' if model else 'not_reported'})
 
 
 class ScriptedAdapter(Adapter):

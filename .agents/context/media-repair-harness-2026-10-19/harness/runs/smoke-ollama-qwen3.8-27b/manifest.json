@@ -64,6 +64,11 @@
     "dirty": true,
     "sha": "6d98d4300698b1678dfa97e02708f166b431a0c2"
   },
+  "invalid": {
+    "reason": "truth leaked to the model: the raw case id (it encodes the class) and fixture file names in tool output were shown; superseded by the leak-guarded runs under runs/ with the \"-v2-\" prefix",
+    "recorded": "2026-10-19, PR #1005 review",
+    "status": "INVALID for scoring"
+  },
   "operator_note_added_after_run": {
     "api_ps_after": {
       "models": []

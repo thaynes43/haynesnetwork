@@ -198,22 +198,30 @@ class CodexAdapterTests(unittest.TestCase):
         self.assertIsNone(c.usage['cost_usd'])  # codex reports tokens, not cost
         self.assertEqual(c.meta['native_tool_items'], ['command_execution'])  # a protocol violation worth recording
         self.assertIsNone(c.response_model)
-        self.assertIn('not reported', c.meta['response_model_source'])
+        self.assertEqual(c.meta['response_model_source'], 'not_reported')
+        old = A._rollout_model
+        A._rollout_model = lambda thread: 'gpt-6-luna'
+        try:
+            c = A.parse_codex(raw, 0, {}, 3.0)
+        finally:
+            A._rollout_model = old
+        self.assertEqual((c.response_model, c.meta['response_model_source']), ('gpt-6-luna', 'rollout'))
 
     def test_no_message_is_adapter_error(self):
         with self.assertRaises(A.AdapterError):
             A.parse_codex('{"type":"turn.failed","error":{"message":"model not found"}}\n', 1, {}, 1.0)
 
-    def test_argv_is_read_only_ephemeral_stdin(self):
+    def test_argv_is_read_only_stdin(self):
         ad = A.CodexAdapter('gpt-6-luna')
         cmd = ad.argv()
         self.assertEqual(cmd[:2], ['codex', 'exec'])
         self.assertEqual(cmd[cmd.index('-s') + 1], 'read-only')
-        for flag in ('--json', '--ephemeral', '--skip-git-repo-check', '--ignore-user-config', '--ignore-rules'):
+        for flag in ('--json', '--skip-git-repo-check', '--ignore-user-config', '--ignore-rules'):
             self.assertIn(flag, cmd)
         self.assertEqual(cmd[-1], '-')
         ad.finish()
-        self.assertNotIn('--ephemeral', A.CodexAdapter('gpt-6-luna', record_session=True).argv())
+        self.assertNotIn('--ephemeral', A.CodexAdapter('gpt-6-luna').argv())   # default keeps the rollout so the model id is recorded
+        self.assertIn('--ephemeral', A.CodexAdapter('gpt-6-luna', record_session=False).argv())
 
 
 class Transcript(unittest.TestCase):

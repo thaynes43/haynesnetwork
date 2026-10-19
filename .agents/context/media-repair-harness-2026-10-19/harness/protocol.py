@@ -162,12 +162,12 @@ def parse_reply(text):
 MODEL_CONTEXT_KEYS = ('title', 'filename', 'expected', 'client_profile', 'question', 'arr', 'notes_for_model')
 
 
-def case_view(case, evidence_rendered, budget=MAX_TOOL_CALLS):
-    """What the model sees.  Never truth, supported_actions, solvable, family, provenance,
+def case_view(case, evidence_rendered, budget=MAX_TOOL_CALLS, case_alias=None):
+    """What the model sees.  Never the real case id, truth, supported_actions, solvable, family, provenance,
     inject_tool_failure, outcome_step, fixture or split."""
     ctx = case.get('context', {})
     return {
-        'case_id': case['id'],
+        'case_id': case_alias or 'case-unaliased',  # opaque per-run alias (leakguard.alias); the real id never reaches a model
         'media_type': case.get('media_type'),
         'context': {k: ctx.get(k) for k in MODEL_CONTEXT_KEYS if k in ctx},
         'evidence': evidence_rendered,

@@ -165,8 +165,8 @@ def score(run_dir, suite):
         for k in ('runtime_version', 'harness_git_sha', 'config_hash', 'case_sha256', 'requested_model'):
             if not r.get(k):
                 miss.append(k)
-        if not r.get('response_model_ids') and not (r.get('turns') and r['turns'][0].get('meta', {}).get('response_model_source')):
-            miss.append('response_model_id')
+        if not [m for m in r.get('response_model_ids', []) if m and isinstance(m, str)]:
+            miss.append('response_model_id')  # an actual id reported by the API / CLI / rollout; a 'not reported' note does not count
         fk = ((c or {}).get('fixture') or {}).get('kind', 'none')
         fx = r.get('fixture') or {}
         if fk != 'none' and not (fx.get('actual_sha256') or fx.get('declared_sha256')):

@@ -103,7 +103,8 @@ class InjectedFailures(unittest.TestCase):
             call = rec['tool_calls'][0]
             self.assertEqual(call['status'], status)
             self.assertTrue(call['injected'])
-            self.assertIn('injected failure', call['output'])
+            self.assertTrue(call['injected'])
+            self.assertNotIn('inject', call['output'].lower())  # the model must not be told the failure is synthetic
             self.assertIn(status, ad.calls[1][-1]['content'])
             ts.cleanup()
 
