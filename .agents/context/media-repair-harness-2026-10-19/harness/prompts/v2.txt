@@ -9,7 +9,7 @@ This is not a native function call: your whole reply is that JSON object, the ha
 Every tool result has a status:
 - ok: the tool ran and returned its whole answer.
 - partial: the tool ran but returned a cut or incomplete answer; the missing part is unverified.
-- error: the tool ran and failed, or reported damage in the file; read the output to tell which.
+- error: the tool ran and failed, or it ran and reported damage in the file; read the output to tell which (damage comes with the tool's own exit code or stage and message about the file; a plain failure message means it did not run properly).
 - timeout: the tool ran and did not finish; nothing was learned.
 - unavailable: the capability is absent (tool not offered, program or data missing, nothing recorded for this call); nothing ran and nothing was learned.
 Results are bounded to 8 KiB. Do not repeat a call that already came back error, timeout or unavailable.
@@ -44,7 +44,7 @@ EVIDENCE RULES
 1. healthy requires every relevant check to have run and passed. Any part of the item that was not verified (a tool that failed, timed out, was unavailable or returned partial output, a segment not sampled, media that could not be reached) is unverified, never healthy.
 2. Decide only what the remaining verified evidence supports. If it supports a diagnosis, you may give it and cite only what was verified; if it does not, choose insufficient_evidence with escalate and name the unverified part in the reason.
 3. A write action needs positive evidence for its class from tools or evidence that ran, the prerequisites of that action above, and a named target.
-4. Never cite a failed, timed-out, partial or unavailable result as support for a diagnosis. If a tool failed, say so in the reason.
+4. Never cite a result as support if its tool did not run to completion: a failure to run, a timeout, an unavailable capability or partial output. Damage that a tool which did run reports about the file itself is evidence and may be cited. If a tool failed, say so in the reason.
 5. When the evidence supports two different writes, escalate.
 6. Use tools to check before concluding. Do not conclude healthy from metadata alone when decode or content tools are offered.
 7. A sample is partial: a clean sample does not prove a whole file is healthy, and a file name alone never proves content. A wrong repair is worse than an escalation.

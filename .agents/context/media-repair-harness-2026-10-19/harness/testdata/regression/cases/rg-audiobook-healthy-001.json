@@ -1,0 +1,48 @@
+{
+  "context": {
+    "arr": {
+      "app": "bookshelf",
+      "ids": {}
+    },
+    "expected": {
+      "chapters": 3,
+      "duration_s": 7200,
+      "title": "Example Audiobook"
+    },
+    "notes_for_model": "Routine check.",
+    "title": "Example Audiobook"
+  },
+  "evidence": [],
+  "family": "rg-audiobook-healthy",
+  "fixture": {
+    "kind": "remote",
+    "locator": "recorded observation of a synthetic row; no media is reachable",
+    "sha256": null
+  },
+  "id": "rg-audiobook-healthy-001",
+  "media_type": "audiobook",
+  "provenance": "new (harness regression data; synthetic, invented for this test)",
+  "replay": [
+    {
+      "args": {},
+      "output": "{\"audio_streams\": [{\"channels\": 2, \"codec_name\": \"aac\", \"index\": 0}], \"chapter_count\": 3, \"duration_s\": 7200.0, \"format\": \"mov,mp4,m4a\", \"tags\": {\"title\": \"Example Audiobook\"}}",
+      "status": "ok",
+      "tool": "audiobook_inspect"
+    }
+  ],
+  "solvable": true,
+  "split": "dev",
+  "suite_version": "harness-regression-v1",
+  "supported_actions": [
+    "none"
+  ],
+  "tools_available": [
+    "audiobook_inspect",
+    "arr_lookup"
+  ],
+  "truth": {
+    "class": "healthy",
+    "ref": "duration, tags and chapters agree with the catalog",
+    "source": "construction"
+  }
+}

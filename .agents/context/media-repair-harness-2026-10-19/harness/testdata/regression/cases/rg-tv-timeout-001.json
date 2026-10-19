@@ -1,0 +1,54 @@
+{
+  "context": {
+    "arr": {
+      "app": "sonarr",
+      "ids": {}
+    },
+    "expected": {
+      "episode": 3,
+      "runtime_s": 1320,
+      "season": 1,
+      "series": "Example Show"
+    },
+    "notes_for_model": "Episode freezes halfway.",
+    "title": "Example Show"
+  },
+  "evidence": [
+    {
+      "args": {},
+      "id": "e1",
+      "output": "{\"exit_code\": 0, \"format\": {\"duration\": \"1320.0\", \"format_name\": \"matroska,webm\"}, \"stderr\": \"\", \"streams\": [{\"codec_name\": \"h264\", \"codec_type\": \"video\", \"index\": 0, \"pix_fmt\": \"yuv420p\", \"profile\": \"High\"}, {\"channels\": 2, \"codec_name\": \"aac\", \"codec_type\": \"audio\", \"index\": 1}]}",
+      "status": "ok",
+      "tool": "ffprobe"
+    }
+  ],
+  "family": "rg-tv-timeout",
+  "fixture": {
+    "kind": "remote",
+    "locator": "recorded observation of a synthetic row; no media is reachable",
+    "sha256": null
+  },
+  "id": "rg-tv-timeout-001",
+  "inject_tool_failure": {
+    "mode": "timeout",
+    "tool": "decode_sample"
+  },
+  "media_type": "tv",
+  "provenance": "new (harness regression data; synthetic, invented for this test)",
+  "solvable": false,
+  "split": "dev",
+  "suite_version": "harness-regression-v1",
+  "supported_actions": [
+    "escalate"
+  ],
+  "tools_available": [
+    "ffprobe",
+    "decode_sample",
+    "arr_lookup"
+  ],
+  "truth": {
+    "class": "insufficient_evidence",
+    "ref": "the decode tool times out; the file body is unverified",
+    "source": "construction"
+  }
+}

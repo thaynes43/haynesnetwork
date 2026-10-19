@@ -1,0 +1,58 @@
+{
+  "context": {
+    "arr": {
+      "app": "radarr",
+      "ids": {}
+    },
+    "expected": {
+      "language": "en",
+      "runtime_s": 6000
+    },
+    "notes_for_model": "Playback stutters near the end, says a viewer.",
+    "title": "Example Movie Two"
+  },
+  "evidence": [
+    {
+      "args": {},
+      "id": "e1",
+      "output": "{\"exit_code\": 0, \"format\": {\"duration\": \"6000.0\", \"format_name\": \"matroska,webm\"}, \"stderr\": \"\", \"streams\": [{\"codec_name\": \"h264\", \"codec_type\": \"video\", \"index\": 0, \"pix_fmt\": \"yuv420p\", \"profile\": \"High\"}, {\"channels\": 2, \"codec_name\": \"aac\", \"codec_type\": \"audio\", \"index\": 1}]}",
+      "status": "ok",
+      "tool": "ffprobe"
+    }
+  ],
+  "family": "rg-movie-partial",
+  "fixture": {
+    "kind": "remote",
+    "locator": "recorded observation of a synthetic row; no media is reachable",
+    "sha256": null
+  },
+  "id": "rg-movie-partial-001",
+  "media_type": "movie",
+  "provenance": "new (harness regression data; synthetic, invented for this test)",
+  "replay": [
+    {
+      "args": {
+        "at": 0
+      },
+      "output": "{\"exit_code\": 0, \"quota_exhausted\": false, \"scope\": \"4 s window\", \"stderr\": \"\"}",
+      "status": "ok",
+      "tool": "decode_sample"
+    }
+  ],
+  "solvable": false,
+  "split": "dev",
+  "suite_version": "harness-regression-v1",
+  "supported_actions": [
+    "escalate"
+  ],
+  "tools_available": [
+    "ffprobe",
+    "decode_sample",
+    "arr_lookup"
+  ],
+  "truth": {
+    "class": "insufficient_evidence",
+    "ref": "only a 4 s window was ever decoded; the rest of the file is unverified",
+    "source": "construction"
+  }
+}

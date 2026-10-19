@@ -18,6 +18,7 @@ This harness never executes a write.  Every run record carries an `action_audit`
 Nothing here says a repair happened: the words in a record are proposal / intent / not executed.  Everything is computed from
 model-visible case data only (context, pre-collected evidence, the run's own tool calls).
 """
+import json
 import re
 
 WRITE_ACTIONS = ('blocklist_and_search', 'remap', 'rename', 'convert')
@@ -84,9 +85,31 @@ def _check(cid, met, detail, basis='computed'):
     return {'id': cid, 'met': bool(met), 'basis': basis, 'detail': detail}
 
 
+def usable_as_support(status, output, injected=False):
+    """May a result be cited as support for a diagnosis?  ok: yes.  partial / timeout / unavailable / an injected failure: no, the
+    tool did not run to completion.  error: only when it is a finding about the file itself, i.e. the tool ran and reported
+    damage in its structured shape (an exit code or a stage with the tool's own message); a plain failure message is not."""
+    if status == 'ok':
+        return True
+    if status != 'error' or injected:
+        return False
+    try:
+        d = json.loads(output) if isinstance(output, str) else output
+    except ValueError:
+        return False
+    return isinstance(d, dict) and ('exit_code' in d or 'stage' in d)
+
+
 def non_ok_evidence_ids(case, tool_calls):
     ids = {c['id'] for c in tool_calls if c.get('status') in NON_OK}
     ids |= {e['id'] for e in case.get('evidence', []) if e.get('status', 'ok') in NON_OK}
+    return ids
+
+
+def unsupportive_ids(case, tool_calls):
+    """Ids of results that must not be cited as support (see usable_as_support)."""
+    ids = {c['id'] for c in tool_calls if not usable_as_support(c.get('status'), c.get('output'), c.get('injected', False))}
+    ids |= {e['id'] for e in case.get('evidence', []) if not usable_as_support(e.get('status', 'ok'), e.get('output'))}
     return ids
 
 
@@ -115,6 +138,13 @@ def _ok_sources(case, tool_calls):
     return out
 
 
+def _supportive_sources(case, tool_calls):
+    return [(c['id'], c.get('tool'), c.get('args') or {}, str(c.get('output'))) for c in tool_calls
+            if usable_as_support(c.get('status'), c.get('output'), c.get('injected', False))] + \
+           [(e['id'], e.get('tool'), e.get('args') or {}, str(e.get('output'))) for e in case.get('evidence', [])
+            if usable_as_support(e.get('status', 'ok'), e.get('output'))]
+
+
 def compute(case, decision, tool_calls, forced=False, prompt_version='v1'):
     """-> the `action_audit` dict for one decision."""
     action = decision.get('action')
@@ -134,9 +164,9 @@ def compute(case, decision, tool_calls, forced=False, prompt_version='v1'):
     arr_app = ((ctx.get('arr') or {}).get('app') or '').lower() or None
     refs = list(decision.get('evidence_refs') or [])
     known = {e['id'] for e in case.get('evidence', [])} | {c['id'] for c in tool_calls}
-    bad_ids = non_ok_evidence_ids(case, tool_calls)
+    bad_ids = unsupportive_ids(case, tool_calls)
     ok_src = _ok_sources(case, tool_calls)
-    ok_cited = [s for s in ok_src if s[0] in refs]
+    ok_cited = [s for s in _supportive_sources(case, tool_calls) if s[0] in refs]
     audit_text = ' '.join([str(audit.get('readback') or ''), str(audit.get('verify') or '')] + out['claimed_preconditions']) if audit else ''
     checks = []
     allowed = ACTION_CLASSES[action]
@@ -149,8 +179,8 @@ def compute(case, decision, tool_calls, forced=False, prompt_version='v1'):
     checks.append(_check('positive_evidence_cited', bool(cited) and not [r for r in refs if r not in known],
                          'cites %s; unknown refs %s' % (cited, [r for r in refs if r not in known])))
     checks.append(_check('no_failed_tool_cited', not (set(refs) & bad_ids),
-                         'cited refs that are error/timeout/partial/unavailable: %s' % sorted(set(refs) & bad_ids)))
-    checks.append(_check('cited_evidence_ok', bool(ok_cited), 'cited results with status ok: %s' % [s[0] for s in ok_cited]))
+                         'cited refs that did not run to completion (failure to run, timeout, partial, unavailable): %s' % sorted(set(refs) & bad_ids)))
+    checks.append(_check('cited_evidence_supports', bool(ok_cited), 'cited results usable as support (ok, or damage the tool itself reported): %s' % [s[0] for s in ok_cited]))
     if action in NEEDS_ARR:
         checks.append(_check('arr_app_present', arr_app in ARR_APPS, 'context.arr.app=%r' % arr_app))
     if action == 'remap':

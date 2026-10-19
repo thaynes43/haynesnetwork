@@ -1,0 +1,57 @@
+{
+  "context": {
+    "arr": {
+      "app": "sonarr",
+      "ids": {}
+    },
+    "expected": {
+      "episode": 5,
+      "order": "catalog uses one order; the broadcast used another",
+      "season": 2,
+      "series": "Example Show"
+    },
+    "notes_for_model": "Episode seems to be in the wrong place in the list.",
+    "title": "Example Show"
+  },
+  "evidence": [
+    {
+      "args": {},
+      "id": "e1",
+      "output": "{\"exit_code\": 0, \"format\": {\"duration\": \"1320.0\", \"format_name\": \"matroska,webm\"}, \"stderr\": \"\", \"streams\": [{\"codec_name\": \"h264\", \"codec_type\": \"video\", \"index\": 0, \"pix_fmt\": \"yuv420p\", \"profile\": \"High\"}, {\"channels\": 2, \"codec_name\": \"aac\", \"codec_type\": \"audio\", \"index\": 1}]}",
+      "status": "ok",
+      "tool": "ffprobe"
+    },
+    {
+      "args": {},
+      "id": "e2",
+      "output": "The on-screen title card matches the broadcast-order episode 6 and the catalog-order episode 5.",
+      "status": "ok",
+      "tool": "prior_record"
+    }
+  ],
+  "family": "rg-tv-order",
+  "fixture": {
+    "kind": "remote",
+    "locator": "recorded observation of a synthetic row; no media is reachable",
+    "sha256": null
+  },
+  "id": "rg-tv-order-001",
+  "media_type": "tv",
+  "provenance": "new (harness regression data; synthetic, invented for this test)",
+  "solvable": false,
+  "split": "dev",
+  "suite_version": "harness-regression-v1",
+  "supported_actions": [
+    "escalate"
+  ],
+  "tools_available": [
+    "ffprobe",
+    "ocr",
+    "arr_lookup"
+  ],
+  "truth": {
+    "class": "order_edition_ambiguity",
+    "ref": "content is right under two legitimate episode orders; the evidence does not choose",
+    "source": "construction"
+  }
+}
