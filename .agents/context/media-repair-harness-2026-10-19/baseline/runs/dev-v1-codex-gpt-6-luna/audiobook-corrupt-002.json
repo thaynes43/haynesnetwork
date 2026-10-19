@@ -1,0 +1,253 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "blocklist_and_search",
+      "class": "corrupt_file",
+      "target": "The Lantern Road.mp3"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "audiobook-corrupt-002",
+  "case_sha256": "2f82ff084a9b664932b8cec70c8510ee13fb1dc95c1a5d38fa1e2fdb061a9f37",
+  "config_hash": "2cfc1eabe5227bd8802a06643b4014f1e23ba9e094e675042bacb4869b7a09ee",
+  "decision": {
+    "action": "blocklist_and_search",
+    "class": "corrupt_file",
+    "confidence": 0.98,
+    "evidence_refs": [
+      "e1",
+      "e2",
+      "t1"
+    ],
+    "reason": "Both ffprobe and audiobook_inspect fail to decode the file, reporting no consecutive MPEG audio frames and invalid data. The catalog metadata matches the expected work, so the evidence supports a bad copy.",
+    "target": "The Lantern Road.mp3",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "8e9b5e893d70370869eb2a6f022930c7535c3f8e2f8d0a6e2ba720a0f25a2192",
+    "bytes": 443,
+    "declared_sha256": "8e9b5e893d70370869eb2a6f022930c7535c3f8e2f8d0a6e2ba720a0f25a2192",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "c61b6c621103b2a817d9ea887fdbc0aa05276ab5",
+  "injected_failure": null,
+  "model_case_alias": "case-53dee290",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; usage is taken from the event stream",
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "gpt-6-luna",
+  "response_model_ids": [
+    "gpt-6-luna"
+  ],
+  "run_id": "dev-v1-codex-gpt-6-luna",
+  "runtime_version": "codex-cli 0.162.1",
+  "split": "dev",
+  "started_at": "2026-10-19T22:11:43.170189+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [
+    {
+      "args": {},
+      "id": "t1",
+      "mode": "replay",
+      "output": "{\"exit_code\": 1, \"stderr\": \"[mp3 @ 0x0] Failed to find two consecutive MPEG audio frames.\\nmedia/The Lantern Road.mp3: Invalid data found when processing input\"}",
+      "status": "error",
+      "tool": "audiobook_inspect",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.003,
+      "why": "Check whether the file contains readable audiobook chapters and metadata"
+    }
+  ],
+  "tool_modes": [
+    "replay"
+  ],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "native_tool_items": [],
+        "response_model_source": "rollout",
+        "thread_id": "01a15638-7619-7470-989c-d6e1fef87ca8"
+      },
+      "n": 1,
+      "native": {},
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "codex",
+          "exec",
+          "--json",
+          "-s",
+          "read-only",
+          "--skip-git-repo-check",
+          "--ignore-user-config",
+          "--ignore-rules",
+          "-c",
+          "web_search=\"disabled\"",
+          "-c",
+          "features.multi_agent=false",
+          "-c",
+          "features.image_generation=false",
+          "-c",
+          "features.plugins=false",
+          "-c",
+          "features.skill_search=false",
+          "-c",
+          "features.goals=false",
+          "-c",
+          "features.hooks=false",
+          "-c",
+          "features.sleep_tool=false",
+          "-c",
+          "features.view_image=false",
+          "-c",
+          "features.unified_exec=false",
+          "-c",
+          "features.shell_tool=false",
+          "-c",
+          "features.write_stdin_approval=false",
+          "-c",
+          "features.tool_suggest=false",
+          "-c",
+          "features.worktrees=false",
+          "-c",
+          "features.remote_plugin=false",
+          "-c",
+          "features.apps=false",
+          "-c",
+          "features.browser_use=false",
+          "-c",
+          "features.computer_use=false",
+          "-m",
+          "gpt-6-luna",
+          "-C",
+          "/tmp/mrh-codex-pqnz4b0z",
+          "-"
+        ],
+        "prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.\n\n---\n\n[CASE]\n{\"case_id\": \"case-53dee290\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Mira Tolland\", \"chapters\": 4, \"duration_s\": 20, \"language\": \"en\", \"narrator\": \"Ellis Marr\", \"title\": \"The Lantern Road\"}, \"filename\": \"The Lantern Road.mp3\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"The Lantern Road (audiobook)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"exit_code\\\":1,\\\"stderr\\\":\\\"[mp3 @ 0x0] Failed to find two consecutive MPEG audio frames.\\\\nmedia/The Lantern Road.mp3: Invalid data found when processing input\\\"}\", \"status\": \"error\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"work\": \"The Lantern Road\"}, \"id\": \"e2\", \"output\": \"{\\\"app\\\":\\\"audiobook-metadata\\\",\\\"authors\\\":[\\\"Mira Tolland\\\"],\\\"chapter_titles\\\":[\\\"Opening Credits\\\",\\\"Chapter 1 Rain\\\",\\\"Chapter 2 Salt\\\",\\\"Chapter 3 Lanterns\\\"],\\\"narrators\\\":[\\\"Ellis Marr\\\"],\\\"runtime_s\\\":20,\\\"work\\\":\\\"The Lantern Road\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"audiobook\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"audiobook_inspect\", \"audio_sample\", \"arr_lookup\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else."
+      },
+      "raw_response": "{\"type\":\"thread.started\",\"thread_id\":\"01a15638-7619-7470-989c-d6e1fef87ca8\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"audiobook_inspect\\\",\\\"args\\\":{},\\\"why\\\":\\\"Check whether the file contains readable audiobook chapters and metadata\\\"}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":46354,\"cached_input_tokens\":29824,\"cache_write_input_tokens\":0,\"output_tokens\":135,\"reasoning_output_tokens\":54}}\n",
+      "response_model": "gpt-6-luna",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"audiobook_inspect\",\"args\":{},\"why\":\"Check whether the file contains readable audiobook chapters and metadata\"}",
+      "usage": {
+        "cached_input_tokens": 29824,
+        "cost_usd": null,
+        "input_tokens": 46354,
+        "output_tokens": 135,
+        "reasoning_output_tokens": 54
+      },
+      "validation_errors": [],
+      "wall_s": 5.009
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "native_tool_items": [],
+        "response_model_source": "rollout",
+        "thread_id": "01a15638-89b1-78d3-a683-7ce31539632f"
+      },
+      "n": 2,
+      "native": {},
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "codex",
+          "exec",
+          "--json",
+          "-s",
+          "read-only",
+          "--skip-git-repo-check",
+          "--ignore-user-config",
+          "--ignore-rules",
+          "-c",
+          "web_search=\"disabled\"",
+          "-c",
+          "features.multi_agent=false",
+          "-c",
+          "features.image_generation=false",
+          "-c",
+          "features.plugins=false",
+          "-c",
+          "features.skill_search=false",
+          "-c",
+          "features.goals=false",
+          "-c",
+          "features.hooks=false",
+          "-c",
+          "features.sleep_tool=false",
+          "-c",
+          "features.view_image=false",
+          "-c",
+          "features.unified_exec=false",
+          "-c",
+          "features.shell_tool=false",
+          "-c",
+          "features.write_stdin_approval=false",
+          "-c",
+          "features.tool_suggest=false",
+          "-c",
+          "features.worktrees=false",
+          "-c",
+          "features.remote_plugin=false",
+          "-c",
+          "features.apps=false",
+          "-c",
+          "features.browser_use=false",
+          "-c",
+          "features.computer_use=false",
+          "-m",
+          "gpt-6-luna",
+          "-C",
+          "/tmp/mrh-codex-pqnz4b0z",
+          "-"
+        ],
+        "prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.\n\n---\n\n[CASE]\n{\"case_id\": \"case-53dee290\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Mira Tolland\", \"chapters\": 4, \"duration_s\": 20, \"language\": \"en\", \"narrator\": \"Ellis Marr\", \"title\": \"The Lantern Road\"}, \"filename\": \"The Lantern Road.mp3\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"The Lantern Road (audiobook)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"exit_code\\\":1,\\\"stderr\\\":\\\"[mp3 @ 0x0] Failed to find two consecutive MPEG audio frames.\\\\nmedia/The Lantern Road.mp3: Invalid data found when processing input\\\"}\", \"status\": \"error\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"work\": \"The Lantern Road\"}, \"id\": \"e2\", \"output\": \"{\\\"app\\\":\\\"audiobook-metadata\\\",\\\"authors\\\":[\\\"Mira Tolland\\\"],\\\"chapter_titles\\\":[\\\"Opening Credits\\\",\\\"Chapter 1 Rain\\\",\\\"Chapter 2 Salt\\\",\\\"Chapter 3 Lanterns\\\"],\\\"narrators\\\":[\\\"Ellis Marr\\\"],\\\"runtime_s\\\":20,\\\"work\\\":\\\"The Lantern Road\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"audiobook\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"audiobook_inspect\", \"audio_sample\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"audiobook_inspect\",\"args\":{},\"why\":\"Check whether the file contains readable audiobook chapters and metadata\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"audiobook_inspect\", \"status\": \"error\", \"truncated\": false, \"output\": \"{\\\"exit_code\\\": 1, \\\"stderr\\\": \\\"[mp3 @ 0x0] Failed to find two consecutive MPEG audio frames.\\\\nmedia/The Lantern Road.mp3: Invalid data found when processing input\\\"}\", \"tool_calls_remaining\": 5}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else."
+      },
+      "raw_response": "{\"type\":\"thread.started\",\"thread_id\":\"01a15638-89b1-78d3-a683-7ce31539632f\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"corrupt_file\\\",\\\"action\\\":\\\"blocklist_and_search\\\",\\\"target\\\":\\\"The Lantern Road.mp3\\\",\\\"confidence\\\":0.98,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e2\\\",\\\"t1\\\"],\\\"reason\\\":\\\"Both ffprobe and audiobook_inspect fail to decode the file, reporting no consecutive MPEG audio frames and invalid data. The catalog metadata matches the expected work, so the evidence supports a bad copy.\\\"}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":23278,\"cached_input_tokens\":6912,\"cache_write_input_tokens\":0,\"output_tokens\":92,\"reasoning_output_tokens\":0}}\n",
+      "response_model": "gpt-6-luna",
+      "text": "{\"type\":\"decision\",\"class\":\"corrupt_file\",\"action\":\"blocklist_and_search\",\"target\":\"The Lantern Road.mp3\",\"confidence\":0.98,\"evidence_refs\":[\"e1\",\"e2\",\"t1\"],\"reason\":\"Both ffprobe and audiobook_inspect fail to decode the file, reporting no consecutive MPEG audio frames and invalid data. The catalog metadata matches the expected work, so the evidence supports a bad copy.\"}",
+      "usage": {
+        "cached_input_tokens": 6912,
+        "cost_usd": null,
+        "input_tokens": 23278,
+        "output_tokens": 92,
+        "reasoning_output_tokens": 0
+      },
+      "validation_errors": [],
+      "wall_s": 3.794
+    }
+  ],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 69632,
+    "output_tokens": 227
+  },
+  "wall": {
+    "case_excl_load_s": 8.819,
+    "load_s": 0.0,
+    "tool_s": [
+      0.003
+    ],
+    "total_s": 8.819,
+    "turn_s": [
+      5.009,
+      3.794
+    ]
+  }
+}

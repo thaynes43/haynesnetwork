@@ -1,0 +1,1319 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "blocklist_and_search",
+      "class": "identity_mismatch",
+      "target": "Pokemon: Hour of the Houndour"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "tv-identity-002",
+  "case_sha256": "661ce9eaca1d82089d6407446ad443b2ad60680e90ada3db55dcbf9ad02569a0",
+  "config_hash": "13a4d71c1fe4faa87c03b1a3e6c2d45015e2f968402e16dddced34282f903a15",
+  "context_check": {
+    "flags": [],
+    "max_prompt_tokens_estimated": 2069,
+    "max_prompt_tokens_reported": 1623,
+    "num_ctx": 4096,
+    "truncated_suspected": false,
+    "turns_checked": 6
+  },
+  "decision": {
+    "action": "blocklist_and_search",
+    "class": "identity_mismatch",
+    "confidence": 0.7,
+    "evidence_refs": [
+      "e1",
+      "e3",
+      "t1",
+      "t2"
+    ],
+    "reason": "OCR at 62s reads 'Happy Hot Diggity Dog Holiday!' which does not match expected episode 'Hour of the Houndour'. ffprobe shows generic Matroska/H.264/AAC but tools cannot reach media for further verification, so identity mismatch is supported by evidence.",
+    "target": "Pokemon: Hour of the Houndour",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2",
+    "e3"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "declared_sha256": "e1c0f024bf837355bb47d8f5f8a3d43ab05b4a21b726082cf820d13b635f13e6",
+    "kind": "pinned",
+    "verified": "declared_only"
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "c61b6c621103b2a817d9ea887fdbc0aa05276ab5",
+  "injected_failure": null,
+  "model_case_alias": "case-ca866966",
+  "model_digest": "de878ce33ad81d060001db1469a02eebe4d86f0ad58cfe52dc062fdcbe4464c1",
+  "model_digest_na_reason": null,
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "muse-glimmer:30b",
+  "response_model_ids": [
+    "muse-glimmer:30b"
+  ],
+  "run_id": "dev-v1-ollama-muse-glimmer-30b",
+  "runtime_version": "0.40.6",
+  "split": "dev",
+  "started_at": "2026-10-19T22:46:49.939833+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [
+    {
+      "args": {},
+      "id": "t1",
+      "output": "this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)",
+      "status": "error",
+      "tool": "ffprobe",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.0,
+      "why": "Check full stream metadata and duration to verify episode identity and completeness."
+    },
+    {
+      "args": {},
+      "id": "t2",
+      "mode": "stub",
+      "output": "{\"arr\": {\"app\": \"sonarr\", \"ids\": {}}, \"note\": \"case-provided context only; no live arr call was made\", \"stub\": true}",
+      "status": "ok",
+      "tool": "arr_lookup",
+      "truncated": false,
+      "turn": 2,
+      "wall_s": 0.0,
+      "why": "Verify Sonarr entry metadata for expected episode title and season/episode numbers."
+    },
+    {
+      "args": {},
+      "id": "t3",
+      "output": "this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)",
+      "status": "error",
+      "tool": "frame_sample",
+      "truncated": false,
+      "turn": 3,
+      "wall_s": 0.0,
+      "why": "Sample a frame to visually confirm episode content matches expected title."
+    },
+    {
+      "args": {},
+      "id": "t4",
+      "output": "this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)",
+      "status": "error",
+      "tool": "audio_sample",
+      "truncated": false,
+      "turn": 4,
+      "wall_s": 0.0,
+      "why": "Check audio sample for dialogue or cues to confirm episode identity."
+    },
+    {
+      "args": {
+        "at": 60
+      },
+      "id": "t5",
+      "output": "this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)",
+      "status": "error",
+      "tool": "ocr",
+      "truncated": false,
+      "turn": 5,
+      "wall_s": 0.0,
+      "why": "OCR at 62s already shows unrelated text; try nearby timestamp to confirm mismatch."
+    }
+  ],
+  "tool_modes": [
+    "stub"
+  ],
+  "turns": [
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 31,
+          "prompt_chars": 4262,
+          "prompt_tokens_estimated": 1420,
+          "prompt_tokens_reported": 1068,
+          "truncated_suspected": false
+        }
+      },
+      "n": 1,
+      "native": {
+        "created_at": "2026-10-19T22:46:51.726695692Z",
+        "done_reason": "stop",
+        "eval_count": 31,
+        "eval_duration": 1004335000,
+        "load_duration": 616840,
+        "prompt_eval_count": 1068,
+        "prompt_eval_duration": 652335000,
+        "total_duration": 1679314856
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-ca866966\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {}}, \"expected\": {\"episode_title\": \"Hour of the Houndour\", \"series\": \"Pokemon\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Pokemon: Hour of the Houndour\"}, \"evidence\": [{\"args\": {\"fixture\": \"remote\"}, \"id\": \"e1\", \"output\": \"{\\\"streams\\\":{\\\"container\\\":\\\"matroska,webm\\\",\\\"selected_audio\\\":{\\\"channels\\\":2,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"profile\\\":\\\"LC\\\",\\\"tags\\\":{\\\"language\\\":\\\"eng\\\"}},\\\"video\\\":{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":1080,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"width\\\":1920}}}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"bytes_read\\\":5828827,\\\"duration_limit_seconds\\\":4,\\\"exit_code\\\":0,\\\"quota_exhausted\\\":false,\\\"stderr\\\":\\\"\\\"}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 62}, \"id\": \"e3\", \"output\": \"Happy Hot Diggity Dog Holiday!\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:46:51.726695692Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"ffprobe\\\",\\\"args\\\":{},\\\"why\\\":\\\"Check full stream metadata and duration to verify episode identity and completeness.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1679314856,\"load_duration\":616840,\"prompt_eval_count\":1068,\"prompt_eval_cached_count\":588,\"prompt_eval_duration\":652335000,\"eval_count\":31,\"eval_duration\":1004335000}",
+        "stderr": "",
+        "wall_seconds": 1.7859137039631605
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full stream metadata and duration to verify episode identity and completeness.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1068,
+        "output_tokens": 31
+      },
+      "validation_errors": [],
+      "wall_s": 1.786
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 33,
+          "prompt_chars": 4649,
+          "prompt_tokens_estimated": 1549,
+          "prompt_tokens_reported": 1175,
+          "truncated_suspected": false
+        }
+      },
+      "n": 2,
+      "native": {
+        "created_at": "2026-10-19T22:46:53.134055855Z",
+        "done_reason": "stop",
+        "eval_count": 33,
+        "eval_duration": 1076199000,
+        "load_duration": 659141,
+        "prompt_eval_count": 1175,
+        "prompt_eval_duration": 188729000,
+        "total_duration": 1287633158
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-ca866966\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {}}, \"expected\": {\"episode_title\": \"Hour of the Houndour\", \"series\": \"Pokemon\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Pokemon: Hour of the Houndour\"}, \"evidence\": [{\"args\": {\"fixture\": \"remote\"}, \"id\": \"e1\", \"output\": \"{\\\"streams\\\":{\\\"container\\\":\\\"matroska,webm\\\",\\\"selected_audio\\\":{\\\"channels\\\":2,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"profile\\\":\\\"LC\\\",\\\"tags\\\":{\\\"language\\\":\\\"eng\\\"}},\\\"video\\\":{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":1080,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"width\\\":1920}}}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"bytes_read\\\":5828827,\\\"duration_limit_seconds\\\":4,\\\"exit_code\\\":0,\\\"quota_exhausted\\\":false,\\\"stderr\\\":\\\"\\\"}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 62}, \"id\": \"e3\", \"output\": \"Happy Hot Diggity Dog Holiday!\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full stream metadata and duration to verify episode identity and completeness.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"error\", \"truncated\": false, \"output\": \"this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:46:53.134055855Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"arr_lookup\\\",\\\"args\\\":{},\\\"why\\\":\\\"Verify Sonarr entry metadata for expected episode title and season/episode numbers.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1287633158,\"load_duration\":659141,\"prompt_eval_count\":1175,\"prompt_eval_cached_count\":1063,\"prompt_eval_duration\":188729000,\"eval_count\":33,\"eval_duration\":1076199000}",
+        "stderr": "",
+        "wall_seconds": 1.4038814078085124
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"args\":{},\"why\":\"Verify Sonarr entry metadata for expected episode title and season/episode numbers.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1175,
+        "output_tokens": 33
+      },
+      "validation_errors": [],
+      "wall_s": 1.404
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 30,
+          "prompt_chars": 5055,
+          "prompt_tokens_estimated": 1685,
+          "prompt_tokens_reported": 1299,
+          "truncated_suspected": false
+        }
+      },
+      "n": 3,
+      "native": {
+        "created_at": "2026-10-19T22:46:54.44434057Z",
+        "done_reason": "stop",
+        "eval_count": 30,
+        "eval_duration": 967852000,
+        "load_duration": 543038,
+        "prompt_eval_count": 1299,
+        "prompt_eval_duration": 206391000,
+        "total_duration": 1204072293
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-ca866966\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {}}, \"expected\": {\"episode_title\": \"Hour of the Houndour\", \"series\": \"Pokemon\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Pokemon: Hour of the Houndour\"}, \"evidence\": [{\"args\": {\"fixture\": \"remote\"}, \"id\": \"e1\", \"output\": \"{\\\"streams\\\":{\\\"container\\\":\\\"matroska,webm\\\",\\\"selected_audio\\\":{\\\"channels\\\":2,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"profile\\\":\\\"LC\\\",\\\"tags\\\":{\\\"language\\\":\\\"eng\\\"}},\\\"video\\\":{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":1080,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"width\\\":1920}}}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"bytes_read\\\":5828827,\\\"duration_limit_seconds\\\":4,\\\"exit_code\\\":0,\\\"quota_exhausted\\\":false,\\\"stderr\\\":\\\"\\\"}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 62}, \"id\": \"e3\", \"output\": \"Happy Hot Diggity Dog Holiday!\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full stream metadata and duration to verify episode identity and completeness.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"error\", \"truncated\": false, \"output\": \"this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"args\":{},\"why\":\"Verify Sonarr entry metadata for expected episode title and season/episode numbers.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"arr_lookup\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"arr\\\": {\\\"app\\\": \\\"sonarr\\\", \\\"ids\\\": {}}, \\\"note\\\": \\\"case-provided context only; no live arr call was made\\\", \\\"stub\\\": true}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:46:54.44434057Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"frame_sample\\\",\\\"args\\\":{},\\\"why\\\":\\\"Sample a frame to visually confirm episode content matches expected title.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1204072293,\"load_duration\":543038,\"prompt_eval_count\":1299,\"prompt_eval_cached_count\":1170,\"prompt_eval_duration\":206391000,\"eval_count\":30,\"eval_duration\":967852000}",
+        "stderr": "",
+        "wall_seconds": 1.310147080104798
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{},\"why\":\"Sample a frame to visually confirm episode content matches expected title.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1299,
+        "output_tokens": 30
+      },
+      "validation_errors": [],
+      "wall_s": 1.31
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 30,
+          "prompt_chars": 5442,
+          "prompt_tokens_estimated": 1814,
+          "prompt_tokens_reported": 1405,
+          "truncated_suspected": false
+        }
+      },
+      "n": 4,
+      "native": {
+        "created_at": "2026-10-19T22:46:55.761565632Z",
+        "done_reason": "stop",
+        "eval_count": 30,
+        "eval_duration": 974260000,
+        "load_duration": 587517,
+        "prompt_eval_count": 1405,
+        "prompt_eval_duration": 190832000,
+        "total_duration": 1201899642
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-ca866966\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {}}, \"expected\": {\"episode_title\": \"Hour of the Houndour\", \"series\": \"Pokemon\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Pokemon: Hour of the Houndour\"}, \"evidence\": [{\"args\": {\"fixture\": \"remote\"}, \"id\": \"e1\", \"output\": \"{\\\"streams\\\":{\\\"container\\\":\\\"matroska,webm\\\",\\\"selected_audio\\\":{\\\"channels\\\":2,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"profile\\\":\\\"LC\\\",\\\"tags\\\":{\\\"language\\\":\\\"eng\\\"}},\\\"video\\\":{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":1080,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"width\\\":1920}}}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"bytes_read\\\":5828827,\\\"duration_limit_seconds\\\":4,\\\"exit_code\\\":0,\\\"quota_exhausted\\\":false,\\\"stderr\\\":\\\"\\\"}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 62}, \"id\": \"e3\", \"output\": \"Happy Hot Diggity Dog Holiday!\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full stream metadata and duration to verify episode identity and completeness.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"error\", \"truncated\": false, \"output\": \"this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"args\":{},\"why\":\"Verify Sonarr entry metadata for expected episode title and season/episode numbers.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"arr_lookup\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"arr\\\": {\\\"app\\\": \\\"sonarr\\\", \\\"ids\\\": {}}, \\\"note\\\": \\\"case-provided context only; no live arr call was made\\\", \\\"stub\\\": true}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{},\"why\":\"Sample a frame to visually confirm episode content matches expected title.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"frame_sample\", \"status\": \"error\", \"truncated\": false, \"output\": \"this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)\", \"tool_calls_remaining\": 3}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:46:55.761565632Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"audio_sample\\\",\\\"args\\\":{},\\\"why\\\":\\\"Check audio sample for dialogue or cues to confirm episode identity.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1201899642,\"load_duration\":587517,\"prompt_eval_count\":1405,\"prompt_eval_cached_count\":1294,\"prompt_eval_duration\":190832000,\"eval_count\":30,\"eval_duration\":974260000}",
+        "stderr": "",
+        "wall_seconds": 1.3177405376918614
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"audio_sample\",\"args\":{},\"why\":\"Check audio sample for dialogue or cues to confirm episode identity.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1405,
+        "output_tokens": 30
+      },
+      "validation_errors": [],
+      "wall_s": 1.318
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 37,
+          "prompt_chars": 5823,
+          "prompt_tokens_estimated": 1941,
+          "prompt_tokens_reported": 1511,
+          "truncated_suspected": false
+        }
+      },
+      "n": 5,
+      "native": {
+        "created_at": "2026-10-19T22:46:57.277703623Z",
+        "done_reason": "stop",
+        "eval_count": 37,
+        "eval_duration": 1145751000,
+        "load_duration": 722883,
+        "prompt_eval_count": 1511,
+        "prompt_eval_duration": 199512000,
+        "total_duration": 1385493035
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-ca866966\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {}}, \"expected\": {\"episode_title\": \"Hour of the Houndour\", \"series\": \"Pokemon\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Pokemon: Hour of the Houndour\"}, \"evidence\": [{\"args\": {\"fixture\": \"remote\"}, \"id\": \"e1\", \"output\": \"{\\\"streams\\\":{\\\"container\\\":\\\"matroska,webm\\\",\\\"selected_audio\\\":{\\\"channels\\\":2,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"profile\\\":\\\"LC\\\",\\\"tags\\\":{\\\"language\\\":\\\"eng\\\"}},\\\"video\\\":{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":1080,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"width\\\":1920}}}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"bytes_read\\\":5828827,\\\"duration_limit_seconds\\\":4,\\\"exit_code\\\":0,\\\"quota_exhausted\\\":false,\\\"stderr\\\":\\\"\\\"}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 62}, \"id\": \"e3\", \"output\": \"Happy Hot Diggity Dog Holiday!\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full stream metadata and duration to verify episode identity and completeness.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"error\", \"truncated\": false, \"output\": \"this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"args\":{},\"why\":\"Verify Sonarr entry metadata for expected episode title and season/episode numbers.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"arr_lookup\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"arr\\\": {\\\"app\\\": \\\"sonarr\\\", \\\"ids\\\": {}}, \\\"note\\\": \\\"case-provided context only; no live arr call was made\\\", \\\"stub\\\": true}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{},\"why\":\"Sample a frame to visually confirm episode content matches expected title.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"frame_sample\", \"status\": \"error\", \"truncated\": false, \"output\": \"this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)\", \"tool_calls_remaining\": 3}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"audio_sample\",\"args\":{},\"why\":\"Check audio sample for dialogue or cues to confirm episode identity.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t4\", \"tool\": \"audio_sample\", \"status\": \"error\", \"truncated\": false, \"output\": \"this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)\", \"tool_calls_remaining\": 2}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:46:57.277703623Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"ocr\\\",\\\"args\\\":{\\\"at\\\":60},\\\"why\\\":\\\"OCR at 62s already shows unrelated text; try nearby timestamp to confirm mismatch.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1385493035,\"load_duration\":722883,\"prompt_eval_count\":1511,\"prompt_eval_cached_count\":1400,\"prompt_eval_duration\":199512000,\"eval_count\":37,\"eval_duration\":1145751000}",
+        "stderr": "",
+        "wall_seconds": 1.5136027853004634
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":60},\"why\":\"OCR at 62s already shows unrelated text; try nearby timestamp to confirm mismatch.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1511,
+        "output_tokens": 37
+      },
+      "validation_errors": [],
+      "wall_s": 1.514
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 113,
+          "prompt_chars": 6207,
+          "prompt_tokens_estimated": 2069,
+          "prompt_tokens_reported": 1623,
+          "truncated_suspected": false
+        }
+      },
+      "n": 6,
+      "native": {
+        "created_at": "2026-10-19T22:47:01.543113493Z",
+        "done_reason": "stop",
+        "eval_count": 113,
+        "eval_duration": 3882649000,
+        "load_duration": 616080,
+        "prompt_eval_count": 1623,
+        "prompt_eval_duration": 222851000,
+        "total_duration": 4149951478
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-ca866966\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {}}, \"expected\": {\"episode_title\": \"Hour of the Houndour\", \"series\": \"Pokemon\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Pokemon: Hour of the Houndour\"}, \"evidence\": [{\"args\": {\"fixture\": \"remote\"}, \"id\": \"e1\", \"output\": \"{\\\"streams\\\":{\\\"container\\\":\\\"matroska,webm\\\",\\\"selected_audio\\\":{\\\"channels\\\":2,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"profile\\\":\\\"LC\\\",\\\"tags\\\":{\\\"language\\\":\\\"eng\\\"}},\\\"video\\\":{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":1080,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"width\\\":1920}}}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"bytes_read\\\":5828827,\\\"duration_limit_seconds\\\":4,\\\"exit_code\\\":0,\\\"quota_exhausted\\\":false,\\\"stderr\\\":\\\"\\\"}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 62}, \"id\": \"e3\", \"output\": \"Happy Hot Diggity Dog Holiday!\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full stream metadata and duration to verify episode identity and completeness.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"error\", \"truncated\": false, \"output\": \"this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"args\":{},\"why\":\"Verify Sonarr entry metadata for expected episode title and season/episode numbers.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"arr_lookup\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"arr\\\": {\\\"app\\\": \\\"sonarr\\\", \\\"ids\\\": {}}, \\\"note\\\": \\\"case-provided context only; no live arr call was made\\\", \\\"stub\\\": true}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{},\"why\":\"Sample a frame to visually confirm episode content matches expected title.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"frame_sample\", \"status\": \"error\", \"truncated\": false, \"output\": \"this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)\", \"tool_calls_remaining\": 3}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"audio_sample\",\"args\":{},\"why\":\"Check audio sample for dialogue or cues to confirm episode identity.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t4\", \"tool\": \"audio_sample\", \"status\": \"error\", \"truncated\": false, \"output\": \"this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)\", \"tool_calls_remaining\": 2}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":60},\"why\":\"OCR at 62s already shows unrelated text; try nearby timestamp to confirm mismatch.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t5\", \"tool\": \"ocr\", \"status\": \"error\", \"truncated\": false, \"output\": \"this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)\", \"tool_calls_remaining\": 1}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:47:01.543113493Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"identity_mismatch\\\",\\\"action\\\":\\\"blocklist_and_search\\\",\\\"target\\\":\\\"Pokemon: Hour of the Houndour\\\",\\\"confidence\\\":0.7,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e3\\\",\\\"t1\\\",\\\"t2\\\"],\\\"reason\\\":\\\"OCR at 62s reads 'Happy Hot Diggity Dog Holiday!' which does not match expected episode 'Hour of the Houndour'. ffprobe shows generic Matroska/H.264/AAC but tools cannot reach media for further verification, so identity mismatch is supported by evidence.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":4149951478,\"load_duration\":616080,\"prompt_eval_count\":1623,\"prompt_eval_cached_count\":1506,\"prompt_eval_duration\":222851000,\"eval_count\":113,\"eval_duration\":3882649000}",
+        "stderr": "",
+        "wall_seconds": 4.2630344978533685
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"decision\",\"class\":\"identity_mismatch\",\"action\":\"blocklist_and_search\",\"target\":\"Pokemon: Hour of the Houndour\",\"confidence\":0.7,\"evidence_refs\":[\"e1\",\"e3\",\"t1\",\"t2\"],\"reason\":\"OCR at 62s reads 'Happy Hot Diggity Dog Holiday!' which does not match expected episode 'Hour of the Houndour'. ffprobe shows generic Matroska/H.264/AAC but tools cannot reach media for further verification, so identity mismatch is supported by evidence.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1623,
+        "output_tokens": 113
+      },
+      "validation_errors": [],
+      "wall_s": 4.263
+    }
+  ],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 8081,
+    "output_tokens": 274
+  },
+  "wall": {
+    "case_excl_load_s": 11.598,
+    "load_s": 0.004,
+    "tool_s": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "total_s": 11.601,
+    "turn_s": [
+      1.786,
+      1.404,
+      1.31,
+      1.318,
+      1.514,
+      4.263
+    ]
+  }
+}

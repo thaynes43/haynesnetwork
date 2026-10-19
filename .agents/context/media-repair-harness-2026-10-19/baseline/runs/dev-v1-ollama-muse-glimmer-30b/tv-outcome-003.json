@@ -1,0 +1,1581 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "blocklist_and_search",
+      "class": "corrupt_file",
+      "target": "Harbor Lights - S01E02 - Lamp Oil.mkv"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": {
+      "check": "post_replace_verify",
+      "correct": true,
+      "detail": "card='HARBOR LIGHTS / S01E03 / THE SALT WIND' decode_clean=True",
+      "expected": "not_repaired",
+      "observed": "not_repaired"
+    },
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "tv-outcome-003",
+  "case_sha256": "4a0f9b4527fc22a024982504d8a19cb756c2b5ad6734a770e90face91e139c44",
+  "config_hash": "13a4d71c1fe4faa87c03b1a3e6c2d45015e2f968402e16dddced34282f903a15",
+  "context_check": {
+    "flags": [],
+    "max_prompt_tokens_estimated": 3121,
+    "max_prompt_tokens_reported": 2678,
+    "num_ctx": 4096,
+    "truncated_suspected": false,
+    "turns_checked": 7
+  },
+  "decision": {
+    "action": "blocklist_and_search",
+    "class": "corrupt_file",
+    "confidence": 0.85,
+    "evidence_refs": [
+      "e1",
+      "e2",
+      "t1",
+      "t2",
+      "t3"
+    ],
+    "reason": "ffprobe shows correct metadata and duration 8.046s matching expected 8s, but decode_sample at 0s and 4s reports H264 cabac errors and unknown-sized element, indicating damaged video stream. Audio sample unavailable but video decode errors persist across samples.",
+    "target": "Harbor Lights - S01E02 - Lamp Oil.mkv",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2",
+    "e3"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "300cd24cf8b78dfbeb305aced3e71f2d4682992eb3b9295b6d98a9e38790c97a",
+    "bytes": 90286,
+    "declared_sha256": "300cd24cf8b78dfbeb305aced3e71f2d4682992eb3b9295b6d98a9e38790c97a",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "c61b6c621103b2a817d9ea887fdbc0aa05276ab5",
+  "injected_failure": null,
+  "model_case_alias": "case-9a6a68d3",
+  "model_digest": "de878ce33ad81d060001db1469a02eebe4d86f0ad58cfe52dc062fdcbe4464c1",
+  "model_digest_na_reason": null,
+  "outcome": {
+    "check": "post_replace_verify",
+    "correct": true,
+    "detail": "card='HARBOR LIGHTS / S01E03 / THE SALT WIND' decode_clean=True",
+    "expected": "not_repaired",
+    "observed": "not_repaired"
+  },
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "muse-glimmer:30b",
+  "response_model_ids": [
+    "muse-glimmer:30b"
+  ],
+  "run_id": "dev-v1-ollama-muse-glimmer-30b",
+  "runtime_version": "0.40.6",
+  "split": "dev",
+  "started_at": "2026-10-19T22:49:03.932055+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [
+    {
+      "args": {},
+      "id": "t1",
+      "mode": "replay",
+      "output": "{\"chapters\": [{\"end\": \"2.000000\", \"start\": \"0.000000\", \"title\": \"Cold open\"}, {\"end\": \"8.000000\", \"start\": \"2.000000\", \"title\": \"Lamp Oil\"}], \"exit_code\": 0, \"format\": {\"bit_rate\": \"89769\", \"duration\": \"8.046000\", \"format_name\": \"matroska,webm\", \"size\": \"90286\", \"tags\": {\"episode_sort\": \"2\", \"season_number\": \"1\", \"show\": \"Harbor Lights\", \"title\": \"Lamp Oil\"}}, \"stderr\": \"\", \"streams\": [{\"codec_name\": \"h264\", \"codec_type\": \"video\", \"height\": 192, \"index\": 0, \"pix_fmt\": \"yuv420p\", \"profile\": \"High\", \"tags\": {}, \"width\": 256}, {\"channels\": 1, \"codec_name\": \"aac\", \"codec_type\": \"audio\", \"index\": 1, \"profile\": \"LC\", \"sample_rate\": \"22050\", \"tags\": {}}]}",
+      "status": "ok",
+      "tool": "ffprobe",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.001,
+      "why": "Check full file metadata and duration to confirm episode identity and detect truncation."
+    },
+    {
+      "args": {
+        "at": 6
+      },
+      "id": "t2",
+      "mode": "replay",
+      "output": "{\"at_s\": 4, \"clean\": false, \"exit_code\": 0, \"frames\": 27, \"note\": \"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\", \"note_window\": \"replay serves the recorded window at ss=4 (recorded: [0, 4, 8, 12])\", \"out_time\": \"00:00:04.000000\", \"quota_exhausted\": false, \"requested_at_s\": 6.0, \"stderr\": \"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\", \"window_s\": 4}",
+      "status": "ok",
+      "tool": "decode_sample",
+      "truncated": false,
+      "turn": 2,
+      "wall_s": 0.002,
+      "why": "Probe mid-file decode to see if corruption is localized or widespread."
+    },
+    {
+      "args": {
+        "at": 0
+      },
+      "id": "t3",
+      "mode": "replay",
+      "output": "{\"at_s\": 0, \"clean\": false, \"exit_code\": 0, \"frames\": 40, \"note\": \"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\", \"out_time\": \"00:00:04.000000\", \"quota_exhausted\": false, \"stderr\": \"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\", \"window_s\": 4}",
+      "status": "ok",
+      "tool": "decode_sample",
+      "truncated": false,
+      "turn": 3,
+      "wall_s": 0.001,
+      "why": "Check start of file for decode errors to confirm corruption onset."
+    },
+    {
+      "args": {
+        "at": 2
+      },
+      "id": "t4",
+      "mode": "replay",
+      "output": "{\"frame\": \"frame@2\", \"note\": \"no image is available in replay mode; call ocr with this frame to read the recorded on-screen text\", \"replay\": true}",
+      "status": "ok",
+      "tool": "frame_sample",
+      "truncated": false,
+      "turn": 4,
+      "wall_s": 0.002,
+      "why": "Sample a frame near chapter boundary to verify visual content matches expected episode title."
+    },
+    {
+      "args": {
+        "at": 2
+      },
+      "id": "t5",
+      "mode": "replay",
+      "output": "{\"consensus\": true, \"note\": \"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\", \"t_s\": 2.0, \"text\": \"\"}",
+      "status": "ok",
+      "tool": "ocr",
+      "truncated": false,
+      "turn": 5,
+      "wall_s": 0.002,
+      "why": "Read on-screen text at chapter boundary to confirm episode title matches expected."
+    },
+    {
+      "args": {
+        "at": 2
+      },
+      "id": "t6",
+      "mode": "replay",
+      "output": "no recorded replay for audio_sample in this suite (audio levels were not recorded)",
+      "status": "error",
+      "tool": "audio_sample",
+      "truncated": false,
+      "turn": 6,
+      "wall_s": 0.001,
+      "why": "Check audio presence to assess if corruption affects audio stream."
+    }
+  ],
+  "tool_modes": [
+    "replay"
+  ],
+  "turns": [
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 32,
+          "prompt_chars": 5307,
+          "prompt_tokens_estimated": 1769,
+          "prompt_tokens_reported": 1414,
+          "truncated_suspected": false
+        }
+      },
+      "n": 1,
+      "native": {
+        "created_at": "2026-10-19T22:49:06.094042556Z",
+        "done_reason": "stop",
+        "eval_count": 32,
+        "eval_duration": 760190000,
+        "load_duration": 712863,
+        "prompt_eval_count": 1414,
+        "prompt_eval_duration": 681550000,
+        "total_duration": 2033568159
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-9a6a68d3\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990202, \"episodeId\": 990102, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 2, \"episode_title\": \"Lamp Oil\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E02 - Lamp Oil.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E02\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Lamp Oil\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89769\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90286\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"2\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Lamp Oil\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 2, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":2,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Lamp Oil\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E02 - Lamp Oil.mkv\\\",\\\"size\\\":90286},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:49:06.094042556Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"ffprobe\\\",\\\"args\\\":{},\\\"why\\\":\\\"Check full file metadata and duration to confirm episode identity and detect truncation.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":2033568159,\"load_duration\":712863,\"prompt_eval_count\":1414,\"prompt_eval_cached_count\":587,\"prompt_eval_duration\":681550000,\"eval_count\":32,\"eval_duration\":760190000}",
+        "stderr": "",
+        "wall_seconds": 2.1563883973285556
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full file metadata and duration to confirm episode identity and detect truncation.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1414,
+        "output_tokens": 32
+      },
+      "validation_errors": [],
+      "wall_s": 2.157
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 34,
+          "prompt_chars": 6354,
+          "prompt_tokens_estimated": 2118,
+          "prompt_tokens_reported": 1748,
+          "truncated_suspected": false
+        }
+      },
+      "n": 2,
+      "native": {
+        "created_at": "2026-10-19T22:49:07.664886247Z",
+        "done_reason": "stop",
+        "eval_count": 34,
+        "eval_duration": 1012057000,
+        "load_duration": 733883,
+        "prompt_eval_count": 1748,
+        "prompt_eval_duration": 429112000,
+        "total_duration": 1469115570
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-9a6a68d3\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990202, \"episodeId\": 990102, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 2, \"episode_title\": \"Lamp Oil\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E02 - Lamp Oil.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E02\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Lamp Oil\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89769\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90286\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"2\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Lamp Oil\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 2, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":2,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Lamp Oil\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E02 - Lamp Oil.mkv\\\",\\\"size\\\":90286},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full file metadata and duration to confirm episode identity and detect truncation.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [{\\\"end\\\": \\\"2.000000\\\", \\\"start\\\": \\\"0.000000\\\", \\\"title\\\": \\\"Cold open\\\"}, {\\\"end\\\": \\\"8.000000\\\", \\\"start\\\": \\\"2.000000\\\", \\\"title\\\": \\\"Lamp Oil\\\"}], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"89769\\\", \\\"duration\\\": \\\"8.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"90286\\\", \\\"tags\\\": {\\\"episode_sort\\\": \\\"2\\\", \\\"season_number\\\": \\\"1\\\", \\\"show\\\": \\\"Harbor Lights\\\", \\\"title\\\": \\\"Lamp Oil\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:49:07.664886247Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"decode_sample\\\",\\\"args\\\":{\\\"at\\\":6},\\\"why\\\":\\\"Probe mid-file decode to see if corruption is localized or widespread.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1469115570,\"load_duration\":733883,\"prompt_eval_count\":1748,\"prompt_eval_cached_count\":1409,\"prompt_eval_duration\":429112000,\"eval_count\":34,\"eval_duration\":1012057000}",
+        "stderr": "",
+        "wall_seconds": 1.5728462589904666
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":6},\"why\":\"Probe mid-file decode to see if corruption is localized or widespread.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1748,
+        "output_tokens": 34
+      },
+      "validation_errors": [],
+      "wall_s": 1.573
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 33,
+          "prompt_chars": 7226,
+          "prompt_tokens_estimated": 2408,
+          "prompt_tokens_reported": 2036,
+          "truncated_suspected": false
+        }
+      },
+      "n": 3,
+      "native": {
+        "created_at": "2026-10-19T22:49:09.130555707Z",
+        "done_reason": "stop",
+        "eval_count": 33,
+        "eval_duration": 901779000,
+        "load_duration": 880227,
+        "prompt_eval_count": 2036,
+        "prompt_eval_duration": 398614000,
+        "total_duration": 1341023905
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-9a6a68d3\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990202, \"episodeId\": 990102, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 2, \"episode_title\": \"Lamp Oil\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E02 - Lamp Oil.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E02\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Lamp Oil\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89769\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90286\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"2\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Lamp Oil\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 2, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":2,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Lamp Oil\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E02 - Lamp Oil.mkv\\\",\\\"size\\\":90286},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full file metadata and duration to confirm episode identity and detect truncation.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [{\\\"end\\\": \\\"2.000000\\\", \\\"start\\\": \\\"0.000000\\\", \\\"title\\\": \\\"Cold open\\\"}, {\\\"end\\\": \\\"8.000000\\\", \\\"start\\\": \\\"2.000000\\\", \\\"title\\\": \\\"Lamp Oil\\\"}], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"89769\\\", \\\"duration\\\": \\\"8.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"90286\\\", \\\"tags\\\": {\\\"episode_sort\\\": \\\"2\\\", \\\"season_number\\\": \\\"1\\\", \\\"show\\\": \\\"Harbor Lights\\\", \\\"title\\\": \\\"Lamp Oil\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":6},\"why\":\"Probe mid-file decode to see if corruption is localized or widespread.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": false, \\\"exit_code\\\": 0, \\\"frames\\\": 27, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"note_window\\\": \\\"replay serves the recorded window at ss=4 (recorded: [0, 4, 8, 12])\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"requested_at_s\\\": 6.0, \\\"stderr\\\": \\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:49:09.130555707Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"decode_sample\\\",\\\"args\\\":{\\\"at\\\":0},\\\"why\\\":\\\"Check start of file for decode errors to confirm corruption onset.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1341023905,\"load_duration\":880227,\"prompt_eval_count\":2036,\"prompt_eval_cached_count\":1743,\"prompt_eval_duration\":398614000,\"eval_count\":33,\"eval_duration\":901779000}",
+        "stderr": "",
+        "wall_seconds": 1.4704467598348856
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":0},\"why\":\"Check start of file for decode errors to confirm corruption onset.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 2036,
+        "output_tokens": 33
+      },
+      "validation_errors": [],
+      "wall_s": 1.471
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 36,
+          "prompt_chars": 7979,
+          "prompt_tokens_estimated": 2659,
+          "prompt_tokens_reported": 2281,
+          "truncated_suspected": false
+        }
+      },
+      "n": 4,
+      "native": {
+        "created_at": "2026-10-19T22:49:10.942904971Z",
+        "done_reason": "stop",
+        "eval_count": 36,
+        "eval_duration": 1260325000,
+        "load_duration": 742472,
+        "prompt_eval_count": 2281,
+        "prompt_eval_duration": 381995000,
+        "total_duration": 1685190100
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-9a6a68d3\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990202, \"episodeId\": 990102, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 2, \"episode_title\": \"Lamp Oil\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E02 - Lamp Oil.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E02\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Lamp Oil\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89769\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90286\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"2\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Lamp Oil\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 2, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":2,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Lamp Oil\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E02 - Lamp Oil.mkv\\\",\\\"size\\\":90286},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full file metadata and duration to confirm episode identity and detect truncation.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [{\\\"end\\\": \\\"2.000000\\\", \\\"start\\\": \\\"0.000000\\\", \\\"title\\\": \\\"Cold open\\\"}, {\\\"end\\\": \\\"8.000000\\\", \\\"start\\\": \\\"2.000000\\\", \\\"title\\\": \\\"Lamp Oil\\\"}], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"89769\\\", \\\"duration\\\": \\\"8.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"90286\\\", \\\"tags\\\": {\\\"episode_sort\\\": \\\"2\\\", \\\"season_number\\\": \\\"1\\\", \\\"show\\\": \\\"Harbor Lights\\\", \\\"title\\\": \\\"Lamp Oil\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":6},\"why\":\"Probe mid-file decode to see if corruption is localized or widespread.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": false, \\\"exit_code\\\": 0, \\\"frames\\\": 27, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"note_window\\\": \\\"replay serves the recorded window at ss=4 (recorded: [0, 4, 8, 12])\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"requested_at_s\\\": 6.0, \\\"stderr\\\": \\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":0},\"why\":\"Check start of file for decode errors to confirm corruption onset.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 0, \\\"clean\\\": false, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"stderr\\\": \\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 3}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:49:10.942904971Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"frame_sample\\\",\\\"args\\\":{\\\"at\\\":2},\\\"why\\\":\\\"Sample a frame near chapter boundary to verify visual content matches expected episode title.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1685190100,\"load_duration\":742472,\"prompt_eval_count\":2281,\"prompt_eval_cached_count\":2031,\"prompt_eval_duration\":381995000,\"eval_count\":36,\"eval_duration\":1260325000}",
+        "stderr": "",
+        "wall_seconds": 1.7986609009094536
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{\"at\":2},\"why\":\"Sample a frame near chapter boundary to verify visual content matches expected episode title.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 2281,
+        "output_tokens": 36
+      },
+      "validation_errors": [],
+      "wall_s": 1.799
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 34,
+          "prompt_chars": 8431,
+          "prompt_tokens_estimated": 2810,
+          "prompt_tokens_reported": 2409,
+          "truncated_suspected": false
+        }
+      },
+      "n": 5,
+      "native": {
+        "created_at": "2026-10-19T22:49:12.478196608Z",
+        "done_reason": "stop",
+        "eval_count": 34,
+        "eval_duration": 1113179000,
+        "load_duration": 842517,
+        "prompt_eval_count": 2409,
+        "prompt_eval_duration": 249148000,
+        "total_duration": 1408520116
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-9a6a68d3\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990202, \"episodeId\": 990102, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 2, \"episode_title\": \"Lamp Oil\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E02 - Lamp Oil.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E02\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Lamp Oil\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89769\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90286\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"2\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Lamp Oil\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 2, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":2,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Lamp Oil\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E02 - Lamp Oil.mkv\\\",\\\"size\\\":90286},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full file metadata and duration to confirm episode identity and detect truncation.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [{\\\"end\\\": \\\"2.000000\\\", \\\"start\\\": \\\"0.000000\\\", \\\"title\\\": \\\"Cold open\\\"}, {\\\"end\\\": \\\"8.000000\\\", \\\"start\\\": \\\"2.000000\\\", \\\"title\\\": \\\"Lamp Oil\\\"}], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"89769\\\", \\\"duration\\\": \\\"8.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"90286\\\", \\\"tags\\\": {\\\"episode_sort\\\": \\\"2\\\", \\\"season_number\\\": \\\"1\\\", \\\"show\\\": \\\"Harbor Lights\\\", \\\"title\\\": \\\"Lamp Oil\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":6},\"why\":\"Probe mid-file decode to see if corruption is localized or widespread.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": false, \\\"exit_code\\\": 0, \\\"frames\\\": 27, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"note_window\\\": \\\"replay serves the recorded window at ss=4 (recorded: [0, 4, 8, 12])\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"requested_at_s\\\": 6.0, \\\"stderr\\\": \\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":0},\"why\":\"Check start of file for decode errors to confirm corruption onset.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 0, \\\"clean\\\": false, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"stderr\\\": \\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 3}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{\"at\":2},\"why\":\"Sample a frame near chapter boundary to verify visual content matches expected episode title.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t4\", \"tool\": \"frame_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"frame\\\": \\\"frame@2\\\", \\\"note\\\": \\\"no image is available in replay mode; call ocr with this frame to read the recorded on-screen text\\\", \\\"replay\\\": true}\", \"tool_calls_remaining\": 2}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:49:12.478196608Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"ocr\\\",\\\"args\\\":{\\\"at\\\":2},\\\"why\\\":\\\"Read on-screen text at chapter boundary to confirm episode title matches expected.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1408520116,\"load_duration\":842517,\"prompt_eval_count\":2409,\"prompt_eval_cached_count\":2281,\"prompt_eval_duration\":249148000,\"eval_count\":34,\"eval_duration\":1113179000}",
+        "stderr": "",
+        "wall_seconds": 1.5314415553584695
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":2},\"why\":\"Read on-screen text at chapter boundary to confirm episode title matches expected.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 2409,
+        "output_tokens": 34
+      },
+      "validation_errors": [],
+      "wall_s": 1.532
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 32,
+          "prompt_chars": 8897,
+          "prompt_tokens_estimated": 2965,
+          "prompt_tokens_reported": 2551,
+          "truncated_suspected": false
+        }
+      },
+      "n": 6,
+      "native": {
+        "created_at": "2026-10-19T22:49:13.957522979Z",
+        "done_reason": "stop",
+        "eval_count": 32,
+        "eval_duration": 991661000,
+        "load_duration": 1287149,
+        "prompt_eval_count": 2551,
+        "prompt_eval_duration": 292664000,
+        "total_duration": 1333481614
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-9a6a68d3\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990202, \"episodeId\": 990102, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 2, \"episode_title\": \"Lamp Oil\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E02 - Lamp Oil.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E02\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Lamp Oil\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89769\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90286\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"2\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Lamp Oil\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 2, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":2,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Lamp Oil\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E02 - Lamp Oil.mkv\\\",\\\"size\\\":90286},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full file metadata and duration to confirm episode identity and detect truncation.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [{\\\"end\\\": \\\"2.000000\\\", \\\"start\\\": \\\"0.000000\\\", \\\"title\\\": \\\"Cold open\\\"}, {\\\"end\\\": \\\"8.000000\\\", \\\"start\\\": \\\"2.000000\\\", \\\"title\\\": \\\"Lamp Oil\\\"}], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"89769\\\", \\\"duration\\\": \\\"8.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"90286\\\", \\\"tags\\\": {\\\"episode_sort\\\": \\\"2\\\", \\\"season_number\\\": \\\"1\\\", \\\"show\\\": \\\"Harbor Lights\\\", \\\"title\\\": \\\"Lamp Oil\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":6},\"why\":\"Probe mid-file decode to see if corruption is localized or widespread.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": false, \\\"exit_code\\\": 0, \\\"frames\\\": 27, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"note_window\\\": \\\"replay serves the recorded window at ss=4 (recorded: [0, 4, 8, 12])\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"requested_at_s\\\": 6.0, \\\"stderr\\\": \\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":0},\"why\":\"Check start of file for decode errors to confirm corruption onset.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 0, \\\"clean\\\": false, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"stderr\\\": \\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 3}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{\"at\":2},\"why\":\"Sample a frame near chapter boundary to verify visual content matches expected episode title.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t4\", \"tool\": \"frame_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"frame\\\": \\\"frame@2\\\", \\\"note\\\": \\\"no image is available in replay mode; call ocr with this frame to read the recorded on-screen text\\\", \\\"replay\\\": true}\", \"tool_calls_remaining\": 2}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":2},\"why\":\"Read on-screen text at chapter boundary to confirm episode title matches expected.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t5\", \"tool\": \"ocr\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"consensus\\\": true, \\\"note\\\": \\\"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\\\", \\\"t_s\\\": 2.0, \\\"text\\\": \\\"\\\"}\", \"tool_calls_remaining\": 1}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:49:13.957522979Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"audio_sample\\\",\\\"args\\\":{\\\"at\\\":2},\\\"why\\\":\\\"Check audio presence to assess if corruption affects audio stream.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1333481614,\"load_duration\":1287149,\"prompt_eval_count\":2551,\"prompt_eval_cached_count\":2409,\"prompt_eval_duration\":292664000,\"eval_count\":32,\"eval_duration\":991661000}",
+        "stderr": "",
+        "wall_seconds": 1.4773223181255162
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"audio_sample\",\"args\":{\"at\":2},\"why\":\"Check audio presence to assess if corruption affects audio stream.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 2551,
+        "output_tokens": 32
+      },
+      "validation_errors": [],
+      "wall_s": 1.478
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 119,
+          "prompt_chars": 9364,
+          "prompt_tokens_estimated": 3121,
+          "prompt_tokens_reported": 2678,
+          "truncated_suspected": false
+        }
+      },
+      "n": 7,
+      "native": {
+        "created_at": "2026-10-19T22:49:18.63322141Z",
+        "done_reason": "stop",
+        "eval_count": 119,
+        "eval_duration": 4244484999,
+        "load_duration": 706641,
+        "prompt_eval_count": 2678,
+        "prompt_eval_duration": 233951000,
+        "total_duration": 4536246634
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-9a6a68d3\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990202, \"episodeId\": 990102, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 2, \"episode_title\": \"Lamp Oil\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E02 - Lamp Oil.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E02\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Lamp Oil\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89769\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90286\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"2\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Lamp Oil\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 2, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":2,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Lamp Oil\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E02 - Lamp Oil.mkv\\\",\\\"size\\\":90286},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full file metadata and duration to confirm episode identity and detect truncation.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [{\\\"end\\\": \\\"2.000000\\\", \\\"start\\\": \\\"0.000000\\\", \\\"title\\\": \\\"Cold open\\\"}, {\\\"end\\\": \\\"8.000000\\\", \\\"start\\\": \\\"2.000000\\\", \\\"title\\\": \\\"Lamp Oil\\\"}], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"89769\\\", \\\"duration\\\": \\\"8.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"90286\\\", \\\"tags\\\": {\\\"episode_sort\\\": \\\"2\\\", \\\"season_number\\\": \\\"1\\\", \\\"show\\\": \\\"Harbor Lights\\\", \\\"title\\\": \\\"Lamp Oil\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":6},\"why\":\"Probe mid-file decode to see if corruption is localized or widespread.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": false, \\\"exit_code\\\": 0, \\\"frames\\\": 27, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"note_window\\\": \\\"replay serves the recorded window at ss=4 (recorded: [0, 4, 8, 12])\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"requested_at_s\\\": 6.0, \\\"stderr\\\": \\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":0},\"why\":\"Check start of file for decode errors to confirm corruption onset.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 0, \\\"clean\\\": false, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"stderr\\\": \\\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 3}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{\"at\":2},\"why\":\"Sample a frame near chapter boundary to verify visual content matches expected episode title.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t4\", \"tool\": \"frame_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"frame\\\": \\\"frame@2\\\", \\\"note\\\": \\\"no image is available in replay mode; call ocr with this frame to read the recorded on-screen text\\\", \\\"replay\\\": true}\", \"tool_calls_remaining\": 2}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":2},\"why\":\"Read on-screen text at chapter boundary to confirm episode title matches expected.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t5\", \"tool\": \"ocr\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"consensus\\\": true, \\\"note\\\": \\\"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\\\", \\\"t_s\\\": 2.0, \\\"text\\\": \\\"\\\"}\", \"tool_calls_remaining\": 1}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"audio_sample\",\"args\":{\"at\":2},\"why\":\"Check audio presence to assess if corruption affects audio stream.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t6\", \"tool\": \"audio_sample\", \"status\": \"error\", \"truncated\": false, \"output\": \"no recorded replay for audio_sample in this suite (audio levels were not recorded)\", \"tool_calls_remaining\": 0}\nTool budget exhausted (6 of 6 used). No more tool calls are possible. Reply with your final decision object now.",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:49:18.63322141Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"corrupt_file\\\",\\\"action\\\":\\\"blocklist_and_search\\\",\\\"target\\\":\\\"Harbor Lights - S01E02 - Lamp Oil.mkv\\\",\\\"confidence\\\":0.85,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e2\\\",\\\"t1\\\",\\\"t2\\\",\\\"t3\\\"],\\\"reason\\\":\\\"ffprobe shows correct metadata and duration 8.046s matching expected 8s, but decode_sample at 0s and 4s reports H264 cabac errors and unknown-sized element, indicating damaged video stream. Audio sample unavailable but video decode errors persist across samples.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":4536246634,\"load_duration\":706641,\"prompt_eval_count\":2678,\"prompt_eval_cached_count\":2551,\"prompt_eval_duration\":233951000,\"eval_count\":119,\"eval_duration\":4244484999}",
+        "stderr": "",
+        "wall_seconds": 4.669693182222545
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"decision\",\"class\":\"corrupt_file\",\"action\":\"blocklist_and_search\",\"target\":\"Harbor Lights - S01E02 - Lamp Oil.mkv\",\"confidence\":0.85,\"evidence_refs\":[\"e1\",\"e2\",\"t1\",\"t2\",\"t3\"],\"reason\":\"ffprobe shows correct metadata and duration 8.046s matching expected 8s, but decode_sample at 0s and 4s reports H264 cabac errors and unknown-sized element, indicating damaged video stream. Audio sample unavailable but video decode errors persist across samples.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 2678,
+        "output_tokens": 119
+      },
+      "validation_errors": [],
+      "wall_s": 4.67
+    }
+  ],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 15117,
+    "output_tokens": 320
+  },
+  "wall": {
+    "case_excl_load_s": 14.696,
+    "load_s": 0.006,
+    "tool_s": [
+      0.001,
+      0.002,
+      0.001,
+      0.002,
+      0.002,
+      0.001
+    ],
+    "total_s": 14.702,
+    "turn_s": [
+      2.157,
+      1.573,
+      1.471,
+      1.799,
+      1.532,
+      1.478,
+      4.67
+    ]
+  }
+}

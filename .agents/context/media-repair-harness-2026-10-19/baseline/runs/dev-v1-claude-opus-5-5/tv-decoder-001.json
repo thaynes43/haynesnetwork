@@ -1,0 +1,149 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "convert",
+      "class": "decoder_incompatible",
+      "target": "Harbor Lights - S01E06 - Gull Rock.mkv"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "tv-decoder-001",
+  "case_sha256": "8522c7d73e71766d51fa01e3e30e4b9db1a751951b1d16307017b4be80c8fb66",
+  "config_hash": "e772f1fdb53885b6d2619be774a831c220dd35c6bf0528004a6d51a8271cd96c",
+  "decision": {
+    "action": "convert",
+    "class": "decoder_incompatible",
+    "confidence": 0.88,
+    "evidence_refs": [
+      "e1",
+      "e2",
+      "e3"
+    ],
+    "reason": "The file decodes fully (60 frames, 6s) and matches the expected episode, but its video is h264 High 10 yuv420p10le, which the client cannot play because it is limited to 8-bit yuv420p. Converting an isolated copy to 8-bit h264 fixes this, and the mono AAC LC audio is already compatible.",
+    "target": "Harbor Lights - S01E06 - Gull Rock.mkv",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2",
+    "e3"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "87c7db22ac940d4a39f112880e9d54f681a9adc47150ef5233b7023dcaf08054",
+    "bytes": 68192,
+    "declared_sha256": "87c7db22ac940d4a39f112880e9d54f681a9adc47150ef5233b7023dcaf08054",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "ad6dd1290eee84af9a977921bfb8abbf067831ca",
+  "injected_failure": null,
+  "model_case_alias": "case-55ade942",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "claude-opus-5-5",
+  "response_model_ids": [
+    "claude-opus-5-5"
+  ],
+  "run_id": "dev-v1-claude-opus-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "split": "dev",
+  "started_at": "2026-10-19T22:06:24.102597+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [],
+  "tool_modes": [],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-opus-5-5": {
+            "cacheCreationInputTokens": 1833,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-opus-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0188364,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 198,
+            "provider": "firstParty",
+            "thinkingTokens": 0,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 1,
+      "native": {
+        "duration_api_ms": 3134,
+        "duration_ms": 3175,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-opus-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-55ade942\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990206, \"episodeId\": 990106, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"client_profile\": {\"audio\": \"aac, up to 2 channels\", \"containers\": [\"matroska,webm\", \"mp4\"], \"definition\": \"defined test direct-play profile, not a measured client (same shape as the 2026-10-18 a01-a04 profile)\", \"subtitles\": \"disabled\", \"video\": \"h264, 8-bit yuv420p, up to 1080p\"}, \"expected\": {\"episode\": 6, \"episode_title\": \"Gull Rock\", \"language\": \"en\", \"runtime_s\": 6, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E06 - Gull Rock.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"question\": \"Can the defined client direct-play this file?\", \"title\": \"Harbor Lights S01E06\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"6.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Gull Rock\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"90230\\\",\\\"duration\\\":\\\"6.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"68192\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"6\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Gull Rock\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p10le\\\",\\\"profile\\\":\\\"High 10\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": \"full\"}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":60,\\\"out_time\\\":\\\"00:00:06.000000\\\",\\\"stderr\\\":\\\"\\\"}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 6, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":6,\\\"runtime_s\\\":6,\\\"season\\\":1,\\\"title\\\":\\\"Gull Rock\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E06 - Gull Rock.mkv\\\",\\\"size\\\":68192},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":3134,\"stop_reason\":\"end_turn\",\"session_id\":\"9aba0edd-1cc2-4563-86ff-2dcc59bbecb4\",\"total_cost_usd\":0.0188364,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1833,\"cache_read_input_tokens\":1022,\"output_tokens\":198,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1833,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":198,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":1833,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1833},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-opus-5-5\":{\"inputTokens\":2,\"outputTokens\":198,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":1833,\"webSearchRequests\":0,\"costUSD\":0.0188364,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-opus-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"decoder_incompatible\\\",\\\"action\\\":\\\"convert\\\",\\\"target\\\":\\\"Harbor Lights - S01E06 - Gull Rock.mkv\\\",\\\"confidence\\\":0.88,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e2\\\",\\\"e3\\\"],\\\"reason\\\":\\\"The file decodes fully (60 frames, 6s) and matches the expected episode, but its video is h264 High 10 yuv420p10le, which the client cannot play because it is limited to 8-bit yuv420p. Converting an isolated copy to 8-bit h264 fixes this, and the mono AAC LC audio is already compatible.\\\"}\",\"ttft_ms\":3148,\"type\":\"result\",\"duration_ms\":3175,\"uuid\":\"479f38b3-0c7a-49a5-97fa-a5364505c004\",\"ttft_stream_ms\":1513,\"time_to_request_ms\":34,\"first_content_frame_ms\":1513,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-opus-5-5",
+      "text": "{\"type\":\"decision\",\"class\":\"decoder_incompatible\",\"action\":\"convert\",\"target\":\"Harbor Lights - S01E06 - Gull Rock.mkv\",\"confidence\":0.88,\"evidence_refs\":[\"e1\",\"e2\",\"e3\"],\"reason\":\"The file decodes fully (60 frames, 6s) and matches the expected episode, but its video is h264 High 10 yuv420p10le, which the client cannot play because it is limited to 8-bit yuv420p. Converting an isolated copy to 8-bit h264 fixes this, and the mono AAC LC audio is already compatible.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 1833,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.0188364,
+        "input_tokens": 2,
+        "output_tokens": 198
+      },
+      "validation_errors": [],
+      "wall_s": 4.059
+    }
+  ],
+  "usage": {
+    "cost_reported": true,
+    "cost_usd": 0.0188364,
+    "input_tokens": 2,
+    "output_tokens": 198
+  },
+  "wall": {
+    "case_excl_load_s": 4.061,
+    "load_s": 0.0,
+    "tool_s": [],
+    "total_s": 4.061,
+    "turn_s": [
+      4.059
+    ]
+  }
+}

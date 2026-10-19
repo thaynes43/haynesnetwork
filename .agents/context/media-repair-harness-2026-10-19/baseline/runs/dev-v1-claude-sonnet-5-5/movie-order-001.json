@@ -1,0 +1,151 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "escalate",
+      "class": "order_edition_ambiguity",
+      "target": "Quiet Orbit (2019).mkv"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "movie-order-001",
+  "case_sha256": "dbc83c5856439d47a25544f3a25acaee56c2eed598f45ae618bd55030f384959",
+  "config_hash": "b6404655552e6b433e3ffd352bb3f376cdccf7b08ab1a7be83793c74c95d0445",
+  "decision": {
+    "action": "escalate",
+    "class": "order_edition_ambiguity",
+    "confidence": 0.8,
+    "evidence_refs": [
+      "e1",
+      "e2",
+      "e3",
+      "e4"
+    ],
+    "reason": "The file is intact (decodes cleanly, 12.0s runtime) and the on-screen title card says Extended Cut, which matches the 12s Extended edition rather than the expected 8s runtime. Radarr has no monitored edition, so the evidence cannot settle which cut is wanted.",
+    "target": "Quiet Orbit (2019).mkv",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "16119c75d0ccb07e5fd50cff28ceecad70d05d83b8a9515f2c1dd9c85b059422",
+    "bytes": 131135,
+    "declared_sha256": "16119c75d0ccb07e5fd50cff28ceecad70d05d83b8a9515f2c1dd9c85b059422",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "ad6dd1290eee84af9a977921bfb8abbf067831ca",
+  "injected_failure": null,
+  "model_case_alias": "case-4a8d7ee5",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "claude-sonnet-5-5",
+  "response_model_ids": [
+    "claude-sonnet-5-5"
+  ],
+  "run_id": "dev-v1-claude-sonnet-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "split": "dev",
+  "started_at": "2026-10-19T21:55:36.982032+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [],
+  "tool_modes": [],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-sonnet-5-5": {
+            "cacheCreationInputTokens": 1666,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-sonnet-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0085702,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 180,
+            "provider": "firstParty",
+            "thinkingTokens": 0,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 1,
+      "native": {
+        "duration_api_ms": 5473,
+        "duration_ms": 5563,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-sonnet-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-4a8d7ee5\", \"context\": {\"arr\": {\"app\": \"radarr\", \"ids\": {\"movieFileId\": 990401, \"movieId\": 990301, \"note\": \"fictional ids\"}}, \"expected\": {\"aliases\": [\"Orbite Silencieuse\"], \"language\": \"en\", \"runtime_s\": 8, \"title\": \"Quiet Orbit\", \"year\": 2019}, \"filename\": \"Quiet Orbit (2019).mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Quiet Orbit (2019)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"87089\\\",\\\"duration\\\":\\\"12.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"131135\\\",\\\"tags\\\":{\\\"title\\\":\\\"Quiet Orbit\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 1.0}, \"id\": \"e3\", \"output\": \"QUIET ORBIT / EXTENDED CUT\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}, {\"args\": {\"app\": \"radarr\", \"movie\": \"Quiet Orbit\"}, \"id\": \"e4\", \"output\": \"{\\\"alternate_titles\\\":[\\\"Orbite Silencieuse\\\"],\\\"app\\\":\\\"radarr\\\",\\\"editions\\\":{\\\"Extended Cut\\\":{\\\"runtime_s\\\":12},\\\"Theatrical\\\":{\\\"runtime_s\\\":8}},\\\"file\\\":{\\\"relativePath\\\":\\\"Quiet Orbit (2019).mkv\\\",\\\"size\\\":131135},\\\"monitored_edition\\\":null,\\\"movie\\\":\\\"Quiet Orbit\\\",\\\"note\\\":\\\"no edition is flagged as wanted\\\",\\\"year\\\":2019}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"movie\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":5473,\"stop_reason\":\"end_turn\",\"session_id\":\"73456a70-be05-42ef-ab98-b58585dd815b\",\"total_cost_usd\":0.0085702,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1666,\"cache_read_input_tokens\":1022,\"output_tokens\":180,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1666,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":180,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":1666,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1666},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-sonnet-5-5\":{\"inputTokens\":2,\"outputTokens\":180,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":1666,\"webSearchRequests\":0,\"costUSD\":0.0085702,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-sonnet-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"order_edition_ambiguity\\\",\\\"action\\\":\\\"escalate\\\",\\\"target\\\":\\\"Quiet Orbit (2019).mkv\\\",\\\"confidence\\\":0.8,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e2\\\",\\\"e3\\\",\\\"e4\\\"],\\\"reason\\\":\\\"The file is intact (decodes cleanly, 12.0s runtime) and the on-screen title card says Extended Cut, which matches the 12s Extended edition rather than the expected 8s runtime. Radarr has no monitored edition, so the evidence cannot settle which cut is wanted.\\\"}\",\"ttft_ms\":5533,\"type\":\"result\",\"duration_ms\":5563,\"uuid\":\"ccbb91ce-3c12-44f7-9036-f7eac22b7db2\",\"ttft_stream_ms\":4394,\"time_to_request_ms\":87,\"first_content_frame_ms\":4394,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-sonnet-5-5",
+      "text": "{\"type\":\"decision\",\"class\":\"order_edition_ambiguity\",\"action\":\"escalate\",\"target\":\"Quiet Orbit (2019).mkv\",\"confidence\":0.8,\"evidence_refs\":[\"e1\",\"e2\",\"e3\",\"e4\"],\"reason\":\"The file is intact (decodes cleanly, 12.0s runtime) and the on-screen title card says Extended Cut, which matches the 12s Extended edition rather than the expected 8s runtime. Radarr has no monitored edition, so the evidence cannot settle which cut is wanted.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 1666,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.0085702,
+        "input_tokens": 2,
+        "output_tokens": 180
+      },
+      "validation_errors": [],
+      "wall_s": 6.182
+    }
+  ],
+  "usage": {
+    "cost_reported": true,
+    "cost_usd": 0.0085702,
+    "input_tokens": 2,
+    "output_tokens": 180
+  },
+  "wall": {
+    "case_excl_load_s": 6.185,
+    "load_s": 0.0,
+    "tool_s": [],
+    "total_s": 6.185,
+    "turn_s": [
+      6.182
+    ]
+  }
+}

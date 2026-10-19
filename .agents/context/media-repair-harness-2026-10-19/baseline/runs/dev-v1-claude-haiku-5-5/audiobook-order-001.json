@@ -1,0 +1,316 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "none",
+      "class": "healthy",
+      "target": "The Lantern Road.m4b"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "audiobook-order-001",
+  "case_sha256": "b6d421624817e4baacf97065da34a218fdbf5dd056319bc9ba91e94722f73bc3",
+  "config_hash": "7b5e13c8b1fc0ffde672f1425f5469aaeeea33f83dac5f145e0c832d517f4b4d",
+  "decision": {
+    "action": "none",
+    "class": "healthy",
+    "confidence": 0.7,
+    "evidence_refs": [
+      "e1",
+      "e2",
+      "t2"
+    ],
+    "reason": "Title, author, narrator, 4 chapters and 20s duration match the expected values and arr metadata. Size is consistent with the bitrate. audio_sample (t1) returned no replay, so decoded audio was not verified; sample evidence is partial.",
+    "target": "The Lantern Road.m4b",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "a230ec54b2c5d5974d5cca2884a3202cc4a0df18e1766645f0cbac274773dd3e",
+    "bytes": 63930,
+    "declared_sha256": "a230ec54b2c5d5974d5cca2884a3202cc4a0df18e1766645f0cbac274773dd3e",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "ad6dd1290eee84af9a977921bfb8abbf067831ca",
+  "injected_failure": null,
+  "model_case_alias": "case-f7bf76d2",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "claude-haiku-5-5",
+  "response_model_ids": [
+    "claude-haiku-5-5"
+  ],
+  "run_id": "dev-v1-claude-haiku-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "split": "dev",
+  "started_at": "2026-10-19T21:44:18.789436+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [
+    {
+      "args": {
+        "at": 10
+      },
+      "id": "t1",
+      "mode": "replay",
+      "output": "no recorded replay for audio_sample in this suite (audio levels were not recorded)",
+      "status": "error",
+      "tool": "audio_sample",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.001,
+      "why": "ffprobe was clean, but it only reads headers. Sample decoded audio mid-file to check for corruption before deciding."
+    },
+    {
+      "args": {},
+      "id": "t2",
+      "mode": "replay",
+      "output": "{\"audio_streams\": [{\"channels\": 1, \"codec_name\": \"aac\", \"duration\": null, \"index\": 0, \"sample_rate\": \"22050\"}], \"bit_rate\": \"25572\", \"chapter_count\": 4, \"chapters\": [{\"end_s\": 5.0, \"start_s\": 0.0, \"title\": \"Opening Credits\"}, {\"end_s\": 10.0, \"start_s\": 5.0, \"title\": \"Chapter 1 Rain\"}, {\"end_s\": 15.0, \"start_s\": 10.0, \"title\": \"Chapter 2 Salt\"}, {\"end_s\": 20.0, \"start_s\": 15.0, \"title\": \"Chapter 3 Lanterns\"}], \"duration_s\": 20.0, \"format\": \"mov,mp4,m4a,3gp,3g2,mj2\", \"tags\": {\"album\": \"The Lantern Road\", \"artist\": \"Mira Tolland\", \"composer\": \"Ellis Marr\", \"date\": \"2019\", \"genre\": \"Audiobook\", \"title\": \"The Lantern Road\"}}",
+      "status": "ok",
+      "tool": "audiobook_inspect",
+      "truncated": false,
+      "turn": 2,
+      "wall_s": 0.001,
+      "why": "Headers and arr metadata match, but chapters and narrator are only checked on headers. Inspect the audiobook structure to confirm content integrity."
+    }
+  ],
+  "tool_modes": [
+    "replay"
+  ],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-haiku-5-5": {
+            "cacheCreationInputTokens": 1700,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-haiku-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0006554200000000001,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 610,
+            "provider": "firstParty",
+            "thinkingTokens": 535,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 1,
+      "native": {
+        "duration_api_ms": 3965,
+        "duration_ms": 4003,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-haiku-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-f7bf76d2\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Mira Tolland\", \"chapters\": 4, \"duration_s\": 20, \"language\": \"en\", \"narrator\": \"Ellis Marr\", \"title\": \"The Lantern Road\"}, \"filename\": \"The Lantern Road.m4b\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"The Lantern Road (audiobook)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"5.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Opening Credits\\\"},{\\\"end\\\":\\\"10.000000\\\",\\\"start\\\":\\\"5.000000\\\",\\\"title\\\":\\\"Chapter 1 Rain\\\"},{\\\"end\\\":\\\"15.000000\\\",\\\"start\\\":\\\"10.000000\\\",\\\"title\\\":\\\"Chapter 2 Salt\\\"},{\\\"end\\\":\\\"20.000000\\\",\\\"start\\\":\\\"15.000000\\\",\\\"title\\\":\\\"Chapter 3 Lanterns\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"25572\\\",\\\"duration\\\":\\\"20.000000\\\",\\\"format_name\\\":\\\"mov,mp4,m4a,3gp,3g2,mj2\\\",\\\"size\\\":\\\"63930\\\",\\\"tags\\\":{\\\"album\\\":\\\"The Lantern Road\\\",\\\"artist\\\":\\\"Mira Tolland\\\",\\\"composer\\\":\\\"Ellis Marr\\\",\\\"date\\\":\\\"2019\\\",\\\"genre\\\":\\\"Audiobook\\\",\\\"title\\\":\\\"The Lantern Road\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"bit_rate\\\":\\\"24103\\\",\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":0,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{\\\"language\\\":\\\"und\\\"}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"work\": \"The Lantern Road\"}, \"id\": \"e2\", \"output\": \"{\\\"app\\\":\\\"audiobook-metadata\\\",\\\"authors\\\":[\\\"Mira Tolland\\\"],\\\"chapter_titles\\\":[\\\"Opening Credits\\\",\\\"Chapter 1 Rain\\\",\\\"Chapter 2 Salt\\\",\\\"Chapter 3 Lanterns\\\"],\\\"editions\\\":{\\\"Dramatised\\\":{\\\"narrator\\\":\\\"Ellis Marr\\\",\\\"runtime_s\\\":20},\\\"Unabridged\\\":{\\\"narrator\\\":\\\"Ellis Marr\\\",\\\"runtime_s\\\":20}},\\\"narrators\\\":[\\\"Ellis Marr\\\"],\\\"runtime_s\\\":20,\\\"wanted_edition\\\":null,\\\"work\\\":\\\"The Lantern Road\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"audiobook\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"audiobook_inspect\", \"audio_sample\", \"arr_lookup\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":3965,\"stop_reason\":\"end_turn\",\"session_id\":\"859b7303-4ee0-4a07-9375-5561cc0b4988\",\"total_cost_usd\":0.0006554200000000001,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1700,\"cache_read_input_tokens\":1022,\"output_tokens\":610,\"output_tokens_details\":{\"thinking_tokens\":535},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1700,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":610,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":1700,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1700},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":610,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":1700,\"webSearchRequests\":0,\"costUSD\":0.0006554200000000001,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":535,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"audio_sample\\\",\\\"args\\\":{\\\"at\\\":10},\\\"why\\\":\\\"ffprobe was clean, but it only reads headers. Sample decoded audio mid-file to check for corruption before deciding.\\\"}\",\"ttft_ms\":3697,\"type\":\"result\",\"duration_ms\":4003,\"uuid\":\"15461b9d-70e1-4622-9a49-5d3fe1dc5fa9\",\"ttft_stream_ms\":1074,\"time_to_request_ms\":33,\"first_content_frame_ms\":1074,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-haiku-5-5",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"audio_sample\",\"args\":{\"at\":10},\"why\":\"ffprobe was clean, but it only reads headers. Sample decoded audio mid-file to check for corruption before deciding.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 1700,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.0006554200000000001,
+        "input_tokens": 2,
+        "output_tokens": 610
+      },
+      "validation_errors": [],
+      "wall_s": 4.805
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-haiku-5-5": {
+            "cacheCreationInputTokens": 1888,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-haiku-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.00042852,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 81,
+            "provider": "firstParty",
+            "thinkingTokens": 0,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 2,
+      "native": {
+        "duration_api_ms": 1305,
+        "duration_ms": 1356,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-haiku-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-f7bf76d2\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Mira Tolland\", \"chapters\": 4, \"duration_s\": 20, \"language\": \"en\", \"narrator\": \"Ellis Marr\", \"title\": \"The Lantern Road\"}, \"filename\": \"The Lantern Road.m4b\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"The Lantern Road (audiobook)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"5.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Opening Credits\\\"},{\\\"end\\\":\\\"10.000000\\\",\\\"start\\\":\\\"5.000000\\\",\\\"title\\\":\\\"Chapter 1 Rain\\\"},{\\\"end\\\":\\\"15.000000\\\",\\\"start\\\":\\\"10.000000\\\",\\\"title\\\":\\\"Chapter 2 Salt\\\"},{\\\"end\\\":\\\"20.000000\\\",\\\"start\\\":\\\"15.000000\\\",\\\"title\\\":\\\"Chapter 3 Lanterns\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"25572\\\",\\\"duration\\\":\\\"20.000000\\\",\\\"format_name\\\":\\\"mov,mp4,m4a,3gp,3g2,mj2\\\",\\\"size\\\":\\\"63930\\\",\\\"tags\\\":{\\\"album\\\":\\\"The Lantern Road\\\",\\\"artist\\\":\\\"Mira Tolland\\\",\\\"composer\\\":\\\"Ellis Marr\\\",\\\"date\\\":\\\"2019\\\",\\\"genre\\\":\\\"Audiobook\\\",\\\"title\\\":\\\"The Lantern Road\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"bit_rate\\\":\\\"24103\\\",\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":0,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{\\\"language\\\":\\\"und\\\"}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"work\": \"The Lantern Road\"}, \"id\": \"e2\", \"output\": \"{\\\"app\\\":\\\"audiobook-metadata\\\",\\\"authors\\\":[\\\"Mira Tolland\\\"],\\\"chapter_titles\\\":[\\\"Opening Credits\\\",\\\"Chapter 1 Rain\\\",\\\"Chapter 2 Salt\\\",\\\"Chapter 3 Lanterns\\\"],\\\"editions\\\":{\\\"Dramatised\\\":{\\\"narrator\\\":\\\"Ellis Marr\\\",\\\"runtime_s\\\":20},\\\"Unabridged\\\":{\\\"narrator\\\":\\\"Ellis Marr\\\",\\\"runtime_s\\\":20}},\\\"narrators\\\":[\\\"Ellis Marr\\\"],\\\"runtime_s\\\":20,\\\"wanted_edition\\\":null,\\\"work\\\":\\\"The Lantern Road\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"audiobook\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"audiobook_inspect\", \"audio_sample\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"audio_sample\",\"args\":{\"at\":10},\"why\":\"ffprobe was clean, but it only reads headers. Sample decoded audio mid-file to check for corruption before deciding.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"audio_sample\", \"status\": \"error\", \"truncated\": false, \"output\": \"no recorded replay for audio_sample in this suite (audio levels were not recorded)\", \"tool_calls_remaining\": 5}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":1305,\"stop_reason\":\"end_turn\",\"session_id\":\"9dcb5554-a3b4-4e02-94ad-45bb80b56150\",\"total_cost_usd\":0.00042852,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1888,\"cache_read_input_tokens\":1022,\"output_tokens\":81,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1888,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":81,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":1888,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1888},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":81,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":1888,\"webSearchRequests\":0,\"costUSD\":0.00042852,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"audiobook_inspect\\\",\\\"args\\\":{},\\\"why\\\":\\\"Headers and arr metadata match, but chapters and narrator are only checked on headers. Inspect the audiobook structure to confirm content integrity.\\\"}\",\"ttft_ms\":1306,\"type\":\"result\",\"duration_ms\":1356,\"uuid\":\"2e17e390-07b1-4a54-98f4-e54a9fe9d27b\",\"ttft_stream_ms\":957,\"time_to_request_ms\":33,\"first_content_frame_ms\":957,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-haiku-5-5",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"audiobook_inspect\",\"args\":{},\"why\":\"Headers and arr metadata match, but chapters and narrator are only checked on headers. Inspect the audiobook structure to confirm content integrity.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 1888,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.00042852,
+        "input_tokens": 2,
+        "output_tokens": 81
+      },
+      "validation_errors": [],
+      "wall_s": 2.206
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-haiku-5-5": {
+            "cacheCreationInputTokens": 2489,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-haiku-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.00086022,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 704,
+            "provider": "firstParty",
+            "thinkingTokens": 553,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 3,
+      "native": {
+        "duration_api_ms": 3651,
+        "duration_ms": 3695,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-haiku-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-f7bf76d2\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Mira Tolland\", \"chapters\": 4, \"duration_s\": 20, \"language\": \"en\", \"narrator\": \"Ellis Marr\", \"title\": \"The Lantern Road\"}, \"filename\": \"The Lantern Road.m4b\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"The Lantern Road (audiobook)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"5.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Opening Credits\\\"},{\\\"end\\\":\\\"10.000000\\\",\\\"start\\\":\\\"5.000000\\\",\\\"title\\\":\\\"Chapter 1 Rain\\\"},{\\\"end\\\":\\\"15.000000\\\",\\\"start\\\":\\\"10.000000\\\",\\\"title\\\":\\\"Chapter 2 Salt\\\"},{\\\"end\\\":\\\"20.000000\\\",\\\"start\\\":\\\"15.000000\\\",\\\"title\\\":\\\"Chapter 3 Lanterns\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"25572\\\",\\\"duration\\\":\\\"20.000000\\\",\\\"format_name\\\":\\\"mov,mp4,m4a,3gp,3g2,mj2\\\",\\\"size\\\":\\\"63930\\\",\\\"tags\\\":{\\\"album\\\":\\\"The Lantern Road\\\",\\\"artist\\\":\\\"Mira Tolland\\\",\\\"composer\\\":\\\"Ellis Marr\\\",\\\"date\\\":\\\"2019\\\",\\\"genre\\\":\\\"Audiobook\\\",\\\"title\\\":\\\"The Lantern Road\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"bit_rate\\\":\\\"24103\\\",\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":0,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{\\\"language\\\":\\\"und\\\"}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"work\": \"The Lantern Road\"}, \"id\": \"e2\", \"output\": \"{\\\"app\\\":\\\"audiobook-metadata\\\",\\\"authors\\\":[\\\"Mira Tolland\\\"],\\\"chapter_titles\\\":[\\\"Opening Credits\\\",\\\"Chapter 1 Rain\\\",\\\"Chapter 2 Salt\\\",\\\"Chapter 3 Lanterns\\\"],\\\"editions\\\":{\\\"Dramatised\\\":{\\\"narrator\\\":\\\"Ellis Marr\\\",\\\"runtime_s\\\":20},\\\"Unabridged\\\":{\\\"narrator\\\":\\\"Ellis Marr\\\",\\\"runtime_s\\\":20}},\\\"narrators\\\":[\\\"Ellis Marr\\\"],\\\"runtime_s\\\":20,\\\"wanted_edition\\\":null,\\\"work\\\":\\\"The Lantern Road\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"audiobook\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"audiobook_inspect\", \"audio_sample\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"audio_sample\",\"args\":{\"at\":10},\"why\":\"ffprobe was clean, but it only reads headers. Sample decoded audio mid-file to check for corruption before deciding.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"audio_sample\", \"status\": \"error\", \"truncated\": false, \"output\": \"no recorded replay for audio_sample in this suite (audio levels were not recorded)\", \"tool_calls_remaining\": 5}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"audiobook_inspect\",\"args\":{},\"why\":\"Headers and arr metadata match, but chapters and narrator are only checked on headers. Inspect the audiobook structure to confirm content integrity.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"audiobook_inspect\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"audio_streams\\\": [{\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"duration\\\": null, \\\"index\\\": 0, \\\"sample_rate\\\": \\\"22050\\\"}], \\\"bit_rate\\\": \\\"25572\\\", \\\"chapter_count\\\": 4, \\\"chapters\\\": [{\\\"end_s\\\": 5.0, \\\"start_s\\\": 0.0, \\\"title\\\": \\\"Opening Credits\\\"}, {\\\"end_s\\\": 10.0, \\\"start_s\\\": 5.0, \\\"title\\\": \\\"Chapter 1 Rain\\\"}, {\\\"end_s\\\": 15.0, \\\"start_s\\\": 10.0, \\\"title\\\": \\\"Chapter 2 Salt\\\"}, {\\\"end_s\\\": 20.0, \\\"start_s\\\": 15.0, \\\"title\\\": \\\"Chapter 3 Lanterns\\\"}], \\\"duration_s\\\": 20.0, \\\"format\\\": \\\"mov,mp4,m4a,3gp,3g2,mj2\\\", \\\"tags\\\": {\\\"album\\\": \\\"The Lantern Road\\\", \\\"artist\\\": \\\"Mira Tolland\\\", \\\"composer\\\": \\\"Ellis Marr\\\", \\\"date\\\": \\\"2019\\\", \\\"genre\\\": \\\"Audiobook\\\", \\\"title\\\": \\\"The Lantern Road\\\"}}\", \"tool_calls_remaining\": 4}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":3651,\"stop_reason\":\"end_turn\",\"session_id\":\"4c23a9a1-cc07-41b7-bcee-89a718ea1fbe\",\"total_cost_usd\":0.00086022,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":2489,\"cache_read_input_tokens\":1022,\"output_tokens\":704,\"output_tokens_details\":{\"thinking_tokens\":553},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":2489,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":704,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":2489,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":2489},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":704,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":2489,\"webSearchRequests\":0,\"costUSD\":0.00086022,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":553,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"healthy\\\",\\\"action\\\":\\\"none\\\",\\\"target\\\":\\\"The Lantern Road.m4b\\\",\\\"confidence\\\":0.7,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e2\\\",\\\"t2\\\"],\\\"reason\\\":\\\"Title, author, narrator, 4 chapters and 20s duration match the expected values and arr metadata. Size is consistent with the bitrate. audio_sample (t1) returned no replay, so decoded audio was not verified; sample evidence is partial.\\\"}\",\"ttft_ms\":3130,\"type\":\"result\",\"duration_ms\":3695,\"uuid\":\"c378b793-11e7-4302-af9e-2ae69120d0dd\",\"ttft_stream_ms\":668,\"time_to_request_ms\":35,\"first_content_frame_ms\":669,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-haiku-5-5",
+      "text": "{\"type\":\"decision\",\"class\":\"healthy\",\"action\":\"none\",\"target\":\"The Lantern Road.m4b\",\"confidence\":0.7,\"evidence_refs\":[\"e1\",\"e2\",\"t2\"],\"reason\":\"Title, author, narrator, 4 chapters and 20s duration match the expected values and arr metadata. Size is consistent with the bitrate. audio_sample (t1) returned no replay, so decoded audio was not verified; sample evidence is partial.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 2489,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.00086022,
+        "input_tokens": 2,
+        "output_tokens": 704
+      },
+      "validation_errors": [],
+      "wall_s": 4.47
+    }
+  ],
+  "usage": {
+    "cost_reported": true,
+    "cost_usd": 0.00194416,
+    "input_tokens": 6,
+    "output_tokens": 1395
+  },
+  "wall": {
+    "case_excl_load_s": 11.485,
+    "load_s": 0.0,
+    "tool_s": [
+      0.001,
+      0.001
+    ],
+    "total_s": 11.485,
+    "turn_s": [
+      4.805,
+      2.206,
+      4.47
+    ]
+  }
+}

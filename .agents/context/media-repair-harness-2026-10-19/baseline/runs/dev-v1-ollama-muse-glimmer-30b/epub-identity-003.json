@@ -1,0 +1,663 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "blocklist_and_search",
+      "class": "identity_mismatch",
+      "target": "case-7e3acf4b"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "epub-identity-003",
+  "case_sha256": "aed4d8afea3062cd189b4b11394d57c733a63a7070c6183f14f4a156d5f093bf",
+  "config_hash": "13a4d71c1fe4faa87c03b1a3e6c2d45015e2f968402e16dddced34282f903a15",
+  "context_check": {
+    "flags": [],
+    "max_prompt_tokens_estimated": 1837,
+    "max_prompt_tokens_reported": 1528,
+    "num_ctx": 4096,
+    "truncated_suspected": false,
+    "turns_checked": 3
+  },
+  "decision": {
+    "action": "blocklist_and_search",
+    "class": "identity_mismatch",
+    "confidence": 0.95,
+    "evidence_refs": [
+      "e1",
+      "t1",
+      "t2"
+    ],
+    "reason": "File metadata shows dc_title Anne of Windy Poplars while expected title is Anne of Green Gables; author and language match but work is different.",
+    "target": "case-7e3acf4b",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc",
+    "bytes": 390182,
+    "declared_sha256": "c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "c61b6c621103b2a817d9ea887fdbc0aa05276ab5",
+  "injected_failure": null,
+  "model_case_alias": "case-7e3acf4b",
+  "model_digest": "de878ce33ad81d060001db1469a02eebe4d86f0ad58cfe52dc062fdcbe4464c1",
+  "model_digest_na_reason": null,
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "muse-glimmer:30b",
+  "response_model_ids": [
+    "muse-glimmer:30b"
+  ],
+  "run_id": "dev-v1-ollama-muse-glimmer-30b",
+  "runtime_version": "0.40.6",
+  "split": "dev",
+  "started_at": "2026-10-19T22:41:02.427396+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [
+    {
+      "args": {},
+      "id": "t1",
+      "output": "{\"bytes\": 390182, \"dc_creator\": [\"L. M. Montgomery\"], \"dc_identifier\": [\"77b3ac05-e617-4b17-b88a-03d5fe685435\", \"6c082791-284e-4006-93c7-200fe45f823e\", \"kA0XedSJUQYC\", \"9780553480658\", \"B004MPRY7Q\"], \"dc_language\": [\"en\"], \"dc_title\": [\"Anne of Windy Poplars\"], \"entries\": 65, \"opf\": \"content.opf\", \"sha256\": \"c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc\", \"spine_characters\": 475777, \"spine_heads\": [\"Cover @page {padding: 0pt; margin:0pt} body\", \"WindyPop book\", \"WindyPop book\"], \"spine_items\": 53, \"status\": \"ok\"}",
+      "status": "ok",
+      "tool": "epub_inspect",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.055,
+      "why": "Verify spine items and metadata to confirm title mismatch and file integrity."
+    },
+    {
+      "args": {},
+      "id": "t2",
+      "mode": "stub",
+      "output": "{\"note\": \"case-provided records only; no live arr call was made\", \"records\": [{\"args\": {\"app\": \"readarr-like\", \"work\": \"Anne of Green Gables\"}, \"record\": \"{\\\"expected_author\\\":\\\"L. M. Montgomery\\\",\\\"expected_title\\\":\\\"Anne of Green Gables\\\"}\"}], \"stub\": true}",
+      "status": "ok",
+      "tool": "arr_lookup",
+      "truncated": false,
+      "turn": 2,
+      "wall_s": 0.0,
+      "why": "Confirm expected work metadata for Anne of Green Gables to compare with file."
+    }
+  ],
+  "tool_modes": [
+    "stub"
+  ],
+  "turns": [
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 33,
+          "prompt_chars": 4083,
+          "prompt_tokens_estimated": 1361,
+          "prompt_tokens_reported": 1034,
+          "truncated_suspected": false
+        }
+      },
+      "n": 1,
+      "native": {
+        "created_at": "2026-10-19T22:41:04.594529567Z",
+        "done_reason": "stop",
+        "eval_count": 33,
+        "eval_duration": 786169000,
+        "load_duration": 688221,
+        "prompt_eval_count": 1034,
+        "prompt_eval_duration": 1241450000,
+        "total_duration": 2050469433
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-7e3acf4b\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"L. M. Montgomery\", \"language\": \"en\", \"title\": \"Anne of Green Gables\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Anne of Green Gables\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"bytes\\\":390182,\\\"dc_creator\\\":[\\\"L. M. Montgomery\\\"],\\\"dc_language\\\":[\\\"en\\\"],\\\"dc_title\\\":[\\\"Anne of Windy Poplars\\\"],\\\"entries\\\":65,\\\"opf\\\":\\\"content.opf\\\",\\\"spine_characters\\\":475777,\\\"spine_heads\\\":[\\\"WindyPop book\\\",\\\"WindyPop book\\\",\\\"WindyPop book\\\"],\\\"spine_items\\\":53,\\\"status\\\":\\\"ok\\\"}\", \"status\": \"ok\", \"tool\": \"epub_inspect\", \"truncated\": false}, {\"args\": {\"app\": \"readarr-like\", \"work\": \"Anne of Green Gables\"}, \"id\": \"e2\", \"output\": \"{\\\"expected_author\\\":\\\"L. M. Montgomery\\\",\\\"expected_title\\\":\\\"Anne of Green Gables\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": [\"epub_inspect\", \"arr_lookup\"]}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:41:04.594529567Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"epub_inspect\\\",\\\"args\\\":{},\\\"why\\\":\\\"Verify spine items and metadata to confirm title mismatch and file integrity.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":2050469433,\"load_duration\":688221,\"prompt_eval_count\":1034,\"prompt_eval_cached_count\":591,\"prompt_eval_duration\":1241450000,\"eval_count\":33,\"eval_duration\":786169000}",
+        "stderr": "",
+        "wall_seconds": 2.1749550262466073
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Verify spine items and metadata to confirm title mismatch and file integrity.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1034,
+        "output_tokens": 33
+      },
+      "validation_errors": [],
+      "wall_s": 2.175
+    },
+    {
+      "load_s": 0.003,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 33,
+          "prompt_chars": 4946,
+          "prompt_tokens_estimated": 1648,
+          "prompt_tokens_reported": 1361,
+          "truncated_suspected": false
+        }
+      },
+      "n": 2,
+      "native": {
+        "created_at": "2026-10-19T22:41:05.894694879Z",
+        "done_reason": "stop",
+        "eval_count": 33,
+        "eval_duration": 785755000,
+        "load_duration": 3285215,
+        "prompt_eval_count": 1361,
+        "prompt_eval_duration": 314063000,
+        "total_duration": 1128744008
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-7e3acf4b\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"L. M. Montgomery\", \"language\": \"en\", \"title\": \"Anne of Green Gables\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Anne of Green Gables\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"bytes\\\":390182,\\\"dc_creator\\\":[\\\"L. M. Montgomery\\\"],\\\"dc_language\\\":[\\\"en\\\"],\\\"dc_title\\\":[\\\"Anne of Windy Poplars\\\"],\\\"entries\\\":65,\\\"opf\\\":\\\"content.opf\\\",\\\"spine_characters\\\":475777,\\\"spine_heads\\\":[\\\"WindyPop book\\\",\\\"WindyPop book\\\",\\\"WindyPop book\\\"],\\\"spine_items\\\":53,\\\"status\\\":\\\"ok\\\"}\", \"status\": \"ok\", \"tool\": \"epub_inspect\", \"truncated\": false}, {\"args\": {\"app\": \"readarr-like\", \"work\": \"Anne of Green Gables\"}, \"id\": \"e2\", \"output\": \"{\\\"expected_author\\\":\\\"L. M. Montgomery\\\",\\\"expected_title\\\":\\\"Anne of Green Gables\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": [\"epub_inspect\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Verify spine items and metadata to confirm title mismatch and file integrity.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"epub_inspect\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"bytes\\\": 390182, \\\"dc_creator\\\": [\\\"L. M. Montgomery\\\"], \\\"dc_identifier\\\": [\\\"77b3ac05-e617-4b17-b88a-03d5fe685435\\\", \\\"6c082791-284e-4006-93c7-200fe45f823e\\\", \\\"kA0XedSJUQYC\\\", \\\"9780553480658\\\", \\\"B004MPRY7Q\\\"], \\\"dc_language\\\": [\\\"en\\\"], \\\"dc_title\\\": [\\\"Anne of Windy Poplars\\\"], \\\"entries\\\": 65, \\\"opf\\\": \\\"content.opf\\\", \\\"sha256\\\": \\\"c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc\\\", \\\"spine_characters\\\": 475777, \\\"spine_heads\\\": [\\\"Cover @page {padding: 0pt; margin:0pt} body\\\", \\\"WindyPop book\\\", \\\"WindyPop book\\\"], \\\"spine_items\\\": 53, \\\"status\\\": \\\"ok\\\"}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:41:05.894694879Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"arr_lookup\\\",\\\"args\\\":{},\\\"why\\\":\\\"Confirm expected work metadata for Anne of Green Gables to compare with file.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1128744008,\"load_duration\":3285215,\"prompt_eval_count\":1361,\"prompt_eval_cached_count\":1029,\"prompt_eval_duration\":314063000,\"eval_count\":33,\"eval_duration\":785755000}",
+        "stderr": "",
+        "wall_seconds": 1.247688079252839
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"args\":{},\"why\":\"Confirm expected work metadata for Anne of Green Gables to compare with file.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1361,
+        "output_tokens": 33
+      },
+      "validation_errors": [],
+      "wall_s": 1.248
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 83,
+          "prompt_chars": 5513,
+          "prompt_tokens_estimated": 1837,
+          "prompt_tokens_reported": 1528,
+          "truncated_suspected": false
+        }
+      },
+      "n": 3,
+      "native": {
+        "created_at": "2026-10-19T22:41:08.273820688Z",
+        "done_reason": "stop",
+        "eval_count": 83,
+        "eval_duration": 1984231000,
+        "load_duration": 754194,
+        "prompt_eval_count": 1528,
+        "prompt_eval_duration": 225302000,
+        "total_duration": 2240872497
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-7e3acf4b\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"L. M. Montgomery\", \"language\": \"en\", \"title\": \"Anne of Green Gables\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Anne of Green Gables\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"bytes\\\":390182,\\\"dc_creator\\\":[\\\"L. M. Montgomery\\\"],\\\"dc_language\\\":[\\\"en\\\"],\\\"dc_title\\\":[\\\"Anne of Windy Poplars\\\"],\\\"entries\\\":65,\\\"opf\\\":\\\"content.opf\\\",\\\"spine_characters\\\":475777,\\\"spine_heads\\\":[\\\"WindyPop book\\\",\\\"WindyPop book\\\",\\\"WindyPop book\\\"],\\\"spine_items\\\":53,\\\"status\\\":\\\"ok\\\"}\", \"status\": \"ok\", \"tool\": \"epub_inspect\", \"truncated\": false}, {\"args\": {\"app\": \"readarr-like\", \"work\": \"Anne of Green Gables\"}, \"id\": \"e2\", \"output\": \"{\\\"expected_author\\\":\\\"L. M. Montgomery\\\",\\\"expected_title\\\":\\\"Anne of Green Gables\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": [\"epub_inspect\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Verify spine items and metadata to confirm title mismatch and file integrity.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"epub_inspect\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"bytes\\\": 390182, \\\"dc_creator\\\": [\\\"L. M. Montgomery\\\"], \\\"dc_identifier\\\": [\\\"77b3ac05-e617-4b17-b88a-03d5fe685435\\\", \\\"6c082791-284e-4006-93c7-200fe45f823e\\\", \\\"kA0XedSJUQYC\\\", \\\"9780553480658\\\", \\\"B004MPRY7Q\\\"], \\\"dc_language\\\": [\\\"en\\\"], \\\"dc_title\\\": [\\\"Anne of Windy Poplars\\\"], \\\"entries\\\": 65, \\\"opf\\\": \\\"content.opf\\\", \\\"sha256\\\": \\\"c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc\\\", \\\"spine_characters\\\": 475777, \\\"spine_heads\\\": [\\\"Cover @page {padding: 0pt; margin:0pt} body\\\", \\\"WindyPop book\\\", \\\"WindyPop book\\\"], \\\"spine_items\\\": 53, \\\"status\\\": \\\"ok\\\"}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"args\":{},\"why\":\"Confirm expected work metadata for Anne of Green Gables to compare with file.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"arr_lookup\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"note\\\": \\\"case-provided records only; no live arr call was made\\\", \\\"records\\\": [{\\\"args\\\": {\\\"app\\\": \\\"readarr-like\\\", \\\"work\\\": \\\"Anne of Green Gables\\\"}, \\\"record\\\": \\\"{\\\\\\\"expected_author\\\\\\\":\\\\\\\"L. M. Montgomery\\\\\\\",\\\\\\\"expected_title\\\\\\\":\\\\\\\"Anne of Green Gables\\\\\\\"}\\\"}], \\\"stub\\\": true}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:41:08.273820688Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"identity_mismatch\\\",\\\"action\\\":\\\"blocklist_and_search\\\",\\\"target\\\":\\\"case-7e3acf4b\\\",\\\"confidence\\\":0.95,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"t1\\\",\\\"t2\\\"],\\\"reason\\\":\\\"File metadata shows dc_title Anne of Windy Poplars while expected title is Anne of Green Gables; author and language match but work is different.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":2240872497,\"load_duration\":754194,\"prompt_eval_count\":1528,\"prompt_eval_cached_count\":1356,\"prompt_eval_duration\":225302000,\"eval_count\":83,\"eval_duration\":1984231000}",
+        "stderr": "",
+        "wall_seconds": 2.363707717973739
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"decision\",\"class\":\"identity_mismatch\",\"action\":\"blocklist_and_search\",\"target\":\"case-7e3acf4b\",\"confidence\":0.95,\"evidence_refs\":[\"e1\",\"t1\",\"t2\"],\"reason\":\"File metadata shows dc_title Anne of Windy Poplars while expected title is Anne of Green Gables; author and language match but work is different.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1528,
+        "output_tokens": 83
+      },
+      "validation_errors": [],
+      "wall_s": 2.364
+    }
+  ],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 3923,
+    "output_tokens": 149
+  },
+  "wall": {
+    "case_excl_load_s": 5.842,
+    "load_s": 0.005,
+    "tool_s": [
+      0.055,
+      0.0
+    ],
+    "total_s": 5.846,
+    "turn_s": [
+      2.175,
+      1.248,
+      2.364
+    ]
+  }
+}

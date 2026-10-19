@@ -1,0 +1,143 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "none",
+      "class": "healthy",
+      "target": null
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "epub-healthy-002",
+  "case_sha256": "67270f2f22b7dfaa202bd4828c7f0d0944e1a76970fa8e80159f8481e392355d",
+  "config_hash": "e772f1fdb53885b6d2619be774a831c220dd35c6bf0528004a6d51a8271cd96c",
+  "decision": {
+    "action": "none",
+    "class": "healthy",
+    "confidence": 0.6,
+    "evidence_refs": [
+      "e1"
+    ],
+    "reason": "The prior EPUB OPF record shows the catalog title and content title both match the expected 'Anne of Green Gables', and nothing indicates damage or a naming problem. No tools were available, so file integrity could not be checked further.",
+    "target": null,
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "declared_sha256": null,
+    "kind": "none",
+    "verified": "n/a"
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "ad6dd1290eee84af9a977921bfb8abbf067831ca",
+  "injected_failure": null,
+  "model_case_alias": "case-655d18f3",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "claude-opus-5-5",
+  "response_model_ids": [
+    "claude-opus-5-5"
+  ],
+  "run_id": "dev-v1-claude-opus-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "split": "dev",
+  "started_at": "2026-10-19T22:01:38.643402+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [],
+  "tool_modes": [],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-opus-5-5": {
+            "cacheCreationInputTokens": 889,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-opus-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0147244,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 370,
+            "provider": "firstParty",
+            "thinkingTokens": 244,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 1,
+      "native": {
+        "duration_api_ms": 5718,
+        "duration_ms": 5849,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-opus-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-655d18f3\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"aliases\": [], \"title\": \"Anne of Green Gables\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Anne of Green Gables\"}, \"evidence\": [{\"args\": {\"id\": \"c08\"}, \"id\": \"e1\", \"output\": \"{\\\"evidence_method\\\":\\\"EPUB OPF\\\",\\\"observed\\\":{\\\"catalog_title\\\":\\\"Anne of Green Gables\\\",\\\"content_titles\\\":[\\\"Anne of Green Gables\\\"],\\\"evidence_method\\\":\\\"EPUB OPF\\\",\\\"reported_size_kb\\\":343}}\", \"status\": \"ok\", \"tool\": \"prior_record\", \"truncated\": false}], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": []}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":5718,\"stop_reason\":\"end_turn\",\"session_id\":\"161c478a-811d-4b42-8c18-9740bbf91353\",\"total_cost_usd\":0.0147244,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":889,\"cache_read_input_tokens\":1022,\"output_tokens\":370,\"output_tokens_details\":{\"thinking_tokens\":244},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":889,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":370,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":889,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":889},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-opus-5-5\":{\"inputTokens\":2,\"outputTokens\":370,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":889,\"webSearchRequests\":0,\"costUSD\":0.0147244,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":244,\"canonicalModel\":\"claude-opus-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"healthy\\\",\\\"action\\\":\\\"none\\\",\\\"target\\\":null,\\\"confidence\\\":0.6,\\\"evidence_refs\\\":[\\\"e1\\\"],\\\"reason\\\":\\\"The prior EPUB OPF record shows the catalog title and content title both match the expected 'Anne of Green Gables', and nothing indicates damage or a naming problem. No tools were available, so file integrity could not be checked further.\\\"}\",\"ttft_ms\":4745,\"type\":\"result\",\"duration_ms\":5849,\"uuid\":\"07f2a4a1-8ea7-41dc-bc60-23b51c2c6096\",\"ttft_stream_ms\":2003,\"time_to_request_ms\":126,\"first_content_frame_ms\":2004,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-opus-5-5",
+      "text": "{\"type\":\"decision\",\"class\":\"healthy\",\"action\":\"none\",\"target\":null,\"confidence\":0.6,\"evidence_refs\":[\"e1\"],\"reason\":\"The prior EPUB OPF record shows the catalog title and content title both match the expected 'Anne of Green Gables', and nothing indicates damage or a naming problem. No tools were available, so file integrity could not be checked further.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 889,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.0147244,
+        "input_tokens": 2,
+        "output_tokens": 370
+      },
+      "validation_errors": [],
+      "wall_s": 6.437
+    }
+  ],
+  "usage": {
+    "cost_reported": true,
+    "cost_usd": 0.0147244,
+    "input_tokens": 2,
+    "output_tokens": 370
+  },
+  "wall": {
+    "case_excl_load_s": 6.438,
+    "load_s": 0.0,
+    "tool_s": [],
+    "total_s": 6.438,
+    "turn_s": [
+      6.437
+    ]
+  }
+}
