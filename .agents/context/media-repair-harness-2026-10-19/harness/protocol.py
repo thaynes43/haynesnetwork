@@ -1,7 +1,12 @@
 """Turn protocol (CONTRACT.md): strict JSON turns, schema validation, prompts, forced decisions."""
+import hashlib
 import json
+from pathlib import Path
 
-PROTOCOL_VERSION = 'v1'
+PROTOCOL_VERSION = 'v1'  # the v1 turn protocol (prompt v1); prompt v2 has its own, see PROMPT_VERSIONS
+PROMPT_VERSIONS = ('v1', 'v2')
+DEFAULT_PROMPT = 'v1'  # stays v1 until checkpoint 2c
+PROMPT_DIR = Path(__file__).resolve().parent / 'prompts'
 MAX_TOOL_CALLS = 6
 TOOL_OUTPUT_BYTES = 8192
 TOOL_TIMEOUT_S = 60
@@ -82,6 +87,161 @@ BUDGET_MESSAGE = ('Tool budget exhausted (6 of 6 used). No more tool calls are p
                   'Reply with your final decision object now.')
 
 
+def get_prompt(version=DEFAULT_PROMPT):
+    """-> {'version', 'text', 'sha256'}.  v1 is SYSTEM_PROMPT above (unchanged, so its sha matches the checkpoint 1
+    records); v2 is prompts/v2.txt, sent exactly as the file reads (one trailing newline removed)."""
+    if version == 'v1':
+        text = SYSTEM_PROMPT
+    elif version == 'v2':
+        text = (PROMPT_DIR / 'v2.txt').read_text(encoding='utf-8').rstrip('\n')
+    else:
+        raise ValueError('unknown prompt version %r (known: %s)' % (version, ', '.join(PROMPT_VERSIONS)))
+    return {'version': version, 'text': text, 'sha256': hashlib.sha256(text.encode()).hexdigest()}
+
+
+# ---- turn protocol v2 (prompt v2): decisions carry an `audit` object when the action is a write ----------------------
+AUDIT_KEYS = ('target', 'preconditions', 'readback', 'verify')
+AUDIT_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'target': {'type': 'string', 'minLength': 1, 'maxLength': 200},
+        'preconditions': {'type': 'array', 'items': {'type': 'string', 'maxLength': 160}, 'minItems': 1, 'maxItems': 6},
+        'readback': {'type': 'string', 'minLength': 1, 'maxLength': 240},
+        'verify': {'type': 'string', 'minLength': 1, 'maxLength': 240},
+    },
+    'required': list(AUDIT_KEYS),
+    'additionalProperties': False,
+}
+_DECISION_V2_PROPS = {
+    'type': {'enum': ['decision']},
+    'class': {'enum': list(CLASSES)},
+    'target': {'type': ['string', 'null'], 'maxLength': 200},
+    'reason': {'type': 'string', 'maxLength': 400},
+    'confidence': {'type': 'number', 'minimum': 0, 'maximum': 1},
+    'evidence_refs': {'type': 'array', 'items': {'type': 'string', 'maxLength': 16}, 'maxItems': 12},
+}
+# A write decision must name a target and carry the audit; any other decision may not claim a write.  The last key of
+# every example is an array or object, never a string: baseline haiku closed a trailing string with `","}` (G7).
+DECISION_NOWRITE_SCHEMA_V2 = {
+    'type': 'object',
+    'properties': dict(_DECISION_V2_PROPS, action={'enum': ['none', 'escalate']}),
+    'required': ['type', 'class', 'action', 'target', 'reason', 'confidence', 'evidence_refs'],
+    'additionalProperties': False,
+}
+DECISION_WRITE_SCHEMA_V2 = {
+    'type': 'object',
+    'properties': dict(_DECISION_V2_PROPS, action={'enum': list(WRITE_ACTIONS)}, target={'type': 'string', 'minLength': 1, 'maxLength': 200},
+                       audit=AUDIT_SCHEMA),
+    'required': ['type', 'class', 'action', 'target', 'reason', 'confidence', 'evidence_refs', 'audit'],
+    'additionalProperties': False,
+}
+
+
+def tool_call_schema_v2(tools=None):
+    """Tool-call schema; the `tool` enum is limited to the case's tools_available when given (baseline muse asked for a tool the
+    case did not offer on 11 cases, and haiku on 3)."""
+    return {
+        'type': 'object',
+        'properties': {'type': {'enum': ['tool_call']}, 'tool': {'enum': list(tools if tools else TOOLS)},
+                       'why': {'type': 'string', 'maxLength': 200}, 'args': {'type': 'object'}},
+        'required': ['type', 'tool', 'why', 'args'],
+        'additionalProperties': False,
+    }
+
+
+def turn_schema(prompt_version=DEFAULT_PROMPT, tools=None, flat=False):
+    """The `format` schema for grammar-constrained engines.  v1: the module constants, unchanged.  v2: per-case tool enum and
+    an audit that is required exactly when the action is a write; flat=True is the anyOf-free fallback."""
+    if prompt_version == 'v1':
+        return FLAT_TURN_SCHEMA if flat else TURN_SCHEMA
+    tc = tool_call_schema_v2(tools)
+    if not flat:
+        return {'anyOf': [tc, DECISION_NOWRITE_SCHEMA_V2, DECISION_WRITE_SCHEMA_V2]}
+    props = {'type': {'enum': ['tool_call', 'decision']}, 'tool': tc['properties']['tool'], 'why': tc['properties']['why'],
+             'args': {'type': 'object'}, 'action': {'enum': list(ACTIONS)}, 'audit': AUDIT_SCHEMA}
+    props.update({k: v for k, v in _DECISION_V2_PROPS.items() if k != 'type'})
+    return {'type': 'object', 'properties': props, 'required': ['type'], 'additionalProperties': False}
+
+
+def _key_errors(obj, allowed, what, optional=()):
+    miss = sorted(set(allowed) - set(obj) - set(optional))
+    extra = sorted(set(obj) - set(allowed) - set(optional))
+    if not miss and not extra:
+        return []
+    parts = []
+    if miss:
+        parts.append('missing %s' % miss)
+    if extra:
+        parts.append('unexpected %s (only the documented keys are allowed; never copy fields from a tool result)' % extra)
+    return ['%s keys wrong: %s' % (what, '; '.join(parts))]
+
+
+def validate_audit(audit):
+    errs = []
+    if not isinstance(audit, dict):
+        return ['audit must be an object with keys %s' % list(AUDIT_KEYS)]
+    errs += _key_errors(audit, AUDIT_KEYS, 'audit')
+    for k in ('target', 'readback', 'verify'):
+        v = audit.get(k)
+        if k in audit and not (isinstance(v, str) and v.strip()):
+            errs.append('audit.%s must be a non-empty string' % k)
+        elif isinstance(v, str) and len(v) > (200 if k == 'target' else 240):
+            errs.append('audit.%s is too long' % k)
+    pre = audit.get('preconditions')
+    if 'preconditions' in audit and (not isinstance(pre, list) or not pre or len(pre) > 6 or not all(isinstance(x, str) and x.strip() and len(x) <= 160 for x in pre)):
+        errs.append('audit.preconditions must be a list of 1 to 6 short strings')
+    return errs
+
+
+def validate_turn_v2(obj, tools_available=None):
+    """Return (kind, errors) for turn protocol v2.  Same shapes as v1, plus: a write action needs a named target and an
+    audit object whose target is that same target; an audit on none/escalate is tolerated if well formed and recorded."""
+    errs = []
+    if not isinstance(obj, dict):
+        return None, ['reply is not a JSON object']
+    kind = obj.get('type')
+    if kind == 'tool_call':
+        errs += _key_errors(obj, ('type', 'tool', 'why', 'args'), 'tool_call')
+        if obj.get('tool') not in TOOLS:
+            errs.append('unknown tool %r' % (obj.get('tool'),))
+        elif tools_available is not None and obj.get('tool') not in tools_available:
+            errs.append('tool %r is not available for this case; available: %s' % (obj.get('tool'), list(tools_available)))
+        if not isinstance(obj.get('args'), dict):
+            errs.append('args must be an object')
+        if not isinstance(obj.get('why'), str) or len(obj.get('why', '')) > 200:
+            errs.append('why must be a string of at most 200 characters')
+        return ('tool_call' if not errs else None), errs
+    if kind == 'decision':
+        errs += _key_errors(obj, ('type', 'class', 'action', 'target', 'reason', 'confidence', 'evidence_refs'), 'decision', optional=('audit',))
+        if obj.get('class') not in CLASSES:
+            errs.append('class must be one of %s' % list(CLASSES))
+        if obj.get('action') not in ACTIONS:
+            errs.append('action must be exactly one of %s (one value, never a combination)' % list(ACTIONS))
+        if not (obj.get('target') is None or (isinstance(obj.get('target'), str) and len(obj['target']) <= 200)):
+            errs.append('target must be a string or null')
+        c = obj.get('confidence')
+        if not _is_num(c) or not 0 <= c <= 1:
+            errs.append('confidence must be a number between 0 and 1')
+        refs = obj.get('evidence_refs')
+        if not isinstance(refs, list) or not all(isinstance(r, str) for r in refs) or len(refs) > 12:
+            errs.append('evidence_refs must be a list of at most 12 strings')
+        if not isinstance(obj.get('reason'), str) or len(obj.get('reason', '')) > 400:
+            errs.append('reason must be a string of at most 400 characters')
+        if obj.get('action') in WRITE_ACTIONS:
+            if not (isinstance(obj.get('target'), str) and obj['target'].strip()):
+                errs.append('a write action needs a named target (non-null string)')
+            if 'audit' not in obj or obj.get('audit') is None:
+                errs.append('a write action needs an audit object with keys %s' % list(AUDIT_KEYS))
+        if obj.get('audit') is not None:
+            aerrs = validate_audit(obj['audit'])
+            errs += aerrs
+            if not aerrs and obj.get('action') in WRITE_ACTIONS and isinstance(obj.get('target'), str) \
+                    and ' '.join(obj['audit']['target'].split()).lower() != ' '.join(obj['target'].split()).lower():
+                errs.append('audit.target must equal target')
+        return ('decision' if not errs else None), errs
+    return None, ['"type" must be "tool_call" or "decision"']
+
+
 def forced_decision(reason):
     return {'type': 'decision', 'class': 'insufficient_evidence', 'action': 'escalate', 'target': None,
             'confidence': 0.0, 'evidence_refs': [], 'reason': ('forced: ' + reason)[:400]}
@@ -91,8 +251,10 @@ def _is_num(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool)
 
 
-def validate_turn(obj, tools_available=None):
+def validate_turn(obj, tools_available=None, prompt_version='v1'):
     """Return (kind, errors).  kind is 'tool_call', 'decision' or None; errors is a list of strings."""
+    if prompt_version == 'v2':
+        return validate_turn_v2(obj, tools_available)
     errs = []
     if not isinstance(obj, dict):
         return None, ['reply is not a JSON object']
@@ -132,6 +294,39 @@ def validate_turn(obj, tools_available=None):
     return None, ['"type" must be "tool_call" or "decision"']
 
 
+# Text a stop-token or a sloppy close can leave after / inside the object.  Diagnostics only: the reply is still a miss.
+STOP_ARTIFACTS = ('<|eot|>', '<|im_end|>', '<|endoftext|>', '<|end|>', '</s>')
+
+
+def salvage_diagnostics(stripped):
+    """Which known artifact, if removed, would make a rejected reply parse?  Recorded so a G7 miss can be classified
+    (fence, stop token, stray `","}` close, prose around the object); the reply is never accepted on this basis."""
+    found = []
+
+    def parses(t):
+        try:
+            return isinstance(json.loads(t), dict)
+        except ValueError:
+            return False
+    if stripped.startswith('```'):
+        inner = stripped.strip('`')
+        if inner.startswith('json'):
+            inner = inner[4:]
+        if parses(inner.strip()):
+            found.append('fence_wrapped')
+    for tok in STOP_ARTIFACTS:
+        if tok in stripped and parses(stripped.replace(tok, '').strip()):
+            found.append('stop_token:' + tok)
+    if stripped.endswith(',"}') and parses(stripped[:-3] + '}'):
+        found.append('stray_comma_quote_close')
+    elif stripped.endswith('","}') and parses(stripped[:-4] + '"}'):
+        found.append('stray_comma_quote_close')
+    a, b = stripped.find('{'), stripped.rfind('}')
+    if 0 <= a < b and (a > 0 or b < len(stripped) - 1) and parses(stripped[a:b + 1]):
+        found.append('prose_around_object')
+    return found
+
+
 def parse_reply(text):
     """Strict parse: the whole reply (whitespace aside) is one JSON object.
     Returns (obj_or_None, error_or_None, diagnostics)."""
@@ -140,20 +335,15 @@ def parse_reply(text):
         return None, 'empty reply', diag
     stripped = text.strip()
     try:
-        return json.loads(stripped), None, diag
+        obj = json.loads(stripped)
     except ValueError as error:
-        # diagnostics only: would a fence-stripped reply have parsed?  It is still a miss.
-        inner = stripped
-        if inner.startswith('```'):
-            inner = inner.strip('`')
-            if inner.startswith('json'):
-                inner = inner[4:]
-            try:
-                json.loads(inner.strip())
-                diag['fence_wrapped'] = True
-            except ValueError:
-                pass
+        found = salvage_diagnostics(stripped)
+        if found:
+            diag['salvageable_by'] = found
+            if 'fence_wrapped' in found:
+                diag['fence_wrapped'] = True  # kept: the scorer counts this key
         return None, 'reply is not strict JSON (%s)' % str(error)[:80], diag
+    return obj, None, diag
 
 
 # context keys shown to the model.  filename, client_profile and question are suite additions (dev-v1) that the
