@@ -1,0 +1,490 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "escalate",
+      "class": "insufficient_evidence",
+      "target": "Harbor Lights - S01E06 - Gull Rock.mkv"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "tv-insuff-003",
+  "case_sha256": "9aad7f720473488366b68de802bd01c514c69c038f3fda16198b2843d6a60d71",
+  "config_hash": "e772f1fdb53885b6d2619be774a831c220dd35c6bf0528004a6d51a8271cd96c",
+  "decision": {
+    "action": "escalate",
+    "class": "insufficient_evidence",
+    "confidence": 0.55,
+    "evidence_refs": [
+      "e1",
+      "e2",
+      "e3",
+      "t1",
+      "t2",
+      "t3",
+      "t4"
+    ],
+    "reason": "The file decodes cleanly in both sampled windows (0-4s, 4-8s) but runs 8.05s against the expected 6s, and no on-screen text was found at 1s or 7s (frame_sample gave no image in replay), so nothing confirms whether this is a different cut, a different episode or just extra material.",
+    "target": "Harbor Lights - S01E06 - Gull Rock.mkv",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2",
+    "e3"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "eceb040939bd8857b43ee8d01207b13a73b788cb6ed078810d2630dd20d49ede",
+    "bytes": 88720,
+    "declared_sha256": "eceb040939bd8857b43ee8d01207b13a73b788cb6ed078810d2630dd20d49ede",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "ad6dd1290eee84af9a977921bfb8abbf067831ca",
+  "injected_failure": null,
+  "model_case_alias": "case-167a6042",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "claude-opus-5-5",
+  "response_model_ids": [
+    "claude-opus-5-5"
+  ],
+  "run_id": "dev-v1-claude-opus-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "split": "dev",
+  "started_at": "2026-10-19T22:08:37.683389+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [
+    {
+      "args": {
+        "ss": 4,
+        "t": 4.1
+      },
+      "id": "t1",
+      "mode": "replay",
+      "output": "{\"at_s\": 4, \"clean\": true, \"exit_code\": 0, \"frames\": 40, \"note\": \"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\", \"out_time\": \"00:00:04.000000\", \"quota_exhausted\": false, \"stderr\": \"\", \"window_s\": 4}",
+      "status": "ok",
+      "tool": "decode_sample",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.001,
+      "why": "Check the rest of the file decodes cleanly to the end; duration 8.05s exceeds the expected 6s runtime."
+    },
+    {
+      "args": {
+        "at": 1
+      },
+      "id": "t2",
+      "mode": "replay",
+      "output": "{\"consensus\": true, \"note\": \"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\", \"t_s\": 1.0, \"text\": \"\"}",
+      "status": "ok",
+      "tool": "ocr",
+      "truncated": false,
+      "turn": 2,
+      "wall_s": 0.001,
+      "why": "Duration 8.05s vs expected 6s runtime; check on-screen text near the start for a title card identifying the episode."
+    },
+    {
+      "args": {
+        "at": 7
+      },
+      "id": "t3",
+      "mode": "replay",
+      "output": "{\"consensus\": true, \"note\": \"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\", \"t_s\": 7.0, \"text\": \"\"}",
+      "status": "ok",
+      "tool": "ocr",
+      "truncated": false,
+      "turn": 3,
+      "wall_s": 0.001,
+      "why": "Runtime 8.05s exceeds expected 6s; look for on-screen text late in the file (credits, title or episode card) that could identify the content."
+    },
+    {
+      "args": {
+        "at": 7
+      },
+      "id": "t4",
+      "mode": "replay",
+      "output": "{\"frame\": \"frame@7\", \"note\": \"no image is available in replay mode; call ocr with this frame to read the recorded on-screen text\", \"replay\": true}",
+      "status": "ok",
+      "tool": "frame_sample",
+      "truncated": false,
+      "turn": 4,
+      "wall_s": 0.001,
+      "why": "File runs 8.05s vs expected 6s and OCR found no text; inspect a late frame for content that could show extra material, a different cut or a different episode."
+    }
+  ],
+  "tool_modes": [
+    "replay"
+  ],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-opus-5-5": {
+            "cacheCreationInputTokens": 1568,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-opus-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0161964,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 172,
+            "provider": "firstParty",
+            "thinkingTokens": 89,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 1,
+      "native": {
+        "duration_api_ms": 3106,
+        "duration_ms": 3147,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-opus-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-167a6042\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990206, \"episodeId\": 990106, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 6, \"episode_title\": \"Gull Rock\", \"language\": \"en\", \"runtime_s\": 6, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E06 - Gull Rock.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E06\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"88212\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"88720\\\",\\\"tags\\\":{\\\"title\\\":\\\"\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 6, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":6,\\\"runtime_s\\\":6,\\\"season\\\":1,\\\"title\\\":\\\"Gull Rock\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E06 - Gull Rock.mkv\\\",\\\"size\\\":88720},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":3106,\"stop_reason\":\"end_turn\",\"session_id\":\"ed870172-287b-4e16-8f65-5a81341b98b4\",\"total_cost_usd\":0.0161964,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1568,\"cache_read_input_tokens\":1022,\"output_tokens\":172,\"output_tokens_details\":{\"thinking_tokens\":89},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1568,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":172,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":1568,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1568},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-opus-5-5\":{\"inputTokens\":2,\"outputTokens\":172,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":1568,\"webSearchRequests\":0,\"costUSD\":0.0161964,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":89,\"canonicalModel\":\"claude-opus-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"decode_sample\\\",\\\"args\\\":{\\\"ss\\\":4,\\\"t\\\":4.1},\\\"why\\\":\\\"Check the rest of the file decodes cleanly to the end; duration 8.05s exceeds the expected 6s runtime.\\\"}\",\"ttft_ms\":2425,\"type\":\"result\",\"duration_ms\":3147,\"uuid\":\"ad40a4a9-b4c8-4bed-ae63-958243697b78\",\"ttft_stream_ms\":1482,\"time_to_request_ms\":35,\"first_content_frame_ms\":1482,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-opus-5-5",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"ss\":4,\"t\":4.1},\"why\":\"Check the rest of the file decodes cleanly to the end; duration 8.05s exceeds the expected 6s runtime.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 1568,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.0161964,
+        "input_tokens": 2,
+        "output_tokens": 172
+      },
+      "validation_errors": [],
+      "wall_s": 3.88
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-opus-5-5": {
+            "cacheCreationInputTokens": 1870,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-opus-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0184524,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 164,
+            "provider": "firstParty",
+            "thinkingTokens": 92,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 2,
+      "native": {
+        "duration_api_ms": 2840,
+        "duration_ms": 2945,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-opus-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-167a6042\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990206, \"episodeId\": 990106, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 6, \"episode_title\": \"Gull Rock\", \"language\": \"en\", \"runtime_s\": 6, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E06 - Gull Rock.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E06\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"88212\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"88720\\\",\\\"tags\\\":{\\\"title\\\":\\\"\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 6, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":6,\\\"runtime_s\\\":6,\\\"season\\\":1,\\\"title\\\":\\\"Gull Rock\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E06 - Gull Rock.mkv\\\",\\\"size\\\":88720},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"ss\":4,\"t\":4.1},\"why\":\"Check the rest of the file decodes cleanly to the end; duration 8.05s exceeds the expected 6s runtime.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": true, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"stderr\\\": \\\"\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 5}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":2840,\"stop_reason\":\"end_turn\",\"session_id\":\"fc76d84b-b197-4cc2-8808-4a763fc90f35\",\"total_cost_usd\":0.0184524,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1870,\"cache_read_input_tokens\":1022,\"output_tokens\":164,\"output_tokens_details\":{\"thinking_tokens\":92},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1870,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":164,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":1870,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1870},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-opus-5-5\":{\"inputTokens\":2,\"outputTokens\":164,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":1870,\"webSearchRequests\":0,\"costUSD\":0.0184524,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":92,\"canonicalModel\":\"claude-opus-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"ocr\\\",\\\"args\\\":{\\\"at\\\":1},\\\"why\\\":\\\"Duration 8.05s vs expected 6s runtime; check on-screen text near the start for a title card identifying the episode.\\\"}\",\"ttft_ms\":2916,\"type\":\"result\",\"duration_ms\":2945,\"uuid\":\"d4206559-1a09-4533-b67d-319b519b6427\",\"ttft_stream_ms\":1413,\"time_to_request_ms\":102,\"first_content_frame_ms\":1413,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-opus-5-5",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":1},\"why\":\"Duration 8.05s vs expected 6s runtime; check on-screen text near the start for a title card identifying the episode.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 1870,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.0184524,
+        "input_tokens": 2,
+        "output_tokens": 164
+      },
+      "validation_errors": [],
+      "wall_s": 3.667
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-opus-5-5": {
+            "cacheCreationInputTokens": 2107,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-opus-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0206084,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 177,
+            "provider": "firstParty",
+            "thinkingTokens": 97,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 3,
+      "native": {
+        "duration_api_ms": 2862,
+        "duration_ms": 2997,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-opus-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-167a6042\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990206, \"episodeId\": 990106, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 6, \"episode_title\": \"Gull Rock\", \"language\": \"en\", \"runtime_s\": 6, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E06 - Gull Rock.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E06\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"88212\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"88720\\\",\\\"tags\\\":{\\\"title\\\":\\\"\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 6, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":6,\\\"runtime_s\\\":6,\\\"season\\\":1,\\\"title\\\":\\\"Gull Rock\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E06 - Gull Rock.mkv\\\",\\\"size\\\":88720},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"ss\":4,\"t\":4.1},\"why\":\"Check the rest of the file decodes cleanly to the end; duration 8.05s exceeds the expected 6s runtime.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": true, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"stderr\\\": \\\"\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 5}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":1},\"why\":\"Duration 8.05s vs expected 6s runtime; check on-screen text near the start for a title card identifying the episode.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"ocr\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"consensus\\\": true, \\\"note\\\": \\\"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\\\", \\\"t_s\\\": 1.0, \\\"text\\\": \\\"\\\"}\", \"tool_calls_remaining\": 4}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":2862,\"stop_reason\":\"end_turn\",\"session_id\":\"122b94db-c929-4906-98b4-c073aedd8216\",\"total_cost_usd\":0.0206084,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":2107,\"cache_read_input_tokens\":1022,\"output_tokens\":177,\"output_tokens_details\":{\"thinking_tokens\":97},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":2107,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":177,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":2107,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":2107},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-opus-5-5\":{\"inputTokens\":2,\"outputTokens\":177,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":2107,\"webSearchRequests\":0,\"costUSD\":0.0206084,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":97,\"canonicalModel\":\"claude-opus-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"ocr\\\",\\\"args\\\":{\\\"at\\\":7},\\\"why\\\":\\\"Runtime 8.05s exceeds expected 6s; look for on-screen text late in the file (credits, title or episode card) that could identify the content.\\\"}\",\"ttft_ms\":2945,\"type\":\"result\",\"duration_ms\":2997,\"uuid\":\"7735c36e-ffeb-4044-a6a9-74fe9f7d465c\",\"ttft_stream_ms\":1138,\"time_to_request_ms\":129,\"first_content_frame_ms\":1139,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-opus-5-5",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":7},\"why\":\"Runtime 8.05s exceeds expected 6s; look for on-screen text late in the file (credits, title or episode card) that could identify the content.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 2107,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.0206084,
+        "input_tokens": 2,
+        "output_tokens": 177
+      },
+      "validation_errors": [],
+      "wall_s": 3.715
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-opus-5-5": {
+            "cacheCreationInputTokens": 2352,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-opus-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0241684,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 257,
+            "provider": "firstParty",
+            "thinkingTokens": 173,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 4,
+      "native": {
+        "duration_api_ms": 3897,
+        "duration_ms": 4055,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-opus-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-167a6042\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990206, \"episodeId\": 990106, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 6, \"episode_title\": \"Gull Rock\", \"language\": \"en\", \"runtime_s\": 6, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E06 - Gull Rock.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E06\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"88212\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"88720\\\",\\\"tags\\\":{\\\"title\\\":\\\"\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 6, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":6,\\\"runtime_s\\\":6,\\\"season\\\":1,\\\"title\\\":\\\"Gull Rock\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E06 - Gull Rock.mkv\\\",\\\"size\\\":88720},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"ss\":4,\"t\":4.1},\"why\":\"Check the rest of the file decodes cleanly to the end; duration 8.05s exceeds the expected 6s runtime.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": true, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"stderr\\\": \\\"\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 5}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":1},\"why\":\"Duration 8.05s vs expected 6s runtime; check on-screen text near the start for a title card identifying the episode.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"ocr\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"consensus\\\": true, \\\"note\\\": \\\"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\\\", \\\"t_s\\\": 1.0, \\\"text\\\": \\\"\\\"}\", \"tool_calls_remaining\": 4}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":7},\"why\":\"Runtime 8.05s exceeds expected 6s; look for on-screen text late in the file (credits, title or episode card) that could identify the content.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"ocr\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"consensus\\\": true, \\\"note\\\": \\\"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\\\", \\\"t_s\\\": 7.0, \\\"text\\\": \\\"\\\"}\", \"tool_calls_remaining\": 3}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":3897,\"stop_reason\":\"end_turn\",\"session_id\":\"f31d4bbf-c15a-4bd4-86b1-84ca5d42a5a4\",\"total_cost_usd\":0.0241684,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":2352,\"cache_read_input_tokens\":1022,\"output_tokens\":257,\"output_tokens_details\":{\"thinking_tokens\":173},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":2352,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":257,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":2352,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":2352},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-opus-5-5\":{\"inputTokens\":2,\"outputTokens\":257,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":2352,\"webSearchRequests\":0,\"costUSD\":0.0241684,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":173,\"canonicalModel\":\"claude-opus-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"frame_sample\\\",\\\"args\\\":{\\\"at\\\":7},\\\"why\\\":\\\"File runs 8.05s vs expected 6s and OCR found no text; inspect a late frame for content that could show extra material, a different cut or a different episode.\\\"}\",\"ttft_ms\":3266,\"type\":\"result\",\"duration_ms\":4055,\"uuid\":\"ae0a5118-4b70-4ae1-8380-610f333e8be3\",\"ttft_stream_ms\":1553,\"time_to_request_ms\":154,\"first_content_frame_ms\":1553,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-opus-5-5",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{\"at\":7},\"why\":\"File runs 8.05s vs expected 6s and OCR found no text; inspect a late frame for content that could show extra material, a different cut or a different episode.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 2352,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.0241684,
+        "input_tokens": 2,
+        "output_tokens": 257
+      },
+      "validation_errors": [],
+      "wall_s": 4.733
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-opus-5-5": {
+            "cacheCreationInputTokens": 2584,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-opus-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.028364399999999998,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 374,
+            "provider": "firstParty",
+            "thinkingTokens": 171,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 5,
+      "native": {
+        "duration_api_ms": 4428,
+        "duration_ms": 4468,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-opus-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-167a6042\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990206, \"episodeId\": 990106, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 6, \"episode_title\": \"Gull Rock\", \"language\": \"en\", \"runtime_s\": 6, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E06 - Gull Rock.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E06\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"88212\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"88720\\\",\\\"tags\\\":{\\\"title\\\":\\\"\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 6, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":6,\\\"runtime_s\\\":6,\\\"season\\\":1,\\\"title\\\":\\\"Gull Rock\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E06 - Gull Rock.mkv\\\",\\\"size\\\":88720},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"ss\":4,\"t\":4.1},\"why\":\"Check the rest of the file decodes cleanly to the end; duration 8.05s exceeds the expected 6s runtime.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": true, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"stderr\\\": \\\"\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 5}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":1},\"why\":\"Duration 8.05s vs expected 6s runtime; check on-screen text near the start for a title card identifying the episode.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"ocr\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"consensus\\\": true, \\\"note\\\": \\\"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\\\", \\\"t_s\\\": 1.0, \\\"text\\\": \\\"\\\"}\", \"tool_calls_remaining\": 4}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":7},\"why\":\"Runtime 8.05s exceeds expected 6s; look for on-screen text late in the file (credits, title or episode card) that could identify the content.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"ocr\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"consensus\\\": true, \\\"note\\\": \\\"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\\\", \\\"t_s\\\": 7.0, \\\"text\\\": \\\"\\\"}\", \"tool_calls_remaining\": 3}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{\"at\":7},\"why\":\"File runs 8.05s vs expected 6s and OCR found no text; inspect a late frame for content that could show extra material, a different cut or a different episode.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t4\", \"tool\": \"frame_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"frame\\\": \\\"frame@7\\\", \\\"note\\\": \\\"no image is available in replay mode; call ocr with this frame to read the recorded on-screen text\\\", \\\"replay\\\": true}\", \"tool_calls_remaining\": 2}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":4428,\"stop_reason\":\"end_turn\",\"session_id\":\"c809ed95-864a-4974-bf03-196488dcb30e\",\"total_cost_usd\":0.028364399999999998,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":2584,\"cache_read_input_tokens\":1022,\"output_tokens\":374,\"output_tokens_details\":{\"thinking_tokens\":171},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":2584,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":374,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":2584,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":2584},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-opus-5-5\":{\"inputTokens\":2,\"outputTokens\":374,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":2584,\"webSearchRequests\":0,\"costUSD\":0.028364399999999998,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":171,\"canonicalModel\":\"claude-opus-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"insufficient_evidence\\\",\\\"action\\\":\\\"escalate\\\",\\\"target\\\":\\\"Harbor Lights - S01E06 - Gull Rock.mkv\\\",\\\"confidence\\\":0.55,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e2\\\",\\\"e3\\\",\\\"t1\\\",\\\"t2\\\",\\\"t3\\\",\\\"t4\\\"],\\\"reason\\\":\\\"The file decodes cleanly in both sampled windows (0-4s, 4-8s) but runs 8.05s against the expected 6s, and no on-screen text was found at 1s or 7s (frame_sample gave no image in replay), so nothing confirms whether this is a different cut, a different episode or just extra material.\\\"}\",\"ttft_ms\":2871,\"type\":\"result\",\"duration_ms\":4468,\"uuid\":\"5fa92620-17c4-40d4-9f46-6627f45de94b\",\"ttft_stream_ms\":1272,\"time_to_request_ms\":32,\"first_content_frame_ms\":1272,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-opus-5-5",
+      "text": "{\"type\":\"decision\",\"class\":\"insufficient_evidence\",\"action\":\"escalate\",\"target\":\"Harbor Lights - S01E06 - Gull Rock.mkv\",\"confidence\":0.55,\"evidence_refs\":[\"e1\",\"e2\",\"e3\",\"t1\",\"t2\",\"t3\",\"t4\"],\"reason\":\"The file decodes cleanly in both sampled windows (0-4s, 4-8s) but runs 8.05s against the expected 6s, and no on-screen text was found at 1s or 7s (frame_sample gave no image in replay), so nothing confirms whether this is a different cut, a different episode or just extra material.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 2584,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.028364399999999998,
+        "input_tokens": 2,
+        "output_tokens": 374
+      },
+      "validation_errors": [],
+      "wall_s": 5.201
+    }
+  ],
+  "usage": {
+    "cost_reported": true,
+    "cost_usd": 0.10779,
+    "input_tokens": 10,
+    "output_tokens": 1144
+  },
+  "wall": {
+    "case_excl_load_s": 21.208,
+    "load_s": 0.0,
+    "tool_s": [
+      0.001,
+      0.001,
+      0.001,
+      0.001
+    ],
+    "total_s": 21.208,
+    "turn_s": [
+      3.88,
+      3.667,
+      3.715,
+      4.733,
+      5.201
+    ]
+  }
+}

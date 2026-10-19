@@ -1,0 +1,322 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "blocklist_and_search",
+      "class": "corrupt_file",
+      "target": "The Lantern Road.m4b"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "audiobook-corrupt-003",
+  "case_sha256": "2eb76362e05f273e2a64a82fa2f8d2e2eab2908b02cb3c1b89c1ab6e9c66163c",
+  "config_hash": "b6404655552e6b433e3ffd352bb3f376cdccf7b08ab1a7be83793c74c95d0445",
+  "decision": {
+    "action": "blocklist_and_search",
+    "class": "corrupt_file",
+    "confidence": 0.8,
+    "evidence_refs": [
+      "e1",
+      "e2",
+      "t1",
+      "t2"
+    ],
+    "reason": "ffprobe (e1) reports 'moov atom not found' and 'Invalid data found', so the container is unreadable. audiobook_inspect (t1) came back partial and showed the same error; audio_sample (t2) errored with no data. Metadata lookup (e2) matches the expected work, so this looks like a bad copy.",
+    "target": "The Lantern Road.m4b",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "f25797193720d32b62e9eab19b1606233784329148162f1f9fd1afa144d1ea77",
+    "bytes": 31965,
+    "declared_sha256": "f25797193720d32b62e9eab19b1606233784329148162f1f9fd1afa144d1ea77",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "ad6dd1290eee84af9a977921bfb8abbf067831ca",
+  "injected_failure": {
+    "mode": "partial",
+    "tool": "audiobook_inspect"
+  },
+  "model_case_alias": "case-27ba2fd1",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "claude-sonnet-5-5",
+  "response_model_ids": [
+    "claude-sonnet-5-5"
+  ],
+  "run_id": "dev-v1-claude-sonnet-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "split": "dev",
+  "started_at": "2026-10-19T21:49:44.427663+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [
+    {
+      "args": {},
+      "id": "t1",
+      "injected": true,
+      "mode": "injected",
+      "output": "{\"exit_code\": 1, \"stderr\": \"[mov,mp4,m4a,3gp,3g2,mj2 @ 0x0] moov atom n ...[output cut off]",
+      "status": "partial",
+      "tool": "audiobook_inspect",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.001,
+      "why": "ffprobe says moov atom not found; check structure and chapters to confirm truncation/corruption."
+    },
+    {
+      "args": {
+        "at": 0
+      },
+      "id": "t2",
+      "mode": "replay",
+      "output": "no recorded replay for audio_sample in this suite (audio levels were not recorded)",
+      "status": "error",
+      "tool": "audio_sample",
+      "truncated": false,
+      "turn": 2,
+      "wall_s": 0.001,
+      "why": "audiobook_inspect output was partial; check whether any audio is decodable from the file start."
+    }
+  ],
+  "tool_modes": [
+    "injected",
+    "replay"
+  ],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-sonnet-5-5": {
+            "cacheCreationInputTokens": 1183,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-sonnet-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0054982,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 66,
+            "provider": "firstParty",
+            "thinkingTokens": 0,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 1,
+      "native": {
+        "duration_api_ms": 1483,
+        "duration_ms": 1608,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-sonnet-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-27ba2fd1\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Mira Tolland\", \"chapters\": 4, \"duration_s\": 20, \"language\": \"en\", \"narrator\": \"Ellis Marr\", \"title\": \"The Lantern Road\"}, \"filename\": \"The Lantern Road.m4b\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"The Lantern Road (audiobook)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"exit_code\\\":1,\\\"stderr\\\":\\\"[mov,mp4,m4a,3gp,3g2,mj2 @ 0x0] moov atom not found\\\\nmedia/The Lantern Road.m4b: Invalid data found when processing input\\\"}\", \"status\": \"error\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"work\": \"The Lantern Road\"}, \"id\": \"e2\", \"output\": \"{\\\"app\\\":\\\"audiobook-metadata\\\",\\\"authors\\\":[\\\"Mira Tolland\\\"],\\\"chapter_titles\\\":[\\\"Opening Credits\\\",\\\"Chapter 1 Rain\\\",\\\"Chapter 2 Salt\\\",\\\"Chapter 3 Lanterns\\\"],\\\"narrators\\\":[\\\"Ellis Marr\\\"],\\\"runtime_s\\\":20,\\\"work\\\":\\\"The Lantern Road\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"audiobook\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"audiobook_inspect\", \"audio_sample\", \"arr_lookup\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":1483,\"stop_reason\":\"end_turn\",\"session_id\":\"5ff60993-2847-4df6-8d03-05762375d12b\",\"total_cost_usd\":0.0054982,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1183,\"cache_read_input_tokens\":1022,\"output_tokens\":66,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1183,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":66,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":1183,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1183},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-sonnet-5-5\":{\"inputTokens\":2,\"outputTokens\":66,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":1183,\"webSearchRequests\":0,\"costUSD\":0.0054982,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-sonnet-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"audiobook_inspect\\\",\\\"args\\\":{},\\\"why\\\":\\\"ffprobe says moov atom not found; check structure and chapters to confirm truncation/corruption.\\\"}\",\"ttft_ms\":1588,\"type\":\"result\",\"duration_ms\":1608,\"uuid\":\"b3651614-e91c-46d1-9804-2fa9f5ad9538\",\"ttft_stream_ms\":792,\"time_to_request_ms\":119,\"first_content_frame_ms\":792,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-sonnet-5-5",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"audiobook_inspect\",\"args\":{},\"why\":\"ffprobe says moov atom not found; check structure and chapters to confirm truncation/corruption.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 1183,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.0054982,
+        "input_tokens": 2,
+        "output_tokens": 66
+      },
+      "validation_errors": [],
+      "wall_s": 2.379
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-sonnet-5-5": {
+            "cacheCreationInputTokens": 1404,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-sonnet-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0071022,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 138,
+            "provider": "firstParty",
+            "thinkingTokens": 75,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 2,
+      "native": {
+        "duration_api_ms": 3429,
+        "duration_ms": 3472,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-sonnet-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-27ba2fd1\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Mira Tolland\", \"chapters\": 4, \"duration_s\": 20, \"language\": \"en\", \"narrator\": \"Ellis Marr\", \"title\": \"The Lantern Road\"}, \"filename\": \"The Lantern Road.m4b\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"The Lantern Road (audiobook)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"exit_code\\\":1,\\\"stderr\\\":\\\"[mov,mp4,m4a,3gp,3g2,mj2 @ 0x0] moov atom not found\\\\nmedia/The Lantern Road.m4b: Invalid data found when processing input\\\"}\", \"status\": \"error\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"work\": \"The Lantern Road\"}, \"id\": \"e2\", \"output\": \"{\\\"app\\\":\\\"audiobook-metadata\\\",\\\"authors\\\":[\\\"Mira Tolland\\\"],\\\"chapter_titles\\\":[\\\"Opening Credits\\\",\\\"Chapter 1 Rain\\\",\\\"Chapter 2 Salt\\\",\\\"Chapter 3 Lanterns\\\"],\\\"narrators\\\":[\\\"Ellis Marr\\\"],\\\"runtime_s\\\":20,\\\"work\\\":\\\"The Lantern Road\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"audiobook\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"audiobook_inspect\", \"audio_sample\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"audiobook_inspect\",\"args\":{},\"why\":\"ffprobe says moov atom not found; check structure and chapters to confirm truncation/corruption.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"audiobook_inspect\", \"status\": \"partial\", \"truncated\": false, \"output\": \"{\\\"exit_code\\\": 1, \\\"stderr\\\": \\\"[mov,mp4,m4a,3gp,3g2,mj2 @ 0x0] moov atom n ...[output cut off]\", \"tool_calls_remaining\": 5}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":3429,\"stop_reason\":\"end_turn\",\"session_id\":\"39c6a025-4a8e-4bbd-91d2-ba35d0fda510\",\"total_cost_usd\":0.0071022,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1404,\"cache_read_input_tokens\":1022,\"output_tokens\":138,\"output_tokens_details\":{\"thinking_tokens\":75},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1404,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":138,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":1404,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1404},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-sonnet-5-5\":{\"inputTokens\":2,\"outputTokens\":138,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":1404,\"webSearchRequests\":0,\"costUSD\":0.0071022,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":75,\"canonicalModel\":\"claude-sonnet-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"audio_sample\\\",\\\"args\\\":{\\\"at\\\":0},\\\"why\\\":\\\"audiobook_inspect output was partial; check whether any audio is decodable from the file start.\\\"}\",\"ttft_ms\":2694,\"type\":\"result\",\"duration_ms\":3472,\"uuid\":\"7b2083f3-ac09-4769-94dc-5766d26b1ac1\",\"ttft_stream_ms\":2117,\"time_to_request_ms\":34,\"first_content_frame_ms\":2117,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-sonnet-5-5",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"audio_sample\",\"args\":{\"at\":0},\"why\":\"audiobook_inspect output was partial; check whether any audio is decodable from the file start.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 1404,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.0071022,
+        "input_tokens": 2,
+        "output_tokens": 138
+      },
+      "validation_errors": [],
+      "wall_s": 4.187
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-sonnet-5-5": {
+            "cacheCreationInputTokens": 1580,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-sonnet-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0083162,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 189,
+            "provider": "firstParty",
+            "thinkingTokens": 0,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 3,
+      "native": {
+        "duration_api_ms": 4351,
+        "duration_ms": 4387,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-sonnet-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-27ba2fd1\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Mira Tolland\", \"chapters\": 4, \"duration_s\": 20, \"language\": \"en\", \"narrator\": \"Ellis Marr\", \"title\": \"The Lantern Road\"}, \"filename\": \"The Lantern Road.m4b\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"The Lantern Road (audiobook)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"exit_code\\\":1,\\\"stderr\\\":\\\"[mov,mp4,m4a,3gp,3g2,mj2 @ 0x0] moov atom not found\\\\nmedia/The Lantern Road.m4b: Invalid data found when processing input\\\"}\", \"status\": \"error\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"work\": \"The Lantern Road\"}, \"id\": \"e2\", \"output\": \"{\\\"app\\\":\\\"audiobook-metadata\\\",\\\"authors\\\":[\\\"Mira Tolland\\\"],\\\"chapter_titles\\\":[\\\"Opening Credits\\\",\\\"Chapter 1 Rain\\\",\\\"Chapter 2 Salt\\\",\\\"Chapter 3 Lanterns\\\"],\\\"narrators\\\":[\\\"Ellis Marr\\\"],\\\"runtime_s\\\":20,\\\"work\\\":\\\"The Lantern Road\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"audiobook\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"audiobook_inspect\", \"audio_sample\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"audiobook_inspect\",\"args\":{},\"why\":\"ffprobe says moov atom not found; check structure and chapters to confirm truncation/corruption.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"audiobook_inspect\", \"status\": \"partial\", \"truncated\": false, \"output\": \"{\\\"exit_code\\\": 1, \\\"stderr\\\": \\\"[mov,mp4,m4a,3gp,3g2,mj2 @ 0x0] moov atom n ...[output cut off]\", \"tool_calls_remaining\": 5}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"audio_sample\",\"args\":{\"at\":0},\"why\":\"audiobook_inspect output was partial; check whether any audio is decodable from the file start.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"audio_sample\", \"status\": \"error\", \"truncated\": false, \"output\": \"no recorded replay for audio_sample in this suite (audio levels were not recorded)\", \"tool_calls_remaining\": 4}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":4351,\"stop_reason\":\"end_turn\",\"session_id\":\"58664ed1-cb1f-44e7-b914-ce647cc9105e\",\"total_cost_usd\":0.0083162,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1580,\"cache_read_input_tokens\":1022,\"output_tokens\":189,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1580,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":189,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":1580,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1580},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-sonnet-5-5\":{\"inputTokens\":2,\"outputTokens\":189,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":1580,\"webSearchRequests\":0,\"costUSD\":0.0083162,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-sonnet-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"corrupt_file\\\",\\\"action\\\":\\\"blocklist_and_search\\\",\\\"target\\\":\\\"The Lantern Road.m4b\\\",\\\"confidence\\\":0.8,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e2\\\",\\\"t1\\\",\\\"t2\\\"],\\\"reason\\\":\\\"ffprobe (e1) reports 'moov atom not found' and 'Invalid data found', so the container is unreadable. audiobook_inspect (t1) came back partial and showed the same error; audio_sample (t2) errored with no data. Metadata lookup (e2) matches the expected work, so this looks like a bad copy.\\\"}\",\"ttft_ms\":4365,\"type\":\"result\",\"duration_ms\":4387,\"uuid\":\"d621a359-f6d2-4366-92a5-729ee95259ca\",\"ttft_stream_ms\":2894,\"time_to_request_ms\":33,\"first_content_frame_ms\":2894,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-sonnet-5-5",
+      "text": "{\"type\":\"decision\",\"class\":\"corrupt_file\",\"action\":\"blocklist_and_search\",\"target\":\"The Lantern Road.m4b\",\"confidence\":0.8,\"evidence_refs\":[\"e1\",\"e2\",\"t1\",\"t2\"],\"reason\":\"ffprobe (e1) reports 'moov atom not found' and 'Invalid data found', so the container is unreadable. audiobook_inspect (t1) came back partial and showed the same error; audio_sample (t2) errored with no data. Metadata lookup (e2) matches the expected work, so this looks like a bad copy.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 1580,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.0083162,
+        "input_tokens": 2,
+        "output_tokens": 189
+      },
+      "validation_errors": [],
+      "wall_s": 5.206
+    }
+  ],
+  "usage": {
+    "cost_reported": true,
+    "cost_usd": 0.0209166,
+    "input_tokens": 6,
+    "output_tokens": 393
+  },
+  "wall": {
+    "case_excl_load_s": 11.778,
+    "load_s": 0.0,
+    "tool_s": [
+      0.001,
+      0.001
+    ],
+    "total_s": 11.778,
+    "turn_s": [
+      2.379,
+      4.187,
+      5.206
+    ]
+  }
+}

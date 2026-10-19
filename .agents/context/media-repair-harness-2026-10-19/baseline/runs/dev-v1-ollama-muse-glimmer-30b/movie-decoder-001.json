@@ -1,0 +1,662 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "escalate",
+      "class": "decoder_incompatible",
+      "target": "movieFileId 6337"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "movie-decoder-001",
+  "case_sha256": "bf43c07caa89ce235fb0d7bdbab7c349260d2157b7832f972ab5afb8521731ad",
+  "config_hash": "13a4d71c1fe4faa87c03b1a3e6c2d45015e2f968402e16dddced34282f903a15",
+  "context_check": {
+    "flags": [],
+    "max_prompt_tokens_estimated": 1957,
+    "max_prompt_tokens_reported": 1536,
+    "num_ctx": 4096,
+    "truncated_suspected": false,
+    "turns_checked": 3
+  },
+  "decision": {
+    "action": "escalate",
+    "class": "decoder_incompatible",
+    "confidence": 0.85,
+    "evidence_refs": [
+      "e1",
+      "e3",
+      "t2"
+    ],
+    "reason": "ffprobe shows audio codec eac3 with 6 channels, while client profile requires aac and max 2 channels. Video matches profile. Tool call failed, so cannot verify further streams; escalation needed.",
+    "target": "movieFileId 6337",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2",
+    "e3"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "declared_sha256": "10f0b86d94f5f28cb55625df6b978e29b8b829db809ff051cdc09ab72f5f45e0",
+    "kind": "pinned",
+    "verified": "declared_only"
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "c61b6c621103b2a817d9ea887fdbc0aa05276ab5",
+  "injected_failure": null,
+  "model_case_alias": "case-78461581",
+  "model_digest": "de878ce33ad81d060001db1469a02eebe4d86f0ad58cfe52dc062fdcbe4464c1",
+  "model_digest_na_reason": null,
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "muse-glimmer:30b",
+  "response_model_ids": [
+    "muse-glimmer:30b"
+  ],
+  "run_id": "dev-v1-ollama-muse-glimmer-30b",
+  "runtime_version": "0.40.6",
+  "split": "dev",
+  "started_at": "2026-10-19T22:42:27.524007+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [
+    {
+      "args": {},
+      "id": "t1",
+      "output": "this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)",
+      "status": "error",
+      "tool": "ffprobe",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.0,
+      "why": "Confirm full stream list and codec parameters to verify direct-play compatibility with client profile."
+    },
+    {
+      "args": {},
+      "id": "t2",
+      "mode": "stub",
+      "output": "{\"arr\": {\"app\": \"radarr\", \"ids\": {\"movieFileId\": 6337, \"movieId\": 9830}}, \"note\": \"case-provided context only; no live arr call was made\", \"stub\": true}",
+      "status": "ok",
+      "tool": "arr_lookup",
+      "truncated": false,
+      "turn": 2,
+      "wall_s": 0.0,
+      "why": "Check Radarr entry metadata to confirm title, year, and file linkage for identity verification."
+    }
+  ],
+  "tool_modes": [
+    "stub"
+  ],
+  "turns": [
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 34,
+          "prompt_chars": 5009,
+          "prompt_tokens_estimated": 1669,
+          "prompt_tokens_reported": 1283,
+          "truncated_suspected": false
+        }
+      },
+      "n": 1,
+      "native": {
+        "created_at": "2026-10-19T22:42:29.612604308Z",
+        "done_reason": "stop",
+        "eval_count": 34,
+        "eval_duration": 847556000,
+        "load_duration": 714153,
+        "prompt_eval_count": 1283,
+        "prompt_eval_duration": 742315000,
+        "total_duration": 1980993601
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-78461581\", \"context\": {\"arr\": {\"app\": \"radarr\", \"ids\": {\"movieFileId\": 6337, \"movieId\": 9830}}, \"expected\": {\"client_profile\": {\"audio_codecs\": [\"aac\"], \"containers\": [\"matroska,webm\"], \"definition\": \"hypothetical exact direct-play profile, not a measured Plex/browser client\", \"max_audio_channels\": 2, \"max_height\": 1080, \"max_width\": 1920, \"subtitles\": \"disabled\", \"video_codec\": \"h264\", \"video_pix_fmt\": \"yuv420p\"}, \"title\": \"Zom 100: Bucket List of the Dead\", \"year\": 2023}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"question\": \"Can the defined client direct-play this file?\", \"title\": \"Zom 100: Bucket List of the Dead (2023)\"}, \"evidence\": [{\"args\": {\"fixture\": \"remote\"}, \"id\": \"e1\", \"output\": \"{\\\"streams\\\":{\\\"container\\\":\\\"matroska,webm\\\",\\\"selected_audio\\\":{\\\"channels\\\":6,\\\"codec_name\\\":\\\"eac3\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"profile\\\":\\\"Dolby Digital Plus + Dolby Atmos\\\",\\\"tags\\\":{\\\"language\\\":\\\"jpn\\\"}},\\\"video\\\":{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":1080,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"Main\\\",\\\"width\\\":1920}}}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"bytes_read\\\":6592732,\\\"duration_limit_seconds\\\":4,\\\"exit_code\\\":0,\\\"quota_exhausted\\\":false,\\\"stderr\\\":\\\"\\\"}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"what\": \"client profile\"}, \"id\": \"e3\", \"output\": \"{\\\"audio_codecs\\\":[\\\"aac\\\"],\\\"containers\\\":[\\\"matroska,webm\\\"],\\\"definition\\\":\\\"hypothetical exact direct-play profile, not a measured Plex/browser client\\\",\\\"max_audio_channels\\\":2,\\\"max_height\\\":1080,\\\"max_width\\\":1920,\\\"subtitles\\\":\\\"disabled\\\",\\\"video_codec\\\":\\\"h264\\\",\\\"video_pix_fmt\\\":\\\"yuv420p\\\"}\", \"status\": \"ok\", \"tool\": \"prior_record\", \"truncated\": false}], \"media_type\": \"movie\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:42:29.612604308Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"ffprobe\\\",\\\"args\\\":{},\\\"why\\\":\\\"Confirm full stream list and codec parameters to verify direct-play compatibility with client profile.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1980993601,\"load_duration\":714153,\"prompt_eval_count\":1283,\"prompt_eval_cached_count\":592,\"prompt_eval_duration\":742315000,\"eval_count\":34,\"eval_duration\":847556000}",
+        "stderr": "",
+        "wall_seconds": 2.0860764239914715
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Confirm full stream list and codec parameters to verify direct-play compatibility with client profile.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1283,
+        "output_tokens": 34
+      },
+      "validation_errors": [],
+      "wall_s": 2.086
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 36,
+          "prompt_chars": 5414,
+          "prompt_tokens_estimated": 1804,
+          "prompt_tokens_reported": 1393,
+          "truncated_suspected": false
+        }
+      },
+      "n": 2,
+      "native": {
+        "created_at": "2026-10-19T22:42:30.838927722Z",
+        "done_reason": "stop",
+        "eval_count": 36,
+        "eval_duration": 924075000,
+        "load_duration": 1156107,
+        "prompt_eval_count": 1393,
+        "prompt_eval_duration": 179948000,
+        "total_duration": 1130749012
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-78461581\", \"context\": {\"arr\": {\"app\": \"radarr\", \"ids\": {\"movieFileId\": 6337, \"movieId\": 9830}}, \"expected\": {\"client_profile\": {\"audio_codecs\": [\"aac\"], \"containers\": [\"matroska,webm\"], \"definition\": \"hypothetical exact direct-play profile, not a measured Plex/browser client\", \"max_audio_channels\": 2, \"max_height\": 1080, \"max_width\": 1920, \"subtitles\": \"disabled\", \"video_codec\": \"h264\", \"video_pix_fmt\": \"yuv420p\"}, \"title\": \"Zom 100: Bucket List of the Dead\", \"year\": 2023}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"question\": \"Can the defined client direct-play this file?\", \"title\": \"Zom 100: Bucket List of the Dead (2023)\"}, \"evidence\": [{\"args\": {\"fixture\": \"remote\"}, \"id\": \"e1\", \"output\": \"{\\\"streams\\\":{\\\"container\\\":\\\"matroska,webm\\\",\\\"selected_audio\\\":{\\\"channels\\\":6,\\\"codec_name\\\":\\\"eac3\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"profile\\\":\\\"Dolby Digital Plus + Dolby Atmos\\\",\\\"tags\\\":{\\\"language\\\":\\\"jpn\\\"}},\\\"video\\\":{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":1080,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"Main\\\",\\\"width\\\":1920}}}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"bytes_read\\\":6592732,\\\"duration_limit_seconds\\\":4,\\\"exit_code\\\":0,\\\"quota_exhausted\\\":false,\\\"stderr\\\":\\\"\\\"}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"what\": \"client profile\"}, \"id\": \"e3\", \"output\": \"{\\\"audio_codecs\\\":[\\\"aac\\\"],\\\"containers\\\":[\\\"matroska,webm\\\"],\\\"definition\\\":\\\"hypothetical exact direct-play profile, not a measured Plex/browser client\\\",\\\"max_audio_channels\\\":2,\\\"max_height\\\":1080,\\\"max_width\\\":1920,\\\"subtitles\\\":\\\"disabled\\\",\\\"video_codec\\\":\\\"h264\\\",\\\"video_pix_fmt\\\":\\\"yuv420p\\\"}\", \"status\": \"ok\", \"tool\": \"prior_record\", \"truncated\": false}], \"media_type\": \"movie\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Confirm full stream list and codec parameters to verify direct-play compatibility with client profile.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"error\", \"truncated\": false, \"output\": \"this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:42:30.838927722Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"arr_lookup\\\",\\\"args\\\":{},\\\"why\\\":\\\"Check Radarr entry metadata to confirm title, year, and file linkage for identity verification.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1130749012,\"load_duration\":1156107,\"prompt_eval_count\":1393,\"prompt_eval_cached_count\":1278,\"prompt_eval_duration\":179948000,\"eval_count\":36,\"eval_duration\":924075000}",
+        "stderr": "",
+        "wall_seconds": 1.2316639507189393
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"args\":{},\"why\":\"Check Radarr entry metadata to confirm title, year, and file linkage for identity verification.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1393,
+        "output_tokens": 36
+      },
+      "validation_errors": [],
+      "wall_s": 1.232
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 91,
+          "prompt_chars": 5872,
+          "prompt_tokens_estimated": 1957,
+          "prompt_tokens_reported": 1536,
+          "truncated_suspected": false
+        }
+      },
+      "n": 3,
+      "native": {
+        "created_at": "2026-10-19T22:42:33.949361419Z",
+        "done_reason": "stop",
+        "eval_count": 91,
+        "eval_duration": 2703012000,
+        "load_duration": 676022,
+        "prompt_eval_count": 1536,
+        "prompt_eval_duration": 246029000,
+        "total_duration": 2979880949
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-78461581\", \"context\": {\"arr\": {\"app\": \"radarr\", \"ids\": {\"movieFileId\": 6337, \"movieId\": 9830}}, \"expected\": {\"client_profile\": {\"audio_codecs\": [\"aac\"], \"containers\": [\"matroska,webm\"], \"definition\": \"hypothetical exact direct-play profile, not a measured Plex/browser client\", \"max_audio_channels\": 2, \"max_height\": 1080, \"max_width\": 1920, \"subtitles\": \"disabled\", \"video_codec\": \"h264\", \"video_pix_fmt\": \"yuv420p\"}, \"title\": \"Zom 100: Bucket List of the Dead\", \"year\": 2023}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"question\": \"Can the defined client direct-play this file?\", \"title\": \"Zom 100: Bucket List of the Dead (2023)\"}, \"evidence\": [{\"args\": {\"fixture\": \"remote\"}, \"id\": \"e1\", \"output\": \"{\\\"streams\\\":{\\\"container\\\":\\\"matroska,webm\\\",\\\"selected_audio\\\":{\\\"channels\\\":6,\\\"codec_name\\\":\\\"eac3\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"profile\\\":\\\"Dolby Digital Plus + Dolby Atmos\\\",\\\"tags\\\":{\\\"language\\\":\\\"jpn\\\"}},\\\"video\\\":{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":1080,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"Main\\\",\\\"width\\\":1920}}}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"bytes_read\\\":6592732,\\\"duration_limit_seconds\\\":4,\\\"exit_code\\\":0,\\\"quota_exhausted\\\":false,\\\"stderr\\\":\\\"\\\"}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"what\": \"client profile\"}, \"id\": \"e3\", \"output\": \"{\\\"audio_codecs\\\":[\\\"aac\\\"],\\\"containers\\\":[\\\"matroska,webm\\\"],\\\"definition\\\":\\\"hypothetical exact direct-play profile, not a measured Plex/browser client\\\",\\\"max_audio_channels\\\":2,\\\"max_height\\\":1080,\\\"max_width\\\":1920,\\\"subtitles\\\":\\\"disabled\\\",\\\"video_codec\\\":\\\"h264\\\",\\\"video_pix_fmt\\\":\\\"yuv420p\\\"}\", \"status\": \"ok\", \"tool\": \"prior_record\", \"truncated\": false}], \"media_type\": \"movie\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Confirm full stream list and codec parameters to verify direct-play compatibility with client profile.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"error\", \"truncated\": false, \"output\": \"this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"args\":{},\"why\":\"Check Radarr entry metadata to confirm title, year, and file linkage for identity verification.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"arr_lookup\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"arr\\\": {\\\"app\\\": \\\"radarr\\\", \\\"ids\\\": {\\\"movieFileId\\\": 6337, \\\"movieId\\\": 9830}}, \\\"note\\\": \\\"case-provided context only; no live arr call was made\\\", \\\"stub\\\": true}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:42:33.949361419Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"decoder_incompatible\\\",\\\"action\\\":\\\"escalate\\\",\\\"target\\\":\\\"movieFileId 6337\\\",\\\"confidence\\\":0.85,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e3\\\",\\\"t2\\\"],\\\"reason\\\":\\\"ffprobe shows audio codec eac3 with 6 channels, while client profile requires aac and max 2 channels. Video matches profile. Tool call failed, so cannot verify further streams; escalation needed.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":2979880949,\"load_duration\":676022,\"prompt_eval_count\":1536,\"prompt_eval_cached_count\":1388,\"prompt_eval_duration\":246029000,\"eval_count\":91,\"eval_duration\":2703012000}",
+        "stderr": "",
+        "wall_seconds": 3.1043595550581813
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"decision\",\"class\":\"decoder_incompatible\",\"action\":\"escalate\",\"target\":\"movieFileId 6337\",\"confidence\":0.85,\"evidence_refs\":[\"e1\",\"e3\",\"t2\"],\"reason\":\"ffprobe shows audio codec eac3 with 6 channels, while client profile requires aac and max 2 channels. Video matches profile. Tool call failed, so cannot verify further streams; escalation needed.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1536,
+        "output_tokens": 91
+      },
+      "validation_errors": [],
+      "wall_s": 3.105
+    }
+  ],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 4212,
+    "output_tokens": 161
+  },
+  "wall": {
+    "case_excl_load_s": 6.423,
+    "load_s": 0.003,
+    "tool_s": [
+      0.0,
+      0.0
+    ],
+    "total_s": 6.426,
+    "turn_s": [
+      2.086,
+      1.232,
+      3.105
+    ]
+  }
+}

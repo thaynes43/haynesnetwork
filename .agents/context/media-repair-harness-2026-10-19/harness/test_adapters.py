@@ -116,13 +116,68 @@ class OllamaAdapterTests(unittest.TestCase):
         rep = ad.finish()
         self.assertTrue(rep['unloaded'])
         self.assertEqual(rep['residents_after'], [])
-        # already-resident model (someone else's load of the same tag): never unloaded by us
+        # a resident model before the batch (even our own tag) is refused, never reused or unloaded
         fake2 = FakeOllama(residents=['qwen3.8:27b'])
         ad2 = self.make(fake2)
-        ad2.preflight()
+        with self.assertRaises(A.AbortRun):
+            ad2.preflight()
         self.assertFalse(ad2.loaded_by_us)
         ad2.finish()
-        self.assertFalse([c for c in fake2.calls if c[0] == '/api/generate' and c[1].get('keep_alive') == 0])
+        self.assertFalse([c for c in fake2.calls if c[0] == '/api/generate'])
+
+    def test_requests_always_carry_the_proven_safe_options(self):
+        fake = FakeOllama()
+        ad = self.make(fake)
+        ad.preflight()
+        ad.complete('s', [{'role': 'user', 'content': 'x'}])
+        for path, body in [c for c in fake.calls if c[0] in ('/api/generate', '/api/chat') and c[1].get('keep_alive') != 0]:
+            o = body['options']
+            self.assertEqual((o['num_ctx'], o['use_mmap'], o['temperature'], o['seed']), (4096, False, 0, 42), path)
+            self.assertIs(body['think'], False)
+            self.assertEqual((body['keep_alive'], body['stream']), ('2m', False))
+        warm = [c for c in fake.calls if c[0] == '/api/generate'][0][1]
+        self.assertEqual(warm['prompt'], 'Reply with OK')
+
+    def test_options_cannot_weaken_or_enlarge(self):
+        o = A.ollama_options({'use_mmap': True, 'temperature': 1, 'seed': 7, 'num_ctx': 8192})
+        self.assertEqual((o['use_mmap'], o['temperature'], o['seed'], o['num_ctx']), (False, 0, 42, 8192))
+        for bad in (32768, 16384, 2048):
+            with self.assertRaises(ValueError):
+                A.ollama_options({'num_ctx': bad})
+
+    def test_warmup_timeout_is_900_and_chat_timeout_stays_configured(self):
+        seen = []
+        base = FakeOllama()
+
+        def spy(path, payload=None, timeout=60):
+            seen.append((path, timeout))
+            return base(path, payload, timeout)
+        ad = self.make(spy, call_timeout=77)
+        ad.preflight()
+        ad.complete('s', [{'role': 'user', 'content': 'x'}])
+        self.assertIn(('/api/generate', 900), seen)
+        self.assertIn(('/api/chat', 77), seen)
+
+    def test_context_check_flags_truncation(self):
+        o = A.ollama_options({})
+        ok = A.context_check(o, {'prompt_eval_count': 1500, 'eval_count': 80, 'done_reason': 'stop'}, 4000)
+        self.assertFalse(ok['truncated_suspected'])
+        full = A.context_check(o, {'prompt_eval_count': 4090, 'eval_count': 80, 'done_reason': 'stop'}, 4000)
+        self.assertTrue(full['truncated_suspected'])
+        self.assertIn('prompt_at_context_limit', full['flags'])
+        est = A.context_check(o, {'prompt_eval_count': 900, 'eval_count': 80}, 13000)  # cached prefix hides the real size
+        self.assertIn('estimated_prompt_exceeds_context', est['flags'])
+        cap = A.context_check(o, {'prompt_eval_count': 900, 'eval_count': 384, 'done_reason': 'length'}, 4000)
+        self.assertFalse(cap['truncated_suspected'])
+        self.assertIn('output_hit_num_predict', cap['flags'])
+
+    def test_chat_completion_carries_context_check(self):
+        fake = FakeOllama()
+        ad = self.make(fake)
+        ad.preflight()
+        c = ad.complete('SYS', [{'role': 'user', 'content': 'hi'}])
+        self.assertEqual(c.meta['context']['num_ctx'], 4096)
+        self.assertEqual(c.meta['context']['prompt_tokens_reported'], 812)
 
     def test_aborted_preflight_keeps_what_it_saw(self):
         ad = self.make(FakeOllama(residents=['someone-else:7b']))
@@ -137,6 +192,15 @@ class OllamaAdapterTests(unittest.TestCase):
             ad.preflight()
         ad.finish()
         self.assertEqual(len([c for c in fake.calls if c[0] == '/api/generate']), 1)
+
+
+class CodexTrimTests(unittest.TestCase):
+    def test_argv_carries_the_token_trim_overrides(self):
+        cmd = A.CodexAdapter('gpt-6-luna').argv()
+        self.assertIn('features.shell_tool=false', cmd)
+        self.assertIn('web_search="disabled"', cmd)
+        self.assertEqual(cmd[-1], '-')
+        self.assertEqual(cmd[cmd.index('-m') + 1], 'gpt-6-luna')
 
 
 class ClaudeAdapterTests(unittest.TestCase):

@@ -37,8 +37,35 @@ def prefix(interactive=False):
     return cmd + [TARGET, '-c', CONTAINER, '--']
 
 
-def api(path, payload=None, timeout=60, runner=subprocess.run):
-    """Return (parsed_json_or_None, receipt).  Never raises on transport trouble."""
+def run_cancellable(cmd, body, timeout, cancel):
+    """subprocess.run(input=body, capture_output=True, timeout=timeout) that also stops when `cancel` (a threading.Event) is set.
+    Killing the local kubectl closes the exec stream, which closes the remote socket, so Ollama sees the client go away."""
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    deadline = time.monotonic() + timeout
+    pending = body
+    while True:
+        try:
+            out, err = proc.communicate(input=pending, timeout=1)
+            return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+        except subprocess.TimeoutExpired:
+            pending = None  # stdin was written by the first communicate(); never write twice
+            if cancel.is_set() or time.monotonic() >= deadline:
+                proc.kill()
+                out, err = proc.communicate()
+                if cancel.is_set():
+                    raise CancelledByGuard(out, err)
+                raise subprocess.TimeoutExpired(cmd, timeout, output=out, stderr=err)
+
+
+class CancelledByGuard(Exception):
+    def __init__(self, out=b'', err=b''):
+        super().__init__('cancelled by guard')
+        self.stdout, self.stderr = out, err
+
+
+def api(path, payload=None, timeout=60, runner=subprocess.run, cancel=None):
+    """Return (parsed_json_or_None, receipt).  Never raises on transport trouble.
+    `cancel` (a threading.Event) lets the PSI guard kill an in-flight request; the receipt then says `cancelled`."""
     assert path in ALLOWED, path
     assert isinstance(timeout, int) and 1 <= timeout <= 900
     body = json.dumps(payload, separators=(',', ':')).encode() if payload is not None else b''
@@ -51,9 +78,16 @@ def api(path, payload=None, timeout=60, runner=subprocess.run):
               "'Content-Length: " + str(len(body)) + "' '' >&3; "
               "printf '%s' \"$body\" >&3; cat <&3")
     started = time.monotonic()
+    cmd = prefix(True) + ['timeout', str(timeout), 'bash', '-c', script]
     try:
-        run = runner(prefix(True) + ['timeout', str(timeout), 'bash', '-c', script],
-                     input=body, capture_output=True, timeout=timeout + 5)
+        if cancel is not None:
+            run = run_cancellable(cmd, body, timeout + 5, cancel)
+        else:
+            run = runner(cmd, input=body, capture_output=True, timeout=timeout + 5)
+    except CancelledByGuard as error:
+        return None, {'wall_seconds': time.monotonic() - started, 'exit_code': 'cancelled',
+                      'stderr': (error.stderr or b'').decode(errors='replace'),
+                      'partial_http': (error.stdout or b'').decode(errors='replace')}
     except subprocess.TimeoutExpired as error:
         return None, {'wall_seconds': time.monotonic() - started, 'exit_code': 'local_timeout',
                       'stderr': (error.stderr or b'').decode(errors='replace'),

@@ -88,6 +88,15 @@ class Guard(unittest.TestCase):
         with self.assertRaises(L.LeakError):
             L.check_messages(c, [{'role': 'user', 'content': 'x'}, {'role': 'user', 'content': 'tv-corrupt-003'}])
 
+    def test_repair_prompt_may_list_the_generic_enumerations_but_nothing_case_specific(self):
+        c = leaky_case()
+        generic = L.REPAIR_PREFIX + " action must be one of ['none', 'escalate', 'blocklist_and_search', 'remap']; class must be one of ['corrupt_file', 'healthy']. Reply again."
+        L.check_messages(c, [{'role': 'user', 'content': generic}])  # no LeakError
+        with self.assertRaises(L.LeakError):
+            L.check_messages(c, [{'role': 'user', 'content': L.REPAIR_PREFIX + ' tv-corrupt-003 is odd'}])
+        with self.assertRaises(L.LeakError):  # an ordinary user message with the same enumeration is still a leak
+            L.check_messages(c, [{'role': 'user', 'content': 'x'}, {'role': 'user', 'content': 'do blocklist_and_search'}])
+
     def test_leak_stops_the_case_before_the_model_is_called(self):
         c = leaky_case(fixture={'kind': 'none'})
         c['context']['notes_for_model'] = 'Please look at tv-corrupt-003'

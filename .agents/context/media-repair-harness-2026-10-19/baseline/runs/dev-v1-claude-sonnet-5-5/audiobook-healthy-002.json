@@ -1,0 +1,235 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "none",
+      "class": "healthy",
+      "target": null
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "audiobook-healthy-002",
+  "case_sha256": "9c623abd5608ddebf455177c35c9b620e3b35d4ff820b8b8885aef1227c5a196",
+  "config_hash": "b6404655552e6b433e3ffd352bb3f376cdccf7b08ab1a7be83793c74c95d0445",
+  "decision": {
+    "action": "none",
+    "class": "healthy",
+    "confidence": 0.8,
+    "evidence_refs": [
+      "e1",
+      "e2",
+      "t1"
+    ],
+    "reason": "ffprobe shows an intact AAC m4b whose title, author, narrator, 4 chapters and 20s duration all match the expected values and the metadata lookup. The audio_sample call errored (no recorded replay), so mid-file decoding is unverified, but no defect was found.",
+    "target": null,
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "a230ec54b2c5d5974d5cca2884a3202cc4a0df18e1766645f0cbac274773dd3e",
+    "bytes": 63930,
+    "declared_sha256": "a230ec54b2c5d5974d5cca2884a3202cc4a0df18e1766645f0cbac274773dd3e",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "ad6dd1290eee84af9a977921bfb8abbf067831ca",
+  "injected_failure": null,
+  "model_case_alias": "case-08109c70",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "claude-sonnet-5-5",
+  "response_model_ids": [
+    "claude-sonnet-5-5"
+  ],
+  "run_id": "dev-v1-claude-sonnet-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "split": "dev",
+  "started_at": "2026-10-19T21:49:59.787871+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [
+    {
+      "args": {
+        "at": 10
+      },
+      "id": "t1",
+      "mode": "replay",
+      "output": "no recorded replay for audio_sample in this suite (audio levels were not recorded)",
+      "status": "error",
+      "tool": "audio_sample",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.001,
+      "why": "Check that audio actually decodes mid-file; metadata and chapters already match expectations."
+    }
+  ],
+  "tool_modes": [
+    "replay"
+  ],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-sonnet-5-5": {
+            "cacheCreationInputTokens": 1603,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-sonnet-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0082882,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 177,
+            "provider": "firstParty",
+            "thinkingTokens": 114,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 1,
+      "native": {
+        "duration_api_ms": 3906,
+        "duration_ms": 3945,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-sonnet-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-08109c70\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Mira Tolland\", \"chapters\": 4, \"duration_s\": 20, \"language\": \"en\", \"narrator\": \"Ellis Marr\", \"title\": \"The Lantern Road\"}, \"filename\": \"The Lantern Road.m4b\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"The Lantern Road (audiobook)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"5.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Opening Credits\\\"},{\\\"end\\\":\\\"10.000000\\\",\\\"start\\\":\\\"5.000000\\\",\\\"title\\\":\\\"Chapter 1 Rain\\\"},{\\\"end\\\":\\\"15.000000\\\",\\\"start\\\":\\\"10.000000\\\",\\\"title\\\":\\\"Chapter 2 Salt\\\"},{\\\"end\\\":\\\"20.000000\\\",\\\"start\\\":\\\"15.000000\\\",\\\"title\\\":\\\"Chapter 3 Lanterns\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"25572\\\",\\\"duration\\\":\\\"20.000000\\\",\\\"format_name\\\":\\\"mov,mp4,m4a,3gp,3g2,mj2\\\",\\\"size\\\":\\\"63930\\\",\\\"tags\\\":{\\\"album\\\":\\\"The Lantern Road\\\",\\\"artist\\\":\\\"Mira Tolland\\\",\\\"composer\\\":\\\"Ellis Marr\\\",\\\"date\\\":\\\"2019\\\",\\\"genre\\\":\\\"Audiobook\\\",\\\"title\\\":\\\"The Lantern Road\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"bit_rate\\\":\\\"24103\\\",\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":0,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{\\\"language\\\":\\\"und\\\"}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"work\": \"The Lantern Road\"}, \"id\": \"e2\", \"output\": \"{\\\"app\\\":\\\"audiobook-metadata\\\",\\\"authors\\\":[\\\"Mira Tolland\\\"],\\\"chapter_titles\\\":[\\\"Opening Credits\\\",\\\"Chapter 1 Rain\\\",\\\"Chapter 2 Salt\\\",\\\"Chapter 3 Lanterns\\\"],\\\"narrators\\\":[\\\"Ellis Marr\\\"],\\\"runtime_s\\\":20,\\\"work\\\":\\\"The Lantern Road\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"audiobook\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"audiobook_inspect\", \"audio_sample\", \"arr_lookup\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":3906,\"stop_reason\":\"end_turn\",\"session_id\":\"180f2d7f-35d7-435a-9653-1d66388c28c5\",\"total_cost_usd\":0.0082882,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1603,\"cache_read_input_tokens\":1022,\"output_tokens\":177,\"output_tokens_details\":{\"thinking_tokens\":114},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1603,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":177,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":1603,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1603},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-sonnet-5-5\":{\"inputTokens\":2,\"outputTokens\":177,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":1603,\"webSearchRequests\":0,\"costUSD\":0.0082882,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":114,\"canonicalModel\":\"claude-sonnet-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"audio_sample\\\",\\\"args\\\":{\\\"at\\\":10},\\\"why\\\":\\\"Check that audio actually decodes mid-file; metadata and chapters already match expectations.\\\"}\",\"ttft_ms\":3196,\"type\":\"result\",\"duration_ms\":3945,\"uuid\":\"618763b9-3cd6-4155-b020-57a2378f961f\",\"ttft_stream_ms\":2359,\"time_to_request_ms\":35,\"first_content_frame_ms\":2359,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-sonnet-5-5",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"audio_sample\",\"args\":{\"at\":10},\"why\":\"Check that audio actually decodes mid-file; metadata and chapters already match expectations.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 1603,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.0082882,
+        "input_tokens": 2,
+        "output_tokens": 177
+      },
+      "validation_errors": [],
+      "wall_s": 4.709
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-sonnet-5-5": {
+            "cacheCreationInputTokens": 1779,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-sonnet-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0099722,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 275,
+            "provider": "firstParty",
+            "thinkingTokens": 125,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 2,
+      "native": {
+        "duration_api_ms": 3651,
+        "duration_ms": 3691,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-sonnet-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-08109c70\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Mira Tolland\", \"chapters\": 4, \"duration_s\": 20, \"language\": \"en\", \"narrator\": \"Ellis Marr\", \"title\": \"The Lantern Road\"}, \"filename\": \"The Lantern Road.m4b\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"The Lantern Road (audiobook)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"5.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Opening Credits\\\"},{\\\"end\\\":\\\"10.000000\\\",\\\"start\\\":\\\"5.000000\\\",\\\"title\\\":\\\"Chapter 1 Rain\\\"},{\\\"end\\\":\\\"15.000000\\\",\\\"start\\\":\\\"10.000000\\\",\\\"title\\\":\\\"Chapter 2 Salt\\\"},{\\\"end\\\":\\\"20.000000\\\",\\\"start\\\":\\\"15.000000\\\",\\\"title\\\":\\\"Chapter 3 Lanterns\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"25572\\\",\\\"duration\\\":\\\"20.000000\\\",\\\"format_name\\\":\\\"mov,mp4,m4a,3gp,3g2,mj2\\\",\\\"size\\\":\\\"63930\\\",\\\"tags\\\":{\\\"album\\\":\\\"The Lantern Road\\\",\\\"artist\\\":\\\"Mira Tolland\\\",\\\"composer\\\":\\\"Ellis Marr\\\",\\\"date\\\":\\\"2019\\\",\\\"genre\\\":\\\"Audiobook\\\",\\\"title\\\":\\\"The Lantern Road\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"bit_rate\\\":\\\"24103\\\",\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":0,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{\\\"language\\\":\\\"und\\\"}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"work\": \"The Lantern Road\"}, \"id\": \"e2\", \"output\": \"{\\\"app\\\":\\\"audiobook-metadata\\\",\\\"authors\\\":[\\\"Mira Tolland\\\"],\\\"chapter_titles\\\":[\\\"Opening Credits\\\",\\\"Chapter 1 Rain\\\",\\\"Chapter 2 Salt\\\",\\\"Chapter 3 Lanterns\\\"],\\\"narrators\\\":[\\\"Ellis Marr\\\"],\\\"runtime_s\\\":20,\\\"work\\\":\\\"The Lantern Road\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"audiobook\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"audiobook_inspect\", \"audio_sample\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"audio_sample\",\"args\":{\"at\":10},\"why\":\"Check that audio actually decodes mid-file; metadata and chapters already match expectations.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"audio_sample\", \"status\": \"error\", \"truncated\": false, \"output\": \"no recorded replay for audio_sample in this suite (audio levels were not recorded)\", \"tool_calls_remaining\": 5}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":3651,\"stop_reason\":\"end_turn\",\"session_id\":\"46d6878f-8078-47b3-941b-68424e23ff3b\",\"total_cost_usd\":0.0099722,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1779,\"cache_read_input_tokens\":1022,\"output_tokens\":275,\"output_tokens_details\":{\"thinking_tokens\":125},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1779,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":275,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":1779,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1779},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-sonnet-5-5\":{\"inputTokens\":2,\"outputTokens\":275,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":1779,\"webSearchRequests\":0,\"costUSD\":0.0099722,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":125,\"canonicalModel\":\"claude-sonnet-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"healthy\\\",\\\"action\\\":\\\"none\\\",\\\"target\\\":null,\\\"confidence\\\":0.8,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e2\\\",\\\"t1\\\"],\\\"reason\\\":\\\"ffprobe shows an intact AAC m4b whose title, author, narrator, 4 chapters and 20s duration all match the expected values and the metadata lookup. The audio_sample call errored (no recorded replay), so mid-file decoding is unverified, but no defect was found.\\\"}\",\"ttft_ms\":2714,\"type\":\"result\",\"duration_ms\":3691,\"uuid\":\"aa1afee6-f589-4ac0-9525-a9bbbd2df948\",\"ttft_stream_ms\":1433,\"time_to_request_ms\":33,\"first_content_frame_ms\":1433,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-sonnet-5-5",
+      "text": "{\"type\":\"decision\",\"class\":\"healthy\",\"action\":\"none\",\"target\":null,\"confidence\":0.8,\"evidence_refs\":[\"e1\",\"e2\",\"t1\"],\"reason\":\"ffprobe shows an intact AAC m4b whose title, author, narrator, 4 chapters and 20s duration all match the expected values and the metadata lookup. The audio_sample call errored (no recorded replay), so mid-file decoding is unverified, but no defect was found.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 1779,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.0099722,
+        "input_tokens": 2,
+        "output_tokens": 275
+      },
+      "validation_errors": [],
+      "wall_s": 4.369
+    }
+  ],
+  "usage": {
+    "cost_reported": true,
+    "cost_usd": 0.018260400000000003,
+    "input_tokens": 4,
+    "output_tokens": 452
+  },
+  "wall": {
+    "case_excl_load_s": 9.084,
+    "load_s": 0.0,
+    "tool_s": [
+      0.001
+    ],
+    "total_s": 9.084,
+    "turn_s": [
+      4.709,
+      4.369
+    ]
+  }
+}

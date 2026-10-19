@@ -1,0 +1,143 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "none",
+      "class": "healthy",
+      "target": null
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "movie-healthy-002",
+  "case_sha256": "9adb80e2a86545cc61408ced86cb889148fce891a6dcbd7602244e8204822a01",
+  "config_hash": "b6404655552e6b433e3ffd352bb3f376cdccf7b08ab1a7be83793c74c95d0445",
+  "decision": {
+    "action": "none",
+    "class": "healthy",
+    "confidence": 0.8,
+    "evidence_refs": [
+      "e1"
+    ],
+    "reason": "The prior record shows the catalog title and content title are both 'Vaiana', which is an expected alias of 'Moana' (same film, regional title). No tools are available, and no defect is evidenced; this is not a mismatch.",
+    "target": null,
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "declared_sha256": null,
+    "kind": "none",
+    "verified": "n/a"
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "ad6dd1290eee84af9a977921bfb8abbf067831ca",
+  "injected_failure": null,
+  "model_case_alias": "case-2cfca989",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "claude-sonnet-5-5",
+  "response_model_ids": [
+    "claude-sonnet-5-5"
+  ],
+  "run_id": "dev-v1-claude-sonnet-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "split": "dev",
+  "started_at": "2026-10-19T21:54:48.331887+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [],
+  "tool_modes": [],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-sonnet-5-5": {
+            "cacheCreationInputTokens": 876,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-sonnet-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0048602,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 125,
+            "provider": "firstParty",
+            "thinkingTokens": 0,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 1,
+      "native": {
+        "duration_api_ms": 6768,
+        "duration_ms": 6879,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-sonnet-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-2cfca989\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"aliases\": [\"Vaiana\"], \"title\": \"Moana\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Moana\"}, \"evidence\": [{\"args\": {\"id\": \"c11\"}, \"id\": \"e1\", \"output\": \"{\\\"evidence_method\\\":\\\"historical same-film alias adjudication\\\",\\\"observed\\\":{\\\"catalog_title\\\":\\\"Vaiana\\\",\\\"content_titles\\\":[\\\"Vaiana\\\"],\\\"evidence_method\\\":\\\"historical same-film alias adjudication\\\"}}\", \"status\": \"ok\", \"tool\": \"prior_record\", \"truncated\": false}], \"media_type\": \"movie\", \"tool_call_budget\": 6, \"tools_available\": []}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":6768,\"stop_reason\":\"end_turn\",\"session_id\":\"3608d041-9fa8-417d-ab67-52012a5a97bb\",\"total_cost_usd\":0.0048602,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":876,\"cache_read_input_tokens\":1022,\"output_tokens\":125,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":876,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":125,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":876,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":876},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-sonnet-5-5\":{\"inputTokens\":2,\"outputTokens\":125,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":876,\"webSearchRequests\":0,\"costUSD\":0.0048602,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-sonnet-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"healthy\\\",\\\"action\\\":\\\"none\\\",\\\"target\\\":null,\\\"confidence\\\":0.8,\\\"evidence_refs\\\":[\\\"e1\\\"],\\\"reason\\\":\\\"The prior record shows the catalog title and content title are both 'Vaiana', which is an expected alias of 'Moana' (same film, regional title). No tools are available, and no defect is evidenced; this is not a mismatch.\\\"}\",\"ttft_ms\":6850,\"type\":\"result\",\"duration_ms\":6879,\"uuid\":\"5cceed39-7ddd-40b6-85ba-a64db9de53d9\",\"ttft_stream_ms\":5872,\"time_to_request_ms\":111,\"first_content_frame_ms\":5873,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-sonnet-5-5",
+      "text": "{\"type\":\"decision\",\"class\":\"healthy\",\"action\":\"none\",\"target\":null,\"confidence\":0.8,\"evidence_refs\":[\"e1\"],\"reason\":\"The prior record shows the catalog title and content title are both 'Vaiana', which is an expected alias of 'Moana' (same film, regional title). No tools are available, and no defect is evidenced; this is not a mismatch.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 876,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.0048602,
+        "input_tokens": 2,
+        "output_tokens": 125
+      },
+      "validation_errors": [],
+      "wall_s": 7.613
+    }
+  ],
+  "usage": {
+    "cost_reported": true,
+    "cost_usd": 0.0048602,
+    "input_tokens": 2,
+    "output_tokens": 125
+  },
+  "wall": {
+    "case_excl_load_s": 7.614,
+    "load_s": 0.0,
+    "tool_s": [],
+    "total_s": 7.614,
+    "turn_s": [
+      7.613
+    ]
+  }
+}

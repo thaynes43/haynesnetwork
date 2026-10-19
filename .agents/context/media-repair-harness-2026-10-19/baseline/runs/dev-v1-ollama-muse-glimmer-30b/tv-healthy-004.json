@@ -1,0 +1,1330 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "escalate",
+      "class": "decoder_incompatible",
+      "target": "hl.s01e04.1080p.web.h264-grp.mkv"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "tv-healthy-004",
+  "case_sha256": "9c2662e663498e7b42e6387cdf5bf0411df3b0629d07b6a29f38893d5d4836dd",
+  "config_hash": "13a4d71c1fe4faa87c03b1a3e6c2d45015e2f968402e16dddced34282f903a15",
+  "context_check": {
+    "flags": [],
+    "max_prompt_tokens_estimated": 2609,
+    "max_prompt_tokens_reported": 2200,
+    "num_ctx": 4096,
+    "truncated_suspected": false,
+    "turns_checked": 6
+  },
+  "decision": {
+    "action": "escalate",
+    "class": "decoder_incompatible",
+    "confidence": 0.6,
+    "evidence_refs": [
+      "e1",
+      "t1",
+      "e3"
+    ],
+    "reason": "File metadata shows 256x192 video and 22.05 kHz mono audio, mismatching expected 1080p and typical TV audio. Duration matches expected 8 s and tags match episode 4 Night Ferry, but resolution and audio specs suggest a low-quality sample or decoder issue. Audio sample tool unavailable, so cannot confirm audio health; escalate for human review.",
+    "target": "hl.s01e04.1080p.web.h264-grp.mkv",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2",
+    "e3"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "2bef8e12d0fe64a59cf5e12a15034ae66576f7e5aff49efec8ddf31141b48884",
+    "bytes": 90073,
+    "declared_sha256": "2bef8e12d0fe64a59cf5e12a15034ae66576f7e5aff49efec8ddf31141b48884",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "c61b6c621103b2a817d9ea887fdbc0aa05276ab5",
+  "injected_failure": null,
+  "model_case_alias": "case-986a8c34",
+  "model_digest": "de878ce33ad81d060001db1469a02eebe4d86f0ad58cfe52dc062fdcbe4464c1",
+  "model_digest_na_reason": null,
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "muse-glimmer:30b",
+  "response_model_ids": [
+    "muse-glimmer:30b"
+  ],
+  "run_id": "dev-v1-ollama-muse-glimmer-30b",
+  "runtime_version": "0.40.6",
+  "split": "dev",
+  "started_at": "2026-10-19T22:45:57.400642+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [
+    {
+      "args": {},
+      "id": "t1",
+      "mode": "replay",
+      "output": "{\"chapters\": [{\"end\": \"2.000000\", \"start\": \"0.000000\", \"title\": \"Cold open\"}, {\"end\": \"8.000000\", \"start\": \"2.000000\", \"title\": \"Night Ferry\"}], \"exit_code\": 0, \"format\": {\"bit_rate\": \"89558\", \"duration\": \"8.046000\", \"format_name\": \"matroska,webm\", \"size\": \"90073\", \"tags\": {\"episode_sort\": \"4\", \"season_number\": \"1\", \"show\": \"Harbor Lights\", \"title\": \"Night Ferry\"}}, \"stderr\": \"\", \"streams\": [{\"codec_name\": \"h264\", \"codec_type\": \"video\", \"height\": 192, \"index\": 0, \"pix_fmt\": \"yuv420p\", \"profile\": \"High\", \"tags\": {}, \"width\": 256}, {\"channels\": 1, \"codec_name\": \"aac\", \"codec_type\": \"audio\", \"index\": 1, \"profile\": \"LC\", \"sample_rate\": \"22050\", \"tags\": {}}]}",
+      "status": "ok",
+      "tool": "ffprobe",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.001,
+      "why": "Check full stream metadata and duration to confirm runtime and codecs."
+    },
+    {
+      "args": {
+        "at": 4
+      },
+      "id": "t2",
+      "mode": "replay",
+      "output": "{\"at_s\": 4, \"clean\": true, \"exit_code\": 0, \"frames\": 40, \"note\": \"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\", \"out_time\": \"00:00:04.000000\", \"quota_exhausted\": false, \"stderr\": \"\", \"window_s\": 4}",
+      "status": "ok",
+      "tool": "decode_sample",
+      "truncated": false,
+      "turn": 2,
+      "wall_s": 0.001,
+      "why": "Verify decodability mid-file to detect corruption."
+    },
+    {
+      "args": {
+        "at": 7
+      },
+      "id": "t3",
+      "mode": "replay",
+      "output": "{\"frame\": \"frame@7\", \"note\": \"no image is available in replay mode; call ocr with this frame to read the recorded on-screen text\", \"replay\": true}",
+      "status": "ok",
+      "tool": "frame_sample",
+      "truncated": false,
+      "turn": 3,
+      "wall_s": 0.001,
+      "why": "Sample near end to check for truncation."
+    },
+    {
+      "args": {
+        "at": 7
+      },
+      "id": "t4",
+      "mode": "replay",
+      "output": "{\"consensus\": true, \"note\": \"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\", \"t_s\": 7.0, \"text\": \"\"}",
+      "status": "ok",
+      "tool": "ocr",
+      "truncated": false,
+      "turn": 4,
+      "wall_s": 0.001,
+      "why": "Read on-screen text near end to verify episode title."
+    },
+    {
+      "args": {
+        "at": 6
+      },
+      "id": "t5",
+      "mode": "replay",
+      "output": "no recorded replay for audio_sample in this suite (audio levels were not recorded)",
+      "status": "error",
+      "tool": "audio_sample",
+      "truncated": false,
+      "turn": 5,
+      "wall_s": 0.001,
+      "why": "Check audio decodability near end."
+    }
+  ],
+  "tool_modes": [
+    "replay"
+  ],
+  "turns": [
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 30,
+          "prompt_chars": 5104,
+          "prompt_tokens_estimated": 1701,
+          "prompt_tokens_reported": 1342,
+          "truncated_suspected": false
+        }
+      },
+      "n": 1,
+      "native": {
+        "created_at": "2026-10-19T22:45:59.342091229Z",
+        "done_reason": "stop",
+        "eval_count": 30,
+        "eval_duration": 702996000,
+        "load_duration": 761924,
+        "prompt_eval_count": 1342,
+        "prompt_eval_duration": 639835000,
+        "total_duration": 1828379348
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-986a8c34\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990204, \"episodeId\": 990104, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 4, \"episode_title\": \"Night Ferry\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"hl.s01e04.1080p.web.h264-grp.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E04\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Night Ferry\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89558\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90073\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"4\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Night Ferry\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 4, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":4,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Night Ferry\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"hl.s01e04.1080p.web.h264-grp.mkv\\\",\\\"size\\\":90073},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:45:59.342091229Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"ffprobe\\\",\\\"args\\\":{},\\\"why\\\":\\\"Check full stream metadata and duration to confirm runtime and codecs.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1828379348,\"load_duration\":761924,\"prompt_eval_count\":1342,\"prompt_eval_cached_count\":589,\"prompt_eval_duration\":639835000,\"eval_count\":30,\"eval_duration\":702996000}",
+        "stderr": "",
+        "wall_seconds": 1.9350050897337496
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full stream metadata and duration to confirm runtime and codecs.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1342,
+        "output_tokens": 30
+      },
+      "validation_errors": [],
+      "wall_s": 1.935
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 31,
+          "prompt_chars": 6139,
+          "prompt_tokens_estimated": 2046,
+          "prompt_tokens_reported": 1674,
+          "truncated_suspected": false
+        }
+      },
+      "n": 2,
+      "native": {
+        "created_at": "2026-10-19T22:46:00.5274421Z",
+        "done_reason": "stop",
+        "eval_count": 31,
+        "eval_duration": 724785000,
+        "load_duration": 724883,
+        "prompt_eval_count": 1674,
+        "prompt_eval_duration": 322578000,
+        "total_duration": 1073557997
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-986a8c34\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990204, \"episodeId\": 990104, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 4, \"episode_title\": \"Night Ferry\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"hl.s01e04.1080p.web.h264-grp.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E04\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Night Ferry\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89558\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90073\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"4\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Night Ferry\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 4, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":4,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Night Ferry\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"hl.s01e04.1080p.web.h264-grp.mkv\\\",\\\"size\\\":90073},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full stream metadata and duration to confirm runtime and codecs.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [{\\\"end\\\": \\\"2.000000\\\", \\\"start\\\": \\\"0.000000\\\", \\\"title\\\": \\\"Cold open\\\"}, {\\\"end\\\": \\\"8.000000\\\", \\\"start\\\": \\\"2.000000\\\", \\\"title\\\": \\\"Night Ferry\\\"}], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"89558\\\", \\\"duration\\\": \\\"8.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"90073\\\", \\\"tags\\\": {\\\"episode_sort\\\": \\\"4\\\", \\\"season_number\\\": \\\"1\\\", \\\"show\\\": \\\"Harbor Lights\\\", \\\"title\\\": \\\"Night Ferry\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:46:00.5274421Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"decode_sample\\\",\\\"args\\\":{\\\"at\\\":4},\\\"why\\\":\\\"Verify decodability mid-file to detect corruption.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1073557997,\"load_duration\":724883,\"prompt_eval_count\":1674,\"prompt_eval_cached_count\":1337,\"prompt_eval_duration\":322578000,\"eval_count\":31,\"eval_duration\":724785000}",
+        "stderr": "",
+        "wall_seconds": 1.1865297658368945
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":4},\"why\":\"Verify decodability mid-file to detect corruption.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1674,
+        "output_tokens": 31
+      },
+      "validation_errors": [],
+      "wall_s": 1.187
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 29,
+          "prompt_chars": 6670,
+          "prompt_tokens_estimated": 2223,
+          "prompt_tokens_reported": 1841,
+          "truncated_suspected": false
+        }
+      },
+      "n": 3,
+      "native": {
+        "created_at": "2026-10-19T22:46:01.628455276Z",
+        "done_reason": "stop",
+        "eval_count": 29,
+        "eval_duration": 675285000,
+        "load_duration": 642940,
+        "prompt_eval_count": 1841,
+        "prompt_eval_duration": 252094000,
+        "total_duration": 962960659
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-986a8c34\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990204, \"episodeId\": 990104, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 4, \"episode_title\": \"Night Ferry\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"hl.s01e04.1080p.web.h264-grp.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E04\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Night Ferry\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89558\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90073\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"4\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Night Ferry\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 4, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":4,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Night Ferry\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"hl.s01e04.1080p.web.h264-grp.mkv\\\",\\\"size\\\":90073},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full stream metadata and duration to confirm runtime and codecs.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [{\\\"end\\\": \\\"2.000000\\\", \\\"start\\\": \\\"0.000000\\\", \\\"title\\\": \\\"Cold open\\\"}, {\\\"end\\\": \\\"8.000000\\\", \\\"start\\\": \\\"2.000000\\\", \\\"title\\\": \\\"Night Ferry\\\"}], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"89558\\\", \\\"duration\\\": \\\"8.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"90073\\\", \\\"tags\\\": {\\\"episode_sort\\\": \\\"4\\\", \\\"season_number\\\": \\\"1\\\", \\\"show\\\": \\\"Harbor Lights\\\", \\\"title\\\": \\\"Night Ferry\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":4},\"why\":\"Verify decodability mid-file to detect corruption.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": true, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"stderr\\\": \\\"\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:46:01.628455276Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"frame_sample\\\",\\\"args\\\":{\\\"at\\\":7},\\\"why\\\":\\\"Sample near end to check for truncation.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":962960659,\"load_duration\":642940,\"prompt_eval_count\":1841,\"prompt_eval_cached_count\":1669,\"prompt_eval_duration\":252094000,\"eval_count\":29,\"eval_duration\":675285000}",
+        "stderr": "",
+        "wall_seconds": 1.0982776121236384
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{\"at\":7},\"why\":\"Sample near end to check for truncation.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1841,
+        "output_tokens": 29
+      },
+      "validation_errors": [],
+      "wall_s": 1.099
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 31,
+          "prompt_chars": 7069,
+          "prompt_tokens_estimated": 2356,
+          "prompt_tokens_reported": 1962,
+          "truncated_suspected": false
+        }
+      },
+      "n": 4,
+      "native": {
+        "created_at": "2026-10-19T22:46:02.776068061Z",
+        "done_reason": "stop",
+        "eval_count": 31,
+        "eval_duration": 773298000,
+        "load_duration": 757054,
+        "prompt_eval_count": 1962,
+        "prompt_eval_duration": 206120000,
+        "total_duration": 1021601636
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-986a8c34\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990204, \"episodeId\": 990104, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 4, \"episode_title\": \"Night Ferry\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"hl.s01e04.1080p.web.h264-grp.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E04\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Night Ferry\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89558\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90073\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"4\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Night Ferry\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 4, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":4,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Night Ferry\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"hl.s01e04.1080p.web.h264-grp.mkv\\\",\\\"size\\\":90073},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full stream metadata and duration to confirm runtime and codecs.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [{\\\"end\\\": \\\"2.000000\\\", \\\"start\\\": \\\"0.000000\\\", \\\"title\\\": \\\"Cold open\\\"}, {\\\"end\\\": \\\"8.000000\\\", \\\"start\\\": \\\"2.000000\\\", \\\"title\\\": \\\"Night Ferry\\\"}], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"89558\\\", \\\"duration\\\": \\\"8.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"90073\\\", \\\"tags\\\": {\\\"episode_sort\\\": \\\"4\\\", \\\"season_number\\\": \\\"1\\\", \\\"show\\\": \\\"Harbor Lights\\\", \\\"title\\\": \\\"Night Ferry\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":4},\"why\":\"Verify decodability mid-file to detect corruption.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": true, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"stderr\\\": \\\"\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{\"at\":7},\"why\":\"Sample near end to check for truncation.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"frame_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"frame\\\": \\\"frame@7\\\", \\\"note\\\": \\\"no image is available in replay mode; call ocr with this frame to read the recorded on-screen text\\\", \\\"replay\\\": true}\", \"tool_calls_remaining\": 3}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:46:02.776068061Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"ocr\\\",\\\"args\\\":{\\\"at\\\":7},\\\"why\\\":\\\"Read on-screen text near end to verify episode title.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1021601636,\"load_duration\":757054,\"prompt_eval_count\":1962,\"prompt_eval_cached_count\":1836,\"prompt_eval_duration\":206120000,\"eval_count\":31,\"eval_duration\":773298000}",
+        "stderr": "",
+        "wall_seconds": 1.145346264820546
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":7},\"why\":\"Read on-screen text near end to verify episode title.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1962,
+        "output_tokens": 31
+      },
+      "validation_errors": [],
+      "wall_s": 1.146
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 29,
+          "prompt_chars": 7506,
+          "prompt_tokens_estimated": 2502,
+          "prompt_tokens_reported": 2101,
+          "truncated_suspected": false
+        }
+      },
+      "n": 5,
+      "native": {
+        "created_at": "2026-10-19T22:46:04.088650935Z",
+        "done_reason": "stop",
+        "eval_count": 29,
+        "eval_duration": 859749000,
+        "load_duration": 868697,
+        "prompt_eval_count": 2101,
+        "prompt_eval_duration": 279249000,
+        "total_duration": 1191749937
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-986a8c34\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990204, \"episodeId\": 990104, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 4, \"episode_title\": \"Night Ferry\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"hl.s01e04.1080p.web.h264-grp.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E04\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Night Ferry\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89558\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90073\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"4\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Night Ferry\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 4, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":4,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Night Ferry\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"hl.s01e04.1080p.web.h264-grp.mkv\\\",\\\"size\\\":90073},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full stream metadata and duration to confirm runtime and codecs.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [{\\\"end\\\": \\\"2.000000\\\", \\\"start\\\": \\\"0.000000\\\", \\\"title\\\": \\\"Cold open\\\"}, {\\\"end\\\": \\\"8.000000\\\", \\\"start\\\": \\\"2.000000\\\", \\\"title\\\": \\\"Night Ferry\\\"}], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"89558\\\", \\\"duration\\\": \\\"8.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"90073\\\", \\\"tags\\\": {\\\"episode_sort\\\": \\\"4\\\", \\\"season_number\\\": \\\"1\\\", \\\"show\\\": \\\"Harbor Lights\\\", \\\"title\\\": \\\"Night Ferry\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":4},\"why\":\"Verify decodability mid-file to detect corruption.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": true, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"stderr\\\": \\\"\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{\"at\":7},\"why\":\"Sample near end to check for truncation.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"frame_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"frame\\\": \\\"frame@7\\\", \\\"note\\\": \\\"no image is available in replay mode; call ocr with this frame to read the recorded on-screen text\\\", \\\"replay\\\": true}\", \"tool_calls_remaining\": 3}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":7},\"why\":\"Read on-screen text near end to verify episode title.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t4\", \"tool\": \"ocr\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"consensus\\\": true, \\\"note\\\": \\\"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\\\", \\\"t_s\\\": 7.0, \\\"text\\\": \\\"\\\"}\", \"tool_calls_remaining\": 2}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:46:04.088650935Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"audio_sample\\\",\\\"args\\\":{\\\"at\\\":6},\\\"why\\\":\\\"Check audio decodability near end.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1191749937,\"load_duration\":868697,\"prompt_eval_count\":2101,\"prompt_eval_cached_count\":1957,\"prompt_eval_duration\":279249000,\"eval_count\":29,\"eval_duration\":859749000}",
+        "stderr": "",
+        "wall_seconds": 1.308068998157978
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"audio_sample\",\"args\":{\"at\":6},\"why\":\"Check audio decodability near end.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 2101,
+        "output_tokens": 29
+      },
+      "validation_errors": [],
+      "wall_s": 1.308
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 135,
+          "prompt_chars": 7828,
+          "prompt_tokens_estimated": 2609,
+          "prompt_tokens_reported": 2200,
+          "truncated_suspected": false
+        }
+      },
+      "n": 6,
+      "native": {
+        "created_at": "2026-10-19T22:46:09.38996469Z",
+        "done_reason": "stop",
+        "eval_count": 135,
+        "eval_duration": 4856786000,
+        "load_duration": 798386,
+        "prompt_eval_count": 2200,
+        "prompt_eval_duration": 269124000,
+        "total_duration": 5178243958
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-986a8c34\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990204, \"episodeId\": 990104, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 4, \"episode_title\": \"Night Ferry\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"hl.s01e04.1080p.web.h264-grp.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E04\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Night Ferry\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89558\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90073\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"4\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Night Ferry\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 4, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":4,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Night Ferry\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"hl.s01e04.1080p.web.h264-grp.mkv\\\",\\\"size\\\":90073},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Check full stream metadata and duration to confirm runtime and codecs.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [{\\\"end\\\": \\\"2.000000\\\", \\\"start\\\": \\\"0.000000\\\", \\\"title\\\": \\\"Cold open\\\"}, {\\\"end\\\": \\\"8.000000\\\", \\\"start\\\": \\\"2.000000\\\", \\\"title\\\": \\\"Night Ferry\\\"}], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"89558\\\", \\\"duration\\\": \\\"8.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"90073\\\", \\\"tags\\\": {\\\"episode_sort\\\": \\\"4\\\", \\\"season_number\\\": \\\"1\\\", \\\"show\\\": \\\"Harbor Lights\\\", \\\"title\\\": \\\"Night Ferry\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":4},\"why\":\"Verify decodability mid-file to detect corruption.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": true, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"stderr\\\": \\\"\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{\"at\":7},\"why\":\"Sample near end to check for truncation.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"frame_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"frame\\\": \\\"frame@7\\\", \\\"note\\\": \\\"no image is available in replay mode; call ocr with this frame to read the recorded on-screen text\\\", \\\"replay\\\": true}\", \"tool_calls_remaining\": 3}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":7},\"why\":\"Read on-screen text near end to verify episode title.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t4\", \"tool\": \"ocr\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"consensus\\\": true, \\\"note\\\": \\\"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\\\", \\\"t_s\\\": 7.0, \\\"text\\\": \\\"\\\"}\", \"tool_calls_remaining\": 2}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"audio_sample\",\"args\":{\"at\":6},\"why\":\"Check audio decodability near end.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t5\", \"tool\": \"audio_sample\", \"status\": \"error\", \"truncated\": false, \"output\": \"no recorded replay for audio_sample in this suite (audio levels were not recorded)\", \"tool_calls_remaining\": 1}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:46:09.38996469Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"decoder_incompatible\\\",\\\"action\\\":\\\"escalate\\\",\\\"target\\\":\\\"hl.s01e04.1080p.web.h264-grp.mkv\\\",\\\"confidence\\\":0.6,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"t1\\\",\\\"e3\\\"],\\\"reason\\\":\\\"File metadata shows 256x192 video and 22.05 kHz mono audio, mismatching expected 1080p and typical TV audio. Duration matches expected 8 s and tags match episode 4 Night Ferry, but resolution and audio specs suggest a low-quality sample or decoder issue. Audio sample tool unavailable, so cannot confirm audio health; escalate for human review.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":5178243958,\"load_duration\":798386,\"prompt_eval_count\":2200,\"prompt_eval_cached_count\":2101,\"prompt_eval_duration\":269124000,\"eval_count\":135,\"eval_duration\":4856786000}",
+        "stderr": "",
+        "wall_seconds": 5.298374399077147
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"decision\",\"class\":\"decoder_incompatible\",\"action\":\"escalate\",\"target\":\"hl.s01e04.1080p.web.h264-grp.mkv\",\"confidence\":0.6,\"evidence_refs\":[\"e1\",\"t1\",\"e3\"],\"reason\":\"File metadata shows 256x192 video and 22.05 kHz mono audio, mismatching expected 1080p and typical TV audio. Duration matches expected 8 s and tags match episode 4 Night Ferry, but resolution and audio specs suggest a low-quality sample or decoder issue. Audio sample tool unavailable, so cannot confirm audio health; escalate for human review.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 2200,
+        "output_tokens": 135
+      },
+      "validation_errors": [],
+      "wall_s": 5.299
+    }
+  ],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 11120,
+    "output_tokens": 285
+  },
+  "wall": {
+    "case_excl_load_s": 11.983,
+    "load_s": 0.005,
+    "tool_s": [
+      0.001,
+      0.001,
+      0.001,
+      0.001,
+      0.001
+    ],
+    "total_s": 11.987,
+    "turn_s": [
+      1.935,
+      1.187,
+      1.099,
+      1.146,
+      1.308,
+      5.299
+    ]
+  }
+}

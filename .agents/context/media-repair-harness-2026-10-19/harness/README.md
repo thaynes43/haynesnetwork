@@ -75,6 +75,17 @@ Run options: `--effort` (claude/codex), `--max-budget-usd` (claude per-call cap,
 
 Versions used for the records here: Claude Code 2.1.299, Codex CLI 0.162.1, Ollama 0.40.6 (server), Python 3.11.2.
 
+### Ollama Prime safety settings (checkpoint 1, 2026-10-19)
+
+After the 21:04 pod kill (Talos OOM controller, cold NFS mmap load, see the W6/W7 notes) the adapter only sends the configuration proven in the guarded retry:
+`options {num_ctx: 4096 (8192 allowed, nothing larger; validated), use_mmap: false, temperature: 0, seed: 42}`, `think: false`, `keep_alive: "2m"`, `stream: false`. These cannot be overridden by `--` flags.
+The warm-up is a separate `/api/generate` ("Reply with OK", `num_predict 256`, the same options) with a 900 s timeout; per-turn calls keep `call_timeout` (120 s). `/api/ps` must be empty before the batch
+(any resident model, including the same tag, aborts the run; nothing is evicted). `guard.py` watches the pod for the whole batch (warm-up included) every 30 s: the container's memory-PSI `full` stall rate
+(the counter behind `container_pressure_memory_stalled_seconds_total`; Prometheus itself is unreachable from the dev-env pod, so it is read from the cgroup by `kubectl exec`) and the pod uid / container id / restart count.
+More than 0.20 stalled s/s for 2 consecutive samples, any restart or pod change, or 3 blind samples in a row cancels the in-flight request, aborts the batch and unloads (`keep_alive: 0`) what this run loaded.
+A cancelled in-flight case is kept as a failed record. The model is unloaded at the end of every batch. Every ollama turn records `meta.context` (reported prompt tokens, a 3-chars-per-token estimate, flags such as
+`prompt_at_context_limit`); the case record carries `context_check`. `--tool-output-bytes N` lowers the cap on one tool result for small local contexts (the system prompt still says 8 KiB; the cut is marked `...[truncated]`).
+
 ### GPU etiquette (Ollama Prime)
 
 Preflight reads `/api/version`, `/api/tags`, `/api/ps` and the GPU snapshot. It aborts, without loading or evicting anything, if a model this run did not load is resident, if the GPU has a compute

@@ -1,0 +1,265 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "none",
+      "class": "healthy",
+      "target": "Harbor Lights - S01E03 - The Salt Wind.mkv"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "tv-healthy-003",
+  "case_sha256": "002c8ae1768c3cf6bde8e069bc2079325d1d9d883e7d6ad290d71daa5c0670e6",
+  "config_hash": "eb97bdc5c331ce6bcfef80fc842769701a622c4fdb621e4169cafe6a51b4af0a",
+  "context_check": {
+    "flags": [],
+    "max_prompt_tokens_estimated": 1756,
+    "max_prompt_tokens_reported": 1485,
+    "num_ctx": 4096,
+    "truncated_suspected": false,
+    "turns_checked": 1
+  },
+  "decision": {
+    "action": "none",
+    "class": "healthy",
+    "confidence": 0.9,
+    "evidence_refs": [
+      "e1",
+      "e2",
+      "e3",
+      "e4"
+    ],
+    "reason": "File matches expected S01E03 'The Salt Wind': tags, chapters, OCR title card, and Sonarr record all agree; decode sample is clean and duration ~8s matches expected runtime.",
+    "target": "Harbor Lights - S01E03 - The Salt Wind.mkv",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "533b1f8b2faf1d095d6b38f8d009c88f857d8ad09742671937fbc653ee0509b0",
+    "bytes": 89938,
+    "declared_sha256": "533b1f8b2faf1d095d6b38f8d009c88f857d8ad09742671937fbc653ee0509b0",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "c61b6c621103b2a817d9ea887fdbc0aa05276ab5",
+  "injected_failure": null,
+  "model_case_alias": "case-387718a1",
+  "model_digest": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+  "model_digest_na_reason": null,
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "qwen3.8:27b",
+  "response_model_ids": [
+    "qwen3.8:27b"
+  ],
+  "run_id": "dev-v1-ollama-qwen3.8-27b",
+  "runtime_version": "0.40.6",
+  "split": "dev",
+  "started_at": "2026-10-19T22:29:26.767549+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [],
+  "tool_modes": [],
+  "turns": [
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 100,
+          "prompt_chars": 5269,
+          "prompt_tokens_estimated": 1756,
+          "prompt_tokens_reported": 1485,
+          "truncated_suspected": false
+        }
+      },
+      "n": 1,
+      "native": {
+        "created_at": "2026-10-19T22:29:29.938777996Z",
+        "done_reason": "stop",
+        "eval_count": 100,
+        "eval_duration": 1495572000,
+        "load_duration": 670032,
+        "prompt_eval_count": 1485,
+        "prompt_eval_duration": 841316000,
+        "total_duration": 3040876581
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-387718a1\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990203, \"episodeId\": 990103, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 3, \"episode_title\": \"The Salt Wind\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E03 - The Salt Wind.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E03\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"The Salt Wind\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89423\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"89938\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"3\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"The Salt Wind\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 1.0}, \"id\": \"e3\", \"output\": \"HARBOR LIGHTS / S01E03 / THE SALT WIND\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 3, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e4\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":3,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"The Salt Wind\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E03 - The Salt Wind.mkv\\\",\\\"size\\\":89938},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          }
+        ],
+        "model": "qwen3.8:27b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|im_end|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"qwen3.8:27b\",\"created_at\":\"2026-10-19T22:29:29.938777996Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"healthy\\\",\\\"action\\\":\\\"none\\\",\\\"target\\\":\\\"Harbor Lights - S01E03 - The Salt Wind.mkv\\\",\\\"confidence\\\":0.9,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e2\\\",\\\"e3\\\",\\\"e4\\\"],\\\"reason\\\":\\\"File matches expected S01E03 'The Salt Wind': tags, chapters, OCR title card, and Sonarr record all agree; decode sample is clean and duration ~8s matches expected runtime.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":3040876581,\"load_duration\":670032,\"prompt_eval_count\":1485,\"prompt_eval_cached_count\":647,\"prompt_eval_duration\":841316000,\"eval_count\":100,\"eval_duration\":1495572000}",
+        "stderr": "",
+        "wall_seconds": 3.1677440777420998
+      },
+      "response_model": "qwen3.8:27b",
+      "text": "{\"type\":\"decision\",\"class\":\"healthy\",\"action\":\"none\",\"target\":\"Harbor Lights - S01E03 - The Salt Wind.mkv\",\"confidence\":0.9,\"evidence_refs\":[\"e1\",\"e2\",\"e3\",\"e4\"],\"reason\":\"File matches expected S01E03 'The Salt Wind': tags, chapters, OCR title card, and Sonarr record all agree; decode sample is clean and duration ~8s matches expected runtime.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1485,
+        "output_tokens": 100
+      },
+      "validation_errors": [],
+      "wall_s": 3.168
+    }
+  ],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 1485,
+    "output_tokens": 100
+  },
+  "wall": {
+    "case_excl_load_s": 3.174,
+    "load_s": 0.001,
+    "tool_s": [],
+    "total_s": 3.175,
+    "turn_s": [
+      3.168
+    ]
+  }
+}

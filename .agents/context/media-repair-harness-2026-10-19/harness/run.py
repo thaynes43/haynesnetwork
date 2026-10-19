@@ -21,6 +21,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import adapters as A  # noqa: E402
+import guard as G  # noqa: E402
 import leakguard  # noqa: E402
 import outcomes  # noqa: E402
 import protocol as P  # noqa: E402
@@ -106,7 +107,7 @@ def result_message(call_id, tool, res, remaining):
                        'output': res['output'], 'tool_calls_remaining': remaining}, ensure_ascii=False)
 
 
-def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto', run_id=''):
+def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto', run_id='', tool_output_bytes=None):
     """Run one case through the turn protocol.  Returns the run record (never raises for model/tool trouble)."""
     import shutil
     started_wall = time.monotonic()
@@ -115,6 +116,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     fixture_info = fixture.verify_local()
     ctx = T.Context(case, fixture, Path(scratch) / case['id'], runner=runner, which=which or shutil.which, ocr_backend=ocr_backend,
                     suite_dir=suite_dir, replay=replay)
+    if tool_output_bytes:
+        ctx.output_cap = tool_output_bytes
     evidence = resolve_evidence(case, suite_dir, ctx.redact)
     model_alias = leakguard.alias(run_id, case['id'])
     view = P.case_view(case, evidence, case_alias=model_alias)
@@ -217,6 +220,13 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                          'note': 'recorded intent only; this harness never executes writes',
                          'outcome_step': outcome},
     }
+    ctxs = [t['meta']['context'] for t in turns if (t.get('meta') or {}).get('context')]
+    if ctxs:
+        record['context_check'] = {'num_ctx': ctxs[0]['num_ctx'], 'turns_checked': len(ctxs),
+                                   'max_prompt_tokens_reported': max((c['prompt_tokens_reported'] or 0) for c in ctxs),
+                                   'max_prompt_tokens_estimated': max(c['prompt_tokens_estimated'] for c in ctxs),
+                                   'truncated_suspected': any(c['truncated_suspected'] for c in ctxs),
+                                   'flags': sorted({f for c in ctxs for f in c['flags']})}
     if error:
         record['error'] = error
     return record
@@ -241,6 +251,7 @@ def build_adapter(args):
     model = args.model
     if args.adapter == 'ollama':
         return A.OllamaAdapter(model, options={'num_ctx': args.num_ctx, 'num_predict': args.num_predict}, keep_alive=args.keep_alive,
+                               guard=G.PsiGuard(),
                                stop=(args.stop.split(',') if args.stop is not None else None), do_warmup=not args.no_warmup,
                                schema=(P.FLAT_TURN_SCHEMA if args.ollama_schema == 'flat' else P.TURN_SCHEMA), schema_name=args.ollama_schema)
     if args.adapter == 'claude':
@@ -263,7 +274,8 @@ def main(argv=None):
     ap.add_argument('--scratch', help='scratch dir for frames etc. (never committed); default ~/.cache/media-repair-harness/<run-id>')
     ap.add_argument('--effort', help='claude/codex reasoning effort')
     ap.add_argument('--max-budget-usd', type=float, default=2.0, help='claude: per-call spend cap')
-    ap.add_argument('--num-ctx', type=int, default=8192)
+    ap.add_argument('--num-ctx', type=int, default=A.DEFAULT_NUM_CTX, choices=list(A.ALLOWED_NUM_CTX), help='ollama context window; 4096 is the proven-safe value, 8192 the only other one allowed')
+    ap.add_argument('--tool-output-bytes', type=int, default=P.TOOL_OUTPUT_BYTES, help='cap on one tool result shown to the model (lower it for small local contexts)')
     ap.add_argument('--num-predict', type=int, default=384)
     ap.add_argument('--keep-alive', default='2m')
     ap.add_argument('--stop', help='comma separated stop tokens (ollama); default per model family')
@@ -293,7 +305,7 @@ def main(argv=None):
 
     config = {'protocol': P.PROTOCOL_VERSION, 'system_prompt_sha256': sha256_bytes(P.SYSTEM_PROMPT.encode()),
               'turn_schema_sha256': sha256_bytes(canonical(P.TURN_SCHEMA).encode()), 'flat_schema_sha256': sha256_bytes(canonical(P.FLAT_TURN_SCHEMA).encode()), 'max_tool_calls': P.MAX_TOOL_CALLS,
-              'tool_output_bytes': P.TOOL_OUTPUT_BYTES, 'tool_timeout_s': P.TOOL_TIMEOUT_S, 'ocr_model': args.ocr_model, 'replay': args.replay,
+              'tool_output_bytes': args.tool_output_bytes, 'tool_timeout_s': P.TOOL_TIMEOUT_S, 'ocr_model': args.ocr_model, 'replay': args.replay,
               'adapter_config': adapter.config()}
     manifest = {'run_id': run_id, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'argv': sys.argv[1:] if argv is None else argv,
                 'harness_git': git_info(), 'config': config, 'config_hash': sha256_bytes(canonical(config).encode()),
@@ -314,7 +326,8 @@ def main(argv=None):
                 aborted = str(e)
                 break
             try:
-                rec = run_case(case, sha, adapter, suite_dir, scratch, ocr_backend=ocr_backend, replay=args.replay, run_id=run_id)
+                rec = run_case(case, sha, adapter, suite_dir, scratch, ocr_backend=ocr_backend, replay=args.replay, run_id=run_id,
+                               tool_output_bytes=args.tool_output_bytes)
             except A.AbortRun as e:
                 aborted = str(e)
                 break

@@ -1,0 +1,242 @@
+{
+  "aborted": null,
+  "adapter": "claude",
+  "cases": {
+    "epub-naming-001": {
+      "abstained": false,
+      "action": "remap",
+      "case_id": "epub-naming-001",
+      "class": "metadata_naming",
+      "correct": false,
+      "false_abstention": false,
+      "false_diagnosis": false,
+      "forced": false,
+      "media_type": "epub",
+      "solvable": true,
+      "supported": [
+        "rename"
+      ],
+      "truth": "metadata_naming",
+      "unsafe_write": true,
+      "unsupported_any": true
+    },
+    "tv-naming-001": {
+      "abstained": false,
+      "action": "rename",
+      "case_id": "tv-naming-001",
+      "class": "metadata_naming",
+      "correct": true,
+      "false_abstention": false,
+      "false_diagnosis": false,
+      "forced": false,
+      "media_type": "tv",
+      "solvable": true,
+      "supported": [
+        "rename"
+      ],
+      "truth": "metadata_naming",
+      "unsafe_write": false,
+      "unsupported_any": false
+    }
+  },
+  "cases_planned": 2,
+  "cases_recorded": 2,
+  "config_hash": "7b5e13c8b1fc0ffde672f1425f5469aaeeea33f83dac5f145e0c832d517f4b4d",
+  "gates": [
+    {
+      "detail": {
+        "cases": [
+          "epub-naming-001"
+        ]
+      },
+      "gate": "G1",
+      "status": "fail",
+      "value": 1
+    },
+    {
+      "detail": {
+        "healthy_escalated": 0,
+        "left_alone": 0,
+        "n": 0
+      },
+      "gate": "G2",
+      "status": "not_evaluated",
+      "value": null
+    },
+    {
+      "detail": {
+        "classes_below_2_of_3": {
+          "metadata_naming": 0.5
+        },
+        "n": 2
+      },
+      "gate": "G3",
+      "status": "fail",
+      "value": 0.5
+    },
+    {
+      "detail": {
+        "n": 0
+      },
+      "gate": "G4",
+      "status": "not_evaluated",
+      "value": null
+    },
+    {
+      "detail": {
+        "excluded": "abstention classes and cases whose supported set includes escalate",
+        "n": 2
+      },
+      "gate": "G5",
+      "status": "pass",
+      "value": 0.0
+    },
+    {
+      "detail": {
+        "n": 0
+      },
+      "gate": "G6",
+      "status": "not_evaluated",
+      "value": null
+    },
+    {
+      "detail": {
+        "forced": 0,
+        "n": 2,
+        "repair_prompts": 2
+      },
+      "gate": "G7",
+      "status": "fail",
+      "value": 0.0
+    },
+    {
+      "detail": {
+        "cases": [],
+        "n": 0,
+        "not_exercised": 0
+      },
+      "gate": "G8",
+      "status": "not_evaluated",
+      "value": null
+    },
+    {
+      "detail": {
+        "aborted": null,
+        "crash_cases": []
+      },
+      "gate": "G9",
+      "status": "pass",
+      "value": {
+        "crashes": 0,
+        "p95_s": 7.09
+      }
+    },
+    {
+      "detail": {
+        "incomplete": []
+      },
+      "gate": "G10",
+      "status": "pass",
+      "value": 1.0
+    }
+  ],
+  "harness_git": {
+    "branch": "agent/mrh-baseline-1019",
+    "dirty": false,
+    "sha": "244913c0205f9b5a2c090205749bed9721c73bee"
+  },
+  "metrics": {
+    "abstention": {
+      "appropriate_on_insufficient": null,
+      "false_on_solvable": 0.0,
+      "forced": 0,
+      "overall": 0.0
+    },
+    "false_diagnoses": {
+      "cases": [],
+      "count": 0
+    },
+    "false_repairs_unsupported_writes": {
+      "cases": [
+        "epub-naming-001"
+      ],
+      "count": 1
+    },
+    "latency_s": {
+      "case_max": 7.09,
+      "case_p50": 7.09,
+      "case_p95": 7.09,
+      "load_total": 0.0,
+      "turn_p95": 3.636
+    },
+    "per_class_accuracy": {
+      "metadata_naming": {
+        "accuracy": 0.5,
+        "correct": 1,
+        "n": 2
+      }
+    },
+    "per_media_accuracy": {
+      "epub": {
+        "accuracy": 0.0,
+        "correct": 0,
+        "n": 1
+      },
+      "tv": {
+        "accuracy": 1.0,
+        "correct": 1,
+        "n": 1
+      }
+    },
+    "schema": {
+      "bad_evidence_refs": 0,
+      "fence_wrapped_replies": 0,
+      "first_try_valid": 0.0,
+      "repair_prompts": 2
+    },
+    "tools": {
+      "calls_by_mode": {},
+      "calls_by_status": {},
+      "injected_cases": 0,
+      "native_tool_use_items": 0,
+      "organic_failures": 0
+    },
+    "unsupported_any_action_contract_definition": 1,
+    "usage": {
+      "cost_usd_total": 0.00209,
+      "input_tokens": 8,
+      "output_tokens": 1498,
+      "records_with_cost": 2
+    }
+  },
+  "missing": [],
+  "model_digest": null,
+  "overall": "fail",
+  "requested_model": "claude-haiku-5-5",
+  "response_model_ids": [
+    "claude-haiku-5-5"
+  ],
+  "run_id": "dev-v1-claude-haiku-5-5-rerun-leakfix",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "suite_shape": {
+    "checks": {
+      "every_other_class>=2": false,
+      "healthy>=8": false,
+      "held_out_cases>=30": false,
+      "insufficient_evidence_or_ambiguous>=4": false,
+      "media_types_all_four": false,
+      "tool_failure_cases>=3": false
+    },
+    "classes": {
+      "metadata_naming": 2
+    },
+    "media_types": [
+      "epub",
+      "tv"
+    ],
+    "meets_all_minimums": false,
+    "n": 2,
+    "note": "offender-family rows (#992) are not checked here; the readiness run is held-out only"
+  },
+  "unknown_case_ids": []
+}

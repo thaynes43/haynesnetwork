@@ -1,0 +1,661 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "none",
+      "class": "healthy",
+      "target": null
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "epub-identity-004",
+  "case_sha256": "0075fc6a0dc52e8b99908facbc845cae6d42da903566f5c76391ea7c9d188d5f",
+  "config_hash": "13a4d71c1fe4faa87c03b1a3e6c2d45015e2f968402e16dddced34282f903a15",
+  "context_check": {
+    "flags": [],
+    "max_prompt_tokens_estimated": 1942,
+    "max_prompt_tokens_reported": 1689,
+    "num_ctx": 4096,
+    "truncated_suspected": false,
+    "turns_checked": 3
+  },
+  "decision": {
+    "action": "none",
+    "class": "healthy",
+    "confidence": 0.9,
+    "evidence_refs": [
+      "e1",
+      "e2",
+      "t1",
+      "t2"
+    ],
+    "reason": "Metadata matches expected author, title, language and epub_inspect reports status ok with 53 spine items and 475777 characters, indicating no defect.",
+    "target": null,
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "6a64109c380d82204785005cb200bbd7fe2ce3f95c34ed8d407d9ca3a8920392",
+    "bytes": 390133,
+    "declared_sha256": "6a64109c380d82204785005cb200bbd7fe2ce3f95c34ed8d407d9ca3a8920392",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "c61b6c621103b2a817d9ea887fdbc0aa05276ab5",
+  "injected_failure": null,
+  "model_case_alias": "case-785b42b5",
+  "model_digest": "de878ce33ad81d060001db1469a02eebe4d86f0ad58cfe52dc062fdcbe4464c1",
+  "model_digest_na_reason": null,
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "muse-glimmer:30b",
+  "response_model_ids": [
+    "muse-glimmer:30b"
+  ],
+  "run_id": "dev-v1-ollama-muse-glimmer-30b",
+  "runtime_version": "0.40.6",
+  "split": "dev",
+  "started_at": "2026-10-19T22:41:08.397580+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [
+    {
+      "args": {},
+      "id": "t1",
+      "output": "{\"bytes\": 390133, \"dc_creator\": [\"L. M. Montgomery\"], \"dc_identifier\": [\"77b3ac05-e617-4b17-b88a-03d5fe685435\", \"6c082791-284e-4006-93c7-200fe45f823e\", \"kA0XedSJUQYC\", \"9780553480658\", \"B004MPRY7Q\"], \"dc_language\": [\"en\"], \"dc_title\": [\"Anne of Green Gables\"], \"entries\": 65, \"opf\": \"content.opf\", \"sha256\": \"6a64109c380d82204785005cb200bbd7fe2ce3f95c34ed8d407d9ca3a8920392\", \"spine_characters\": 475777, \"spine_heads\": [\"Cover @page {padding: 0pt; margin:0pt} body\", \"WindyPop book\", \"WindyPop book\"], \"spine_items\": 53, \"status\": \"ok\"}",
+      "status": "ok",
+      "tool": "epub_inspect",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.075,
+      "why": "Verify spine items and metadata to confirm content matches expected title/author and check for corruption."
+    },
+    {
+      "args": {},
+      "id": "t2",
+      "output": "{\"bytes\": 390133, \"dc_creator\": [\"L. M. Montgomery\"], \"dc_identifier\": [\"77b3ac05-e617-4b17-b88a-03d5fe685435\", \"6c082791-284e-4006-93c7-200fe45f823e\", \"kA0XedSJUQYC\", \"9780553480658\", \"B004MPRY7Q\"], \"dc_language\": [\"en\"], \"dc_title\": [\"Anne of Green Gables\"], \"entries\": 65, \"opf\": \"content.opf\", \"sha256\": \"6a64109c380d82204785005cb200bbd7fe2ce3f95c34ed8d407d9ca3a8920392\", \"spine_characters\": 475777, \"spine_heads\": [\"Cover @page {padding: 0pt; margin:0pt} body\", \"WindyPop book\", \"WindyPop book\"], \"spine_items\": 53, \"status\": \"ok\"}",
+      "status": "ok",
+      "tool": "epub_inspect",
+      "truncated": false,
+      "turn": 2,
+      "wall_s": 0.061,
+      "why": "Check spine heads for content anomalies and confirm spine integrity."
+    }
+  ],
+  "tool_modes": [],
+  "turns": [
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 37,
+          "prompt_chars": 4082,
+          "prompt_tokens_estimated": 1360,
+          "prompt_tokens_reported": 1031,
+          "truncated_suspected": false
+        }
+      },
+      "n": 1,
+      "native": {
+        "created_at": "2026-10-19T22:41:10.158596148Z",
+        "done_reason": "stop",
+        "eval_count": 37,
+        "eval_duration": 925543000,
+        "load_duration": 658491,
+        "prompt_eval_count": 1031,
+        "prompt_eval_duration": 461912000,
+        "total_duration": 1621947423
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-785b42b5\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"L. M. Montgomery\", \"language\": \"en\", \"title\": \"Anne of Green Gables\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Anne of Green Gables\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"bytes\\\":390133,\\\"dc_creator\\\":[\\\"L. M. Montgomery\\\"],\\\"dc_language\\\":[\\\"en\\\"],\\\"dc_title\\\":[\\\"Anne of Green Gables\\\"],\\\"entries\\\":65,\\\"opf\\\":\\\"content.opf\\\",\\\"spine_characters\\\":475777,\\\"spine_heads\\\":[\\\"WindyPop book\\\",\\\"WindyPop book\\\",\\\"WindyPop book\\\"],\\\"spine_items\\\":53,\\\"status\\\":\\\"ok\\\"}\", \"status\": \"ok\", \"tool\": \"epub_inspect\", \"truncated\": false}, {\"args\": {\"app\": \"readarr-like\", \"work\": \"Anne of Green Gables\"}, \"id\": \"e2\", \"output\": \"{\\\"expected_author\\\":\\\"L. M. Montgomery\\\",\\\"expected_title\\\":\\\"Anne of Green Gables\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": [\"epub_inspect\", \"arr_lookup\"]}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:41:10.158596148Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"epub_inspect\\\",\\\"args\\\":{},\\\"why\\\":\\\"Verify spine items and metadata to confirm content matches expected title/author and check for corruption.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1621947423,\"load_duration\":658491,\"prompt_eval_count\":1031,\"prompt_eval_cached_count\":590,\"prompt_eval_duration\":461912000,\"eval_count\":37,\"eval_duration\":925543000}",
+        "stderr": "",
+        "wall_seconds": 1.7667873338796198
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Verify spine items and metadata to confirm content matches expected title/author and check for corruption.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1031,
+        "output_tokens": 37
+      },
+      "validation_errors": [],
+      "wall_s": 1.767
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 31,
+          "prompt_chars": 4973,
+          "prompt_tokens_estimated": 1657,
+          "prompt_tokens_reported": 1363,
+          "truncated_suspected": false
+        }
+      },
+      "n": 2,
+      "native": {
+        "created_at": "2026-10-19T22:41:11.494530033Z",
+        "done_reason": "stop",
+        "eval_count": 31,
+        "eval_duration": 745322000,
+        "load_duration": 583767,
+        "prompt_eval_count": 1363,
+        "prompt_eval_duration": 354073000,
+        "total_duration": 1129986793
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-785b42b5\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"L. M. Montgomery\", \"language\": \"en\", \"title\": \"Anne of Green Gables\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Anne of Green Gables\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"bytes\\\":390133,\\\"dc_creator\\\":[\\\"L. M. Montgomery\\\"],\\\"dc_language\\\":[\\\"en\\\"],\\\"dc_title\\\":[\\\"Anne of Green Gables\\\"],\\\"entries\\\":65,\\\"opf\\\":\\\"content.opf\\\",\\\"spine_characters\\\":475777,\\\"spine_heads\\\":[\\\"WindyPop book\\\",\\\"WindyPop book\\\",\\\"WindyPop book\\\"],\\\"spine_items\\\":53,\\\"status\\\":\\\"ok\\\"}\", \"status\": \"ok\", \"tool\": \"epub_inspect\", \"truncated\": false}, {\"args\": {\"app\": \"readarr-like\", \"work\": \"Anne of Green Gables\"}, \"id\": \"e2\", \"output\": \"{\\\"expected_author\\\":\\\"L. M. Montgomery\\\",\\\"expected_title\\\":\\\"Anne of Green Gables\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": [\"epub_inspect\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Verify spine items and metadata to confirm content matches expected title/author and check for corruption.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"epub_inspect\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"bytes\\\": 390133, \\\"dc_creator\\\": [\\\"L. M. Montgomery\\\"], \\\"dc_identifier\\\": [\\\"77b3ac05-e617-4b17-b88a-03d5fe685435\\\", \\\"6c082791-284e-4006-93c7-200fe45f823e\\\", \\\"kA0XedSJUQYC\\\", \\\"9780553480658\\\", \\\"B004MPRY7Q\\\"], \\\"dc_language\\\": [\\\"en\\\"], \\\"dc_title\\\": [\\\"Anne of Green Gables\\\"], \\\"entries\\\": 65, \\\"opf\\\": \\\"content.opf\\\", \\\"sha256\\\": \\\"6a64109c380d82204785005cb200bbd7fe2ce3f95c34ed8d407d9ca3a8920392\\\", \\\"spine_characters\\\": 475777, \\\"spine_heads\\\": [\\\"Cover @page {padding: 0pt; margin:0pt} body\\\", \\\"WindyPop book\\\", \\\"WindyPop book\\\"], \\\"spine_items\\\": 53, \\\"status\\\": \\\"ok\\\"}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:41:11.494530033Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"epub_inspect\\\",\\\"args\\\":{},\\\"why\\\":\\\"Check spine heads for content anomalies and confirm spine integrity.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1129986793,\"load_duration\":583767,\"prompt_eval_count\":1363,\"prompt_eval_cached_count\":1026,\"prompt_eval_duration\":354073000,\"eval_count\":31,\"eval_duration\":745322000}",
+        "stderr": "",
+        "wall_seconds": 1.2568780570290983
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Check spine heads for content anomalies and confirm spine integrity.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1363,
+        "output_tokens": 31
+      },
+      "validation_errors": [],
+      "wall_s": 1.257
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 73,
+          "prompt_chars": 5826,
+          "prompt_tokens_estimated": 1942,
+          "prompt_tokens_reported": 1689,
+          "truncated_suspected": false
+        }
+      },
+      "n": 3,
+      "native": {
+        "created_at": "2026-10-19T22:41:13.806690811Z",
+        "done_reason": "stop",
+        "eval_count": 73,
+        "eval_duration": 1750132000,
+        "load_duration": 1262460,
+        "prompt_eval_count": 1689,
+        "prompt_eval_duration": 351397000,
+        "total_duration": 2135460747
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-785b42b5\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"L. M. Montgomery\", \"language\": \"en\", \"title\": \"Anne of Green Gables\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Anne of Green Gables\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"bytes\\\":390133,\\\"dc_creator\\\":[\\\"L. M. Montgomery\\\"],\\\"dc_language\\\":[\\\"en\\\"],\\\"dc_title\\\":[\\\"Anne of Green Gables\\\"],\\\"entries\\\":65,\\\"opf\\\":\\\"content.opf\\\",\\\"spine_characters\\\":475777,\\\"spine_heads\\\":[\\\"WindyPop book\\\",\\\"WindyPop book\\\",\\\"WindyPop book\\\"],\\\"spine_items\\\":53,\\\"status\\\":\\\"ok\\\"}\", \"status\": \"ok\", \"tool\": \"epub_inspect\", \"truncated\": false}, {\"args\": {\"app\": \"readarr-like\", \"work\": \"Anne of Green Gables\"}, \"id\": \"e2\", \"output\": \"{\\\"expected_author\\\":\\\"L. M. Montgomery\\\",\\\"expected_title\\\":\\\"Anne of Green Gables\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": [\"epub_inspect\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Verify spine items and metadata to confirm content matches expected title/author and check for corruption.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"epub_inspect\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"bytes\\\": 390133, \\\"dc_creator\\\": [\\\"L. M. Montgomery\\\"], \\\"dc_identifier\\\": [\\\"77b3ac05-e617-4b17-b88a-03d5fe685435\\\", \\\"6c082791-284e-4006-93c7-200fe45f823e\\\", \\\"kA0XedSJUQYC\\\", \\\"9780553480658\\\", \\\"B004MPRY7Q\\\"], \\\"dc_language\\\": [\\\"en\\\"], \\\"dc_title\\\": [\\\"Anne of Green Gables\\\"], \\\"entries\\\": 65, \\\"opf\\\": \\\"content.opf\\\", \\\"sha256\\\": \\\"6a64109c380d82204785005cb200bbd7fe2ce3f95c34ed8d407d9ca3a8920392\\\", \\\"spine_characters\\\": 475777, \\\"spine_heads\\\": [\\\"Cover @page {padding: 0pt; margin:0pt} body\\\", \\\"WindyPop book\\\", \\\"WindyPop book\\\"], \\\"spine_items\\\": 53, \\\"status\\\": \\\"ok\\\"}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Check spine heads for content anomalies and confirm spine integrity.\"}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"epub_inspect\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"bytes\\\": 390133, \\\"dc_creator\\\": [\\\"L. M. Montgomery\\\"], \\\"dc_identifier\\\": [\\\"77b3ac05-e617-4b17-b88a-03d5fe685435\\\", \\\"6c082791-284e-4006-93c7-200fe45f823e\\\", \\\"kA0XedSJUQYC\\\", \\\"9780553480658\\\", \\\"B004MPRY7Q\\\"], \\\"dc_language\\\": [\\\"en\\\"], \\\"dc_title\\\": [\\\"Anne of Green Gables\\\"], \\\"entries\\\": 65, \\\"opf\\\": \\\"content.opf\\\", \\\"sha256\\\": \\\"6a64109c380d82204785005cb200bbd7fe2ce3f95c34ed8d407d9ca3a8920392\\\", \\\"spine_characters\\\": 475777, \\\"spine_heads\\\": [\\\"Cover @page {padding: 0pt; margin:0pt} body\\\", \\\"WindyPop book\\\", \\\"WindyPop book\\\"], \\\"spine_items\\\": 53, \\\"status\\\": \\\"ok\\\"}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:41:13.806690811Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"healthy\\\",\\\"action\\\":\\\"none\\\",\\\"target\\\":null,\\\"confidence\\\":0.9,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e2\\\",\\\"t1\\\",\\\"t2\\\"],\\\"reason\\\":\\\"Metadata matches expected author, title, language and epub_inspect reports status ok with 53 spine items and 475777 characters, indicating no defect.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":2135460747,\"load_duration\":1262460,\"prompt_eval_count\":1689,\"prompt_eval_cached_count\":1358,\"prompt_eval_duration\":351397000,\"eval_count\":73,\"eval_duration\":1750132000}",
+        "stderr": "",
+        "wall_seconds": 2.246376186143607
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"decision\",\"class\":\"healthy\",\"action\":\"none\",\"target\":null,\"confidence\":0.9,\"evidence_refs\":[\"e1\",\"e2\",\"t1\",\"t2\"],\"reason\":\"Metadata matches expected author, title, language and epub_inspect reports status ok with 53 spine items and 475777 characters, indicating no defect.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1689,
+        "output_tokens": 73
+      },
+      "validation_errors": [],
+      "wall_s": 2.247
+    }
+  ],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 4083,
+    "output_tokens": 141
+  },
+  "wall": {
+    "case_excl_load_s": 5.409,
+    "load_s": 0.003,
+    "tool_s": [
+      0.075,
+      0.061
+    ],
+    "total_s": 5.411,
+    "turn_s": [
+      1.767,
+      1.257,
+      2.247
+    ]
+  }
+}

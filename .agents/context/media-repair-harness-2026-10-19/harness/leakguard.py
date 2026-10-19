@@ -120,12 +120,22 @@ def find_leaks(case, text, extra_paths=()):
     return sorted({kind for kind, rx in forbidden_tokens(case, extra_paths) if rx.search(text)})
 
 
+REPAIR_PREFIX = 'Your last reply was rejected:'
+
+
 def check_messages(case, messages, extra_paths=()):
     """Guard for a model request: every harness-authored (user) message must be free of forbidden tokens."""
     toks = forbidden_tokens(case, extra_paths)
     for i, m in enumerate(messages):
         if m.get('role') != 'user':
             continue
-        hits = sorted({kind for kind, rx in toks if rx.search(m.get('content', ''))})
+        content = m.get('content', '')
+        mine = toks
+        if content.startswith(REPAIR_PREFIX):
+            # The repair prompt quotes the validator's error, which lists every allowed action and class
+            # (e.g. "action must be one of ... rename ..."). That generic enumeration is not a leak, and checking it
+            # crashed two haiku cases on 2026-10-19 (G9). Everything case-specific is still checked.
+            mine = [(k, rx) for k, rx in toks if k not in ('supported_action', 'truth_class')]
+        hits = sorted({kind for kind, rx in mine if rx.search(content)})
         if hits:
             raise LeakError('forbidden token(s) %s in model-bound message %d' % (hits, i + 1))

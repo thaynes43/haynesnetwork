@@ -87,30 +87,81 @@ def default_stop(model):
     return []
 
 
+ALLOWED_NUM_CTX = (4096, 8192)  # 4096 is the proven-safe value (2026-10-19 retry); 8192 ran on Oct 18; nothing larger
+DEFAULT_NUM_CTX = 4096
+WARMUP_TIMEOUT_S = 900          # a cold NFS load of a 17 GB model took 336 s on 2026-10-19; never time one out at 60 s
+WARMUP_PROMPT = 'Reply with OK'
+
+
+def ollama_options(overrides=None):
+    """The only request options this harness sends to Ollama Prime.  num_ctx is validated; use_mmap, temperature and seed
+    cannot be overridden (the 2026-10-19 21:04 kill followed a request with the server default -c 32768 and mmap)."""
+    o = dict({'num_predict': 384}, **(overrides or {}))
+    num_ctx = o.get('num_ctx', DEFAULT_NUM_CTX)
+    if num_ctx not in ALLOWED_NUM_CTX:
+        raise ValueError('num_ctx %r is not allowed on Ollama Prime (allowed: %s)' % (num_ctx, ALLOWED_NUM_CTX))
+    o.update(num_ctx=num_ctx, use_mmap=False, temperature=0, seed=42)
+    return o
+
+
+def context_check(options, native, chars):
+    """Per-turn truncation record.  Ollama truncates an over-long prompt silently, so the turn is flagged here and the
+    flags are summarised per case.  prompt_eval_count excludes tokens served from the prompt cache, so a character-based
+    estimate (3 chars per token, deliberately pessimistic) is kept next to it."""
+    n = options['num_ctx']
+    prompt, out = native.get('prompt_eval_count'), native.get('eval_count')
+    est = int(chars / 3.0)
+    flags = []
+    if prompt is not None and prompt >= n - 8:
+        flags.append('prompt_at_context_limit')
+    if prompt is not None and out is not None and prompt + out >= n:
+        flags.append('context_full_after_generation')
+    if est >= n:
+        flags.append('estimated_prompt_exceeds_context')
+    if native.get('done_reason') == 'length':
+        flags.append('output_hit_num_predict')
+    return {'num_ctx': n, 'prompt_tokens_reported': prompt, 'output_tokens': out, 'prompt_chars': chars,
+            'prompt_tokens_estimated': est, 'flags': flags, 'truncated_suspected': any(f != 'output_hit_num_predict' for f in flags)}
+
+
 class OllamaAdapter(Adapter):
     name = 'ollama'
 
     def __init__(self, model, api=ot.api, snapshot=ot.snapshot, options=None, keep_alive='2m', stop=None,
-                 schema=TURN_SCHEMA, schema_name='anyof', load_timeout=600, call_timeout=120, do_warmup=True):
+                 schema=TURN_SCHEMA, schema_name='anyof', load_timeout=WARMUP_TIMEOUT_S, call_timeout=120, do_warmup=True,
+                 guard=None):
         super().__init__(model)
         self.api, self.snapshot = api, snapshot
-        self.options = dict({'temperature': 0, 'seed': 42, 'num_ctx': 8192, 'num_predict': 384}, **(options or {}))
+        self.options = ollama_options(options)
         self.keep_alive, self.stop = keep_alive, default_stop(model) if stop is None else stop
         self.schema_name = schema_name
         self.schema, self.load_timeout, self.call_timeout, self.do_warmup = schema, load_timeout, call_timeout, do_warmup
+        self.guard = guard  # a PsiGuard (None only in unit tests that do not exercise it)
         self.loaded_by_us = False
         self.model_info = {}
         self.last_preflight = {}  # kept even when preflight aborts, so the run manifest shows why
 
     def config(self):
         return {'adapter': self.name, 'model': self.requested_model, 'options': self.options, 'stop': self.stop,
-                'think': False, 'keep_alive': self.keep_alive, 'format': 'TURN_SCHEMA:' + self.schema_name}
+                'think': False, 'keep_alive': self.keep_alive, 'stream': False, 'format': 'TURN_SCHEMA:' + self.schema_name,
+                'warmup_timeout_s': self.load_timeout, 'call_timeout_s': self.call_timeout,
+                'psi_guard': ({'threshold': self.guard.threshold, 'interval_s': self.guard.interval, 'consecutive': self.guard.consecutive}
+                              if self.guard else None)}
+
+    def _cancel(self):
+        return self.guard.cancel if self.guard else None
+
+    def _call(self, path, payload=None, timeout=60):
+        return self.api(path, payload, timeout=timeout, **({'cancel': self._cancel()} if self.guard else {}))
 
     def _residents(self):
         ps, receipt = self.api('/api/ps')
         if ps is None:
             raise AbortRun('cannot read /api/ps (%s); refusing to touch the GPU blind' % receipt.get('exit_code'))
         return [m.get('name') or m.get('model') for m in ps.get('models', [])]
+
+    def _guard_trip(self):
+        return self.guard.tripped if self.guard else None
 
     def preflight(self):
         ver, _ = self.api('/api/version')
@@ -120,10 +171,10 @@ class OllamaAdapter(Adapter):
         residents = self._residents()
         snap = self.snapshot()
         report = self.last_preflight = {'residents_before': residents, 'resources_before': snap}
-        foreign = [r for r in residents if r != self.requested_model]
-        if foreign:
-            raise AbortRun('GPU busy: model(s) %s resident that this run did not load; not evicting' % foreign)
-        if not residents and snap.get('compute_processes'):
+        if residents:
+            # even our own tag: a model this run did not load is somebody else's (or a stale load) and is never reused or evicted
+            raise AbortRun('GPU busy: model(s) %s resident before this batch started; /api/ps must be empty, not evicting' % residents)
+        if snap.get('compute_processes'):
             raise AbortRun('GPU has an existing compute owner: %s' % snap['compute_processes'])
         installed = next((m for m in tags.get('models', []) if m.get('name') == self.requested_model), None)
         if not installed:
@@ -131,15 +182,24 @@ class OllamaAdapter(Adapter):
         self.runtime_version = (ver or {}).get('version')
         self.model_digest = installed.get('digest')
         self.model_info = {'details': installed.get('details'), 'size': installed.get('size')}
-        self.loaded_by_us = not residents
-        report.update(self.describe(), model_info=self.model_info, loaded_by_us=self.loaded_by_us)
+        if self.guard:
+            self.guard.start()  # baseline pod identity + stall counter before the GPU is touched
+            report['psi_baseline'] = self.guard.samples[-1]
+            if self.guard.tripped:
+                raise AbortRun('guard tripped before the load: %s' % self.guard.tripped)
+        report.update(self.describe(), model_info=self.model_info, loaded_by_us=False)
         if self.do_warmup:
+            self.loaded_by_us = True  # from here on a stop must unload it
             t = time.monotonic()
-            resp, rc = self.api('/api/generate', {'model': self.requested_model, 'prompt': '', 'stream': False,
-                                                  'keep_alive': self.keep_alive}, timeout=self.load_timeout)
+            resp, rc = self._call('/api/generate', {'model': self.requested_model, 'prompt': WARMUP_PROMPT, 'stream': False, 'think': False,
+                                                    'keep_alive': self.keep_alive, 'options': dict(self.options, num_predict=256)},
+                                  timeout=self.load_timeout)
+            report['loaded_by_us'] = True
             report['warmup'] = {'wall_s': round(time.monotonic() - t, 3), 'ok': resp is not None and not resp.get('error'),
                                 'load_duration_ns': (resp or {}).get('load_duration'), 'error': (resp or {}).get('error'),
                                 'exit_code': rc.get('exit_code')}
+            if self._guard_trip():
+                raise AbortRun('guard tripped during the load: %s' % self._guard_trip())
             if resp is None or resp.get('error'):
                 # a half-finished load may still be running: do not unload, do not replay
                 self.loaded_by_us = False
@@ -147,6 +207,9 @@ class OllamaAdapter(Adapter):
         return report
 
     def before_case(self):
+        trip = self._guard_trip() or (self.guard.check() if self.guard else None)
+        if trip:
+            raise AbortRun('guard: %s' % trip)
         foreign = [r for r in self._residents() if r != self.requested_model]
         if foreign:
             raise AbortRun('resident_owner_changed_no_eviction: %s' % foreign)
@@ -156,8 +219,11 @@ class OllamaAdapter(Adapter):
                 'keep_alive': self.keep_alive, 'options': dict(self.options, **({'stop': self.stop} if self.stop else {})),
                 'messages': [{'role': 'system', 'content': system}] + messages}
         started = time.monotonic()
-        resp, receipt = self.api('/api/chat', body, timeout=self.call_timeout)
+        resp, receipt = self._call('/api/chat', body, timeout=self.call_timeout)
         wall = time.monotonic() - started
+        if self._guard_trip():
+            # recorded as a failed case (forced escalate); the next before_case() aborts the batch
+            raise AdapterError('request cancelled, PSI/restart guard tripped: %s' % self._guard_trip())
         if resp is None:
             raise AdapterError('ollama transport failure: %s' % json.dumps({k: receipt.get(k) for k in ('exit_code', 'http_status', 'stderr')})[:400])
         if resp.get('error'):
@@ -165,18 +231,25 @@ class OllamaAdapter(Adapter):
         native = {k: resp.get(k) for k in ('total_duration', 'load_duration', 'prompt_eval_count', 'prompt_eval_duration',
                                            'eval_count', 'eval_duration', 'done_reason', 'created_at')}
         usage = {'input_tokens': resp.get('prompt_eval_count'), 'output_tokens': resp.get('eval_count'), 'cost_usd': None}
+        chars = len(system) + sum(len(m['content']) for m in messages)
         return Completion((resp.get('message') or {}).get('content', ''), body, receipt, response_model=resp.get('model'),
-                          usage=usage, wall_s=wall, load_s=(resp.get('load_duration') or 0) / 1e9, native=native)
+                          usage=usage, wall_s=wall, load_s=(resp.get('load_duration') or 0) / 1e9, native=native,
+                          meta={'context': context_check(self.options, native, chars)})
 
     def finish(self):
         report = {'unloaded': False}
         try:
+            if self.guard:
+                self.guard.stop()
             if self.loaded_by_us:
                 resp, rc = self.api('/api/generate', {'model': self.requested_model, 'keep_alive': 0, 'stream': False}, timeout=60)
                 report.update(unloaded=resp is not None and not resp.get('error'), unload_response=resp)
             ps, _ = self.api('/api/ps')
             report['residents_after'] = None if ps is None else [m.get('name') for m in ps.get('models', [])]
             report['resources_after'] = self.snapshot()
+            if self.guard:
+                self.guard.sample()  # one more reading after the unload
+                report['psi_guard'] = dict(self.guard.summary(), samples_detail=self.guard.samples[-200:])
         except Exception as e:  # noqa: BLE001 - reporting only
             report['error'] = str(e)[:200]
         return report
@@ -252,6 +325,14 @@ def parse_claude(raw, stderr, returncode, req, wall):
 
 
 CODEX_FLAGS = ['--json', '-s', 'read-only', '--skip-git-repo-check', '--ignore-user-config', '--ignore-rules']
+# Codex's own tool definitions cost about 5k tokens per turn that this protocol never uses (the model answers in JSON and the
+# harness runs our tools).  Measured 2026-10-19 with gpt-6-luna on a one-line prompt: 27.1k input tokens with the flags above,
+# 22.2k with these overrides (web search, shell, apps, browser/computer use, multi-agent, plugins, image generation, ... off).
+# Disabling the shell tool also means the model cannot run anything natively.  The rest (about 22k) is Codex's fixed system prompt.
+CODEX_TRIM_FEATURES = ['multi_agent', 'image_generation', 'plugins', 'skill_search', 'goals', 'hooks', 'sleep_tool', 'view_image',
+                       'unified_exec', 'shell_tool', 'write_stdin_approval', 'tool_suggest', 'worktrees', 'remote_plugin', 'apps',
+                       'browser_use', 'computer_use']
+CODEX_TRIM = ['-c', 'web_search="disabled"'] + [x for f in CODEX_TRIM_FEATURES for x in ('-c', 'features.%s=false' % f)]
 NATIVE_TOOL_ITEMS = ('command_execution', 'mcp_tool_call', 'file_change', 'web_search', 'collab_tool_call')
 
 
@@ -266,7 +347,7 @@ class CodexAdapter(Adapter):
 
     def config(self):
         return {'adapter': self.name, 'model': self.requested_model, 'effort': self.effort, 'flags': CODEX_FLAGS,
-                'ephemeral': not self.record_session}
+                'trim': CODEX_TRIM, 'ephemeral': not self.record_session}
 
     def preflight(self):
         if not shutil.which('codex'):
@@ -276,7 +357,7 @@ class CodexAdapter(Adapter):
         return self.describe()
 
     def argv(self):
-        cmd = ['codex', 'exec'] + CODEX_FLAGS + ['-m', self.requested_model, '-C', self.workdir]
+        cmd = ['codex', 'exec'] + CODEX_FLAGS + CODEX_TRIM + ['-m', self.requested_model, '-C', self.workdir]
         if not self.record_session:
             cmd.append('--ephemeral')
         if self.effort:

@@ -43,15 +43,16 @@ class ToolResult:
         assert status in ('ok', 'partial', 'error', 'timeout')
         self.status, self.output, self.extra = status, output, extra
 
-    def bounded(self, redactor=None):
+    def bounded(self, redactor=None, cap=None):
         text = self.output if isinstance(self.output, str) else json.dumps(self.output, sort_keys=True, ensure_ascii=False)
         if redactor:
             text = redactor(text)  # fixture names encode the answer; redact before bounding
         raw = text.encode('utf-8')
-        truncated = len(raw) > TOOL_OUTPUT_BYTES
+        limit = cap or TOOL_OUTPUT_BYTES
+        truncated = len(raw) > limit
         if truncated:
             marker = ' ...[truncated]'
-            text = raw[:TOOL_OUTPUT_BYTES - len(marker.encode())].decode('utf-8', errors='ignore') + marker
+            text = raw[:limit - len(marker.encode())].decode('utf-8', errors='ignore') + marker
         return {'status': self.status, 'output': text, 'truncated': truncated, **self.extra}
 
 
@@ -107,6 +108,7 @@ class Context:
         self.case, self.fixture, self.scratch = case, fixture, Path(scratch)
         self.runner, self.which, self.ocr_backend = runner, which, ocr_backend
         self.suite_dir, self.replay, self.replay_rec = suite_dir, replay, None
+        self.output_cap = None  # per-run cap on one tool result (None = protocol default)
         extra = [fixture.path] if getattr(fixture, 'path', None) else []
         self.redact = lambda text: leakguard.redact(text, case, extra)
         self.forbidden_extra = extra
@@ -619,6 +621,6 @@ def call_tool(ctx, name, args):
             pool.shutdown(wait=False)
         if inject and inject.get('tool') == name:
             res = _failure(inject.get('mode', 'error'), name, res)
-    out = res.bounded(ctx.redact)
+    out = res.bounded(ctx.redact, cap=ctx.output_cap)
     out['wall_s'] = round(time.monotonic() - started, 3)
     return out

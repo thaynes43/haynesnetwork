@@ -1,0 +1,1335 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "blocklist_and_search",
+      "class": "identity_mismatch",
+      "target": "Quiet Orbit (2019).mkv"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "movie-identity-002",
+  "case_sha256": "16e054992182eca1e35eea0fd627bf4be94da6dc07dc6c420f5925318a0c4d63",
+  "config_hash": "13a4d71c1fe4faa87c03b1a3e6c2d45015e2f968402e16dddced34282f903a15",
+  "context_check": {
+    "flags": [],
+    "max_prompt_tokens_estimated": 2685,
+    "max_prompt_tokens_reported": 2269,
+    "num_ctx": 4096,
+    "truncated_suspected": false,
+    "turns_checked": 6
+  },
+  "decision": {
+    "action": "blocklist_and_search",
+    "class": "identity_mismatch",
+    "confidence": 0.9,
+    "evidence_refs": [
+      "e1",
+      "e3",
+      "e4",
+      "t1",
+      "t5"
+    ],
+    "reason": "File tags title Paper Kingdom and OCR shows PAPER KINGDOM, not Quiet Orbit. Duration 11.046s mismatches expected 8s theatrical/12s extended. Content is a different work.",
+    "target": "Quiet Orbit (2019).mkv",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "60f4df0b9835b7d2c7ddd80b22331fd4257af916612b54fcf93a7c8f7e5d115a",
+    "bytes": 120841,
+    "declared_sha256": "60f4df0b9835b7d2c7ddd80b22331fd4257af916612b54fcf93a7c8f7e5d115a",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "c61b6c621103b2a817d9ea887fdbc0aa05276ab5",
+  "injected_failure": null,
+  "model_case_alias": "case-b3cda205",
+  "model_digest": "de878ce33ad81d060001db1469a02eebe4d86f0ad58cfe52dc062fdcbe4464c1",
+  "model_digest_na_reason": null,
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "muse-glimmer:30b",
+  "response_model_ids": [
+    "muse-glimmer:30b"
+  ],
+  "run_id": "dev-v1-ollama-muse-glimmer-30b",
+  "runtime_version": "0.40.6",
+  "split": "dev",
+  "started_at": "2026-10-19T22:43:17.888461+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [
+    {
+      "args": {},
+      "id": "t1",
+      "mode": "replay",
+      "output": "{\"chapters\": [], \"exit_code\": 0, \"format\": {\"bit_rate\": \"87518\", \"duration\": \"11.046000\", \"format_name\": \"matroska,webm\", \"size\": \"120841\", \"tags\": {\"title\": \"Paper Kingdom\"}}, \"stderr\": \"\", \"streams\": [{\"codec_name\": \"h264\", \"codec_type\": \"video\", \"height\": 192, \"index\": 0, \"pix_fmt\": \"yuv420p\", \"profile\": \"High\", \"tags\": {}, \"width\": 256}, {\"channels\": 1, \"codec_name\": \"aac\", \"codec_type\": \"audio\", \"index\": 1, \"profile\": \"LC\", \"sample_rate\": \"22050\", \"tags\": {}}]}",
+      "status": "ok",
+      "tool": "ffprobe",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.001,
+      "why": "Verify duration and tags to confirm identity mismatch vs expected runtime"
+    },
+    {
+      "args": {
+        "at": 5
+      },
+      "id": "t2",
+      "mode": "replay",
+      "output": "{\"at_s\": 4, \"clean\": true, \"exit_code\": 0, \"frames\": 40, \"note\": \"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\", \"note_window\": \"replay serves the recorded window at ss=4 (recorded: [0, 4, 8, 12])\", \"out_time\": \"00:00:04.000000\", \"quota_exhausted\": false, \"requested_at_s\": 5.0, \"stderr\": \"\", \"window_s\": 4}",
+      "status": "ok",
+      "tool": "decode_sample",
+      "truncated": false,
+      "turn": 2,
+      "wall_s": 0.001,
+      "why": "Check decodability mid-file to rule out corruption"
+    },
+    {
+      "args": {
+        "at": 6
+      },
+      "id": "t3",
+      "mode": "replay",
+      "output": "{\"frame\": \"frame@6\", \"note\": \"no image is available in replay mode; call ocr with this frame to read the recorded on-screen text\", \"replay\": true}",
+      "status": "ok",
+      "tool": "frame_sample",
+      "truncated": false,
+      "turn": 3,
+      "wall_s": 0.001,
+      "why": "Sample a frame near expected runtime to see if content matches title"
+    },
+    {
+      "args": {
+        "at": 6
+      },
+      "id": "t4",
+      "mode": "replay",
+      "output": "{\"consensus\": true, \"note\": \"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\", \"t_s\": 6.0, \"text\": \"\"}",
+      "status": "ok",
+      "tool": "ocr",
+      "truncated": false,
+      "turn": 4,
+      "wall_s": 0.001,
+      "why": "Read on-screen text to confirm content identity"
+    },
+    {
+      "args": {
+        "app": "radarr",
+        "movie": "Quiet Orbit"
+      },
+      "id": "t5",
+      "mode": "stub",
+      "output": "{\"note\": \"case-provided records only; no live arr call was made\", \"records\": [{\"args\": {\"app\": \"radarr\", \"movie\": \"Quiet Orbit\"}, \"record\": \"{\\\"alternate_titles\\\":[\\\"Orbite Silencieuse\\\"],\\\"app\\\":\\\"radarr\\\",\\\"editions\\\":{\\\"Extended Cut\\\":{\\\"runtime_s\\\":12},\\\"Theatrical\\\":{\\\"runtime_s\\\":8}},\\\"file\\\":{\\\"relativePath\\\":\\\"Quiet Orbit (2019).mkv\\\",\\\"size\\\":120841},\\\"movie\\\":\\\"Quiet Orbit\\\",\\\"year\\\":2019}\"}], \"stub\": true}",
+      "status": "ok",
+      "tool": "arr_lookup",
+      "truncated": false,
+      "turn": 5,
+      "wall_s": 0.001,
+      "why": "Confirm expected runtime and editions for comparison"
+    }
+  ],
+  "tool_modes": [
+    "replay",
+    "stub"
+  ],
+  "turns": [
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 30,
+          "prompt_chars": 4951,
+          "prompt_tokens_estimated": 1650,
+          "prompt_tokens_reported": 1299,
+          "truncated_suspected": false
+        }
+      },
+      "n": 1,
+      "native": {
+        "created_at": "2026-10-19T22:43:19.570124752Z",
+        "done_reason": "stop",
+        "eval_count": 30,
+        "eval_duration": 798628000,
+        "load_duration": 800035,
+        "prompt_eval_count": 1299,
+        "prompt_eval_duration": 741530000,
+        "total_duration": 1559966017
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-b3cda205\", \"context\": {\"arr\": {\"app\": \"radarr\", \"ids\": {\"movieFileId\": 990401, \"movieId\": 990301, \"note\": \"fictional ids\"}}, \"expected\": {\"aliases\": [\"Orbite Silencieuse\"], \"language\": \"en\", \"runtime_s\": 8, \"title\": \"Quiet Orbit\", \"year\": 2019}, \"filename\": \"Quiet Orbit (2019).mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Quiet Orbit (2019)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"87518\\\",\\\"duration\\\":\\\"11.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"120841\\\",\\\"tags\\\":{\\\"title\\\":\\\"Paper Kingdom\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 1.0}, \"id\": \"e3\", \"output\": \"PAPER KINGDOM\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}, {\"args\": {\"app\": \"radarr\", \"movie\": \"Quiet Orbit\"}, \"id\": \"e4\", \"output\": \"{\\\"alternate_titles\\\":[\\\"Orbite Silencieuse\\\"],\\\"app\\\":\\\"radarr\\\",\\\"editions\\\":{\\\"Extended Cut\\\":{\\\"runtime_s\\\":12},\\\"Theatrical\\\":{\\\"runtime_s\\\":8}},\\\"file\\\":{\\\"relativePath\\\":\\\"Quiet Orbit (2019).mkv\\\",\\\"size\\\":120841},\\\"movie\\\":\\\"Quiet Orbit\\\",\\\"year\\\":2019}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"movie\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:43:19.570124752Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"ffprobe\\\",\\\"args\\\":{},\\\"why\\\":\\\"Verify duration and tags to confirm identity mismatch vs expected runtime\\\" }\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1559966017,\"load_duration\":800035,\"prompt_eval_count\":1299,\"prompt_eval_cached_count\":589,\"prompt_eval_duration\":741530000,\"eval_count\":30,\"eval_duration\":798628000}",
+        "stderr": "",
+        "wall_seconds": 1.6762233497574925
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Verify duration and tags to confirm identity mismatch vs expected runtime\" }",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1299,
+        "output_tokens": 30
+      },
+      "validation_errors": [],
+      "wall_s": 1.676
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 32,
+          "prompt_chars": 5762,
+          "prompt_tokens_estimated": 1920,
+          "prompt_tokens_reported": 1556,
+          "truncated_suspected": false
+        }
+      },
+      "n": 2,
+      "native": {
+        "created_at": "2026-10-19T22:43:20.847209903Z",
+        "done_reason": "stop",
+        "eval_count": 32,
+        "eval_duration": 785748000,
+        "load_duration": 664411,
+        "prompt_eval_count": 1556,
+        "prompt_eval_duration": 342458000,
+        "total_duration": 1154951579
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-b3cda205\", \"context\": {\"arr\": {\"app\": \"radarr\", \"ids\": {\"movieFileId\": 990401, \"movieId\": 990301, \"note\": \"fictional ids\"}}, \"expected\": {\"aliases\": [\"Orbite Silencieuse\"], \"language\": \"en\", \"runtime_s\": 8, \"title\": \"Quiet Orbit\", \"year\": 2019}, \"filename\": \"Quiet Orbit (2019).mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Quiet Orbit (2019)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"87518\\\",\\\"duration\\\":\\\"11.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"120841\\\",\\\"tags\\\":{\\\"title\\\":\\\"Paper Kingdom\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 1.0}, \"id\": \"e3\", \"output\": \"PAPER KINGDOM\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}, {\"args\": {\"app\": \"radarr\", \"movie\": \"Quiet Orbit\"}, \"id\": \"e4\", \"output\": \"{\\\"alternate_titles\\\":[\\\"Orbite Silencieuse\\\"],\\\"app\\\":\\\"radarr\\\",\\\"editions\\\":{\\\"Extended Cut\\\":{\\\"runtime_s\\\":12},\\\"Theatrical\\\":{\\\"runtime_s\\\":8}},\\\"file\\\":{\\\"relativePath\\\":\\\"Quiet Orbit (2019).mkv\\\",\\\"size\\\":120841},\\\"movie\\\":\\\"Quiet Orbit\\\",\\\"year\\\":2019}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"movie\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Verify duration and tags to confirm identity mismatch vs expected runtime\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"87518\\\", \\\"duration\\\": \\\"11.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"120841\\\", \\\"tags\\\": {\\\"title\\\": \\\"Paper Kingdom\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:43:20.847209903Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"decode_sample\\\",\\\"args\\\":{\\\"at\\\":5},\\\"why\\\":\\\"Check decodability mid-file to rule out corruption\\\" }\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1154951579,\"load_duration\":664411,\"prompt_eval_count\":1556,\"prompt_eval_cached_count\":1294,\"prompt_eval_duration\":342458000,\"eval_count\":32,\"eval_duration\":785748000}",
+        "stderr": "",
+        "wall_seconds": 1.2757298308424652
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":5},\"why\":\"Check decodability mid-file to rule out corruption\" }",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1556,
+        "output_tokens": 32
+      },
+      "validation_errors": [],
+      "wall_s": 1.276
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 34,
+          "prompt_chars": 6409,
+          "prompt_tokens_estimated": 2136,
+          "prompt_tokens_reported": 1766,
+          "truncated_suspected": false
+        }
+      },
+      "n": 3,
+      "native": {
+        "created_at": "2026-10-19T22:43:22.089067712Z",
+        "done_reason": "stop",
+        "eval_count": 34,
+        "eval_duration": 820396000,
+        "load_duration": 873318,
+        "prompt_eval_count": 1766,
+        "prompt_eval_duration": 282274000,
+        "total_duration": 1134861803
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-b3cda205\", \"context\": {\"arr\": {\"app\": \"radarr\", \"ids\": {\"movieFileId\": 990401, \"movieId\": 990301, \"note\": \"fictional ids\"}}, \"expected\": {\"aliases\": [\"Orbite Silencieuse\"], \"language\": \"en\", \"runtime_s\": 8, \"title\": \"Quiet Orbit\", \"year\": 2019}, \"filename\": \"Quiet Orbit (2019).mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Quiet Orbit (2019)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"87518\\\",\\\"duration\\\":\\\"11.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"120841\\\",\\\"tags\\\":{\\\"title\\\":\\\"Paper Kingdom\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 1.0}, \"id\": \"e3\", \"output\": \"PAPER KINGDOM\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}, {\"args\": {\"app\": \"radarr\", \"movie\": \"Quiet Orbit\"}, \"id\": \"e4\", \"output\": \"{\\\"alternate_titles\\\":[\\\"Orbite Silencieuse\\\"],\\\"app\\\":\\\"radarr\\\",\\\"editions\\\":{\\\"Extended Cut\\\":{\\\"runtime_s\\\":12},\\\"Theatrical\\\":{\\\"runtime_s\\\":8}},\\\"file\\\":{\\\"relativePath\\\":\\\"Quiet Orbit (2019).mkv\\\",\\\"size\\\":120841},\\\"movie\\\":\\\"Quiet Orbit\\\",\\\"year\\\":2019}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"movie\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Verify duration and tags to confirm identity mismatch vs expected runtime\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"87518\\\", \\\"duration\\\": \\\"11.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"120841\\\", \\\"tags\\\": {\\\"title\\\": \\\"Paper Kingdom\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":5},\"why\":\"Check decodability mid-file to rule out corruption\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": true, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"note_window\\\": \\\"replay serves the recorded window at ss=4 (recorded: [0, 4, 8, 12])\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"requested_at_s\\\": 5.0, \\\"stderr\\\": \\\"\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:43:22.089067712Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"frame_sample\\\",\\\"args\\\":{\\\"at\\\":6},\\\"why\\\":\\\"Sample a frame near expected runtime to see if content matches title\\\" }\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1134861803,\"load_duration\":873318,\"prompt_eval_count\":1766,\"prompt_eval_cached_count\":1551,\"prompt_eval_duration\":282274000,\"eval_count\":34,\"eval_duration\":820396000}",
+        "stderr": "",
+        "wall_seconds": 1.2395183336921036
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{\"at\":6},\"why\":\"Sample a frame near expected runtime to see if content matches title\" }",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1766,
+        "output_tokens": 34
+      },
+      "validation_errors": [],
+      "wall_s": 1.24
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 29,
+          "prompt_chars": 6837,
+          "prompt_tokens_estimated": 2279,
+          "prompt_tokens_reported": 1892,
+          "truncated_suspected": false
+        }
+      },
+      "n": 4,
+      "native": {
+        "created_at": "2026-10-19T22:43:23.177518591Z",
+        "done_reason": "stop",
+        "eval_count": 29,
+        "eval_duration": 731000000,
+        "load_duration": 826075,
+        "prompt_eval_count": 1892,
+        "prompt_eval_duration": 206893000,
+        "total_duration": 975623330
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-b3cda205\", \"context\": {\"arr\": {\"app\": \"radarr\", \"ids\": {\"movieFileId\": 990401, \"movieId\": 990301, \"note\": \"fictional ids\"}}, \"expected\": {\"aliases\": [\"Orbite Silencieuse\"], \"language\": \"en\", \"runtime_s\": 8, \"title\": \"Quiet Orbit\", \"year\": 2019}, \"filename\": \"Quiet Orbit (2019).mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Quiet Orbit (2019)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"87518\\\",\\\"duration\\\":\\\"11.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"120841\\\",\\\"tags\\\":{\\\"title\\\":\\\"Paper Kingdom\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 1.0}, \"id\": \"e3\", \"output\": \"PAPER KINGDOM\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}, {\"args\": {\"app\": \"radarr\", \"movie\": \"Quiet Orbit\"}, \"id\": \"e4\", \"output\": \"{\\\"alternate_titles\\\":[\\\"Orbite Silencieuse\\\"],\\\"app\\\":\\\"radarr\\\",\\\"editions\\\":{\\\"Extended Cut\\\":{\\\"runtime_s\\\":12},\\\"Theatrical\\\":{\\\"runtime_s\\\":8}},\\\"file\\\":{\\\"relativePath\\\":\\\"Quiet Orbit (2019).mkv\\\",\\\"size\\\":120841},\\\"movie\\\":\\\"Quiet Orbit\\\",\\\"year\\\":2019}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"movie\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Verify duration and tags to confirm identity mismatch vs expected runtime\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"87518\\\", \\\"duration\\\": \\\"11.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"120841\\\", \\\"tags\\\": {\\\"title\\\": \\\"Paper Kingdom\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":5},\"why\":\"Check decodability mid-file to rule out corruption\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": true, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"note_window\\\": \\\"replay serves the recorded window at ss=4 (recorded: [0, 4, 8, 12])\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"requested_at_s\\\": 5.0, \\\"stderr\\\": \\\"\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{\"at\":6},\"why\":\"Sample a frame near expected runtime to see if content matches title\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"frame_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"frame\\\": \\\"frame@6\\\", \\\"note\\\": \\\"no image is available in replay mode; call ocr with this frame to read the recorded on-screen text\\\", \\\"replay\\\": true}\", \"tool_calls_remaining\": 3}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:43:23.177518591Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"ocr\\\",\\\"args\\\":{\\\"at\\\":6},\\\"why\\\":\\\"Read on-screen text to confirm content identity\\\" }\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":975623330,\"load_duration\":826075,\"prompt_eval_count\":1892,\"prompt_eval_cached_count\":1761,\"prompt_eval_duration\":206893000,\"eval_count\":29,\"eval_duration\":731000000}",
+        "stderr": "",
+        "wall_seconds": 1.0863483981229365
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":6},\"why\":\"Read on-screen text to confirm content identity\" }",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 1892,
+        "output_tokens": 29
+      },
+      "validation_errors": [],
+      "wall_s": 1.087
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 35,
+          "prompt_chars": 7269,
+          "prompt_tokens_estimated": 2423,
+          "prompt_tokens_reported": 2029,
+          "truncated_suspected": false
+        }
+      },
+      "n": 5,
+      "native": {
+        "created_at": "2026-10-19T22:43:26.492373334Z",
+        "done_reason": "stop",
+        "eval_count": 35,
+        "eval_duration": 2167055000,
+        "load_duration": 701912,
+        "prompt_eval_count": 2029,
+        "prompt_eval_duration": 983552000,
+        "total_duration": 3192703893
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-b3cda205\", \"context\": {\"arr\": {\"app\": \"radarr\", \"ids\": {\"movieFileId\": 990401, \"movieId\": 990301, \"note\": \"fictional ids\"}}, \"expected\": {\"aliases\": [\"Orbite Silencieuse\"], \"language\": \"en\", \"runtime_s\": 8, \"title\": \"Quiet Orbit\", \"year\": 2019}, \"filename\": \"Quiet Orbit (2019).mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Quiet Orbit (2019)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"87518\\\",\\\"duration\\\":\\\"11.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"120841\\\",\\\"tags\\\":{\\\"title\\\":\\\"Paper Kingdom\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 1.0}, \"id\": \"e3\", \"output\": \"PAPER KINGDOM\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}, {\"args\": {\"app\": \"radarr\", \"movie\": \"Quiet Orbit\"}, \"id\": \"e4\", \"output\": \"{\\\"alternate_titles\\\":[\\\"Orbite Silencieuse\\\"],\\\"app\\\":\\\"radarr\\\",\\\"editions\\\":{\\\"Extended Cut\\\":{\\\"runtime_s\\\":12},\\\"Theatrical\\\":{\\\"runtime_s\\\":8}},\\\"file\\\":{\\\"relativePath\\\":\\\"Quiet Orbit (2019).mkv\\\",\\\"size\\\":120841},\\\"movie\\\":\\\"Quiet Orbit\\\",\\\"year\\\":2019}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"movie\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Verify duration and tags to confirm identity mismatch vs expected runtime\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"87518\\\", \\\"duration\\\": \\\"11.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"120841\\\", \\\"tags\\\": {\\\"title\\\": \\\"Paper Kingdom\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":5},\"why\":\"Check decodability mid-file to rule out corruption\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": true, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"note_window\\\": \\\"replay serves the recorded window at ss=4 (recorded: [0, 4, 8, 12])\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"requested_at_s\\\": 5.0, \\\"stderr\\\": \\\"\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{\"at\":6},\"why\":\"Sample a frame near expected runtime to see if content matches title\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"frame_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"frame\\\": \\\"frame@6\\\", \\\"note\\\": \\\"no image is available in replay mode; call ocr with this frame to read the recorded on-screen text\\\", \\\"replay\\\": true}\", \"tool_calls_remaining\": 3}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":6},\"why\":\"Read on-screen text to confirm content identity\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t4\", \"tool\": \"ocr\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"consensus\\\": true, \\\"note\\\": \\\"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\\\", \\\"t_s\\\": 6.0, \\\"text\\\": \\\"\\\"}\", \"tool_calls_remaining\": 2}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:43:26.492373334Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"arr_lookup\\\",\\\"args\\\":{\\\"app\\\":\\\"radarr\\\",\\\"movie\\\":\\\"Quiet Orbit\\\"},\\\"why\\\":\\\"Confirm expected runtime and editions for comparison\\\" }\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":3192703893,\"load_duration\":701912,\"prompt_eval_count\":2029,\"prompt_eval_cached_count\":1887,\"prompt_eval_duration\":983552000,\"eval_count\":35,\"eval_duration\":2167055000}",
+        "stderr": "",
+        "wall_seconds": 3.3136717448942363
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"args\":{\"app\":\"radarr\",\"movie\":\"Quiet Orbit\"},\"why\":\"Confirm expected runtime and editions for comparison\" }",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 2029,
+        "output_tokens": 35
+      },
+      "validation_errors": [],
+      "wall_s": 3.314
+    },
+    {
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 4096,
+          "output_tokens": 98,
+          "prompt_chars": 8057,
+          "prompt_tokens_estimated": 2685,
+          "prompt_tokens_reported": 2269,
+          "truncated_suspected": false
+        }
+      },
+      "n": 6,
+      "native": {
+        "created_at": "2026-10-19T22:43:30.707712863Z",
+        "done_reason": "stop",
+        "eval_count": 98,
+        "eval_duration": 3595788000,
+        "load_duration": 734543,
+        "prompt_eval_count": 2269,
+        "prompt_eval_duration": 451446000,
+        "total_duration": 4096657086
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "args",
+                "why"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate",
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "confidence",
+                "evidence_refs",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-b3cda205\", \"context\": {\"arr\": {\"app\": \"radarr\", \"ids\": {\"movieFileId\": 990401, \"movieId\": 990301, \"note\": \"fictional ids\"}}, \"expected\": {\"aliases\": [\"Orbite Silencieuse\"], \"language\": \"en\", \"runtime_s\": 8, \"title\": \"Quiet Orbit\", \"year\": 2019}, \"filename\": \"Quiet Orbit (2019).mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Quiet Orbit (2019)\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"87518\\\",\\\"duration\\\":\\\"11.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"120841\\\",\\\"tags\\\":{\\\"title\\\":\\\"Paper Kingdom\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 1.0}, \"id\": \"e3\", \"output\": \"PAPER KINGDOM\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}, {\"args\": {\"app\": \"radarr\", \"movie\": \"Quiet Orbit\"}, \"id\": \"e4\", \"output\": \"{\\\"alternate_titles\\\":[\\\"Orbite Silencieuse\\\"],\\\"app\\\":\\\"radarr\\\",\\\"editions\\\":{\\\"Extended Cut\\\":{\\\"runtime_s\\\":12},\\\"Theatrical\\\":{\\\"runtime_s\\\":8}},\\\"file\\\":{\\\"relativePath\\\":\\\"Quiet Orbit (2019).mkv\\\",\\\"size\\\":120841},\\\"movie\\\":\\\"Quiet Orbit\\\",\\\"year\\\":2019}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"movie\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"Verify duration and tags to confirm identity mismatch vs expected runtime\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ffprobe\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"chapters\\\": [], \\\"exit_code\\\": 0, \\\"format\\\": {\\\"bit_rate\\\": \\\"87518\\\", \\\"duration\\\": \\\"11.046000\\\", \\\"format_name\\\": \\\"matroska,webm\\\", \\\"size\\\": \\\"120841\\\", \\\"tags\\\": {\\\"title\\\": \\\"Paper Kingdom\\\"}}, \\\"stderr\\\": \\\"\\\", \\\"streams\\\": [{\\\"codec_name\\\": \\\"h264\\\", \\\"codec_type\\\": \\\"video\\\", \\\"height\\\": 192, \\\"index\\\": 0, \\\"pix_fmt\\\": \\\"yuv420p\\\", \\\"profile\\\": \\\"High\\\", \\\"tags\\\": {}, \\\"width\\\": 256}, {\\\"channels\\\": 1, \\\"codec_name\\\": \\\"aac\\\", \\\"codec_type\\\": \\\"audio\\\", \\\"index\\\": 1, \\\"profile\\\": \\\"LC\\\", \\\"sample_rate\\\": \\\"22050\\\", \\\"tags\\\": {}}]}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"args\":{\"at\":5},\"why\":\"Check decodability mid-file to rule out corruption\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 4, \\\"clean\\\": true, \\\"exit_code\\\": 0, \\\"frames\\\": 40, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"note_window\\\": \\\"replay serves the recorded window at ss=4 (recorded: [0, 4, 8, 12])\\\", \\\"out_time\\\": \\\"00:00:04.000000\\\", \\\"quota_exhausted\\\": false, \\\"requested_at_s\\\": 5.0, \\\"stderr\\\": \\\"\\\", \\\"window_s\\\": 4}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"frame_sample\",\"args\":{\"at\":6},\"why\":\"Sample a frame near expected runtime to see if content matches title\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t3\", \"tool\": \"frame_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"frame\\\": \\\"frame@6\\\", \\\"note\\\": \\\"no image is available in replay mode; call ocr with this frame to read the recorded on-screen text\\\", \\\"replay\\\": true}\", \"tool_calls_remaining\": 3}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"args\":{\"at\":6},\"why\":\"Read on-screen text to confirm content identity\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t4\", \"tool\": \"ocr\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"consensus\\\": true, \\\"note\\\": \\\"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\\\", \\\"t_s\\\": 6.0, \\\"text\\\": \\\"\\\"}\", \"tool_calls_remaining\": 2}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"args\":{\"app\":\"radarr\",\"movie\":\"Quiet Orbit\"},\"why\":\"Confirm expected runtime and editions for comparison\" }",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t5\", \"tool\": \"arr_lookup\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"note\\\": \\\"case-provided records only; no live arr call was made\\\", \\\"records\\\": [{\\\"args\\\": {\\\"app\\\": \\\"radarr\\\", \\\"movie\\\": \\\"Quiet Orbit\\\"}, \\\"record\\\": \\\"{\\\\\\\"alternate_titles\\\\\\\":[\\\\\\\"Orbite Silencieuse\\\\\\\"],\\\\\\\"app\\\\\\\":\\\\\\\"radarr\\\\\\\",\\\\\\\"editions\\\\\\\":{\\\\\\\"Extended Cut\\\\\\\":{\\\\\\\"runtime_s\\\\\\\":12},\\\\\\\"Theatrical\\\\\\\":{\\\\\\\"runtime_s\\\\\\\":8}},\\\\\\\"file\\\\\\\":{\\\\\\\"relativePath\\\\\\\":\\\\\\\"Quiet Orbit (2019).mkv\\\\\\\",\\\\\\\"size\\\\\\\":120841},\\\\\\\"movie\\\\\\\":\\\\\\\"Quiet Orbit\\\\\\\",\\\\\\\"year\\\\\\\":2019}\\\"}], \\\"stub\\\": true}\", \"tool_calls_remaining\": 1}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 4096,
+          "num_predict": 384,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-19T22:43:30.707712863Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"identity_mismatch\\\",\\\"action\\\":\\\"blocklist_and_search\\\",\\\"target\\\":\\\"Quiet Orbit (2019).mkv\\\",\\\"confidence\\\":0.9,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e3\\\",\\\"e4\\\",\\\"t1\\\",\\\"t5\\\"],\\\"reason\\\":\\\"File tags title Paper Kingdom and OCR shows PAPER KINGDOM, not Quiet Orbit. Duration 11.046s mismatches expected 8s theatrical/12s extended. Content is a different work.\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":4096657086,\"load_duration\":734543,\"prompt_eval_count\":2269,\"prompt_eval_cached_count\":2024,\"prompt_eval_duration\":451446000,\"eval_count\":98,\"eval_duration\":3595788000}",
+        "stderr": "",
+        "wall_seconds": 4.214021530933678
+      },
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"decision\",\"class\":\"identity_mismatch\",\"action\":\"blocklist_and_search\",\"target\":\"Quiet Orbit (2019).mkv\",\"confidence\":0.9,\"evidence_refs\":[\"e1\",\"e3\",\"e4\",\"t1\",\"t5\"],\"reason\":\"File tags title Paper Kingdom and OCR shows PAPER KINGDOM, not Quiet Orbit. Duration 11.046s mismatches expected 8s theatrical/12s extended. Content is a different work.\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 2269,
+        "output_tokens": 98
+      },
+      "validation_errors": [],
+      "wall_s": 4.215
+    }
+  ],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 10811,
+    "output_tokens": 258
+  },
+  "wall": {
+    "case_excl_load_s": 12.817,
+    "load_s": 0.005,
+    "tool_s": [
+      0.001,
+      0.001,
+      0.001,
+      0.001,
+      0.001
+    ],
+    "total_s": 12.822,
+    "turn_s": [
+      1.676,
+      1.276,
+      1.24,
+      1.087,
+      3.314,
+      4.215
+    ]
+  }
+}
