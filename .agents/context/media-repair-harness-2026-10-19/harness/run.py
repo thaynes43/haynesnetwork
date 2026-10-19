@@ -105,14 +105,15 @@ def result_message(call_id, tool, res, remaining):
                        'output': res['output'], 'tool_calls_remaining': remaining}, ensure_ascii=False)
 
 
-def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None):
+def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto'):
     """Run one case through the turn protocol.  Returns the run record (never raises for model/tool trouble)."""
     import shutil
     started_wall = time.monotonic()
     started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     fixture = T.Fixture.from_case(case, suite_dir)
     fixture_info = fixture.verify_local()
-    ctx = T.Context(case, fixture, Path(scratch) / case['id'], runner=runner, which=which or shutil.which, ocr_backend=ocr_backend)
+    ctx = T.Context(case, fixture, Path(scratch) / case['id'], runner=runner, which=which or shutil.which, ocr_backend=ocr_backend,
+                    suite_dir=suite_dir, replay=replay)
     evidence = resolve_evidence(case, suite_dir)
     view = P.case_view(case, evidence)
     system = P.SYSTEM_PROMPT
@@ -179,7 +180,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
 
     first_try_valid = (decision is not None and not forced and not repairs)
     bad_refs = sorted(r for r in (decision or {}).get('evidence_refs', []) if r not in ev_ids and r not in {c['id'] for c in tool_calls})
-    failed_refs = sorted(set((decision or {}).get('evidence_refs', [])) & {c['id'] for c in tool_calls if c['status'] in ('error', 'timeout')})
+    failed_refs = sorted(set((decision or {}).get('evidence_refs', [])) & {c['id'] for c in tool_calls if c['status'] in ('error', 'timeout') and c.get('injected')})
     outcome = outcomes.run_outcome_step(case, suite_dir)
     total = time.monotonic() - started_wall
     usage = {'input_tokens': 0, 'output_tokens': 0, 'cost_usd': 0.0, 'cost_reported': False}
@@ -201,7 +202,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
         'runtime_version': adapter.runtime_version, 'model_digest': adapter.model_digest,
         'model_digest_na_reason': adapter.digest_na_reason if not adapter.model_digest else None,
         'fixture': fixture_info, 'evidence_shown': [e['id'] for e in evidence],
-        'turns': turns, 'tool_calls': tool_calls, 'repair_prompts': repairs,
+        'turns': turns, 'tool_calls': tool_calls, 'tool_modes': sorted({c.get('mode') for c in tool_calls if c.get('mode')}), 'repair_prompts': repairs,
         'decision': decision, 'forced': forced, 'forced_reason': forced_reason, 'first_try_valid': first_try_valid,
         'bad_evidence_refs': bad_refs, 'refs_to_failed_tools': failed_refs,
         'outcome': outcome, 'usage': usage,
@@ -264,6 +265,7 @@ def main(argv=None):
     ap.add_argument('--keep-alive', default='2m')
     ap.add_argument('--stop', help='comma separated stop tokens (ollama); default per model family')
     ap.add_argument('--ollama-schema', choices=['anyof', 'flat'], default='anyof', help='format schema variant sent to Ollama')
+    ap.add_argument('--replay', choices=['auto', 'off', 'force'], default='auto', help='serve recorded ffprobe/decode/title-card results from <suite>/fixtures/probes when ffprobe/ffmpeg are missing (auto), never, or always')
     ap.add_argument('--no-warmup', action='store_true')
     ap.add_argument('--ocr-model', help='vision model on Prime for the ocr tool')
     ap.add_argument('--codex-record-session', action='store_true', help='codex: keep the rollout so the model id can be read back')
@@ -288,7 +290,7 @@ def main(argv=None):
 
     config = {'protocol': P.PROTOCOL_VERSION, 'system_prompt_sha256': sha256_bytes(P.SYSTEM_PROMPT.encode()),
               'turn_schema_sha256': sha256_bytes(canonical(P.TURN_SCHEMA).encode()), 'flat_schema_sha256': sha256_bytes(canonical(P.FLAT_TURN_SCHEMA).encode()), 'max_tool_calls': P.MAX_TOOL_CALLS,
-              'tool_output_bytes': P.TOOL_OUTPUT_BYTES, 'tool_timeout_s': P.TOOL_TIMEOUT_S, 'ocr_model': args.ocr_model,
+              'tool_output_bytes': P.TOOL_OUTPUT_BYTES, 'tool_timeout_s': P.TOOL_TIMEOUT_S, 'ocr_model': args.ocr_model, 'replay': args.replay,
               'adapter_config': adapter.config()}
     manifest = {'run_id': run_id, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'argv': sys.argv[1:] if argv is None else argv,
                 'harness_git': git_info(), 'config': config, 'config_hash': sha256_bytes(canonical(config).encode()),
@@ -309,7 +311,7 @@ def main(argv=None):
                 aborted = str(e)
                 break
             try:
-                rec = run_case(case, sha, adapter, suite_dir, scratch, ocr_backend=ocr_backend)
+                rec = run_case(case, sha, adapter, suite_dir, scratch, ocr_backend=ocr_backend, replay=args.replay)
             except A.AbortRun as e:
                 aborted = str(e)
                 break

@@ -214,6 +214,41 @@ class Scoring(unittest.TestCase):
         self.assertFalse(s['suite_shape']['meets_all_minimums'])
         self.assertFalse(s['suite_shape']['checks']['held_out_cases>=30'])
 
+    def test_suite_dev_v1_semantics_all_cases_solvable(self):
+        """W3 suite: every case is solvable:true; abstention classes support only escalate; some write cases also allow escalate."""
+        cases = [th.make_case('a1', 'insufficient_evidence', ('escalate',)), th.make_case('a2', 'order_edition_ambiguity', ('escalate',)),
+                 th.make_case('w1', 'corrupt_file', ('blocklist_and_search', 'escalate'), inject_tool_failure={'tool': 'ffprobe', 'mode': 'timeout'}),
+                 th.make_case('w2', 'corrupt_file', ('blocklist_and_search',)), th.make_case('h1', 'healthy', ('none',))]
+        ts = th.TempSuite(cases)
+        self.addCleanup(ts.cleanup)
+
+        def score_with(decisions):
+            d = Path(tempfile.mkdtemp())
+            for cid, (cls, act) in decisions.items():
+                r = record(cid, cls, act)
+                if cid == 'w1':
+                    r['tool_calls'] = [{'id': 't1', 'tool': 'ffprobe', 'status': 'timeout', 'injected': True}]
+                (d / (cid + '.json')).write_text(json.dumps(r))
+            (d / 'manifest.json').write_text(json.dumps({'case_ids': list(decisions), 'run_id': 'r'}))
+            return S.score(d, ts.root)
+        base = {'a1': ('insufficient_evidence', 'escalate'), 'a2': ('order_edition_ambiguity', 'escalate'), 'w1': ('insufficient_evidence', 'escalate'),
+                'w2': ('corrupt_file', 'blocklist_and_search'), 'h1': ('healthy', 'none')}
+        s = score_with(base)
+        g5 = self.gate(s, 'G5')
+        self.assertEqual(g5['detail']['n'], 2)          # w2 and h1 only: abstention classes and escalate-supporting cases are out
+        self.assertEqual(g5['value'], 0.0)
+        self.assertEqual(self.gate(s, 'G4')['detail']['n'], 2)   # a1 and a2
+        self.assertEqual(self.gate(s, 'G4')['value'], 1.0)
+        self.assertEqual(s['metrics']['false_diagnoses']['count'], 0)
+        # abstaining on w1 is acceptable (not a false abstention); abstaining on w2 or h1 is
+        s = score_with(dict(base, w2=('insufficient_evidence', 'escalate')))
+        self.assertEqual(self.gate(s, 'G5')['value'], 0.5)
+        self.assertEqual(self.gate(s, 'G5')['status'], 'fail')
+        # missing the order/edition ambiguity (picking a write) fails G4 and G1
+        s = score_with(dict(base, a2=('identity_mismatch', 'blocklist_and_search')))
+        self.assertEqual(self.gate(s, 'G4')['status'], 'fail')
+        self.assertEqual(self.gate(s, 'G1')['status'], 'fail')
+
     def test_p95_nearest_rank(self):
         self.assertEqual(S.p95(list(range(1, 101))), 95)
         self.assertEqual(S.p95([7]), 7)

@@ -1,0 +1,57 @@
+{
+ "bytes": 63931,
+ "decode_sample": {
+  "0": {
+   "exit_code": 183,
+   "frames": null,
+   "out_time": null,
+   "ss": 0,
+   "stderr": "[in#0 @ 0x0] moov atom not found\n[in#0 @ 0x0] Error opening input: Invalid data found when processing input\nError opening input file media/qo_nomoov.mp4.\nError opening input files: Invalid data found when processing input",
+   "t": 4
+  },
+  "12": {
+   "exit_code": 183,
+   "frames": null,
+   "out_time": null,
+   "ss": 12,
+   "stderr": "[in#0 @ 0x0] moov atom not found\n[in#0 @ 0x0] Error opening input: Invalid data found when processing input\nError opening input file media/qo_nomoov.mp4.\nError opening input files: Invalid data found when processing input",
+   "t": 4
+  },
+  "4": {
+   "exit_code": 183,
+   "frames": null,
+   "out_time": null,
+   "ss": 4,
+   "stderr": "[in#0 @ 0x0] moov atom not found\n[in#0 @ 0x0] Error opening input: Invalid data found when processing input\nError opening input file media/qo_nomoov.mp4.\nError opening input files: Invalid data found when processing input",
+   "t": 4
+  },
+  "8": {
+   "exit_code": 183,
+   "frames": null,
+   "out_time": null,
+   "ss": 8,
+   "stderr": "[in#0 @ 0x0] moov atom not found\n[in#0 @ 0x0] Error opening input: Invalid data found when processing input\nError opening input file media/qo_nomoov.mp4.\nError opening input files: Invalid data found when processing input",
+   "t": 4
+  },
+  "full": {
+   "exit_code": 183,
+   "frames": null,
+   "out_time": null,
+   "stderr": "[in#0 @ 0x0] moov atom not found\n[in#0 @ 0x0] Error opening input: Invalid data found when processing input\nError opening input file media/qo_nomoov.mp4.\nError opening input files: Invalid data found when processing input"
+  }
+ },
+ "ffprobe": {
+  "exit_code": 1,
+  "stderr": "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x0] moov atom not found\nmedia/qo_nomoov.mp4: Invalid data found when processing input"
+ },
+ "fixture": "qo_nomoov.mp4",
+ "frame_text": [
+  {
+   "t0": 0,
+   "t1": 2,
+   "text": "QUIET ORBIT"
+  }
+ ],
+ "sha256": "3a5e3e8477dbc0de9cc95cc5e6ce22ab4a245f7f4c627d87b1d4f7651b176937",
+ "tool_version": "ffmpeg/ffprobe 8.1.2 (audiobookshelf 2.37.1 image)"
+}

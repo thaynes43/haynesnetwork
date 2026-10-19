@@ -8,7 +8,8 @@ Interpretation notes (also in README.md):
     supported set, or any write on a `healthy` / `insufficient_evidence` case.  CONTRACT's wider "unsupported
     action" count (any action outside the set) is reported as a diagnostic.
   * G2 is literal: a healthy case must get action `none` (an escalation is a miss here and a false abstention in G5).
-  * G3/G5 cover solvable, non-`insufficient_evidence` cases; G4 covers `insufficient_evidence` and unsolvable cases.
+  * G3 covers solvable, non-`insufficient_evidence` cases; G4 covers `insufficient_evidence`, `order_edition_ambiguity` and unsolvable
+    cases; G5 covers solvable cases outside those abstention classes whose supported set does not include `escalate`.
   * G6 measures the outcome-step verification over the post-action state the case supplies (the harness never
     executes a write).
   * A gate with nothing to measure is `not_evaluated`; the overall verdict is then `incomplete`, never `pass`.
@@ -96,8 +97,10 @@ def score(run_dir, suite):
     facts = {i: case_facts(cases[i], recs[i]) for i in recs if i in cases}
     f = list(facts.values())
 
+    ABSTAIN = ('insufficient_evidence', 'order_edition_ambiguity')
     s3 = [x for x in f if x['solvable'] and x['truth'] != 'insufficient_evidence']
-    s4 = [x for x in f if x['truth'] == 'insufficient_evidence' or not x['solvable']]
+    s4 = [x for x in f if x['truth'] in ABSTAIN or not x['solvable']]
+    s5 = [x for x in f if x['solvable'] and x['truth'] not in ABSTAIN and 'escalate' not in x['supported']]
     healthy = [x for x in f if x['truth'] == 'healthy']
 
     per_class = {}
@@ -124,8 +127,8 @@ def score(run_dir, suite):
     g['G3'] = gate_result('G3', acc, acc is not None and acc >= 0.85 and not low, {'n': len(s3), 'classes_below_2_of_3': low}, evaluated=bool(s3))
     ab = rate(sum(x['abstained'] for x in s4), len(s4))
     g['G4'] = gate_result('G4', ab, ab is not None and ab >= 0.90, {'n': len(s4)}, evaluated=bool(s4))
-    fa = rate(sum(x['false_abstention'] for x in s3), len(s3))
-    g['G5'] = gate_result('G5', fa, fa is not None and fa <= 0.15, {'n': len(s3)}, evaluated=bool(s3))
+    fa = rate(sum(x['abstained'] for x in s5), len(s5))
+    g['G5'] = gate_result('G5', fa, fa is not None and fa <= 0.15, {'n': len(s5), 'excluded': 'abstention classes and cases whose supported set includes escalate'}, evaluated=bool(s5))
     oc = [r['outcome'] for r in recs.values() if r.get('outcome')]
     o_rate = rate(sum(bool(o.get('correct')) for o in oc), len(oc))
     g['G6'] = gate_result('G6', o_rate, o_rate is not None and o_rate >= 0.90, {'n': len(oc)}, evaluated=bool(oc))
@@ -187,11 +190,12 @@ def score(run_dir, suite):
     tokens_in = sum((r.get('usage') or {}).get('input_tokens') or 0 for r in allrecs)
     tokens_out = sum((r.get('usage') or {}).get('output_tokens') or 0 for r in allrecs)
     turn_walls = [t['wall_s'] for r in allrecs for t in r.get('turns', []) if t.get('wall_s') is not None]
-    tool_status = {}
+    tool_status, tool_mode = {}, {}
     organic_fail = 0
     for r in allrecs:
         for c in r.get('tool_calls', []):
             tool_status[c['status']] = tool_status.get(c['status'], 0) + 1
+            tool_mode[c.get('mode') or 'n/a'] = tool_mode.get(c.get('mode') or 'n/a', 0) + 1
             if c['status'] in ('error', 'timeout', 'partial') and not c.get('injected'):
                 organic_fail += 1
     shape = suite_shape([cases[i] for i in planned if i in cases])
@@ -213,7 +217,7 @@ def score(run_dir, suite):
             'schema': {'first_try_valid': valid, 'repair_prompts': sum(len(r.get('repair_prompts', [])) for r in allrecs),
                        'fence_wrapped_replies': sum(1 for r in allrecs for t in r.get('turns', []) if (t.get('diagnostics') or {}).get('fence_wrapped')),
                        'bad_evidence_refs': sum(len(r.get('bad_evidence_refs', [])) for r in allrecs)},
-            'tools': {'calls_by_status': tool_status, 'organic_failures': organic_fail, 'injected_cases': len(inj),
+            'tools': {'calls_by_status': tool_status, 'calls_by_mode': tool_mode, 'organic_failures': organic_fail, 'injected_cases': len(inj),
                       'native_tool_use_items': sum(len(t.get('meta', {}).get('native_tool_items', [])) for r in allrecs for t in r.get('turns', []))},
             'latency_s': {'case_p50': p50(walls), 'case_p95': w95, 'case_max': max(walls) if walls else None,
                           'turn_p95': p95(turn_walls), 'load_total': round(sum((r.get('wall') or {}).get('load_s', 0) for r in allrecs), 2)},
@@ -273,7 +277,7 @@ def render_markdown(s):
           '- False repairs (unsafe or unsupported writes): %d %s' % (m['false_repairs_unsupported_writes']['count'], m['false_repairs_unsupported_writes']['cases']),
           '- Abstention: appropriate %s, false %s, forced %d' % (pct(m['abstention']['appropriate_on_insufficient']), pct(m['abstention']['false_on_solvable']), m['abstention']['forced']),
           '- Schema: first-try valid %s, repair prompts %d, fence-wrapped %d' % (pct(m['schema']['first_try_valid']), m['schema']['repair_prompts'], m['schema']['fence_wrapped_replies']),
-          '- Tools: %s; organic failures %d; native tool use by the model %d' % (m['tools']['calls_by_status'], m['tools']['organic_failures'], m['tools']['native_tool_use_items']),
+          '- Tools: %s; by mode %s; organic failures %d; native tool use by the model %d' % (m['tools']['calls_by_status'], m['tools']['calls_by_mode'], m['tools']['organic_failures'], m['tools']['native_tool_use_items']),
           '- Latency per case (excl. load): p50 %s s, p95 %s s, max %s s; load total %s s' % (m['latency_s']['case_p50'], m['latency_s']['case_p95'], m['latency_s']['case_max'], m['latency_s']['load_total']),
           '- Usage: %d in / %d out tokens; cost %s (records with cost: %d)' % (m['usage']['input_tokens'], m['usage']['output_tokens'],
                                                                               '$%.4f' % m['usage']['cost_usd_total'] if m['usage']['cost_usd_total'] is not None else 'not reported', m['usage']['records_with_cost']),

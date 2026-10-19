@@ -33,15 +33,18 @@ class EpubInspect(unittest.TestCase):
         r = T.call_tool(ctx_for(c, local_fixture(FIX / 'td-right.epub')), 'epub_inspect', {})
         out = json.loads(r['output'])
         self.assertEqual(r['status'], 'ok')
-        self.assertTrue(out['valid'])
-        self.assertEqual(out['titles'], ['The Lantern Ledger'])
+        self.assertEqual(out['status'], 'ok')
+        self.assertEqual(out['dc_title'], ['The Lantern Ledger'])
+        self.assertEqual(out['dc_creator'], ['Ines Varga'])
+        self.assertEqual(out['dc_language'], ['en'])
+        self.assertEqual(len(out['spine_heads']), 2)
 
-    def test_truncated_epub_is_a_finding_not_a_tool_failure(self):
+    def test_truncated_epub_is_reported_in_the_suites_recorded_shape(self):
         r = T.call_tool(ctx_for(th.make_case(), local_fixture(FIX / 'td-corrupt.epub')), 'epub_inspect', {})
         out = json.loads(r['output'])
-        self.assertEqual(r['status'], 'ok')
-        self.assertFalse(out['valid'])
-        self.assertIn('BadZipFile', out['problem'])
+        self.assertEqual(r['status'], 'error')  # same convention as the suite's recorded epub_inspect evidence
+        self.assertEqual((out['status'], out['stage']), ('error', 'zip_open'))
+        self.assertIn('BadZipFile', out['error'])
 
     def test_no_fixture_is_error(self):
         r = T.call_tool(ctx_for(th.make_case(), T.Fixture('none')), 'epub_inspect', {})
@@ -110,12 +113,13 @@ class MediaTools(unittest.TestCase):
         self.assertIn('-threads', seen[0])
         self.assertEqual(seen[0][-1], str(FIX / 'td-right.epub'))
 
-    def test_ffprobe_failure_exit_is_a_finding(self):
+    def test_ffprobe_failure_exit_has_the_recorded_shape(self):
         runner = lambda cmd, **kw: Completed(1, b'', b'moov atom not found')
         ctx = ctx_for(th.make_case(), local_fixture(FIX / 'td-right.epub'), runner=runner, which=lambda n: '/x/' + n)
         r = T.call_tool(ctx, 'ffprobe', {})
-        self.assertEqual(r['status'], 'ok')
-        self.assertIn('ffprobe_exit', r['output'])
+        self.assertEqual(r['status'], 'error')
+        self.assertEqual(json.loads(r['output'])['exit_code'], 1)
+        self.assertEqual(r['mode'], 'local')
 
     def test_local_timeout_maps_to_timeout_status(self):
         def runner(cmd, **kw):

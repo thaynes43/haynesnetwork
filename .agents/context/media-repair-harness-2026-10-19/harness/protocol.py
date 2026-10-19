@@ -156,6 +156,12 @@ def parse_reply(text):
         return None, 'reply is not strict JSON (%s)' % str(error)[:80], diag
 
 
+# context keys shown to the model.  filename, client_profile and question are suite additions (dev-v1) that the
+# task needs (a decoder_incompatible verdict is impossible without the client profile); any other key, at the
+# top level or inside context, is ignored and never shown.
+MODEL_CONTEXT_KEYS = ('title', 'filename', 'expected', 'client_profile', 'question', 'arr', 'notes_for_model')
+
+
 def case_view(case, evidence_rendered, budget=MAX_TOOL_CALLS):
     """What the model sees.  Never truth, supported_actions, solvable, family, provenance,
     inject_tool_failure, outcome_step, fixture or split."""
@@ -163,7 +169,7 @@ def case_view(case, evidence_rendered, budget=MAX_TOOL_CALLS):
     return {
         'case_id': case['id'],
         'media_type': case.get('media_type'),
-        'context': {k: ctx.get(k) for k in ('title', 'expected', 'arr', 'notes_for_model') if k in ctx},
+        'context': {k: ctx.get(k) for k in MODEL_CONTEXT_KEYS if k in ctx},
         'evidence': evidence_rendered,
         'tools_available': list(case.get('tools_available', [])),
         'tool_call_budget': budget,

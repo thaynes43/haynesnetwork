@@ -188,7 +188,7 @@ class MainEndToEnd(unittest.TestCase):
         ts.cleanup()
 
     def test_malformed_case_becomes_failed_record_and_run_continues(self):
-        bad = th.make_case('bad', fixture={'kind': 'remote', 'locator': 'not-a-remote-locator'})
+        bad = th.make_case('bad', fixture={'kind': 'remote', 'locator': 'remote:not-a-valid-locator'})
         code, out, ts = self.run_main([th.decision()], [bad, th.make_case('good')])
         self.assertEqual(code, 0)
         rec = json.loads((out / 'bad.json').read_text())
