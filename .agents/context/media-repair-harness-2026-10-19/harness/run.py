@@ -294,11 +294,12 @@ def main(argv=None):
                 'case_ids': [c['id'] for c, _ in cases], 'case_sha256': {c['id']: s for c, s in cases}}
     aborted = None
     records = []
+    audit = None
     try:
         manifest['preflight'] = adapter.preflight()
         manifest.update(adapter.describe())
         (out / 'manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n')
-        audit = open(out / 'audit.jsonl', 'a')
+        audit = open(out / 'audit.jsonl', 'a')  # closed in finally
         for case, sha in cases:
             try:
                 adapter.before_case()
@@ -323,6 +324,8 @@ def main(argv=None):
     except A.AbortRun as e:
         aborted = str(e)
     finally:
+        if audit:
+            audit.close()
         manifest['aborted'] = aborted
         manifest['finish'] = adapter.finish()
         manifest['ended_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
