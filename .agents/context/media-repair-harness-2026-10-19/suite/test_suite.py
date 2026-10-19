@@ -196,6 +196,14 @@ class ValidatorCatchesProblems(unittest.TestCase):
         self.mutate("tv-healthy-003", lambda c: c.update(solvable=False))
         self.assertTrue(any("manifest sha256 stale" in e for e in self.errors()))
 
+    def test_fixture_not_in_manifest(self):
+        for sub in ("media", "probes"):
+            extra = self.sd / "fixtures" / sub / "unlisted.bin"
+            extra.write_bytes(b"x")
+            self.assertTrue(any("unlisted.bin is not listed in manifest.json" in e for e in self.errors()), sub)
+            extra.unlink()
+            self.assertEqual(self.errors(), [])
+
     def test_minimum_counts(self):
         for p in list((self.sd / "cases").glob("*healthy*.json")):
             p.unlink()

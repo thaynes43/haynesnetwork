@@ -282,6 +282,12 @@ def validate(sd):
             fp = sd / fx["path"]
             if not fp.exists() or sha256_file(fp) != fx["sha256"]:
                 errors.append(f"manifest fixture {fx['path']} missing or changed")
+        listed = {fx["path"] for fx in m.get("fixtures", [])}
+        for sub in ("media", "probes"):
+            for fp in sorted((sd / "fixtures" / sub).glob("*")):
+                rel = f"fixtures/{sub}/{fp.name}"
+                if rel not in listed:
+                    errors.append(f"fixture file {rel} is not listed in manifest.json (run: suite.py manifest)")
         if m.get("counts", {}).get("total") != n:
             errors.append("manifest counts.total stale")
     return errors, notes, good, (by_class, by_media, by_split, matrix, flags, total)
