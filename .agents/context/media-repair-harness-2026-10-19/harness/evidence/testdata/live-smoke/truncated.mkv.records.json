@@ -1,0 +1,396 @@
+{
+ "fixture": "truncated.mkv",
+ "label": "LIVE: collected by the real ffprobe/ffmpeg inside a CPU-limited batch Job on synthetic fixtures; not replay, not real library media",
+ "records": [
+  {
+   "bounds": {
+    "max_stderr_bytes": 65536,
+    "max_stdout_bytes": 4194304,
+    "stderr_excerpt_bytes": 1500,
+    "timeout_s": 20
+   },
+   "coverage": {
+    "not_verified": [
+     "stream contents: nothing was decoded",
+     "stream changes beyond the first ~5 MB analysed (probesize 5000000)"
+    ],
+    "verified": [
+     "container and stream headers parse",
+     "stream list, duration, tags, chapters as declared by the container"
+    ]
+   },
+   "elapsed_s": 0.068,
+   "harness_tool": "ffprobe",
+   "input": {
+    "bytes": 100702,
+    "head_1m_sha256": "fe5f98ba8cc6f1e9f30c51b0feea73a5bf519b2fa62503b3a1dbd5161c396edf",
+    "name": "truncated.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "fe5f98ba8cc6f1e9f30c51b0feea73a5bf519b2fa62503b3a1dbd5161c396edf"
+   },
+   "mode": "live",
+   "output": {
+    "bit_rate": "66878",
+    "bytes": 100702.0,
+    "chapter_count": 0,
+    "chapters": [],
+    "duration_s": 12.046,
+    "findings": [],
+    "format": "matroska,webm",
+    "stream_count": 2,
+    "streams": [
+     {
+      "codec": "h264",
+      "height": 192,
+      "index": 0,
+      "pix_fmt": "yuv420p",
+      "profile": "Constrained Baseline",
+      "type": "video",
+      "width": 256
+     },
+     {
+      "channel_layout": "mono",
+      "channels": 1,
+      "codec": "aac",
+      "index": 1,
+      "language": "eng",
+      "profile": "LC",
+      "sample_rate": "22050",
+      "type": "audio"
+     }
+    ],
+    "tags": {
+     "encoder": "Lavf62.12.102",
+     "title": "Synthetic Good Clip"
+    }
+   },
+   "status": "ok",
+   "stderr": "",
+   "tool": "probe",
+   "tool_version": "ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers"
+  },
+  {
+   "bounds": {
+    "deadline_s": 120,
+    "full_decode": false,
+    "full_max_bytes": 67108864,
+    "full_timeout_s": 60,
+    "max_segments": 10,
+    "max_stderr_bytes": 65536,
+    "max_stdout_bytes": 4194304,
+    "segment_s": 4,
+    "segments": 3,
+    "stderr_excerpt_bytes": 1500,
+    "timeout_s": 20
+   },
+   "coverage": {
+    "not_verified": [
+     "the rest of the file was not decoded; a clean sample does not prove whole-file health",
+     "subtitle and data streams were not decoded"
+    ],
+    "verified": [
+     "4 segment(s) of up to 4s decoded (head, tail and 3 spread offsets); 7.1s decoded (59% of the duration)"
+    ]
+   },
+   "elapsed_s": 0.299,
+   "harness_tool": "decode_sample",
+   "input": {
+    "bytes": 100702,
+    "head_1m_sha256": "fe5f98ba8cc6f1e9f30c51b0feea73a5bf519b2fa62503b3a1dbd5161c396edf",
+    "name": "truncated.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "fe5f98ba8cc6f1e9f30c51b0feea73a5bf519b2fa62503b3a1dbd5161c396edf"
+   },
+   "mode": "live",
+   "output": {
+    "clean": false,
+    "decoded_s": 7.1,
+    "decoder_error_lines": 5,
+    "duration_s": 12.046,
+    "findings": [
+     "3 of 4 sampled segments produced decoder errors"
+    ],
+    "full": null,
+    "sampled_fraction": 0.589,
+    "segments": [
+     {
+      "at_s": 0.0,
+      "decoded_s": 4.0,
+      "elapsed_s": 0.066,
+      "error_lines": 0,
+      "errors": [],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 40,
+      "state": "clean",
+      "window_s": 4
+     },
+     {
+      "at_s": 3.011,
+      "decoded_s": 3.1,
+      "elapsed_s": 0.066,
+      "error_lines": 1,
+      "errors": [
+       "[in#0/matroska,webm @ 0x7f3d84340340] File ended prematurely"
+      ],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 30,
+      "state": "errors",
+      "window_s": 4
+     },
+     {
+      "at_s": 6.023,
+      "decoded_s": null,
+      "elapsed_s": 0.066,
+      "error_lines": 2,
+      "errors": [
+       "[in#0/matroska,webm @ 0x7fd0660ae340] File ended prematurely",
+       "Last message repeated 3 times"
+      ],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 0,
+      "state": "errors",
+      "window_s": 4
+     },
+     {
+      "at_s": 8.046,
+      "decoded_s": null,
+      "elapsed_s": 0.066,
+      "error_lines": 2,
+      "errors": [
+       "[in#0/matroska,webm @ 0x7fc6229ee340] File ended prematurely",
+       "Last message repeated 3 times"
+      ],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 0,
+      "state": "errors",
+      "window_s": 4
+     }
+    ],
+    "segments_clean": 1,
+    "segments_output_cap": 0,
+    "segments_planned": 4,
+    "segments_run": 4,
+    "segments_short": 0,
+    "segments_skipped_deadline": 0,
+    "segments_spawn_error": 0,
+    "segments_timeout": 0,
+    "segments_with_errors": 3
+   },
+   "status": "ok",
+   "stderr": "[in#0/matroska,webm @ 0x7f3d84340340] File ended prematurely\n[in#0/matroska,webm @ 0x7fd0660ae340] File ended prematurely\nLast message repeated 3 times\n[in#0/matroska,webm @ 0x7fc6229ee340] File ended prematurely\nLast message repeated 3 times",
+   "tool": "decode",
+   "tool_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
+  },
+  {
+   "bounds": {
+    "deadline_s": 120,
+    "frame_width": 640,
+    "frames": 3,
+    "max_stderr_bytes": 65536,
+    "max_stdout_bytes": 4194304,
+    "ocr": "auto",
+    "ocr_max_chars": 400,
+    "ocr_timeout_s": 20,
+    "stderr_excerpt_bytes": 1500,
+    "timeout_s": 20
+   },
+   "coverage": {
+    "not_verified": [
+     "frames between the sampled offsets",
+     "whether any frame is the right picture: only decodability and text were looked at",
+     "on-screen text was not read (tesseract not found on PATH)",
+     "frame at 6.023s: no_frame",
+     "frame at 11.546s: no_frame"
+    ],
+    "verified": [
+     "1 frame(s) decoded at spread offsets (scaled to width 640); pictures not kept"
+    ]
+   },
+   "elapsed_s": 0.199,
+   "harness_tool": "frame_sample",
+   "input": {
+    "bytes": 100702,
+    "head_1m_sha256": "fe5f98ba8cc6f1e9f30c51b0feea73a5bf519b2fa62503b3a1dbd5161c396edf",
+    "name": "truncated.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "fe5f98ba8cc6f1e9f30c51b0feea73a5bf519b2fa62503b3a1dbd5161c396edf"
+   },
+   "mode": "live",
+   "output": {
+    "distinct_frames": 1,
+    "duration_s": 12.046,
+    "findings": [],
+    "frames": [
+     {
+      "at_s": 0.5,
+      "bytes": 132416,
+      "height": 480,
+      "ocr": {
+       "reason": "tesseract not found on PATH",
+       "state": "unavailable"
+      },
+      "sha256": "9908863708aed78b03512c40f5d9bce0c82ab43c10470cf166973cee4523554f",
+      "state": "ok",
+      "width": 640
+     },
+     {
+      "at_s": 6.023,
+      "error_lines": 2,
+      "errors": [
+       "[in#0/matroska,webm @ 0x7f0205c86340] File ended prematurely",
+       "Last message repeated 3 times"
+      ],
+      "exit_code": 0,
+      "state": "no_frame"
+     },
+     {
+      "at_s": 11.546,
+      "error_lines": 2,
+      "errors": [
+       "[in#0/matroska,webm @ 0x7f5f365fa340] File ended prematurely",
+       "Last message repeated 3 times"
+      ],
+      "exit_code": 0,
+      "state": "no_frame"
+     }
+    ],
+    "frames_ok": 1,
+    "frames_with_errors": 0,
+    "ocr": "unavailable"
+   },
+   "reason": "frame at 6.023s: no_frame; frame at 11.546s: no_frame",
+   "status": "partial",
+   "stderr": "[in#0/matroska,webm @ 0x7f0205c86340] File ended prematurely\n    Last message repeated 3 times\n\n[in#0/matroska,webm @ 0x7f5f365fa340] File ended prematurely\n    Last message repeated 3 times",
+   "tool": "frames",
+   "tool_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
+  },
+  {
+   "bounds": {
+    "deadline_s": 120,
+    "max_audio_streams": 2,
+    "max_segments": 10,
+    "max_stderr_bytes": 65536,
+    "max_stdout_bytes": 4194304,
+    "segment_s": 4,
+    "segments": 3,
+    "silence_min_s": 0.5,
+    "silence_noise_db": -50,
+    "stderr_excerpt_bytes": 1500,
+    "timeout_s": 20
+   },
+   "coverage": {
+    "not_verified": [
+     "audio between the sampled segments",
+     "speech content: levels only, no speech recognition",
+     "whether the language tag matches the spoken language"
+    ],
+    "verified": [
+     "4 segment(s) of up to 4s decoded across 1 audio stream(s): mean and max level, silence runs of at least 0.5s below -50dB",
+     "language and title tags read from the container"
+    ]
+   },
+   "elapsed_s": 0.232,
+   "harness_tool": "audio_sample",
+   "input": {
+    "bytes": 100702,
+    "head_1m_sha256": "fe5f98ba8cc6f1e9f30c51b0feea73a5bf519b2fa62503b3a1dbd5161c396edf",
+    "name": "truncated.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "fe5f98ba8cc6f1e9f30c51b0feea73a5bf519b2fa62503b3a1dbd5161c396edf"
+   },
+   "mode": "live",
+   "output": {
+    "duration_s": 12.046,
+    "findings": [
+     "audio stream 1: 3 of 4 segments not normal (errors)"
+    ],
+    "silence_min_s": 0.5,
+    "silence_threshold_db": -50,
+    "streams": [
+     {
+      "channels": 1,
+      "codec": "aac",
+      "index": 1,
+      "language": "eng",
+      "sample_rate": "22050",
+      "segments": [
+       {
+        "at_s": 0.0,
+        "elapsed_s": 0.065,
+        "exit_code": 0,
+        "max_db": -16.1,
+        "mean_db": -21.1,
+        "problem_lines": 0,
+        "silence_runs": 0,
+        "silent_fraction": 0.0,
+        "silent_s": 0.0,
+        "state": "ok",
+        "window_s": 4.0
+       },
+       {
+        "at_s": 3.011,
+        "elapsed_s": 0.066,
+        "exit_code": 0,
+        "max_db": -17.5,
+        "mean_db": -21.2,
+        "problem_lines": 1,
+        "problems": [
+         "File ended prematurely"
+        ],
+        "silence_runs": 0,
+        "silent_fraction": 0.0,
+        "silent_s": 0.0,
+        "state": "errors",
+        "window_s": 4.0
+       },
+       {
+        "at_s": 6.023,
+        "elapsed_s": 0.066,
+        "exit_code": 0,
+        "max_db": -35.6,
+        "mean_db": -59.5,
+        "problem_lines": 4,
+        "problems": [
+         "File ended prematurely",
+         "File ended prematurely",
+         "File ended prematurely"
+        ],
+        "silence_runs": 0,
+        "silent_fraction": 0.0,
+        "silent_s": 0.0,
+        "state": "errors",
+        "window_s": 4.0
+       },
+       {
+        "at_s": 8.046,
+        "elapsed_s": 0.033,
+        "exit_code": 0,
+        "max_db": null,
+        "mean_db": null,
+        "problem_lines": 6,
+        "problems": [
+         "File ended prematurely",
+         "File ended prematurely",
+         "File ended prematurely"
+        ],
+        "silence_runs": 0,
+        "silent_fraction": 0.0,
+        "silent_s": 0.0,
+        "state": "errors",
+        "window_s": 4.0
+       }
+      ]
+     }
+    ]
+   },
+   "status": "ok",
+   "stderr": "File ended prematurely\nFile ended prematurely\nFile ended prematurely",
+   "tool": "audio",
+   "tool_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
+  }
+ ]
+}

@@ -1,0 +1,372 @@
+{
+ "fixture": "good.mkv",
+ "label": "LIVE: collected by the real ffprobe/ffmpeg inside a CPU-limited batch Job on synthetic fixtures; not replay, not real library media",
+ "records": [
+  {
+   "bounds": {
+    "max_stderr_bytes": 65536,
+    "max_stdout_bytes": 4194304,
+    "stderr_excerpt_bytes": 1500,
+    "timeout_s": 20
+   },
+   "coverage": {
+    "not_verified": [
+     "stream contents: nothing was decoded",
+     "stream changes beyond the first ~5 MB analysed (probesize 5000000)"
+    ],
+    "verified": [
+     "container and stream headers parse",
+     "stream list, duration, tags, chapters as declared by the container"
+    ]
+   },
+   "elapsed_s": 0.068,
+   "harness_tool": "ffprobe",
+   "input": {
+    "bytes": 183096,
+    "head_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7",
+    "name": "good.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7"
+   },
+   "mode": "live",
+   "output": {
+    "bit_rate": "121597",
+    "bytes": 183096.0,
+    "chapter_count": 0,
+    "chapters": [],
+    "duration_s": 12.046,
+    "findings": [],
+    "format": "matroska,webm",
+    "stream_count": 2,
+    "streams": [
+     {
+      "codec": "h264",
+      "height": 192,
+      "index": 0,
+      "pix_fmt": "yuv420p",
+      "profile": "Constrained Baseline",
+      "type": "video",
+      "width": 256
+     },
+     {
+      "channel_layout": "mono",
+      "channels": 1,
+      "codec": "aac",
+      "index": 1,
+      "language": "eng",
+      "profile": "LC",
+      "sample_rate": "22050",
+      "type": "audio"
+     }
+    ],
+    "tags": {
+     "encoder": "Lavf62.12.102",
+     "title": "Synthetic Good Clip"
+    }
+   },
+   "status": "ok",
+   "stderr": "",
+   "tool": "probe",
+   "tool_version": "ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers"
+  },
+  {
+   "bounds": {
+    "deadline_s": 120,
+    "full_decode": false,
+    "full_max_bytes": 67108864,
+    "full_timeout_s": 60,
+    "max_segments": 10,
+    "max_stderr_bytes": 65536,
+    "max_stdout_bytes": 4194304,
+    "segment_s": 4,
+    "segments": 3,
+    "stderr_excerpt_bytes": 1500,
+    "timeout_s": 20
+   },
+   "coverage": {
+    "not_verified": [
+     "the rest of the file was not decoded; a clean sample does not prove whole-file health",
+     "subtitle and data streams were not decoded"
+    ],
+    "verified": [
+     "4 segment(s) of up to 4s decoded (head, tail and 3 spread offsets); 16.0s decoded (133% of the duration)"
+    ]
+   },
+   "elapsed_s": 0.298,
+   "harness_tool": "decode_sample",
+   "input": {
+    "bytes": 183096,
+    "head_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7",
+    "name": "good.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7"
+   },
+   "mode": "live",
+   "output": {
+    "clean": true,
+    "decoded_s": 15.982,
+    "decoder_error_lines": 0,
+    "duration_s": 12.046,
+    "findings": [],
+    "full": null,
+    "sampled_fraction": 1.327,
+    "segments": [
+     {
+      "at_s": 0.0,
+      "decoded_s": 4.0,
+      "elapsed_s": 0.066,
+      "error_lines": 0,
+      "errors": [],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 40,
+      "state": "clean",
+      "window_s": 4
+     },
+     {
+      "at_s": 3.011,
+      "decoded_s": 4.0,
+      "elapsed_s": 0.065,
+      "error_lines": 0,
+      "errors": [],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 39,
+      "state": "clean",
+      "window_s": 4
+     },
+     {
+      "at_s": 6.023,
+      "decoded_s": 4.0,
+      "elapsed_s": 0.066,
+      "error_lines": 0,
+      "errors": [],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 39,
+      "state": "clean",
+      "window_s": 4
+     },
+     {
+      "at_s": 8.046,
+      "decoded_s": 3.982,
+      "elapsed_s": 0.066,
+      "error_lines": 0,
+      "errors": [],
+      "exit_code": 0,
+      "expected_s": 4.0,
+      "frames": 39,
+      "state": "clean",
+      "window_s": 4
+     }
+    ],
+    "segments_clean": 4,
+    "segments_output_cap": 0,
+    "segments_planned": 4,
+    "segments_run": 4,
+    "segments_short": 0,
+    "segments_skipped_deadline": 0,
+    "segments_spawn_error": 0,
+    "segments_timeout": 0,
+    "segments_with_errors": 0
+   },
+   "status": "ok",
+   "stderr": "",
+   "tool": "decode",
+   "tool_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
+  },
+  {
+   "bounds": {
+    "deadline_s": 120,
+    "frame_width": 640,
+    "frames": 3,
+    "max_stderr_bytes": 65536,
+    "max_stdout_bytes": 4194304,
+    "ocr": "auto",
+    "ocr_max_chars": 400,
+    "ocr_timeout_s": 20,
+    "stderr_excerpt_bytes": 1500,
+    "timeout_s": 20
+   },
+   "coverage": {
+    "not_verified": [
+     "frames between the sampled offsets",
+     "whether any frame is the right picture: only decodability and text were looked at",
+     "on-screen text was not read (tesseract not found on PATH)"
+    ],
+    "verified": [
+     "3 frame(s) decoded at spread offsets (scaled to width 640); pictures not kept"
+    ]
+   },
+   "elapsed_s": 0.3,
+   "harness_tool": "frame_sample",
+   "input": {
+    "bytes": 183096,
+    "head_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7",
+    "name": "good.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7"
+   },
+   "mode": "live",
+   "output": {
+    "distinct_frames": 3,
+    "duration_s": 12.046,
+    "findings": [],
+    "frames": [
+     {
+      "at_s": 0.5,
+      "bytes": 132416,
+      "height": 480,
+      "ocr": {
+       "reason": "tesseract not found on PATH",
+       "state": "unavailable"
+      },
+      "sha256": "9908863708aed78b03512c40f5d9bce0c82ab43c10470cf166973cee4523554f",
+      "state": "ok",
+      "width": 640
+     },
+     {
+      "at_s": 6.023,
+      "bytes": 142006,
+      "height": 480,
+      "ocr": {
+       "reason": "tesseract not found on PATH",
+       "state": "unavailable"
+      },
+      "sha256": "9a0513755ed07c31d5cad2375c9927478296834f79f3e8096fdf3c6a1242a4dd",
+      "state": "ok",
+      "width": 640
+     },
+     {
+      "at_s": 11.546,
+      "bytes": 139079,
+      "height": 480,
+      "ocr": {
+       "reason": "tesseract not found on PATH",
+       "state": "unavailable"
+      },
+      "sha256": "af7dfc36fb7befd8884920b18aa3fc0ef2494d4fb60b340072f6d4b53559b18c",
+      "state": "ok",
+      "width": 640
+     }
+    ],
+    "frames_ok": 3,
+    "frames_with_errors": 0,
+    "ocr": "unavailable"
+   },
+   "status": "ok",
+   "stderr": "",
+   "tool": "frames",
+   "tool_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
+  },
+  {
+   "bounds": {
+    "deadline_s": 120,
+    "max_audio_streams": 2,
+    "max_segments": 10,
+    "max_stderr_bytes": 65536,
+    "max_stdout_bytes": 4194304,
+    "segment_s": 4,
+    "segments": 3,
+    "silence_min_s": 0.5,
+    "silence_noise_db": -50,
+    "stderr_excerpt_bytes": 1500,
+    "timeout_s": 20
+   },
+   "coverage": {
+    "not_verified": [
+     "audio between the sampled segments",
+     "speech content: levels only, no speech recognition",
+     "whether the language tag matches the spoken language"
+    ],
+    "verified": [
+     "4 segment(s) of up to 4s decoded across 1 audio stream(s): mean and max level, silence runs of at least 0.5s below -50dB",
+     "language and title tags read from the container"
+    ]
+   },
+   "elapsed_s": 0.265,
+   "harness_tool": "audio_sample",
+   "input": {
+    "bytes": 183096,
+    "head_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7",
+    "name": "good.mkv",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7"
+   },
+   "mode": "live",
+   "output": {
+    "duration_s": 12.046,
+    "findings": [],
+    "silence_min_s": 0.5,
+    "silence_threshold_db": -50,
+    "streams": [
+     {
+      "channels": 1,
+      "codec": "aac",
+      "index": 1,
+      "language": "eng",
+      "sample_rate": "22050",
+      "segments": [
+       {
+        "at_s": 0.0,
+        "elapsed_s": 0.065,
+        "exit_code": 0,
+        "max_db": -16.1,
+        "mean_db": -21.1,
+        "problem_lines": 0,
+        "silence_runs": 0,
+        "silent_fraction": 0.0,
+        "silent_s": 0.0,
+        "state": "ok",
+        "window_s": 4.0
+       },
+       {
+        "at_s": 3.011,
+        "elapsed_s": 0.065,
+        "exit_code": 0,
+        "max_db": -17.5,
+        "mean_db": -22.3,
+        "problem_lines": 0,
+        "silence_runs": 1,
+        "silent_fraction": 0.254,
+        "silent_s": 1.015,
+        "state": "ok",
+        "window_s": 4.0
+       },
+       {
+        "at_s": 6.023,
+        "elapsed_s": 0.066,
+        "exit_code": 0,
+        "max_db": -17.8,
+        "mean_db": -26.5,
+        "problem_lines": 0,
+        "silence_runs": 1,
+        "silent_fraction": 0.732,
+        "silent_s": 2.926,
+        "state": "ok",
+        "window_s": 4.0
+       },
+       {
+        "at_s": 8.046,
+        "elapsed_s": 0.066,
+        "exit_code": 0,
+        "max_db": -17.6,
+        "mean_db": -22.3,
+        "problem_lines": 0,
+        "silence_runs": 1,
+        "silent_fraction": 0.232,
+        "silent_s": 0.929,
+        "state": "ok",
+        "window_s": 4.0
+       }
+      ]
+     }
+    ]
+   },
+   "status": "ok",
+   "stderr": "",
+   "tool": "audio",
+   "tool_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
+  }
+ ]
+}

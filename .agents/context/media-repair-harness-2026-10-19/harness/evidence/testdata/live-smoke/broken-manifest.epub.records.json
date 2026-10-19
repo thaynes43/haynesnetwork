@@ -1,0 +1,83 @@
+{
+ "fixture": "broken-manifest.epub",
+ "label": "LIVE: collected by the real ffprobe/ffmpeg inside a CPU-limited batch Job on synthetic fixtures; not replay, not real library media",
+ "records": [
+  {
+   "bounds": {
+    "epub_max_member_bytes": 8388608,
+    "epub_max_members": 5000,
+    "epub_max_opf_bytes": 2097152,
+    "epub_max_uncompressed_bytes": 134217728,
+    "epub_max_xhtml_docs": 200,
+    "stderr_excerpt_bytes": 1500
+   },
+   "cause": "input",
+   "coverage": {
+    "not_verified": [
+     "stages after manifest were not reached",
+     "reading quality, typography and rendering: no reader was run",
+     "DRM or encryption: not looked for beyond a missing-member check",
+     "whether the content is the right book: only the declared metadata and structure were read"
+    ],
+    "verified": [
+     "zip central directory read; CRC-32 verified for 4 of 4 member(s)",
+     "container.xml and the package document (OPF) parse",
+     "the check stopped at stage manifest"
+    ]
+   },
+   "elapsed_s": 0.0,
+   "harness_tool": "epub_inspect",
+   "input": {
+    "bytes": 1035,
+    "head_1m_sha256": "7ecb7b018aa213d87562c87b344cb4c645b783cf2258f14ce822b55c88b80d16",
+    "name": "broken-manifest.epub",
+    "partial_fingerprint_only": true,
+    "tail_1m_sha256": "7ecb7b018aa213d87562c87b344cb4c645b783cf2258f14ce822b55c88b80d16"
+   },
+   "mode": "live",
+   "output": {
+    "crc_members_checked": 4,
+    "dc_creator": [
+     "Test Author"
+    ],
+    "dc_identifier": [
+     "urn:uuid:00000000-0000-4000-8000-000000000001"
+    ],
+    "dc_language": [
+     "en"
+    ],
+    "dc_title": [
+     "Synthetic Test Book"
+    ],
+    "entries": 4,
+    "epub_version": "3.0",
+    "error": "manifest names 1 member(s) that are not in the archive: ['OEBPS/ch2.xhtml']",
+    "findings": [],
+    "manifest_items": 2,
+    "manifest_missing": [
+     "OEBPS/ch2.xhtml"
+    ],
+    "mimetype": {
+     "content": "application/epub+zip",
+     "first_entry": true,
+     "present": true,
+     "stored_uncompressed": true
+    },
+    "opf": "OEBPS/content.opf",
+    "stage": "manifest",
+    "stages_passed": [
+     "zip_open",
+     "zip_crc",
+     "opf_parse"
+    ],
+    "uncompressed_bytes_declared": 966,
+    "valid": false
+   },
+   "reason": "manifest: manifest names 1 member(s) that are not in the archive: ['OEBPS/ch2.xhtml']",
+   "status": "error",
+   "stderr": "",
+   "tool": "epub",
+   "tool_version": "python 3.14.7 zipfile+xml.etree (stdlib)"
+  }
+ ]
+}
