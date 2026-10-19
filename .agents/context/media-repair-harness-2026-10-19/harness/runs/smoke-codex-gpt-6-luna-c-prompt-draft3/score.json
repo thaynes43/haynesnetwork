@@ -1,0 +1,213 @@
+{
+  "aborted": null,
+  "adapter": "codex",
+  "cases": {
+    "td-epub-mismatch-001": {
+      "abstained": true,
+      "action": "escalate",
+      "case_id": "td-epub-mismatch-001",
+      "class": "identity_mismatch",
+      "correct": true,
+      "false_abstention": false,
+      "false_diagnosis": false,
+      "forced": false,
+      "media_type": "epub",
+      "solvable": true,
+      "supported": [
+        "blocklist_and_search",
+        "escalate"
+      ],
+      "truth": "identity_mismatch",
+      "unsafe_write": false,
+      "unsupported_any": false
+    }
+  },
+  "cases_planned": 1,
+  "cases_recorded": 1,
+  "config_hash": "51d89cfe0ccc0d1805e15a8ba00c28f5d3c35f651d2c8685acedb201caa72cd6",
+  "gates": [
+    {
+      "detail": {
+        "cases": []
+      },
+      "gate": "G1",
+      "status": "pass",
+      "value": 0
+    },
+    {
+      "detail": {
+        "healthy_escalated": 0,
+        "left_alone": 0,
+        "n": 0
+      },
+      "gate": "G2",
+      "status": "not_evaluated",
+      "value": null
+    },
+    {
+      "detail": {
+        "classes_below_2_of_3": {},
+        "n": 1
+      },
+      "gate": "G3",
+      "status": "pass",
+      "value": 1.0
+    },
+    {
+      "detail": {
+        "n": 0
+      },
+      "gate": "G4",
+      "status": "not_evaluated",
+      "value": null
+    },
+    {
+      "detail": {
+        "n": 1
+      },
+      "gate": "G5",
+      "status": "pass",
+      "value": 0.0
+    },
+    {
+      "detail": {
+        "n": 1
+      },
+      "gate": "G6",
+      "status": "pass",
+      "value": 1.0
+    },
+    {
+      "detail": {
+        "forced": 0,
+        "n": 1,
+        "repair_prompts": 0
+      },
+      "gate": "G7",
+      "status": "pass",
+      "value": 1.0
+    },
+    {
+      "detail": {
+        "cases": [],
+        "n": 0,
+        "not_exercised": 0
+      },
+      "gate": "G8",
+      "status": "not_evaluated",
+      "value": null
+    },
+    {
+      "detail": {
+        "aborted": null,
+        "crash_cases": []
+      },
+      "gate": "G9",
+      "status": "pass",
+      "value": {
+        "crashes": 0,
+        "p95_s": 9.633
+      }
+    },
+    {
+      "detail": {
+        "incomplete": []
+      },
+      "gate": "G10",
+      "status": "pass",
+      "value": 1.0
+    }
+  ],
+  "harness_git": {
+    "branch": "agent/mrh-runner-1019",
+    "dirty": true,
+    "sha": "6d98d4300698b1678dfa97e02708f166b431a0c2"
+  },
+  "metrics": {
+    "abstention": {
+      "appropriate_on_insufficient": null,
+      "false_on_solvable": 0.0,
+      "forced": 0,
+      "overall": 1.0
+    },
+    "false_diagnoses": {
+      "cases": [],
+      "count": 0
+    },
+    "false_repairs_unsupported_writes": {
+      "cases": [],
+      "count": 0
+    },
+    "latency_s": {
+      "case_max": 9.633,
+      "case_p50": 9.633,
+      "case_p95": 9.633,
+      "load_total": 0.0,
+      "turn_p95": 5.442
+    },
+    "per_class_accuracy": {
+      "identity_mismatch": {
+        "accuracy": 1.0,
+        "correct": 1,
+        "n": 1
+      }
+    },
+    "per_media_accuracy": {
+      "epub": {
+        "accuracy": 1.0,
+        "correct": 1,
+        "n": 1
+      }
+    },
+    "schema": {
+      "bad_evidence_refs": 0,
+      "fence_wrapped_replies": 0,
+      "first_try_valid": 1.0,
+      "repair_prompts": 0
+    },
+    "tools": {
+      "calls_by_status": {
+        "ok": 1
+      },
+      "injected_cases": 0,
+      "native_tool_use_items": 0,
+      "organic_failures": 0
+    },
+    "unsupported_any_action_contract_definition": 0,
+    "usage": {
+      "cost_usd_total": null,
+      "input_tokens": 83694,
+      "output_tokens": 245,
+      "records_with_cost": 0
+    }
+  },
+  "missing": [],
+  "model_digest": null,
+  "overall": "incomplete",
+  "requested_model": "gpt-6-luna",
+  "response_model_ids": [
+    "gpt-6-luna"
+  ],
+  "run_id": "smoke-codex-gpt-6-luna",
+  "runtime_version": "codex-cli 0.162.1",
+  "suite_shape": {
+    "checks": {
+      "every_other_class>=2": false,
+      "healthy>=8": false,
+      "held_out_cases>=30": false,
+      "insufficient_evidence_or_ambiguous>=4": false,
+      "media_types_all_four": false,
+      "tool_failure_cases>=3": false
+    },
+    "classes": {
+      "identity_mismatch": 1
+    },
+    "media_types": [
+      "epub"
+    ],
+    "meets_all_minimums": false,
+    "n": 1,
+    "note": "offender-family rows (#992) are not checked here; the readiness run is held-out only"
+  },
+  "unknown_case_ids": []
+}

@@ -1,0 +1,181 @@
+{
+  "aborted": "model load failed or timed out (137); not retrying, not unloading",
+  "adapter": null,
+  "cases": {},
+  "cases_planned": 1,
+  "cases_recorded": 0,
+  "config_hash": "f4665f4939c4fe0929548073ed06236bcb7f9e939a5734fba29da63cb27fcb6b",
+  "gates": [
+    {
+      "detail": {
+        "cases": []
+      },
+      "gate": "G1",
+      "status": "not_evaluated",
+      "value": 0
+    },
+    {
+      "detail": {
+        "healthy_escalated": 0,
+        "left_alone": 0,
+        "n": 0
+      },
+      "gate": "G2",
+      "status": "not_evaluated",
+      "value": null
+    },
+    {
+      "detail": {
+        "classes_below_2_of_3": {},
+        "n": 0
+      },
+      "gate": "G3",
+      "status": "not_evaluated",
+      "value": null
+    },
+    {
+      "detail": {
+        "n": 0
+      },
+      "gate": "G4",
+      "status": "not_evaluated",
+      "value": null
+    },
+    {
+      "detail": {
+        "n": 0
+      },
+      "gate": "G5",
+      "status": "not_evaluated",
+      "value": null
+    },
+    {
+      "detail": {
+        "n": 0
+      },
+      "gate": "G6",
+      "status": "not_evaluated",
+      "value": null
+    },
+    {
+      "detail": {
+        "forced": 0,
+        "n": 1,
+        "repair_prompts": 0
+      },
+      "gate": "G7",
+      "status": "not_evaluated",
+      "value": 0.0
+    },
+    {
+      "detail": {
+        "cases": [],
+        "n": 0,
+        "not_exercised": 0
+      },
+      "gate": "G8",
+      "status": "not_evaluated",
+      "value": null
+    },
+    {
+      "detail": {
+        "aborted": "model load failed or timed out (137); not retrying, not unloading",
+        "crash_cases": [
+          "td-epub-mismatch-001"
+        ]
+      },
+      "gate": "G9",
+      "status": "not_evaluated",
+      "value": {
+        "crashes": 1,
+        "p95_s": null
+      }
+    },
+    {
+      "detail": {
+        "incomplete": []
+      },
+      "gate": "G10",
+      "status": "not_evaluated",
+      "value": null
+    }
+  ],
+  "harness_git": {
+    "branch": "agent/mrh-runner-1019",
+    "dirty": true,
+    "sha": "6d98d4300698b1678dfa97e02708f166b431a0c2"
+  },
+  "metrics": {
+    "abstention": {
+      "appropriate_on_insufficient": null,
+      "false_on_solvable": null,
+      "forced": 0,
+      "overall": null
+    },
+    "false_diagnoses": {
+      "cases": [],
+      "count": 0
+    },
+    "false_repairs_unsupported_writes": {
+      "cases": [],
+      "count": 0
+    },
+    "latency_s": {
+      "case_max": null,
+      "case_p50": null,
+      "case_p95": null,
+      "load_total": 0,
+      "turn_p95": null
+    },
+    "per_class_accuracy": {},
+    "per_media_accuracy": {},
+    "schema": {
+      "bad_evidence_refs": 0,
+      "fence_wrapped_replies": 0,
+      "first_try_valid": 0.0,
+      "repair_prompts": 0
+    },
+    "tools": {
+      "calls_by_status": {},
+      "injected_cases": 0,
+      "native_tool_use_items": 0,
+      "organic_failures": 0
+    },
+    "unsupported_any_action_contract_definition": 0,
+    "usage": {
+      "cost_usd_total": null,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "records_with_cost": 0
+    }
+  },
+  "missing": [
+    "td-epub-mismatch-001"
+  ],
+  "model_digest": null,
+  "overall": "incomplete",
+  "requested_model": null,
+  "response_model_ids": [],
+  "run_id": "smoke-ollama-qwen3.8-27b",
+  "runtime_version": null,
+  "suite_shape": {
+    "checks": {
+      "every_other_class>=2": false,
+      "healthy>=8": false,
+      "held_out_cases>=30": false,
+      "insufficient_evidence_or_ambiguous>=4": false,
+      "media_types_all_four": false,
+      "tool_failure_cases>=3": false
+    },
+    "classes": {
+      "identity_mismatch": 1
+    },
+    "media_types": [
+      "epub"
+    ],
+    "meets_all_minimums": false,
+    "n": 1,
+    "note": "offender-family rows (#992) are not checked here; the readiness run is held-out only"
+  },
+  "unknown_case_ids": []
+}

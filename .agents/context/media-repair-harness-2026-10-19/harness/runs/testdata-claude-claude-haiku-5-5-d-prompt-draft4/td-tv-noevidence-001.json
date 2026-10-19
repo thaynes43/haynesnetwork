@@ -1,0 +1,144 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "escalate",
+      "class": "insufficient_evidence",
+      "target": "Example Show S01E04"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "td-tv-noevidence-001",
+  "case_sha256": "678e64fc3cdcf5226504a41d47925589b660ba62492089c95c9212a1f09f2d62",
+  "config_hash": "e463be504936a575a1aec8172333174da4443fa3e450ae62d2a7f755ca58f68a",
+  "decision": {
+    "action": "escalate",
+    "class": "insufficient_evidence",
+    "confidence": 0.8,
+    "evidence_refs": [
+      "e1"
+    ],
+    "reason": "The only tool run, ffprobe (e1), failed with 'host unavailable', so no stream, duration or content data was obtained. The case holds only a viewer's report that the episode looks wrong and the expected metadata (S01E04, en, 1320 s). Nothing confirms whether the file is a different episode, corrupt, misnamed or healthy. Escalating to a human rather than guessing.",
+    "target": "Example Show S01E04",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "declared_sha256": null,
+    "kind": "none",
+    "verified": "n/a"
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "6d98d4300698b1678dfa97e02708f166b431a0c2",
+  "injected_failure": {
+    "mode": "timeout",
+    "tool": "decode_sample"
+  },
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "claude-haiku-5-5",
+  "response_model_ids": [
+    "claude-haiku-5-5"
+  ],
+  "run_id": "testdata-claude-claude-haiku-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "split": "dev",
+  "started_at": "2026-10-19T21:08:01.982202+00:00",
+  "suite_version": "harness-testdata-v1",
+  "tool_calls": [],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-haiku-5-5": {
+            "cacheCreationInputTokens": 796,
+            "cacheReadInputTokens": 995,
+            "canonicalModel": "claude-haiku-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.00037985000000000004,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 421,
+            "provider": "firstParty",
+            "thinkingTokens": 226,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 1,
+      "native": {
+        "duration_api_ms": 2905,
+        "duration_ms": 2944,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-haiku-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"td-tv-noevidence-001\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {}}, \"expected\": {\"episode\": 4, \"language\": \"en\", \"runtime_s\": 1320, \"season\": 1, \"series\": \"Example Show\"}, \"notes_for_model\": \"A viewer says this episode looks wrong.\", \"title\": \"Example Show\"}, \"evidence\": [{\"args\": {}, \"id\": \"e1\", \"output\": \"ffprobe: probe failed (host unavailable)\", \"status\": \"error\", \"tool\": \"ffprobe\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":2905,\"stop_reason\":\"end_turn\",\"session_id\":\"9397b7ba-f243-4de9-9bcd-c212308ffdd2\",\"total_cost_usd\":0.00037985000000000004,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":796,\"cache_read_input_tokens\":995,\"output_tokens\":421,\"output_tokens_details\":{\"thinking_tokens\":226},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":796,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":421,\"cache_read_input_tokens\":995,\"cache_creation_input_tokens\":796,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":796},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":421,\"cacheReadInputTokens\":995,\"cacheCreationInputTokens\":796,\"webSearchRequests\":0,\"costUSD\":0.00037985000000000004,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":226,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"insufficient_evidence\\\",\\\"action\\\":\\\"escalate\\\",\\\"target\\\":\\\"Example Show S01E04\\\",\\\"confidence\\\":0.8,\\\"evidence_refs\\\":[\\\"e1\\\"],\\\"reason\\\":\\\"The only tool run, ffprobe (e1), failed with 'host unavailable', so no stream, duration or content data was obtained. The case holds only a viewer's report that the episode looks wrong and the expected metadata (S01E04, en, 1320 s). Nothing confirms whether the file is a different episode, corrupt, misnamed or healthy. Escalating to a human rather than guessing.\\\"}\",\"ttft_ms\":2044,\"type\":\"result\",\"duration_ms\":2944,\"uuid\":\"7484dfdc-9918-4e14-b317-e981cc9287be\",\"ttft_stream_ms\":938,\"time_to_request_ms\":34,\"first_content_frame_ms\":938,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-haiku-5-5",
+      "text": "{\"type\":\"decision\",\"class\":\"insufficient_evidence\",\"action\":\"escalate\",\"target\":\"Example Show S01E04\",\"confidence\":0.8,\"evidence_refs\":[\"e1\"],\"reason\":\"The only tool run, ffprobe (e1), failed with 'host unavailable', so no stream, duration or content data was obtained. The case holds only a viewer's report that the episode looks wrong and the expected metadata (S01E04, en, 1320 s). Nothing confirms whether the file is a different episode, corrupt, misnamed or healthy. Escalating to a human rather than guessing.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 796,
+        "cache_read_input_tokens": 995,
+        "cost_usd": 0.00037985000000000004,
+        "input_tokens": 2,
+        "output_tokens": 421
+      },
+      "validation_errors": [],
+      "wall_s": 3.73
+    }
+  ],
+  "usage": {
+    "cost_reported": true,
+    "cost_usd": 0.00037985000000000004,
+    "input_tokens": 2,
+    "output_tokens": 421
+  },
+  "wall": {
+    "case_excl_load_s": 3.731,
+    "load_s": 0.0,
+    "tool_s": [],
+    "total_s": 3.731,
+    "turn_s": [
+      3.73
+    ]
+  }
+}

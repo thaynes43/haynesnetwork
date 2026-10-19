@@ -1,0 +1,185 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "blocklist_and_search",
+      "class": "corrupt_file",
+      "target": null
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": {
+      "check": "epub_valid",
+      "correct": true,
+      "detail": "BadZipFile: File is not a zip file",
+      "expected": "not_repaired",
+      "observed": "not_repaired"
+    },
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "td-epub-corrupt-001",
+  "case_sha256": "adc78a7a0abd55befb0c286c3ed39934446a3dae598353f5ec853f5530d1e26f",
+  "config_hash": "d91db13bc08a931552b4c69ae1dbfda0c246f82667c43f6e5681d41ffff82b7c",
+  "decision": {
+    "action": "blocklist_and_search",
+    "class": "corrupt_file",
+    "confidence": 0.99,
+    "evidence_refs": [
+      "t1"
+    ],
+    "reason": "The EPUB inspection failed at zip_open with “File is not a zip file” for an 820-byte file, indicating this is not a usable EPUB copy (t1).",
+    "target": null,
+    "type": "decision"
+  },
+  "evidence_shown": [],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "d9f87148a702b2a87d1c12b921cd3e8c1832d7e31e6437bb6659f669ad24fb95",
+    "bytes": 820,
+    "declared_sha256": "d9f87148a702b2a87d1c12b921cd3e8c1832d7e31e6437bb6659f669ad24fb95",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "311ced167994755b4b552a137c6984345dda57b9",
+  "injected_failure": null,
+  "model_case_alias": "case-2875a160",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; usage is taken from the event stream",
+  "outcome": {
+    "check": "epub_valid",
+    "correct": true,
+    "detail": "BadZipFile: File is not a zip file",
+    "expected": "not_repaired",
+    "observed": "not_repaired"
+  },
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "gpt-6-luna",
+  "response_model_ids": [
+    "gpt-6-luna"
+  ],
+  "run_id": "v2-testdata-gpt-6-luna",
+  "runtime_version": "codex-cli 0.162.1",
+  "split": "dev",
+  "started_at": "2026-10-19T21:29:48.491927+00:00",
+  "suite_version": "harness-testdata-v1",
+  "tool_calls": [
+    {
+      "args": {},
+      "id": "t1",
+      "output": "{\"bytes\": 820, \"error\": \"BadZipFile: File is not a zip file\", \"sha256\": \"d9f87148a702b2a87d1c12b921cd3e8c1832d7e31e6437bb6659f669ad24fb95\", \"stage\": \"zip_open\", \"status\": \"error\"}",
+      "status": "error",
+      "tool": "epub_inspect",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.011,
+      "why": "Inspect the EPUB structure and metadata to check why readers cannot open it."
+    }
+  ],
+  "tool_modes": [],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "native_tool_items": [],
+        "response_model_source": "rollout",
+        "thread_id": "01a15612-1701-7911-81e1-a3128c5003ba"
+      },
+      "n": 1,
+      "native": {},
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "codex",
+          "exec",
+          "--json",
+          "-s",
+          "read-only",
+          "--skip-git-repo-check",
+          "--ignore-user-config",
+          "--ignore-rules",
+          "-m",
+          "gpt-6-luna",
+          "-C",
+          "/tmp/mrh-codex-i4i3qn2g",
+          "-"
+        ],
+        "prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.\n\n---\n\n[CASE]\n{\"case_id\": \"case-2875a160\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Ines Varga\", \"language\": \"en\", \"title\": \"The Lantern Ledger\"}, \"notes_for_model\": \"Readers report this book will not open.\", \"title\": \"The Lantern Ledger\"}, \"evidence\": [], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": [\"epub_inspect\", \"arr_lookup\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else."
+      },
+      "raw_response": "{\"type\":\"thread.started\",\"thread_id\":\"01a15612-1701-7911-81e1-a3128c5003ba\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"epub_inspect\\\",\\\"args\\\":{},\\\"why\\\":\\\"Inspect the EPUB structure and metadata to check why readers cannot open it.\\\"}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":55607,\"cached_input_tokens\":39296,\"cache_write_input_tokens\":0,\"output_tokens\":107,\"reasoning_output_tokens\":32}}\n",
+      "response_model": "gpt-6-luna",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Inspect the EPUB structure and metadata to check why readers cannot open it.\"}",
+      "usage": {
+        "cached_input_tokens": 39296,
+        "cost_usd": null,
+        "input_tokens": 55607,
+        "output_tokens": 107,
+        "reasoning_output_tokens": 32
+      },
+      "validation_errors": [],
+      "wall_s": 5.767
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "native_tool_items": [],
+        "response_model_source": "rollout",
+        "thread_id": "01a15612-2db5-7772-95a1-7a52f3753b4a"
+      },
+      "n": 2,
+      "native": {},
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "codex",
+          "exec",
+          "--json",
+          "-s",
+          "read-only",
+          "--skip-git-repo-check",
+          "--ignore-user-config",
+          "--ignore-rules",
+          "-m",
+          "gpt-6-luna",
+          "-C",
+          "/tmp/mrh-codex-i4i3qn2g",
+          "-"
+        ],
+        "prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content.\n\n---\n\n[CASE]\n{\"case_id\": \"case-2875a160\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Ines Varga\", \"language\": \"en\", \"title\": \"The Lantern Ledger\"}, \"notes_for_model\": \"Readers report this book will not open.\", \"title\": \"The Lantern Ledger\"}, \"evidence\": [], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": [\"epub_inspect\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Inspect the EPUB structure and metadata to check why readers cannot open it.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"epub_inspect\", \"status\": \"error\", \"truncated\": false, \"output\": \"{\\\"bytes\\\": 820, \\\"error\\\": \\\"BadZipFile: File is not a zip file\\\", \\\"sha256\\\": \\\"d9f87148a702b2a87d1c12b921cd3e8c1832d7e31e6437bb6659f669ad24fb95\\\", \\\"stage\\\": \\\"zip_open\\\", \\\"status\\\": \\\"error\\\"}\", \"tool_calls_remaining\": 5}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else."
+      },
+      "raw_response": "{\"type\":\"thread.started\",\"thread_id\":\"01a15612-2db5-7772-95a1-7a52f3753b4a\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"corrupt_file\\\",\\\"action\\\":\\\"blocklist_and_search\\\",\\\"target\\\":null,\\\"confidence\\\":0.99,\\\"evidence_refs\\\":[\\\"t1\\\"],\\\"reason\\\":\\\"The EPUB inspection failed at zip_open with “File is not a zip file” for an 820-byte file, indicating this is not a usable EPUB copy (t1).\\\"}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":27946,\"cached_input_tokens\":11648,\"cache_write_input_tokens\":0,\"output_tokens\":78,\"reasoning_output_tokens\":0}}\n",
+      "response_model": "gpt-6-luna",
+      "text": "{\"type\":\"decision\",\"class\":\"corrupt_file\",\"action\":\"blocklist_and_search\",\"target\":null,\"confidence\":0.99,\"evidence_refs\":[\"t1\"],\"reason\":\"The EPUB inspection failed at zip_open with “File is not a zip file” for an 820-byte file, indicating this is not a usable EPUB copy (t1).\"}",
+      "usage": {
+        "cached_input_tokens": 11648,
+        "cost_usd": null,
+        "input_tokens": 27946,
+        "output_tokens": 78,
+        "reasoning_output_tokens": 0
+      },
+      "validation_errors": [],
+      "wall_s": 3.282
+    }
+  ],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 83553,
+    "output_tokens": 185
+  },
+  "wall": {
+    "case_excl_load_s": 9.071,
+    "load_s": 0.0,
+    "tool_s": [
+      0.011
+    ],
+    "total_s": 9.071,
+    "turn_s": [
+      5.767,
+      3.282
+    ]
+  }
+}

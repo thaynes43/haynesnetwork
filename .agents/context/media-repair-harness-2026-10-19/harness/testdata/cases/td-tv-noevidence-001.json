@@ -1,0 +1,52 @@
+{
+  "id": "td-tv-noevidence-001",
+  "suite_version": "harness-testdata-v1",
+  "split": "dev",
+  "media_type": "tv",
+  "family": "td-tv",
+  "truth": {
+    "class": "insufficient_evidence",
+    "source": "construction",
+    "ref": "no fixture; the only probe is a recorded failure and the injected failure removes the live probe"
+  },
+  "supported_actions": [
+    "escalate"
+  ],
+  "solvable": false,
+  "context": {
+    "title": "Example Show",
+    "expected": {
+      "series": "Example Show",
+      "season": 1,
+      "episode": 4,
+      "runtime_s": 1320,
+      "language": "en"
+    },
+    "arr": {
+      "app": "sonarr",
+      "ids": {}
+    },
+    "notes_for_model": "A viewer says this episode looks wrong."
+  },
+  "fixture": {
+    "kind": "none"
+  },
+  "evidence": [
+    {
+      "id": "e1",
+      "tool": "ffprobe",
+      "args": {},
+      "status": "error",
+      "output": "ffprobe: probe failed (host unavailable)"
+    }
+  ],
+  "tools_available": [
+    "ffprobe",
+    "decode_sample"
+  ],
+  "provenance": "new (harness self-test data; synthetic text written for this test)",
+  "inject_tool_failure": {
+    "tool": "decode_sample",
+    "mode": "timeout"
+  }
+}

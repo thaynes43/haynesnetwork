@@ -1,0 +1,104 @@
+{
+  "aborted": null,
+  "adapter": "claude",
+  "argv": [
+    "--suite",
+    "testdata/suite_sample",
+    "--adapter",
+    "claude",
+    "--model",
+    "claude-haiku-5-5",
+    "--out",
+    "runs/suitesample-haiku-5-5"
+  ],
+  "case_ids": [
+    "audiobook-corrupt-003",
+    "epub-corrupt-002",
+    "epub-healthy-004",
+    "movie-corrupt-003",
+    "movie-decoder-002",
+    "tv-corrupt-003",
+    "tv-insuff-001",
+    "tv-order-001",
+    "tv-outcome-001"
+  ],
+  "case_sha256": {
+    "audiobook-corrupt-003": "2eb76362e05f273e2a64a82fa2f8d2e2eab2908b02cb3c1b89c1ab6e9c66163c",
+    "epub-corrupt-002": "a315bc3f4c79c27bfb181575c183bc9a27a037488bb5fa43d91191e7fce7b538",
+    "epub-healthy-004": "3f1c97b8be3304d99918a5ee2af927df844e1697208096ba67162b36893cbea8",
+    "movie-corrupt-003": "0ec33287e90c8ebdd861d4258c1e24b2b7e8028311604840a3ebc36573b78744",
+    "movie-decoder-002": "c2b09bae2bc10de85feeb8779eb8bd70951371a7ab58a4ea5eba3cc47dc7f3e0",
+    "tv-corrupt-003": "d48915d9c156c6feded9273c0d4d02c6171ba9faf57be3c3fdbe744eb59d5eb1",
+    "tv-insuff-001": "cb642bbda4540da4364b1e5eb3ed8bd3febe6eb1c5a24555694bedc93ca8c40d",
+    "tv-order-001": "b8fd5b5eddf73b34099db98378da09599ab22d0d952069b295ce410b129bc38a",
+    "tv-outcome-001": "bf12277b72989c76c43aff4f0b46f3d7848ccc6df97d9f73abb0612d44ca42a5"
+  },
+  "config": {
+    "adapter_config": {
+      "adapter": "claude",
+      "effort": null,
+      "flags": [
+        "--tools",
+        "",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--disable-slash-commands",
+        "--setting-sources",
+        "",
+        "--no-session-persistence"
+      ],
+      "max_budget_usd": 2.0,
+      "model": "claude-haiku-5-5",
+      "output_format": "json"
+    },
+    "flat_schema_sha256": "0cc08ff1de36f459c2654838e3dad024986815dd843572340b74a624ffb7d2eb",
+    "max_tool_calls": 6,
+    "ocr_model": null,
+    "protocol": "v1",
+    "replay": "auto",
+    "system_prompt_sha256": "30749f5dc7065a2ddd70967cd6888e91d237030e1b025bc6dac19ca51fed9ee8",
+    "tool_output_bytes": 8192,
+    "tool_timeout_s": 60,
+    "turn_schema_sha256": "4d976ba5fc8f82af307a7cfb4f168db248b08ffb5e7bf2a82d11b2b9ce28790b"
+  },
+  "config_hash": "7b5e13c8b1fc0ffde672f1425f5469aaeeea33f83dac5f145e0c832d517f4b4d",
+  "ended_at": "2026-10-19T21:16:48.506967+00:00",
+  "finish": {},
+  "harness_git": {
+    "branch": "agent/mrh-runner-1019",
+    "dirty": true,
+    "sha": "8fc5381cfee797865a5875c83b3529ae3c427783"
+  },
+  "invalid": {
+    "reason": "truth leaked to the model: the raw case id (it encodes the class) and fixture file names in tool output were shown; superseded by the leak-guarded runs under runs/ with the \"-v2-\" prefix",
+    "recorded": "2026-10-19, PR #1005 review",
+    "status": "INVALID for scoring"
+  },
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "preflight": {
+    "adapter": "claude",
+    "model_digest": null,
+    "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+    "requested_model": "claude-haiku-5-5",
+    "runtime_version": "2.1.299 (Claude Code)"
+  },
+  "python": "3.11.2",
+  "records_written": [
+    "audiobook-corrupt-003",
+    "epub-corrupt-002",
+    "epub-healthy-004",
+    "movie-corrupt-003",
+    "movie-decoder-002",
+    "tv-corrupt-003",
+    "tv-insuff-001",
+    "tv-order-001",
+    "tv-outcome-001"
+  ],
+  "requested_model": "claude-haiku-5-5",
+  "run_id": "suitesample-haiku-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "started_at": "2026-10-19T21:16:01.925070+00:00",
+  "suite_dir": "testdata/suite_sample"
+}

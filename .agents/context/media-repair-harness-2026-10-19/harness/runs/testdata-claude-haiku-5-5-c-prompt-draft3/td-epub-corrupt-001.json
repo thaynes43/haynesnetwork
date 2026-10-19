@@ -1,0 +1,235 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "blocklist_and_search",
+      "class": "corrupt_file",
+      "target": "The Lantern Ledger (Ines Varga) EPUB, sha256 d9f87148a702b2a87d1c12b921cd3e8c1832d7e31e6437bb6659f669ad24fb95"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": {
+      "check": "epub_valid",
+      "correct": true,
+      "detail": "BadZipFile: File is not a zip file",
+      "expected": "not_repaired",
+      "observed": "not_repaired"
+    },
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "td-epub-corrupt-001",
+  "case_sha256": "adc78a7a0abd55befb0c286c3ed39934446a3dae598353f5ec853f5530d1e26f",
+  "config_hash": "18488731c9212c9e15dd65dc77e436a0d405e9c622203d3652bf741b917bd73c",
+  "decision": {
+    "action": "blocklist_and_search",
+    "class": "corrupt_file",
+    "confidence": 0.85,
+    "evidence_refs": [
+      "t1"
+    ],
+    "reason": "epub_inspect ok: file is 820 bytes and fails zip parsing (BadZipFile, valid=false). An EPUB must be a zip container, so the copy is damaged or truncated. Case has no other evidence and the sample is one tool call, so the title and author were not checked.",
+    "target": "The Lantern Ledger (Ines Varga) EPUB, sha256 d9f87148a702b2a87d1c12b921cd3e8c1832d7e31e6437bb6659f669ad24fb95",
+    "type": "decision"
+  },
+  "evidence_shown": [],
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "d9f87148a702b2a87d1c12b921cd3e8c1832d7e31e6437bb6659f669ad24fb95",
+    "bytes": 820,
+    "declared_sha256": "d9f87148a702b2a87d1c12b921cd3e8c1832d7e31e6437bb6659f669ad24fb95",
+    "kind": "local",
+    "verified": true
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "6d98d4300698b1678dfa97e02708f166b431a0c2",
+  "injected_failure": null,
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "outcome": {
+    "check": "epub_valid",
+    "correct": true,
+    "detail": "BadZipFile: File is not a zip file",
+    "expected": "not_repaired",
+    "observed": "not_repaired"
+  },
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "claude-haiku-5-5",
+  "response_model_ids": [
+    "claude-haiku-5-5"
+  ],
+  "run_id": "testdata-claude-haiku-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "split": "dev",
+  "started_at": "2026-10-19T21:06:05.800549+00:00",
+  "suite_version": "harness-testdata-v1",
+  "tool_calls": [
+    {
+      "args": {},
+      "id": "t1",
+      "output": "{\"bytes\": 820, \"problem\": \"BadZipFile: File is not a zip file\", \"sha256\": \"d9f87148a702b2a87d1c12b921cd3e8c1832d7e31e6437bb6659f669ad24fb95\", \"valid\": false}",
+      "status": "ok",
+      "tool": "epub_inspect",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.015,
+      "why": "Case has no evidence; reported unopenable EPUB needs structural inspection to check for corruption or metadata mismatch."
+    }
+  ],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-haiku-5-5": {
+            "cacheCreationInputTokens": 728,
+            "cacheReadInputTokens": 956,
+            "canonicalModel": "claude-haiku-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.00019136,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 72,
+            "provider": "firstParty",
+            "thinkingTokens": 0,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 1,
+      "native": {
+        "duration_api_ms": 1584,
+        "duration_ms": 1623,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-haiku-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"td-epub-corrupt-001\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Ines Varga\", \"language\": \"en\", \"title\": \"The Lantern Ledger\"}, \"notes_for_model\": \"Readers report this book will not open.\", \"title\": \"The Lantern Ledger\"}, \"evidence\": [], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": [\"epub_inspect\", \"arr_lookup\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":1584,\"stop_reason\":\"end_turn\",\"session_id\":\"0e3536c8-6a30-493d-b082-8818533c1616\",\"total_cost_usd\":0.00019136,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":728,\"cache_read_input_tokens\":956,\"output_tokens\":72,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":728,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":72,\"cache_read_input_tokens\":956,\"cache_creation_input_tokens\":728,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":728},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":72,\"cacheReadInputTokens\":956,\"cacheCreationInputTokens\":728,\"webSearchRequests\":0,\"costUSD\":0.00019136,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"epub_inspect\\\",\\\"args\\\":{},\\\"why\\\":\\\"Case has no evidence; reported unopenable EPUB needs structural inspection to check for corruption or metadata mismatch.\\\"}\",\"ttft_ms\":1597,\"type\":\"result\",\"duration_ms\":1623,\"uuid\":\"30a4c0e4-2689-423c-89f8-f119f03e5541\",\"ttft_stream_ms\":1158,\"time_to_request_ms\":33,\"first_content_frame_ms\":1158,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-haiku-5-5",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Case has no evidence; reported unopenable EPUB needs structural inspection to check for corruption or metadata mismatch.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 728,
+        "cache_read_input_tokens": 956,
+        "cost_usd": 0.00019136,
+        "input_tokens": 2,
+        "output_tokens": 72
+      },
+      "validation_errors": [],
+      "wall_s": 2.577
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-haiku-5-5": {
+            "cacheCreationInputTokens": 986,
+            "cacheReadInputTokens": 956,
+            "canonicalModel": "claude-haiku-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.00042146,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 429,
+            "provider": "firstParty",
+            "thinkingTokens": 205,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 2,
+      "native": {
+        "duration_api_ms": 2756,
+        "duration_ms": 2846,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-haiku-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"td-epub-corrupt-001\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"author\": \"Ines Varga\", \"language\": \"en\", \"title\": \"The Lantern Ledger\"}, \"notes_for_model\": \"Readers report this book will not open.\", \"title\": \"The Lantern Ledger\"}, \"evidence\": [], \"media_type\": \"epub\", \"tool_call_budget\": 6, \"tools_available\": [\"epub_inspect\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"epub_inspect\",\"args\":{},\"why\":\"Case has no evidence; reported unopenable EPUB needs structural inspection to check for corruption or metadata mismatch.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"epub_inspect\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"bytes\\\": 820, \\\"problem\\\": \\\"BadZipFile: File is not a zip file\\\", \\\"sha256\\\": \\\"d9f87148a702b2a87d1c12b921cd3e8c1832d7e31e6437bb6659f669ad24fb95\\\", \\\"valid\\\": false}\", \"tool_calls_remaining\": 5}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":2756,\"stop_reason\":\"end_turn\",\"session_id\":\"ba4847b6-d4d8-4d80-a71a-47b128054fda\",\"total_cost_usd\":0.00042146,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":986,\"cache_read_input_tokens\":956,\"output_tokens\":429,\"output_tokens_details\":{\"thinking_tokens\":205},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":986,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":429,\"cache_read_input_tokens\":956,\"cache_creation_input_tokens\":986,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":986},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":429,\"cacheReadInputTokens\":956,\"cacheCreationInputTokens\":986,\"webSearchRequests\":0,\"costUSD\":0.00042146,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":205,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"corrupt_file\\\",\\\"action\\\":\\\"blocklist_and_search\\\",\\\"target\\\":\\\"The Lantern Ledger (Ines Varga) EPUB, sha256 d9f87148a702b2a87d1c12b921cd3e8c1832d7e31e6437bb6659f669ad24fb95\\\",\\\"confidence\\\":0.85,\\\"evidence_refs\\\":[\\\"t1\\\"],\\\"reason\\\":\\\"epub_inspect ok: file is 820 bytes and fails zip parsing (BadZipFile, valid=false). An EPUB must be a zip container, so the copy is damaged or truncated. Case has no other evidence and the sample is one tool call, so the title and author were not checked.\\\"}\",\"ttft_ms\":1943,\"type\":\"result\",\"duration_ms\":2846,\"uuid\":\"6b90b720-2943-4786-a7bd-22088e6c3810\",\"ttft_stream_ms\":965,\"time_to_request_ms\":86,\"first_content_frame_ms\":966,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-haiku-5-5",
+      "text": "{\"type\":\"decision\",\"class\":\"corrupt_file\",\"action\":\"blocklist_and_search\",\"target\":\"The Lantern Ledger (Ines Varga) EPUB, sha256 d9f87148a702b2a87d1c12b921cd3e8c1832d7e31e6437bb6659f669ad24fb95\",\"confidence\":0.85,\"evidence_refs\":[\"t1\"],\"reason\":\"epub_inspect ok: file is 820 bytes and fails zip parsing (BadZipFile, valid=false). An EPUB must be a zip container, so the copy is damaged or truncated. Case has no other evidence and the sample is one tool call, so the title and author were not checked.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 986,
+        "cache_read_input_tokens": 956,
+        "cost_usd": 0.00042146,
+        "input_tokens": 2,
+        "output_tokens": 429
+      },
+      "validation_errors": [],
+      "wall_s": 3.576
+    }
+  ],
+  "usage": {
+    "cost_reported": true,
+    "cost_usd": 0.00061282,
+    "input_tokens": 4,
+    "output_tokens": 501
+  },
+  "wall": {
+    "case_excl_load_s": 6.169,
+    "load_s": 0.0,
+    "tool_s": [
+      0.015
+    ],
+    "total_s": 6.169,
+    "turn_s": [
+      2.577,
+      3.576
+    ]
+  }
+}

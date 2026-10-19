@@ -1,0 +1,58 @@
+{
+  "id": "td-epub-mismatch-001",
+  "suite_version": "harness-testdata-v1",
+  "split": "dev",
+  "media_type": "epub",
+  "family": "td-epub",
+  "truth": {
+    "class": "identity_mismatch",
+    "source": "construction",
+    "ref": "make_fixtures.py: orchard story packaged where ledger is expected; sha256 pinned"
+  },
+  "supported_actions": [
+    "blocklist_and_search",
+    "escalate"
+  ],
+  "solvable": true,
+  "context": {
+    "title": "The Lantern Ledger",
+    "expected": {
+      "title": "The Lantern Ledger",
+      "author": "Ines Varga",
+      "language": "en"
+    },
+    "arr": {
+      "app": null,
+      "ids": {}
+    },
+    "notes_for_model": "This EPUB was imported for the book above. Check that it is the right book."
+  },
+  "fixture": {
+    "kind": "local",
+    "sha256": "a1a75ebd16e8dfb03ba67e5dfa794e1c300d2363f7247bcdf2f1f93cad5b2c59",
+    "bytes": 1352,
+    "locator": "fixtures/td-wrong.epub"
+  },
+  "evidence": [
+    {
+      "id": "e1",
+      "tool": "arr_lookup",
+      "args": {},
+      "status": "ok",
+      "output": "imported as \"The Lantern Ledger - Ines Varga.epub\""
+    }
+  ],
+  "tools_available": [
+    "epub_inspect",
+    "arr_lookup"
+  ],
+  "provenance": "new (harness self-test data; synthetic text written for this test)",
+  "outcome_step": {
+    "check": "epub_title_is",
+    "inputs": {
+      "path": "fixtures/td-right.epub",
+      "title": "The Lantern Ledger"
+    },
+    "expected": "repaired"
+  }
+}
