@@ -38,7 +38,7 @@ stderr (scrubbed, capped excerpt), elapsed_s, output {structured findings}, reas
 ```
 
 * **status** describes the collection: `ok` = it ran to the end of its plan (findings such as decoder errors, `valid: false` or tag mismatches are in `output.findings`, not hidden in the status);
-  `partial` = some part of the plan did not run or finish (cap, deadline, timeout, missing optional binary, unknown duration), and `coverage.not_verified` and `reason` say which;
+  `partial` = some part of the plan did not run or finish (cap, deadline, timeout, missing optional binary, unknown duration, a frame produced with errors, an audiobook part that could not be read), and `coverage.not_verified` and `reason` say which;
   `timeout` = nothing finished inside its timeout; `unavailable` = a required binary is missing (`reason` names it, nothing was run, `coverage.verified` is empty);
   `error` = it could not do its job. `cause` separates **`input`** (the file is damaged or unreadable: ffprobe exits non-zero, not a zip, a CRC failure, the OPF or a manifest member is broken; the suite's recorded
   stages `zip_open`, `zip_crc`, `opf_parse`, `manifest`) from **`tool`** (a binary could not start, output cap hit, JSON unparsable, collector crashed).
@@ -47,16 +47,20 @@ stderr (scrubbed, capped excerpt), elapsed_s, output {structured findings}, reas
   `recorded_from`, and is refused (`unavailable`) when the input's size and head/tail hashes differ from the recording's `input`. Kinds absent from the recording run live.
 * `input` is a **partial** fingerprint only (size, SHA-256 of the first and last MiB). The whole file is never hashed or read except where a collector decodes it.
 * Paths never appear in output: the input path and base name are replaced by `<input>` in stderr excerpts and errors (`output` carries only the base names the parts of an audiobook have, in `files[].name`).
+* `to_tool_result` puts status, reason, cause, replay_note, bounds_clamped, coverage and stderr first and `output` last; when the text exceeds the cap it is `output` that is cut (a string ending in `...[output truncated]`), so the object stays valid JSON.
 * `to_tool_result`: `unavailable` becomes tool-result status `error` with `evidence_status: "unavailable"` beside it, because the harness' `ToolResult` knows `ok|partial|error|timeout` only. The wiring story should either add `unavailable`
   to `ToolResult` or keep that mapping.
 
 ## Bounds and safety
 
 Defaults and hard maxima are in `core.BOUND_SPEC` (a request above the hard maximum is cut and listed in `bounds_clamped`; an unknown bound name raises). Main ones: `timeout_s` 20 per subprocess (max 60), `deadline_s` 120 per collector
-(a subprocess timeout never exceeds the time left), `segments` 3, `segment_s` 4, `max_segments` 10, `frames` 3, `max_stdout_bytes` 1 MiB, `max_stderr_bytes` 64 KiB, `stderr_excerpt_bytes` 1500, `max_files` 50 parts,
-`epub_max_members` 5000, `epub_max_uncompressed_bytes` 128 MiB, `epub_max_member_bytes` 8 MiB, `epub_max_xhtml_docs` 200.
+(a subprocess timeout never exceeds the time left), `segments` 3, `segment_s` 4, `max_segments` 10, `frames` 3, `max_stdout_bytes` 4 MiB, `max_frame_bytes` 8 MiB (one PNG), `max_stderr_bytes` 64 KiB, `stderr_excerpt_bytes` 1500, `max_files` 50 parts,
+`epub_max_members` 5000, `epub_max_uncompressed_bytes` 128 MiB, `epub_max_member_bytes` 8 MiB, `epub_max_opf_bytes` 2 MiB (container.xml and the OPF are read whole), `epub_max_xhtml_docs` 200.
 
-* argv lists only, no shell; every child runs at `nice 19` with `-threads 1`, in its own process group (killed on timeout), stdin closed, stdout and stderr in temp files capped with `RLIMIT_FSIZE`, core dumps off.
+* argv lists only, no shell; every child runs at `nice 19` with `-threads 1` and `OMP_THREAD_LIMIT=1` (tesseract), in its own process group (killed on timeout), stdin closed, stdout and stderr in temp files capped with `RLIMIT_FSIZE`, core dumps off.
+  A child killed by the file-size cap (SIGXFSZ, restored to its default in the child) is reported as the collector's own cap (`cause: tool`, segment/frame state `output_cap`), never as a damaged file.
+* Every ffmpeg/ffprobe call gets `-protocol_whitelist file,pipe` and `-i <absolute path>`: the input path is made absolute in `collect()` (subprocesses run in the scratch dir), so a name starting with `-` or `concat:` cannot be read as an option or a protocol.
+  Limit: `file` stays allowed, so a playlist-style input that names other local files can still make ffmpeg open them.
 * Inputs are opened read-only (ffmpeg/ffprobe read them; the zip is opened for reading). Every output goes to the `-f null` muxer or to a temp dir (PNG frames) that is deleted when `collect` returns; frames are deleted as soon as they are read.
 * Serial only: no parallel subprocesses. Heavy runs (generation, decoding real media) belong in a CPU-limited Job, not the dev-env pod; this pod has no ffmpeg.
 * EPUB: the zip is streamed through CRC checking inside the byte cap, a member that inflates past its declared size is a `zip_crc` failure, documents with `<!ENTITY` declarations are not parsed (reported), nothing is extracted.
@@ -80,7 +84,7 @@ Defaults and hard maxima are in `core.BOUND_SPEC` (a request above the hard maxi
 | `core.py` | bounds, subprocess runner, `Ctx`, record builder, `to_tool_result`, replay |
 | `avtools.py` | probe, decode, frames, audio, audiobook collectors |
 | `epubtool.py` | EPUB collector |
-| `test_evidence.py` | 83 unit tests: fake runner for every collector (ok, partial, timeout, missing binary, corrupt input), real zips for EPUB, real subprocess runner with tiny python children |
+| `test_evidence.py` | 100 unit tests (the last class is the regression set for the independent review of PR 1010): fake runner for every collector (ok, partial, timeout, missing binary, corrupt input), real zips for EPUB, real subprocess runner with tiny python children |
 | `live_smoke.py`, `launch_smoke.py` | the live smoke: generate synthetic fixtures and collect inside a CPU-limited Job, then fetch the records and delete the Job |
 | `testdata/live-smoke/` | records from that run, labelled live, with `RUN.json` (image digest, ffmpeg/ffprobe/python versions, fixture hashes) and `SUMMARY.md` |
 

@@ -7,14 +7,14 @@ Job limits: cpu 1, memory 1Gi, ephemeral 2Gi; the Job was deleted after the reco
 
 | fixture | tool | status | cause | mode | what the record says |
 |---|---|---|---|---|---|
-| `book-bad/` | audiobook | ok |  | live | part3.m4b: ffprobe error (ffprobe exited 1: the container could not be read); tags differ or are missing across parts |
+| `book-bad/` | audiobook | partial |  | live | part3.m4b: ffprobe error (ffprobe exited 1: the container could not be read); tags differ or are missing across parts |
 | `book/` | audiobook | ok |  | live |  |
 | `broken-manifest.epub` | epub | error | input | live | manifest: manifest names 1 member(s) that are not in the archive: ['OEBPS/ch2.xhtml'] |
 | `broken-xhtml.epub` | epub | ok |  | live | 1 spine document(s) are not well-formed XML (first: OEBPS/ch1.xhtml) |
 | `corrupt.mkv` | probe | ok |  | live |  |
 | `corrupt.mkv` | decode | ok |  | live | 2 of 4 sampled segments produced decoder errors |
-| `corrupt.mkv` | frames | ok |  | live |  |
-| `corrupt.mkv` | audio | ok |  | live |  |
+| `corrupt.mkv` | frames | partial |  | live | frame at 6.023s decoded but ffmpeg exited 0 with 1 error line(s) |
+| `corrupt.mkv` | audio | ok |  | live | audio stream 1: 2 of 4 segments not normal (errors) |
 | `good.epub` | epub | ok |  | live |  |
 | `good.mkv` | probe | ok |  | live |  |
 | `good.mkv` | decode | ok |  | live |  |
@@ -31,5 +31,5 @@ Job limits: cpu 1, memory 1Gi, ephemeral 2Gi; the Job was deleted after the reco
 | `truncated.mkv` | probe | ok |  | live |  |
 | `truncated.mkv` | decode | ok |  | live | 3 of 4 sampled segments produced decoder errors |
 | `truncated.mkv` | frames | partial |  | live | frame at 6.023s: no_frame; frame at 11.546s: no_frame |
-| `truncated.mkv` | audio | ok |  | live | audio stream 1: 1 of 4 segments not normal (no_audio) |
+| `truncated.mkv` | audio | ok |  | live | audio stream 1: 3 of 4 segments not normal (errors) |
 | `truncated.mkv#full-decode` | decode | ok |  | live | 3 of 4 sampled segments produced decoder errors; full decode produced 1 error line(s) |

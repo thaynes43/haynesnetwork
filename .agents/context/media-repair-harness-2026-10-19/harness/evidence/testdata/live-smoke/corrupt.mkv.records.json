@@ -5,7 +5,7 @@
   {
    "bounds": {
     "max_stderr_bytes": 65536,
-    "max_stdout_bytes": 1048576,
+    "max_stdout_bytes": 4194304,
     "stderr_excerpt_bytes": 1500,
     "timeout_s": 20
    },
@@ -19,14 +19,14 @@
      "stream list, duration, tags, chapters as declared by the container"
     ]
    },
-   "elapsed_s": 0.067,
+   "elapsed_s": 0.068,
    "harness_tool": "ffprobe",
    "input": {
     "bytes": 183096,
-    "head_1m_sha256": "1f5b2bd05b2e74e33752802d4b51fe9df7d88346878aa5ad951d6bc11a276bb0",
+    "head_1m_sha256": "16714af65222d7187e318786a895fe31bfe40b1fac66f912d56664405956f63e",
     "name": "corrupt.mkv",
     "partial_fingerprint_only": true,
-    "tail_1m_sha256": "1f5b2bd05b2e74e33752802d4b51fe9df7d88346878aa5ad951d6bc11a276bb0"
+    "tail_1m_sha256": "16714af65222d7187e318786a895fe31bfe40b1fac66f912d56664405956f63e"
    },
    "mode": "live",
    "output": {
@@ -77,7 +77,7 @@
     "full_timeout_s": 60,
     "max_segments": 10,
     "max_stderr_bytes": 65536,
-    "max_stdout_bytes": 1048576,
+    "max_stdout_bytes": 4194304,
     "segment_s": 4,
     "segments": 3,
     "stderr_excerpt_bytes": 1500,
@@ -92,14 +92,14 @@
      "4 segment(s) of up to 4s decoded (head, tail and 3 spread offsets); 15.1s decoded (125% of the duration)"
     ]
    },
-   "elapsed_s": 0.296,
+   "elapsed_s": 0.298,
    "harness_tool": "decode_sample",
    "input": {
     "bytes": 183096,
-    "head_1m_sha256": "1f5b2bd05b2e74e33752802d4b51fe9df7d88346878aa5ad951d6bc11a276bb0",
+    "head_1m_sha256": "16714af65222d7187e318786a895fe31bfe40b1fac66f912d56664405956f63e",
     "name": "corrupt.mkv",
     "partial_fingerprint_only": true,
-    "tail_1m_sha256": "1f5b2bd05b2e74e33752802d4b51fe9df7d88346878aa5ad951d6bc11a276bb0"
+    "tail_1m_sha256": "16714af65222d7187e318786a895fe31bfe40b1fac66f912d56664405956f63e"
    },
    "mode": "live",
    "output": {
@@ -128,10 +128,10 @@
      {
       "at_s": 3.011,
       "decoded_s": 3.119,
-      "elapsed_s": 0.065,
+      "elapsed_s": 0.066,
       "error_lines": 1,
       "errors": [
-       "[in#0/matroska,webm @ 0x7fe2155ec340] Unknown-sized element at 0x189a9 inside parent with finite size"
+       "[in#0/matroska,webm @ 0x7fc998797340] Unknown-sized element at 0x189a9 inside parent with finite size"
       ],
       "exit_code": 0,
       "expected_s": 4.0,
@@ -145,7 +145,7 @@
       "elapsed_s": 0.066,
       "error_lines": 1,
       "errors": [
-       "[in#0/matroska,webm @ 0x7ff55ea80340] Unknown-sized element at 0x189a9 inside parent with finite size"
+       "[in#0/matroska,webm @ 0x7f6c9904b340] Unknown-sized element at 0x189a9 inside parent with finite size"
       ],
       "exit_code": 0,
       "expected_s": 4.0,
@@ -156,7 +156,7 @@
      {
       "at_s": 8.046,
       "decoded_s": 3.982,
-      "elapsed_s": 0.065,
+      "elapsed_s": 0.066,
       "error_lines": 0,
       "errors": [],
       "exit_code": 0,
@@ -167,6 +167,7 @@
      }
     ],
     "segments_clean": 2,
+    "segments_output_cap": 0,
     "segments_planned": 4,
     "segments_run": 4,
     "segments_short": 0,
@@ -176,7 +177,7 @@
     "segments_with_errors": 2
    },
    "status": "ok",
-   "stderr": "[in#0/matroska,webm @ 0x7fe2155ec340] Unknown-sized element at 0x189a9 inside parent with finite size\n[in#0/matroska,webm @ 0x7ff55ea80340] Unknown-sized element at 0x189a9 inside parent with finite size",
+   "stderr": "[in#0/matroska,webm @ 0x7fc998797340] Unknown-sized element at 0x189a9 inside parent with finite size\n[in#0/matroska,webm @ 0x7f6c9904b340] Unknown-sized element at 0x189a9 inside parent with finite size",
    "tool": "decode",
    "tool_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
   },
@@ -186,7 +187,7 @@
     "frame_width": 640,
     "frames": 3,
     "max_stderr_bytes": 65536,
-    "max_stdout_bytes": 1048576,
+    "max_stdout_bytes": 4194304,
     "ocr": "auto",
     "ocr_max_chars": 400,
     "ocr_timeout_s": 20,
@@ -197,26 +198,29 @@
     "not_verified": [
      "frames between the sampled offsets",
      "whether any frame is the right picture: only decodability and text were looked at",
-     "on-screen text was not read (tesseract not found on PATH)"
+     "on-screen text was not read (tesseract not found on PATH)",
+     "frame at 6.023s: produced with decoder errors"
     ],
     "verified": [
-     "3 frame(s) decoded at spread offsets (scaled to width 640); pictures not kept"
+     "2 frame(s) decoded at spread offsets (scaled to width 640); pictures not kept"
     ]
    },
    "elapsed_s": 0.249,
    "harness_tool": "frame_sample",
    "input": {
     "bytes": 183096,
-    "head_1m_sha256": "1f5b2bd05b2e74e33752802d4b51fe9df7d88346878aa5ad951d6bc11a276bb0",
+    "head_1m_sha256": "16714af65222d7187e318786a895fe31bfe40b1fac66f912d56664405956f63e",
     "name": "corrupt.mkv",
     "partial_fingerprint_only": true,
-    "tail_1m_sha256": "1f5b2bd05b2e74e33752802d4b51fe9df7d88346878aa5ad951d6bc11a276bb0"
+    "tail_1m_sha256": "16714af65222d7187e318786a895fe31bfe40b1fac66f912d56664405956f63e"
    },
    "mode": "live",
    "output": {
     "distinct_frames": 3,
     "duration_s": 12.046,
-    "findings": [],
+    "findings": [
+     "frame at 6.023s decoded but ffmpeg exited 0 with 1 error line(s)"
+    ],
     "frames": [
      {
       "at_s": 0.5,
@@ -233,13 +237,13 @@
      {
       "at_s": 6.023,
       "bytes": 144118,
+      "error_lines": 1,
+      "errors": [
+       "[in#0/matroska,webm @ 0x7fba23334340] Unknown-sized element at 0x189a9 inside parent with finite size"
+      ],
       "height": 480,
-      "ocr": {
-       "reason": "tesseract not found on PATH",
-       "state": "unavailable"
-      },
       "sha256": "402d570439315ffaafca8266868ca5f5c3ff0f84df442d754de2044a7f61561e",
-      "state": "ok",
+      "state": "errors",
       "width": 640
      },
      {
@@ -255,11 +259,13 @@
       "width": 640
      }
     ],
-    "frames_ok": 3,
+    "frames_ok": 2,
+    "frames_with_errors": 1,
     "ocr": "unavailable"
    },
-   "status": "ok",
-   "stderr": "[in#0/matroska,webm @ 0x7f3a87e05340] Unknown-sized element at 0x189a9 inside parent with finite size",
+   "reason": "frame at 6.023s: produced with decoder errors",
+   "status": "partial",
+   "stderr": "[in#0/matroska,webm @ 0x7fba23334340] Unknown-sized element at 0x189a9 inside parent with finite size",
    "tool": "frames",
    "tool_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
   },
@@ -269,7 +275,7 @@
     "max_audio_streams": 2,
     "max_segments": 10,
     "max_stderr_bytes": 65536,
-    "max_stdout_bytes": 1048576,
+    "max_stdout_bytes": 4194304,
     "segment_s": 4,
     "segments": 3,
     "silence_min_s": 0.5,
@@ -288,19 +294,21 @@
      "language and title tags read from the container"
     ]
    },
-   "elapsed_s": 0.263,
+   "elapsed_s": 0.264,
    "harness_tool": "audio_sample",
    "input": {
     "bytes": 183096,
-    "head_1m_sha256": "1f5b2bd05b2e74e33752802d4b51fe9df7d88346878aa5ad951d6bc11a276bb0",
+    "head_1m_sha256": "16714af65222d7187e318786a895fe31bfe40b1fac66f912d56664405956f63e",
     "name": "corrupt.mkv",
     "partial_fingerprint_only": true,
-    "tail_1m_sha256": "1f5b2bd05b2e74e33752802d4b51fe9df7d88346878aa5ad951d6bc11a276bb0"
+    "tail_1m_sha256": "16714af65222d7187e318786a895fe31bfe40b1fac66f912d56664405956f63e"
    },
    "mode": "live",
    "output": {
     "duration_s": 12.046,
-    "findings": [],
+    "findings": [
+     "audio stream 1: 2 of 4 segments not normal (errors)"
+    ],
     "silence_min_s": 0.5,
     "silence_threshold_db": -50,
     "streams": [
@@ -313,7 +321,7 @@
       "segments": [
        {
         "at_s": 0.0,
-        "elapsed_s": 0.066,
+        "elapsed_s": 0.065,
         "exit_code": 0,
         "max_db": -16.1,
         "mean_db": -21.1,
@@ -326,28 +334,34 @@
        },
        {
         "at_s": 3.011,
-        "elapsed_s": 0.065,
+        "elapsed_s": 0.066,
         "exit_code": 0,
         "max_db": -17.5,
         "mean_db": -21.3,
-        "problem_lines": 0,
+        "problem_lines": 1,
+        "problems": [
+         "Unknown-sized element at 0x189a9 inside parent with finite size"
+        ],
         "silence_runs": 0,
         "silent_fraction": 0.0,
         "silent_s": 0.0,
-        "state": "ok",
+        "state": "errors",
         "window_s": 4.0
        },
        {
         "at_s": 6.023,
-        "elapsed_s": 0.065,
+        "elapsed_s": 0.066,
         "exit_code": 0,
         "max_db": -17.8,
         "mean_db": -23.9,
-        "problem_lines": 0,
+        "problem_lines": 1,
+        "problems": [
+         "Unknown-sized element at 0x189a9 inside parent with finite size"
+        ],
         "silence_runs": 1,
         "silent_fraction": 0.267,
         "silent_s": 1.068,
-        "state": "ok",
+        "state": "errors",
         "window_s": 4.0
        },
        {
@@ -368,7 +382,7 @@
     ]
    },
    "status": "ok",
-   "stderr": "",
+   "stderr": "Unknown-sized element at 0x189a9 inside parent with finite size\nUnknown-sized element at 0x189a9 inside parent with finite size",
    "tool": "audio",
    "tool_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
   }

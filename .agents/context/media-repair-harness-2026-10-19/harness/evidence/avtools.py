@@ -1,6 +1,7 @@
 """ffprobe / ffmpeg collectors: probe, decode, frames, audio, audiobook.  See README.md for the record shape."""
 import hashlib
 import json
+import os
 import re
 import struct
 from pathlib import Path
@@ -13,6 +14,14 @@ DECODE_BOUNDS = PROBE_BOUNDS + ('deadline_s', 'segments', 'segment_s', 'max_segm
 FRAME_BOUNDS = PROBE_BOUNDS + ('deadline_s', 'frames', 'frame_width', 'ocr', 'ocr_timeout_s', 'ocr_max_chars')
 AUDIO_BOUNDS = PROBE_BOUNDS + ('deadline_s', 'segments', 'segment_s', 'max_segments', 'max_audio_streams', 'silence_noise_db', 'silence_min_s')
 BOOK_BOUNDS = PROBE_BOUNDS + ('deadline_s', 'max_files', 'audiobook_segments', 'audiobook_segment_s', 'max_segments')
+
+WHITELIST = ['-protocol_whitelist', 'file,pipe']  # input option: only local files and pipes, never concat:, http:, tcp: and friends
+
+
+def _in(path):
+    """Input arguments for ffmpeg/ffprobe: protocol whitelist, then `-i` and an ABSOLUTE path (so it cannot be read as an option or a protocol)."""
+    return WHITELIST + ['-i', os.path.abspath(str(path))]
+
 
 NEVER_PROVES = 'a clean sample does not prove whole-file health'
 
@@ -55,19 +64,20 @@ def probe_file(ctx, path, deadline):
         res = {'state': 'unavailable', 'reason': 'ffprobe not found on PATH', 'data': None, 'stderr': '', 'elapsed_s': 0.0}
     else:
         argv = [exe, '-v', 'error', '-threads', '1', '-probesize', '5000000', '-analyzeduration', '2000000',
-                '-show_format', '-show_streams', '-show_chapters', '-of', 'json', str(path)]
+                '-show_format', '-show_streams', '-show_chapters', '-of', 'json'] + _in(path)
         r = ctx.run(argv, deadline=deadline)
         stderr = ctx.excerpt(r.stderr)
         if r.error:
             res = {'state': 'error', 'cause': 'tool', 'reason': 'could not start ffprobe: %s' % ctx.scrub(r.error), 'data': None,
                    'stderr': '', 'elapsed_s': r.elapsed_s}
+        elif r.file_size_limit or r.stdout_truncated:  # before the exit code: a SIGXFSZ kill is the collector's cap, not a damaged file
+            res = {'state': 'error', 'cause': 'tool', 'rc': r.returncode,
+                   'reason': 'ffprobe output hit the %d byte cap (max_stdout_bytes); the file was not judged' % ctx.bounds['max_stdout_bytes'],
+                   'data': None, 'stderr': stderr, 'elapsed_s': r.elapsed_s}
         elif r.timed_out:
             res = {'state': 'timeout', 'reason': 'ffprobe exceeded %ss' % ctx.bounds['timeout_s'], 'data': None, 'stderr': stderr, 'elapsed_s': r.elapsed_s}
         elif r.returncode != 0:
             res = {'state': 'error', 'cause': 'input', 'rc': r.returncode, 'reason': 'ffprobe exited %s: the container could not be read' % r.returncode,
-                   'data': None, 'stderr': stderr, 'elapsed_s': r.elapsed_s}
-        elif r.stdout_truncated:
-            res = {'state': 'error', 'cause': 'tool', 'reason': 'ffprobe output exceeded the %d byte cap' % ctx.bounds['max_stdout_bytes'],
                    'data': None, 'stderr': stderr, 'elapsed_s': r.elapsed_s}
         else:
             try:
@@ -94,7 +104,7 @@ def condense(data):
                 'title': _clip(t.get('title') or t.get('TITLE'), 120) or None}
         streams.append({k: v for k, v in item.items() if v is not None})
     chapters = []
-    for c in (data.get('chapters') or [])[:200]:
+    for c in (data.get('chapters') or []):  # all of them: the findings need the whole list, only the output is cut
         ct = c.get('tags') or {}
         chapters.append({'start_s': _f(c.get('start_time')), 'end_s': _f(c.get('end_time')), 'title': _clip(ct.get('title') or ct.get('TITLE'), 120) or None})
     return {'format': fmt.get('format_name'), 'duration_s': _f(fmt.get('duration')), 'bytes': _f(fmt.get('size'), 0),
@@ -122,6 +132,9 @@ def collect_probe(ctx, started):
     not_verified = ['stream contents: nothing was decoded', 'stream changes beyond the first ~5 MB analysed (probesize 5000000)']
     if p['state'] == 'ok':
         out = condense(p['data'])
+        if len(out['chapters']) > 200:
+            out['chapters_omitted'] = len(out['chapters']) - 200
+            out['chapters'] = out['chapters'][:200]
         findings = []
         if not out['streams']:
             findings.append('the container lists no streams')
@@ -180,7 +193,7 @@ def decode_window(ctx, path, at, window, deadline, audio_only=False, timeout_s=N
     argv = [ctx.binary('ffmpeg'), '-nostdin', '-v', 'error', '-nostats', '-progress', 'pipe:1', '-threads', '1']
     if at is not None:
         argv += ['-ss', '%g' % at]
-    argv += ['-i', str(path)]
+    argv += _in(path)
     if window is not None:
         argv += ['-t', '%g' % window]
     argv += (['-map', '0:a:0', '-vn'] if audio_only else ['-map', '0:v:0?', '-map', '0:a:0?']) + ['-sn', '-dn', '-f', 'null', '-']
@@ -192,7 +205,9 @@ def decode_window(ctx, path, at, window, deadline, audio_only=False, timeout_s=N
     errs = [_clip(ctx.scrub(l), 160) for l in _lines(r.stderr)]
     frames, decoded = _progress(r.stdout)
     seg.update(exit_code=r.returncode, frames=frames, decoded_s=_f(decoded), error_lines=len(errs), errors=errs[:3])
-    if r.timed_out:
+    if r.file_size_limit:
+        seg['state'] = 'output_cap'  # the collector's own output cap killed ffmpeg: says nothing about the file
+    elif r.timed_out:
         seg['state'] = 'timeout'
     elif r.returncode != 0 or errs:
         seg['state'] = 'errors'
@@ -221,7 +236,7 @@ def _decode_summary(segs, skipped, duration):
     decoded = sum((s.get('decoded_s') or 0) for s in segs)
     out = {'segments_planned': len(segs) + skipped, 'segments_run': len(segs), 'segments_skipped_deadline': skipped,
            'segments_clean': count('clean'), 'segments_with_errors': count('errors'), 'segments_short': count('short'),
-           'segments_timeout': count('timeout'), 'segments_spawn_error': count('spawn_error'),
+           'segments_timeout': count('timeout'), 'segments_spawn_error': count('spawn_error'), 'segments_output_cap': count('output_cap'),
            'decoder_error_lines': sum(s.get('error_lines', 0) for s in segs), 'decoded_s': _f(decoded),
            'sampled_fraction': _f(decoded / duration, 3) if duration else None, 'segments': segs}
     out['clean'] = bool(segs) and count('clean') == len(segs)
@@ -247,6 +262,8 @@ def collect_decode(ctx, started):
         partial_reasons.append('%d planned segments skipped: collector deadline reached' % skipped)
     if out['segments_timeout']:
         partial_reasons.append('%d segments timed out' % out['segments_timeout'])
+    if out['segments_output_cap']:
+        partial_reasons.append('%d segments hit the collector output cap (a tool limit; the file was not judged for them)' % out['segments_output_cap'])
     if segs and out['segments_spawn_error'] == len(segs):
         return tool_error('decode', ctx, started, 'ffmpeg could not be started: %s' % segs[0].get('error'), version=ver, bounds_used=b)
     if out['segments_with_errors']:
@@ -342,24 +359,36 @@ def collect_frames(ctx, started):
             partial_reasons.append('frames from offset %g on skipped: collector deadline reached' % off)
             break
         png = ctx.scratch / ('frame_%02d.png' % i)
-        argv = [ctx.binary('ffmpeg'), '-nostdin', '-v', 'error', '-threads', '1', '-ss', '%g' % off, '-i', ctx.path, '-map', '0:v:0',
-                '-frames:v', '1', '-vf', 'scale=%d:-2' % ctx.bounds['frame_width'], '-y', str(png)]
-        r = ctx.run(argv, deadline=deadline)
+        argv = [ctx.binary('ffmpeg'), '-nostdin', '-v', 'error', '-threads', '1', '-ss', '%g' % off] + _in(ctx.path) + [
+                '-map', '0:v:0', '-frames:v', '1', '-vf', 'scale=%d:-2' % ctx.bounds['frame_width'], '-y', str(png)]
+        r = ctx.run(argv, deadline=deadline, max_file=ctx.bounds['max_frame_bytes'])
         fr = {'at_s': off}
         if r.error:
             fr.update(state='spawn_error', error=ctx.scrub(r.error))
+        elif r.file_size_limit:
+            fr.update(state='output_cap', note='ffmpeg was killed at the max_frame_bytes cap (%d); a tool limit, not a verdict on the file' % ctx.bounds['max_frame_bytes'])
         elif r.timed_out:
             fr['state'] = 'timeout'
         else:
             data = png.read_bytes() if png.is_file() else b''
             size = _png_size(data)
+            elines = _lines(r.stderr)
             if size is None:
                 fr.update(state='no_frame', exit_code=r.returncode)
             else:
-                fr.update(state='ok', width=size[0], height=size[1], bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
-            if r.stderr.strip():
+                # a frame that came out while ffmpeg exited non-zero or printed errors is not a clean frame
+                fr.update(state='ok' if r.returncode == 0 and not elines else 'errors', width=size[0], height=size[1], bytes=len(data),
+                          sha256=hashlib.sha256(data).hexdigest())
+            if r.returncode != 0:
+                fr['exit_code'] = r.returncode
+            if elines:
+                fr['error_lines'] = len(elines)
+                fr['errors'] = [_clip(ctx.scrub(l), 160) for l in elines[:3]]
                 errs.append(r.stderr)
-        if fr['state'] != 'ok':
+        if fr['state'] == 'errors':
+            findings.append('frame at %gs decoded but ffmpeg exited %s with %d error line(s)' % (off, r.returncode, len(elines)))
+            partial_reasons.append('frame at %gs: produced with decoder errors' % off)
+        elif fr['state'] != 'ok':
             partial_reasons.append('frame at %gs: %s' % (off, fr['state']))
         elif ocr_exe:
             fr['ocr'] = _ocr(ctx, ocr_exe, png, deadline)
@@ -371,10 +400,10 @@ def collect_frames(ctx, started):
         if png.is_file():
             png.unlink()  # scratch is removed anyway; keep it small while sampling
     ok_frames = [f for f in frames if f['state'] == 'ok']
-    hashes = [f['sha256'] for f in ok_frames]
+    hashes = [f['sha256'] for f in frames if f.get('sha256')]
     if len(hashes) >= 2 and len(set(hashes)) == 1:
         findings.append('all sampled frames are byte-identical (a frozen or placeholder picture is possible)')
-    out = {'duration_s': duration, 'frames': frames, 'frames_ok': len(ok_frames), 'distinct_frames': len(set(hashes)), 'findings': findings,
+    out = {'duration_s': duration, 'frames': frames, 'frames_ok': len(ok_frames), 'frames_with_errors': sum(1 for f in frames if f['state'] == 'errors'), 'distinct_frames': len(set(hashes)), 'findings': findings,
            'ocr': ('tesseract' if ocr_exe else ('off' if ctx.bounds['ocr'] == 'off' else 'unavailable'))}
     verified = ['%d frame(s) decoded at spread offsets (scaled to width %d); pictures not kept' % (len(ok_frames), ctx.bounds['frame_width'])]
     not_verified = ['frames between the sampled offsets', 'whether any frame is the right picture: only decodability and text were looked at']
@@ -386,7 +415,7 @@ def collect_frames(ctx, started):
     not_verified += partial_reasons
     version = ('%s; %s' % (ver, ocr_ver) if ocr_ver else ver)
     if frames and all(f['state'] == 'timeout' for f in frames):
-        status = 'timeout'
+        status = 'timeout'  # (an all-output_cap run falls through to partial below)
     elif frames and all(f['state'] == 'spawn_error' for f in frames):
         return tool_error('frames', ctx, started, 'ffmpeg could not be started', version=ver, bounds_used=b)
     else:
@@ -401,7 +430,7 @@ _MEAN = re.compile(r'mean_volume:\s*(-?inf|-?[\d.]+)\s*dB')
 _MAX = re.compile(r'max_volume:\s*(-?inf|-?[\d.]+)\s*dB')
 _SIL_START = re.compile(r'silence_start:\s*(-?[\d.]+)')
 _SIL_END = re.compile(r'silence_end:\s*(-?[\d.]+)\s*\|\s*silence_duration:\s*(-?[\d.]+)')
-_LEVEL = re.compile(r'^\[(warning|error|fatal|panic)\]\s*(.*)')
+_LEVEL = re.compile(r'\[(warning|error|fatal|panic)\]\s*(.*)')  # `[error] msg` and `[aac @ 0x..] [error] msg` both occur
 
 
 def parse_levels(stderr_text, window):
@@ -426,7 +455,7 @@ def parse_levels(stderr_text, window):
             silent += max(0.0, float(m.group(2)))
             n_sil += 1
             open_start = None
-        m = _LEVEL.match(line.strip())
+        m = _LEVEL.search(line)
         if m:
             problems.append(m.group(2))
     if open_start is not None and window:
@@ -464,7 +493,7 @@ def collect_audio(ctx, started):
     offsets = segment_offsets(duration, ctx.bounds['segments'], seg_s, int(ctx.bounds['max_segments']))
     if duration is None:
         partial_reasons.append('duration unknown: only the head was sampled')
-    results, errs, timeouts, skipped = [], [], 0, 0
+    results, errs, timeouts, skipped, caps = [], [], 0, 0, 0
     for st in streams:
         item = dict(st)
         item['segments'] = []
@@ -475,7 +504,7 @@ def collect_audio(ctx, started):
             if deadline.left() <= 0.5:
                 skipped += 1
                 continue
-            argv = [ctx.binary('ffmpeg'), '-nostdin', '-hide_banner', '-v', 'level+info', '-nostats', '-threads', '1', '-ss', '%g' % off, '-i', ctx.path,
+            argv = [ctx.binary('ffmpeg'), '-nostdin', '-hide_banner', '-v', 'level+info', '-nostats', '-threads', '1', '-ss', '%g' % off] + _in(ctx.path) + [
                     '-t', '%g' % seg_s, '-map', mapspec, '-vn', '-af',
                     'volumedetect,silencedetect=noise=%gdB:d=%g' % (ctx.bounds['silence_noise_db'], ctx.bounds['silence_min_s']), '-f', 'null', '-']
             r = ctx.run(argv, deadline=deadline)
@@ -483,6 +512,9 @@ def collect_audio(ctx, started):
             window = min(seg_s, duration - off) if duration else seg_s
             if r.error:
                 seg.update(state='spawn_error', error=ctx.scrub(r.error))
+            elif r.file_size_limit:
+                seg['state'] = 'output_cap'
+                caps += 1
             elif r.timed_out:
                 seg['state'] = 'timeout'
                 timeouts += 1
@@ -513,6 +545,8 @@ def collect_audio(ctx, started):
         partial_reasons.append('%d planned segments skipped: collector deadline reached' % skipped)
     if timeouts:
         partial_reasons.append('%d segments timed out' % timeouts)
+    if caps:
+        partial_reasons.append('%d segments hit the collector output cap (a tool limit, not a verdict on the file)' % caps)
     out = {'duration_s': duration, 'streams': results, 'silence_threshold_db': ctx.bounds['silence_noise_db'], 'silence_min_s': ctx.bounds['silence_min_s'], 'findings': findings}
     n_seg = sum(len(s['segments']) for s in results)
     verified = ['%d segment(s) of up to %gs decoded across %d audio stream(s): mean and max level, silence runs of at least %gs below %gdB' % (
@@ -627,12 +661,18 @@ def collect_audiobook(ctx, started, inputs):
     keep_tags = CONSISTENCY_KEYS + ('title', 'track', 'disc', 'narrator', 'comment')
     for part in parts:
         entry = {'name': part.name, 'bytes': part.stat().st_size}
+        if deadline.left() <= 0.5:
+            entry.update(probe='skipped', probe_reason='collector deadline reached before this part')
+            findings.append('%s: not examined (collector deadline reached)' % part.name)
+            partial_reasons.append('%s: not examined, collector deadline reached' % part.name)
+            files.append(entry)
+            continue
         pr = probe_file(ctx, str(part), deadline)
         if pr['state'] != 'ok':
-            entry.update(probe=pr['state'], probe_reason=pr.get('reason'), probe_stderr=pr.get('stderr'))
+            entry.update(probe=pr['state'], probe_cause=pr.get('cause'), probe_reason=pr.get('reason'), probe_stderr=pr.get('stderr'))
             findings.append('%s: ffprobe %s (%s)' % (part.name, pr['state'], pr.get('reason')))
-            if pr['state'] in ('timeout', 'unavailable'):
-                partial_reasons.append('%s: ffprobe %s' % (part.name, pr['state']))
+            # a part nobody could read means the book was not fully verified, whatever the reason
+            partial_reasons.append('%s: could not be read (ffprobe %s)' % (part.name, pr['state']))
             if pr.get('stderr'):
                 errs.append(pr['stderr'])
             files.append(entry)
@@ -657,13 +697,15 @@ def collect_audiobook(ctx, started, inputs):
             segs, skipped = sample_decode(ctx, str(part), dur, ctx.bounds['audiobook_segments'], ctx.bounds['audiobook_segment_s'],
                                           int(ctx.bounds['max_segments']), deadline, audio_only=True)
             ds = _decode_summary(segs, skipped, dur)
-            entry['decode'] = {k: ds[k] for k in ('segments_run', 'segments_clean', 'segments_with_errors', 'segments_short', 'segments_timeout',
+            entry['decode'] = {k: ds[k] for k in ('segments_run', 'segments_clean', 'segments_with_errors', 'segments_short', 'segments_timeout', 'segments_output_cap',
                                                   'decoder_error_lines', 'decoded_s', 'clean')}
             entry['decode']['segments'] = [{k: s.get(k) for k in ('at_s', 'state', 'decoded_s', 'error_lines', 'errors') if s.get(k) is not None} for s in segs]
             if skipped:
                 partial_reasons.append('%s: %d decode segments skipped (deadline)' % (part.name, skipped))
             if ds['segments_timeout']:
                 partial_reasons.append('%s: %d decode segments timed out' % (part.name, ds['segments_timeout']))
+            if ds['segments_output_cap']:
+                partial_reasons.append('%s: %d decode segments hit the collector output cap' % (part.name, ds['segments_output_cap']))
             if not ds['clean']:
                 findings.append('%s: sampled decode not clean (%d with errors, %d short, %d timed out)' % (
                     part.name, ds['segments_with_errors'], ds['segments_short'], ds['segments_timeout']))
@@ -692,9 +734,15 @@ def collect_audiobook(ctx, started, inputs):
         not_verified.append('%d non-audio file(s) in the folder were ignored' % ignored)
     if probed == 0:
         first = files[0] if files else {}
-        return make_record('audiobook', 'live', 'error', ctx, started, version=ctx.version('ffprobe'), bounds_used=b, output=out, cause='input',
-                           reason='no part could be read by ffprobe: %s' % first.get('probe_reason'), stderr=ctx.excerpt(first.get('probe_stderr') or ''),
-                           coverage={'verified': [], 'not_verified': ['chapters, durations, tags and decode: nothing was readable'] + not_verified})
+        states = {f.get('probe') for f in files}
+        cov = {'verified': [], 'not_verified': ['chapters, durations, tags and decode: nothing was readable'] + not_verified}
+        if states <= {'timeout', 'skipped'}:  # time ran out; nothing says the parts are damaged
+            return make_record('audiobook', 'live', 'timeout', ctx, started, version=ctx.version('ffprobe'), bounds_used=b, output=out,
+                               reason='no part was examined: ffprobe timed out or the collector deadline was reached (%s)' % first.get('probe_reason'),
+                               stderr=ctx.excerpt(first.get('probe_stderr') or ''), coverage=cov)
+        cause = 'input' if any(f.get('probe_cause') == 'input' for f in files) else 'tool'
+        return make_record('audiobook', 'live', 'error', ctx, started, version=ctx.version('ffprobe'), bounds_used=b, output=out, cause=cause,
+                           reason='no part could be read by ffprobe: %s' % first.get('probe_reason'), stderr=ctx.excerpt(first.get('probe_stderr') or ''), coverage=cov)
     version = ctx.version('ffprobe')
     if have_ffmpeg and ctx.version('ffmpeg'):
         version = '%s; %s' % (version, ctx.version('ffmpeg'))

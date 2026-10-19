@@ -6,6 +6,7 @@
    "bounds": {
     "epub_max_member_bytes": 8388608,
     "epub_max_members": 5000,
+    "epub_max_opf_bytes": 2097152,
     "epub_max_uncompressed_bytes": 134217728,
     "epub_max_xhtml_docs": 200,
     "stderr_excerpt_bytes": 1500
@@ -23,14 +24,14 @@
      "2 of 2 spine document(s) parsed as XML; 95 characters of text seen"
     ]
    },
-   "elapsed_s": 0.005,
+   "elapsed_s": 0.004,
    "harness_tool": "epub_inspect",
    "input": {
     "bytes": 1257,
-    "head_1m_sha256": "359ba6ef3066c5a4746c7a2a6b5ddc61d7144590ff9cd2ba3f521dda20ecd310",
+    "head_1m_sha256": "d8840db62a89ef5e1c4a6c890054c9dd8f2a7cd3e92ad3745a06fe98582a21c0",
     "name": "good.epub",
     "partial_fingerprint_only": true,
-    "tail_1m_sha256": "359ba6ef3066c5a4746c7a2a6b5ddc61d7144590ff9cd2ba3f521dda20ecd310"
+    "tail_1m_sha256": "d8840db62a89ef5e1c4a6c890054c9dd8f2a7cd3e92ad3745a06fe98582a21c0"
    },
    "mode": "live",
    "output": {

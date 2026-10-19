@@ -26,10 +26,11 @@ class Fake:
     """Scripted runner.  rules = [(predicate(argv), RunResult | callable(argv) -> RunResult)], first match wins."""
 
     def __init__(self, rules, clock=None, step=0.0):
-        self.rules, self.calls, self.clock, self.step = rules, [], clock, step
+        self.rules, self.calls, self.clock, self.step, self.max_files = rules, [], clock, step, []
 
-    def __call__(self, argv, *, timeout_s, max_stdout, max_stderr, cwd=None):
+    def __call__(self, argv, *, timeout_s, max_stdout, max_stderr, cwd=None, max_file=0):
         self.calls.append((list(argv), timeout_s))
+        self.max_files.append(max_file)
         if self.clock is not None:
             self.clock.t += self.step
         for match, result in self.rules:
@@ -485,7 +486,8 @@ class AudiobookTests(Base):
         d = self.make_parts()
         per = {'part 1.m4b': RunResult(0, book_probe(track='1/2'), b''), 'part 2.m4b': RunResult(1, b'', b'moov atom not found\n')}
         rec, _ = self.run_kind('audiobook', self.rules(per), path=d)
-        self.assertEqual(rec['status'], 'ok')
+        self.assertEqual(rec['status'], 'partial')  # finding 6: an unreadable part means the book was not fully verified
+        self.assertIn('could not be read', rec['reason'])
         self.assertEqual(rec['output']['parts_probed'], 1)
         self.assertTrue(any('part 2.m4b: ffprobe error' in f for f in rec['output']['findings']))
         self.assertNotIn('tag_consistency', rec['output'])
@@ -739,7 +741,8 @@ class RecordTests(Base):
         tr = core.to_tool_result(rec, cap=2000)
         self.assertTrue(tr['truncated'])
         self.assertLessEqual(len(tr['output'].encode()), 2000)
-        self.assertTrue(tr['output'].endswith('...[truncated]'))
+        self.assertTrue(tr['output'].endswith('...[output truncated]"}'))
+        self.assertEqual(json.loads(tr['output'])['status'], 'ok')
         self.assertEqual(tr['status'], 'ok')
 
     def test_replay_serves_matching_recording_labelled_replay(self):
@@ -841,6 +844,239 @@ class BoundTests(unittest.TestCase):
         b, clamped = core.resolve_bounds({'silence_noise_db': -10})
         self.assertEqual(b['silence_noise_db'], -30)
         self.assertEqual(clamped[0]['bound'], 'silence_noise_db')
+
+
+# ------------------------------------------------------------------ regression tests for the independent review of PR 1010
+
+class ReviewRegressionTests(Base):
+    def chdir(self, path):
+        old = os.getcwd()
+        os.chdir(path)
+        self.addCleanup(os.chdir, old)
+
+    # 1. relative input path
+    def test_relative_path_is_made_absolute_before_any_subprocess(self):
+        self.chdir(self.dir)
+        (self.dir / 'rel.mkv').write_bytes(b'x' * 100)
+        seen = []
+
+        def runner(argv, *, timeout_s, max_stdout, max_stderr, cwd=None, max_file=0):
+            if '-show_format' in argv:
+                seen.append((argv[-1], cwd))
+                return RunResult(0, probe_json(), b'') if os.path.isfile(argv[-1]) else RunResult(1, b'', b'No such file or directory\n')
+            return RunResult(0, b'ffprobe version 8.1.2\n', b'')
+        rec = evidence.collect('rel.mkv', ['probe'], runner=runner, which=which_with('ffprobe'))[0]
+        self.assertEqual(rec['status'], 'ok')
+        self.assertEqual(seen[0][0], str(self.dir / 'rel.mkv'))
+        self.assertNotEqual(os.path.realpath(seen[0][1]), os.path.realpath(os.getcwd()))  # cwd is the scratch dir, so only an absolute path works
+        self.assertEqual(rec['input']['name'], 'rel.mkv')
+
+    # 2. EPUB members read whole are size-checked
+    def test_epub_oversized_opf_container_and_mimetype_are_refused_not_read(self):
+        big = '<!--' + ' ' * (3 * 1024 * 1024) + '-->'
+        p = self.dir / 'bigopf.epub'
+        make_epub(p, opf=OPF + big)  # 3 MiB of padding deflates to a few KB
+        self.assertLess(p.stat().st_size, 100 * 1024)
+        rec = evidence.collect(p, ['epub'], {'epub_max_opf_bytes': 1 << 20}, runner=Fake([]), which=which_with())[0]
+        self.assertEqual((rec['status'], rec['cause'], rec['output']['stage']), ('error', 'input', 'opf_parse'))
+        self.assertIn('TooBig', rec['reason'])
+        self.assertIn('byte cap', rec['reason'])
+        p2 = self.dir / 'bigcontainer.epub'
+        make_epub(p2, container=CONTAINER + big)
+        rec = evidence.collect(p2, ['epub'], {'epub_max_opf_bytes': 1 << 20}, runner=Fake([]), which=which_with())[0]
+        self.assertEqual(rec['output']['stage'], 'opf_parse')
+        self.assertIn('container.xml', rec['reason'])
+        p3 = self.dir / 'bigmime.epub'
+        make_epub(p3, mimetype_content=b'application/epub+zip' + b' ' * (1 << 20))
+        rec = evidence.collect(p3, ['epub'], runner=Fake([]), which=which_with())[0]
+        self.assertEqual(rec['output']['mimetype']['content'], '(over 64 bytes)')
+        self.assertFalse(rec['output']['valid'])
+        # within the default cap the same padding is fine
+        rec = evidence.collect(p, ['epub'], {'epub_max_opf_bytes': 4 << 20}, runner=Fake([]), which=which_with())[0]
+        self.assertTrue(rec['output']['valid'])
+
+    def test_epub_read_helper_counts_inflated_bytes_not_the_header(self):
+        from evidence import epubtool
+        p = self.dir / 'z.zip'
+        with zipfile.ZipFile(p, 'w', zipfile.ZIP_DEFLATED) as z:
+            z.writestr('a', b'A' * 100000)
+        with zipfile.ZipFile(p) as z:
+            with self.assertRaises(epubtool.TooBig):  # declared size over the cap: refused before any inflation
+                epubtool._read(z, 'a', 1000)
+            self.assertEqual(len(epubtool._read(z, 'a', 200000)), 100000)
+            z.getinfo('a').file_size = 10  # a lying header never makes the read bigger than the header says: the CRC fails instead
+            with self.assertRaises(zipfile.BadZipFile):
+                epubtool._read(z, 'a', 1000)
+
+    # 3. chapter findings use the full list
+    def test_chapter_checks_see_all_chapters_beyond_the_output_cut(self):
+        chapters = [(i, i + 1, 'Chapter %d' % (i + 1)) for i in range(250)]
+        chapters[230] = (230, 231, 'Chapter 3')  # a duplicate that only the full list contains
+        d = self.dir / 'book'
+        d.mkdir()
+        (d / 'one.m4b').write_bytes(b'x' * 50)
+        pj = probe_json(250.0, video=False, tags={'album': 'A'}, chapters=chapters)
+        rules = [(prog('ffprobe', '-show_format'), RunResult(0, pj, b'')), (prog('ffmpeg', '-progress'), clean_decode)]
+        rec, _ = self.run_kind('audiobook', rules, path=d)
+        findings = ' | '.join(rec['output']['findings'])
+        self.assertIn('duplicate chapter titles', findings)
+        self.assertNotIn('chapters stop', findings)
+        self.assertEqual(rec['output']['files'][0]['chapter_count'], 250)
+        self.assertEqual(len(rec['output']['files'][0]['chapters']), 60)
+        prec, _ = self.run_kind('probe', [(prog('ffprobe', '-show_format'), RunResult(0, pj, b''))])
+        self.assertEqual((prec['output']['chapter_count'], len(prec['output']['chapters']), prec['output']['chapters_omitted']), (250, 200, 50))
+
+    # 4. to_tool_result keeps the head, cuts the output
+    def test_to_tool_result_truncation_keeps_status_reason_notes_and_coverage(self):
+        rec, _ = self.run_kind('probe', [(prog('ffprobe', '-show_format'), RunResult(0, probe_json(chapters=[(i, i + 1, 'Chapter %d' % i) for i in range(150)]), b''))])
+        rec.update(reason='something partial happened', replay_note='served from a recording', bounds_clamped=[{'bound': 'segments', 'requested': 99, 'used': 8}], stderr='warn ' * 40)
+        tr = core.to_tool_result(rec, cap=1800)
+        self.assertTrue(tr['truncated'])
+        self.assertLessEqual(len(tr['output'].encode()), 1800)
+        body = json.loads(tr['output'])  # still valid JSON
+        self.assertEqual(list(body)[0], 'status')
+        for key in ('status', 'reason', 'replay_note', 'bounds_clamped', 'coverage', 'stderr', 'mode', 'tool'):
+            self.assertIn(key, body, key)
+        self.assertEqual(body['reason'], 'something partial happened')
+        self.assertTrue(body['coverage']['not_verified'])
+        self.assertTrue(body['output'].endswith('...[output truncated]'))
+        small = core.to_tool_result(rec, cap=1 << 20)
+        self.assertFalse(small['truncated'])
+        self.assertIsInstance(json.loads(small['output'])['output'], dict)
+
+    # 5. frames: non-zero exit or ffmpeg errors are not ok
+    def test_frame_with_errors_or_nonzero_exit_is_not_ok(self):
+        def noisy(argv):
+            Path(argv[-1]).write_bytes(FrameTests.PNG + argv[-1].encode())
+            return RunResult(1, b'', b'[mjpeg @ 0x1] overread 8\n')
+        rec, _ = self.run_kind('frames', [FrameTests.probe, (prog('ffmpeg', '-frames:v'), noisy)])
+        self.assertEqual(rec['status'], 'partial')
+        self.assertEqual(rec['output']['frames_ok'], 0)
+        self.assertEqual(rec['output']['frames_with_errors'], 3)
+        self.assertEqual(rec['output']['frames'][0]['state'], 'errors')
+        self.assertEqual(rec['output']['frames'][0]['exit_code'], 1)
+        self.assertTrue(any('error line(s)' in f for f in rec['output']['findings']))
+        self.assertIn('overread', rec['stderr'])
+
+        def chatty(argv):  # exit 0 but messages on stderr
+            Path(argv[-1]).write_bytes(FrameTests.PNG + argv[-1].encode())
+            return RunResult(0, b'', b'[h264 @ 0x1] concealing 10 errors\n')
+        rec, _ = self.run_kind('frames', [FrameTests.probe, (prog('ffmpeg', '-frames:v'), chatty)])
+        self.assertEqual((rec['status'], rec['output']['frames'][0]['state']), ('partial', 'errors'))
+
+    # 6. audiobook with unreadable parts
+    def test_audiobook_all_probes_timing_out_is_timeout_not_input(self):
+        d = self.dir / 'bk'
+        d.mkdir()
+        for n in ('a.m4b', 'b.m4b'):
+            (d / n).write_bytes(b'x' * 20)
+        rec, _ = self.run_kind('audiobook', [(prog('ffprobe', '-show_format'), RunResult(None, b'', b'', timed_out=True))], path=d)
+        self.assertEqual(rec['status'], 'timeout')
+        self.assertNotIn('cause', rec)
+
+    def test_audiobook_deadline_skips_later_parts_as_partial(self):
+        d = self.dir / 'bk2'
+        d.mkdir()
+        for n in ('a.m4b', 'b.m4b'):
+            (d / n).write_bytes(b'x' * 20)
+        clock = Clock()
+        rules = [(prog('ffprobe', '-show_format'), RunResult(0, book_probe(), b'')), (prog('ffmpeg', '-progress'), clean_decode)]
+        rec, _ = self.run_kind('audiobook', rules, path=d, bounds={'deadline_s': 50}, clock_obj=clock, step=100.0, clock=clock)
+        self.assertEqual(rec['status'], 'partial')
+        self.assertEqual([f.get('probe') for f in rec['output']['files']], [None, 'skipped'])
+        self.assertIn('deadline', rec['reason'])
+
+    def test_audiobook_tool_failure_on_every_part_is_tool_cause(self):
+        d = self.dir / 'bk3'
+        d.mkdir()
+        (d / 'a.m4b').write_bytes(b'x' * 20)
+        rec, _ = self.run_kind('audiobook', [(prog('ffprobe', '-show_format'), RunResult(error='PermissionError: no'))], path=d)
+        self.assertEqual((rec['status'], rec['cause']), ('error', 'tool'))
+
+    # 7. output-cap kills are not damaged input
+    def test_sigxfsz_kill_is_a_tool_cap_not_damaged_input(self):
+        r = core.subprocess_runner(['head', '-c', '5000', '/dev/zero'], timeout_s=5, max_stdout=100, max_stderr=100)
+        self.assertTrue(r.file_size_limit)
+        self.assertEqual(r.returncode, -25)
+        r = core.subprocess_runner(['head', '-c', '5000', '/dev/zero'], timeout_s=5, max_stdout=100, max_stderr=100, max_file=20000)
+        self.assertFalse(r.file_size_limit)
+        self.assertTrue(r.stdout_truncated)
+        killed = RunResult(-25, b'{"strea', b'', file_size_limit=True)
+        rec, _ = self.run_kind('probe', [(prog('ffprobe', '-show_format'), killed)])
+        self.assertEqual((rec['status'], rec['cause']), ('error', 'tool'))
+        self.assertIn('cap', rec['reason'])
+        self.assertIn('not judged', rec['reason'])
+
+    def test_decode_and_audio_and_frames_report_output_cap(self):
+        killed = RunResult(-25, b'', b'', file_size_limit=True)
+        rec, _ = self.run_kind('decode', [DecodeTests.probe, (prog('ffmpeg', '-progress'), killed)])
+        self.assertEqual(rec['output']['segments_output_cap'], 4)
+        self.assertIn(rec['status'], ('partial',))
+        self.assertFalse(rec['output']['clean'])
+        self.assertEqual(rec['output']['segments_with_errors'], 0)
+        rec, _ = self.run_kind('audio', [AudioTests.probe, (prog('ffmpeg', '-af'), killed)])
+        self.assertEqual(rec['status'], 'partial')
+        self.assertEqual(rec['output']['streams'][0]['segments'][0]['state'], 'output_cap')
+        rec, fake = self.run_kind('frames', [FrameTests.probe, (prog('ffmpeg', '-frames:v'), killed)])
+        self.assertEqual((rec['status'], rec['output']['frames'][0]['state']), ('partial', 'output_cap'))
+        self.assertIn(8 * 1024 * 1024, fake.max_files)  # frames are allowed a PNG-sized file
+
+    def test_default_caps_are_raised_for_big_probe_json_and_frames(self):
+        b, _ = core.resolve_bounds(None)
+        self.assertGreaterEqual(b['max_stdout_bytes'], 4 * 1024 * 1024)
+        self.assertGreaterEqual(b['max_frame_bytes'], 8 * 1024 * 1024)
+
+    # 8. protocol whitelist and absolute input on every ffmpeg/ffprobe call
+    def test_every_ffmpeg_and_ffprobe_call_is_whitelisted_with_an_absolute_input(self):
+        self.chdir(self.dir)
+        (self.dir / '-weird.mkv').write_bytes(b'x' * 100)
+        rules = [(prog('ffprobe', '-show_format'), RunResult(0, probe_json(10.0), b'')), (prog('ffmpeg', '-progress'), clean_decode),
+                 (prog('ffmpeg', '-af'), RunResult(0, b'', LEVELS)), (prog('ffmpeg', '-frames:v'), lambda a: (Path(a[-1]).write_bytes(FrameTests.PNG), RunResult(0, b'', b''))[1])]
+        fake = Fake(rules + VERSION)
+        evidence.collect('-weird.mkv', ['probe', 'decode', 'frames', 'audio'], runner=fake, which=which_with('ffmpeg', 'ffprobe'))
+        d = self.dir / 'concat:x'
+        d.mkdir()
+        (d / 'p.m4b').write_bytes(b'x' * 10)
+        evidence.collect('concat:x', ['audiobook'], runner=Fake(rules[:2] + VERSION), which=which_with('ffmpeg', 'ffprobe'))
+        media_calls = [a for a, _t in fake.calls if '-i' in a]
+        self.assertGreaterEqual(len(media_calls), 10)
+        for argv in media_calls:
+            i = argv.index('-i')
+            self.assertEqual(argv[argv.index('-protocol_whitelist') + 1], 'file,pipe', argv)
+            self.assertLess(argv.index('-protocol_whitelist'), i)
+            self.assertTrue(argv[i + 1].startswith('/'), argv)
+            self.assertEqual(os.path.basename(argv[i + 1]), '-weird.mkv')
+
+    def test_audiobook_calls_use_the_whitelist_too(self):
+        d = self.dir / 'concat:book'
+        d.mkdir()
+        (d / 'p.m4b').write_bytes(b'x' * 10)
+        fake = Fake([(prog('ffprobe', '-show_format'), RunResult(0, book_probe(), b'')), (prog('ffmpeg', '-progress'), clean_decode)] + VERSION)
+        evidence.collect(d.parent / 'concat:book', ['audiobook'], runner=fake, which=which_with('ffmpeg', 'ffprobe'))
+        calls = [a for a, _t in fake.calls if '-i' in a]
+        self.assertGreaterEqual(len(calls), 4)
+        for argv in calls:
+            self.assertIn('-protocol_whitelist', argv)
+            self.assertTrue(argv[argv.index('-i') + 1].startswith('/'))
+
+    # 9. tesseract must not fan out
+    def test_children_get_omp_thread_limit_1(self):
+        r = core.subprocess_runner([sys.executable, '-c', "import os; print(os.environ.get('OMP_THREAD_LIMIT'), os.environ.get('OMP_NUM_THREADS'))"],
+                                   timeout_s=5, max_stdout=100, max_stderr=100)
+        self.assertEqual(r.stdout.split(), [b'1', b'1'])
+
+    # 10. level marker anywhere in the line
+    def test_problem_lines_match_the_level_marker_in_either_position(self):
+        lv, problems = avtools.parse_levels('[error] first style\n[aac @ 0x55] [error] second style\n[mp3float @ 0x1] [warning] third\n'
+                                           '[info] [Parsed_volumedetect_0 @ 0x2] mean_volume: -20.0 dB\n[info] fine\n', 4.0)
+        self.assertEqual(problems, ['first style', 'second style', 'third'])
+        self.assertEqual(lv['mean_db'], -20.0)
+
+    def test_audio_segment_with_prefixed_level_marker_is_errors(self):
+        bad = LEVELS + b'[aac @ 0x7f] [error] Number of bands (31) exceeds limit\n'
+        rec, _ = self.run_kind('audio', [AudioTests.probe, (prog('ffmpeg', '-af'), RunResult(0, b'', bad))])
+        self.assertEqual(rec['output']['streams'][0]['segments'][0]['state'], 'errors')
+        self.assertIn('Number of bands', rec['stderr'])
 
 
 if __name__ == '__main__':

@@ -12,7 +12,7 @@ from urllib.parse import unquote, urlsplit
 
 from .core import make_record, used_bounds
 
-EPUB_BOUNDS = ('stderr_excerpt_bytes', 'epub_max_members', 'epub_max_uncompressed_bytes', 'epub_max_member_bytes', 'epub_max_xhtml_docs')
+EPUB_BOUNDS = ('stderr_excerpt_bytes', 'epub_max_members', 'epub_max_uncompressed_bytes', 'epub_max_member_bytes', 'epub_max_opf_bytes', 'epub_max_xhtml_docs')
 XHTML_TYPES = ('application/xhtml+xml', 'text/html')
 VERSION = 'python %s zipfile+xml.etree (stdlib)' % sys.version.split()[0]
 
@@ -23,6 +23,22 @@ def _local(tag):
 
 def _texts(pkg, name):
     return [(x.text or '').strip() for x in pkg.iter() if _local(x.tag) == name and (x.text or '').strip()]
+
+
+class TooBig(Exception):
+    pass
+
+
+def _read(z, name, cap):
+    """Read a member whole, but never more than `cap` bytes: the declared size is not trusted, the bytes actually inflated are counted."""
+    info = z.getinfo(name)
+    if info.file_size > cap:
+        raise TooBig('member %s declares %d bytes, over the %d byte cap' % (name, info.file_size, cap))
+    with z.open(info) as f:
+        data = f.read(cap + 1)
+    if len(data) > cap:
+        raise TooBig('member %s inflates past the %d byte cap' % (name, cap))
+    return data
 
 
 def _err(e):
@@ -99,7 +115,10 @@ def collect_epub(ctx, started):
         if mt['present']:
             info = z.getinfo('mimetype')
             mt['stored_uncompressed'] = info.compress_type == zipfile.ZIP_STORED
-            mt['content'] = z.read('mimetype')[:64].decode('ascii', 'replace').strip()
+            try:
+                mt['content'] = _read(z, 'mimetype', 64).decode('ascii', 'replace').strip()
+            except TooBig:
+                mt['content'] = '(over 64 bytes)'
         out['mimetype'] = mt
         if not mt['present']:
             out['findings'].append({'severity': 'damage', 'what': 'no mimetype member'})
@@ -114,7 +133,7 @@ def collect_epub(ctx, started):
             out['findings'].append({'severity': 'warning', 'what': 'META-INF/encryption.xml is present: content may be encrypted or font-obfuscated; it was not examined'})
         # --- container.xml -> OPF
         try:
-            root = ET.fromstring(z.read('META-INF/container.xml'))
+            root = ET.fromstring(_read(z, 'META-INF/container.xml', b['epub_max_opf_bytes']))
             rootfiles = [x for x in root.iter() if _local(x.tag) == 'rootfile']
             opf = rootfiles[0].attrib['full-path']
         except Exception as e:  # noqa: BLE001
@@ -123,7 +142,7 @@ def collect_epub(ctx, started):
         if opf not in names:
             return fail('opf_parse', 'container.xml names %s, which is not in the archive' % opf, cov_ok)
         try:
-            pkg = ET.fromstring(z.read(opf))
+            pkg = ET.fromstring(_read(z, opf, b['epub_max_opf_bytes']))
         except Exception as e:  # noqa: BLE001
             return fail('opf_parse', 'package document: %s' % _err(e), cov_ok)
         out['stages_passed'].append('opf_parse')
@@ -174,7 +193,14 @@ def collect_epub(ctx, started):
             if info.file_size > b['epub_max_member_bytes']:
                 skipped_big += 1
                 continue
-            raw = z.read(target)
+            try:
+                raw = _read(z, target, b['epub_max_member_bytes'])
+            except TooBig:
+                skipped_big += 1
+                continue
+            except Exception as e:  # noqa: BLE001 - e.g. a member the zip layer cannot inflate
+                failed.append({'member': target, 'error': _err(e)})
+                continue
             if b'<!ENTITY' in raw:
                 skipped_entity += 1  # internal entity declarations are not expanded here
                 continue

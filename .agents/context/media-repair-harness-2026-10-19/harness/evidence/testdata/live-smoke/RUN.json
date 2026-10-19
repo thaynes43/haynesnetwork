@@ -1,5 +1,5 @@
 {
- "elapsed_s": 5.41,
+ "elapsed_s": 5.6,
  "ffmpeg": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers",
  "ffprobe": "ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers",
  "fixtures": {
@@ -25,31 +25,31 @@
   },
   "broken-manifest.epub": {
    "bytes": 1035,
-   "sha256": "67010ce1aa4c3f1519bb3c1d10c15c91cfbeda75d8059fc1af7c64df3ec3f00b"
+   "sha256": "7ecb7b018aa213d87562c87b344cb4c645b783cf2258f14ce822b55c88b80d16"
   },
   "broken-xhtml.epub": {
    "bytes": 1177,
-   "sha256": "b1ef88e7ad3aa84ee6bb3832b95bfdb110db5b7a0587a8b9e15a6d264bb17632"
+   "sha256": "ac104c25b53f55ad94dbaa8c1e12f0fddaffd7038e8690bf19ef493996925e27"
   },
   "corrupt.mkv": {
    "bytes": 183096,
-   "sha256": "1f5b2bd05b2e74e33752802d4b51fe9df7d88346878aa5ad951d6bc11a276bb0"
+   "sha256": "16714af65222d7187e318786a895fe31bfe40b1fac66f912d56664405956f63e"
   },
   "good.epub": {
    "bytes": 1257,
-   "sha256": "359ba6ef3066c5a4746c7a2a6b5ddc61d7144590ff9cd2ba3f521dda20ecd310"
+   "sha256": "d8840db62a89ef5e1c4a6c890054c9dd8f2a7cd3e92ad3745a06fe98582a21c0"
   },
   "good.mkv": {
    "bytes": 183096,
-   "sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521"
+   "sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7"
   },
   "truncated.epub": {
    "bytes": 628,
-   "sha256": "42c63cd125145f6ae0d0a6ce876abe65b634991593485efb6a85837e51c3bcfb"
+   "sha256": "9498c0e7a5d93d4d298b20050c1865043a733ef46708dae79abc2f8ae6e2d7e0"
   },
   "truncated.mkv": {
    "bytes": 100702,
-   "sha256": "181cff79aad5cec5796b6b71a2ec75e99a2281f43629f9edefd2abb2fdedd47f"
+   "sha256": "fe5f98ba8cc6f1e9f30c51b0feea73a5bf519b2fa62503b3a1dbd5161c396edf"
   }
  },
  "generation": {
@@ -62,7 +62,7 @@
   "image": "ghcr.io/home-operations/bazarr:1.6.2",
   "image_id": "ghcr.io/home-operations/bazarr@sha256:17dc1cff22e99694ffbfb06555526cb47a66b362b4d6c982f06b557f7caae2bb",
   "memory_limit": "1Gi",
-  "name": "mrh-evidence-smoke-1792452811",
+  "name": "mrh-evidence-smoke-1792453320",
   "namespace": "dev"
  },
  "label": "LIVE: collected by the real ffprobe/ffmpeg inside a CPU-limited batch Job on synthetic fixtures; not replay, not real library media",

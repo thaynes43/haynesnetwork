@@ -10,7 +10,7 @@
     "max_files": 50,
     "max_segments": 10,
     "max_stderr_bytes": 65536,
-    "max_stdout_bytes": 1048576,
+    "max_stdout_bytes": 4194304,
     "stderr_excerpt_bytes": 1500,
     "timeout_s": 20
    },
@@ -18,7 +18,8 @@
     "not_verified": [
      "audio outside the sampled segments",
      "whether the chapter titles or tags describe the right book",
-     "2 non-audio file(s) in the folder were ignored"
+     "2 non-audio file(s) in the folder were ignored",
+     "part3.m4b: could not be read (ffprobe error)"
     ],
     "verified": [
      "chapters, durations and tags read from 2 of 3 part(s) via ffprobe",
@@ -26,7 +27,7 @@
      "tag consistency compared across parts (album, artist, album_artist, composer, genre, date)"
     ]
    },
-   "elapsed_s": 0.5,
+   "elapsed_s": 0.568,
    "harness_tool": "audiobook_inspect",
    "input": {
     "count": 3,
@@ -111,6 +112,7 @@
         }
        ],
        "segments_clean": 3,
+       "segments_output_cap": 0,
        "segments_run": 3,
        "segments_short": 0,
        "segments_timeout": 0,
@@ -181,6 +183,7 @@
         }
        ],
        "segments_clean": 3,
+       "segments_output_cap": 0,
        "segments_run": 3,
        "segments_short": 0,
        "segments_timeout": 0,
@@ -203,8 +206,9 @@
       "bytes": 31967,
       "name": "part3.m4b",
       "probe": "error",
+      "probe_cause": "input",
       "probe_reason": "ffprobe exited 1: the container could not be read",
-      "probe_stderr": "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x7f137a17c380] moov atom not found\n<input>: Invalid data found when processing input"
+      "probe_stderr": "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x7f7975190380] moov atom not found\n<input>: Invalid data found when processing input"
      }
     ],
     "findings": [
@@ -240,8 +244,9 @@
     },
     "total_duration_s": 40.0
    },
-   "status": "ok",
-   "stderr": "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x7f137a17c380] moov atom not found\n<input>: Invalid data found when processing input",
+   "reason": "part3.m4b: could not be read (ffprobe error)",
+   "status": "partial",
+   "stderr": "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x7f7975190380] moov atom not found\n<input>: Invalid data found when processing input",
    "tool": "audiobook",
    "tool_version": "ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers; ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
   }

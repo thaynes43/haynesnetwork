@@ -6,6 +6,7 @@
    "bounds": {
     "epub_max_member_bytes": 8388608,
     "epub_max_members": 5000,
+    "epub_max_opf_bytes": 2097152,
     "epub_max_uncompressed_bytes": 134217728,
     "epub_max_xhtml_docs": 200,
     "stderr_excerpt_bytes": 1500
@@ -26,10 +27,10 @@
    "harness_tool": "epub_inspect",
    "input": {
     "bytes": 628,
-    "head_1m_sha256": "42c63cd125145f6ae0d0a6ce876abe65b634991593485efb6a85837e51c3bcfb",
+    "head_1m_sha256": "9498c0e7a5d93d4d298b20050c1865043a733ef46708dae79abc2f8ae6e2d7e0",
     "name": "truncated.epub",
     "partial_fingerprint_only": true,
-    "tail_1m_sha256": "42c63cd125145f6ae0d0a6ce876abe65b634991593485efb6a85837e51c3bcfb"
+    "tail_1m_sha256": "9498c0e7a5d93d4d298b20050c1865043a733ef46708dae79abc2f8ae6e2d7e0"
    },
    "mode": "live",
    "output": {

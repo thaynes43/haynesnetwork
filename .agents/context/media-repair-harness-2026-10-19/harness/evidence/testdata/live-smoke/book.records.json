@@ -10,7 +10,7 @@
     "max_files": 50,
     "max_segments": 10,
     "max_stderr_bytes": 65536,
-    "max_stdout_bytes": 1048576,
+    "max_stdout_bytes": 4194304,
     "stderr_excerpt_bytes": 1500,
     "timeout_s": 20
    },
@@ -26,7 +26,7 @@
      "tag consistency compared across parts (album, artist, album_artist, composer, genre, date)"
     ]
    },
-   "elapsed_s": 0.401,
+   "elapsed_s": 0.47,
    "harness_tool": "audiobook_inspect",
    "input": {
     "count": 2,
@@ -104,6 +104,7 @@
         }
        ],
        "segments_clean": 3,
+       "segments_output_cap": 0,
        "segments_run": 3,
        "segments_short": 0,
        "segments_timeout": 0,
@@ -174,6 +175,7 @@
         }
        ],
        "segments_clean": 3,
+       "segments_output_cap": 0,
        "segments_run": 3,
        "segments_short": 0,
        "segments_timeout": 0,

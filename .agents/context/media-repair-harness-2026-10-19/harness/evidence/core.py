@@ -39,7 +39,8 @@ BOUND_SPEC = {
     'max_audio_streams': (2, 4),
     'silence_noise_db': (-50, -30),
     'silence_min_s': (0.5, 5),
-    'max_stdout_bytes': (1 * MIB, 4 * MIB),
+    'max_stdout_bytes': (4 * MIB, 16 * MIB),      # ffprobe JSON of a book with many chapters is large
+    'max_frame_bytes': (8 * MIB, 32 * MIB),       # one PNG frame written by ffmpeg
     'max_stderr_bytes': (64 * 1024, 256 * 1024),
     'stderr_excerpt_bytes': (1500, 4000),
     'max_files': (50, 200),                # audiobook parts
@@ -48,6 +49,7 @@ BOUND_SPEC = {
     'epub_max_members': (5000, 20000),
     'epub_max_uncompressed_bytes': (128 * MIB, 1024 * MIB),
     'epub_max_member_bytes': (8 * MIB, 32 * MIB),
+    'epub_max_opf_bytes': (2 * MIB, 8 * MIB),      # container.xml, the OPF and mimetype are read whole, so they get a tighter cap
     'epub_max_xhtml_docs': (200, 1000),
 }
 
@@ -85,7 +87,7 @@ def resolve_bounds(user):
 BOUND_SPEC_MIN = {'timeout_s': 1, 'deadline_s': 1, 'segment_s': 1, 'max_segments': 2, 'frame_width': 16, 'full_timeout_s': 1,
                   'ocr_timeout_s': 1, 'max_stdout_bytes': 1024, 'max_stderr_bytes': 1024, 'stderr_excerpt_bytes': 100,
                   'max_files': 1, 'silence_noise_db': -120, 'silence_min_s': 0.05, 'audiobook_segment_s': 1,
-                  'epub_max_members': 1, 'epub_max_member_bytes': 1024, 'epub_max_uncompressed_bytes': 1024,
+                  'epub_max_members': 1, 'max_frame_bytes': 1024, 'epub_max_opf_bytes': 1024, 'epub_max_member_bytes': 1024, 'epub_max_uncompressed_bytes': 1024,
                   'max_audio_streams': 1, 'ocr_max_chars': 10}
 
 
@@ -93,29 +95,32 @@ class RunResult:
     """What a subprocess did.  `error` is set when it could not be started at all."""
 
     def __init__(self, returncode=None, stdout=b'', stderr=b'', timed_out=False, elapsed_s=0.0, stdout_truncated=False,
-                 stderr_truncated=False, error=None):
+                 stderr_truncated=False, error=None, file_size_limit=False):
+        self.file_size_limit = file_size_limit  # the child was killed by SIGXFSZ: it tried to write past the file-size cap
         self.returncode, self.stdout, self.stderr, self.timed_out = returncode, stdout, stderr, timed_out
         self.elapsed_s, self.stdout_truncated, self.stderr_truncated, self.error = elapsed_s, stdout_truncated, stderr_truncated, error
 
 
-def subprocess_runner(argv, *, timeout_s, max_stdout, max_stderr, cwd=None):
+def subprocess_runner(argv, *, timeout_s, max_stdout, max_stderr, cwd=None, max_file=0):
     """Run argv (no shell) at nice 19, in its own process group, with a hard timeout and capped output.
 
     stdout and stderr go to temp files whose size is capped with RLIMIT_FSIZE (the child gets SIGXFSZ past the
     cap), so a runaway tool can neither fill the disk nor this process's memory."""
     import resource
 
-    cap = max(max_stdout, max_stderr) + 1
+    cap = max(max_stdout, max_stderr, max_file or 0) + 1
+    env = dict(os.environ, OMP_THREAD_LIMIT='1', OMP_NUM_THREADS='1')  # tesseract (OpenMP) must not fan out over the node's cores
 
     def prepare():
         os.nice(19)
         resource.setrlimit(resource.RLIMIT_FSIZE, (cap, cap))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        signal.signal(signal.SIGXFSZ, signal.SIG_DFL)  # CPython ignores SIGXFSZ and children inherit that: restore it so the cap kills instead of failing writes with EFBIG
 
     started = time.monotonic()
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         try:
-            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=err, cwd=cwd, shell=False,
+            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=err, cwd=cwd, shell=False, env=env,
                                     start_new_session=True, preexec_fn=prepare)
         except OSError as e:
             return RunResult(error='%s: %s' % (type(e).__name__, e), elapsed_s=time.monotonic() - started)
@@ -134,7 +139,7 @@ def subprocess_runner(argv, *, timeout_s, max_stdout, max_stderr, cwd=None):
         err.seek(0)
         so, se = out.read(max_stdout + 1), err.read(max_stderr + 1)
     return RunResult(None if timed_out else proc.returncode, so[:max_stdout], se[:max_stderr], timed_out, elapsed,
-                     len(so) > max_stdout, len(se) > max_stderr)
+                     len(so) > max_stdout, len(se) > max_stderr, file_size_limit=(not timed_out and proc.returncode == -signal.SIGXFSZ))
 
 
 class Deadline:
@@ -157,14 +162,14 @@ class Ctx:
     def add_name(self, path):
         self.names |= {str(path), os.path.basename(str(path))}
 
-    def run(self, argv, timeout_s=None, deadline=None):
+    def run(self, argv, timeout_s=None, deadline=None, max_file=0):
         """-> RunResult.  The timeout never exceeds the time left on the collector's deadline."""
         t = float(timeout_s or self.bounds['timeout_s'])
         if deadline is not None:
             t = min(t, max(0.1, deadline.left()))
         self._n += 1
         return self.runner(argv, timeout_s=t, max_stdout=int(self.bounds['max_stdout_bytes']),
-                           max_stderr=int(self.bounds['max_stderr_bytes']), cwd=str(self.scratch))
+                           max_stderr=int(self.bounds['max_stderr_bytes']), cwd=str(self.scratch), max_file=int(max_file))
 
     def binary(self, name):
         return self.which(name)
@@ -177,7 +182,7 @@ class Ctx:
         ver = None
         if exe:
             flag = '--version' if name == 'tesseract' else '-version'
-            r = self.runner([exe, flag], timeout_s=10, max_stdout=8192, max_stderr=8192, cwd=str(self.scratch))
+            r = self.runner([exe, flag], timeout_s=10, max_stdout=8192, max_stderr=8192, cwd=str(self.scratch), max_file=0)
             text = (r.stdout + r.stderr).decode('utf-8', 'replace').strip()
             ver = text.splitlines()[0][:160] if text and not r.error and not r.timed_out else None
         self.versions[name] = ver
@@ -256,16 +261,37 @@ def to_tool_result(rec, cap=8192):
     """A record in the harness' tool-result shape ({status, output text, truncated, mode, wall_s, ...}).
 
     The harness' ToolResult knows ok|partial|error|timeout only, so `unavailable` is delivered as `error`
-    with `evidence_status: "unavailable"` kept beside it (nothing is relabelled healthy)."""
+    with `evidence_status: "unavailable"` kept beside it (nothing is relabelled healthy).
+
+    The text is one JSON object whose keys are in priority order: status, reason, cause, replay_note, bounds_clamped,
+    coverage, stderr and the rest first, `output` last.  When the text exceeds `cap`, `output` is the part that is cut
+    (it becomes a string ending in a marker), so a reader never loses the status, the reason or what was not verified."""
     status = rec['status']
-    body = {k: rec[k] for k in ('tool', 'tool_version', 'mode', 'status', 'coverage', 'bounds', 'stderr', 'elapsed_s', 'output',
-                                'reason', 'cause', 'recorded_from') if k in rec}
-    text = json.dumps(body, sort_keys=True, ensure_ascii=False)
-    raw = text.encode('utf-8')
-    truncated = len(raw) > cap
-    if truncated:
-        marker = ' ...[truncated]'
-        text = raw[:cap - len(marker)].decode('utf-8', 'ignore') + marker
+    order = ('status', 'reason', 'cause', 'mode', 'tool', 'tool_version', 'replay_note', 'recorded_from', 'bounds_clamped', 'coverage',
+             'stderr', 'bounds', 'elapsed_s')
+    body = {k: rec[k] for k in order if k in rec}
+    dump = lambda d: json.dumps(d, ensure_ascii=False)
+    output = rec.get('output', {})
+    truncated = False
+    if len((dump(dict(body, output=output))).encode('utf-8')) > cap:
+        truncated = True
+        marker = ' ...[output truncated]'
+        if len(dump(dict(body, output=marker)).encode('utf-8')) > cap:  # the head alone is too big: trim the long fields
+            body['stderr'] = (body.get('stderr') or '')[:300]
+            cov = dict(body.get('coverage', {}))
+            cov['not_verified'] = list(cov.get('not_verified', []))[:8]
+            cov['verified'] = list(cov.get('verified', []))[:4]
+            body['coverage'] = cov
+            body['bounds'] = {}
+        full = dump(output).encode('utf-8')
+        room = cap - len(dump(dict(body, output='')).encode('utf-8')) - len(marker.encode()) - 8
+        while True:  # the cut text is JSON-escaped once more when embedded, so shrink until the whole object fits
+            output = full[:max(0, room)].decode('utf-8', 'ignore') + marker
+            excess = len(dump(dict(body, output=output)).encode('utf-8')) - cap
+            if excess <= 0 or room <= 0:
+                break
+            room -= excess + 4
+    text = dump(dict(body, output=output))
     out = {'status': 'error' if status == 'unavailable' else status, 'output': text, 'truncated': truncated,
            'mode': rec['mode'], 'wall_s': rec['elapsed_s'], 'tool': rec['tool'], 'evidence_status': status}
     if rec.get('tool_version'):

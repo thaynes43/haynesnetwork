@@ -10,7 +10,7 @@
     "full_timeout_s": 60,
     "max_segments": 10,
     "max_stderr_bytes": 65536,
-    "max_stdout_bytes": 1048576,
+    "max_stdout_bytes": 4194304,
     "segment_s": 4,
     "segments": 3,
     "stderr_excerpt_bytes": 1500,
@@ -25,14 +25,14 @@
      "full decode of the first video and first audio stream ran to the end (errors)"
     ]
    },
-   "elapsed_s": 0.396,
+   "elapsed_s": 0.398,
    "harness_tool": "decode_sample",
    "input": {
     "bytes": 100702,
-    "head_1m_sha256": "181cff79aad5cec5796b6b71a2ec75e99a2281f43629f9edefd2abb2fdedd47f",
+    "head_1m_sha256": "fe5f98ba8cc6f1e9f30c51b0feea73a5bf519b2fa62503b3a1dbd5161c396edf",
     "name": "truncated.mkv",
     "partial_fingerprint_only": true,
-    "tail_1m_sha256": "181cff79aad5cec5796b6b71a2ec75e99a2281f43629f9edefd2abb2fdedd47f"
+    "tail_1m_sha256": "fe5f98ba8cc6f1e9f30c51b0feea73a5bf519b2fa62503b3a1dbd5161c396edf"
    },
    "mode": "live",
    "output": {
@@ -47,10 +47,10 @@
     "full": {
      "at_s": null,
      "decoded_s": 6.1,
-     "elapsed_s": 0.065,
+     "elapsed_s": 0.066,
      "error_lines": 1,
      "errors": [
-      "[in#0/matroska,webm @ 0x7ff52e530340] File ended prematurely"
+      "[in#0/matroska,webm @ 0x7f5133f0d340] File ended prematurely"
      ],
      "exit_code": 0,
      "frames": 61,
@@ -63,7 +63,7 @@
      {
       "at_s": 0.0,
       "decoded_s": 4.0,
-      "elapsed_s": 0.065,
+      "elapsed_s": 0.066,
       "error_lines": 0,
       "errors": [],
       "exit_code": 0,
@@ -78,7 +78,7 @@
       "elapsed_s": 0.066,
       "error_lines": 1,
       "errors": [
-       "[in#0/matroska,webm @ 0x7f37b9963340] File ended prematurely"
+       "[in#0/matroska,webm @ 0x7f30a1517340] File ended prematurely"
       ],
       "exit_code": 0,
       "expected_s": 4.0,
@@ -89,10 +89,10 @@
      {
       "at_s": 6.023,
       "decoded_s": null,
-      "elapsed_s": 0.033,
+      "elapsed_s": 0.065,
       "error_lines": 2,
       "errors": [
-       "[in#0/matroska,webm @ 0x7fb652d10340] File ended prematurely",
+       "[in#0/matroska,webm @ 0x7fb8890e9340] File ended prematurely",
        "Last message repeated 3 times"
       ],
       "exit_code": 0,
@@ -104,10 +104,10 @@
      {
       "at_s": 8.046,
       "decoded_s": null,
-      "elapsed_s": 0.066,
+      "elapsed_s": 0.065,
       "error_lines": 2,
       "errors": [
-       "[in#0/matroska,webm @ 0x7f8eded44340] File ended prematurely",
+       "[in#0/matroska,webm @ 0x7f4e32a61340] File ended prematurely",
        "Last message repeated 3 times"
       ],
       "exit_code": 0,
@@ -118,6 +118,7 @@
      }
     ],
     "segments_clean": 1,
+    "segments_output_cap": 0,
     "segments_planned": 4,
     "segments_run": 4,
     "segments_short": 0,
@@ -127,7 +128,7 @@
     "segments_with_errors": 3
    },
    "status": "ok",
-   "stderr": "[in#0/matroska,webm @ 0x7f37b9963340] File ended prematurely\n[in#0/matroska,webm @ 0x7fb652d10340] File ended prematurely\nLast message repeated 3 times\n[in#0/matroska,webm @ 0x7f8eded44340] File ended prematurely\nLast message repeated 3 times",
+   "stderr": "[in#0/matroska,webm @ 0x7f30a1517340] File ended prematurely\n[in#0/matroska,webm @ 0x7fb8890e9340] File ended prematurely\nLast message repeated 3 times\n[in#0/matroska,webm @ 0x7f4e32a61340] File ended prematurely\nLast message repeated 3 times",
    "tool": "decode",
    "tool_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
   }

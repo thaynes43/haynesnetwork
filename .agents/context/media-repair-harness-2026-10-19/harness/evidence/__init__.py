@@ -6,6 +6,7 @@
 See README.md in this folder for the record shape, the bounds and the limits.  Not wired into tools.py or run.py.
 """
 import json
+import os
 import shutil
 import tempfile
 import time
@@ -30,9 +31,11 @@ def load_replay(source):
 
 
 def _inputs(path):
+    """Absolute paths.  Subprocesses run with the scratch dir as cwd, so a relative path would point at the wrong place, and an
+    absolute path can never be read by ffmpeg as an option (a name starting with '-') or as a protocol ('concat:', 'http:')."""
     if isinstance(path, (list, tuple)):
-        return [Path(p) for p in path]
-    return [Path(path)]
+        return [Path(os.path.abspath(os.fspath(p))) for p in path]
+    return [Path(os.path.abspath(os.fspath(path)))]
 
 
 def _fingerprint(inputs, max_files):

@@ -14,10 +14,10 @@
    "harness_tool": "decode_sample",
    "input": {
     "bytes": 183096,
-    "head_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521",
+    "head_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7",
     "name": "good.mkv",
     "partial_fingerprint_only": true,
-    "tail_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521"
+    "tail_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7"
    },
    "mode": "live",
    "output": {},
@@ -40,10 +40,10 @@
    "harness_tool": "frame_sample",
    "input": {
     "bytes": 183096,
-    "head_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521",
+    "head_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7",
     "name": "good.mkv",
     "partial_fingerprint_only": true,
-    "tail_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521"
+    "tail_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7"
    },
    "mode": "live",
    "output": {},
@@ -66,10 +66,10 @@
    "harness_tool": "audio_sample",
    "input": {
     "bytes": 183096,
-    "head_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521",
+    "head_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7",
     "name": "good.mkv",
     "partial_fingerprint_only": true,
-    "tail_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521"
+    "tail_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7"
    },
    "mode": "live",
    "output": {},

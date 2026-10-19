@@ -14,10 +14,10 @@
    "harness_tool": "ffprobe",
    "input": {
     "bytes": 183096,
-    "head_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521",
+    "head_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7",
     "name": "good.mkv",
     "partial_fingerprint_only": true,
-    "tail_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521"
+    "tail_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7"
    },
    "mode": "live",
    "output": {},
@@ -35,7 +35,7 @@
     "full_timeout_s": 60,
     "max_segments": 10,
     "max_stderr_bytes": 65536,
-    "max_stdout_bytes": 1048576,
+    "max_stdout_bytes": 4194304,
     "segment_s": 4,
     "segments": 3,
     "stderr_excerpt_bytes": 1500,
@@ -51,14 +51,14 @@
      "1 segment(s) of up to 4s decoded (head, tail and 3 spread offsets); 4.0s decoded"
     ]
    },
-   "elapsed_s": 0.1,
+   "elapsed_s": 0.099,
    "harness_tool": "decode_sample",
    "input": {
     "bytes": 183096,
-    "head_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521",
+    "head_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7",
     "name": "good.mkv",
     "partial_fingerprint_only": true,
-    "tail_1m_sha256": "3996021424c28e74f6501221731c839dd432ee4f33134a7dd505c140cac68521"
+    "tail_1m_sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7"
    },
    "mode": "live",
    "output": {
@@ -84,6 +84,7 @@
      }
     ],
     "segments_clean": 1,
+    "segments_output_cap": 0,
     "segments_planned": 1,
     "segments_run": 1,
     "segments_short": 0,

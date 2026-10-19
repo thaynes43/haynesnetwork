@@ -6,6 +6,7 @@
    "bounds": {
     "epub_max_member_bytes": 8388608,
     "epub_max_members": 5000,
+    "epub_max_opf_bytes": 2097152,
     "epub_max_uncompressed_bytes": 134217728,
     "epub_max_xhtml_docs": 200,
     "stderr_excerpt_bytes": 1500
@@ -24,14 +25,14 @@
      "the check stopped at stage manifest"
     ]
    },
-   "elapsed_s": 0.001,
+   "elapsed_s": 0.0,
    "harness_tool": "epub_inspect",
    "input": {
     "bytes": 1035,
-    "head_1m_sha256": "67010ce1aa4c3f1519bb3c1d10c15c91cfbeda75d8059fc1af7c64df3ec3f00b",
+    "head_1m_sha256": "7ecb7b018aa213d87562c87b344cb4c645b783cf2258f14ce822b55c88b80d16",
     "name": "broken-manifest.epub",
     "partial_fingerprint_only": true,
-    "tail_1m_sha256": "67010ce1aa4c3f1519bb3c1d10c15c91cfbeda75d8059fc1af7c64df3ec3f00b"
+    "tail_1m_sha256": "7ecb7b018aa213d87562c87b344cb4c645b783cf2258f14ce822b55c88b80d16"
    },
    "mode": "live",
    "output": {

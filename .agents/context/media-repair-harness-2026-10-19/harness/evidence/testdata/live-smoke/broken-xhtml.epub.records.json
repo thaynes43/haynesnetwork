@@ -6,6 +6,7 @@
    "bounds": {
     "epub_max_member_bytes": 8388608,
     "epub_max_members": 5000,
+    "epub_max_opf_bytes": 2097152,
     "epub_max_uncompressed_bytes": 134217728,
     "epub_max_xhtml_docs": 200,
     "stderr_excerpt_bytes": 1500
@@ -27,10 +28,10 @@
    "harness_tool": "epub_inspect",
    "input": {
     "bytes": 1177,
-    "head_1m_sha256": "b1ef88e7ad3aa84ee6bb3832b95bfdb110db5b7a0587a8b9e15a6d264bb17632",
+    "head_1m_sha256": "ac104c25b53f55ad94dbaa8c1e12f0fddaffd7038e8690bf19ef493996925e27",
     "name": "broken-xhtml.epub",
     "partial_fingerprint_only": true,
-    "tail_1m_sha256": "b1ef88e7ad3aa84ee6bb3832b95bfdb110db5b7a0587a8b9e15a6d264bb17632"
+    "tail_1m_sha256": "ac104c25b53f55ad94dbaa8c1e12f0fddaffd7038e8690bf19ef493996925e27"
    },
    "mode": "live",
    "output": {
