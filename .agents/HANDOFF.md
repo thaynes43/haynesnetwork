@@ -1,5 +1,28 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-19: media repair harness, authorized implementation (checkpoint 1 done)
+
+- Tom authorized implementation and a monitored rollout on 2026-10-19. This supersedes the 2026-10-18 spike-only hold for
+  this effort. Owner: Claude Code coordinator `claude-opus-5-5`, session
+  https://claude.ai/code/session_01K8EwSeoPBCV45Db9DKyYiR. Tracker: OpenProject haynes-media-repair epic #48, spike #65
+  (In progress), stories #131-#134 Accepted. Order, progress, delegation and results:
+  `/home/dev/work/orders/media-repair-harness-1019/` (pod PVC).
+- **Cost rule for any future coordinator (Opus or Sol):** plan and review only. Routine work goes to cheaper workers
+  (`sonnet-worker` = `claude-sonnet-5-5`; for Codex, the luna tiers). Read summaries and diffs, not whole logs.
+- Checkpoint 1 is merged under [context/media-repair-harness-2026-10-19/](context/media-repair-harness-2026-10-19/):
+  - `GATES.md` (G1-G10, recorded before scoring), the dev suite `suite/` (73 cases), `harness/` (runner, adapters,
+    scorer, leak guard), and the sealed `heldout/` (47 cases; contents only in `~/.cache/media-repair-harness-1019/`,
+    never opened before checkpoint 3).
+  - `baseline/REPORT.md`: six models on dev; none passes. Qwen ties Opus on accuracy (86.4%) but makes 5 unsafe
+    writes, with 50% abstention.
+  - `ADJUDICATION-dev-v1.md`: the coordinator's rulings on the 13 frontier misses, which feed dev-v1.1.
+- **Ollama Prime rule:** always send `num_ctx` (4096; 8192 at most) and `use_mmap:false`, use a load timeout of
+  900 s or more, check `/api/ps` first, and keep the PSI guard on. The default `-c 32768` with a cold NFS mmap got
+  the pod killed by the Talos PSI OOM controller on 2026-10-19 21:04 UTC. Nemotron (24.8 GB) is deferred: it does
+  not fit in VRAM.
+- Next: checkpoint 2, the tool-assisted harness. Then checkpoint 3, a frozen held-out readiness run. Real-media
+  repairs (#992 offenders) only after readiness evidence; no uncertain write is ever replayed.
+
 ## 2026-10-18: bounded Media Repair benchmark; other repair work stays paused
 
 - Tom explicitly authorized the isolated historical benchmark in existing Saga43;
