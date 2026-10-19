@@ -21,6 +21,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import adapters as A  # noqa: E402
+import audit as AU  # noqa: E402
 import guard as G  # noqa: E402
 import leakguard  # noqa: E402
 import outcomes  # noqa: E402
@@ -107,7 +108,8 @@ def result_message(call_id, tool, res, remaining):
                        'output': res['output'], 'tool_calls_remaining': remaining}, ensure_ascii=False)
 
 
-def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto', run_id='', tool_output_bytes=None):
+def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto', run_id='', tool_output_bytes=None,
+             prompt_version=P.DEFAULT_PROMPT):
     """Run one case through the turn protocol.  Returns the run record (never raises for model/tool trouble)."""
     import shutil
     started_wall = time.monotonic()
@@ -121,7 +123,11 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     evidence = resolve_evidence(case, suite_dir, ctx.redact)
     model_alias = leakguard.alias(run_id, case['id'])
     view = P.case_view(case, evidence, case_alias=model_alias)
-    system = P.SYSTEM_PROMPT
+    prompt = P.get_prompt(prompt_version)
+    system = prompt['text']
+    # v1 sends the adapter's fixed schema (as in checkpoint 1); v2 builds one per case (tool enum, audit required on writes)
+    schema = None if prompt_version == 'v1' else P.turn_schema(prompt_version, case.get('tools_available'),
+                                                                flat=getattr(adapter, 'schema_name', None) == 'flat')
     messages = [{'role': 'user', 'content': json.dumps(view, ensure_ascii=False, sort_keys=True)}]
     ev_ids = {e['id'] for e in evidence}
     turns, tool_calls = [], []
@@ -142,7 +148,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
             n_calls += 1
             leakguard.check_messages(case, messages, ctx.forbidden_extra)  # raises LeakError: harness error, the model is not called
             try:
-                comp = adapter.complete(system, messages)
+                comp = adapter.complete(system, messages, schema=schema) if schema is not None else adapter.complete(system, messages)
             except A.AdapterError as e:
                 error = {'kind': 'adapter_error', 'message': str(e)[:500]}
                 turns.append({'n': len(turns) + 1, 'error': str(e)[:500]})
@@ -150,15 +156,16 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                 break
             load_s += comp.load_s
             obj, perr, diag = P.parse_reply(comp.text)
-            kind, verrs = (None, [perr]) if perr else P.validate_turn(obj, case.get('tools_available'))
+            kind, verrs = (None, [perr]) if perr else P.validate_turn(obj, case.get('tools_available'), prompt_version)
             turn = dict(comp.to_dict(), n=len(turns) + 1, raw_request=comp.raw_request, raw_response=comp.raw_response,
                         parsed_type=kind, validation_errors=[e for e in verrs if e], **({'diagnostics': diag} if diag else {}))
             turns.append(turn)
             if kind is None:
                 if not repairs:
                     err = '; '.join(e for e in verrs if e)[:300]
-                    repairs.append({'after_turn': turn['n'], 'error': err})
-                    messages += [{'role': 'assistant', 'content': comp.text}, {'role': 'user', 'content': P.REPAIR_PROMPT.format(error=err)}]
+                    repair_text = P.REPAIR_PROMPT.format(error=err)
+                    repairs.append({'after_turn': turn['n'], 'error': err, 'prompt': repair_text, 'salvageable_by': diag.get('salvageable_by', [])})
+                    messages += [{'role': 'assistant', 'content': comp.text}, {'role': 'user', 'content': repair_text}]
                     continue
                 force('invalid output after the one repair prompt: ' + '; '.join(e for e in verrs if e)[:200])
                 break
@@ -187,6 +194,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     first_try_valid = (decision is not None and not forced and not repairs)
     bad_refs = sorted(r for r in (decision or {}).get('evidence_refs', []) if r not in ev_ids and r not in {c['id'] for c in tool_calls})
     failed_refs = sorted(set((decision or {}).get('evidence_refs', [])) & {c['id'] for c in tool_calls if c['status'] in ('error', 'timeout') and c.get('injected')})
+    non_ok_refs = sorted(set((decision or {}).get('evidence_refs', [])) & AU.non_ok_evidence_ids(case, tool_calls))
     outcome = outcomes.run_outcome_step(case, suite_dir)
     total = time.monotonic() - started_wall
     usage = {'input_tokens': 0, 'output_tokens': 0, 'cost_usd': 0.0, 'cost_reported': False}
@@ -200,25 +208,25 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     if not usage['cost_reported']:
         usage['cost_usd'] = None
     response_models = sorted({str(t.get('response_model')) for t in turns if t.get('response_model')})
-    write_intent = decision['action'] in P.WRITE_ACTIONS
+    action_audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version)
+    action_audit['outcome_step'] = outcome
     record = {
         'record_version': 1, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
         'split': case.get('split'), 'started_at': started_at,
+        'prompt': {'version': prompt['version'], 'sha256': prompt['sha256'], 'protocol': 'turn-' + prompt['version'],
+                   'turn_schema_sha256': sha256_bytes(canonical(schema if schema is not None else P.TURN_SCHEMA).encode())},
         'model_case_alias': model_alias, 'requested_model': adapter.requested_model, 'response_model_ids': response_models,
         'runtime_version': adapter.runtime_version, 'model_digest': adapter.model_digest,
         'model_digest_na_reason': adapter.digest_na_reason if not adapter.model_digest else None,
         'fixture': fixture_info, 'evidence_shown': [e['id'] for e in evidence],
         'turns': turns, 'tool_calls': tool_calls, 'tool_modes': sorted({c.get('mode') for c in tool_calls if c.get('mode')}), 'repair_prompts': repairs,
         'decision': decision, 'forced': forced, 'forced_reason': forced_reason, 'first_try_valid': first_try_valid,
-        'bad_evidence_refs': bad_refs, 'refs_to_failed_tools': failed_refs,
+        'bad_evidence_refs': bad_refs, 'refs_to_failed_tools': failed_refs, 'refs_to_non_ok_tools': non_ok_refs,
         'outcome': outcome, 'usage': usage,
         'wall': {'total_s': round(total, 3), 'load_s': round(load_s, 3), 'case_excl_load_s': round(max(0.0, total - load_s), 3),
                  'turn_s': [t.get('wall_s') for t in turns], 'tool_s': [c.get('wall_s') for c in tool_calls]},
         'injected_failure': case.get('inject_tool_failure'),
-        'action_audit': {'intent': {'class': decision['class'], 'action': decision['action'], 'target': decision['target']},
-                         'write_intent': write_intent, 'executed': False,
-                         'note': 'recorded intent only; this harness never executes writes',
-                         'outcome_step': outcome},
+        'action_audit': action_audit,
     }
     ctxs = [t['meta']['context'] for t in turns if (t.get('meta') or {}).get('context')]
     if ctxs:
@@ -232,25 +240,28 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     return record
 
 
-def crash_record(case, case_sha, adapter, exc):
+def crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT):
     d = P.forced_decision('harness error before the run: ' + type(exc).__name__)
     return {'record_version': 1, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
             'split': case.get('split'), 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'prompt': {'version': prompt_version, 'sha256': P.get_prompt(prompt_version)['sha256'], 'protocol': 'turn-' + prompt_version, 'turn_schema_sha256': None},
             'requested_model': adapter.requested_model, 'response_model_ids': [], 'runtime_version': adapter.runtime_version,
             'model_digest': adapter.model_digest, 'model_digest_na_reason': adapter.digest_na_reason if not adapter.model_digest else None,
             'fixture': None, 'evidence_shown': [], 'turns': [], 'tool_calls': [], 'repair_prompts': [], 'decision': d, 'forced': True,
-            'forced_reason': d['reason'], 'first_try_valid': False, 'bad_evidence_refs': [], 'refs_to_failed_tools': [], 'outcome': None,
+            'forced_reason': d['reason'], 'first_try_valid': False, 'bad_evidence_refs': [], 'refs_to_failed_tools': [], 'refs_to_non_ok_tools': [], 'outcome': None,
             'usage': {'input_tokens': 0, 'output_tokens': 0, 'cost_usd': None, 'cost_reported': False},
             'wall': {'total_s': 0.0, 'load_s': 0.0, 'case_excl_load_s': 0.0, 'turn_s': [], 'tool_s': []}, 'injected_failure': case.get('inject_tool_failure'),
             'action_audit': {'intent': {'class': d['class'], 'action': d['action'], 'target': None}, 'write_intent': False, 'executed': False,
-                             'note': 'recorded intent only; this harness never executes writes', 'outcome_step': None},
+                             'note': 'recorded intent only; this harness never executes writes', 'audit': None, 'claimed_preconditions': [],
+                             'preconditions_checked': [], 'preconditions_unmet': False, 'unmet': [], 'outcome_step': None},
             'error': {'kind': 'harness_crash', 'message': '%s: %s' % (type(exc).__name__, exc), 'traceback': traceback.format_exc()[-1500:]}}
 
 
 def build_adapter(args):
     model = args.model
     if args.adapter == 'ollama':
-        return A.OllamaAdapter(model, options={'num_ctx': args.num_ctx, 'num_predict': args.num_predict}, keep_alive=args.keep_alive,
+        num_predict = args.num_predict or (640 if args.prompt == 'v2' else 384)
+        return A.OllamaAdapter(model, options={'num_ctx': args.num_ctx, 'num_predict': num_predict}, keep_alive=args.keep_alive,
                                guard=G.PsiGuard(),
                                stop=(args.stop.split(',') if args.stop is not None else None), do_warmup=not args.no_warmup,
                                schema=(P.FLAT_TURN_SCHEMA if args.ollama_schema == 'flat' else P.TURN_SCHEMA), schema_name=args.ollama_schema)
@@ -276,7 +287,8 @@ def main(argv=None):
     ap.add_argument('--max-budget-usd', type=float, default=2.0, help='claude: per-call spend cap')
     ap.add_argument('--num-ctx', type=int, default=A.DEFAULT_NUM_CTX, choices=list(A.ALLOWED_NUM_CTX), help='ollama context window; 4096 is the proven-safe value, 8192 the only other one allowed')
     ap.add_argument('--tool-output-bytes', type=int, default=P.TOOL_OUTPUT_BYTES, help='cap on one tool result shown to the model (lower it for small local contexts)')
-    ap.add_argument('--num-predict', type=int, default=384)
+    ap.add_argument('--num-predict', type=int, help='ollama output cap; default 384 for prompt v1, 640 for v2 (a write decision carries an audit object)')
+    ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c)')
     ap.add_argument('--keep-alive', default='2m')
     ap.add_argument('--stop', help='comma separated stop tokens (ollama); default per model family')
     ap.add_argument('--ollama-schema', choices=['anyof', 'flat'], default='anyof', help='format schema variant sent to Ollama')
@@ -303,7 +315,8 @@ def main(argv=None):
         import ollama_transport as ot
         ocr_backend = T.ollama_ocr_backend(args.ocr_model, ot.api)
 
-    config = {'protocol': P.PROTOCOL_VERSION, 'system_prompt_sha256': sha256_bytes(P.SYSTEM_PROMPT.encode()),
+    prompt = P.get_prompt(args.prompt)
+    config = {'protocol': P.PROTOCOL_VERSION if args.prompt == 'v1' else 'turn-' + args.prompt, 'prompt_version': args.prompt, 'system_prompt_sha256': prompt['sha256'],
               'turn_schema_sha256': sha256_bytes(canonical(P.TURN_SCHEMA).encode()), 'flat_schema_sha256': sha256_bytes(canonical(P.FLAT_TURN_SCHEMA).encode()), 'max_tool_calls': P.MAX_TOOL_CALLS,
               'tool_output_bytes': args.tool_output_bytes, 'tool_timeout_s': P.TOOL_TIMEOUT_S, 'ocr_model': args.ocr_model, 'replay': args.replay,
               'adapter_config': adapter.config()}
@@ -327,12 +340,12 @@ def main(argv=None):
                 break
             try:
                 rec = run_case(case, sha, adapter, suite_dir, scratch, ocr_backend=ocr_backend, replay=args.replay, run_id=run_id,
-                               tool_output_bytes=args.tool_output_bytes)
+                               tool_output_bytes=args.tool_output_bytes, prompt_version=args.prompt)
             except A.AbortRun as e:
                 aborted = str(e)
                 break
             except Exception as e:  # noqa: BLE001 - e.g. a malformed case file: keep a failed record, go on
-                rec = crash_record(case, sha, adapter, e)
+                rec = crash_record(case, sha, adapter, e, args.prompt)
             rec.update(run_id=run_id, harness_git_sha=manifest['harness_git']['sha'], config_hash=manifest['config_hash'])
             (out / (case['id'] + '.json')).write_text(json.dumps(rec, indent=2, ensure_ascii=False, sort_keys=True) + '\n')
             audit.write(canonical({'run_id': run_id, 'case_id': case['id'], 'case_sha256': sha, 'at': rec['started_at'],
