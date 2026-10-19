@@ -325,6 +325,14 @@ def parse_claude(raw, stderr, returncode, req, wall):
 
 
 CODEX_FLAGS = ['--json', '-s', 'read-only', '--skip-git-repo-check', '--ignore-user-config', '--ignore-rules']
+# Codex's own tool definitions cost about 5k tokens per turn that this protocol never uses (the model answers in JSON and the
+# harness runs our tools).  Measured 2026-10-19 with gpt-6-luna on a one-line prompt: 27.1k input tokens with the flags above,
+# 22.2k with these overrides (web search, shell, apps, browser/computer use, multi-agent, plugins, image generation, ... off).
+# Disabling the shell tool also means the model cannot run anything natively.  The rest (about 22k) is Codex's fixed system prompt.
+CODEX_TRIM_FEATURES = ['multi_agent', 'image_generation', 'plugins', 'skill_search', 'goals', 'hooks', 'sleep_tool', 'view_image',
+                       'unified_exec', 'shell_tool', 'write_stdin_approval', 'tool_suggest', 'worktrees', 'remote_plugin', 'apps',
+                       'browser_use', 'computer_use']
+CODEX_TRIM = ['-c', 'web_search="disabled"'] + [x for f in CODEX_TRIM_FEATURES for x in ('-c', 'features.%s=false' % f)]
 NATIVE_TOOL_ITEMS = ('command_execution', 'mcp_tool_call', 'file_change', 'web_search', 'collab_tool_call')
 
 
@@ -339,7 +347,7 @@ class CodexAdapter(Adapter):
 
     def config(self):
         return {'adapter': self.name, 'model': self.requested_model, 'effort': self.effort, 'flags': CODEX_FLAGS,
-                'ephemeral': not self.record_session}
+                'trim': CODEX_TRIM, 'ephemeral': not self.record_session}
 
     def preflight(self):
         if not shutil.which('codex'):
@@ -349,7 +357,7 @@ class CodexAdapter(Adapter):
         return self.describe()
 
     def argv(self):
-        cmd = ['codex', 'exec'] + CODEX_FLAGS + ['-m', self.requested_model, '-C', self.workdir]
+        cmd = ['codex', 'exec'] + CODEX_FLAGS + CODEX_TRIM + ['-m', self.requested_model, '-C', self.workdir]
         if not self.record_session:
             cmd.append('--ephemeral')
         if self.effort:

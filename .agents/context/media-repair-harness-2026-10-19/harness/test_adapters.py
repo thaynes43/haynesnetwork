@@ -194,6 +194,15 @@ class OllamaAdapterTests(unittest.TestCase):
         self.assertEqual(len([c for c in fake.calls if c[0] == '/api/generate']), 1)
 
 
+class CodexTrimTests(unittest.TestCase):
+    def test_argv_carries_the_token_trim_overrides(self):
+        cmd = A.CodexAdapter('gpt-6-luna').argv()
+        self.assertIn('features.shell_tool=false', cmd)
+        self.assertIn('web_search="disabled"', cmd)
+        self.assertEqual(cmd[-1], '-')
+        self.assertEqual(cmd[cmd.index('-m') + 1], 'gpt-6-luna')
+
+
 class ClaudeAdapterTests(unittest.TestCase):
     def test_parse_recorded_output(self):
         raw = (S / 'claude_haiku_5_5.json').read_text()
