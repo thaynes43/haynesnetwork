@@ -1,0 +1,73 @@
+{
+ "bytes": 62933,
+ "decode_sample": {
+  "0": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:04.000000",
+   "ss": 0,
+   "stderr": "",
+   "t": 4
+  },
+  "12": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:04.000000",
+   "ss": 12,
+   "stderr": "",
+   "t": 4
+  },
+  "4": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:04.000000",
+   "ss": 4,
+   "stderr": "",
+   "t": 4
+  },
+  "8": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:04.000000",
+   "ss": 8,
+   "stderr": "",
+   "t": 4
+  },
+  "full": {
+   "exit_code": 0,
+   "frames": null,
+   "out_time": "00:00:20.015601",
+   "stderr": ""
+  }
+ },
+ "ffprobe": {
+  "chapters": [],
+  "exit_code": 0,
+  "format": {
+   "bit_rate": "25173",
+   "duration": "20.000000",
+   "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+   "size": "62933",
+   "tags": {}
+  },
+  "stderr": "",
+  "streams": [
+   {
+    "bit_rate": "24103",
+    "channels": 1,
+    "codec_name": "aac",
+    "codec_type": "audio",
+    "index": 0,
+    "profile": "LC",
+    "sample_rate": "22050",
+    "tags": {
+     "language": "und"
+    }
+   }
+  ]
+ },
+ "fixture": "lr_blank.m4b",
+ "frame_text": "no text visible in any sampled frame (construction: no title card was drawn)",
+ "sha256": "abc97fe1b9b7a1099eb9bf0064a4488c5048f3814dcb9e31d6ffcb0229486432",
+ "tool_version": "ffmpeg/ffprobe 8.1.2 (audiobookshelf 2.37.1 image)"
+}

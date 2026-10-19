@@ -1,0 +1,88 @@
+{
+ "bytes": 172934,
+ "decode_sample": {
+  "0": {
+   "exit_code": 0,
+   "frames": 40,
+   "out_time": "00:00:04.000000",
+   "ss": 0,
+   "stderr": "",
+   "t": 4
+  },
+  "12": {
+   "exit_code": 0,
+   "frames": 40,
+   "out_time": "00:00:04.000000",
+   "ss": 12,
+   "stderr": "",
+   "t": 4
+  },
+  "4": {
+   "exit_code": 0,
+   "frames": 40,
+   "out_time": "00:00:04.000000",
+   "ss": 4,
+   "stderr": "",
+   "t": 4
+  },
+  "8": {
+   "exit_code": 0,
+   "frames": 40,
+   "out_time": "00:00:04.000000",
+   "ss": 8,
+   "stderr": "",
+   "t": 4
+  },
+  "full": {
+   "exit_code": 0,
+   "frames": 160,
+   "out_time": "00:00:16.000000",
+   "stderr": ""
+  }
+ },
+ "ffprobe": {
+  "chapters": [],
+  "exit_code": 0,
+  "format": {
+   "bit_rate": "86219",
+   "duration": "16.046000",
+   "format_name": "matroska,webm",
+   "size": "172934",
+   "tags": {
+    "title": "Quiet Orbit"
+   }
+  },
+  "stderr": "",
+  "streams": [
+   {
+    "codec_name": "h264",
+    "codec_type": "video",
+    "height": 192,
+    "index": 0,
+    "pix_fmt": "yuv420p",
+    "profile": "High",
+    "tags": {},
+    "width": 256
+   },
+   {
+    "channels": 1,
+    "codec_name": "aac",
+    "codec_type": "audio",
+    "index": 1,
+    "profile": "LC",
+    "sample_rate": "22050",
+    "tags": {}
+   }
+  ]
+ },
+ "fixture": "qo_double.mkv",
+ "frame_text": [
+  {
+   "t0": 0,
+   "t1": 2,
+   "text": "QUIET ORBIT"
+  }
+ ],
+ "sha256": "8cc9ac6bd16b30a507436a6271d31577e6fe66678adddaa31a6501899aa03dc2",
+ "tool_version": "ffmpeg/ffprobe 8.1.2 (audiobookshelf 2.37.1 image)"
+}

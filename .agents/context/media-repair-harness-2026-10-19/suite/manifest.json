@@ -1,0 +1,1328 @@
+{
+ "suite_version": "dev-v1",
+ "contract": "CONTRACT.md v1 (harness/CONTRACT.md)",
+ "gates": ".agents/context/media-repair-harness-2026-10-19/GATES.md",
+ "base_commit": "9285641a",
+ "built_by": "build_cases.py (deterministic)",
+ "cases": [
+  {
+   "id": "audiobook-corrupt-001",
+   "file": "cases/audiobook-corrupt-001.json",
+   "sha256": "59cf4c4d9099fbd1d3096d6644574c4c890753b6f14a164de4b7b5f8b0936388",
+   "split": "dev",
+   "media_type": "audiobook",
+   "class": "corrupt_file",
+   "family": "lr-corrupt",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "audiobook-corrupt-002",
+   "file": "cases/audiobook-corrupt-002.json",
+   "sha256": "2f82ff084a9b664932b8cec70c8510ee13fb1dc95c1a5d38fa1e2fdb061a9f37",
+   "split": "dev",
+   "media_type": "audiobook",
+   "class": "corrupt_file",
+   "family": "lr-corrupt",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "audiobook-corrupt-003",
+   "file": "cases/audiobook-corrupt-003.json",
+   "sha256": "2eb76362e05f273e2a64a82fa2f8d2e2eab2908b02cb3c1b89c1ab6e9c66163c",
+   "split": "dev",
+   "media_type": "audiobook",
+   "class": "corrupt_file",
+   "family": "lr-corrupt",
+   "supported_actions": [
+    "blocklist_and_search",
+    "escalate"
+   ]
+  },
+  {
+   "id": "audiobook-healthy-001",
+   "file": "cases/audiobook-healthy-001.json",
+   "sha256": "d00a050b955755f160c7f94e71369821b85feef830bb8f6a4ef8f3084f041b38",
+   "split": "dev",
+   "media_type": "audiobook",
+   "class": "healthy",
+   "family": "crown",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "audiobook-healthy-002",
+   "file": "cases/audiobook-healthy-002.json",
+   "sha256": "9c623abd5608ddebf455177c35c9b620e3b35d4ff820b8b8885aef1227c5a196",
+   "split": "dev",
+   "media_type": "audiobook",
+   "class": "healthy",
+   "family": "lr-main",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "audiobook-healthy-003",
+   "file": "cases/audiobook-healthy-003.json",
+   "sha256": "a41a2e975bd4794ed63f5354acae566d4a4576cea1d89a2d718c5fa774971c55",
+   "split": "dev",
+   "media_type": "audiobook",
+   "class": "healthy",
+   "family": "lr-mp3",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "audiobook-identity-001",
+   "file": "cases/audiobook-identity-001.json",
+   "sha256": "55ddb334f7100b5c02054bbcb633c23b33b03dbea352d13ba3897a3921b73178",
+   "split": "dev",
+   "media_type": "audiobook",
+   "class": "identity_mismatch",
+   "family": "crown",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "audiobook-identity-002",
+   "file": "cases/audiobook-identity-002.json",
+   "sha256": "7e6d6fb8eb27f6466e069e3c7decd21fa39075b4a5b77bea967a5409834fe3fa",
+   "split": "dev",
+   "media_type": "audiobook",
+   "class": "identity_mismatch",
+   "family": "lr-wrong",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "audiobook-insuff-001",
+   "file": "cases/audiobook-insuff-001.json",
+   "sha256": "c9f75edb4bc6b4f84c5fe5bc491bd604225d0930087ce69ef307b42d31fb3081",
+   "split": "dev",
+   "media_type": "audiobook",
+   "class": "insufficient_evidence",
+   "family": "lr-blank",
+   "supported_actions": [
+    "escalate"
+   ]
+  },
+  {
+   "id": "audiobook-naming-001",
+   "file": "cases/audiobook-naming-001.json",
+   "sha256": "6dd4166a379207981f11badf111cfd7aae7c886a27a1f3827b5536ef628d8b3a",
+   "split": "dev",
+   "media_type": "audiobook",
+   "class": "metadata_naming",
+   "family": "lr-untitled",
+   "supported_actions": [
+    "rename"
+   ]
+  },
+  {
+   "id": "audiobook-order-001",
+   "file": "cases/audiobook-order-001.json",
+   "sha256": "b6d421624817e4baacf97065da34a218fdbf5dd056319bc9ba91e94722f73bc3",
+   "split": "dev",
+   "media_type": "audiobook",
+   "class": "order_edition_ambiguity",
+   "family": "lr-edition",
+   "supported_actions": [
+    "escalate"
+   ]
+  },
+  {
+   "id": "audiobook-outcome-001",
+   "file": "cases/audiobook-outcome-001.json",
+   "sha256": "d6f3aa4b282d4d7934b31f4f177f314feb1dc0bee15eb4702006229d0600cc0f",
+   "split": "dev",
+   "media_type": "audiobook",
+   "class": "corrupt_file",
+   "family": "lr-outcome",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "audiobook-outcome-002",
+   "file": "cases/audiobook-outcome-002.json",
+   "sha256": "9787b67fe8c694b4e7fc6191b5b9b5f3278aec6c51e4c1fa113077bb073fc637",
+   "split": "dev",
+   "media_type": "audiobook",
+   "class": "corrupt_file",
+   "family": "lr-outcome",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "epub-corrupt-001",
+   "file": "cases/epub-corrupt-001.json",
+   "sha256": "c42b464e887643e317e8094fbda1afc82e18205d0bc71e05cd1c556a8192c9c7",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "corrupt_file",
+   "family": "anne",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "epub-corrupt-002",
+   "file": "cases/epub-corrupt-002.json",
+   "sha256": "a315bc3f4c79c27bfb181575c183bc9a27a037488bb5fa43d91191e7fce7b538",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "corrupt_file",
+   "family": "lr-epub-corrupt",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "epub-corrupt-003",
+   "file": "cases/epub-corrupt-003.json",
+   "sha256": "02810de7d292bf034ccd87dfc069ec259fc9535a17b5c8d3c1ddafa427df7a98",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "corrupt_file",
+   "family": "lr-epub-corrupt",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "epub-corrupt-004",
+   "file": "cases/epub-corrupt-004.json",
+   "sha256": "a74f7c390baace332b6135fa12e48be596ab6858b4cf566b0ab58a1f093071e8",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "corrupt_file",
+   "family": "lr-epub-corrupt",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "epub-corrupt-005",
+   "file": "cases/epub-corrupt-005.json",
+   "sha256": "1680fd8c880e05559b8595f19f63e8e1dc728cc6dcce98090966ec67167aee91",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "corrupt_file",
+   "family": "lr-epub-corrupt",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "epub-healthy-001",
+   "file": "cases/epub-healthy-001.json",
+   "sha256": "1df1ee4836a569e3b4418e6a4c9b8fde7a13c2faf9a3b325c83246291802da3f",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "healthy",
+   "family": "city",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "epub-healthy-002",
+   "file": "cases/epub-healthy-002.json",
+   "sha256": "67270f2f22b7dfaa202bd4828c7f0d0944e1a76970fa8e80159f8481e392355d",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "healthy",
+   "family": "anne",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "epub-healthy-003",
+   "file": "cases/epub-healthy-003.json",
+   "sha256": "938709e771e35f3480728ff9e33f383e1a0ceba7223a5ec4e02705b3e0b4e57d",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "healthy",
+   "family": "anne",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "epub-healthy-004",
+   "file": "cases/epub-healthy-004.json",
+   "sha256": "3f1c97b8be3304d99918a5ee2af927df844e1697208096ba67162b36893cbea8",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "healthy",
+   "family": "lr-epub",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "epub-healthy-005",
+   "file": "cases/epub-healthy-005.json",
+   "sha256": "ba0d3ae6549d8b888d0ab2569afd37c310b7010b2cc4bb2415cfaf1698b6f9c2",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "healthy",
+   "family": "lr-epub-series",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "epub-healthy-006",
+   "file": "cases/epub-healthy-006.json",
+   "sha256": "3013b9ad619ed49e43b97cd44b17d31ffce29b3e10ad71e041c58ffcfdd24080",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "healthy",
+   "family": "lamplighter",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "epub-identity-001",
+   "file": "cases/epub-identity-001.json",
+   "sha256": "119324bf1ebea7bab88261513b167e862bee9fafa89f841d590cb37a41eecc4f",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "identity_mismatch",
+   "family": "city",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "epub-identity-002",
+   "file": "cases/epub-identity-002.json",
+   "sha256": "ea6180b4894f76606ce086c38209f1a37342a2a7de62a0165aefc8d4d6feaf01",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "identity_mismatch",
+   "family": "anne",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "epub-identity-003",
+   "file": "cases/epub-identity-003.json",
+   "sha256": "aed4d8afea3062cd189b4b11394d57c733a63a7070c6183f14f4a156d5f093bf",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "identity_mismatch",
+   "family": "anne",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "epub-identity-004",
+   "file": "cases/epub-identity-004.json",
+   "sha256": "0075fc6a0dc52e8b99908facbc845cae6d42da903566f5c76391ea7c9d188d5f",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "identity_mismatch",
+   "family": "anne",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "epub-identity-005",
+   "file": "cases/epub-identity-005.json",
+   "sha256": "85e5e5c5417926eb74a949aa4ae912ae42a1fd7970436ffeeede98919e585d5b",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "identity_mismatch",
+   "family": "lr-epub-wrong",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "epub-insuff-001",
+   "file": "cases/epub-insuff-001.json",
+   "sha256": "21b2ff2b49052763b6e8fd78004fe920300481229a76f804f88a9247a33a50ea",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "insufficient_evidence",
+   "family": "lr-epub-corrupt",
+   "supported_actions": [
+    "escalate"
+   ]
+  },
+  {
+   "id": "epub-insuff-002",
+   "file": "cases/epub-insuff-002.json",
+   "sha256": "9cf1372f55a52f5ccc28ea1eb3e6b5c37cc8529d1c214fa89493c99d71acbeae",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "insufficient_evidence",
+   "family": "lr-epub-french",
+   "supported_actions": [
+    "escalate"
+   ]
+  },
+  {
+   "id": "epub-naming-001",
+   "file": "cases/epub-naming-001.json",
+   "sha256": "06b795f0f93d76983c6d81b7b22f99219b4c2cb124202705256d90d4e9ce1755",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "metadata_naming",
+   "family": "lr-epub-untitled",
+   "supported_actions": [
+    "rename"
+   ]
+  },
+  {
+   "id": "epub-outcome-001",
+   "file": "cases/epub-outcome-001.json",
+   "sha256": "984769747885ae24a2b8ac9ee3a1cd712b531dffa4b0f8026638f3d5f2d7f17e",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "corrupt_file",
+   "family": "lr-epub-outcome",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "epub-outcome-002",
+   "file": "cases/epub-outcome-002.json",
+   "sha256": "0723666776899f29e26e118ac3022966917dd28c5eb8d6602513712b316b28f6",
+   "split": "dev",
+   "media_type": "epub",
+   "class": "corrupt_file",
+   "family": "lr-epub-outcome",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "movie-corrupt-001",
+   "file": "cases/movie-corrupt-001.json",
+   "sha256": "2b692f1e805cf7b93f9f78247b0fe33c576034db0904cb6e8f2f9946b0434fe9",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "corrupt_file",
+   "family": "qo-corrupt",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "movie-corrupt-002",
+   "file": "cases/movie-corrupt-002.json",
+   "sha256": "ce2b0e448d01f80ae92ebbc2f9ed89bc85f94a0da7e3aeacfd74c1dc8e2dfe33",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "corrupt_file",
+   "family": "qo-corrupt",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "movie-corrupt-003",
+   "file": "cases/movie-corrupt-003.json",
+   "sha256": "0ec33287e90c8ebdd861d4258c1e24b2b7e8028311604840a3ebc36573b78744",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "corrupt_file",
+   "family": "qo-corrupt",
+   "supported_actions": [
+    "blocklist_and_search",
+    "escalate"
+   ]
+  },
+  {
+   "id": "movie-decoder-001",
+   "file": "cases/movie-decoder-001.json",
+   "sha256": "bf43c07caa89ce235fb0d7bdbab7c349260d2157b7832f972ab5afb8521731ad",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "decoder_incompatible",
+   "family": "zom",
+   "supported_actions": [
+    "convert"
+   ]
+  },
+  {
+   "id": "movie-decoder-002",
+   "file": "cases/movie-decoder-002.json",
+   "sha256": "c2b09bae2bc10de85feeb8779eb8bd70951371a7ab58a4ea5eba3cc47dc7f3e0",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "decoder_incompatible",
+   "family": "qo-hevc",
+   "supported_actions": [
+    "convert"
+   ]
+  },
+  {
+   "id": "movie-healthy-001",
+   "file": "cases/movie-healthy-001.json",
+   "sha256": "22778e889acd2b6d4413b2d67fd01f57f096c2bbe193a3d98851f826801cd025",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "healthy",
+   "family": "zom",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "movie-healthy-002",
+   "file": "cases/movie-healthy-002.json",
+   "sha256": "9adb80e2a86545cc61408ced86cb889148fce891a6dcbd7602244e8204822a01",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "healthy",
+   "family": "moana-alias",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "movie-healthy-003",
+   "file": "cases/movie-healthy-003.json",
+   "sha256": "c28b14a32223bc7ca5aba11a03e7ea3fa0f2aea25ec58d1688d59f823fa04cf4",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "healthy",
+   "family": "qo-main",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "movie-healthy-004",
+   "file": "cases/movie-healthy-004.json",
+   "sha256": "1eed35fdb2bbbb1a7f4f90e544150d45c5d5bb27fcafc7bf2c695ecc560cdb76",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "healthy",
+   "family": "qo-edition",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "movie-identity-001",
+   "file": "cases/movie-identity-001.json",
+   "sha256": "79883dd5a3602bf8981806ead9d2d86055a51e86e423c13c9c6737e5dcb53134",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "identity_mismatch",
+   "family": "zom",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "movie-identity-002",
+   "file": "cases/movie-identity-002.json",
+   "sha256": "16e054992182eca1e35eea0fd627bf4be94da6dc07dc6c420f5925318a0c4d63",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "identity_mismatch",
+   "family": "po-paper",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "movie-insuff-001",
+   "file": "cases/movie-insuff-001.json",
+   "sha256": "bb848eae6557cb48a4231fb11ae5e77ead8c6971016c04a1e1924ef7fc3103d8",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "insufficient_evidence",
+   "family": "qo-double",
+   "supported_actions": [
+    "escalate"
+   ]
+  },
+  {
+   "id": "movie-naming-001",
+   "file": "cases/movie-naming-001.json",
+   "sha256": "5da6c0ed127376f4b53256a256b6e50e80cbca15080cb7383e779414fb61fbac",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "metadata_naming",
+   "family": "qo-main",
+   "supported_actions": [
+    "rename"
+   ]
+  },
+  {
+   "id": "movie-order-001",
+   "file": "cases/movie-order-001.json",
+   "sha256": "dbc83c5856439d47a25544f3a25acaee56c2eed598f45ae618bd55030f384959",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "order_edition_ambiguity",
+   "family": "qo-edition",
+   "supported_actions": [
+    "escalate"
+   ]
+  },
+  {
+   "id": "movie-outcome-001",
+   "file": "cases/movie-outcome-001.json",
+   "sha256": "36dbd713840ef4ba07f9551bc8f49754fc7809cf9d05f815b6cdf7cd840ea555",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "decoder_incompatible",
+   "family": "qo-hevc-outcome",
+   "supported_actions": [
+    "convert"
+   ]
+  },
+  {
+   "id": "movie-outcome-002",
+   "file": "cases/movie-outcome-002.json",
+   "sha256": "0e55585796da2e11e38b4bcb332bc497d53bba6e0f69c801879ef20d39de1e03",
+   "split": "dev",
+   "media_type": "movie",
+   "class": "decoder_incompatible",
+   "family": "qo-hevc-outcome",
+   "supported_actions": [
+    "convert"
+   ]
+  },
+  {
+   "id": "tv-corrupt-001",
+   "file": "cases/tv-corrupt-001.json",
+   "sha256": "dbad2361e89eaf465f88f3e894322c7f6c7df67695f59be3bf2ff5b09e58cfe5",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "corrupt_file",
+   "family": "hl-e02",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "tv-corrupt-002",
+   "file": "cases/tv-corrupt-002.json",
+   "sha256": "e4a3e13044359c9061c52d6461f934232c919aabf99f95b1bf15a9c5134221ed",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "corrupt_file",
+   "family": "hl-e02",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "tv-corrupt-003",
+   "file": "cases/tv-corrupt-003.json",
+   "sha256": "d48915d9c156c6feded9273c0d4d02c6171ba9faf57be3c3fdbe744eb59d5eb1",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "corrupt_file",
+   "family": "hl-e02",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "tv-decoder-001",
+   "file": "cases/tv-decoder-001.json",
+   "sha256": "8522c7d73e71766d51fa01e3e30e4b9db1a751951b1d16307017b4be80c8fb66",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "decoder_incompatible",
+   "family": "hl-e06",
+   "supported_actions": [
+    "convert"
+   ]
+  },
+  {
+   "id": "tv-healthy-001",
+   "file": "cases/tv-healthy-001.json",
+   "sha256": "473f7452d82f49d5d5de2a9f350972fab79366a0326b8df90c78483c6bfbcac5",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "healthy",
+   "family": "spidey",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "tv-healthy-002",
+   "file": "cases/tv-healthy-002.json",
+   "sha256": "cb933751a90860d9b0d3d8230e0a4b223ebaf5822e1566698dea6d1f182702fb",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "healthy",
+   "family": "mickey-roadster",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "tv-healthy-003",
+   "file": "cases/tv-healthy-003.json",
+   "sha256": "002c8ae1768c3cf6bde8e069bc2079325d1d9d883e7d6ad290d71daa5c0670e6",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "healthy",
+   "family": "hl-e03",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "tv-healthy-004",
+   "file": "cases/tv-healthy-004.json",
+   "sha256": "9c2662e663498e7b42e6387cdf5bf0411df3b0629d07b6a29f38893d5d4836dd",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "healthy",
+   "family": "hl-e04",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "tv-healthy-005",
+   "file": "cases/tv-healthy-005.json",
+   "sha256": "1f86711d32591191f9d2271af8f9c28a4fe44f3fe091a6f55af429039cb02012",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "healthy",
+   "family": "hl-e01",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "tv-healthy-006",
+   "file": "cases/tv-healthy-006.json",
+   "sha256": "558dfe6c5f0fbb537a518f062029dc1f6a1129ef070ae736df0981b3518a8f1d",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "healthy",
+   "family": "hl-e06",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "tv-healthy-007",
+   "file": "cases/tv-healthy-007.json",
+   "sha256": "115d1a0f3bf81909f1d6a5d1366874d46b4a88cc32d9ecb6f21e682acca466b2",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "healthy",
+   "family": "hl-order",
+   "supported_actions": [
+    "none"
+   ]
+  },
+  {
+   "id": "tv-identity-001",
+   "file": "cases/tv-identity-001.json",
+   "sha256": "570147ff8d37d579567948c08c8d151f868d331b0df3ffdbaced8c3c53f7dfd6",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "identity_mismatch",
+   "family": "spidey",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "tv-identity-002",
+   "file": "cases/tv-identity-002.json",
+   "sha256": "661ce9eaca1d82089d6407446ad443b2ad60680e90ada3db55dcbf9ad02569a0",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "identity_mismatch",
+   "family": "mickey-roadster",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "tv-identity-003",
+   "file": "cases/tv-identity-003.json",
+   "sha256": "618adbb262bd1b17ac280e863ceaadb4a9e6e507b5ecf4c713283fe43f497844",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "identity_mismatch",
+   "family": "hl-e03-as-e04",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "tv-identity-004",
+   "file": "cases/tv-identity-004.json",
+   "sha256": "99adfa52b9d2c3c950285db0346f66c0b09acbbba50abfbedd49cfdd409d99ce",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "identity_mismatch",
+   "family": "hl-e03-as-e04",
+   "supported_actions": [
+    "blocklist_and_search",
+    "escalate"
+   ]
+  },
+  {
+   "id": "tv-insuff-001",
+   "file": "cases/tv-insuff-001.json",
+   "sha256": "cb642bbda4540da4364b1e5eb3ed8bd3febe6eb1c5a24555694bedc93ca8c40d",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "insufficient_evidence",
+   "family": "pokemon-houndour",
+   "supported_actions": [
+    "escalate"
+   ]
+  },
+  {
+   "id": "tv-insuff-002",
+   "file": "cases/tv-insuff-002.json",
+   "sha256": "d18d2a6e83e5ea62a08134b0dbc7357333347224bb686200b2a38359f7309a7f",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "insufficient_evidence",
+   "family": "hl-e02",
+   "supported_actions": [
+    "escalate"
+   ]
+  },
+  {
+   "id": "tv-insuff-003",
+   "file": "cases/tv-insuff-003.json",
+   "sha256": "9aad7f720473488366b68de802bd01c514c69c038f3fda16198b2843d6a60d71",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "insufficient_evidence",
+   "family": "hl-generic",
+   "supported_actions": [
+    "escalate"
+   ]
+  },
+  {
+   "id": "tv-naming-001",
+   "file": "cases/tv-naming-001.json",
+   "sha256": "542546767abc95d6a7ac95caaa30236b41c11c71daa74285cdad21c61a70d396",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "metadata_naming",
+   "family": "hl-e03",
+   "supported_actions": [
+    "rename"
+   ]
+  },
+  {
+   "id": "tv-order-001",
+   "file": "cases/tv-order-001.json",
+   "sha256": "b8fd5b5eddf73b34099db98378da09599ab22d0d952069b295ce410b129bc38a",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "order_edition_ambiguity",
+   "family": "hl-order",
+   "supported_actions": [
+    "escalate"
+   ]
+  },
+  {
+   "id": "tv-outcome-001",
+   "file": "cases/tv-outcome-001.json",
+   "sha256": "bf12277b72989c76c43aff4f0b46f3d7848ccc6df97d9f73abb0612d44ca42a5",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "corrupt_file",
+   "family": "hl-e02-outcome",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "tv-outcome-002",
+   "file": "cases/tv-outcome-002.json",
+   "sha256": "a6b5616468c813c30bd1f621cf87dd3030be1d751a54ba071c69a64b0790575d",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "corrupt_file",
+   "family": "hl-e02-outcome",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  },
+  {
+   "id": "tv-outcome-003",
+   "file": "cases/tv-outcome-003.json",
+   "sha256": "4a0f9b4527fc22a024982504d8a19cb756c2b5ad6734a770e90face91e139c44",
+   "split": "dev",
+   "media_type": "tv",
+   "class": "corrupt_file",
+   "family": "hl-e02-outcome",
+   "supported_actions": [
+    "blocklist_and_search"
+   ]
+  }
+ ],
+ "fixtures": [
+  {
+   "path": "fixtures/media/hl_e01_multi.mkv",
+   "sha256": "6068caedb005ebdf3243454163045c6ccb0e2836879ac5b902ddad36c250fae9",
+   "bytes": 116257
+  },
+  {
+   "path": "fixtures/media/hl_e02_flip.mkv",
+   "sha256": "300cd24cf8b78dfbeb305aced3e71f2d4682992eb3b9295b6d98a9e38790c97a",
+   "bytes": 90286
+  },
+  {
+   "path": "fixtures/media/hl_e02_flip2.mkv",
+   "sha256": "405db68167176bdaf7e5ea6ca5c2ed67086cd2939db77c5813a2d131d39d5b1c",
+   "bytes": 90286
+  },
+  {
+   "path": "fixtures/media/hl_e02_good.mkv",
+   "sha256": "a26a8240306713c6906203fead378cb4748012b8604f585ffbb9701a776cbebc",
+   "bytes": 90286
+  },
+  {
+   "path": "fixtures/media/hl_e02_trunc.mkv",
+   "sha256": "db9f9e7ebc91d900eb2c5e60b67eb6db089aeeed303168a91bee860e6525dc2c",
+   "bytes": 49657
+  },
+  {
+   "path": "fixtures/media/hl_e03.mkv",
+   "sha256": "533b1f8b2faf1d095d6b38f8d009c88f857d8ad09742671937fbc653ee0509b0",
+   "bytes": 89938
+  },
+  {
+   "path": "fixtures/media/hl_e04_nightferry.mkv",
+   "sha256": "2bef8e12d0fe64a59cf5e12a15034ae66576f7e5aff49efec8ddf31141b48884",
+   "bytes": 90073
+  },
+  {
+   "path": "fixtures/media/hl_e06_hi10.mkv",
+   "sha256": "87c7db22ac940d4a39f112880e9d54f681a9adc47150ef5233b7023dcaf08054",
+   "bytes": 68192
+  },
+  {
+   "path": "fixtures/media/hl_generic.mkv",
+   "sha256": "eceb040939bd8857b43ee8d01207b13a73b788cb6ed078810d2630dd20d49ede",
+   "bytes": 88720
+  },
+  {
+   "path": "fixtures/media/hl_glass_harbor.mkv",
+   "sha256": "8e692f6644eeeadb49633a0ffc7c91a9d6a39baaf52fecd58560d3432bb7e216",
+   "bytes": 90271
+  },
+  {
+   "path": "fixtures/media/lamplighter_short.epub",
+   "sha256": "6b0a05b32e6dbafd57b88a77c4e11b6c1891ffa001b3af7f297c51cc280e1062",
+   "bytes": 1705
+  },
+  {
+   "path": "fixtures/media/lr.m4b",
+   "sha256": "a230ec54b2c5d5974d5cca2884a3202cc4a0df18e1766645f0cbac274773dd3e",
+   "bytes": 63930
+  },
+  {
+   "path": "fixtures/media/lr.mp3",
+   "sha256": "9c4dadee81e2ed015b77a610f3cfa636c631793f967379585801711fecd65d14",
+   "bytes": 80875
+  },
+  {
+   "path": "fixtures/media/lr_blank.m4b",
+   "sha256": "abc97fe1b9b7a1099eb9bf0064a4488c5048f3814dcb9e31d6ffcb0229486432",
+   "bytes": 62933
+  },
+  {
+   "path": "fixtures/media/lr_crc.epub",
+   "sha256": "cecad6da067d58900cbc550717ecf4f66846d163118d41c916b383afd3032ab2",
+   "bytes": 3300
+  },
+  {
+   "path": "fixtures/media/lr_empty.mp3",
+   "sha256": "8e9b5e893d70370869eb2a6f022930c7535c3f8e2f8d0a6e2ba720a0f25a2192",
+   "bytes": 443
+  },
+  {
+   "path": "fixtures/media/lr_french.epub",
+   "sha256": "0bb960ef1ad5b1a36e32d96361f96586f8a585c703ab3146342544d9b40ca32a",
+   "bytes": 2186
+  },
+  {
+   "path": "fixtures/media/lr_good.epub",
+   "sha256": "15ac8ee4c1a70746a38506961920c49ee16d415f44273e57e97b7a4a4588edbd",
+   "bytes": 3300
+  },
+  {
+   "path": "fixtures/media/lr_missing_member.epub",
+   "sha256": "df374b99fa2f0abac9178697b160fa4dd6cd9c9c325ae08562e3ccf2bee5411e",
+   "bytes": 3312
+  },
+  {
+   "path": "fixtures/media/lr_opf_broken.epub",
+   "sha256": "2cdd09ab1bf72568d4eabb87993784428fcf680eec3faadee4a6592c4232da73",
+   "bytes": 3301
+  },
+  {
+   "path": "fixtures/media/lr_series.epub",
+   "sha256": "b8608cfd0ac6fe29403c5c771bf00271a41eac8b5bed7908e52810ee025a0a88",
+   "bytes": 3319
+  },
+  {
+   "path": "fixtures/media/lr_trunc.m4b",
+   "sha256": "f25797193720d32b62e9eab19b1606233784329148162f1f9fd1afa144d1ea77",
+   "bytes": 31965
+  },
+  {
+   "path": "fixtures/media/lr_untitled.epub",
+   "sha256": "4b980baf16554c925c2c91c27e43048898944c7b7ffc85be9a16fbf2edded2ff",
+   "bytes": 3675
+  },
+  {
+   "path": "fixtures/media/lr_untitled.m4b",
+   "sha256": "66dec09eb92ad3dbae7d2e2f955fd37f1b2e518b27f8d417a44a2a68a4d08caf",
+   "bytes": 63719
+  },
+  {
+   "path": "fixtures/media/lr_wrong.m4b",
+   "sha256": "f38ca615045d8e85476b8617f6e25e83222f8a5f1a9e8d8b5d06048c039614e8",
+   "bytes": 39164
+  },
+  {
+   "path": "fixtures/media/lr_wrongbody.epub",
+   "sha256": "f13d45537c5044e758dfe4cdc67685d52daefb824ce7e8b91ba6aa499c81090a",
+   "bytes": 3052
+  },
+  {
+   "path": "fixtures/media/lr_zip_trunc.epub",
+   "sha256": "f418a35c68389aa96ad7f45362c1d29c1a7e5041378eb4c5b2d3353c9fe389ac",
+   "bytes": 1980
+  },
+  {
+   "path": "fixtures/media/po_paper.mkv",
+   "sha256": "60f4df0b9835b7d2c7ddd80b22331fd4257af916612b54fcf93a7c8f7e5d115a",
+   "bytes": 120841
+  },
+  {
+   "path": "fixtures/media/qo_conv_noaudio.mp4",
+   "sha256": "124e3c967b3440f8c9413ac608f27050be3198ca53e5055aec11697d6fd31257",
+   "bytes": 29481
+  },
+  {
+   "path": "fixtures/media/qo_conv_ok.mp4",
+   "sha256": "e6742db857ff4994be5175ebda2b7daca648944d1535938f5038c6115d776581",
+   "bytes": 50812
+  },
+  {
+   "path": "fixtures/media/qo_double.mkv",
+   "sha256": "8cc9ac6bd16b30a507436a6271d31577e6fe66678adddaa31a6501899aa03dc2",
+   "bytes": 172934
+  },
+  {
+   "path": "fixtures/media/qo_ext.mkv",
+   "sha256": "16119c75d0ccb07e5fd50cff28ceecad70d05d83b8a9515f2c1dd9c85b059422",
+   "bytes": 131135
+  },
+  {
+   "path": "fixtures/media/qo_hevc.mkv",
+   "sha256": "c8381c888327a252ffd024c53a60581db44753a850a250d5987e237c6006fd37",
+   "bytes": 107217
+  },
+  {
+   "path": "fixtures/media/qo_main.mkv",
+   "sha256": "c42e4a7082868a4a70e62413c0c9e3a53f5ab389d109d721a3396c3dd53131f3",
+   "bytes": 90000
+  },
+  {
+   "path": "fixtures/media/qo_nomoov.mp4",
+   "sha256": "3a5e3e8477dbc0de9cc95cc5e6ce22ab4a245f7f4c627d87b1d4f7651b176937",
+   "bytes": 63931
+  },
+  {
+   "path": "fixtures/media/qo_zero.mkv",
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "bytes": 0
+  },
+  {
+   "path": "fixtures/probes/hl_e01_multi.mkv.json",
+   "sha256": "3c35a9d3b08046246b6158ae05e0bda8d02caa46cd208fdd425e37dda263c397",
+   "bytes": 2156
+  },
+  {
+   "path": "fixtures/probes/hl_e02_flip.mkv.json",
+   "sha256": "1f92c261ae32fdca2563d3537d46030bf5594adf94613f0e8f381f0da562cca5",
+   "bytes": 2349
+  },
+  {
+   "path": "fixtures/probes/hl_e02_flip2.mkv.json",
+   "sha256": "f4088e8f44de2b4bd31918267075d5016a03eca250576323975eef78a0d64a8c",
+   "bytes": 2181
+  },
+  {
+   "path": "fixtures/probes/hl_e02_good.mkv.json",
+   "sha256": "6e98379a45017df1a7195d83d98bd7ac4ef7671108dbb745facd45bd0b58dcee",
+   "bytes": 1740
+  },
+  {
+   "path": "fixtures/probes/hl_e02_trunc.mkv.json",
+   "sha256": "de7e98ab3190f1ca90283cd222b665d264a7934474b606f5ee21e5a39b1106ba",
+   "bytes": 2090
+  },
+  {
+   "path": "fixtures/probes/hl_e03.mkv.json",
+   "sha256": "8282a42362da6a589166fb439efbb0f225d8025c3ac7bd47a3b49c13826c69a7",
+   "bytes": 1750
+  },
+  {
+   "path": "fixtures/probes/hl_e04_nightferry.mkv.json",
+   "sha256": "adebca5de5ec3736d8d8a7ccd181903c3265d1d58cd00836a31ba29095dec28f",
+   "bytes": 1755
+  },
+  {
+   "path": "fixtures/probes/hl_e06_hi10.mkv.json",
+   "sha256": "ecad4b5acc5056914a0e4fd5ddb621e1240e23f7237400c81835af322276d656",
+   "bytes": 1750
+  },
+  {
+   "path": "fixtures/probes/hl_generic.mkv.json",
+   "sha256": "db6c2c567d225bafeba297bc50bf90445c6e5d8db295926d96a720b3470be45a",
+   "bytes": 1477
+  },
+  {
+   "path": "fixtures/probes/hl_glass_harbor.mkv.json",
+   "sha256": "d3c59a02c036ed381421be7f51e61e1ea3f610d5f4e5cf0e8529b3861d5d5a8c",
+   "bytes": 1531
+  },
+  {
+   "path": "fixtures/probes/lr.m4b.json",
+   "sha256": "3b827059b6cc01830f5efe3758014c307fefcbf51e045fb7b981cf10437e76dc",
+   "bytes": 1913
+  },
+  {
+   "path": "fixtures/probes/lr.mp3.json",
+   "sha256": "354481b86d15dacc20b76c8e751ad990d618dba1a7c7b6ecd565d41bf3592d0f",
+   "bytes": 1844
+  },
+  {
+   "path": "fixtures/probes/lr_blank.m4b.json",
+   "sha256": "8abd5ae4d108e9c72e4a5578a0adc0defab18216ce913b845aeb7928410d98d7",
+   "bytes": 1376
+  },
+  {
+   "path": "fixtures/probes/lr_empty.mp3.json",
+   "sha256": "d3509871af26dc0a0d5bdf238a8cb03bc928afcbae772a8d34ab57bac10be020",
+   "bytes": 2305
+  },
+  {
+   "path": "fixtures/probes/lr_trunc.m4b.json",
+   "sha256": "83f59b6842bd6e310d001aae58a4fd17e7b726bbe1922566e3a9a85d6c996ab1",
+   "bytes": 2147
+  },
+  {
+   "path": "fixtures/probes/lr_untitled.m4b.json",
+   "sha256": "47bc14ed193d2f6b402f471fae09437730e4e8055bba6844791cb76bbe8810b5",
+   "bytes": 1747
+  },
+  {
+   "path": "fixtures/probes/lr_wrong.m4b.json",
+   "sha256": "86c5e34c08fd86f42843b917ea6b7e1b7dedfa2fd158d1aab4046ce98eceb427",
+   "bytes": 1853
+  },
+  {
+   "path": "fixtures/probes/po_paper.mkv.json",
+   "sha256": "48911d52331443055ca5aeb4c4f3a14609a581b5321c40ca255e71d356e2c7a2",
+   "bytes": 1491
+  },
+  {
+   "path": "fixtures/probes/qo_conv_noaudio.mp4.json",
+   "sha256": "15f0df59c461bef52e9829d0985d00223f0d99280a6d591cb6685fe15c18ea7f",
+   "bytes": 1346
+  },
+  {
+   "path": "fixtures/probes/qo_conv_ok.mp4.json",
+   "sha256": "60ef20e4e807c84d8e92b9b7a6b7213c377301011c7b789de5ae8eeabff772b7",
+   "bytes": 1556
+  },
+  {
+   "path": "fixtures/probes/qo_double.mkv.json",
+   "sha256": "1365b6450f37887b071535f07c85f4e3a3bcdcac221805bf8906f8f182b606c3",
+   "bytes": 1502
+  },
+  {
+   "path": "fixtures/probes/qo_ext.mkv.json",
+   "sha256": "ecd35a2363cd559e42b7e2845040d31670f547f840382f991ed8287da1d81fa8",
+   "bytes": 1500
+  },
+  {
+   "path": "fixtures/probes/qo_hevc.mkv.json",
+   "sha256": "7ff2972a68d6dd048bcc5c7aebb10c6e51816883f7088a54f97695f8a2922929",
+   "bytes": 1479
+  },
+  {
+   "path": "fixtures/probes/qo_main.mkv.json",
+   "sha256": "5288ebbb30b5b147c1caf5cd453cf5a72454af26c16d47fc6168b37214e8d936",
+   "bytes": 1468
+  },
+  {
+   "path": "fixtures/probes/qo_nomoov.mp4.json",
+   "sha256": "94f9db403f30c8caeb166c569ef00c9a4b0b6b849c3b8e2fced29ad6f86d2320",
+   "bytes": 2137
+  },
+  {
+   "path": "fixtures/probes/qo_zero.mkv.json",
+   "sha256": "e01de00361badee0928724710e4396da84d0d6b4f03d2303d90ff0aa66538b93",
+   "bytes": 2168
+  },
+  {
+   "path": "fixtures/gen_media.sh",
+   "sha256": "698610cd68c13c931a13672b5555398c92691578a187d590f83d845c2fe5d9d9",
+   "bytes": 9959
+  },
+  {
+   "path": "fixtures/gen_epub.py",
+   "sha256": "6ff0ab8e7ca5f4b5f122c4132ab6bf55861bd7f9c650bbb3cd8a782e3a5f6b16",
+   "bytes": 8822
+  },
+  {
+   "path": "fixtures/make_replay.py",
+   "sha256": "781d4e9144afdef74abccf64b7a6f9c6a0d43b07c2d7ae5f44b27c968f323a1f",
+   "bytes": 4833
+  }
+ ],
+ "external_fixtures": [
+  {
+   "locator": "radarr movie 9830 file 6337 (5555730978 B); sha256 is of the pinned observation record cases.json a04, not of the media",
+   "kind": "remote",
+   "sha256": "10f0b86d94f5f28cb55625df6b978e29b8b829db809ff051cdc09ab72f5f45e0",
+   "bytes": 5555730978
+  },
+  {
+   "locator": "sonarr episodefile 80065 (839928932 B); sha256 is of the pinned observation record cases.json a03, not of the media",
+   "kind": "remote",
+   "sha256": "b96d89a21689f34522f8fdbdd7032854f5425c9f0199c6aeabf0cf41f5d410d8",
+   "bytes": 839928932
+  },
+  {
+   "locator": "sonarr episodefile 80066 (1455149536 B); sha256 is of the pinned observation record cases.json a01, not of the media",
+   "kind": "remote",
+   "sha256": "e1c0f024bf837355bb47d8f5f8a3d43ab05b4a21b726082cf820d13b635f13e6",
+   "bytes": 1455149536
+  },
+  {
+   "locator": "~/.cache/media-repair-actual-epub-1018/pristine-0.epub",
+   "kind": "local",
+   "sha256": "c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc",
+   "bytes": 390182
+  },
+  {
+   "locator": "~/.cache/media-repair-actual-epub-1018/pristine-1.epub",
+   "kind": "local",
+   "sha256": "e42c77b5aef6528277b16b4c2ed4a015391cf0821394001da497c6bbbc9099fa",
+   "bytes": 343250
+  },
+  {
+   "locator": "~/.cache/media-repair-selection-1018/derived-damage.epub",
+   "kind": "local",
+   "sha256": "f6f0c5ef5a2b342f026201dfeb63acbbe003e6336bd6bdf9d23f84c84897a1b8",
+   "bytes": 2048
+  },
+  {
+   "locator": "~/.cache/media-repair-selection-1018/derived-title.epub",
+   "kind": "local",
+   "sha256": "6a64109c380d82204785005cb200bbd7fe2ce3f95c34ed8d407d9ca3a8920392",
+   "bytes": 390133
+  }
+ ],
+ "counts": {
+  "total": 73,
+  "by_split": {
+   "dev": 73
+  },
+  "by_media_type": {
+   "movie": 16,
+   "tv": 23,
+   "epub": 21,
+   "audiobook": 13
+  },
+  "by_class": {
+   "identity_mismatch": 13,
+   "corrupt_file": 21,
+   "decoder_incompatible": 5,
+   "metadata_naming": 4,
+   "order_edition_ambiguity": 3,
+   "insufficient_evidence": 7,
+   "healthy": 20
+  },
+  "class_by_media": {
+   "identity_mismatch": {
+    "movie": 2,
+    "tv": 4,
+    "epub": 5,
+    "audiobook": 2
+   },
+   "corrupt_file": {
+    "movie": 3,
+    "tv": 6,
+    "epub": 7,
+    "audiobook": 5
+   },
+   "decoder_incompatible": {
+    "movie": 4,
+    "tv": 1,
+    "epub": 0,
+    "audiobook": 0
+   },
+   "metadata_naming": {
+    "movie": 1,
+    "tv": 1,
+    "epub": 1,
+    "audiobook": 1
+   },
+   "order_edition_ambiguity": {
+    "movie": 1,
+    "tv": 1,
+    "epub": 0,
+    "audiobook": 1
+   },
+   "insufficient_evidence": {
+    "movie": 1,
+    "tv": 3,
+    "epub": 2,
+    "audiobook": 1
+   },
+   "healthy": {
+    "movie": 4,
+    "tv": 7,
+    "epub": 6,
+    "audiobook": 3
+   }
+  },
+  "inject_tool_failure": 5,
+  "outcome_step": 9,
+  "reused": 19,
+  "new": 54
+ }
+}

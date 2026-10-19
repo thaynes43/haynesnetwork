@@ -1,0 +1,139 @@
+{
+ "id": "tv-outcome-001",
+ "suite_version": "dev-v1",
+ "split": "dev",
+ "media_type": "tv",
+ "family": "hl-e02-outcome",
+ "truth": {
+  "class": "corrupt_file",
+  "source": "deterministic",
+  "ref": "original hl_e02_flip.mkv is corrupt (replay fixtures/probes/hl_e02_flip.mkv.json sha256 1f92c261ae32); outcome truth: replacement hl_e02_good.mkv -> repaired (clean full decode, card/tags S01E02, duration 8.05 s); replay fixtures/probes/hl_e02_good.mkv.json sha256 6e98379a4501"
+ },
+ "supported_actions": [
+  "blocklist_and_search"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Harbor Lights S01E02",
+  "filename": "Harbor Lights - S01E02 - Lamp Oil.mkv",
+  "expected": {
+   "series": "Harbor Lights",
+   "season": 1,
+   "episode": 2,
+   "episode_title": "Lamp Oil",
+   "runtime_s": 8,
+   "language": "en"
+  },
+  "arr": {
+   "app": "sonarr",
+   "ids": {
+    "seriesId": 990001,
+    "episodeId": 990102,
+    "episodeFileId": 990202,
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "300cd24cf8b78dfbeb305aced3e71f2d4682992eb3b9295b6d98a9e38790c97a",
+  "bytes": 90286,
+  "locator": "fixtures/media/hl_e02_flip.mkv"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"chapters\":[{\"end\":\"2.000000\",\"start\":\"0.000000\",\"title\":\"Cold open\"},{\"end\":\"8.000000\",\"start\":\"2.000000\",\"title\":\"Lamp Oil\"}],\"exit_code\":0,\"format\":{\"bit_rate\":\"89769\",\"duration\":\"8.046000\",\"format_name\":\"matroska,webm\",\"size\":\"90286\",\"tags\":{\"episode_sort\":\"2\",\"season_number\":\"1\",\"show\":\"Harbor Lights\",\"title\":\"Lamp Oil\"}},\"stderr\":\"\",\"streams\":[{\"codec_name\":\"h264\",\"codec_type\":\"video\",\"height\":192,\"index\":0,\"pix_fmt\":\"yuv420p\",\"profile\":\"High\",\"tags\":{},\"width\":256},{\"channels\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"index\":1,\"profile\":\"LC\",\"sample_rate\":\"22050\",\"tags\":{}}]}"
+  },
+  {
+   "id": "e2",
+   "tool": "decode_sample",
+   "args": {
+    "ss": 0,
+    "t": 4
+   },
+   "status": "ok",
+   "output": "{\"exit_code\":0,\"frames\":40,\"out_time\":\"00:00:04.000000\",\"ss\":0,\"stderr\":\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\\n[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\\n[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\",\"t\":4}"
+  },
+  {
+   "id": "e3",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "sonarr",
+    "series": "Harbor Lights",
+    "season": 1,
+    "episode": 2
+   },
+   "status": "ok",
+   "output": "{\"app\":\"sonarr\",\"episode\":{\"episode\":2,\"runtime_s\":8,\"season\":1,\"title\":\"Lamp Oil\"},\"file\":{\"relativePath\":\"Harbor Lights - S01E02 - Lamp Oil.mkv\",\"size\":90286},\"series\":\"Harbor Lights\",\"series_order\":\"aired\"}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "decode_sample",
+  "frame_sample",
+  "audio_sample",
+  "ocr",
+  "arr_lookup"
+ ],
+ "outcome_step": {
+  "check": "post_replace_verify",
+  "inputs": {
+   "action": "blocklist_and_search",
+   "replacement": {
+    "kind": "local",
+    "sha256": "a26a8240306713c6906203fead378cb4748012b8604f585ffbb9701a776cbebc",
+    "bytes": 90286,
+    "locator": "fixtures/media/hl_e02_good.mkv"
+   },
+   "replacement_filename": "Harbor Lights - S01E02 - Lamp Oil.mkv",
+   "expected_entry": {
+    "series": "Harbor Lights",
+    "season": 1,
+    "episode": 2,
+    "episode_title": "Lamp Oil",
+    "runtime_s": 8
+   },
+   "post_evidence": [
+    {
+     "id": "e1",
+     "tool": "ffprobe",
+     "args": {
+      "fixture": "file"
+     },
+     "status": "ok",
+     "output": "{\"chapters\":[{\"end\":\"2.000000\",\"start\":\"0.000000\",\"title\":\"Cold open\"},{\"end\":\"8.000000\",\"start\":\"2.000000\",\"title\":\"Lamp Oil\"}],\"exit_code\":0,\"format\":{\"bit_rate\":\"89769\",\"duration\":\"8.046000\",\"format_name\":\"matroska,webm\",\"size\":\"90286\",\"tags\":{\"episode_sort\":\"2\",\"season_number\":\"1\",\"show\":\"Harbor Lights\",\"title\":\"Lamp Oil\"}},\"stderr\":\"\",\"streams\":[{\"codec_name\":\"h264\",\"codec_type\":\"video\",\"height\":192,\"index\":0,\"pix_fmt\":\"yuv420p\",\"profile\":\"High\",\"tags\":{},\"width\":256},{\"channels\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"index\":1,\"profile\":\"LC\",\"sample_rate\":\"22050\",\"tags\":{}}]}"
+    },
+    {
+     "id": "e2",
+     "tool": "decode_sample",
+     "args": {
+      "ss": 0,
+      "t": "full"
+     },
+     "status": "ok",
+     "output": "{\"exit_code\":0,\"frames\":80,\"out_time\":\"00:00:08.000000\",\"stderr\":\"\"}"
+    },
+    {
+     "id": "e3",
+     "tool": "ocr",
+     "args": {
+      "t": 1.0
+     },
+     "status": "ok",
+     "output": "HARBOR LIGHTS / S01E02 / LAMP OIL"
+    }
+   ],
+   "pass_rule": "full decode clean AND identity (card/tags) matches the entry AND duration within 1 s of the entry runtime"
+  },
+  "expected": "repaired",
+  "why": "clean full decode, card/tags S01E02, duration 8.05 s"
+ },
+ "provenance": "new"
+}

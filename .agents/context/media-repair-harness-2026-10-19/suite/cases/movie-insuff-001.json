@@ -1,0 +1,93 @@
+{
+ "id": "movie-insuff-001",
+ "suite_version": "dev-v1",
+ "split": "dev",
+ "media_type": "movie",
+ "family": "qo-double",
+ "truth": {
+  "class": "insufficient_evidence",
+  "source": "construction",
+  "ref": "16 s file with the QUIET ORBIT card at 0 s only and a bare second half; no edition is 16 s (theatrical 8, extended 12); it may be a duplicate, a compilation or another cut, and the sampled evidence cannot tell (the Mickey 'second story unverified' shape); replay fixtures/probes/qo_double.mkv.json sha256 1365b6450f37"
+ },
+ "supported_actions": [
+  "escalate"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Quiet Orbit (2019)",
+  "filename": "Quiet Orbit (2019).mkv",
+  "expected": {
+   "title": "Quiet Orbit",
+   "year": 2019,
+   "aliases": [
+    "Orbite Silencieuse"
+   ],
+   "runtime_s": 8,
+   "language": "en"
+  },
+  "arr": {
+   "app": "radarr",
+   "ids": {
+    "movieId": 990301,
+    "movieFileId": 990401,
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "8cc9ac6bd16b30a507436a6271d31577e6fe66678adddaa31a6501899aa03dc2",
+  "bytes": 172934,
+  "locator": "fixtures/media/qo_double.mkv"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"chapters\":[],\"exit_code\":0,\"format\":{\"bit_rate\":\"86219\",\"duration\":\"16.046000\",\"format_name\":\"matroska,webm\",\"size\":\"172934\",\"tags\":{\"title\":\"Quiet Orbit\"}},\"stderr\":\"\",\"streams\":[{\"codec_name\":\"h264\",\"codec_type\":\"video\",\"height\":192,\"index\":0,\"pix_fmt\":\"yuv420p\",\"profile\":\"High\",\"tags\":{},\"width\":256},{\"channels\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"index\":1,\"profile\":\"LC\",\"sample_rate\":\"22050\",\"tags\":{}}]}"
+  },
+  {
+   "id": "e2",
+   "tool": "decode_sample",
+   "args": {
+    "ss": 0,
+    "t": 4
+   },
+   "status": "ok",
+   "output": "{\"exit_code\":0,\"frames\":40,\"out_time\":\"00:00:04.000000\",\"ss\":0,\"stderr\":\"\",\"t\":4}"
+  },
+  {
+   "id": "e3",
+   "tool": "ocr",
+   "args": {
+    "t": 1.0
+   },
+   "status": "ok",
+   "output": "QUIET ORBIT"
+  },
+  {
+   "id": "e4",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "radarr",
+    "movie": "Quiet Orbit"
+   },
+   "status": "ok",
+   "output": "{\"alternate_titles\":[\"Orbite Silencieuse\"],\"app\":\"radarr\",\"editions\":{\"Extended Cut\":{\"runtime_s\":12},\"Theatrical\":{\"runtime_s\":8}},\"file\":{\"relativePath\":\"Quiet Orbit (2019).mkv\",\"size\":172934},\"movie\":\"Quiet Orbit\",\"year\":2019}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "decode_sample",
+  "frame_sample",
+  "audio_sample",
+  "ocr",
+  "arr_lookup"
+ ],
+ "provenance": "new"
+}

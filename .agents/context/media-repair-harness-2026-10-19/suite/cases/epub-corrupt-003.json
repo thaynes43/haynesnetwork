@@ -1,0 +1,62 @@
+{
+ "id": "epub-corrupt-003",
+ "suite_version": "dev-v1",
+ "split": "dev",
+ "media_type": "epub",
+ "family": "lr-epub-corrupt",
+ "truth": {
+  "class": "corrupt_file",
+  "source": "deterministic",
+  "ref": "ZIP is intact but content.opf is not well-formed XML (unterminated tag); epub_inspect stage opf_parse"
+ },
+ "supported_actions": [
+  "blocklist_and_search"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "The Lantern Road",
+  "filename": "The Lantern Road.epub",
+  "expected": {
+   "title": "The Lantern Road",
+   "author": "Mira Tolland",
+   "language": "en"
+  },
+  "arr": {
+   "app": null,
+   "ids": {}
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "2cdd09ab1bf72568d4eabb87993784428fcf680eec3faadee4a6592c4232da73",
+  "bytes": 3301,
+  "locator": "fixtures/media/lr_opf_broken.epub"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "epub_inspect",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "error",
+   "output": "{\"bytes\":3301,\"entries\":7,\"error\":\"ParseError: not well-formed (invalid token): line 2, column 336\",\"stage\":\"opf_parse\",\"status\":\"error\"}"
+  },
+  {
+   "id": "e2",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "readarr-like",
+    "work": "The Lantern Road"
+   },
+   "status": "ok",
+   "output": "{\"aliases\":[],\"app\":\"readarr-like\",\"authors\":[\"Mira Tolland\"],\"language\":\"en\",\"series\":\"Lantern Cycle\",\"series_position\":1,\"work\":\"The Lantern Road\"}"
+  }
+ ],
+ "tools_available": [
+  "epub_inspect",
+  "arr_lookup"
+ ],
+ "provenance": "new"
+}

@@ -1,0 +1,93 @@
+{
+ "id": "movie-naming-001",
+ "suite_version": "dev-v1",
+ "split": "dev",
+ "media_type": "movie",
+ "family": "qo-main",
+ "truth": {
+  "class": "metadata_naming",
+  "source": "authoritative_metadata",
+  "ref": "the Radarr movie the file is attached to is Quiet Orbit (2019) and the content card and 8.05 s runtime match it; only the file name's year (2011) is wrong; replay fixtures/probes/qo_main.mkv.json sha256 5288ebbb30b5"
+ },
+ "supported_actions": [
+  "rename"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Quiet Orbit (2019)",
+  "filename": "Quiet Orbit (2011).mkv",
+  "expected": {
+   "title": "Quiet Orbit",
+   "year": 2019,
+   "aliases": [
+    "Orbite Silencieuse"
+   ],
+   "runtime_s": 8,
+   "language": "en"
+  },
+  "arr": {
+   "app": "radarr",
+   "ids": {
+    "movieId": 990301,
+    "movieFileId": 990401,
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "c42e4a7082868a4a70e62413c0c9e3a53f5ab389d109d721a3396c3dd53131f3",
+  "bytes": 90000,
+  "locator": "fixtures/media/qo_main.mkv"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"chapters\":[],\"exit_code\":0,\"format\":{\"bit_rate\":\"89485\",\"duration\":\"8.046000\",\"format_name\":\"matroska,webm\",\"size\":\"90000\",\"tags\":{\"title\":\"Quiet Orbit\"}},\"stderr\":\"\",\"streams\":[{\"codec_name\":\"h264\",\"codec_type\":\"video\",\"height\":192,\"index\":0,\"pix_fmt\":\"yuv420p\",\"profile\":\"High\",\"tags\":{},\"width\":256},{\"channels\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"index\":1,\"profile\":\"LC\",\"sample_rate\":\"22050\",\"tags\":{}}]}"
+  },
+  {
+   "id": "e2",
+   "tool": "decode_sample",
+   "args": {
+    "ss": 0,
+    "t": 4
+   },
+   "status": "ok",
+   "output": "{\"exit_code\":0,\"frames\":40,\"out_time\":\"00:00:04.000000\",\"ss\":0,\"stderr\":\"\",\"t\":4}"
+  },
+  {
+   "id": "e3",
+   "tool": "ocr",
+   "args": {
+    "t": 1.0
+   },
+   "status": "ok",
+   "output": "QUIET ORBIT"
+  },
+  {
+   "id": "e4",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "radarr",
+    "movie": "Quiet Orbit"
+   },
+   "status": "ok",
+   "output": "{\"alternate_titles\":[\"Orbite Silencieuse\"],\"app\":\"radarr\",\"editions\":{\"Extended Cut\":{\"runtime_s\":12},\"Theatrical\":{\"runtime_s\":8}},\"file\":{\"relativePath\":\"Quiet Orbit (2011).mkv\",\"size\":90000},\"movie\":\"Quiet Orbit\",\"year\":2019}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "decode_sample",
+  "frame_sample",
+  "audio_sample",
+  "ocr",
+  "arr_lookup"
+ ],
+ "provenance": "new"
+}

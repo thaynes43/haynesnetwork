@@ -1,0 +1,47 @@
+{
+ "id": "audiobook-healthy-001",
+ "suite_version": "dev-v1",
+ "split": "dev",
+ "media_type": "audiobook",
+ "family": "crown",
+ "truth": {
+  "class": "healthy",
+  "source": "human_adjudication",
+  "ref": "https://github.com/thaynes43/haynesnetwork/blob/ff789924f0402bc67896c24c3f1b8bf462118eb8/.agents/context/ll-library-audit/fix_census_795.py#L19-L24 (corpus.jsonl row c04, label_status confirmed_historical_documentary); historical report, not re-decoded media"
+ },
+ "supported_actions": [
+  "none"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "A Crown of Swords",
+  "expected": {
+   "aliases": [],
+   "title": "A Crown of Swords"
+  },
+  "arr": {
+   "app": null,
+   "ids": {}
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "none",
+  "sha256": null,
+  "bytes": 0,
+  "locator": "none: reported historical observation, no media retrieved"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "prior_record",
+   "args": {
+    "id": "c04"
+   },
+   "status": "ok",
+   "output": "{\"evidence_method\":\"album tags\",\"observed\":{\"catalog_title\":\"A Crown of Swords\",\"chapters\":45,\"content_titles\":[\"[Wheel of Time, Book 7] A Crown of Swords\"],\"duration_hours\":30.4,\"evidence_method\":\"album tags\"}}"
+  }
+ ],
+ "tools_available": [],
+ "provenance": "reused from .agents/context/media-repair-benchmark-2026-10-18/corpus.jsonl@9285641a row c04 (was development in 2026-10-18; re-labelled dev because every candidate has already seen it)"
+}

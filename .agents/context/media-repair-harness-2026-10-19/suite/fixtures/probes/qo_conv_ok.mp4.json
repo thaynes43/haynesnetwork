@@ -1,0 +1,92 @@
+{
+ "bytes": 50812,
+ "decode_sample": {
+  "0": {
+   "exit_code": 0,
+   "frames": 40,
+   "out_time": "00:00:04.000000",
+   "ss": 0,
+   "stderr": "",
+   "t": 4
+  },
+  "12": {
+   "exit_code": 0,
+   "frames": 0,
+   "out_time": null,
+   "ss": 12,
+   "stderr": "",
+   "t": 4
+  },
+  "4": {
+   "exit_code": 0,
+   "frames": 20,
+   "out_time": "00:00:02.000000",
+   "ss": 4,
+   "stderr": "",
+   "t": 4
+  },
+  "8": {
+   "exit_code": 0,
+   "frames": 0,
+   "out_time": null,
+   "ss": 8,
+   "stderr": "",
+   "t": 4
+  },
+  "full": {
+   "exit_code": 0,
+   "frames": 60,
+   "out_time": "00:00:06.000000",
+   "stderr": ""
+  }
+ },
+ "ffprobe": {
+  "chapters": [],
+  "exit_code": 0,
+  "format": {
+   "bit_rate": "67636",
+   "duration": "6.010000",
+   "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+   "size": "50812",
+   "tags": {}
+  },
+  "stderr": "",
+  "streams": [
+   {
+    "bit_rate": "37193",
+    "codec_name": "h264",
+    "codec_type": "video",
+    "height": 192,
+    "index": 0,
+    "pix_fmt": "yuv420p",
+    "profile": "High",
+    "tags": {
+     "language": "und"
+    },
+    "width": 256
+   },
+   {
+    "bit_rate": "24830",
+    "channels": 2,
+    "codec_name": "aac",
+    "codec_type": "audio",
+    "index": 1,
+    "profile": "LC",
+    "sample_rate": "48000",
+    "tags": {
+     "language": "eng"
+    }
+   }
+  ]
+ },
+ "fixture": "qo_conv_ok.mp4",
+ "frame_text": [
+  {
+   "t0": 0,
+   "t1": 2,
+   "text": "QUIET ORBIT"
+  }
+ ],
+ "sha256": "e6742db857ff4994be5175ebda2b7daca648944d1535938f5038c6115d776581",
+ "tool_version": "ffmpeg/ffprobe 8.1.2 (audiobookshelf 2.37.1 image)"
+}
