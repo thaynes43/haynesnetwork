@@ -1,0 +1,235 @@
+{
+  "action_audit": {
+    "executed": false,
+    "intent": {
+      "action": "escalate",
+      "class": "insufficient_evidence",
+      "target": "Pokemon S3E34 (sonarr episodeFileId 80065)"
+    },
+    "note": "recorded intent only; this harness never executes writes",
+    "outcome_step": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "tv-insuff-001",
+  "case_sha256": "cb642bbda4540da4364b1e5eb3ed8bd3febe6eb1c5a24555694bedc93ca8c40d",
+  "config_hash": "7b5e13c8b1fc0ffde672f1425f5469aaeeea33f83dac5f145e0c832d517f4b4d",
+  "decision": {
+    "action": "escalate",
+    "class": "insufficient_evidence",
+    "confidence": 0.4,
+    "evidence_refs": [
+      "e1",
+      "e2",
+      "e3",
+      "t1"
+    ],
+    "reason": "ffprobe shows playable h264/AAC streams and a 4s decode sample exited cleanly (e1, e2). The single subtitle cue (e3) does not confirm episode identity, and the arr lookup is a stub with no live record (t1). Sample evidence cannot confirm the expected episode or rule out other defects.",
+    "target": "Pokemon S3E34 (sonarr episodeFileId 80065)",
+    "type": "decision"
+  },
+  "evidence_shown": [
+    "e1",
+    "e2",
+    "e3"
+  ],
+  "first_try_valid": true,
+  "fixture": {
+    "declared_sha256": "b96d89a21689f34522f8fdbdd7032854f5425c9f0199c6aeabf0cf41f5d410d8",
+    "kind": "pinned",
+    "verified": "declared_only"
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "311ced167994755b4b552a137c6984345dda57b9",
+  "injected_failure": null,
+  "model_case_alias": "case-91568bfd",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "outcome": null,
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "repair_prompts": [],
+  "requested_model": "claude-haiku-5-5",
+  "response_model_ids": [
+    "claude-haiku-5-5"
+  ],
+  "run_id": "v2-suitesample-haiku-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "split": "dev",
+  "started_at": "2026-10-19T21:29:32.847080+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [
+    {
+      "args": {
+        "episodeFileId": 80065
+      },
+      "id": "t1",
+      "mode": "stub",
+      "output": "{\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 80065}}, \"note\": \"case-provided context only; no live arr call was made\", \"stub\": true}",
+      "status": "ok",
+      "tool": "arr_lookup",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.001,
+      "why": "Confirm the library record for this episode file against expected Pokemon S3E34 before deciding on any repair."
+    }
+  ],
+  "tool_modes": [
+    "stub"
+  ],
+  "turns": [
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-haiku-5-5": {
+            "cacheCreationInputTokens": 1265,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-haiku-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.00030142000000000005,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 76,
+            "provider": "firstParty",
+            "thinkingTokens": 0,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 1,
+      "native": {
+        "duration_api_ms": 1225,
+        "duration_ms": 1267,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-haiku-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-91568bfd\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 80065}}, \"expected\": {\"episode\": 34, \"season\": 3, \"series\": \"Pokemon\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Pokemon: Hour of the Houndour\"}, \"evidence\": [{\"args\": {\"fixture\": \"remote\"}, \"id\": \"e1\", \"output\": \"{\\\"streams\\\":{\\\"container\\\":\\\"matroska,webm\\\",\\\"selected_audio\\\":{\\\"channels\\\":2,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"profile\\\":\\\"HE-AAC\\\",\\\"tags\\\":{\\\"language\\\":\\\"eng\\\"}},\\\"video\\\":{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":480,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"width\\\":640}}}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"bytes_read\\\":3666249,\\\"duration_limit_seconds\\\":4,\\\"exit_code\\\":0,\\\"quota_exhausted\\\":false,\\\"stderr\\\":\\\"\\\"}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"what\": \"embedded subtitle sample (one cue)\"}, \"id\": \"e3\", \"output\": \"1\\n00:00:03,273 --> 00:00:05,435\\nPikachu,\\nuse your Thunder Shock now!\\n\\n\", \"status\": \"ok\", \"tool\": \"prior_record\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":1225,\"stop_reason\":\"end_turn\",\"session_id\":\"df0eeab5-427f-459e-bead-a53103ac4c02\",\"total_cost_usd\":0.00030142000000000005,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1265,\"cache_read_input_tokens\":1022,\"output_tokens\":76,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1265,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":76,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":1265,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1265},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":76,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":1265,\"webSearchRequests\":0,\"costUSD\":0.00030142000000000005,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"arr_lookup\\\",\\\"args\\\":{\\\"episodeFileId\\\":80065},\\\"why\\\":\\\"Confirm the library record for this episode file against expected Pokemon S3E34 before deciding on any repair.\\\"}\",\"ttft_ms\":1244,\"type\":\"result\",\"duration_ms\":1267,\"uuid\":\"9b40d050-031e-4de7-98a1-5fe8e235df13\",\"ttft_stream_ms\":818,\"time_to_request_ms\":35,\"first_content_frame_ms\":818,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-haiku-5-5",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"args\":{\"episodeFileId\":80065},\"why\":\"Confirm the library record for this episode file against expected Pokemon S3E34 before deciding on any repair.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 1265,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.00030142000000000005,
+        "input_tokens": 2,
+        "output_tokens": 76
+      },
+      "validation_errors": [],
+      "wall_s": 2.246
+    },
+    {
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-haiku-5-5": {
+            "cacheCreationInputTokens": 1504,
+            "cacheReadInputTokens": 1022,
+            "canonicalModel": "claude-haiku-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.00069722,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 772,
+            "provider": "firstParty",
+            "thinkingTokens": 573,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 2,
+      "native": {
+        "duration_api_ms": 4369,
+        "duration_ms": 4407,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-haiku-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-91568bfd\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 80065}}, \"expected\": {\"episode\": 34, \"season\": 3, \"series\": \"Pokemon\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Pokemon: Hour of the Houndour\"}, \"evidence\": [{\"args\": {\"fixture\": \"remote\"}, \"id\": \"e1\", \"output\": \"{\\\"streams\\\":{\\\"container\\\":\\\"matroska,webm\\\",\\\"selected_audio\\\":{\\\"channels\\\":2,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"profile\\\":\\\"HE-AAC\\\",\\\"tags\\\":{\\\"language\\\":\\\"eng\\\"}},\\\"video\\\":{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":480,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"width\\\":640}}}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"bytes_read\\\":3666249,\\\"duration_limit_seconds\\\":4,\\\"exit_code\\\":0,\\\"quota_exhausted\\\":false,\\\"stderr\\\":\\\"\\\"}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"what\": \"embedded subtitle sample (one cue)\"}, \"id\": \"e3\", \"output\": \"1\\n00:00:03,273 --> 00:00:05,435\\nPikachu,\\nuse your Thunder Shock now!\\n\\n\", \"status\": \"ok\", \"tool\": \"prior_record\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"args\":{\"episodeFileId\":80065},\"why\":\"Confirm the library record for this episode file against expected Pokemon S3E34 before deciding on any repair.\"}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"arr_lookup\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"arr\\\": {\\\"app\\\": \\\"sonarr\\\", \\\"ids\\\": {\\\"episodeFileId\\\": 80065}}, \\\"note\\\": \\\"case-provided context only; no live arr call was made\\\", \\\"stub\\\": true}\", \"tool_calls_remaining\": 5}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself: the action you choose is recorded as an intent for a human-supervised system.\n\nEvery reply of yours is exactly ONE JSON object and nothing else (no prose, no markdown fences).\n\n1. Tool call:\n{\"type\":\"tool_call\",\"tool\":\"ffprobe\",\"args\":{},\"why\":\"short reason\"}\n(the tool name and args vary; args is an object, often {} or {\"at\":60}; why is at most 200 characters). This is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. You may make at most 6 tool calls. Each tool result is bounded to 8 KiB and may come back with status ok, partial, error or timeout. Tools only ever act on this case's file; you cannot choose paths.\n\n2. Final answer:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<file, release or episode reference, or null>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"],\"reason\":\"<=400 chars\"}\n\nClasses: identity_mismatch (the content is a different work, episode or edition than expected), corrupt_file (damaged, truncated or undecodable data), decoder_incompatible (the file is intact but its codecs or features cannot be played by the stated client), metadata_naming (the content is right but its name, tags, numbering or index metadata is wrong), order_edition_ambiguity (the content is right but episode order, cut or edition differs from the expected numbering and the evidence cannot settle which is correct), insufficient_evidence (the evidence cannot settle what is wrong), healthy (no defect found).\n\nActions: none (leave the item alone), escalate (hand to a human with your reason), blocklist_and_search (record an intent to blocklist this release and search for a replacement; only for a bad copy), remap and rename (metadata-only changes), convert (decoder work on an isolated copy only).\n\nOutput format rules: one object, double-quoted keys and strings, every string closed, no trailing commas, no text before or after it.\n\nRules:\n- Keep reason to one or two sentences (the hard limit is 400 characters).\n- Base every claim on evidence. Cite the evidence ids (e1.., from the case; t1.. for your tool results) in evidence_refs.\n- If a tool fails, times out or returns partial output, say so in your reason. Never invent or assume what it would have shown. Decide on the remaining evidence, or escalate.\n- When the evidence cannot settle the question, choose class insufficient_evidence with action escalate. A wrong repair is worse than an escalation.\n- Leave a healthy item alone: class healthy, action none.\n- Sample evidence is partial. A clean sample does not prove a whole file is healthy, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":4369,\"stop_reason\":\"end_turn\",\"session_id\":\"d1756d62-0bc1-4c48-be93-9389f4b6f702\",\"total_cost_usd\":0.00069722,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1504,\"cache_read_input_tokens\":1022,\"output_tokens\":772,\"output_tokens_details\":{\"thinking_tokens\":573},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1504,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":772,\"cache_read_input_tokens\":1022,\"cache_creation_input_tokens\":1504,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1504},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":772,\"cacheReadInputTokens\":1022,\"cacheCreationInputTokens\":1504,\"webSearchRequests\":0,\"costUSD\":0.00069722,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":573,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"insufficient_evidence\\\",\\\"action\\\":\\\"escalate\\\",\\\"target\\\":\\\"Pokemon S3E34 (sonarr episodeFileId 80065)\\\",\\\"confidence\\\":0.4,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e2\\\",\\\"e3\\\",\\\"t1\\\"],\\\"reason\\\":\\\"ffprobe shows playable h264/AAC streams and a 4s decode sample exited cleanly (e1, e2). The single subtitle cue (e3) does not confirm episode identity, and the arr lookup is a stub with no live record (t1). Sample evidence cannot confirm the expected episode or rule out other defects.\\\"}\",\"ttft_ms\":3543,\"type\":\"result\",\"duration_ms\":4407,\"uuid\":\"65a0b682-0685-46c3-9d47-7c74ba33ca5c\",\"ttft_stream_ms\":849,\"time_to_request_ms\":31,\"first_content_frame_ms\":850,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "response_model": "claude-haiku-5-5",
+      "text": "{\"type\":\"decision\",\"class\":\"insufficient_evidence\",\"action\":\"escalate\",\"target\":\"Pokemon S3E34 (sonarr episodeFileId 80065)\",\"confidence\":0.4,\"evidence_refs\":[\"e1\",\"e2\",\"e3\",\"t1\"],\"reason\":\"ffprobe shows playable h264/AAC streams and a 4s decode sample exited cleanly (e1, e2). The single subtitle cue (e3) does not confirm episode identity, and the arr lookup is a stub with no live record (t1). Sample evidence cannot confirm the expected episode or rule out other defects.\"}",
+      "usage": {
+        "cache_creation_input_tokens": 1504,
+        "cache_read_input_tokens": 1022,
+        "cost_usd": 0.00069722,
+        "input_tokens": 2,
+        "output_tokens": 772
+      },
+      "validation_errors": [],
+      "wall_s": 5.28
+    }
+  ],
+  "usage": {
+    "cost_reported": true,
+    "cost_usd": 0.00099864,
+    "input_tokens": 4,
+    "output_tokens": 848
+  },
+  "wall": {
+    "case_excl_load_s": 7.53,
+    "load_s": 0.0,
+    "tool_s": [
+      0.001
+    ],
+    "total_s": 7.53,
+    "turn_s": [
+      2.246,
+      5.28
+    ]
+  }
+}

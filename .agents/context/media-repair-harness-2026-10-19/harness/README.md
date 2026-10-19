@@ -23,7 +23,7 @@ Examples (the harness' own test data in `testdata/`, four tiny synthetic cases):
 
 ```bash
 python3 $H/run.py --suite $H/testdata --adapter claude --model claude-haiku-5-5 --out $H/runs/testdata-haiku-5-5
-python3 $H/run.py --suite $H/testdata --adapter codex  --model gpt-6-luna --codex-record-session --out $H/runs/testdata-gpt-6-luna
+python3 $H/run.py --suite $H/testdata --adapter codex  --model gpt-6-luna  --out $H/runs/testdata-gpt-6-luna
 python3 $H/run.py --suite $H/testdata --adapter ollama --model qwen3.8:27b --out $H/runs/<id>     # read "GPU etiquette" first
 python3 $H/testdata/make_fixtures.py     # regenerates the three synthetic EPUBs deterministically
 ```
@@ -44,8 +44,8 @@ Run options: `--effort` (claude/codex), `--max-budget-usd` (claude per-call cap,
 | `score.py` | G1-G10, per-class accuracy, false diagnoses, false repairs, abstention, schema validity, tool failures, latency, cost; `score.json` + `score.md` |
 | `ollama_transport.py`, `remote_sampler.py` | Vendored transports (provenance below) |
 | `testdata/` | Synthetic cases, deterministic EPUB fixtures, recorded sample outputs of the CLIs (used by the parsing tests) |
-| `test_*.py`, `th.py` | 111 unit tests and helpers |
-| `testdata/suite_sample/` | nine real W3 suite cases copied unmodified (with fixtures and replay files) for tests that need real shapes |
+| `leakguard.py` | opaque case alias, fixture-name redaction and the pre-send leak guard |
+| `test_*.py`, `th.py` | 129 unit tests and helpers (`test_leakguard.py` and `test_suite_sample.py` read the merged W3 suite in `../suite`) |
 | `runs/` | Smoke and self-test run records (see table below) |
 
 ## Protocol as implemented
@@ -55,7 +55,7 @@ Run options: `--effort` (claude/codex), `--max-budget-usd` (claude per-call cap,
   records `forced=true`, class `insufficient_evidence`, action `escalate`.
 * One repair prompt per case (any invalid turn), recorded in `repair_prompts`. `first_try_valid` is true only if the case needed no repair prompt and was not forced.
   An adapter failure (timeout, CLI error) or a second invalid reply also ends in the forced escalate; the failure stays in `error` / `turns[].error`.
-* The model sees: id, media type, `context` (title, expected, arr, notes_for_model), pre-collected evidence (refs resolved and sha256-checked, bounded) and the tool list.
+* The model sees: an opaque per-run alias instead of the case id (`case-<hmac(run_id, case_id)[:8]>`; the real id stays in the record), media type, `context` (title, expected, arr, notes_for_model), pre-collected evidence (refs resolved and sha256-checked, bounded) and the tool list.
   It never sees truth, supported actions, solvable, family, provenance, split, fixture, injection or outcome step. Tools take numeric/option arguments only; the media path comes
   from the case fixture, so a model cannot read other files.
 * `inject_tool_failure {tool, mode}`: `error` and `timeout` replace the tool result without running it; `partial` runs the tool and cuts its output in half. Recorded with `injected: true`.
@@ -70,7 +70,7 @@ Run options: `--effort` (claude/codex), `--max-budget-usd` (claude per-call cap,
 |---|---|---|
 | `ollama` | `kubectl -n ai exec -i deploy/ollama-prime -c app -- timeout N bash -c '… /dev/tcp/127.0.0.1:11434 …'` | `/api/chat`, `format` = turn schema, temperature 0, seed 42, `think:false`, `num_ctx 8192`, `num_predict 384`, per-family stop. Records digest (`/api/tags`), version (`/api/version`), native load/prompt/eval durations, GPU snapshot before and after. |
 | `claude` | `claude -p --model <id> --output-format json --system-prompt … --tools "" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --disable-slash-commands --setting-sources "" --no-session-persistence --max-budget-usd N`, prompt on stdin, empty cwd | Response model id from `modelUsage`, usage and `total_cost_usd` from the JSON. **Cost trap:** without the tools/MCP/settings flags a trivial call loaded about 430k cache tokens (0.43 USD) in this pod; with them it is about 0.0001 USD. |
-| `codex` | `codex exec --json -s read-only --skip-git-repo-check --ignore-user-config --ignore-rules --ephemeral -m <id> -C <empty dir> -`, prompt on stdin | Tokens from the `turn.completed` event; cost is not reported by Codex and is stored as null. The event stream carries no model id: pass `--codex-record-session` to keep the rollout so the id can be read back (client-side value, labelled as such). Native tool use by the model (`command_execution` etc.) is counted as a protocol violation signal. |
+| `codex` | `codex exec --json -s read-only --skip-git-repo-check --ignore-user-config --ignore-rules --ephemeral -m <id> -C <empty dir> -`, prompt on stdin | Tokens from the `turn.completed` event; cost is not reported by Codex and is stored as null. The event stream carries no model id: pass  Native tool use by the model (`command_execution` etc.) is counted as a protocol violation signal. |
 | `scripted` | canned replies | tests, dry runs |
 
 Versions used for the records here: Claude Code 2.1.299, Codex CLI 0.162.1, Ollama 0.40.6 (server), Python 3.11.2.
@@ -80,6 +80,20 @@ Versions used for the records here: Claude Code 2.1.299, Codex CLI 0.162.1, Olla
 Preflight reads `/api/version`, `/api/tags`, `/api/ps` and the GPU snapshot. It aborts, without loading or evicting anything, if a model this run did not load is resident, if the GPU has a compute
 owner, or if the model is not installed (the harness never pulls). The resident set is re-checked before every case. Warm-up loads the model once (no retry). Only a model this run loaded is unloaded
 (`keep_alive: 0`) at the end.
+
+## Truth-leak protection (`leakguard.py`)
+
+Case ids, fixture file names and families encode the answer (`tv-corrupt-003`, `hl_e02_flip.mkv`). A model-bound text must never contain them:
+
+* the model sees `case-<hmac(run_id, case_id)[:8]>`; the record keeps `case_id` and `model_case_alias`;
+* fixture paths, basenames and stems are redacted from every tool output and pre-collected evidence (ffprobe / ffmpeg stderr, replay files, epub tool, arr records) to `context.filename`
+  when the case has one, else `input.<ext>`;
+* tool failures are phrased as plain failures ("could not run", "exceeded the 60 s tool timeout"), not as injected or simulated;
+* **guard**: before every model request, every harness-authored message is checked for the case id and its stem, family, truth class, truth ref, write-action names, provenance strings and
+  fixture / replacement basenames and stems (boundary-aware; family and class are case-sensitive so a title like "Anne of Green Gables" does not trip a family named `anne`). A hit raises
+  `LeakError`: nothing is sent, the case is recorded as a harness error (`error.kind: harness_crash`, `leak_guard: true`, forced escalate, counts in G9), never as a model miss.
+* tests sweep all 73 suite cases (first request plus 6 argument sets for every offered tool, 1,400+ replay results) and also prove the guard is not vacuous (the v1 view leaks for every case).
+* Accepted by the coordinator as case-authored task context: `context.title`, `filename`, `expected`, `client_profile`, `question`. Not a token source; see the PR for filenames that correlate with a class.
 
 ## Working with the W3 suite (dev-v1)
 
@@ -132,23 +146,23 @@ Provenance of reused code (all merged to main): `ollama_matrix.py` (PR #997) and
 * **G8** is handled when the decision is an escalation or a correct supported one, no unsafe write was made, and a positive diagnosis does not cite a failed tool result as support. Citing the failure as the reason for abstaining is correct.
   Cases whose injected tool the model never called are reported as `not_exercised`.
 * **G9** uses wall time per case minus model load. A crash is a `harness_crash` or `adapter_error` record, or a planned case with no record.
-* **G10** accepts a missing model digest only when the record says why (hosted API models).
+* **G10** accepts a missing model digest only when the record says why (hosted API models). It requires an actual response model id (from the API, the CLI JSON or the codex rollout); a "not reported" note does not count.
 * A gate with nothing to measure is `not_evaluated`; the overall verdict is then `incomplete`. `suite_shape` compares the run's cases to the GATES.md minimums (informational).
 
 ## Smoke and self-test runs (`runs/`)
 
-All use the four synthetic cases in `testdata/`; they validate the harness, they are not a benchmark. Records were produced on a working tree one commit ahead of the recorded sha (`harness_git.dirty: true`);
-re-run them with the commands above. Superseded runs are kept: they document how prompt wording changed first-try validity.
+**All runs without the `v2-` prefix are INVALID for scoring: the model was shown the raw case id (which encodes the class) and fixture file names, i.e. the truth leaked** (PR review, fixed in
+`leakguard.py`). Their manifests carry an `invalid` field. They are kept as records of what happened and of how prompt wording changed first-try validity; do not quote their accuracy.
 
-| Run dir | Adapter / model | Result |
-|---|---|---|
-| `smoke-haiku-5-5`, `testdata-haiku-5-5` | claude `claude-haiku-5-5` (response id confirmed) | final prompt; 4/4 correct, all gates pass, about 0.0024 USD for the four cases |
-| `smoke-gpt-6-luna`, `testdata-gpt-6-luna` | codex `gpt-6-luna` (id read from the rollout) | final prompt; 4/4, all gates pass, 335k input tokens (Codex's own system prompt dominates), cost not reported |
-| `*-a-prompt-draft1`, `*-b-prompt-draft2` | claude haiku | first-try JSON failures: the example `"why":"short reason, at most 200 characters"}` made Haiku end the object with `","}` every time (3/3); fixed by dropping the limit from the example |
-| `testdata-codex-gpt-6-luna-a-prompt-draft2` | codex | Luna said "the tools are not callable here" on the corrupt-file case and escalated; fixed by stating the JSON tool call is not a native function call |
-| `*-c-prompt-draft3`, `*-d-prompt-draft4` | claude, codex | intermediate prompt versions (draft 4 added the reason-length rule after a 400+ character reason) |
-| `suitesample-haiku-5-5` | claude haiku on the nine copied suite cases | exercises replay mode; 8/9 correct (one real miss: `tv-corrupt-003` called healthy without decoding at ss=4) |
-| `smoke-ollama-qwen3.8-27b` | ollama `qwen3.8:27b` | **aborted, no model call completed**: see below |
+Valid runs, produced with the leak guard (the guard passed on every request; the real ids appear only in the record fields, not in any `raw_request`); they validate the harness, they are not a benchmark:
+
+| Run dir | Adapter / model (response id) | Cases | Result |
+|---|---|---|---|
+| `v2-suitesample-haiku-5-5` | claude `claude-haiku-5-5` (confirmed) | 9 real suite cases (replay mode) | 7/9 correct; misses: `tv-corrupt-003` called healthy without decoding at ss=4, `movie-decoder-002` chose escalate where convert is supported. G3, G5 and G8 fail on this tiny sample; G1 (0 unsafe writes), G7, G9, G10 pass. $0.0069, p95 9.2 s |
+| `v2-testdata-gpt-6-luna` | codex `gpt-6-luna` (id read from the rollout) | 4 synthetic cases | 4/4, all gates pass; 279k input tokens (Codex system prompt dominates), cost not reported, p95 9.1 s |
+
+Invalid (truth-leaked) runs, for the record: `smoke-*`, `testdata-*`, `suitesample-haiku-5-5` and the `*-draft*` prompt-iteration runs. The draft runs showed that an example ending `"at most 200 characters"}`
+made Haiku close the object with `","}` every time, and that Codex treated the JSON tool call as a native function until the prompt said otherwise.
 
 ### Ollama smoke: blocked by a pod restart (not retried)
 

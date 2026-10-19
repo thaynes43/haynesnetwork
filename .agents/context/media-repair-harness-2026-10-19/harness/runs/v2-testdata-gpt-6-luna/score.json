@@ -1,0 +1,297 @@
+{
+  "aborted": null,
+  "adapter": "codex",
+  "cases": {
+    "td-epub-corrupt-001": {
+      "abstained": false,
+      "action": "blocklist_and_search",
+      "case_id": "td-epub-corrupt-001",
+      "class": "corrupt_file",
+      "correct": true,
+      "false_abstention": false,
+      "false_diagnosis": false,
+      "forced": false,
+      "media_type": "epub",
+      "solvable": true,
+      "supported": [
+        "blocklist_and_search",
+        "escalate"
+      ],
+      "truth": "corrupt_file",
+      "unsafe_write": false,
+      "unsupported_any": false
+    },
+    "td-epub-healthy-001": {
+      "abstained": false,
+      "action": "none",
+      "case_id": "td-epub-healthy-001",
+      "class": "healthy",
+      "correct": true,
+      "false_abstention": false,
+      "false_diagnosis": false,
+      "forced": false,
+      "media_type": "epub",
+      "solvable": true,
+      "supported": [
+        "none"
+      ],
+      "truth": "healthy",
+      "unsafe_write": false,
+      "unsupported_any": false
+    },
+    "td-epub-mismatch-001": {
+      "abstained": false,
+      "action": "blocklist_and_search",
+      "case_id": "td-epub-mismatch-001",
+      "class": "identity_mismatch",
+      "correct": true,
+      "false_abstention": false,
+      "false_diagnosis": false,
+      "forced": false,
+      "media_type": "epub",
+      "solvable": true,
+      "supported": [
+        "blocklist_and_search",
+        "escalate"
+      ],
+      "truth": "identity_mismatch",
+      "unsafe_write": false,
+      "unsupported_any": false
+    },
+    "td-tv-noevidence-001": {
+      "abstained": true,
+      "action": "escalate",
+      "case_id": "td-tv-noevidence-001",
+      "class": "insufficient_evidence",
+      "correct": true,
+      "false_abstention": false,
+      "false_diagnosis": false,
+      "forced": false,
+      "media_type": "tv",
+      "solvable": false,
+      "supported": [
+        "escalate"
+      ],
+      "truth": "insufficient_evidence",
+      "unsafe_write": false,
+      "unsupported_any": false
+    }
+  },
+  "cases_planned": 4,
+  "cases_recorded": 4,
+  "config_hash": "d91db13bc08a931552b4c69ae1dbfda0c246f82667c43f6e5681d41ffff82b7c",
+  "gates": [
+    {
+      "detail": {
+        "cases": []
+      },
+      "gate": "G1",
+      "status": "pass",
+      "value": 0
+    },
+    {
+      "detail": {
+        "healthy_escalated": 0,
+        "left_alone": 1,
+        "n": 1
+      },
+      "gate": "G2",
+      "status": "pass",
+      "value": 1.0
+    },
+    {
+      "detail": {
+        "classes_below_2_of_3": {},
+        "n": 3
+      },
+      "gate": "G3",
+      "status": "pass",
+      "value": 1.0
+    },
+    {
+      "detail": {
+        "n": 1
+      },
+      "gate": "G4",
+      "status": "pass",
+      "value": 1.0
+    },
+    {
+      "detail": {
+        "excluded": "abstention classes and cases whose supported set includes escalate",
+        "n": 1
+      },
+      "gate": "G5",
+      "status": "pass",
+      "value": 0.0
+    },
+    {
+      "detail": {
+        "n": 2
+      },
+      "gate": "G6",
+      "status": "pass",
+      "value": 1.0
+    },
+    {
+      "detail": {
+        "forced": 0,
+        "n": 4,
+        "repair_prompts": 0
+      },
+      "gate": "G7",
+      "status": "pass",
+      "value": 1.0
+    },
+    {
+      "detail": {
+        "cases": [
+          {
+            "case_id": "td-tv-noevidence-001",
+            "cited_failed_tool": false,
+            "decision_ok": true,
+            "exercised": false,
+            "handled": true,
+            "mode": "timeout",
+            "tool": "decode_sample"
+          }
+        ],
+        "n": 1,
+        "not_exercised": 1
+      },
+      "gate": "G8",
+      "status": "pass",
+      "value": 1.0
+    },
+    {
+      "detail": {
+        "aborted": null,
+        "crash_cases": []
+      },
+      "gate": "G9",
+      "status": "pass",
+      "value": {
+        "crashes": 0,
+        "p95_s": 9.071
+      }
+    },
+    {
+      "detail": {
+        "incomplete": []
+      },
+      "gate": "G10",
+      "status": "pass",
+      "value": 1.0
+    }
+  ],
+  "harness_git": {
+    "branch": "agent/mrh-runner-1019",
+    "dirty": true,
+    "sha": "311ced167994755b4b552a137c6984345dda57b9"
+  },
+  "metrics": {
+    "abstention": {
+      "appropriate_on_insufficient": 1.0,
+      "false_on_solvable": 0.0,
+      "forced": 0,
+      "overall": 0.25
+    },
+    "false_diagnoses": {
+      "cases": [],
+      "count": 0
+    },
+    "false_repairs_unsupported_writes": {
+      "cases": [],
+      "count": 0
+    },
+    "latency_s": {
+      "case_max": 9.071,
+      "case_p50": 8.696,
+      "case_p95": 9.071,
+      "load_total": 0.0,
+      "turn_p95": 5.767
+    },
+    "per_class_accuracy": {
+      "corrupt_file": {
+        "accuracy": 1.0,
+        "correct": 1,
+        "n": 1
+      },
+      "healthy": {
+        "accuracy": 1.0,
+        "correct": 1,
+        "n": 1
+      },
+      "identity_mismatch": {
+        "accuracy": 1.0,
+        "correct": 1,
+        "n": 1
+      }
+    },
+    "per_media_accuracy": {
+      "epub": {
+        "accuracy": 1.0,
+        "correct": 3,
+        "n": 3
+      }
+    },
+    "schema": {
+      "bad_evidence_refs": 0,
+      "fence_wrapped_replies": 0,
+      "first_try_valid": 1.0,
+      "repair_prompts": 0
+    },
+    "tools": {
+      "calls_by_mode": {
+        "n/a": 3
+      },
+      "calls_by_status": {
+        "error": 1,
+        "ok": 2
+      },
+      "injected_cases": 1,
+      "native_tool_use_items": 0,
+      "organic_failures": 1
+    },
+    "unsupported_any_action_contract_definition": 0,
+    "usage": {
+      "cost_usd_total": null,
+      "input_tokens": 278995,
+      "output_tokens": 633,
+      "records_with_cost": 0
+    }
+  },
+  "missing": [],
+  "model_digest": null,
+  "overall": "pass",
+  "requested_model": "gpt-6-luna",
+  "response_model_ids": [
+    "gpt-6-luna"
+  ],
+  "run_id": "v2-testdata-gpt-6-luna",
+  "runtime_version": "codex-cli 0.162.1",
+  "suite_shape": {
+    "checks": {
+      "every_other_class>=2": false,
+      "healthy>=8": false,
+      "held_out_cases>=30": false,
+      "insufficient_evidence_or_ambiguous>=4": false,
+      "media_types_all_four": false,
+      "tool_failure_cases>=3": false
+    },
+    "classes": {
+      "corrupt_file": 1,
+      "healthy": 1,
+      "identity_mismatch": 1,
+      "insufficient_evidence": 1
+    },
+    "media_types": [
+      "epub",
+      "tv"
+    ],
+    "meets_all_minimums": false,
+    "n": 4,
+    "note": "offender-family rows (#992) are not checked here; the readiness run is held-out only"
+  },
+  "unknown_case_ids": []
+}
