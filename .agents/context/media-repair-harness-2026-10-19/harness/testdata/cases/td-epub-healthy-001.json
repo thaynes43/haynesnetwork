@@ -1,0 +1,49 @@
+{
+  "id": "td-epub-healthy-001",
+  "suite_version": "harness-testdata-v1",
+  "split": "dev",
+  "media_type": "epub",
+  "family": "td-epub",
+  "truth": {
+    "class": "healthy",
+    "source": "construction",
+    "ref": "make_fixtures.py: ledger story, valid structure; sha256 pinned"
+  },
+  "supported_actions": [
+    "none"
+  ],
+  "solvable": true,
+  "context": {
+    "title": "The Lantern Ledger",
+    "expected": {
+      "title": "The Lantern Ledger",
+      "author": "Ines Varga",
+      "language": "en"
+    },
+    "arr": {
+      "app": null,
+      "ids": {}
+    },
+    "notes_for_model": "This EPUB was imported for the book above. Check that it is the right book."
+  },
+  "fixture": {
+    "kind": "local",
+    "sha256": "c81612f94791da592252c88f4cb008e470fefc9ac63c245d6218ec33a6a59b49",
+    "bytes": 1368,
+    "locator": "fixtures/td-right.epub"
+  },
+  "evidence": [
+    {
+      "id": "e1",
+      "tool": "arr_lookup",
+      "args": {},
+      "status": "ok",
+      "output": "imported as \"The Lantern Ledger - Ines Varga.epub\""
+    }
+  ],
+  "tools_available": [
+    "epub_inspect",
+    "arr_lookup"
+  ],
+  "provenance": "new (harness self-test data; synthetic text written for this test)"
+}

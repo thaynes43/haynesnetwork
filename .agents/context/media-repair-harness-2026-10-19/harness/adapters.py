@@ -1,0 +1,366 @@
+"""Model adapters.  An adapter turns (system prompt, message list) into one Completion.
+
+  ollama   Ollama Prime through kubectl exec; strict JSON schema in `format`; per-model stop tokens.
+  claude   `claude -p --output-format json` with every tool, MCP server, setting source and slash command
+           disabled, from an empty working directory, so the model can only answer through our protocol.
+  codex    `codex exec --json` in a read-only sandbox from an empty directory, prompt on stdin.
+  scripted canned replies (tests and dry runs).
+"""
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import time
+from pathlib import Path
+
+import ollama_transport as ot
+from protocol import TURN_SCHEMA
+
+
+class AdapterError(Exception):
+    """A single model call failed (transport, CLI error, timeout).  The runner records it and moves on."""
+
+
+class AbortRun(Exception):
+    """The whole run must stop (e.g. someone else's model is resident on the GPU).  Never evict."""
+
+
+class Completion:
+    def __init__(self, text, raw_request, raw_response, response_model=None, usage=None, wall_s=0.0, load_s=0.0,
+                 native=None, meta=None):
+        self.text, self.raw_request, self.raw_response = text, raw_request, raw_response
+        self.response_model, self.usage, self.wall_s, self.load_s = response_model, usage or {}, wall_s, load_s
+        self.native, self.meta = native or {}, meta or {}
+
+    def to_dict(self):
+        return {'text': self.text, 'response_model': self.response_model, 'usage': self.usage,
+                'wall_s': round(self.wall_s, 3), 'load_s': round(self.load_s, 3), 'native': self.native, 'meta': self.meta}
+
+
+def render_transcript(messages):
+    """Flatten a message list for the single-prompt CLIs."""
+    parts = []
+    for m in messages:
+        label = 'CASE' if m['role'] == 'user' and not parts else ('YOUR PREVIOUS REPLY' if m['role'] == 'assistant' else 'HARNESS')
+        parts.append('[%s]\n%s' % (label, m['content']))
+    parts.append('[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.')
+    return '\n\n'.join(parts)
+
+
+class Adapter:
+    name = 'base'
+    runtime_version = None
+    model_digest = None
+    digest_na_reason = None
+
+    def __init__(self, model):
+        self.requested_model = model
+
+    def preflight(self):
+        return {}
+
+    def before_case(self):
+        pass
+
+    def complete(self, system, messages):
+        raise NotImplementedError
+
+    def finish(self):
+        return {}
+
+    def describe(self):
+        return {'adapter': self.name, 'requested_model': self.requested_model, 'runtime_version': self.runtime_version,
+                'model_digest': self.model_digest, 'model_digest_na_reason': self.digest_na_reason}
+
+    def config(self):
+        return {'adapter': self.name, 'model': self.requested_model}
+
+
+STOPS = {'qwen': ['<|im_end|>'], 'muse': ['<|eot|>']}
+
+
+def default_stop(model):
+    for prefix, stop in STOPS.items():
+        if model.lower().startswith(prefix):
+            return list(stop)
+    return []
+
+
+class OllamaAdapter(Adapter):
+    name = 'ollama'
+
+    def __init__(self, model, api=ot.api, snapshot=ot.snapshot, options=None, keep_alive='2m', stop=None,
+                 schema=TURN_SCHEMA, load_timeout=600, call_timeout=120, do_warmup=True):
+        super().__init__(model)
+        self.api, self.snapshot = api, snapshot
+        self.options = dict({'temperature': 0, 'seed': 42, 'num_ctx': 8192, 'num_predict': 384}, **(options or {}))
+        self.keep_alive, self.stop = keep_alive, default_stop(model) if stop is None else stop
+        self.schema, self.load_timeout, self.call_timeout, self.do_warmup = schema, load_timeout, call_timeout, do_warmup
+        self.loaded_by_us = False
+        self.model_info = {}
+
+    def config(self):
+        return {'adapter': self.name, 'model': self.requested_model, 'options': self.options, 'stop': self.stop,
+                'think': False, 'keep_alive': self.keep_alive, 'format': 'TURN_SCHEMA(anyOf tool_call|decision)'}
+
+    def _residents(self):
+        ps, receipt = self.api('/api/ps')
+        if ps is None:
+            raise AbortRun('cannot read /api/ps (%s); refusing to touch the GPU blind' % receipt.get('exit_code'))
+        return [m.get('name') or m.get('model') for m in ps.get('models', [])]
+
+    def preflight(self):
+        ver, _ = self.api('/api/version')
+        tags, tr = self.api('/api/tags')
+        if tags is None:
+            raise AbortRun('cannot read /api/tags: %s' % tr.get('exit_code'))
+        residents = self._residents()
+        snap = self.snapshot()
+        report = {'residents_before': residents, 'resources_before': snap}
+        foreign = [r for r in residents if r != self.requested_model]
+        if foreign:
+            raise AbortRun('GPU busy: model(s) %s resident that this run did not load; not evicting' % foreign)
+        if not residents and snap.get('compute_processes'):
+            raise AbortRun('GPU has an existing compute owner: %s' % snap['compute_processes'])
+        installed = next((m for m in tags.get('models', []) if m.get('name') == self.requested_model), None)
+        if not installed:
+            raise AbortRun('model %s is not installed on Prime (this harness never pulls)' % self.requested_model)
+        self.runtime_version = (ver or {}).get('version')
+        self.model_digest = installed.get('digest')
+        self.model_info = {'details': installed.get('details'), 'size': installed.get('size')}
+        self.loaded_by_us = not residents
+        report.update(self.describe(), model_info=self.model_info, loaded_by_us=self.loaded_by_us)
+        if self.do_warmup:
+            t = time.monotonic()
+            resp, rc = self.api('/api/generate', {'model': self.requested_model, 'prompt': '', 'stream': False,
+                                                  'keep_alive': self.keep_alive}, timeout=self.load_timeout)
+            report['warmup'] = {'wall_s': round(time.monotonic() - t, 3), 'ok': resp is not None and not resp.get('error'),
+                                'load_duration_ns': (resp or {}).get('load_duration'), 'error': (resp or {}).get('error'),
+                                'exit_code': rc.get('exit_code')}
+            if resp is None or resp.get('error'):
+                # a half-finished load may still be running: do not unload, do not replay
+                self.loaded_by_us = False
+                raise AbortRun('model load failed or timed out (%s); not retrying, not unloading' % (report['warmup']['error'] or rc.get('exit_code')))
+        return report
+
+    def before_case(self):
+        foreign = [r for r in self._residents() if r != self.requested_model]
+        if foreign:
+            raise AbortRun('resident_owner_changed_no_eviction: %s' % foreign)
+
+    def complete(self, system, messages):
+        body = {'model': self.requested_model, 'stream': False, 'think': False, 'format': self.schema,
+                'keep_alive': self.keep_alive, 'options': dict(self.options, **({'stop': self.stop} if self.stop else {})),
+                'messages': [{'role': 'system', 'content': system}] + messages}
+        started = time.monotonic()
+        resp, receipt = self.api('/api/chat', body, timeout=self.call_timeout)
+        wall = time.monotonic() - started
+        if resp is None:
+            raise AdapterError('ollama transport failure: %s' % json.dumps({k: receipt.get(k) for k in ('exit_code', 'http_status', 'stderr')})[:400])
+        if resp.get('error'):
+            raise AdapterError('ollama error: %s' % str(resp['error'])[:300])
+        native = {k: resp.get(k) for k in ('total_duration', 'load_duration', 'prompt_eval_count', 'prompt_eval_duration',
+                                           'eval_count', 'eval_duration', 'done_reason', 'created_at')}
+        usage = {'input_tokens': resp.get('prompt_eval_count'), 'output_tokens': resp.get('eval_count'), 'cost_usd': None}
+        return Completion((resp.get('message') or {}).get('content', ''), body, receipt, response_model=resp.get('model'),
+                          usage=usage, wall_s=wall, load_s=(resp.get('load_duration') or 0) / 1e9, native=native)
+
+    def finish(self):
+        report = {'unloaded': False}
+        try:
+            if self.loaded_by_us:
+                resp, rc = self.api('/api/generate', {'model': self.requested_model, 'keep_alive': 0, 'stream': False}, timeout=60)
+                report.update(unloaded=resp is not None and not resp.get('error'), unload_response=resp)
+            ps, _ = self.api('/api/ps')
+            report['residents_after'] = None if ps is None else [m.get('name') for m in ps.get('models', [])]
+            report['resources_after'] = self.snapshot()
+        except Exception as e:  # noqa: BLE001 - reporting only
+            report['error'] = str(e)[:200]
+        return report
+
+
+CLAUDE_FLAGS = ['--tools', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--disable-slash-commands',
+                '--setting-sources', '', '--no-session-persistence']
+
+
+class ClaudeAdapter(Adapter):
+    name = 'claude'
+    digest_na_reason = 'hosted API model: no weights digest; the response model id is recorded instead'
+
+    def __init__(self, model, effort=None, max_budget_usd=2.0, timeout=240, runner=subprocess.run):
+        super().__init__(model)
+        self.effort, self.max_budget_usd, self.timeout, self.runner = effort, max_budget_usd, timeout, runner
+        self.workdir = tempfile.mkdtemp(prefix='mrh-claude-')
+
+    def config(self):
+        return {'adapter': self.name, 'model': self.requested_model, 'effort': self.effort, 'flags': CLAUDE_FLAGS,
+                'output_format': 'json', 'max_budget_usd': self.max_budget_usd}
+
+    def preflight(self):
+        if not shutil.which('claude'):
+            raise AbortRun('claude CLI not found')
+        v = self.runner(['claude', '--version'], capture_output=True, text=True, timeout=30)
+        self.runtime_version = v.stdout.strip()
+        return self.describe()
+
+    def argv(self, system):
+        cmd = ['claude', '-p', '--model', self.requested_model, '--output-format', 'json', '--system-prompt', system,
+               '--max-budget-usd', str(self.max_budget_usd)] + CLAUDE_FLAGS
+        if self.effort:
+            cmd += ['--effort', self.effort]
+        return cmd
+
+    def complete(self, system, messages):
+        prompt = render_transcript(messages)
+        cmd = self.argv(system)
+        started = time.monotonic()
+        try:
+            r = self.runner(cmd, input=prompt.encode(), capture_output=True, timeout=self.timeout, cwd=self.workdir)
+        except subprocess.TimeoutExpired:
+            raise AdapterError('claude CLI timed out after %d s' % self.timeout)
+        wall = time.monotonic() - started
+        raw = r.stdout.decode(errors='replace')
+        req = {'argv': cmd[:cmd.index('--system-prompt')] + ['--system-prompt', '<system>'] + cmd[cmd.index('--system-prompt') + 2:],
+               'system_prompt': system, 'prompt': prompt}
+        return parse_claude(raw, r.stderr.decode(errors='replace'), r.returncode, req, wall)
+
+    def finish(self):
+        shutil.rmtree(self.workdir, ignore_errors=True)
+        return {}
+
+
+def parse_claude(raw, stderr, returncode, req, wall):
+    try:
+        d = json.loads(raw)
+    except ValueError:
+        raise AdapterError('claude CLI returned non-JSON (exit %s): %s' % (returncode, (raw or stderr)[:300]))
+    if d.get('is_error') or d.get('subtype', 'success') != 'success':
+        raise AdapterError('claude CLI error: %s' % json.dumps({k: d.get(k) for k in ('subtype', 'api_error_status', 'result', 'terminal_reason')})[:400])
+    models = list((d.get('modelUsage') or {}).keys())
+    u = d.get('usage') or {}
+    usage = {'input_tokens': u.get('input_tokens'), 'output_tokens': u.get('output_tokens'),
+             'cache_creation_input_tokens': u.get('cache_creation_input_tokens'), 'cache_read_input_tokens': u.get('cache_read_input_tokens'),
+             'cost_usd': d.get('total_cost_usd')}
+    return Completion(d.get('result') or '', req, raw, response_model=models[0] if len(models) == 1 else (models or None),
+                      usage=usage, wall_s=wall, native={'duration_ms': d.get('duration_ms'), 'duration_api_ms': d.get('duration_api_ms'),
+                                                        'num_turns': d.get('num_turns'), 'stop_reason': d.get('stop_reason'),
+                                                        'permission_denials': d.get('permission_denials')},
+                      meta={'model_usage': d.get('modelUsage')})
+
+
+CODEX_FLAGS = ['--json', '-s', 'read-only', '--skip-git-repo-check', '--ignore-user-config', '--ignore-rules']
+NATIVE_TOOL_ITEMS = ('command_execution', 'mcp_tool_call', 'file_change', 'web_search', 'collab_tool_call')
+
+
+class CodexAdapter(Adapter):
+    name = 'codex'
+    digest_na_reason = 'hosted API model: no weights digest; usage is taken from the event stream'
+
+    def __init__(self, model, effort=None, timeout=300, record_session=False, runner=subprocess.run):
+        super().__init__(model)
+        self.effort, self.timeout, self.record_session, self.runner = effort, timeout, record_session, runner
+        self.workdir = tempfile.mkdtemp(prefix='mrh-codex-')
+
+    def config(self):
+        return {'adapter': self.name, 'model': self.requested_model, 'effort': self.effort, 'flags': CODEX_FLAGS,
+                'ephemeral': not self.record_session}
+
+    def preflight(self):
+        if not shutil.which('codex'):
+            raise AbortRun('codex CLI not found')
+        v = self.runner(['codex', '--version'], capture_output=True, text=True, timeout=30)
+        self.runtime_version = v.stdout.strip()
+        return self.describe()
+
+    def argv(self):
+        cmd = ['codex', 'exec'] + CODEX_FLAGS + ['-m', self.requested_model, '-C', self.workdir]
+        if not self.record_session:
+            cmd.append('--ephemeral')
+        if self.effort:
+            cmd += ['-c', 'model_reasoning_effort="%s"' % self.effort]
+        return cmd + ['-']
+
+    def complete(self, system, messages):
+        prompt = system + '\n\n---\n\n' + render_transcript(messages)
+        cmd = self.argv()
+        started = time.monotonic()
+        try:
+            r = self.runner(cmd, input=prompt.encode(), capture_output=True, timeout=self.timeout)
+        except subprocess.TimeoutExpired:
+            raise AdapterError('codex CLI timed out after %d s' % self.timeout)
+        wall = time.monotonic() - started
+        raw = r.stdout.decode(errors='replace')
+        return parse_codex(raw, r.returncode, {'argv': cmd, 'prompt': prompt}, wall, record_session=self.record_session)
+
+    def finish(self):
+        shutil.rmtree(self.workdir, ignore_errors=True)
+        return {}
+
+
+def _rollout_model(thread_id):
+    root = Path(os.path.expanduser('~/.codex/sessions'))
+    for f in root.glob('*/*/*/rollout-*%s.jsonl' % thread_id):
+        for line in f.read_text(errors='replace').splitlines():
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            payload = e.get('payload') if isinstance(e, dict) else None
+            if isinstance(payload, dict) and payload.get('model'):
+                return payload['model']
+    return None
+
+
+def parse_codex(raw, returncode, req, wall, record_session=False):
+    text, usage, native_tools, errors, thread = None, {}, [], [], None
+    for line in raw.splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        t = e.get('type')
+        if t == 'thread.started':
+            thread = e.get('thread_id')
+        elif t == 'item.completed':
+            item = e.get('item') or {}
+            if item.get('type') == 'agent_message':
+                text = item.get('text')
+            elif item.get('type') in NATIVE_TOOL_ITEMS:
+                native_tools.append(item.get('type'))
+        elif t == 'turn.completed':
+            u = e.get('usage') or {}
+            usage = {'input_tokens': u.get('input_tokens'), 'cached_input_tokens': u.get('cached_input_tokens'),
+                     'output_tokens': u.get('output_tokens'), 'reasoning_output_tokens': u.get('reasoning_output_tokens'),
+                     'cost_usd': None}
+        elif t in ('turn.failed', 'error'):
+            errors.append(e.get('error') or e.get('message') or e)
+    if text is None:
+        raise AdapterError('codex produced no agent message (exit %s): %s' % (returncode, json.dumps(errors)[:300] or raw[:300]))
+    model = _rollout_model(thread) if (record_session and thread) else None
+    return Completion(text, req, raw, response_model=model, usage=usage, wall_s=wall,
+                      meta={'thread_id': thread, 'native_tool_items': native_tools,
+                            'response_model_source': 'codex rollout turn_context (client side)' if model else 'not reported in the codex exec --json event stream'})
+
+
+class ScriptedAdapter(Adapter):
+    """Canned replies, one per call (a string, or an Exception instance to raise)."""
+    name = 'scripted'
+    digest_na_reason = 'scripted test adapter'
+
+    def __init__(self, model, replies):
+        super().__init__(model)
+        self.replies = list(replies)
+        self.runtime_version = 'scripted-1'
+        self.calls = []
+
+    def complete(self, system, messages):
+        self.calls.append(json.loads(json.dumps(messages)))
+        if not self.replies:
+            raise AdapterError('scripted adapter ran out of replies')
+        r = self.replies.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        text = r if isinstance(r, str) else json.dumps(r)
+        return Completion(text, {'system': system, 'messages': messages}, text, response_model=self.requested_model,
+                          usage={'input_tokens': 10, 'output_tokens': 5, 'cost_usd': 0.0}, wall_s=0.01)

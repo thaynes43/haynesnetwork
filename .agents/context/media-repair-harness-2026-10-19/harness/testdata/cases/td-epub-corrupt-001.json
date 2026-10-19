@@ -1,0 +1,49 @@
+{
+  "id": "td-epub-corrupt-001",
+  "suite_version": "harness-testdata-v1",
+  "split": "dev",
+  "media_type": "epub",
+  "family": "td-epub",
+  "truth": {
+    "class": "corrupt_file",
+    "source": "deterministic",
+    "ref": "archive truncated to 60% by make_fixtures.py; zipfile cannot open it"
+  },
+  "supported_actions": [
+    "blocklist_and_search",
+    "escalate"
+  ],
+  "solvable": true,
+  "context": {
+    "title": "The Lantern Ledger",
+    "expected": {
+      "title": "The Lantern Ledger",
+      "author": "Ines Varga",
+      "language": "en"
+    },
+    "arr": {
+      "app": null,
+      "ids": {}
+    },
+    "notes_for_model": "Readers report this book will not open."
+  },
+  "fixture": {
+    "kind": "local",
+    "sha256": "d9f87148a702b2a87d1c12b921cd3e8c1832d7e31e6437bb6659f669ad24fb95",
+    "bytes": 820,
+    "locator": "fixtures/td-corrupt.epub"
+  },
+  "evidence": [],
+  "tools_available": [
+    "epub_inspect",
+    "arr_lookup"
+  ],
+  "provenance": "new (harness self-test data; synthetic text written for this test)",
+  "outcome_step": {
+    "check": "epub_valid",
+    "inputs": {
+      "path": "fixtures/td-corrupt.epub"
+    },
+    "expected": "not_repaired"
+  }
+}
