@@ -38,7 +38,7 @@ def run_v2(case, replies, suite=None, **kw):
 
 def v2_case(**kw):
     kw.setdefault('evidence', [{'id': 'e1', 'tool': 'epub_inspect', 'args': {}, 'status': 'ok', 'output': 'archive damaged: rel-1 cannot be read'}])
-    kw.setdefault('context', {'title': 'Some Book', 'expected': {}, 'arr': {'app': 'bookshelf', 'ids': {}}, 'notes_for_model': 'n'})
+    kw.setdefault('context', {'title': 'Some Book', 'expected': {}, 'arr': {'app': 'bookshelf', 'ids': {'releaseId': 'rel-1'}}, 'notes_for_model': 'n'})
     return th.make_case(truth='corrupt_file', supported=('blocklist_and_search', 'escalate'), **kw)
 
 

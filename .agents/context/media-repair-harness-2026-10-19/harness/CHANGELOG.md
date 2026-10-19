@@ -75,6 +75,11 @@ Pre-collected evidence with `status: unavailable` is no longer coerced to `ok` (
 * v2 validator rejects an `audit` on `none` / `escalate` (first-try invalid), matching the prompt and the Ollama no-write schema. The stray-close repair
   hint now says one double-quote character.
 
+* Audit `target_in_context` is strict: `met` with basis `computed` only when the target equals or contains an identifier of the case's own item (file
+  name or path, a linked item id, or the title, with season and episode for a TV item) and names no broader scope (all / every / whole / library /
+  series / season / indexer ...). App names, generic words and matches inside free tool or evidence output never count; text found only in free output is
+  reported unmet with basis `claim_text` (unverifiable). The 5-case smoke records predate this change (their audits used the looser match).
+
 ### Run records and summary
 
 Record: `harness_version` (`dev-c1`), harness git sha + dirty flag (manifest), prompt version + sha256 + turn-schema sha256, `config_hash` (config now

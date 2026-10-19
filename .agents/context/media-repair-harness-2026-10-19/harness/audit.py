@@ -64,21 +64,88 @@ def _context_texts(case):
     return texts
 
 
-def target_in_context(case, target, tool_calls=()):
-    """True when the target string is, or contains, something the model could see: a context value, an evidence item, or a
-    tool result.  Short or generic targets (under 4 characters after normalisation) never count."""
+BROAD_SCOPE = re.compile(r'\b(all|every|each|any|entire|whole|everything|library|libraries|indexers?|series|seasons?|collection|catalog|catalogue)\b')
+ID_MIN_LEN = 4   # an id shorter than this ("1", "12") is a number, not an identifier
+
+
+def _token_in(needle, hay):
+    """needle occurs in hay on token boundaries (both already normalised)."""
+    return bool(needle) and (' ' + needle + ' ') in (' ' + hay + ' ')
+
+
+def item_identifiers(case):
+    """-> ([(kind, normalised text)], episode_regex or None): what identifies THIS case's own item in the model-visible context.
+    A file name / path, a linked item id, the item's title (for a TV episode only together with its season and episode), nothing broader.
+    App names (sonarr), free words and tool / evidence output are never identifiers."""
+    ctx = case.get('context') or {}
+    exp = ctx.get('expected') or {}
+    ids = []
+    fn = ctx.get('filename')
+    if fn:
+        full = _norm(fn)
+        ids.append(('filename', full))
+        stem = _norm(re.sub(r'\.[A-Za-z0-9]{2,5}$', '', str(fn)))
+        if len(stem) >= ID_MIN_LEN:
+            ids.append(('filename', stem))
+    for k, v in ((ctx.get('arr') or {}).get('ids') or {}).items():
+        if k != 'note' and isinstance(v, (str, int)) and not isinstance(v, bool) and len(_norm(v)) >= ID_MIN_LEN:
+            ids.append(('id', _norm(v)))
+    names = [x for x in (ctx.get('title'), exp.get('title'), exp.get('series')) if isinstance(x, str) and len(_norm(x)) >= ID_MIN_LEN]
+    se, ep = exp.get('season'), exp.get('episode')
+    ep_rx = None
+    if isinstance(se, int) and isinstance(ep, int) and not isinstance(se, bool):
+        ep_rx = re.compile(r'\b(s0*{s}e0*{e}|s0*{s} e0*{e}|0*{s}x0*{e}|season 0*{s} episode 0*{e})\b'.format(s=se, e=ep))
+    return ids, names, ep_rx
+
+
+def target_identity(case, target):
+    """-> (status, detail).  status: identified | broad | unverifiable | unidentified.
+    `identified` only when the target equals or contains a specific identifier of the case's own item (file name, linked item id, or the
+    title -- with its season and episode for a TV item) and names no broader scope (all / every / whole / library / series / indexer ...)."""
+    fn = (case.get('context') or {}).get('filename')
+    raw = str(target or '')
+    if fn:
+        # a directory prefix that runs straight into the exact file name (/tv/Show/Season 01/<file>) is a location, not a scope
+        raw = re.sub(r'(?i)^\s*(?:[a-z]:)?[/\\][^\n]*?[/\\](?=%s)' % re.escape(str(fn)), '', raw)
+    t = _norm(raw)
+    if not t:
+        return 'unidentified', 'no target'
+    ids, names, ep_rx = item_identifiers(case)
+    hit = []
+    rest = t
+    for kind, v in ids:
+        if _token_in(v, t):
+            hit.append(kind)
+            rest = ' '.join(rest.replace(v, ' ').split())
+    ep_hit = ep_rx.search(t) if ep_rx else None
+    for n in sorted({_norm(x) for x in names}, key=len, reverse=True):
+        if _token_in(n, t) and (ep_rx is None or ep_hit or ep_rx.search(n)):
+            hit.append('title+episode' if ep_rx else 'title')
+            rest = ' '.join(rest.replace(n, ' ').split())
+    if ep_hit and hit:
+        rest = ' '.join(ep_rx.sub(' ', rest).split())
+    broad = BROAD_SCOPE.search(rest) if hit else BROAD_SCOPE.search(t)
+    if broad:
+        return 'broad', 'the target names a broader scope (%r), not one file or item' % broad.group(1)
+    if hit:
+        return 'identified', 'the target contains the case\'s own %s' % '/'.join(sorted(set(hit)))
+    return 'unidentified', 'the target contains no file name, linked item id or title (with season and episode for TV) of this case\'s item'
+
+
+def target_in_text(case, target, tool_calls=()):
+    """The target only appears inside free evidence / tool output (never counts as identifying; reported as unverifiable)."""
     t = _norm(target)
-    if len(t) < 4:
+    if len(t) < 8:
         return False
-    hay = [_norm(x) for x in _context_texts(case)]
-    hay += [_norm(e.get('output') if isinstance(e.get('output'), str) else str(e.get('output'))) for e in case.get('evidence', [])]
+    hay = [_norm(e.get('output') if isinstance(e.get('output'), str) else str(e.get('output'))) for e in case.get('evidence', [])]
     hay += [_norm(c.get('output')) for c in tool_calls if c.get('status') == 'ok']
-    for h in hay:
-        if not h:
-            continue
-        if t in h or (len(h) >= 4 and h in t):
-            return True
-    return False
+    return any(t in h for h in hay if h)
+
+
+def target_in_context(case, target, tool_calls=()):
+    """True only when the target identifies the case's own item (see target_identity); never on app names, generic words, broad
+    scopes or matches inside free tool output."""
+    return target_identity(case, target)[0] == 'identified'
 
 
 def _check(cid, met, detail, basis='computed'):
@@ -173,8 +240,10 @@ def compute(case, decision, tool_calls, forced=False, prompt_version='v1'):
     checks.append(_check('class_matches_action', decision.get('class') in allowed,
                          'class %r, %s is for %s' % (decision.get('class'), action, '/'.join(allowed))))
     checks.append(_check('target_named', bool(str(decision.get('target') or '').strip()), 'target=%r' % (decision.get('target'),)))
-    checks.append(_check('target_in_context', target_in_context(case, decision.get('target') or '', tool_calls),
-                         'the target must be found in the context, the evidence or a tool result'))
+    tstatus, tdetail = target_identity(case, decision.get('target') or '')
+    if tstatus == 'unidentified' and target_in_text(case, decision.get('target') or '', tool_calls):
+        tstatus, tdetail = 'unverifiable', 'the target appears only inside free evidence or tool output; nothing in the context confirms it identifies this item'
+    checks.append(_check('target_in_context', tstatus == 'identified', tdetail, basis='claim_text' if tstatus == 'unverifiable' else 'computed'))
     cited = [r for r in refs if r in known]
     checks.append(_check('positive_evidence_cited', bool(cited) and not [r for r in refs if r not in known],
                          'cites %s; unknown refs %s' % (cited, [r for r in refs if r not in known])))
