@@ -60,9 +60,9 @@ def collect_epub(ctx, started):
     not_verified = ['reading quality, typography and rendering: no reader was run', 'DRM or encryption: not looked for beyond a missing-member check',
                     'whether the content is the right book: only the declared metadata and structure were read']
 
-    def fail(stage, msg, partial_cov=None):
+    def fail(stage, msg, partial_cov=None, cause='input'):
         out.update(valid=False, stage=stage, error=msg)
-        return make_record('epub', 'live', 'error', ctx, started, version=VERSION, bounds_used=b, output=out, cause='input',
+        return make_record('epub', 'live', 'error', ctx, started, version=VERSION, bounds_used=b, output=out, cause=cause,
                            reason='%s: %s' % (stage, msg), stderr='',
                            coverage={'verified': (partial_cov or []) + ['the check stopped at stage %s' % stage],
                                      'not_verified': ['stages after %s were not reached' % stage] + not_verified})
@@ -133,7 +133,10 @@ def collect_epub(ctx, started):
             out['findings'].append({'severity': 'warning', 'what': 'META-INF/encryption.xml is present: content may be encrypted or font-obfuscated; it was not examined'})
         # --- container.xml -> OPF
         try:
-            root = ET.fromstring(_read(z, 'META-INF/container.xml', b['epub_max_opf_bytes']))
+            raw_c = _read(z, 'META-INF/container.xml', b['epub_max_opf_bytes'])
+            if b'<!ENTITY' in raw_c:
+                return fail('opf_parse', 'container.xml has entity declarations; not parsed (the collector refuses them)', cov_ok, cause='tool')
+            root = ET.fromstring(raw_c)
             rootfiles = [x for x in root.iter() if _local(x.tag) == 'rootfile']
             opf = rootfiles[0].attrib['full-path']
         except Exception as e:  # noqa: BLE001
@@ -142,7 +145,10 @@ def collect_epub(ctx, started):
         if opf not in names:
             return fail('opf_parse', 'container.xml names %s, which is not in the archive' % opf, cov_ok)
         try:
-            pkg = ET.fromstring(_read(z, opf, b['epub_max_opf_bytes']))
+            raw_o = _read(z, opf, b['epub_max_opf_bytes'])
+            if b'<!ENTITY' in raw_o:
+                return fail('opf_parse', 'the package document has entity declarations; not parsed (the collector refuses them)', cov_ok, cause='tool')
+            pkg = ET.fromstring(raw_o)
         except Exception as e:  # noqa: BLE001
             return fail('opf_parse', 'package document: %s' % _err(e), cov_ok)
         out['stages_passed'].append('opf_parse')

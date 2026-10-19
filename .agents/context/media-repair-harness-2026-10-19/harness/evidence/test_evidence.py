@@ -769,6 +769,15 @@ class RecordTests(Base):
         self.assertEqual([r['mode'] for r in recs], ['replay', 'live'])
         self.assertEqual(recs[1]['status'], 'unavailable')
 
+    def test_replay_without_input_fingerprint_is_refused(self):
+        rec, _ = self.run_kind('probe', [(prog('ffprobe', '-show_format'), RunResult(0, probe_json(), b''))])
+        for stripped in (dict(rec, input=None), {k: v for k, v in rec.items() if k != 'input'}):
+            replayed = evidence.collect(self.media, ['probe'], runner=Fake([]), which=which_with(), replay=[stripped])[0]
+            self.assertEqual((replayed['status'], replayed['mode']), ('unavailable', 'replay'))
+            self.assertIn('recording has no input fingerprint', replayed['reason'])
+            self.assertEqual(replayed['output'], {})
+            self.assertEqual(replayed['coverage']['verified'], [])
+
     def test_replay_file_roundtrip(self):
         rec, _ = self.run_kind('probe', [(prog('ffprobe', '-show_format'), RunResult(0, probe_json(), b''))])
         f = self.dir / 'rec.json'
@@ -894,6 +903,21 @@ class ReviewRegressionTests(Base):
         # within the default cap the same padding is fine
         rec = evidence.collect(p, ['epub'], {'epub_max_opf_bytes': 4 << 20}, runner=Fake([]), which=which_with())[0]
         self.assertTrue(rec['output']['valid'])
+
+    # advisory re-check (b): entity declarations in container.xml and the OPF
+    def test_epub_entity_declarations_in_container_and_opf_are_not_parsed(self):
+        dt = '<!DOCTYPE x [<!ENTITY a "aaaa"><!ENTITY b "&a;&a;&a;&a;">]>'
+        p = self.dir / 'ent-opf.epub'
+        make_epub(p, opf=OPF.replace('<package', dt + '<package', 1).replace('<?xml version="1.0"?>', '<?xml version="1.0"?>', 1))
+        rec = evidence.collect(p, ['epub'], runner=Fake([]), which=which_with())[0]
+        self.assertEqual((rec['status'], rec['output']['stage'], rec['cause']), ('error', 'opf_parse', 'tool'))
+        self.assertIn('entity declarations', rec['reason'])
+        p2 = self.dir / 'ent-container.epub'
+        make_epub(p2, container=CONTAINER.replace('<container', dt + '<container', 1))
+        rec = evidence.collect(p2, ['epub'], runner=Fake([]), which=which_with())[0]
+        self.assertEqual((rec['status'], rec['output']['stage'], rec['cause']), ('error', 'opf_parse', 'tool'))
+        self.assertIn('container.xml has entity declarations', rec['reason'])
+        self.assertFalse(rec['output']['valid'])
 
     def test_epub_read_helper_counts_inflated_bytes_not_the_header(self):
         from evidence import epubtool

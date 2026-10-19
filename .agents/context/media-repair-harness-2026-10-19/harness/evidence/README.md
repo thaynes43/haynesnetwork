@@ -44,7 +44,7 @@ stderr (scrubbed, capped excerpt), elapsed_s, output {structured findings}, reas
   stages `zip_open`, `zip_crc`, `opf_parse`, `manifest`) from **`tool`** (a binary could not start, output cap hit, JSON unparsable, collector crashed).
 * Nothing is called healthy. A clean sample says so in `not_verified` ("a clean sample does not prove whole-file health"); `ok` on `decode` with `clean: true` means the sampled windows were clean and nothing more.
 * **mode** is `live` for anything run now. `replay` is only produced from a recording passed as `replay=` (records list, `{kind: record}` dict, or a JSON file with `{"records": [...]}`): the recorded record is served with `mode: "replay"`,
-  `recorded_from`, and is refused (`unavailable`) when the input's size and head/tail hashes differ from the recording's `input`. Kinds absent from the recording run live.
+  `recorded_from`, and is refused (`unavailable`) when the input's size and head/tail hashes differ from the recording's `input`, **and when the recording has no `input` fingerprint at all** (reason "recording has no input fingerprint"): a stripped or hand-built recording cannot pass as evidence about any file. Kinds absent from the recording run live.
 * `input` is a **partial** fingerprint only (size, SHA-256 of the first and last MiB). The whole file is never hashed or read except where a collector decodes it.
 * Paths never appear in output: the input path and base name are replaced by `<input>` in stderr excerpts and errors (`output` carries only the base names the parts of an audiobook have, in `files[].name`).
 * `to_tool_result` puts status, reason, cause, replay_note, bounds_clamped, coverage and stderr first and `output` last; when the text exceeds the cap it is `output` that is cut (a string ending in `...[output truncated]`), so the object stays valid JSON.
@@ -63,7 +63,7 @@ Defaults and hard maxima are in `core.BOUND_SPEC` (a request above the hard maxi
   Limit: `file` stays allowed, so a playlist-style input that names other local files can still make ffmpeg open them.
 * Inputs are opened read-only (ffmpeg/ffprobe read them; the zip is opened for reading). Every output goes to the `-f null` muxer or to a temp dir (PNG frames) that is deleted when `collect` returns; frames are deleted as soon as they are read.
 * Serial only: no parallel subprocesses. Heavy runs (generation, decoding real media) belong in a CPU-limited Job, not the dev-env pod; this pod has no ffmpeg.
-* EPUB: the zip is streamed through CRC checking inside the byte cap, a member that inflates past its declared size is a `zip_crc` failure, documents with `<!ENTITY` declarations are not parsed (reported), nothing is extracted.
+* EPUB: the zip is streamed through CRC checking inside the byte cap, a member that inflates past its declared size is a `zip_crc` failure, `container.xml`, the OPF and spine documents with `<!ENTITY` declarations are not parsed (a spine document is skipped and reported; container.xml or the OPF stops the check at `opf_parse` with `cause: tool`, because the collector refused them, not because the file was shown to be damaged), nothing is extracted.
 
 ## Limits (read before relying on a record)
 

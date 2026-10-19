@@ -301,18 +301,22 @@ def to_tool_result(rec, cap=8192):
 
 def as_replay(rec, current_fp):
     """A recorded record served as `replay`.  If the input no longer matches the recording's fingerprint the replay
-    is refused (`unavailable`): a recording of another file is not evidence about this one."""
+    is refused (`unavailable`), and so is a recording with no fingerprint at all: a recording of another file, or one that
+    cannot say which file it is about, is not evidence about this one."""
     out = copy.deepcopy(rec)
     recorded_fp = rec.get('input')
     out['recorded_from'] = {'mode': rec.get('mode'), 'elapsed_s': rec.get('elapsed_s'), 'tool_version': rec.get('tool_version')}
     out['mode'] = 'replay'
     out['replay_note'] = 'served from a recording; nothing was run now'
+    refuse = None
     if recorded_fp is None:
-        out['replay_note'] += '; the recording carries no input fingerprint, so a match with this input is unproven'
+        refuse = 'recording has no input fingerprint; it cannot be shown to describe this input, so it is not served'
     elif current_fp is None or _sig(recorded_fp) != _sig(current_fp):
+        refuse = 'the recording does not match this input (size or head/tail hash differs); not served'
+    if refuse:
         out['status'] = 'unavailable'
-        out['reason'] = 'the recording does not match this input (size or head/tail hash differs); not served'
-        out['coverage'] = {'verified': [], 'not_verified': ['everything: the recording is for different bytes']}
+        out['reason'] = refuse
+        out['coverage'] = {'verified': [], 'not_verified': ['everything: no matching recording of this input']}
         out['output'] = {}
         out.pop('cause', None)
     return out
