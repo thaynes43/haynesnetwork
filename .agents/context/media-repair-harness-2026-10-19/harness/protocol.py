@@ -241,6 +241,8 @@ def validate_turn_v2(obj, tools_available=None):
                 errs.append('a write action needs a named target (non-null string)')
             if 'audit' not in obj or obj.get('audit') is None:
                 errs.append('a write action needs an audit object with keys %s' % list(AUDIT_KEYS))
+        if obj.get('action') in ('none', 'escalate') and 'audit' in obj:
+            errs.append('audit is only for a write action; do not add it for none or escalate')
         if obj.get('audit') is not None:
             aerrs = validate_audit(obj['audit'])
             errs += aerrs
@@ -261,7 +263,7 @@ REPAIR_HINTS = {
     'missing_type': 'the first key must be "type":"tool_call" or "type":"decision"',
     'envelope_keys_copied': 'do not copy fields of a tool result (status, output, truncated, tool_calls_remaining, id) into your reply',
     'echoed_tool_result': 'a tool result is not a reply; reply with a tool_call or a decision',
-    'stray_comma_quote_close': 'close the last string with a single quote and then the brace, never with ","}',
+    'stray_comma_quote_close': 'close the last string with exactly one double-quote character and then the brace; never add a comma and a second quote before the brace',
     'fence_wrapped': 'no markdown fence',
     'prose_around_object': 'nothing before the opening brace or after the closing brace',
     'stop_token': 'nothing after the closing brace',

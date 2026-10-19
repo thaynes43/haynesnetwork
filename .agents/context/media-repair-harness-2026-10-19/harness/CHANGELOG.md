@@ -46,8 +46,9 @@ Pre-collected evidence with `status: unavailable` is no longer coerced to `ok` (
 
 ### Leak guard
 
-* `check_system`: the static system prompt is checked for this case's id, id stem, file names, a long provenance string and its title (tokens under 6
-  characters are skipped: `a`, `new` are ordinary words). Hit = harness error, nothing sent, recorded `harness_crash` / `leak_guard: true`.
+* `check_system`: the static system prompt is checked for this case's id, id stem, file names and a long provenance string (tokens under 6
+  characters are skipped: `a`, `new` are ordinary words). The case **title is not checked**: it is shown to the model in the case context anyway, and one-word
+  titles such as `Identity` or `Evidence` are ordinary protocol words that would otherwise crash the case on both prompts (review finding, test with 11 such titles). Hit = harness error, nothing sent, recorded `harness_crash` / `leak_guard: true`.
 * Generic harness text (the repair prompt: validator error that lists every class and action, plus hints) is checked for case-specific tokens only.
   Tool-result text never echoes model-chosen names, so a bogus tool called `rename` cannot trip the label check. Tests cover both directions: generic
   definitions pass for all 73 suite cases and the synthetic ones; ids, stems, family, file names, class and action labels in case text are still caught.
@@ -64,6 +65,15 @@ Pre-collected evidence with `status: unavailable` is no longer coerced to `ok` (
   timeout, partial or unavailable result may not. `unverified_parts` lists every non-ok result and `decision_flags` marks healthy/none next to one
   (informational; the decision is never rewritten).
 * Records, `audit.jsonl` and `run_summary.json` say proposal / intent / not executed; a test scans them for claims that something was repaired.
+
+### Review fixes (PR #1009)
+
+* OCR replay: the suite author's construction note for a string `frame_text` stays in the run record only (`tool_calls[].recorded_note`); the model-visible
+  OCR output is what the call returned, as in v1.
+* `prompt.turn_schema_sha256` is the hash of the schema actually sent (Ollama: v1 anyOf or flat, or the v2 per-case schema); adapters that send none
+  (claude, codex, scripted) record `null` and `schema_sent: false`.
+* v2 validator rejects an `audit` on `none` / `escalate` (first-try invalid), matching the prompt and the Ollama no-write schema. The stray-close repair
+  hint now says one double-quote character.
 
 ### Run records and summary
 
@@ -87,6 +97,10 @@ were not computed. Five cases are too few to say the first-try failure modes are
 
 ### Known limits
 
+* **Evaluator: compare `calls_by_status`.** `score.py` `organic_failures` ignores `unavailable` (see below), so a drop in organic failures between v1
+  checkpoint 1 and dev-c1 can be a relabelling (`error` -> `unavailable`), not fewer failures. Compare `tools.calls_by_status` side by side.
+* **v1 on dev-c1 is not a pure checkpoint 1 rerun.** The v1 prompt text is byte-identical (same sha256), but tool statuses (`unavailable`), pinned and
+  OCR replay output and the evidence integrity status changed in the shared tool layer, so v1 runs are only comparable with checkpoint 1 with that in mind.
 * `score.py` (not touched) predates `unavailable`: its G8 "exercised" test and `organic_failures` count only error / timeout / partial, so an
   `unavailable` result is listed under `calls_by_status` but not treated as a tool failure. The evaluator decides whether that matters.
 * Per-case structured output exists for Ollama only and has not run against a live Ollama (no Ollama use in this story). The v2 `anyOf` schema is

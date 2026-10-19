@@ -126,17 +126,18 @@ REPAIR_PREFIX = 'Your last reply was rejected:'
 # The class and action names are public protocol vocabulary.  Never put model- or case-derived free text into such a message.
 GENERIC_PREFIXES = (REPAIR_PREFIX,)
 GENERIC_KINDS = ('supported_action', 'truth_class')
-# What a static system prompt must never contain: this case's id (and its stem), file names, a long provenance string and its
-# title.  Ordinary words are not checked: tokens shorter than 6 characters (an id such as `a`, a provenance tag such as `new`)
+# What a static system prompt must never contain: this case's id (and its stem), file names and a long provenance string.
+# The title is NOT checked: a one-word title such as `Identity` is an ordinary protocol word and the model sees it in the case context anyway.
+#  Ordinary words are not checked: tokens shorter than 6 characters (an id such as `a`, a provenance tag such as `new`)
 # would match everyday words, so they are skipped; real case ids, titles and file names are longer.
 SYSTEM_MIN_LEN = 6
 
 
 def check_system(case, system, extra_paths=()):
-    """Guard for the static system prompt: it may name classes and actions, but never this case's id, file name, provenance or title."""
+    """Guard for the static system prompt: it may name classes and actions, but never this case's id, file name or provenance."""
     cid = str(case.get('id') or '')
     cands = {'case_id': [cid], 'case_id_stem': [re.sub(r'-\d+$', '', cid)], 'fixture_name': fixture_basenames(case, extra_paths),
-             'provenance': [str(case.get('provenance') or '')], 'title': [str((case.get('context') or {}).get('title') or '')]}
+             'provenance': [str(case.get('provenance') or '')]}   # the title is case context the model sees anyway: not checked
     hits = sorted(kind for kind, toks in cands.items() if any(len(t) >= SYSTEM_MIN_LEN and _ci(t).search(system or '') for t in toks))
     if hits:
         raise LeakError('forbidden token(s) %s in the system prompt' % hits)

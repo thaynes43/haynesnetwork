@@ -582,9 +582,10 @@ def _ocr_replay(ctx, t):
     text = next((e['text'] for e in ft if e['t0'] <= t < e['t1']), '') if isinstance(ft, list) else ''  # a string means no text was drawn
     note = 'replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time'
     out = {'t_s': t, 'text': text, 'consensus': True, 'note': note}
-    if isinstance(ft, str):
-        out['recorded_note'] = ft
-    return ToolResult('ok', out, mode='replay')
+    # The suite author's construction note for a string frame_text stays in the run record only (ToolResult extra); the
+    # model-visible output is what the call returned, as in v1.
+    extra = {'recorded_note': ft} if isinstance(ft, str) else {}
+    return ToolResult('ok', out, mode='replay', **extra)
 
 
 def ollama_ocr_backend(model, api):

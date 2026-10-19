@@ -128,6 +128,10 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     # v1 sends the adapter's fixed schema (as in checkpoint 1); v2 builds one per case (tool enum, audit required on writes)
     schema = None if prompt_version == 'v1' else P.turn_schema(prompt_version, case.get('tools_available'),
                                                                 flat=getattr(adapter, 'schema_name', None) == 'flat')
+    # Hash of the schema the model actually got: only the Ollama adapter sends one (v1: its own anyOf / flat schema; v2: the per-case
+    # schema).  Claude, Codex and scripted adapters send none, so nothing is recorded as sent.
+    sent_schema = (schema if schema is not None else getattr(adapter, 'schema', None)) if getattr(adapter, 'name', None) == 'ollama' else None
+    sent_schema_sha = sha256_bytes(canonical(sent_schema).encode()) if sent_schema is not None else None
     messages = [{'role': 'user', 'content': json.dumps(view, ensure_ascii=False, sort_keys=True)}]
     ev_ids = {e['id'] for e in evidence}
     turns, tool_calls = [], []
@@ -235,7 +239,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
         'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
         'split': case.get('split'), 'started_at': started_at,
         'prompt': {'version': prompt['version'], 'sha256': prompt['sha256'], 'protocol': 'turn-' + prompt['version'],
-                   'turn_schema_sha256': sha256_bytes(canonical(schema if schema is not None else P.TURN_SCHEMA).encode())},
+                   'turn_schema_sha256': sent_schema_sha, 'schema_sent': sent_schema_sha is not None},
         'model_case_alias': model_alias, 'requested_model': adapter.requested_model, 'response_model_ids': response_models,
         'runtime_version': adapter.runtime_version, 'model_digest': adapter.model_digest,
         'model_digest_na_reason': adapter.digest_na_reason if not adapter.model_digest else None,
@@ -269,7 +273,7 @@ def crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT):
     d = P.forced_decision('harness error before the run: ' + type(exc).__name__)
     return {'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
             'split': case.get('split'), 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            'prompt': {'version': prompt_version, 'sha256': P.get_prompt(prompt_version)['sha256'], 'protocol': 'turn-' + prompt_version, 'turn_schema_sha256': None},
+            'prompt': {'version': prompt_version, 'sha256': P.get_prompt(prompt_version)['sha256'], 'protocol': 'turn-' + prompt_version, 'turn_schema_sha256': None, 'schema_sent': False},
             'requested_model': adapter.requested_model, 'response_model_ids': [], 'runtime_version': adapter.runtime_version,
             'model_digest': adapter.model_digest, 'model_digest_na_reason': adapter.digest_na_reason if not adapter.model_digest else None,
             'fixture': None, 'evidence_shown': [], 'turns': [], 'tool_calls': [], 'repair_prompts': [], 'decision': d, 'forced': True,

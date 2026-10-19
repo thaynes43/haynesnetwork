@@ -103,7 +103,7 @@ class PromptV2(unittest.TestCase):
             c = json.loads(f.read_text())
             L.check_system(c, text)   # generic class / action / schema definitions never trip the guard
         c = json.loads(paths[0].read_text())
-        for bad in (c['id'], (c['context'] or {}).get('title'), Path(str(c['fixture'].get('locator') or 'x.bin')).name):
+        for bad in (c['id'], Path(str(c['fixture'].get('locator') or 'x.bin')).name):
             if bad and len(bad) >= L.SYSTEM_MIN_LEN:
                 with self.assertRaises(L.LeakError):
                     L.check_system(c, text + '\nExample: ' + bad)
@@ -201,7 +201,8 @@ class FirstTryFailureModes(unittest.TestCase):
         stray = text[:-1] + ',"}'     # ..."reason": "r","}   (the string is closed, then a stray quote opens a key)
         self.assertIsNone(P.parse_reply(stray)[0])
         rec, ad = self.assert_miss_then_valid(stray, 'stray_comma_quote_close')
-        self.assertIn('single quote', ad.calls[1][-1]['content'])
+        self.assertIn('one double-quote character', ad.calls[1][-1]['content'])
+        self.assertNotIn('single quote', ad.calls[1][-1]['content'])
         self.assertEqual(rec['turns'][0]['diagnostics']['salvageable_by'], ['stray_comma_quote_close'])   # diagnostics only: never accepted
 
     def test_missing_type_key(self):
@@ -460,7 +461,7 @@ class RecordsAndSummary(unittest.TestCase):
         self.assertEqual(rec['config_hash'], manifest['config_hash'])
         self.assertEqual(rec['harness_git_sha'], manifest['harness_git']['sha'])
         self.assertEqual(manifest['config']['system_prompt_sha256'], rec['prompt']['sha256'])
-        self.assertTrue(rec['prompt']['turn_schema_sha256'])
+        self.assertEqual((rec['prompt']['turn_schema_sha256'], rec['prompt']['schema_sent']), (None, False))   # scripted sends no schema
         self.assertIn('fixture', rec['fixture_hashes'])
         self.assertEqual(rec['response_model_ids'], ['scripted-1'])
         self.assertIn('input_tokens', rec['usage'])
