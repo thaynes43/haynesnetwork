@@ -1,0 +1,72 @@
+{
+ "elapsed_s": 5.6,
+ "ffmpeg": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers",
+ "ffprobe": "ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers",
+ "fixtures": {
+  "book-bad/part1.m4b": {
+   "bytes": 63809,
+   "sha256": "e58d09870653a37c46d8266599477725ba5617306587e52c7068eedd478cab87"
+  },
+  "book-bad/part2.m4b": {
+   "bytes": 63899,
+   "sha256": "6a3137c6d49ed059b5adb4b62f0878c4d44d4bb29640e48df5b5a373c5e2b224"
+  },
+  "book-bad/part3.m4b": {
+   "bytes": 31967,
+   "sha256": "ada5903c3fa25685fe1e57b8ce65c800ae66a1552e66058b008363650769bc0e"
+  },
+  "book/part1.m4b": {
+   "bytes": 63809,
+   "sha256": "e58d09870653a37c46d8266599477725ba5617306587e52c7068eedd478cab87"
+  },
+  "book/part2.m4b": {
+   "bytes": 63894,
+   "sha256": "813ff6c1fd74d3cc2be77d4b90e7a95ad349c77da721041ce4328d145f0592ee"
+  },
+  "broken-manifest.epub": {
+   "bytes": 1035,
+   "sha256": "7ecb7b018aa213d87562c87b344cb4c645b783cf2258f14ce822b55c88b80d16"
+  },
+  "broken-xhtml.epub": {
+   "bytes": 1177,
+   "sha256": "ac104c25b53f55ad94dbaa8c1e12f0fddaffd7038e8690bf19ef493996925e27"
+  },
+  "corrupt.mkv": {
+   "bytes": 183096,
+   "sha256": "16714af65222d7187e318786a895fe31bfe40b1fac66f912d56664405956f63e"
+  },
+  "good.epub": {
+   "bytes": 1257,
+   "sha256": "d8840db62a89ef5e1c4a6c890054c9dd8f2a7cd3e92ad3745a06fe98582a21c0"
+  },
+  "good.mkv": {
+   "bytes": 183096,
+   "sha256": "0630dad267149272f8edfb318adae4dec0c3b2bc58dc9f94a43ad8ddc8b72da7"
+  },
+  "truncated.epub": {
+   "bytes": 628,
+   "sha256": "9498c0e7a5d93d4d298b20050c1865043a733ef46708dae79abc2f8ae6e2d7e0"
+  },
+  "truncated.mkv": {
+   "bytes": 100702,
+   "sha256": "fe5f98ba8cc6f1e9f30c51b0feea73a5bf519b2fa62503b3a1dbd5161c396edf"
+  }
+ },
+ "generation": {
+  "audio_encoder": "aac",
+  "notes": [],
+  "video_encoder": "libx264"
+ },
+ "job": {
+  "cpu_limit": 1,
+  "image": "ghcr.io/home-operations/bazarr:1.6.2",
+  "image_id": "ghcr.io/home-operations/bazarr@sha256:17dc1cff22e99694ffbfb06555526cb47a66b362b4d6c982f06b557f7caae2bb",
+  "memory_limit": "1Gi",
+  "name": "mrh-evidence-smoke-1792453320",
+  "namespace": "dev"
+ },
+ "label": "LIVE: collected by the real ffprobe/ffmpeg inside a CPU-limited batch Job on synthetic fixtures; not replay, not real library media",
+ "platform": "Linux-6.18.44-talos-x86_64-with-musl1",
+ "python": "3.14.7",
+ "tesseract": "not installed in the Job image"
+}
