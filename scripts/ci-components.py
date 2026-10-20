@@ -16,8 +16,9 @@ Two subcommands:
 Components:
   site     apps/*, packages/*, root Node manifests and lockfile, Dockerfile and site configs, `.agents` data files
            the site unit tests parse.
-  harness  tools/media-repair-harness/**, the public suite and GATES.md of the harness context, the EPUB source it
-           imports, the old in-tree harness location, root Python packaging files.
+  harness  tools/media-repair-harness/**, the public suites (suite/ and suite-dev-v1.1/), GATES.md and RULINGS-v1.1.md
+           of the harness context, the EPUB source it imports, the old in-tree harness location, root Python
+           packaging files.
   docs     Markdown and other docs paths that no CI job reads (selects nothing).
   shared   CI workflows and the routing scripts and their tests: selects EVERY component.
   unknown  not named by any rule: selects every component (fail closed).
@@ -118,8 +119,9 @@ def classify_path(raw: str) -> str:
         return HARNESS
     if path.startswith(HARNESS_CONTEXT):
         rest = path[len(HARNESS_CONTEXT):]
-        in_code_or_suite = rest.startswith(("harness/", "suite/"))
-        if rest == "GATES.md" or in_code_or_suite or not path.endswith(".md"):
+        in_code_or_suite = rest.startswith(("harness/", "suite/", "suite-dev-v1.1/"))
+        # The rulings that define the v1.1 suite are read like GATES.md: a change to them is a change to what the harness is judged on.
+        if rest in ("GATES.md", "RULINGS-v1.1.md") or in_code_or_suite or not path.endswith(".md"):
             return HARNESS
         return DOCS  # notes and reports in the context folder affect nothing
     if "/" not in path and (name in PYTHON_ROOT_FILES or any(fnmatch.fnmatchcase(name, g) for g in PYTHON_ROOT_GLOBS)):

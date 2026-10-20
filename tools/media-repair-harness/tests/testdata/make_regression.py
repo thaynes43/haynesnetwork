@@ -23,8 +23,8 @@ def sha(name):
 
 
 def case(cid, media, truth, supported, solvable, title, expected, tools, arr=None, notes='', fixture=None, evidence=(), replay=(),
-         inject=None, outcome=None, client_profile=None):
-    ctx = {'title': title, 'expected': expected, 'arr': {'app': arr, 'ids': {}}, 'notes_for_model': notes}
+         inject=None, outcome=None, client_profile=None, arr_ids=None):
+    ctx = {'title': title, 'expected': expected, 'arr': {'app': arr, 'ids': dict(arr_ids or {})}, 'notes_for_model': notes}
     if client_profile:
         ctx['client_profile'] = client_profile
     c = {'id': cid, 'suite_version': 'harness-regression-v1', 'split': 'dev', 'media_type': media,
@@ -111,6 +111,47 @@ def cases():
              replay=[{'tool': 'audiobook_inspect', 'args': {}, 'status': 'ok', 'output': json.dumps(
                  {'format': 'mov,mp4,m4a', 'duration_s': 5400.0, 'tags': {'title': 'Example Audiobook Three'}, 'chapter_count': 12,
                   'chapters': [{'start_s': 450.0 * i, 'end_s': 450.0 * (i + 1), 'title': 'Part %d' % (i + 1)} for i in range(12)]}, sort_keys=True)}]),
+    ]
+
+    # ---- dev-c3 (prompt v3) evidence-rule fixtures: generic and synthetic, one set per rule, phrased by EVIDENCE TYPE -------------
+    # Rule A, whole-item clean evidence is healthy: the integrity evidence covers the whole item and is clean, nothing contradicts identity.
+    # Rule B, bad copy with a managing app: a tool that ran reports damage in the file and context.arr.app names the manager.
+    # Rule C, a real named gap: an unverified part, a failed tool, conflicting identity evidence, or a write with no managing app.
+    ll_ebook = {'bookId': 'll-990001', 'format': 'ebook', 'note': 'fictional ids'}
+    ll_audio = {'bookId': 'll-990002', 'format': 'audiobook', 'note': 'fictional ids'}
+    damaged = decode(False, True)
+    damaged_err = json.dumps({'exit_code': 1, 'stderr': 'error while decoding; invalid data found when processing input', 'quota_exhausted': False,
+                              'scope': 'whole file'}, sort_keys=True)
+    book_tags_ok = json.dumps({'format': 'mov,mp4,m4a', 'duration_s': 7200.0, 'tags': {'title': 'Example Audiobook Four'}, 'chapter_count': 3,
+                               'parts_read': 3, 'parts_total': 3, 'errors': []}, sort_keys=True)
+    out += [
+        case('rg-v3-ebook-healthy-001', 'epub', ('healthy', 'rule A: the package opens, spine and OPF parse, title and author match (whole package read)'), ['none'], True,
+             'The Lantern Ledger', ledger, EPUB_TOOLS, arr='lazylibrarian', arr_ids=ll_ebook, notes='Routine check.',
+             fixture={'kind': 'local', 'sha256': sha('td-right.epub'), 'locator': right}),
+        case('rg-v3-audiobook-healthy-001', 'audiobook', ('healthy', 'rule A: every part was read, duration and tags agree with the catalog'), ['none'], True,
+             'Example Audiobook Four', {'title': 'Example Audiobook Four', 'duration_s': 7200, 'chapters': 3}, ['audiobook_inspect', 'arr_lookup'],
+             arr='lazylibrarian', arr_ids=ll_audio, notes='Routine check.',
+             replay=[{'tool': 'audiobook_inspect', 'args': {}, 'status': 'ok', 'output': book_tags_ok}]),
+        case('rg-v3-ebook-badcopy-001', 'epub', ('corrupt_file', 'rule B: epub_inspect reports an unreadable archive and the managing app is named'),
+             ['blocklist_and_search', 'escalate'], True, 'The Lantern Ledger', ledger, EPUB_TOOLS, arr='lazylibrarian', arr_ids=ll_ebook,
+             notes='Readers report this book will not open.', fixture={'kind': 'local', 'sha256': sha('td-corrupt.epub'), 'locator': corrupt},
+             outcome={'check': 'epub_valid', 'inputs': {'path': corrupt}, 'expected': 'not_repaired'}),
+        case('rg-v3-movie-badcopy-001', 'movie', ('corrupt_file', 'rule B: the whole-file decode reports damage and the managing app is named'),
+             ['blocklist_and_search', 'escalate'], True, 'Example Movie Five', {'runtime_s': 5400, 'language': 'en'}, ['ffprobe', 'decode_sample', 'arr_lookup'],
+             arr='radarr', arr_ids={'movieId': 990003, 'note': 'fictional ids'}, notes='Playback stops partway through.',
+             evidence=[{'id': 'e1', 'tool': 'ffprobe', 'args': {}, 'status': 'ok', 'output': ffprobe_ok()},
+                       {'id': 'e2', 'tool': 'decode_sample', 'args': {'full': True}, 'status': 'error', 'output': damaged_err}]),
+        case('rg-v3-movie-noapp-001', 'movie', ('corrupt_file', 'rule C: the damage is shown but no managing app is named, so no write is supported'),
+             ['escalate'], False, 'Example Movie Six', {'runtime_s': 5400, 'language': 'en'}, ['ffprobe', 'decode_sample', 'arr_lookup'],
+             arr=None, notes='Playback stops partway through.',
+             evidence=[{'id': 'e1', 'tool': 'ffprobe', 'args': {}, 'status': 'ok', 'output': ffprobe_ok()},
+                       {'id': 'e2', 'tool': 'decode_sample', 'args': {'full': True}, 'status': 'error', 'output': damaged_err}]),
+        case('rg-v3-audiobook-conflict-001', 'audiobook', ('insufficient_evidence', 'rule C: the tags name the expected title but the recorded duration is a third of the catalog duration'),
+             ['escalate'], False, 'Example Audiobook Five', {'title': 'Example Audiobook Five', 'duration_s': 9000, 'chapters': 3}, ['audiobook_inspect', 'arr_lookup'],
+             arr='lazylibrarian', arr_ids=ll_audio, notes='Listener says it ends far too early.',
+             replay=[{'tool': 'audiobook_inspect', 'args': {}, 'status': 'ok', 'output': json.dumps(
+                 {'format': 'mov,mp4,m4a', 'duration_s': 3000.0, 'tags': {'title': 'Example Audiobook Five'}, 'chapter_count': 3,
+                  'parts_read': 3, 'parts_total': 3, 'errors': []}, sort_keys=True)}]),
     ]
     return out
 

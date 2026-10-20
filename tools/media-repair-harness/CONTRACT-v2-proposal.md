@@ -1,22 +1,24 @@
-# Harness contract v2: PROPOSAL (harness `dev-c2`)
+# Harness contract v2: PROPOSAL (harness `dev-c3`)
 
-**Status: proposal.** This file describes what the harness candidates dev-c1 and dev-c2 emit and accept, so that the independent evaluator can
+**Status: proposal.** This file describes what the harness candidates dev-c1, dev-c2 and dev-c3 emit and accept, so that the independent evaluator can
 accept, amend or reject it as the next contract. It is written by the harness side and binds nothing: `CONTRACT.md` (v1), `score.py`, the suite, the labels
 and `GATES.md` are untouched and remain the evaluator's. Nothing here says how any field is, or should be, scored. Where this text and the code disagree, the code
 and its tests (`test_v2.py`, `test_regression.py`, `test_wiring.py`) are the fact and this file is the bug.
 
-What differs from v1 is marked **new in dev-c1** or **new in dev-c2**; everything unmarked is v1 behaviour kept as it was.
+What differs from v1 is marked **new in dev-c1**, **new in dev-c2** or **new in dev-c3**; everything unmarked is v1 behaviour kept as it was.
 
 ## 1. Versions
 
 | field | where | value now |
 |---|---|---|
-| `harness_version` | every run record, manifest, `run_summary.json` | `dev-c2` (dev-c1 before; `protocol.HARNESS_VERSION`) |
-| `record_version` | every run record | `1` (the record is a superset of v1's; no field was removed or renamed) |
-| `prompt.version`, `prompt.sha256`, `prompt.protocol` | run record | `v1` or `v2`, sha256 of the exact system text sent, `turn-v1` / `turn-v2` |
+| `harness_version` | every run record, manifest, `run_summary.json` | `dev-c3` (dev-c2, dev-c1 before; `protocol.HARNESS_VERSION`) |
+| `record_version` | every run record | `1` (a full record is a superset of v1's, no field removed or renamed; the **minimal crash record** is not, see section 7) |
+| `prompt.version`, `prompt.sha256`, `prompt.protocol` | run record | `v1`, `v2` or `v3` (**v3 new in dev-c3**), sha256 of the exact system text sent, `turn-v1` / `turn-v2` (v3 is new prompt text on the v2 turn protocol, so its `protocol` is `turn-v2`) |
 | `prompt.turn_schema_sha256`, `prompt.schema_sent` | run record | hash of the schema actually sent, or `null` and `false` (only the Ollama adapter sends one) |
 | `config_hash` | run record, manifest | hash of the run configuration, including `harness_version`, `prompt_version`, `evidence_mode` and `evidence_bounds` |
 | `evidence_mode` | run record, manifest `config`, `run_summary.json`, every tool call | `replay` or `live` (**new in dev-c2**) |
+
+Prompt v1 and v2 are byte-identical to dev-c2's (pinned by digest in `tests/test_packaging.py`); v3 is a separate file.
 
 A comparison across versions should compare `harness_version`, `prompt.sha256` and `evidence_mode` first: the same prompt text (v1) behaves differently under
 dev-c1 and dev-c2 only where noted in `CHANGELOG.md`.
@@ -37,6 +39,8 @@ Decision, prompt v2 (**new in dev-c1**). `action` is exactly one value, never a 
 {"type":"decision","class":"<class>","action":"blocklist_and_search|remap|rename|convert","target":"<non-empty>","reason":"<=400","confidence":0.0,
  "evidence_refs":["e1","t2"],"audit":{"target":"...","preconditions":["<=160 chars each, 1 to 6"],"readback":"<=240","verify":"<=240"}}
 ```
+
+An audit on `none` or `escalate` is **rejected** by the validator (not tolerated): the reply is invalid on the first try and gets the one repair prompt.
 
 Classes and actions are the v1 sets. A tool call outside the case's `tools_available` is a **protocol violation** (**new in dev-c1**, prompt v2 only): it is
 answered with a tool result of status `unavailable`, counts against the 6 calls, is recorded in `protocol_violations[]`, and gets no repair prompt.
@@ -83,13 +87,15 @@ says when it was cut). The case file name and path are redacted from `output`; f
 
 `--evidence replay|live`, default `replay`.
 
-* **replay** is dev-c1's tool layer unchanged. What the model sees for a given case, tool and arguments is byte for byte what dev-c1 showed (`test_wiring.ReplayIdentity`
+* **replay** is the default and the scored mode. It is dev-c1's tool layer unchanged. What the model sees for a given case, tool and arguments is byte for byte what dev-c1 showed (`test_wiring.ReplayIdentity`
   compares sha256 digests, generated from the real dev-c1 code, of the case view and every offered tool's rendered result for all 73 dev cases with a fixed argument set, and of the v1 and v2 system prompts,
   the turn schemas, repair prompts and validator errors for a fixed list of bad replies, the budget notice, the not-offered message and bad-argument errors; it does not cover a machine with ffprobe/ffmpeg installed,
   other arguments, adapters or record fields; `replay_identity.py` lists it exactly). Sources: recorded probe results for local
   fixtures, recorded observations of pinned real media, case-provided *arr records, and the local ffprobe/ffmpeg route when those binaries exist (`--replay auto|off|force`).
-  Replay data is recorded data, labelled by `mode`.
-* **live** serves ffprobe, decode_sample, frame_sample, audio_sample, ocr, epub_inspect and audiobook_inspect from the bounded read-only collectors in `evidence/` (stdlib Python, the
+  **Replay may therefore run a local `ffprobe` / `ffmpeg` when present, and `kubectl exec` into the pinned target for a remote fixture** (**new in dev-c3 text, behaviour unchanged since dev-c1**;
+  CONTRACT-v1.1 section 4 says the same). A result is always labelled by `mode` (`replay`, `pinned_replay`, `local`, `remote`, `stub`, `injected`), and no gate reads `mode`.
+  Replay data is recorded data, labelled by `mode`; a run on a machine with ffprobe/ffmpeg can show a model different probe text from a run without them.
+* **live** is an **opt-in diagnostic, not scored**: nothing in this contract, the gates or the evaluator's runs depends on it, and the dev suites' cases are replay-shaped (mostly `unavailable` under live). It serves ffprobe, decode_sample, frame_sample, audio_sample, ocr, epub_inspect and audiobook_inspect from the bounded read-only collectors in `evidence/` (stdlib Python, the
   real binaries, no write, serial, `nice 19`, per-call deadline 45 s inside the 60 s tool timeout; a larger `deadline_s` is cut to it and listed in `bounds_clamped`; if the tool timeout fires anyway the running child is killed and the collector stopped before the next call, so calls stay serial), run on the case's own local media file. A case whose fixture is not a local path that
   exists (no fixture, pinned real media, remote host, missing file) gets `unavailable` with the reason and nothing is run. `arr_lookup` is not media and behaves as in replay.
   `ocr` needs `tesseract`; without it the record says the text was not read. The model chooses a tool and numeric arguments; the path always comes from the case.
@@ -127,12 +133,12 @@ action_audit: { execution_status: "proposed_not_executed" | "no_write_proposed",
                 preconditions[]{id, met, basis: "computed"|"claim_text", detail}, preconditions_unmet, unmet[], outcome_step }
 ```
 
-Three states are kept apart, and only the first is ever produced by the harness:
+Three states are kept apart, and only the first is ever produced by the harness (the second and third exist as words in the record, never as events):
 
 | state | meaning | in the record |
 |---|---|---|
 | **proposed** | the decision names a write action | `execution_status: proposed_not_executed`, `write_intent: true` |
-| **executed** | a write happened | always `executed: false` (the field exists so a future executor has a place to say otherwise; `run_summary.writes_executed` is `0`) |
+| **executed** | a write happened | never produced. **`executed: false` on every `action_audit` and `writes_executed: 0` in `run_summary.json` are invariants of this contract** (CONTRACT-v1.1 section 4): a record that says otherwise violates it. They are not a placeholder for a future executor; an executor would need a new contract. `record_missing_fields` flags any record whose `executed` is not `false` |
 | **verified** | a write was read back and its effect checked | not produced. `readback_plan` / `verification_plan` are the model's text about what would be checked. `outcome_step` is the suite's own after-the-fact check on the case data, unchanged from v1 |
 
 `preconditions[]` is computed by the harness from the case data and the run's own tool calls (`basis: computed`), or only records that the model's audit text made a claim nothing in the case can
@@ -142,7 +148,10 @@ timeout, a partial or an `unavailable` result may not. `unverified_parts[]` list
 
 ## 7. Run record
 
-Existing v1 fields are kept (CONTRACT.md "Run record"). Added or changed:
+Existing v1 fields are kept (CONTRACT.md "Run record") in every full record. **The superset claim excludes the minimal crash record**: when even the full crash record cannot be built (a malformed case file breaks one
+of its computed fields), `run._minimal_crash_record` writes a smaller record that lacks `bad_evidence_refs`, `evidence_shown`, `fixture`, `injected_failure`, `model_digest`, `model_digest_na_reason`, `outcome`,
+`refs_to_failed_tools`, `refs_to_non_ok_tools`, `split`, `suite_version` and, because it has no harness manifest, `harness_git_sha` and `config_hash`. It still says `forced: true`, `error.kind: harness_crash`, a
+forced `insufficient_evidence` / `escalate` decision and `executed: false`, and `record_missing_fields` reports the two required fields it lacks. A consumer must not assume every field of a full record in a crash record. Added or changed:
 
 | field | since | content |
 |---|---|---|
@@ -156,9 +165,10 @@ Existing v1 fields are kept (CONTRACT.md "Run record"). Added or changed:
 | `fixture_hashes{fixture, evidence_shown_sha256}` | dev-c1 | declared and actual fixture sha256, sha256 of every evidence text shown |
 | `evidence_mode`, `evidence{...}` | dev-c2 | sections 4 and 5 |
 | `tool_calls[].evidence_mode / live_ran / evidence / args_ignored` | dev-c2 | section 3 |
+| `write_rejection{rejected_write_attempts, attempts[], forced_after_rejected_write, repaired_to_valid_decision, note}` | dev-c3 | **record only, shown next to G1, no gate reads it.** A parseable write decision the strict v2 validator rejected is counted (the same turns as the evaluator's `rejected_write_attempts`). `forced_after_rejected_write: true` marks the case where the one repair prompt then also failed, so the case ended as a forced `insufficient_evidence` / `escalate` that no model chose. `run_summary.validity` counts both |
 
-`run_summary.json` (validity and completeness counts only, no scoring) adds `evidence_mode` and `evidence{tool_calls_by_evidence_mode, gaps, gaps_by_type}`. `record_missing_fields`
-lists any required field that is absent; `evidence_mode` and `evidence` are now required.
+`run_summary.json` (validity and completeness counts only, no scoring) adds `validity.rejected_write_attempts` and `validity.forced_after_rejected_write` (dev-c3), `evidence_mode` and `evidence{tool_calls_by_evidence_mode, gaps, gaps_by_type}`. `record_missing_fields`
+lists any required field that is absent; `evidence_mode` and `evidence` are required (dev-c2) and so is `write_rejection` (dev-c3).
 
 ## 8. Points for the evaluator
 

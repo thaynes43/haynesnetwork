@@ -1,0 +1,44 @@
+{
+  "context": {
+    "arr": {
+      "app": "lazylibrarian",
+      "ids": {
+        "bookId": "ll-990001",
+        "format": "ebook",
+        "note": "fictional ids"
+      }
+    },
+    "expected": {
+      "author": "Ines Varga",
+      "language": "en",
+      "title": "The Lantern Ledger"
+    },
+    "notes_for_model": "Routine check.",
+    "title": "The Lantern Ledger"
+  },
+  "evidence": [],
+  "family": "rg-v3-ebook-healthy",
+  "fixture": {
+    "kind": "local",
+    "locator": "../fixtures/td-right.epub",
+    "sha256": "c81612f94791da592252c88f4cb008e470fefc9ac63c245d6218ec33a6a59b49"
+  },
+  "id": "rg-v3-ebook-healthy-001",
+  "media_type": "epub",
+  "provenance": "new (harness regression data; synthetic, invented for this test)",
+  "solvable": true,
+  "split": "dev",
+  "suite_version": "harness-regression-v1",
+  "supported_actions": [
+    "none"
+  ],
+  "tools_available": [
+    "epub_inspect",
+    "arr_lookup"
+  ],
+  "truth": {
+    "class": "healthy",
+    "ref": "rule A: the package opens, spine and OPF parse, title and author match (whole package read)",
+    "source": "construction"
+  }
+}

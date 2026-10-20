@@ -76,6 +76,11 @@ class ClassifyPath(unittest.TestCase):
             f"{H}/suite/dev/case-01.json",  # public suite and fixtures
             f"{H}/suite/fixtures/a.bin",
             f"{H}/GATES.md",
+            f"{H}/RULINGS-v1.1.md",  # the evaluator's v1.1 rulings, read like GATES.md
+            f"{H}/suite-dev-v1.1/README.md",  # the corrected dev suite is routed like suite/ (Markdown inside it included)
+            f"{H}/suite-dev-v1.1/manifest.json",
+            f"{H}/suite-dev-v1.1/cases/movie-corrupt-001.json",
+            f"{H}/suite-dev-v1.1/build_v11.py",
             f"{E}/epub.py",  # the external source the harness imports
             f"{E}/freeze.json",  # JSON there is harness data, not site data
             f"{E}/README.md",
@@ -98,6 +103,8 @@ class ClassifyPath(unittest.TestCase):
             ".agents/context/ll-library-audit/audit.py",
             ".agents/plans/.gitkeep",
             f"{H}/NOTES.md",  # a note in the harness context, not the suite, GATES.md or code
+            f"{H}/RULINGS-v2.md",  # only the named rulings file is harness; another note is not
+            f"{H}/suite-dev-v1.1-notes.md",  # a prefix ends at the directory boundary: this is a note, not the suite
             "packages/domain/README.md",
             "LICENSE",
         )

@@ -1,0 +1,52 @@
+{
+  "context": {
+    "arr": {
+      "app": "lazylibrarian",
+      "ids": {
+        "bookId": "ll-990002",
+        "format": "audiobook",
+        "note": "fictional ids"
+      }
+    },
+    "expected": {
+      "chapters": 3,
+      "duration_s": 9000,
+      "title": "Example Audiobook Five"
+    },
+    "notes_for_model": "Listener says it ends far too early.",
+    "title": "Example Audiobook Five"
+  },
+  "evidence": [],
+  "family": "rg-v3-audiobook-conflict",
+  "fixture": {
+    "kind": "remote",
+    "locator": "recorded observation of a synthetic row; no media is reachable",
+    "sha256": null
+  },
+  "id": "rg-v3-audiobook-conflict-001",
+  "media_type": "audiobook",
+  "provenance": "new (harness regression data; synthetic, invented for this test)",
+  "replay": [
+    {
+      "args": {},
+      "output": "{\"chapter_count\": 3, \"duration_s\": 3000.0, \"errors\": [], \"format\": \"mov,mp4,m4a\", \"parts_read\": 3, \"parts_total\": 3, \"tags\": {\"title\": \"Example Audiobook Five\"}}",
+      "status": "ok",
+      "tool": "audiobook_inspect"
+    }
+  ],
+  "solvable": false,
+  "split": "dev",
+  "suite_version": "harness-regression-v1",
+  "supported_actions": [
+    "escalate"
+  ],
+  "tools_available": [
+    "audiobook_inspect",
+    "arr_lookup"
+  ],
+  "truth": {
+    "class": "insufficient_evidence",
+    "ref": "rule C: the tags name the expected title but the recorded duration is a third of the catalog duration",
+    "source": "construction"
+  }
+}
