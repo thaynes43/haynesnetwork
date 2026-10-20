@@ -2,7 +2,9 @@
  "conversations_dev_c5_qwen_calls": {
   "cases": 73,
   "estimate_at_or_over_8192": [
+   "movie-insuff-001",
    "tv-corrupt-003",
+   "tv-healthy-004",
    "tv-healthy-005",
    "tv-insuff-002",
    "tv-insuff-003"
@@ -12,47 +14,53 @@
    "movie-healthy-003",
    "movie-healthy-004",
    "movie-insuff-001",
+   "tv-corrupt-002",
    "tv-corrupt-003",
+   "tv-decoder-001",
    "tv-healthy-004",
    "tv-healthy-005",
+   "tv-healthy-006",
    "tv-insuff-001",
    "tv-insuff-002",
-   "tv-insuff-003"
+   "tv-insuff-003",
+   "tv-outcome-001",
+   "tv-outcome-002",
+   "tv-outcome-003"
   ],
-  "estimate_tokens_max": 9086,
+  "estimate_tokens_max": 9260,
   "largest": [
    {
     "calls_replayed": 5,
     "case": "tv-insuff-002",
-    "estimate_tokens_max": 9086,
+    "estimate_tokens_max": 9260,
     "largest_message_bytes": 5171,
     "requests": 6
    },
    {
     "calls_replayed": 5,
     "case": "tv-insuff-003",
-    "estimate_tokens_max": 8673,
+    "estimate_tokens_max": 8847,
     "largest_message_bytes": 4754,
     "requests": 6
    },
    {
     "calls_replayed": 3,
     "case": "tv-healthy-005",
-    "estimate_tokens_max": 8574,
+    "estimate_tokens_max": 8748,
     "largest_message_bytes": 5692,
     "requests": 4
    },
    {
     "calls_replayed": 1,
     "case": "tv-corrupt-003",
-    "estimate_tokens_max": 8344,
+    "estimate_tokens_max": 8519,
     "largest_message_bytes": 5203,
     "requests": 2
    },
    {
     "calls_replayed": 3,
     "case": "movie-insuff-001",
-    "estimate_tokens_max": 8136,
+    "estimate_tokens_max": 8310,
     "largest_message_bytes": 5099,
     "requests": 4
    }
@@ -67,9 +75,9 @@
    "cases": 73,
    "errors": [],
    "estimate_at_or_over_8192": 0,
-   "estimate_plus_num_predict_at_or_over_8192": 2,
-   "estimate_tokens_max": 7592,
-   "estimate_tokens_median": 6194,
+   "estimate_plus_num_predict_at_or_over_8192": 6,
+   "estimate_tokens_max": 7766,
+   "estimate_tokens_median": 6368,
    "first_bytes_max": 6952,
    "first_bytes_median": 2759,
    "largest": [
@@ -77,21 +85,21 @@
      "bytes": 6952,
      "case": "tv-decoder-001",
      "chars": 6952,
-     "estimate_tokens": 7592,
+     "estimate_tokens": 7766,
      "pages": 1
     },
     {
      "bytes": 6910,
      "case": "tv-healthy-006",
      "chars": 6910,
-     "estimate_tokens": 7578,
+     "estimate_tokens": 7752,
      "pages": 1
     },
     {
      "bytes": 6705,
      "case": "tv-corrupt-002",
      "chars": 6705,
-     "estimate_tokens": 7509,
+     "estimate_tokens": 7684,
      "pages": 1
     }
    ],
@@ -103,9 +111,9 @@
    "cases": 73,
    "errors": [],
    "estimate_at_or_over_8192": 0,
-   "estimate_plus_num_predict_at_or_over_8192": 0,
-   "estimate_tokens_max": 7550,
-   "estimate_tokens_median": 6230,
+   "estimate_plus_num_predict_at_or_over_8192": 6,
+   "estimate_tokens_max": 7724,
+   "estimate_tokens_median": 6404,
    "first_bytes_max": 6826,
    "first_bytes_median": 2867,
    "largest": [
@@ -113,21 +121,21 @@
      "bytes": 6826,
      "case": "tv-decoder-001",
      "chars": 6826,
-     "estimate_tokens": 7550,
+     "estimate_tokens": 7724,
      "pages": 1
     },
     {
      "bytes": 6784,
      "case": "tv-healthy-006",
      "chars": 6784,
-     "estimate_tokens": 7536,
+     "estimate_tokens": 7710,
      "pages": 1
     },
     {
      "bytes": 6579,
      "case": "tv-corrupt-002",
      "chars": 6579,
-     "estimate_tokens": 7467,
+     "estimate_tokens": 7642,
      "pages": 1
     }
    ],
@@ -137,9 +145,9 @@
   }
  },
  "prompt": {
-  "chars": 15824,
-  "estimate_tokens": 5274,
-  "sha256": "cd0c5150d7989014fa4e542e64f5d73e0d77f723cb5926bec93246076ce3c5f6",
+  "chars": 16347,
+  "estimate_tokens": 5449,
+  "sha256": "f828f9ac0df6a92e03bd6b0368f1675193be0f295abdcd3d5c3415677ba0a126",
   "version": "v6"
  }
 }

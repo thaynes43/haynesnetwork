@@ -2,8 +2,8 @@
  "_comment": "Human-readable restatement of what is frozen for dev-c6 (PREREGISTRATION.md). NOT the runner's manifest.json, which is compared with this file after each run; any frozen value that differs is reported as a deviation. Hash formats: case_order_sha256 = sha256('\\n'.join(ids)) with no trailing newline; case_sha256_table_sha256 = sha256(json.dumps({id: sha}, sort_keys=True)); prompt.assembled_sha256 is over the text sent (one trailing newline removed), prompt.file_sha256 over the file bytes. Null fields are filled after the run.",
  "harness_version": "dev-c6",
  "base_main_commit": "43ce9e9f",
- "frozen_code_commit": "56a9b88c",
- "frozen_src_tree_sha1": "cdd3d95c1408b2e8c3ad34c1b3a8d38d6fbdee52",
+ "frozen_code_commit": "a6122505",
+ "frozen_src_tree_sha1": "2b70d6112bc38782f4e1467bb50ccaac1af09d38",
  "suite": {
   "path": ".agents/context/media-repair-harness-2026-10-19/suite-dev-v1.1",
   "split": "dev",
@@ -88,9 +88,9 @@
  },
  "prompt": {
   "version": "v6",
-  "file_sha256": "a7271f9d1e3042dd3c492fe258ed0c30d5188b288ad72abadc9b7db65eb12221",
-  "assembled_sha256": "cd0c5150d7989014fa4e542e64f5d73e0d77f723cb5926bec93246076ce3c5f6",
-  "assembled_chars": 15824,
+  "file_sha256": "17f34466533792d423caa52c8d5239e9f33a707aa3ff250f2b4abc0d526b637c",
+  "assembled_sha256": "f828f9ac0df6a92e03bd6b0368f1675193be0f295abdcd3d5c3415677ba0a126",
+  "assembled_chars": 16347,
   "protocol": "turn-v3",
   "v1_to_v5_unchanged": {
    "v1": "30749f5dc7065a2ddd70967cd6888e91d237030e1b025bc6dac19ca51fed9ee8",
@@ -145,7 +145,8 @@
    "timeout_s": 900,
    "receipt": "manifest.preflight.warmup",
    "scored": false
-  }
+  },
+  "spend_limit": "uncapped (--no-spend-limit on all three commands; config.spend_limit)"
  },
  "retry_repair": {
   "repair_prompts_per_case": 1,
@@ -189,7 +190,8 @@
    "config_hash": null,
    "harness_git_sha": null,
    "started_at": null,
-   "first_measured_response": null
+   "first_measured_response": null,
+   "spend_limit_flags": "none (--no-spend-limit); the wall cap stays"
   },
   "haiku": {
    "run_id": "devc6-haiku-5-5",
@@ -207,8 +209,6 @@
     "",
     "--no-session-persistence"
    ],
-   "max_budget_usd_per_call": 2.0,
-   "max_budget_note": "the adapter's default CLI stop per call (in the config hash); not a run cap",
    "claude_timeout_s": 240,
    "hard_cap_total_cost_usd": null,
    "runtime_version_at_registration": "Claude Code 2.1.299",
@@ -218,7 +218,9 @@
    "config_hash": null,
    "harness_git_sha": null,
    "started_at": null,
-   "first_measured_response": null
+   "first_measured_response": null,
+   "max_budget_usd": null,
+   "spend_limit_flags": "none (--no-spend-limit: no --max-budget-usd)"
   },
   "astra": {
    "run_id": "devc6-gpt-6-astra",
@@ -247,11 +249,13 @@
    "config_hash": null,
    "harness_git_sha": null,
    "started_at": null,
-   "first_measured_response": null
+   "first_measured_response": null,
+   "spend_limit_flags": "none (--no-spend-limit)",
+   "codex_timeout_in_config": true
   }
  },
  "context_overflow": "qwen only: not prevented; flagged per turn from reported counts and from the estimate; all recorded cases scored as recorded; two subset rows (no reported flag; no reported and no estimate flag); estimate-only flags labelled possibly truncated; no rerun",
- "offline_budget": "offline-budget.json: every v3 first message of both public suites <= 8192 bytes on one page; first-message estimate max 7592 (dev-v1) / 7550 (dev-v1.1) tokens; dev-c5 qwen call sequences under v3 reach the 8192 estimate in 4 of 73 cases",
+ "offline_budget": "offline-budget.json: every v3 first message of both public suites <= 8192 bytes on one page; first-message estimate max 7766 (dev-v1) / 7724 (dev-v1.1) tokens; dev-c5 qwen call sequences under v3 reach the 8192 estimate in 6 of 73 cases (max 9260)",
  "tables": [
   "run",
   "gates guarded (C6 vs dev-c5 vs dev-c4)",
@@ -263,7 +267,14 @@
   "uncalled available checks at the decision prefix",
   "change in words",
   "statements",
-  "benchmark-passability report (Astra)"
+  "benchmark-passability report (Astra)",
+  "contract-violating writes, every run (table 12)"
  ],
- "passability": "rows: every Astra case with score.py correct false or unsafe_write true (forced decisions listed as not a model decision); categories in order: label tension (frozen 6-case list), model error (prerequisites met on S, or on O through an uncalled available link), evidence gap (no accepted pair met on O), presentation problem (met on S but the deciding fact missing or misstated in the sent messages); rubric v3.1 checker states on S and O; hand judgements marked with reasons"
+ "passability": "scripts/passability.py (policy passability-1): rows = every guarded decision score.py marks not correct or unsafe, plus every write (guarded or restored) with an unmet or unknown audit v3 prerequisite even when score-correct; categories in order: non-model failure, guard change, score-correct write with unmet or unknown prerequisites, model error (met on S and faithful sent transcript), not obtained (unfetched page), presentation problem, obtainable not obtained (witness <= 6 calls with pages), undetermined (hand judgement), evidence gap; tension-list membership is an independent annotation",
+ "analysis_scripts": {
+  "passability_py_sha256": "8b3e7b9917ee1ae0b5582616f019cc9c4ce0d6b93d5224472dafa93aa1f741c6",
+  "passability_policy": "passability-1",
+  "contract_v3_budget_py_sha256": "983663abd06a63b0d171e35447b552906c3d16bb728d011bad62051d74d03032"
+ },
+ "amendment_1": "Pre-measurement review of 0440870d (Opus cleared with P3; Astra 22, six blocking) before any model response: prompt v6 naming / marker / bounded-window wording (Astra 1, 2), --no-spend-limit (Astra 3), passability classification, exploration policy and score-correct violations (Astra 4 to 6), codex timeout in config, guard_cli refusal, guards sentence, token ratio (Opus P3). Changed: prompt hashes, frozen_code_commit, frozen_src_tree_sha1, adapter configs, the offline figures; new: analysis_scripts."
 }
