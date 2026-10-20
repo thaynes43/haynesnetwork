@@ -1,0 +1,68 @@
+{
+ "id": "epub-identity-003",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "epub",
+ "family": "anne",
+ "truth": {
+  "class": "identity_mismatch",
+  "source": "deterministic",
+  "ref": "Anne of Windy Poplars is attached to the Anne of Green Gables entry; parsed OPF titles and spine headings (epub_inspect evidence); independent primary-text proof in media-repair-actual-epub-2026-10-18/IDENTITY.md"
+ },
+ "supported_actions": [
+  "blocklist_and_search"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Anne of Green Gables",
+  "expected": {
+   "title": "Anne of Green Gables",
+   "author": "L. M. Montgomery",
+   "language": "en"
+  },
+  "arr": {
+   "app": "lazylibrarian",
+   "ids": {
+    "bookId": "ll-990501",
+    "format": "ebook",
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "c28cec78ddba679ef46185ee88bf8cb6c00b893a689d3575890adac99787b5cc",
+  "bytes": 390182,
+  "locator": "~/.cache/media-repair-actual-epub-1018/pristine-0.epub"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "epub_inspect",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"bytes\":390182,\"dc_creator\":[\"L. M. Montgomery\"],\"dc_language\":[\"en\"],\"dc_title\":[\"Anne of Windy Poplars\"],\"entries\":65,\"opf\":\"content.opf\",\"spine_characters\":475777,\"spine_heads\":[\"WindyPop book\",\"WindyPop book\",\"WindyPop book\"],\"spine_items\":53,\"status\":\"ok\"}"
+  },
+  {
+   "id": "e2",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "lazylibrarian",
+    "work": "Anne of Green Gables"
+   },
+   "status": "ok",
+   "output": "{\"expected_author\":\"L. M. Montgomery\",\"expected_title\":\"Anne of Green Gables\"}"
+  }
+ ],
+ "tools_available": [
+  "epub_inspect",
+  "arr_lookup"
+ ],
+ "provenance": "reused from .agents/context/media-repair-actual-epub-2026-10-18@9285641a (PR #998), private copy in ~/.cache/media-repair-actual-epub-1018 (>200 KiB, not committed)",
+ "corrections": [
+  "C1: context.arr.app null -> lazylibrarian with synthetic ids; arr_lookup e2 app 'readarr-like' -> 'lazylibrarian'"
+ ]
+}

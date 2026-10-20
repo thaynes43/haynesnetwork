@@ -1,0 +1,65 @@
+{
+ "id": "tv-identity-001",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "tv",
+ "family": "spidey",
+ "truth": {
+  "class": "identity_mismatch",
+  "source": "human_adjudication",
+  "ref": "https://github.com/thaynes43/haynesnetwork/issues/928#issuecomment-6149686202 (corpus.jsonl row c09, label_status confirmed_historical_documentary); historical report, not re-decoded media"
+ },
+ "supported_actions": [
+  "blocklist_and_search",
+  "escalate"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Spidey and His Amazing Friends",
+  "expected": {
+   "aliases": [],
+   "episodes": [
+    3,
+    4
+   ],
+   "segment_titles": [
+    "One fantastic surprise party.",
+    "Kitty Cat Chaos."
+   ],
+   "title": "Spidey and His Amazing Friends"
+  },
+  "arr": {
+   "app": "sonarr",
+   "ids": {
+    "seriesId": 990011,
+    "episodeId": 990111,
+    "episodeFileId": 990211,
+    "note": "fictional ids; the real library ids are not used"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "none",
+  "sha256": null,
+  "bytes": 0,
+  "locator": "none: reported historical observation, no media retrieved"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "prior_record",
+   "args": {
+    "id": "c09"
+   },
+   "status": "ok",
+   "output": "{\"evidence_method\":\"reported embedded subtitle opening cards\",\"observed\":{\"assigned_episodes\":[3],\"catalog_title\":\"Spidey and His Amazing Friends\",\"content_titles\":[\"Remote-controlled Zola.\",\"Super Cat.\"],\"evidence_method\":\"reported embedded subtitle opening cards\",\"file_id\":64849}}"
+  }
+ ],
+ "tools_available": [],
+ "provenance": "reused from .agents/context/media-repair-benchmark-2026-10-18/corpus.jsonl@9285641a row c09 (was held_out in 2026-10-18; re-labelled dev because every candidate has already seen it)",
+ "corrections": [
+  "C1: context.arr.app null -> sonarr with synthetic ids (the truth needs a managed write)",
+  "C6-8: supported_actions [blocklist_and_search] -> [blocklist_and_search, escalate]; remap is NOT supported (nothing shows the other slot is missing)"
+ ]
+}

@@ -1,0 +1,69 @@
+{
+ "id": "epub-healthy-006",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "epub",
+ "family": "lamplighter",
+ "truth": {
+  "class": "healthy",
+  "source": "construction",
+  "ref": "a one-chapter 1.7 KB EPUB: tiny, but the entry is the short story 'The Lamplighter's Note' and the OPF/body agree"
+ },
+ "supported_actions": [
+  "none"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "The Lamplighter's Note",
+  "filename": "Mira Tolland - The Lamplighter's Note.epub",
+  "expected": {
+   "title": "The Lamplighter's Note",
+   "author": "Mira Tolland",
+   "language": "en"
+  },
+  "arr": {
+   "app": "lazylibrarian",
+   "ids": {
+    "bookId": "ll-990503",
+    "format": "ebook",
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "6b0a05b32e6dbafd57b88a77c4e11b6c1891ffa001b3af7f297c51cc280e1062",
+  "bytes": 1705,
+  "locator": "fixtures/media/lamplighter_short.epub"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "epub_inspect",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"bytes\":1705,\"dc_creator\":[\"Mira Tolland\"],\"dc_language\":[\"en\"],\"dc_title\":[\"The Lamplighter's Note\"],\"entries\":5,\"opf\":\"OEBPS/content.opf\",\"spine_characters\":302,\"spine_heads\":[\"The Lamplighter's Note The Lamplighter's Note\"],\"spine_items\":1,\"status\":\"ok\"}"
+  },
+  {
+   "id": "e2",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "lazylibrarian",
+    "work": "The Lantern Road"
+   },
+   "status": "ok",
+   "output": "{\"aliases\":[],\"app\":\"lazylibrarian\",\"authors\":[\"Mira Tolland\"],\"language\":\"en\",\"series\":null,\"series_position\":null,\"work\":\"The Lamplighter's Note\"}"
+  }
+ ],
+ "tools_available": [
+  "epub_inspect",
+  "arr_lookup"
+ ],
+ "provenance": "new",
+ "corrections": [
+  "C1: context.arr.app null -> lazylibrarian with synthetic ids; arr_lookup e2 app 'readarr-like' -> 'lazylibrarian'"
+ ]
+}

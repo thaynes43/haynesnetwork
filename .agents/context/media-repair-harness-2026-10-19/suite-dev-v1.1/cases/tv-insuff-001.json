@@ -1,0 +1,78 @@
+{
+ "id": "tv-insuff-001",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "tv",
+ "family": "pokemon-houndour",
+ "truth": {
+  "class": "insufficient_evidence",
+  "source": "human_adjudication",
+  "ref": "IDENTITY.md: a03 supplies ONLY a generic 600 s scene and one battle subtitle; no literal title card exists, so no evidence settles identity; abstention concerns the adequacy of evidence, not a claim the file is wrong"
+ },
+ "supported_actions": [
+  "escalate"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Pokemon: Hour of the Houndour",
+  "expected": {
+   "series": "Pokemon",
+   "season": 3,
+   "episode": 34
+  },
+  "arr": {
+   "app": "sonarr",
+   "ids": {
+    "episodeFileId": 80065
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "remote",
+  "sha256": "b96d89a21689f34522f8fdbdd7032854f5425c9f0199c6aeabf0cf41f5d410d8",
+  "bytes": 839928932,
+  "locator": "sonarr episodefile 80065 (839928932 B); sha256 is of the pinned observation record cases.json a03, not of the media"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "remote"
+   },
+   "status": "ok",
+   "output": "{\"streams\":{\"container\":\"matroska,webm\",\"selected_audio\":{\"channels\":2,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"profile\":\"HE-AAC\",\"tags\":{\"language\":\"eng\"}},\"video\":{\"codec_name\":\"h264\",\"codec_type\":\"video\",\"height\":480,\"pix_fmt\":\"yuv420p\",\"profile\":\"High\",\"width\":640}}}"
+  },
+  {
+   "id": "e2",
+   "tool": "decode_sample",
+   "args": {
+    "ss": 0,
+    "t": 4
+   },
+   "status": "ok",
+   "output": "{\"bytes_read\":3666249,\"duration_limit_seconds\":4,\"exit_code\":0,\"quota_exhausted\":false,\"stderr\":\"\"}"
+  },
+  {
+   "id": "e3",
+   "tool": "prior_record",
+   "args": {
+    "what": "embedded subtitle sample (one cue)"
+   },
+   "status": "ok",
+   "output": "1\n00:00:03,273 --> 00:00:05,435\nPikachu,\nuse your Thunder Shock now!\n\n"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "decode_sample",
+  "frame_sample",
+  "ocr",
+  "arr_lookup"
+ ],
+ "provenance": "reused from .agents/context/media-repair-av-2026-10-18/cases.json@9285641a a03 (#992 offender family: Pokemon, row 1 of 2)",
+ "corrections": [
+  "C5: audio_sample removed from tools_available (no replay data for this case)"
+ ]
+}

@@ -1,0 +1,50 @@
+{
+ "id": "movie-healthy-001",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "movie",
+ "family": "zom",
+ "truth": {
+  "class": "insufficient_evidence",
+  "source": "human_adjudication",
+  "ref": "https://github.com/thaynes43/haynesnetwork/issues/940 (corpus.jsonl row c06, label_status confirmed_historical_documentary); historical report, not re-decoded media | C2 (evaluator correction 2026-10-20): relabelled from healthy. The model sees only a title or identity record and has no tool (tools_available is empty), so no integrity check of the file exists in the case; the only supported answer is to escalate"
+ },
+ "supported_actions": [
+  "escalate"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Zom 100: Bucket List of the Dead",
+  "expected": {
+   "aliases": [],
+   "title": "Zom 100: Bucket List of the Dead"
+  },
+  "arr": {
+   "app": null,
+   "ids": {}
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "none",
+  "sha256": null,
+  "bytes": 0,
+  "locator": "none: reported historical observation, no media retrieved"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "prior_record",
+   "args": {
+    "id": "c06"
+   },
+   "status": "ok",
+   "output": "{\"evidence_method\":\"reported release title and Plex duration\",\"observed\":{\"catalog_title\":\"Zom 100: Bucket List of the Dead\",\"content_titles\":[\"Zom 100: Bucket List of the Dead\"],\"duration_minutes\":130,\"evidence_method\":\"reported release title and Plex duration\",\"year\":2023}}"
+  }
+ ],
+ "tools_available": [],
+ "provenance": "reused from .agents/context/media-repair-benchmark-2026-10-18/corpus.jsonl@9285641a row c06 (was development in 2026-10-18; re-labelled dev because every candidate has already seen it)",
+ "corrections": [
+  "C2: healthy -> insufficient_evidence; supported_actions [none] -> [escalate]; source human_adjudication (empty tools_available and a single prior_record identity record, no integrity check)"
+ ]
+}

@@ -1,0 +1,109 @@
+{
+ "id": "audiobook-outcome-002",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "audiobook",
+ "family": "lr-outcome",
+ "truth": {
+  "class": "corrupt_file",
+  "source": "deterministic",
+  "ref": "original lr_trunc.m4b is unreadable (replay fixtures/probes/lr_trunc.m4b.json sha256 83f59b6842bd); outcome truth: replacement lr_wrong.m4b -> not_repaired (replacement is readable but is a different recording: 12 s, chapter titles do not match the record); replay fixtures/probes/lr_wrong.m4b.json sha256 86c5e34c08fd"
+ },
+ "supported_actions": [
+  "blocklist_and_search"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "The Lantern Road (audiobook)",
+  "filename": "Mira Tolland - The Lantern Road (Unabridged).m4b",
+  "expected": {
+   "title": "The Lantern Road",
+   "author": "Mira Tolland",
+   "narrator": "Ellis Marr",
+   "duration_s": 20,
+   "chapters": 4,
+   "language": "en"
+  },
+  "arr": {
+   "app": "lazylibrarian",
+   "ids": {
+    "bookId": "ll-990504",
+    "format": "audiobook",
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "f25797193720d32b62e9eab19b1606233784329148162f1f9fd1afa144d1ea77",
+  "bytes": 31965,
+  "locator": "fixtures/media/lr_trunc.m4b"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "error",
+   "output": "{\"exit_code\":1,\"stderr\":\"[mov,mp4,m4a,3gp,3g2,mj2 @ 0x0] moov atom not found\\nmedia/lr_trunc.m4b: Invalid data found when processing input\"}"
+  },
+  {
+   "id": "e2",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "lazylibrarian",
+    "work": "The Lantern Road"
+   },
+   "status": "ok",
+   "output": "{\"app\":\"lazylibrarian\",\"authors\":[\"Mira Tolland\"],\"chapter_titles\":[\"Opening Credits\",\"Chapter 1 Rain\",\"Chapter 2 Salt\",\"Chapter 3 Lanterns\"],\"narrators\":[\"Ellis Marr\"],\"runtime_s\":20,\"work\":\"The Lantern Road\"}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "audiobook_inspect",
+  "arr_lookup"
+ ],
+ "outcome_step": {
+  "check": "post_replace_verify",
+  "inputs": {
+   "action": "blocklist_and_search",
+   "replacement": {
+    "kind": "local",
+    "sha256": "f38ca615045d8e85476b8617f6e25e83222f8a5f1a9e8d8b5d06048c039614e8",
+    "bytes": 39164,
+    "locator": "fixtures/media/lr_wrong.m4b"
+   },
+   "expected_entry": {
+    "title": "The Lantern Road",
+    "author": "Mira Tolland",
+    "narrator": "Ellis Marr",
+    "duration_s": 20,
+    "chapters": 4,
+    "language": "en"
+   },
+   "post_evidence": [
+    {
+     "id": "e1",
+     "tool": "ffprobe",
+     "args": {
+      "fixture": "file"
+     },
+     "status": "ok",
+     "output": "{\"chapters\":[{\"end\":\"3.000000\",\"start\":\"0.000000\",\"title\":\"Prologue\"},{\"end\":\"6.000000\",\"start\":\"3.000000\",\"title\":\"Chapter 1 Ashes\"},{\"end\":\"9.000000\",\"start\":\"6.000000\",\"title\":\"Chapter 2 Embers\"},{\"end\":\"12.000000\",\"start\":\"9.000000\",\"title\":\"Chapter 3 Ash Fall\"}],\"exit_code\":0,\"format\":{\"bit_rate\":\"26109\",\"duration\":\"12.000000\",\"format_name\":\"mov,mp4,m4a,3gp,3g2,mj2\",\"size\":\"39164\",\"tags\":{\"album\":\"The Lantern Road\",\"artist\":\"Ellis Marr\",\"date\":\"2016\",\"title\":\"The Lantern Road\"}},\"stderr\":\"\",\"streams\":[{\"bit_rate\":\"24171\",\"channels\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"index\":0,\"profile\":\"LC\",\"sample_rate\":\"22050\",\"tags\":{\"language\":\"und\"}}]}"
+    }
+   ],
+   "pass_rule": "ffprobe exit 0 AND duration within 1 s of the record AND chapter titles equal the record's list AND album tag equals the title"
+  },
+  "expected": "not_repaired",
+  "why": "replacement is readable but is a different recording: 12 s, chapter titles do not match the record"
+ },
+ "provenance": "new",
+ "corrections": [
+  "C1: context.arr.app null -> lazylibrarian with synthetic ids; arr_lookup e2 app None -> 'lazylibrarian'",
+  "C6-fn: context.filename 'The Lantern Road.m4b' -> 'Mira Tolland - The Lantern Road (Unabridged).m4b' (same name in the arr_lookup relativePath: 0 records); bytes of the fixture unchanged; defective cases get the odd and scene-style names the healthy controls have",
+  "C5: audio_sample removed from tools_available (no replay data for this case)"
+ ]
+}

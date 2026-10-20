@@ -1,0 +1,68 @@
+{
+ "id": "epub-corrupt-001",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "epub",
+ "family": "anne",
+ "truth": {
+  "class": "corrupt_file",
+  "source": "construction",
+  "ref": "derived-damage.epub is the 2048-byte head of an intact EPUB (central directory lost); zipfile raises BadZipFile; construction recorded in media-repair-selection-2026-10-18/prepare.py"
+ },
+ "supported_actions": [
+  "blocklist_and_search"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Anne of Green Gables",
+  "expected": {
+   "title": "Anne of Green Gables",
+   "author": "L. M. Montgomery",
+   "language": "en"
+  },
+  "arr": {
+   "app": "lazylibrarian",
+   "ids": {
+    "bookId": "ll-990501",
+    "format": "ebook",
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "f6f0c5ef5a2b342f026201dfeb63acbbe003e6336bd6bdf9d23f84c84897a1b8",
+  "bytes": 2048,
+  "locator": "~/.cache/media-repair-selection-1018/derived-damage.epub"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "epub_inspect",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "error",
+   "output": "{\"bytes\":2048,\"error\":\"BadZipFile: File is not a zip file\",\"stage\":\"zip_open\",\"status\":\"error\"}"
+  },
+  {
+   "id": "e2",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "lazylibrarian",
+    "work": "Anne of Green Gables"
+   },
+   "status": "ok",
+   "output": "{\"expected_author\":\"L. M. Montgomery\",\"expected_title\":\"Anne of Green Gables\"}"
+  }
+ ],
+ "tools_available": [
+  "epub_inspect",
+  "arr_lookup"
+ ],
+ "provenance": "reused from .agents/context/media-repair-selection-2026-10-18@9285641a (PR #999) fixture derived-damage.epub; tiny enough to commit but kept in the private cache with its siblings",
+ "corrections": [
+  "C1: context.arr.app null -> lazylibrarian with synthetic ids; arr_lookup e2 app 'readarr-like' -> 'lazylibrarian'"
+ ]
+}

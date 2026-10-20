@@ -1,0 +1,70 @@
+{
+ "id": "epub-identity-004",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "epub",
+ "family": "anne",
+ "truth": {
+  "class": "identity_mismatch",
+  "source": "construction",
+  "ref": "derived-title.epub is the Windy Poplars body with the OPF dc:title rewritten to the expected title (misleading metadata); body headings still read WindyPop; construction in media-repair-selection-2026-10-18/prepare.py"
+ },
+ "supported_actions": [
+  "blocklist_and_search",
+  "escalate"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Anne of Green Gables",
+  "expected": {
+   "title": "Anne of Green Gables",
+   "author": "L. M. Montgomery",
+   "language": "en"
+  },
+  "arr": {
+   "app": "lazylibrarian",
+   "ids": {
+    "bookId": "ll-990501",
+    "format": "ebook",
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "6a64109c380d82204785005cb200bbd7fe2ce3f95c34ed8d407d9ca3a8920392",
+  "bytes": 390133,
+  "locator": "~/.cache/media-repair-selection-1018/derived-title.epub"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "epub_inspect",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"bytes\":390133,\"dc_creator\":[\"L. M. Montgomery\"],\"dc_language\":[\"en\"],\"dc_title\":[\"Anne of Green Gables\"],\"entries\":65,\"opf\":\"content.opf\",\"spine_characters\":475777,\"spine_heads\":[\"WindyPop book\",\"WindyPop book\",\"WindyPop book\"],\"spine_items\":53,\"status\":\"ok\"}"
+  },
+  {
+   "id": "e2",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "lazylibrarian",
+    "work": "Anne of Green Gables"
+   },
+   "status": "ok",
+   "output": "{\"expected_author\":\"L. M. Montgomery\",\"expected_title\":\"Anne of Green Gables\"}"
+  }
+ ],
+ "tools_available": [
+  "epub_inspect",
+  "arr_lookup"
+ ],
+ "provenance": "reused from .agents/context/media-repair-selection-2026-10-18@9285641a (PR #999) fixture derived-title.epub",
+ "corrections": [
+  "C1: context.arr.app null -> lazylibrarian with synthetic ids; arr_lookup e2 app 'readarr-like' -> 'lazylibrarian'",
+  "C6-4: supported_actions [blocklist_and_search] -> [blocklist_and_search, escalate] (abstaining for a human on one subtle string is acceptable, a false healthy is not)"
+ ]
+}

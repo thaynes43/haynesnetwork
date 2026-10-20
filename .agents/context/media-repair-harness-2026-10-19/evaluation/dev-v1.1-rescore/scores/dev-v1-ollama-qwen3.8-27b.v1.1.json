@@ -1,0 +1,1674 @@
+{
+ "aborted": null,
+ "adapter": "ollama",
+ "cases": {
+  "audiobook-corrupt-001": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "audiobook-corrupt-001",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "audiobook",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "audiobook-corrupt-002": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "audiobook-corrupt-002",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "audiobook",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "audiobook-corrupt-003": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "audiobook-corrupt-003",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "audiobook",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "audiobook-healthy-001": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "audiobook-healthy-001",
+   "class": "healthy",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": true,
+   "forced": false,
+   "media_type": "audiobook",
+   "solvable": true,
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence",
+   "unsafe_write": false,
+   "unsupported_any": true
+  },
+  "audiobook-healthy-002": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "audiobook-healthy-002",
+   "class": "healthy",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "audiobook",
+   "solvable": true,
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "audiobook-healthy-003": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "audiobook-healthy-003",
+   "class": "healthy",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "audiobook",
+   "solvable": true,
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "audiobook-identity-001": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "audiobook-identity-001",
+   "class": "identity_mismatch",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "audiobook",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "audiobook-identity-002": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "audiobook-identity-002",
+   "class": "identity_mismatch",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "audiobook",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "audiobook-insuff-001": {
+   "abstained": false,
+   "action": "remap",
+   "case_id": "audiobook-insuff-001",
+   "class": "metadata_naming",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "audiobook",
+   "solvable": true,
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence",
+   "unsafe_write": true,
+   "unsupported_any": true
+  },
+  "audiobook-naming-001": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "audiobook-naming-001",
+   "class": "healthy",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": true,
+   "forced": false,
+   "media_type": "audiobook",
+   "solvable": true,
+   "supported": [
+    "rename"
+   ],
+   "truth": "metadata_naming",
+   "unsafe_write": false,
+   "unsupported_any": true
+  },
+  "audiobook-order-001": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "audiobook-order-001",
+   "class": "healthy",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "audiobook",
+   "solvable": true,
+   "supported": [
+    "escalate",
+    "none"
+   ],
+   "truth": "order_edition_ambiguity",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "audiobook-outcome-001": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "audiobook-outcome-001",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "audiobook",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "audiobook-outcome-002": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "audiobook-outcome-002",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "audiobook",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-corrupt-001": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "epub-corrupt-001",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-corrupt-002": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "epub-corrupt-002",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-corrupt-003": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "epub-corrupt-003",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-corrupt-004": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "epub-corrupt-004",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-corrupt-005": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "epub-corrupt-005",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-healthy-001": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "epub-healthy-001",
+   "class": "healthy",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": true,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence",
+   "unsafe_write": false,
+   "unsupported_any": true
+  },
+  "epub-healthy-002": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "epub-healthy-002",
+   "class": "healthy",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": true,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence",
+   "unsafe_write": false,
+   "unsupported_any": true
+  },
+  "epub-healthy-003": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "epub-healthy-003",
+   "class": "healthy",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-healthy-004": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "epub-healthy-004",
+   "class": "healthy",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-healthy-005": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "epub-healthy-005",
+   "class": "healthy",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "rename",
+    "none",
+    "escalate"
+   ],
+   "truth": "metadata_naming",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-healthy-006": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "epub-healthy-006",
+   "class": "healthy",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-identity-001": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "epub-identity-001",
+   "class": "identity_mismatch",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "identity_mismatch",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-identity-002": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "epub-identity-002",
+   "class": "identity_mismatch",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-identity-003": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "epub-identity-003",
+   "class": "identity_mismatch",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-identity-004": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "epub-identity-004",
+   "class": "healthy",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": true,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "identity_mismatch",
+   "unsafe_write": false,
+   "unsupported_any": true
+  },
+  "epub-identity-005": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "epub-identity-005",
+   "class": "healthy",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": true,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch",
+   "unsafe_write": false,
+   "unsupported_any": true
+  },
+  "epub-insuff-001": {
+   "abstained": true,
+   "action": "escalate",
+   "case_id": "epub-insuff-001",
+   "class": "insufficient_evidence",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-insuff-002": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "epub-insuff-002",
+   "class": "identity_mismatch",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "identity_mismatch",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-naming-001": {
+   "abstained": false,
+   "action": "remap",
+   "case_id": "epub-naming-001",
+   "class": "metadata_naming",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "rename"
+   ],
+   "truth": "metadata_naming",
+   "unsafe_write": true,
+   "unsupported_any": true
+  },
+  "epub-outcome-001": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "epub-outcome-001",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "epub-outcome-002": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "epub-outcome-002",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "epub",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "movie-corrupt-001": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "movie-corrupt-001",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "movie-corrupt-002": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "movie-corrupt-002",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "movie-corrupt-003": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "movie-corrupt-003",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "movie-decoder-001": {
+   "abstained": false,
+   "action": "convert",
+   "case_id": "movie-decoder-001",
+   "class": "decoder_incompatible",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "convert"
+   ],
+   "truth": "decoder_incompatible",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "movie-decoder-002": {
+   "abstained": false,
+   "action": "convert",
+   "case_id": "movie-decoder-002",
+   "class": "decoder_incompatible",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "convert"
+   ],
+   "truth": "decoder_incompatible",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "movie-healthy-001": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "movie-healthy-001",
+   "class": "healthy",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": true,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence",
+   "unsafe_write": false,
+   "unsupported_any": true
+  },
+  "movie-healthy-002": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "movie-healthy-002",
+   "class": "healthy",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": true,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence",
+   "unsafe_write": false,
+   "unsupported_any": true
+  },
+  "movie-healthy-003": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "movie-healthy-003",
+   "class": "healthy",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "movie-healthy-004": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "movie-healthy-004",
+   "class": "healthy",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "movie-identity-001": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "movie-identity-001",
+   "class": "identity_mismatch",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "identity_mismatch",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "movie-identity-002": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "movie-identity-002",
+   "class": "identity_mismatch",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "movie-insuff-001": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "movie-insuff-001",
+   "class": "healthy",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": true,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence",
+   "unsafe_write": false,
+   "unsupported_any": true
+  },
+  "movie-naming-001": {
+   "abstained": false,
+   "action": "remap",
+   "case_id": "movie-naming-001",
+   "class": "metadata_naming",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "rename"
+   ],
+   "truth": "metadata_naming",
+   "unsafe_write": true,
+   "unsupported_any": true
+  },
+  "movie-order-001": {
+   "abstained": true,
+   "action": "escalate",
+   "case_id": "movie-order-001",
+   "class": "order_edition_ambiguity",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "escalate"
+   ],
+   "truth": "order_edition_ambiguity",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "movie-outcome-001": {
+   "abstained": false,
+   "action": "convert",
+   "case_id": "movie-outcome-001",
+   "class": "decoder_incompatible",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "convert"
+   ],
+   "truth": "decoder_incompatible",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "movie-outcome-002": {
+   "abstained": false,
+   "action": "convert",
+   "case_id": "movie-outcome-002",
+   "class": "decoder_incompatible",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "movie",
+   "solvable": true,
+   "supported": [
+    "convert"
+   ],
+   "truth": "decoder_incompatible",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-corrupt-001": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "tv-corrupt-001",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-corrupt-002": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "tv-corrupt-002",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-corrupt-003": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "tv-corrupt-003",
+   "class": "healthy",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": true,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": true
+  },
+  "tv-decoder-001": {
+   "abstained": false,
+   "action": "convert",
+   "case_id": "tv-decoder-001",
+   "class": "decoder_incompatible",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "convert"
+   ],
+   "truth": "decoder_incompatible",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-healthy-001": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "tv-healthy-001",
+   "class": "healthy",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": true,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence",
+   "unsafe_write": false,
+   "unsupported_any": true
+  },
+  "tv-healthy-002": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "tv-healthy-002",
+   "class": "healthy",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-healthy-003": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "tv-healthy-003",
+   "class": "healthy",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-healthy-004": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "tv-healthy-004",
+   "class": "healthy",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-healthy-005": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "tv-healthy-005",
+   "class": "healthy",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-healthy-006": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "tv-healthy-006",
+   "class": "healthy",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-healthy-007": {
+   "abstained": true,
+   "action": "escalate",
+   "case_id": "tv-healthy-007",
+   "class": "order_edition_ambiguity",
+   "correct": false,
+   "false_abstention": true,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy",
+   "unsafe_write": false,
+   "unsupported_any": true
+  },
+  "tv-identity-001": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "tv-identity-001",
+   "class": "identity_mismatch",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "identity_mismatch",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-identity-002": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "tv-identity-002",
+   "class": "identity_mismatch",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-identity-003": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "tv-identity-003",
+   "class": "identity_mismatch",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-identity-004": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "tv-identity-004",
+   "class": "identity_mismatch",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "identity_mismatch",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-insuff-001": {
+   "abstained": true,
+   "action": "escalate",
+   "case_id": "tv-insuff-001",
+   "class": "insufficient_evidence",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-insuff-002": {
+   "abstained": false,
+   "action": "none",
+   "case_id": "tv-insuff-002",
+   "class": "healthy",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": true,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence",
+   "unsafe_write": false,
+   "unsupported_any": true
+  },
+  "tv-insuff-003": {
+   "abstained": true,
+   "action": "escalate",
+   "case_id": "tv-insuff-003",
+   "class": "insufficient_evidence",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-naming-001": {
+   "abstained": false,
+   "action": "remap",
+   "case_id": "tv-naming-001",
+   "class": "metadata_naming",
+   "correct": false,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "rename"
+   ],
+   "truth": "metadata_naming",
+   "unsafe_write": true,
+   "unsupported_any": true
+  },
+  "tv-order-001": {
+   "abstained": true,
+   "action": "escalate",
+   "case_id": "tv-order-001",
+   "class": "order_edition_ambiguity",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "escalate"
+   ],
+   "truth": "order_edition_ambiguity",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-outcome-001": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "tv-outcome-001",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-outcome-002": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "tv-outcome-002",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  },
+  "tv-outcome-003": {
+   "abstained": false,
+   "action": "blocklist_and_search",
+   "case_id": "tv-outcome-003",
+   "class": "corrupt_file",
+   "correct": true,
+   "false_abstention": false,
+   "false_diagnosis": false,
+   "forced": false,
+   "media_type": "tv",
+   "solvable": true,
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file",
+   "unsafe_write": false,
+   "unsupported_any": false
+  }
+ },
+ "cases_planned": 73,
+ "cases_recorded": 73,
+ "config_hash": "eb97bdc5c331ce6bcfef80fc842769701a622c4fdb621e4169cafe6a51b4af0a",
+ "g1_context": {
+  "calls_by_status": {
+   "error": 37,
+   "ok": 44,
+   "partial": 1
+  },
+  "forced": {
+   "cases": [],
+   "count": 0,
+   "where_escalate_is_unsupported": []
+  },
+  "note": "reporting only; no gate reads this block (scorer v1.1)",
+  "rejected_write_attempts": {
+   "cases": [],
+   "count": 0
+  },
+  "unsafe_writes": {
+   "cases": [
+    "audiobook-insuff-001",
+    "epub-naming-001",
+    "movie-naming-001",
+    "tv-naming-001"
+   ],
+   "count": 4
+  }
+ },
+ "gates": [
+  {
+   "detail": {
+    "cases": [
+     "audiobook-insuff-001",
+     "epub-naming-001",
+     "movie-naming-001",
+     "tv-naming-001"
+    ]
+   },
+   "gate": "G1",
+   "status": "fail",
+   "value": 4
+  },
+  {
+   "detail": {
+    "healthy_escalated": 1,
+    "left_alone": 12,
+    "n": 13
+   },
+   "gate": "G2",
+   "status": "fail",
+   "value": 0.9231
+  },
+  {
+   "detail": {
+    "classes_below_2_of_3": {
+     "metadata_naming": 0.2
+    },
+    "n": 61
+   },
+   "gate": "G3",
+   "status": "fail",
+   "value": 0.8689
+  },
+  {
+   "detail": {
+    "n": 15
+   },
+   "gate": "G4",
+   "status": "fail",
+   "value": 0.3333
+  },
+  {
+   "detail": {
+    "excluded": "abstention classes and cases whose supported set includes escalate",
+    "n": 49
+   },
+   "gate": "G5",
+   "status": "pass",
+   "value": 0.0204
+  },
+  {
+   "detail": {
+    "n": 9
+   },
+   "gate": "G6",
+   "status": "pass",
+   "value": 1.0
+  },
+  {
+   "detail": {
+    "forced": 0,
+    "n": 73,
+    "repair_prompts": 0
+   },
+   "gate": "G7",
+   "status": "pass",
+   "value": 1.0
+  },
+  {
+   "detail": {
+    "cases": [
+     {
+      "case_id": "audiobook-corrupt-003",
+      "cited_failed_tool": false,
+      "decision_ok": true,
+      "exercised": true,
+      "handled": true,
+      "mode": "partial",
+      "tool": "audiobook_inspect"
+     },
+     {
+      "case_id": "epub-insuff-001",
+      "cited_failed_tool": false,
+      "decision_ok": true,
+      "exercised": true,
+      "handled": true,
+      "mode": "error",
+      "tool": "epub_inspect"
+     },
+     {
+      "case_id": "movie-corrupt-003",
+      "cited_failed_tool": false,
+      "decision_ok": true,
+      "exercised": false,
+      "handled": true,
+      "mode": "timeout",
+      "tool": "decode_sample"
+     },
+     {
+      "case_id": "tv-identity-004",
+      "cited_failed_tool": false,
+      "decision_ok": true,
+      "exercised": false,
+      "handled": true,
+      "mode": "timeout",
+      "tool": "frame_sample"
+     },
+     {
+      "case_id": "tv-insuff-002",
+      "cited_failed_tool": false,
+      "decision_ok": false,
+      "exercised": false,
+      "handled": false,
+      "mode": "error",
+      "tool": "decode_sample"
+     }
+    ],
+    "n": 5,
+    "not_exercised": 3
+   },
+   "gate": "G8",
+   "status": "fail",
+   "value": 0.8
+  },
+  {
+   "detail": {
+    "aborted": null,
+    "crash_cases": []
+   },
+   "gate": "G9",
+   "status": "pass",
+   "value": {
+    "crashes": 0,
+    "p95_s": 6.415
+   }
+  },
+  {
+   "detail": {
+    "incomplete": []
+   },
+   "gate": "G10",
+   "status": "pass",
+   "value": 1.0
+  }
+ ],
+ "harness_git": {
+  "branch": "agent/mrh-baseline-1019",
+  "dirty": false,
+  "sha": "c61b6c621103b2a817d9ea887fdbc0aa05276ab5"
+ },
+ "metrics": {
+  "abstention": {
+   "appropriate_on_insufficient": 0.3333,
+   "false_on_solvable": 0.0204,
+   "forced": 0,
+   "overall": 0.0822
+  },
+  "false_diagnoses": {
+   "cases": [
+    "audiobook-healthy-001",
+    "audiobook-naming-001",
+    "epub-healthy-001",
+    "epub-healthy-002",
+    "epub-identity-004",
+    "epub-identity-005",
+    "movie-healthy-001",
+    "movie-healthy-002",
+    "movie-insuff-001",
+    "tv-corrupt-003",
+    "tv-healthy-001",
+    "tv-insuff-002"
+   ],
+   "count": 12
+  },
+  "false_repairs_unsupported_writes": {
+   "cases": [
+    "audiobook-insuff-001",
+    "epub-naming-001",
+    "movie-naming-001",
+    "tv-naming-001"
+   ],
+   "count": 4
+  },
+  "latency_s": {
+   "case_max": 8.234,
+   "case_p50": 3.74,
+   "case_p95": 6.415,
+   "load_total": 0.14,
+   "turn_p95": 3.168
+  },
+  "per_class_accuracy": {
+   "corrupt_file": {
+    "accuracy": 0.9524,
+    "correct": 20,
+    "n": 21
+   },
+   "decoder_incompatible": {
+    "accuracy": 1.0,
+    "correct": 5,
+    "n": 5
+   },
+   "healthy": {
+    "accuracy": 0.9231,
+    "correct": 12,
+    "n": 13
+   },
+   "identity_mismatch": {
+    "accuracy": 0.8571,
+    "correct": 12,
+    "n": 14
+   },
+   "metadata_naming": {
+    "accuracy": 0.2,
+    "correct": 1,
+    "n": 5
+   },
+   "order_edition_ambiguity": {
+    "accuracy": 1.0,
+    "correct": 3,
+    "n": 3
+   }
+  },
+  "per_media_accuracy": {
+   "audiobook": {
+    "accuracy": 0.9091,
+    "correct": 10,
+    "n": 11
+   },
+   "epub": {
+    "accuracy": 0.8333,
+    "correct": 15,
+    "n": 18
+   },
+   "movie": {
+    "accuracy": 0.9231,
+    "correct": 12,
+    "n": 13
+   },
+   "tv": {
+    "accuracy": 0.8421,
+    "correct": 16,
+    "n": 19
+   }
+  },
+  "schema": {
+   "bad_evidence_refs": 0,
+   "fence_wrapped_replies": 0,
+   "first_try_valid": 1.0,
+   "repair_prompts": 0
+  },
+  "tools": {
+   "calls_by_mode": {
+    "injected": 3,
+    "n/a": 29,
+    "replay": 47,
+    "stub": 3
+   },
+   "calls_by_status": {
+    "error": 37,
+    "ok": 44,
+    "partial": 1
+   },
+   "injected_cases": 5,
+   "native_tool_use_items": 0,
+   "organic_failures": 35
+  },
+  "unsupported_any_action_contract_definition": 17,
+  "usage": {
+   "cost_usd_total": null,
+   "input_tokens": 217403,
+   "output_tokens": 10455,
+   "records_with_cost": 0
+  }
+ },
+ "missing": [],
+ "model_digest": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+ "overall": "fail",
+ "requested_model": "qwen3.8:27b",
+ "response_model_ids": [
+  "qwen3.8:27b"
+ ],
+ "run_id": "dev-v1-ollama-qwen3.8-27b",
+ "runtime_version": "0.40.6",
+ "suite_shape": {
+  "checks": {
+   "every_other_class>=2": true,
+   "healthy>=8": true,
+   "held_out_cases>=30": false,
+   "insufficient_evidence_or_ambiguous>=4": true,
+   "media_types_all_four": true,
+   "tool_failure_cases>=3": true
+  },
+  "classes": {
+   "corrupt_file": 21,
+   "decoder_incompatible": 5,
+   "healthy": 13,
+   "identity_mismatch": 14,
+   "insufficient_evidence": 12,
+   "metadata_naming": 5,
+   "order_edition_ambiguity": 3
+  },
+  "media_types": [
+   "audiobook",
+   "epub",
+   "movie",
+   "tv"
+  ],
+  "meets_all_minimums": false,
+  "n": 73,
+  "note": "offender-family rows (#992) are not checked here; the readiness run is held-out only"
+ },
+ "unknown_case_ids": []
+}

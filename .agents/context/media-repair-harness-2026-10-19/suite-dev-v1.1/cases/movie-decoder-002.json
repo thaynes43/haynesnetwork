@@ -1,0 +1,94 @@
+{
+ "id": "movie-decoder-002",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "movie",
+ "family": "qo-hevc",
+ "truth": {
+  "class": "decoder_incompatible",
+  "source": "deterministic",
+  "ref": "HEVC Main10 yuv420p10le + AC-3 5.1 against a profile that allows only 8-bit H.264 and AAC stereo; the full software decode is clean, so the file is intact; replay fixtures/probes/qo_hevc.mkv.json sha256 7ff2972a68d6"
+ },
+ "supported_actions": [
+  "convert"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Quiet Orbit (2019)",
+  "filename": "Quiet Orbit (2019).mkv",
+  "expected": {
+   "title": "Quiet Orbit",
+   "year": 2019,
+   "runtime_s": 6,
+   "language": "en"
+  },
+  "arr": {
+   "app": "radarr",
+   "ids": {
+    "movieId": 990301,
+    "movieFileId": 990401,
+    "note": "fictional ids"
+   }
+  },
+  "client_profile": {
+   "definition": "defined test direct-play profile, not a measured client (same shape as the 2026-10-18 a01-a04 profile)",
+   "containers": [
+    "matroska,webm",
+    "mp4"
+   ],
+   "video": "h264, 8-bit yuv420p, up to 1080p",
+   "audio": "aac, up to 2 channels",
+   "subtitles": "disabled"
+  },
+  "question": "Can the defined client direct-play this file?",
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "c8381c888327a252ffd024c53a60581db44753a850a250d5987e237c6006fd37",
+  "bytes": 107217,
+  "locator": "fixtures/media/qo_hevc.mkv"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"chapters\":[],\"exit_code\":0,\"format\":{\"bit_rate\":\"142956\",\"duration\":\"6.000000\",\"format_name\":\"matroska,webm\",\"size\":\"107217\",\"tags\":{}},\"stderr\":\"\",\"streams\":[{\"codec_name\":\"hevc\",\"codec_type\":\"video\",\"height\":192,\"index\":0,\"pix_fmt\":\"yuv420p10le\",\"profile\":\"Main 10\",\"tags\":{},\"width\":256},{\"bit_rate\":\"96000\",\"channels\":6,\"codec_name\":\"ac3\",\"codec_type\":\"audio\",\"index\":1,\"sample_rate\":\"48000\",\"tags\":{\"language\":\"eng\"}}]}"
+  },
+  {
+   "id": "e2",
+   "tool": "decode_sample",
+   "args": {
+    "ss": 0,
+    "t": "full"
+   },
+   "status": "ok",
+   "output": "{\"exit_code\":0,\"frames\":60,\"out_time\":\"00:00:06.000000\",\"stderr\":\"\"}"
+  },
+  {
+   "id": "e3",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "radarr",
+    "movie": "Quiet Orbit"
+   },
+   "status": "ok",
+   "output": "{\"alternate_titles\":[\"Orbite Silencieuse\"],\"app\":\"radarr\",\"editions\":{\"Extended Cut\":{\"runtime_s\":12},\"Theatrical\":{\"runtime_s\":8}},\"file\":{\"relativePath\":\"Quiet Orbit (2019).mkv\",\"size\":107217},\"movie\":\"Quiet Orbit\",\"year\":2019}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "decode_sample",
+  "frame_sample",
+  "ocr",
+  "arr_lookup"
+ ],
+ "provenance": "new",
+ "corrections": [
+  "C5: audio_sample removed from tools_available (no replay data for this case)"
+ ]
+}

@@ -1,0 +1,89 @@
+{
+ "id": "tv-corrupt-001",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "tv",
+ "family": "hl-e02",
+ "truth": {
+  "class": "corrupt_file",
+  "source": "deterministic",
+  "ref": "hl_e02_trunc.mkv is the first 55% of the good file (head -c); the demuxer reports 'File ended prematurely' in every window and the ss=4 window decodes only 3 of 40 frames; the arr records 90286 B but the file is 49657 B; replay fixtures/probes/hl_e02_trunc.mkv.json sha256 de7e98ab3190"
+ },
+ "supported_actions": [
+  "blocklist_and_search"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Harbor Lights S01E02",
+  "filename": "hl.s01e02.1080p.web.h264-grp.mkv",
+  "expected": {
+   "series": "Harbor Lights",
+   "season": 1,
+   "episode": 2,
+   "episode_title": "Lamp Oil",
+   "runtime_s": 8,
+   "language": "en"
+  },
+  "arr": {
+   "app": "sonarr",
+   "ids": {
+    "seriesId": 990001,
+    "episodeId": 990102,
+    "episodeFileId": 990202,
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "db9f9e7ebc91d900eb2c5e60b67eb6db089aeeed303168a91bee860e6525dc2c",
+  "bytes": 49657,
+  "locator": "fixtures/media/hl_e02_trunc.mkv"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"chapters\":[{\"end\":\"2.000000\",\"start\":\"0.000000\",\"title\":\"Cold open\"},{\"end\":\"8.000000\",\"start\":\"2.000000\",\"title\":\"Lamp Oil\"}],\"exit_code\":0,\"format\":{\"bit_rate\":\"49373\",\"duration\":\"8.046000\",\"format_name\":\"matroska,webm\",\"size\":\"49657\",\"tags\":{\"episode_sort\":\"2\",\"season_number\":\"1\",\"show\":\"Harbor Lights\",\"title\":\"Lamp Oil\"}},\"stderr\":\"\",\"streams\":[{\"codec_name\":\"h264\",\"codec_type\":\"video\",\"height\":192,\"index\":0,\"pix_fmt\":\"yuv420p\",\"profile\":\"High\",\"tags\":{},\"width\":256},{\"channels\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"index\":1,\"profile\":\"LC\",\"sample_rate\":\"22050\",\"tags\":{}}]}"
+  },
+  {
+   "id": "e2",
+   "tool": "decode_sample",
+   "args": {
+    "ss": 0,
+    "t": 4
+   },
+   "status": "ok",
+   "output": "{\"exit_code\":0,\"frames\":40,\"out_time\":\"00:00:04.000000\",\"ss\":0,\"stderr\":\"[in#0/matroska,webm @ 0x0] File ended prematurely\",\"t\":4}"
+  },
+  {
+   "id": "e3",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "sonarr",
+    "series": "Harbor Lights",
+    "season": 1,
+    "episode": 2
+   },
+   "status": "ok",
+   "output": "{\"app\":\"sonarr\",\"episode\":{\"episode\":2,\"runtime_s\":8,\"season\":1,\"title\":\"Lamp Oil\"},\"file\":{\"relativePath\":\"hl.s01e02.1080p.web.h264-grp.mkv\",\"size\":90286},\"series\":\"Harbor Lights\",\"series_order\":\"aired\"}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "decode_sample",
+  "frame_sample",
+  "ocr",
+  "arr_lookup"
+ ],
+ "provenance": "new",
+ "corrections": [
+  "C6-fn: context.filename 'Harbor Lights - S01E02 - Lamp Oil.mkv' -> 'hl.s01e02.1080p.web.h264-grp.mkv' (same name in the arr_lookup relativePath: 1 record); bytes of the fixture unchanged; defective cases get the odd and scene-style names the healthy controls have",
+  "C5: audio_sample removed from tools_available (no replay data for this case)"
+ ]
+}

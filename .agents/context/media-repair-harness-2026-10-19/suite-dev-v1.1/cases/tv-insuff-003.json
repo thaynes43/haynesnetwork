@@ -1,0 +1,88 @@
+{
+ "id": "tv-insuff-003",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "tv",
+ "family": "hl-generic",
+ "truth": {
+  "class": "insufficient_evidence",
+  "source": "construction",
+  "ref": "hl_generic.mkv was generated with no title card, no tags and no chapters; it is intact (clean decode) and 8 s against an expected 6 s, but nothing says which episode it is; replay fixtures/probes/hl_generic.mkv.json sha256 db6c2c567d22"
+ },
+ "supported_actions": [
+  "escalate"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Harbor Lights S01E06",
+  "filename": "Harbor Lights - S01E06 - Gull Rock.mkv",
+  "expected": {
+   "series": "Harbor Lights",
+   "season": 1,
+   "episode": 6,
+   "episode_title": "Gull Rock",
+   "runtime_s": 6,
+   "language": "en"
+  },
+  "arr": {
+   "app": "sonarr",
+   "ids": {
+    "seriesId": 990001,
+    "episodeId": 990106,
+    "episodeFileId": 990206,
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "eceb040939bd8857b43ee8d01207b13a73b788cb6ed078810d2630dd20d49ede",
+  "bytes": 88720,
+  "locator": "fixtures/media/hl_generic.mkv"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"chapters\":[],\"exit_code\":0,\"format\":{\"bit_rate\":\"88212\",\"duration\":\"8.046000\",\"format_name\":\"matroska,webm\",\"size\":\"88720\",\"tags\":{\"title\":\"\"}},\"stderr\":\"\",\"streams\":[{\"codec_name\":\"h264\",\"codec_type\":\"video\",\"height\":192,\"index\":0,\"pix_fmt\":\"yuv420p\",\"profile\":\"High\",\"tags\":{},\"width\":256},{\"channels\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"index\":1,\"profile\":\"LC\",\"sample_rate\":\"22050\",\"tags\":{}}]}"
+  },
+  {
+   "id": "e2",
+   "tool": "decode_sample",
+   "args": {
+    "ss": 0,
+    "t": 4
+   },
+   "status": "ok",
+   "output": "{\"exit_code\":0,\"frames\":40,\"out_time\":\"00:00:04.000000\",\"ss\":0,\"stderr\":\"\",\"t\":4}"
+  },
+  {
+   "id": "e3",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "sonarr",
+    "series": "Harbor Lights",
+    "season": 1,
+    "episode": 6
+   },
+   "status": "ok",
+   "output": "{\"app\":\"sonarr\",\"episode\":{\"episode\":6,\"runtime_s\":6,\"season\":1,\"title\":\"Gull Rock\"},\"file\":{\"relativePath\":\"Harbor Lights - S01E06 - Gull Rock.mkv\",\"size\":88720},\"series\":\"Harbor Lights\",\"series_order\":\"aired\"}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "decode_sample",
+  "frame_sample",
+  "ocr",
+  "arr_lookup"
+ ],
+ "provenance": "new",
+ "corrections": [
+  "C5: audio_sample removed from tools_available (no replay data for this case)"
+ ]
+}

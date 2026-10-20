@@ -1,0 +1,71 @@
+{
+ "id": "epub-insuff-002",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "epub",
+ "family": "lr-epub-french",
+ "truth": {
+  "class": "identity_mismatch",
+  "source": "human_adjudication",
+  "ref": "OPF dc:language is fr and the title and chapter headings are French, while the entry expects language en and the record lists no translation or alias. A French edition where English is expected is a wrong-language release (ADJUDICATION-dev-v1.md ruling 2, evaluator 2026-10-20). Earlier basis: OPF title 'La Route des Lanternes', language fr, same creator; the record lists no alias or translation, so whether this is the same work in translation (a different edition) cannot be shown from the evidence"
+ },
+ "supported_actions": [
+  "blocklist_and_search",
+  "escalate"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "The Lantern Road",
+  "filename": "Mira Tolland - La Route des Lanternes.epub",
+  "expected": {
+   "title": "The Lantern Road",
+   "author": "Mira Tolland",
+   "language": "en"
+  },
+  "arr": {
+   "app": "lazylibrarian",
+   "ids": {
+    "bookId": "ll-990504",
+    "format": "ebook",
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "0bb960ef1ad5b1a36e32d96361f96586f8a585c703ab3146342544d9b40ca32a",
+  "bytes": 2186,
+  "locator": "fixtures/media/lr_french.epub"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "epub_inspect",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"bytes\":2186,\"dc_creator\":[\"Mira Tolland\"],\"dc_language\":[\"fr\"],\"dc_title\":[\"La Route des Lanternes\"],\"entries\":6,\"opf\":\"OEBPS/content.opf\",\"spine_characters\":486,\"spine_heads\":[\"Chapitre 1: La pluie Chapitre 1:\",\"Chapitre 2: Le sel Chapitre 2:\"],\"spine_items\":2,\"status\":\"ok\"}"
+  },
+  {
+   "id": "e2",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "lazylibrarian",
+    "work": "The Lantern Road"
+   },
+   "status": "ok",
+   "output": "{\"aliases\":[],\"app\":\"lazylibrarian\",\"authors\":[\"Mira Tolland\"],\"language\":\"en\",\"series\":\"Lantern Cycle\",\"series_position\":1,\"work\":\"The Lantern Road\"}"
+  }
+ ],
+ "tools_available": [
+  "epub_inspect",
+  "arr_lookup"
+ ],
+ "provenance": "new",
+ "corrections": [
+  "C1: context.arr.app null -> lazylibrarian with synthetic ids; arr_lookup e2 app 'readarr-like' -> 'lazylibrarian'",
+  "C6-2: insufficient_evidence -> identity_mismatch (wrong-language release); supported_actions [escalate] -> [blocklist_and_search, escalate]"
+ ]
+}

@@ -1,0 +1,95 @@
+{
+ "id": "movie-identity-002",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "movie",
+ "family": "po-paper",
+ "truth": {
+  "class": "identity_mismatch",
+  "source": "deterministic",
+  "ref": "card reads PAPER KINGDOM and the container title is 'Paper Kingdom'; the entry is Quiet Orbit (8 s); runtime 11 s matches no Quiet Orbit edition; replay fixtures/probes/po_paper.mkv.json sha256 48911d523314"
+ },
+ "supported_actions": [
+  "blocklist_and_search"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Quiet Orbit (2019)",
+  "filename": "Quiet Orbit (2019).mkv",
+  "expected": {
+   "title": "Quiet Orbit",
+   "year": 2019,
+   "aliases": [
+    "Orbite Silencieuse"
+   ],
+   "runtime_s": 8,
+   "language": "en"
+  },
+  "arr": {
+   "app": "radarr",
+   "ids": {
+    "movieId": 990301,
+    "movieFileId": 990401,
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "60f4df0b9835b7d2c7ddd80b22331fd4257af916612b54fcf93a7c8f7e5d115a",
+  "bytes": 120841,
+  "locator": "fixtures/media/po_paper.mkv"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"chapters\":[],\"exit_code\":0,\"format\":{\"bit_rate\":\"87518\",\"duration\":\"11.046000\",\"format_name\":\"matroska,webm\",\"size\":\"120841\",\"tags\":{\"title\":\"Paper Kingdom\"}},\"stderr\":\"\",\"streams\":[{\"codec_name\":\"h264\",\"codec_type\":\"video\",\"height\":192,\"index\":0,\"pix_fmt\":\"yuv420p\",\"profile\":\"High\",\"tags\":{},\"width\":256},{\"channels\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"index\":1,\"profile\":\"LC\",\"sample_rate\":\"22050\",\"tags\":{}}]}"
+  },
+  {
+   "id": "e2",
+   "tool": "decode_sample",
+   "args": {
+    "ss": 0,
+    "t": 4
+   },
+   "status": "ok",
+   "output": "{\"exit_code\":0,\"frames\":40,\"out_time\":\"00:00:04.000000\",\"ss\":0,\"stderr\":\"\",\"t\":4}"
+  },
+  {
+   "id": "e3",
+   "tool": "ocr",
+   "args": {
+    "t": 1.0
+   },
+   "status": "ok",
+   "output": "PAPER KINGDOM"
+  },
+  {
+   "id": "e4",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "radarr",
+    "movie": "Quiet Orbit"
+   },
+   "status": "ok",
+   "output": "{\"alternate_titles\":[\"Orbite Silencieuse\"],\"app\":\"radarr\",\"editions\":{\"Extended Cut\":{\"runtime_s\":12},\"Theatrical\":{\"runtime_s\":8}},\"file\":{\"relativePath\":\"Quiet Orbit (2019).mkv\",\"size\":120841},\"movie\":\"Quiet Orbit\",\"year\":2019}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "decode_sample",
+  "frame_sample",
+  "ocr",
+  "arr_lookup"
+ ],
+ "provenance": "new",
+ "corrections": [
+  "C5: audio_sample removed from tools_available (no replay data for this case)"
+ ]
+}
