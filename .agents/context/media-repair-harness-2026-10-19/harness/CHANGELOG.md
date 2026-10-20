@@ -1,5 +1,66 @@
 # Harness changelog
 
+## dev-c2 (candidate, OpenProject #135)
+
+Evidence wiring, `unavailable` everywhere, capabilities and gaps, and a contract proposal. Not scoring: `score.py`, `CONTRACT.md`, the suite, labels and gates are
+untouched. Builds on dev-c1 (#1009) and the live collectors (#1010). Default stays `--evidence replay`, and replay is byte-for-byte what dev-c1 showed the model.
+
+### Evidence mode (`--evidence replay|live`, default `replay`)
+
+* **replay** is dev-c1's tool layer unchanged. `test_wiring.ReplayIdentity` recomputes, for all 73 dev cases, the sha256 of every offered tool's rendered result (as
+  `run.result_message` sends it, fixed argument set, no ffmpeg on PATH) plus the model-visible case view, and demands equality with
+  `testdata/replay-identity-dev-c1.json`, generated from the dev-c1 code before any dev-c2 edit to `tools.py` (`replay_identity.py` is the generator).
+* **live** serves `ffprobe`, `decode_sample`, `frame_sample`, `audio_sample`, `ocr`, `epub_inspect` and `audiobook_inspect` from `evidence.collect` on the case's own local media
+  file (`tools.live_tool`). No fixture, pinned real media, remote host, a path that does not exist, or a directory for a single-file tool: `unavailable` with the reason, and
+  nothing is run. `arr_lookup` is unchanged. The collector deadline is 45 s (`LIVE_DEADLINE_S`), so a slow file ends `partial` inside the 60 s tool timeout; the outer timeout still
+  turns a hung collector into `timeout`. `--evidence-bounds '{"segments": 2}'` overrides collector bounds (clamped to the hard maxima, unknown names refused; live only).
+  `frame_sample` runs the frames collector with OCR off, `ocr` with OCR on; without tesseract `ocr` is `unavailable` (the frames decoded, the text was not read), as in replay with no OCR backend.
+* Every tool result and run record says which mode: `evidence_mode` (`replay`|`live`) on each `tool_calls[]` entry, in the record, in the manifest `config` (so in `config_hash`)
+  and in `run_summary.json`. `mode` on a call keeps its dev-c1 meaning (how the answer was produced: `live`, `local`, `remote`, `replay`, `pinned_replay`, `stub`, `injected`).
+  Neither is shown to the model: `run.result_message` still sends only type, id, tool, status, truncated, output and calls remaining.
+* A live damage finding (`error` with collector `cause: input`) is usable as support in the action audit, like a replay `error` that carries the tool's own `exit_code` / `stage`;
+  a tool-side `error` is not. Live calls are kept per call in `tool_calls[].evidence` (kind, coverage, reason, cause, bounds, input fingerprint without the file name) and
+  `args_ignored` (model arguments such as `at` that live collection validates but does not use: the collectors choose their own sample points).
+
+### `unavailable` is first-class
+
+`evidence.core.to_tool_result` no longer turns `unavailable` into `error` plus `evidence_status`; the status passes through and `evidence_status` is gone (dev-c1 said the wiring
+story should do exactly this). `test_evidence` was updated for it; `tools.STATUSES` and `evidence.STATUSES` are asserted equal.
+
+### Capabilities and gaps (record only)
+
+`gaps.py`, run record field `evidence` (mode, `capabilities[]`, `gaps[]`, `gaps_cited[]`): what was not verified, which call showed it (a citeable `t<n>`), its type (`not_run`,
+`incomplete`, `standing`), the area, the reason and the harness tool that would be needed. Never shown to the model, never changes a decision, not scored. A damage finding is evidence,
+not a gap. `run_summary.json` counts gaps. `evidence_mode` and `evidence` are required record fields (`record_missing_fields`).
+
+### Contract proposal
+
+`CONTRACT-v2-proposal.md`: a proposal for the evaluator to accept or reject (decision fields, the write-action audit object with `proposed_not_executed`, proposal vs executed vs verified,
+tool statuses, capability and gap records, version fields). `CONTRACT.md` is not edited; nothing in it describes scoring.
+
+### Tests
+
+`test_wiring.py` (36 tests): replay identity over the dev suite, explicit replay equals default, no mode or gap field reaches the model, live with a fake collector runner and a fake
+`collect` (ok, missing binary, damaged input, timeout, hung collector, partial, missing path, no fixture / pinned / remote, directory, injected failure, bounds mapping, bad arguments, output cap,
+OCR without an engine), a real EPUB through the real collector, leak guard (names redacted; a leaking message still raises), `unavailable` status, gaps, run records through `run_case`
+and `main`. Whole harness: 369 tests (333 before). `wiring_smoke.py` + `launch_wiring_smoke.py` ran `run_case --evidence live` with a scripted adapter and the real ffprobe/ffmpeg in a
+CPU-limited Job on synthetic fixtures (`testdata/wiring-smoke/wiring-smoke.json`; Job deleted).
+
+### Smoke (validity only, not a benchmark)
+
+`runs/smoke-dev-c2-claude-haiku-5-5-v2/`: see the table in `README.md`.
+
+### Known limits
+
+* **Live mode needs local media.** The dev suite's own cases are replay-shaped (recorded probe results, pinned real media), so a `--evidence live` run over it yields mostly `unavailable`;
+  live is meant for cases that carry a local media path, such as the synthetic fixtures or a future suite built from generated media. It has run for real only on the wiring-smoke fixtures.
+* Live `ok` means the collection plan ran, not that the media is healthy; sampling finds damage only where it samples (see `evidence/README.md` limits). tesseract is not in the smoke image,
+  so live OCR has only fake-runner coverage.
+* `at`, `stream` and `frame` arguments have no effect in live mode (recorded in `args_ignored`); replay serves the nearest recorded window instead.
+* The replay-identity digests cover the fixed argument set in `replay_identity.CALLS` and the case view, with no ffmpeg on PATH; they do not cover a run on a machine that has ffprobe (the local route is unchanged code).
+* Gap `needed_tool` for `standing` gaps is a keyword hint on the collector's wording. `ocr` and `frame_sample` share the frames collector, so one `ocr` call repeats the frame decode.
+* Everything from dev-c1's known limits still applies (`score.py` predates `unavailable`; `claim_text` checks are English keyword matches; per-case structured output for Ollama is untested live).
+
 ## dev-c1 (candidate, OpenProject #136) 
 
 Prompt v2, protocol and audit. Builds on W10's WIP (prompt v2 draft, `unavailable` status, pinned replay, `audit.py`). Not scoring: `score.py`,

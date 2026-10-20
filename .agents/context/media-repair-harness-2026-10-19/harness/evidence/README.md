@@ -2,8 +2,8 @@
 
 Read-only collectors that run the real `ffprobe` / `ffmpeg` / `tesseract` (when present) or stdlib zip and XML code on one input
 and return honest records: what was verified, what was **not**, which bounds applied, and why anything failed. Stdlib Python only
-(3.11 and 3.14 exercised). **Not wired into `tools.py` or `run.py`**; `to_tool_result` shows how a record maps onto the harness'
-tool-result shape so the wiring story can do it later.
+(3.11 and 3.14 exercised). Wired into `tools.py` / `run.py` from harness `dev-c2` as the opt-in `--evidence live` mode (see `../CHANGELOG.md`);
+the collectors themselves still know nothing about cases.
 
 ```python
 import sys; sys.path.insert(0, '<harness dir>')
@@ -11,7 +11,7 @@ from evidence import collect, to_tool_result
 records = collect('/path/to/file.mkv', ['probe', 'decode', 'frames', 'audio'], {'segments': 2})     # one record per kind, in order
 records = collect('/path/to/book/', ['audiobook'])                                                  # folder of parts, or a list of part files
 records = collect('/path/to/b.epub', ['epub'])
-tool_result = to_tool_result(records[0], cap=8192)       # {status, output (JSON text, bounded), truncated, mode, wall_s, tool, evidence_status}
+tool_result = to_tool_result(records[0], cap=8192)       # {status, output (JSON text, bounded), truncated, mode, wall_s, tool}
 ```
 
 `collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=None, scratch_dir=None)` never raises for a bad input or a
@@ -48,8 +48,7 @@ stderr (scrubbed, capped excerpt), elapsed_s, output {structured findings}, reas
 * `input` is a **partial** fingerprint only (size, SHA-256 of the first and last MiB). The whole file is never hashed or read except where a collector decodes it.
 * Paths never appear in output: the input path and base name are replaced by `<input>` in stderr excerpts and errors (`output` carries only the base names the parts of an audiobook have, in `files[].name`).
 * `to_tool_result` puts status, reason, cause, replay_note, bounds_clamped, coverage and stderr first and `output` last; when the text exceeds the cap it is `output` that is cut (a string ending in `...[output truncated]`), so the object stays valid JSON.
-* `to_tool_result`: `unavailable` becomes tool-result status `error` with `evidence_status: "unavailable"` beside it, because the harness' `ToolResult` knows `ok|partial|error|timeout` only. The wiring story should either add `unavailable`
-  to `ToolResult` or keep that mapping.
+* `to_tool_result` passes the status through. Until dev-c1 it delivered `unavailable` as `error` plus `evidence_status`, because the harness' `ToolResult` did not know `unavailable`; it does now, so the workaround is gone (dev-c2) and `unavailable` keeps its meaning: nothing ran, nothing was learned, the checked part stays unverified.
 
 ## Bounds and safety
 

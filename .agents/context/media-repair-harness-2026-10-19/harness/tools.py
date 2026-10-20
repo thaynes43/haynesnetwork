@@ -26,6 +26,7 @@ import concurrent.futures
 import leakguard
 from pathlib import Path
 
+import evidence as evcol
 from protocol import TOOL_OUTPUT_BYTES, TOOL_TIMEOUT_S
 
 HERE = Path(__file__).resolve().parent
@@ -113,10 +114,27 @@ class Fixture:
                 'verified': (self.sha256 is None or h.hexdigest() == self.sha256), 'bytes': p.stat().st_size}
 
 
+# Evidence modes (dev-c2).  `replay` (default) is the tool layer of dev-c1 unchanged: recorded probe results, recorded observations of pinned
+# media, case-provided records, and the local ffprobe/ffmpeg route when those binaries exist.  `live` runs the bounded read-only collectors
+# of `evidence/` on the case's own local media file; a case without a local media path that exists gets `unavailable` with the reason.
+EVIDENCE_MODES = ('replay', 'live')
+# harness tool -> collector kind of `evidence/` (frame_sample and ocr share the `frames` collector; the model never sees a picture either way)
+LIVE_KINDS = {'ffprobe': 'probe', 'decode_sample': 'decode', 'frame_sample': 'frames', 'ocr': 'frames', 'audio_sample': 'audio',
+              'epub_inspect': 'epub', 'audiobook_inspect': 'audiobook'}
+# the collector finishes by itself inside the tool timeout, so a slow file is reported `partial`, not killed from outside
+LIVE_DEADLINE_S = TOOL_TIMEOUT_S - 15
+
+
 class Context:
     def __init__(self, case, fixture, scratch, runner=subprocess.run, which=shutil.which, ocr_backend=None,
-                 suite_dir=None, replay='auto'):
+                 suite_dir=None, replay='auto', evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None,
+                 evidence_bounds=None):
         assert replay in ('auto', 'off', 'force')
+        assert evidence_mode in EVIDENCE_MODES, evidence_mode
+        self.evidence_mode = evidence_mode
+        # live-mode seams: `collect` replaces evidence.collect, `evidence_runner` / `evidence_which` are the collectors' own runner and which
+        self.collect, self.evidence_runner, self.evidence_which = collect, evidence_runner, evidence_which
+        self.evidence_bounds = dict(evidence_bounds or {})
         self.case, self.fixture, self.scratch = case, fixture, Path(scratch)
         self.runner, self.which, self.ocr_backend = runner, which, ocr_backend
         self.suite_dir, self.replay, self.replay_rec = suite_dir, replay, None
@@ -711,6 +729,85 @@ def tool_arr_lookup(args, ctx):
     return ToolResult('ok', {'stub': True, 'arr': arr, 'note': 'case-provided context only; no live arr call was made'}, mode='stub')
 
 
+# ---- live evidence mode (dev-c2) ----------------------------------------------------------------------------------------
+def _live_unavailable(ctx, why):
+    return ToolResult('unavailable', why + '; live evidence was not collected and nothing ran', mode='live', live_ran=False)
+
+
+def _live_gate(tool, ctx):
+    """None when live collection may run for this case, else the `unavailable` ToolResult (with the reason)."""
+    kind = ctx.fixture.kind
+    if kind == 'none':
+        return _live_unavailable(ctx, 'no media fixture behind this case')
+    if kind == 'pinned':
+        return _live_unavailable(ctx, 'this case holds only a recorded observation of real library media; no local media path exists')
+    if kind == 'remote':
+        return _live_unavailable(ctx, 'the media is on a remote host; live collection needs a local media path')
+    path = Path(ctx.fixture.path)
+    if not path.exists():
+        return _live_unavailable(ctx, 'the case names a local media path that does not exist')
+    if tool != 'audiobook_inspect' and not path.is_file():
+        return _live_unavailable(ctx, '%s needs one media file; the case path is not a regular file' % tool)
+    return None
+
+
+def _live_bounds(tool, args, ctx):
+    """-> (bounds for evidence.collect, args that were accepted but have no effect in live mode)."""
+    bounds = {'deadline_s': LIVE_DEADLINE_S}
+    bounds.update(ctx.evidence_bounds)
+    ignored = []
+    if tool in ('decode_sample', 'frame_sample', 'audio_sample', 'ocr'):
+        for key in ('at', 'ss', 't'):
+            if key in args and args[key] != 'full':
+                _num(args, key, 0, 0, 86400 * 4)       # same argument check as replay: a bad number is a bad-arguments error
+                ignored.append(key)
+    if tool == 'audio_sample' and 'stream' in args:
+        _num(args, 'stream', 0, 0, 127)
+        ignored.append('stream')
+    if tool == 'ocr' and 'frame' in args:
+        ignored.append('frame')
+    if tool == 'decode_sample':
+        if _is_full(args):
+            bounds['full_decode'] = True
+    if tool == 'frame_sample':
+        bounds['ocr'] = 'off'
+    if tool == 'ocr':
+        bounds['ocr'] = 'auto'
+    return bounds, ignored
+
+
+def _live_extra(rec, ignored):
+    fp = rec.get('input') or {}
+    if fp.get('kind') == 'files':
+        fp = {'kind': 'files', 'count': fp.get('count'), 'partial_fingerprint_only': True}
+    else:
+        fp = {k: v for k, v in fp.items() if k != 'name'}   # a file name can encode the answer; the sizes and hashes stay
+    extra = {'evidence': {'kind': rec['tool'], 'status': rec['status'], 'coverage': rec['coverage'], 'reason': rec.get('reason'),
+                          'cause': rec.get('cause'), 'tool_version': rec.get('tool_version'), 'bounds': rec.get('bounds'),
+                          'bounds_clamped': rec.get('bounds_clamped'), 'input': fp, 'elapsed_s': rec.get('elapsed_s')}}
+    if ignored:
+        extra['args_ignored'] = ignored
+    return extra
+
+
+def live_tool(tool, args, ctx):
+    """One live collection for `tool` on the case's local media file -> ToolResult.  Read-only; the file never comes from the model."""
+    bad = _live_gate(tool, ctx)
+    if bad:
+        return bad
+    bounds, ignored = _live_bounds(tool, args, ctx)
+    collect = ctx.collect or evcol.collect
+    recs = collect(ctx.fixture.path, [LIVE_KINDS[tool]], bounds, runner=ctx.evidence_runner, which=ctx.evidence_which, scratch_dir=ctx.scratch)
+    rec = recs[0]
+    out_ = rec.get('output') or {}
+    if tool == 'ocr' and rec['status'] in ('ok', 'partial') and isinstance(out_, dict) and out_.get('ocr') == 'unavailable':
+        # the frames decoded, but reading text is what `ocr` is for and no OCR engine exists here: the capability is absent
+        rec = dict(rec, status='unavailable', reason='no OCR engine is installed (tesseract not found on PATH); the on-screen text was not read'
+                   + ('' if rec['status'] == 'ok' else '; the frame collection was also partial'))
+    tr = evcol.to_tool_result(rec, cap=ctx.output_cap or TOOL_OUTPUT_BYTES)
+    return ToolResult(tr['status'], tr['output'], mode=tr['mode'], live_ran=rec['mode'] == 'live', **_live_extra(rec, ignored))
+
+
 REGISTRY = {'ffprobe': tool_ffprobe, 'decode_sample': tool_decode_sample, 'frame_sample': tool_frame_sample,
             'audio_sample': tool_audio_sample, 'ocr': tool_ocr, 'epub_inspect': tool_epub_inspect,
             'audiobook_inspect': tool_audiobook_inspect, 'arr_lookup': tool_arr_lookup}
@@ -739,6 +836,8 @@ def call_tool(ctx, name, args):
         res = _failure(inject['mode'], name, None)  # nothing is run: the failure is the whole result
     else:
         def work():
+            if ctx.evidence_mode == 'live' and name in LIVE_KINDS:
+                return live_tool(name, args, ctx)
             if ctx.fixture.kind == 'pinned' and name != 'arr_lookup':
                 return _pinned(name, args, ctx)
             return REGISTRY[name](args, ctx)
@@ -757,5 +856,6 @@ def call_tool(ctx, name, args):
         if inject and inject.get('tool') == name:
             res = _failure(inject.get('mode', 'error'), name, res)
     out = res.bounded(ctx.redact, cap=ctx.output_cap)
+    out['evidence_mode'] = ctx.evidence_mode   # record only; result_message (what the model sees) never carries it
     out['wall_s'] = round(time.monotonic() - started, 3)
     return out

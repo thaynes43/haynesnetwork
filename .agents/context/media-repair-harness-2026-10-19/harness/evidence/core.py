@@ -260,8 +260,8 @@ def tool_error(tool, ctx, started, reason, **kw):
 def to_tool_result(rec, cap=8192):
     """A record in the harness' tool-result shape ({status, output text, truncated, mode, wall_s, ...}).
 
-    The harness' ToolResult knows ok|partial|error|timeout only, so `unavailable` is delivered as `error`
-    with `evidence_status: "unavailable"` kept beside it (nothing is relabelled healthy).
+    The status is passed through unchanged: `unavailable` is a first-class tool-result status in the harness (dev-c2), so it is
+    no longer relabelled `error` with an `evidence_status` beside it.  Nothing is relabelled healthy.
 
     The text is one JSON object whose keys are in priority order: status, reason, cause, replay_note, bounds_clamped,
     coverage, stderr and the rest first, `output` last.  When the text exceeds `cap`, `output` is the part that is cut
@@ -292,8 +292,8 @@ def to_tool_result(rec, cap=8192):
                 break
             room -= excess + 4
     text = dump(dict(body, output=output))
-    out = {'status': 'error' if status == 'unavailable' else status, 'output': text, 'truncated': truncated,
-           'mode': rec['mode'], 'wall_s': rec['elapsed_s'], 'tool': rec['tool'], 'evidence_status': status}
+    out = {'status': status, 'output': text, 'truncated': truncated,
+           'mode': rec['mode'], 'wall_s': rec['elapsed_s'], 'tool': rec['tool']}
     if rec.get('tool_version'):
         out['tool_version'] = rec['tool_version']
     return out

@@ -725,11 +725,12 @@ class EpubTests(Base):
 # ------------------------------------------------------------------ records, replay, runner
 
 class RecordTests(Base):
-    def test_to_tool_result_maps_unavailable_to_error_and_keeps_status(self):
+    def test_to_tool_result_keeps_unavailable_as_its_own_status(self):
         rec, _ = self.run_kind('probe', [], which=())
         tr = core.to_tool_result(rec)
-        self.assertEqual(tr['status'], 'error')
-        self.assertEqual(tr['evidence_status'], 'unavailable')
+        self.assertEqual(tr['status'], 'unavailable')   # first-class since dev-c2: no relabelling to `error`
+        self.assertNotIn('evidence_status', tr)
+        self.assertEqual(json.loads(tr['output'])['status'], 'unavailable')
         self.assertEqual(tr['mode'], 'live')
         self.assertFalse(tr['truncated'])
         self.assertIn('ffprobe not found', json.loads(tr['output'])['reason'])
