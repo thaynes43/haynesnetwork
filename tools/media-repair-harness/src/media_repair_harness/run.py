@@ -781,7 +781,8 @@ def build_adapter(args):
                                stop=(args.stop.split(',') if args.stop is not None else None), do_warmup=not args.no_warmup,
                                schema=(P.FLAT_TURN_SCHEMA if args.ollama_schema == 'flat' else P.TURN_SCHEMA), schema_name=args.ollama_schema)
     if args.adapter == 'claude':
-        return A.ClaudeAdapter(model, effort=args.effort, max_budget_usd=args.max_budget_usd)
+        budget = None if getattr(args, 'no_spend_limit', False) else (args.max_budget_usd if args.max_budget_usd is not None else 2.0)
+        return A.ClaudeAdapter(model, effort=args.effort, max_budget_usd=budget)
     if args.adapter == 'codex':
         return A.CodexAdapter(model, effort=args.effort, record_session=not args.codex_ephemeral)
     if args.adapter == 'scripted':
@@ -799,7 +800,9 @@ def main(argv=None):
     ap.add_argument('--out', required=True, help='run directory, e.g. runs/<run-id>; must not already hold records')
     ap.add_argument('--scratch', help='scratch dir for frames etc. (never committed); default ~/.cache/media-repair-harness/<run-id>')
     ap.add_argument('--effort', help='claude/codex reasoning effort')
-    ap.add_argument('--max-budget-usd', type=float, default=2.0, help='claude: per-call spend cap')
+    ap.add_argument('--max-budget-usd', type=float, default=None, help='claude: per-call spend cap (default 2.0)')
+    ap.add_argument('--no-spend-limit', action='store_true', help='dev-c6: an explicitly uncapped run: no spend-limit flag of any kind (no claude --max-budget-usd); '
+                                                                     'refused with --max-budget-usd or --max-total-cost-usd; usage accounting and timeouts stay')
     ap.add_argument('--num-ctx', type=int, default=A.DEFAULT_NUM_CTX, choices=list(A.ALLOWED_NUM_CTX), help='ollama context window; 4096 is the proven-safe value, 8192 the only other one allowed')
     ap.add_argument('--tool-output-bytes', type=int, default=P.TOOL_OUTPUT_BYTES, help='cap on one tool result shown to the model (lower it for small local contexts)')
     ap.add_argument('--num-predict', type=int, help='ollama output cap; default 384 for prompt v1, 640 for v2 (a write decision carries an audit object)')
@@ -825,6 +828,8 @@ def main(argv=None):
         check_option_combination(args.prompt, args.evidence_format, args.guards, args.tool_output_bytes)
     except ValueError as e:
         raise SystemExit(str(e))
+    if args.no_spend_limit and (args.max_budget_usd is not None or args.max_total_cost_usd is not None):
+        raise SystemExit('--no-spend-limit is an explicitly uncapped run: it cannot be combined with --max-budget-usd or --max-total-cost-usd')
     out = Path(args.out)
     if out.exists() and any(out.iterdir()):
         raise SystemExit('refusing to reuse a non-empty run directory (failed runs are kept, never overwritten): %s' % out)
@@ -860,6 +865,8 @@ def main(argv=None):
               'adapter_config': adapter.config()}
     if args.guards:
         config['guards'] = args.guards   # only when on: a run without guards has the same config (and config_hash) shape as before
+    if args.no_spend_limit:
+        config['spend_limit'] = 'uncapped'     # only when set (dev-c6): an explicitly uncapped run; the claude adapter config also shows max_budget_usd None
     limits = RunLimits(args.max_total_cost_usd, args.max_wall_s)
     if limits.enabled:   # likewise only when set: a run without caps keeps its earlier config shape
         config['limits'] = limits.config()

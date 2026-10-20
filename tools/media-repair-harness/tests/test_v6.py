@@ -22,9 +22,9 @@ OLD_SHA = {'v1': '30749f5dc7065a2ddd70967cd6888e91d237030e1b025bc6dac19ca51fed9e
            'v3': 'b1fd9e8558396dc288c8b66443a3363f29496032f1e32a0590a1245469e8061a', 'v4': 'a2c3036e57d243a1c892b844a37796ec026e4ea449c4737bcbc3efd01591eedd',
            'v5': '0064e63389bae941508be01e10ab5ee607925105aeafa20dd3d81a00573bba26'}      # v5: the assembled sha256 dev-c5 measured
 V5_FILE_SHA256 = '4db2a64ccba83d2ae2fe3d6da9843369d49676019e39519a50464c8ad128e863'
-# prompts/v6.txt, frozen by runs/dev-c6/PREREGISTRATION.md (file bytes) and the assembled text the model is sent (one trailing newline removed)
-V6_FILE_SHA256 = 'a7271f9d1e3042dd3c492fe258ed0c30d5188b288ad72abadc9b7db65eb12221'
-V6_SENT_SHA256 = 'cd0c5150d7989014fa4e542e64f5d73e0d77f723cb5926bec93246076ce3c5f6'
+# prompts/v6.txt as amended by Amendment 1 of runs/dev-c6/PREREGISTRATION.md (file bytes) and the assembled text the model is sent (one trailing newline removed)
+V6_FILE_SHA256 = '17f34466533792d423caa52c8d5239e9f33a707aa3ff250f2b4abc0d526b637c'
+V6_SENT_SHA256 = 'f828f9ac0df6a92e03bd6b0368f1675193be0f295abdcd3d5c3415677ba0a126'
 V1_TO_V5_SCHEMAS_SHA256 = '94234f18012a8f338d5f7f3eb11de15aa12e5773857287535e64a6dfd54e0465'   # computed on main 43ce9e9f
 NUM_CTX = 8192
 ESCALATE = {'type': 'decision', 'class': 'insufficient_evidence', 'action': 'escalate', 'reason': 'r', 'confidence': 0.0, 'evidence_refs': []}
@@ -82,6 +82,22 @@ class PromptV6(unittest.TestCase):
         self.assertIn('An unchecked remainder alone is not material, and it is never clean', self.v6)
         self.assertIn('needs no full decode', self.v6)
         self.assertIn('positive content confirmation of identity is not required', self.v6)
+
+    def test_amendment_1_naming_and_marker_rules_verbatim(self):
+        # Astra 22 item 1 (rubric v3.1 A31-13 and the empty-list fixes; A31-12)
+        self.assertIn("Compare each part's album and artist with the catalog. A part's title is a chapter name and is exempt from that comparison. "
+                      "Explicit emptiness still matters for all naming fields, including empty lists and empty string elements.", self.v6)
+        self.assertIn('Every asserted episode marker must match the target; an erroneous current marker cannot be reused.', self.v6)
+        m5 = next(x for x in self.v6.splitlines() if x.startswith('M5 '))
+        self.assertIn("a part's title is a chapter name and is exempt from the comparison", m5)
+
+    def test_amendment_1_a_bounded_window_is_not_a_material_conflict(self):
+        # Astra 22 item 2: only a FULL decode that ends short of the container is a completion conflict; a completed bounded window leaves an ordinary remainder
+        self.assertNotIn('decoded span shorter', self.v6)
+        self.assertIn('A full decode whose observed end falls short of the container duration creates a completion conflict.', self.v6)
+        self.assertIn('A successfully completed bounded window leaves an ordinary unchecked remainder, which alone is not material.', self.v6)
+        m4 = next(x for x in self.v6.splitlines() if x.startswith('M4 '))
+        self.assertNotIn('decoded span', m4)
 
     def test_separates_diagnosis_from_action_prerequisites(self):
         self.assertIn('DIAGNOSIS PREREQUISITES', self.v6)
@@ -208,6 +224,79 @@ class EveryOtherCombinationIsRefused(unittest.TestCase):
                 self.assertFalse(out.exists())
         finally:
             R.build_adapter = orig
+        ts.cleanup()
+
+
+class Amendment1Wiring(unittest.TestCase):
+    """dev-c6 Amendment 1: an explicitly uncapped run (Astra 22 item 3), the codex timeout in the config hash and guard_cli refusing guards v1 / v2 on a v3 record (Opus P3)."""
+
+    def args(self, *extra):
+        import argparse
+        ns = argparse.Namespace(adapter='claude', model='claude-haiku-5-5', effort=None, max_budget_usd=None, no_spend_limit=False, prompt='v6')
+        for k, v in extra:
+            setattr(ns, k, v)
+        return ns
+
+    def test_the_legacy_default_still_sends_the_two_dollar_per_call_flag(self):
+        ad = R.build_adapter(self.args())
+        self.assertEqual(ad.max_budget_usd, 2.0)
+        argv = ad.argv('sys')
+        self.assertEqual(argv[argv.index('--max-budget-usd') + 1], '2.0')
+        self.assertEqual(ad.config()['max_budget_usd'], 2.0)
+        ad = R.build_adapter(self.args(('max_budget_usd', 0.5)))
+        self.assertEqual(ad.argv('sys')[ad.argv('sys').index('--max-budget-usd') + 1], '0.5')
+
+    def test_no_spend_limit_omits_every_spend_flag_and_keeps_the_timeout(self):
+        ad = R.build_adapter(self.args(('no_spend_limit', True)))
+        self.assertIsNone(ad.max_budget_usd)
+        argv = ad.argv('sys')
+        self.assertNotIn('--max-budget-usd', argv)
+        self.assertFalse([x for x in argv if 'budget' in x or 'cost' in x])
+        self.assertEqual((ad.config()['max_budget_usd'], ad.config()['timeout_s']), (None, 240))
+
+    def test_main_records_the_uncapped_setting_and_refuses_a_contradiction(self):
+        case = th.make_case(id='w21-s1')
+        ts = th.TempSuite([case])
+        orig = R.build_adapter
+        R.build_adapter = lambda args: A.ScriptedAdapter('m', [ESCALATE])
+        try:
+            out = Path(tempfile.mkdtemp()) / 'r-s1'
+            R.main(['--suite', str(ts.root), '--adapter', 'scripted', '--model', 'm', '--out', str(out), '--scratch', tempfile.mkdtemp(),
+                    '--prompt', 'v6', '--evidence-format', 'v3', '--guards', 'v3', '--no-spend-limit'])
+            man = json.loads((out / 'manifest.json').read_text())
+            self.assertEqual(man['config']['spend_limit'], 'uncapped')
+            self.assertNotIn('limits', man['config'])
+            out2 = Path(tempfile.mkdtemp()) / 'r-s2'
+            R.main(['--suite', str(ts.root), '--adapter', 'scripted', '--model', 'm', '--out', str(out2), '--scratch', tempfile.mkdtemp(), '--prompt', 'v6', '--evidence-format', 'v3'])
+            self.assertNotIn('spend_limit', json.loads((out2 / 'manifest.json').read_text())['config'])     # unset: the earlier config shape
+            for extra in (['--max-budget-usd', '1'], ['--max-total-cost-usd', '1']):
+                with self.assertRaises(SystemExit):
+                    R.main(['--suite', str(ts.root), '--adapter', 'scripted', '--model', 'm', '--out', str(Path(tempfile.mkdtemp()) / 'r'), '--prompt', 'v6',
+                            '--evidence-format', 'v3', '--no-spend-limit'] + extra)
+        finally:
+            R.build_adapter = orig
+        ts.cleanup()
+
+    def test_the_codex_timeout_is_in_the_adapter_config(self):
+        self.assertEqual(A.CodexAdapter('gpt-6-astra', effort='high').config()['timeout_s'], 300)
+        self.assertIn('model_reasoning_effort="high"', ' '.join(A.CodexAdapter('gpt-6-astra', effort='high').argv()))
+
+    def test_guard_cli_refuses_guards_v1_and_v2_on_a_v3_record(self):
+        from media_repair_harness import guard_cli as GC
+        case = th.make_case(id='w21-g1', evidence=[{'id': 'e1', 'tool': 'arr_lookup', 'args': {}, 'status': 'ok', 'output': '{}'}], tools_available=[])
+        ts = th.TempSuite([case])
+        orig = R.build_adapter
+        R.build_adapter = lambda args: A.ScriptedAdapter('m', [ESCALATE])
+        out = Path(tempfile.mkdtemp()) / 'r-g1'
+        try:
+            R.main(['--suite', str(ts.root), '--adapter', 'scripted', '--model', 'm', '--out', str(out), '--scratch', tempfile.mkdtemp(), '--prompt', 'v6', '--evidence-format', 'v3', '--guards', 'v3'])
+        finally:
+            R.build_adapter = orig
+        for v in ('v1', 'v2'):
+            with self.assertRaises(SystemExit):
+                GC.guard_run(out, ts.root, Path(tempfile.mkdtemp()) / ('g-' + v), version=v)
+        GC.guard_run(out, ts.root, Path(tempfile.mkdtemp()) / 'g-v3', version='v3')
+        GC.guard_run(out, ts.root, Path(tempfile.mkdtemp()) / 'g-restore', restore=True)
         ts.cleanup()
 
 
