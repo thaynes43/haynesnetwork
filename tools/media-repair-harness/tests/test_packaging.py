@@ -22,11 +22,13 @@ COMPONENT = th.COMPONENT
 
 # Digests of what the model is sent, taken from the frozen dev-c2 candidate (e27f2385) before the move into the package.  The full
 # replay-identity comparison lives in test_wiring.ReplayIdentity; these are the short, explicit pins.
-HARNESS_VERSION = 'dev-c2'
+HARNESS_VERSION = 'dev-c3'
 PROMPT_SHA256 = {'v1': '30749f5dc7065a2ddd70967cd6888e91d237030e1b025bc6dac19ca51fed9ee8',
                  'v2': '351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a'}
 GOLDEN_SHA256 = '8f4f17373e857c90509b4768f426b668b520683c8c353993028f771f8eb2e411'
 PROMPT_FILE_SHA256 = {'v2.txt': 'b63a9e9b5558a1f1fbb94fcdd8624d1c3e46f8990a3af2d2a00c0a480521ec04'}
+# dev-c3 added prompts/v3.txt (new text, same turn protocol as v2).  Pinned so a stray edit shows up; v1 and v2 above stay byte-identical.
+V3_FILE_SHA256 = 'V3PLACEHOLDER'
 
 
 class Pinned(unittest.TestCase):
@@ -39,7 +41,9 @@ class Pinned(unittest.TestCase):
 
     def test_prompt_resource_files_are_byte_identical_to_dev_c2(self):
         files = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(P.PROMPT_DIR.iterdir()) if p.is_file()}
-        self.assertEqual(files, PROMPT_FILE_SHA256)
+        v3 = files.pop('v3.txt')
+        self.assertEqual(files, PROMPT_FILE_SHA256)   # v2.txt (and v1, which lives in protocol.py) are the dev-c2 bytes
+        self.assertEqual(v3, V3_FILE_SHA256)
 
 
 class GoldenUnchanged(unittest.TestCase):

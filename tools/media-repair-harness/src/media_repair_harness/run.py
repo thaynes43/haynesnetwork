@@ -148,7 +148,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     turns, tool_calls = [], []
     repairs, forced, forced_reason, error = [], False, None, None
     violations = []   # protocol violations (a tool call outside tools_available): answered with a tool result, never repaired
-    v2 = prompt_version == 'v2'
+    v2 = P.protocol_of(prompt_version) == 'v2'   # v2 and v3 speak the v2 turn protocol (v3 differs in prompt text only)
+    rejected_writes = []   # parseable write decisions the strict validator rejected (record only, see write_rejection below)
     decision = None
     load_s = 0.0
 
@@ -183,6 +184,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                         attempt='repair' if repairs else 'first', reply_valid=(kind is not None and offered_bad is None), failure_modes=modes)
             turns.append(turn)
             if kind is None:
+                if isinstance(obj, dict) and obj.get('type') == 'decision' and obj.get('action') in P.WRITE_ACTIONS:
+                    rejected_writes.append({'turn': turn['n'], 'action': obj.get('action'), 'errors': [str(e)[:160] for e in verrs if e][:4]})
                 if not repairs:
                     err = '; '.join(e for e in verrs if e)[:300]
                     repair_text = P.repair_prompt(err, modes) if v2 else P.REPAIR_PROMPT.format(error=err)
@@ -250,7 +253,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     record = {
         'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
         'split': case.get('split'), 'started_at': started_at,
-        'prompt': {'version': prompt['version'], 'sha256': prompt['sha256'], 'protocol': 'turn-' + prompt['version'],
+        'prompt': {'version': prompt['version'], 'sha256': prompt['sha256'], 'protocol': _turn_protocol(prompt['version']),
                    'turn_schema_sha256': sent_schema_sha, 'schema_sent': sent_schema_sha is not None},
         'model_case_alias': model_alias, 'requested_model': adapter.requested_model, 'response_model_ids': response_models,
         'runtime_version': adapter.runtime_version, 'model_digest': adapter.model_digest,
@@ -262,6 +265,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
         'turns': turns, 'tool_calls': tool_calls, 'tool_modes': sorted({c.get('mode') for c in tool_calls if c.get('mode')}), 'repair_prompts': repairs,
         'decision': decision, 'forced': forced, 'forced_reason': forced_reason, 'first_try_valid': first_try_valid, 'first_try': first_try,
         'final_decision_valid': decision is not None and not forced, 'protocol_violations': violations,
+        'write_rejection': write_rejection_info(rejected_writes, decision, forced, forced_reason),
         'unverified_parts': parts, 'decision_flags': AU.decision_flags(decision, parts),
         'bad_evidence_refs': bad_refs, 'refs_to_failed_tools': failed_refs, 'refs_to_non_ok_tools': non_ok_refs,
         'outcome': outcome, 'usage': usage,
@@ -280,6 +284,28 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     if error:
         record['error'] = error
     return record
+
+
+FORCED_AFTER_REPAIR = 'invalid output after the one repair prompt'
+
+
+def _turn_protocol(prompt_version):
+    """'turn-v1' / 'turn-v2' for the record and the config.  Never raises (the crash paths call it): an unknown version is shown as given."""
+    try:
+        return 'turn-' + P.protocol_of(prompt_version)
+    except ValueError:
+        return 'turn-' + str(prompt_version)
+
+
+def write_rejection_info(rejected, decision, forced, forced_reason):
+    """Record-only, shown next to G1 (score.py's `rejected_write_attempts` counts the same turns).  A write decision the strict v2 validator
+    rejected is not an unsafe write (it never became the decision), but a case where the one repair prompt then also failed ends as a FORCED
+    escalate that nobody chose; `forced_after_rejected_write` makes that visible.  Never read by a gate, never shown to a model."""
+    n = len(rejected)
+    after = bool(n and forced and str(forced_reason or '').startswith(FORCED_AFTER_REPAIR))
+    return {'rejected_write_attempts': n, 'attempts': list(rejected), 'forced_after_rejected_write': after,
+            'repaired_to_valid_decision': bool(n and decision is not None and not forced),
+            'note': 'record only: a rejected write decision never became the decision; forced_after_rejected_write means the repair also failed and the harness forced insufficient_evidence/escalate'}
 
 
 def crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay'):
@@ -305,12 +331,13 @@ def _minimal_crash_record(case, case_sha, adapter, exc, prompt_version, evidence
         psha = None
     return {'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': str(cid), 'case_sha256': case_sha, 'evidence_mode': evidence_mode,
             'evidence': {'mode': evidence_mode, 'capabilities': [], 'gaps': [], 'gaps_cited': [], 'note': 'minimal crash record'},
-            'prompt': {'version': prompt_version, 'sha256': psha, 'protocol': 'turn-' + str(prompt_version), 'turn_schema_sha256': None, 'schema_sent': False},
+            'prompt': {'version': prompt_version, 'sha256': psha, 'protocol': _turn_protocol(prompt_version), 'turn_schema_sha256': None, 'schema_sent': False},
             'requested_model': get(adapter, 'requested_model'), 'response_model_ids': [], 'runtime_version': get(adapter, 'runtime_version'),
             'turns': [], 'tool_calls': [], 'repair_prompts': [], 'decision': d, 'forced': True, 'forced_reason': d['reason'], 'first_try_valid': False,
             'first_try': {'valid': False, 'first_reply_valid': False, 'failure_modes': ['harness_error_before_run'], 'repair_prompts': 0, 'protocol_violations': 0,
                           'valid_after_repair': False, 'note': 'the case never reached a model'},
-            'final_decision_valid': False, 'protocol_violations': [], 'unverified_parts': [], 'decision_flags': [], 'fixture_hashes': None,
+            'final_decision_valid': False, 'protocol_violations': [], 'write_rejection': write_rejection_info([], d, True, d['reason']),
+            'unverified_parts': [], 'decision_flags': [], 'fixture_hashes': None,
             'usage': {'input_tokens': 0, 'output_tokens': 0, 'cost_usd': None, 'cost_reported': False},
             'wall': {'total_s': 0.0, 'load_s': 0.0, 'case_excl_load_s': 0.0, 'turn_s': [], 'tool_s': []}, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'action_audit': {'execution_status': 'no_write_proposed', 'executed': False, 'write_intent': False,
@@ -325,14 +352,15 @@ def _crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT,
     return {'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
             'split': case.get('split'), 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'evidence_mode': evidence_mode,
             'evidence': GP.evidence_summary(case, [], evidence_mode, d, live_kinds=T.LIVE_KINDS),
-            'prompt': {'version': prompt_version, 'sha256': P.get_prompt(prompt_version)['sha256'], 'protocol': 'turn-' + prompt_version, 'turn_schema_sha256': None, 'schema_sent': False},
+            'prompt': {'version': prompt_version, 'sha256': P.get_prompt(prompt_version)['sha256'], 'protocol': _turn_protocol(prompt_version), 'turn_schema_sha256': None, 'schema_sent': False},
             'requested_model': adapter.requested_model, 'response_model_ids': [], 'runtime_version': adapter.runtime_version,
             'model_digest': adapter.model_digest, 'model_digest_na_reason': adapter.digest_na_reason if not adapter.model_digest else None,
             'fixture': None, 'evidence_shown': [], 'turns': [], 'tool_calls': [], 'repair_prompts': [], 'decision': d, 'forced': True,
             'forced_reason': d['reason'], 'first_try_valid': False,
             'first_try': {'valid': False, 'first_reply_valid': False, 'failure_modes': ['harness_error_before_run'], 'repair_prompts': 0, 'protocol_violations': 0,
                           'valid_after_repair': False, 'note': 'the case never reached a model'},
-            'final_decision_valid': False, 'protocol_violations': [], 'unverified_parts': [], 'decision_flags': [], 'fixture_hashes': None,
+            'final_decision_valid': False, 'protocol_violations': [], 'write_rejection': write_rejection_info([], d, True, d['reason']),
+            'unverified_parts': [], 'decision_flags': [], 'fixture_hashes': None,
             'bad_evidence_refs': [], 'refs_to_failed_tools': [], 'refs_to_non_ok_tools': [], 'outcome': None,
             'usage': {'input_tokens': 0, 'output_tokens': 0, 'cost_usd': None, 'cost_reported': False},
             'wall': {'total_s': 0.0, 'load_s': 0.0, 'case_excl_load_s': 0.0, 'turn_s': [], 'tool_s': []}, 'injected_failure': case.get('inject_tool_failure'),
@@ -342,7 +370,7 @@ def _crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT,
 
 REQUIRED_RECORD_FIELDS = ('record_version', 'harness_version', 'harness_git_sha', 'case_id', 'case_sha256', 'prompt', 'requested_model', 'response_model_ids',
                           'runtime_version', 'config_hash', 'fixture_hashes', 'turns', 'tool_calls', 'decision', 'forced', 'first_try_valid', 'first_try',
-                          'usage', 'wall', 'action_audit', 'evidence_mode', 'evidence')
+                          'usage', 'wall', 'action_audit', 'evidence_mode', 'evidence', 'write_rejection')
 
 
 def record_missing_fields(rec):
@@ -388,6 +416,8 @@ def summarize_run(records, manifest):
         'cases_planned': len(manifest.get('case_ids', [])), 'records_written': n, 'aborted': manifest.get('aborted'),
         'validity': {'first_try_valid': sum(1 for r in records if r['first_try_valid']), 'final_decision_valid': sum(1 for r in records if r.get('final_decision_valid')),
                      'repaired': sum(1 for r in records if r['repair_prompts']), 'forced': sum(1 for r in records if r['forced']),
+                     'rejected_write_attempts': sum((r.get('write_rejection') or {}).get('rejected_write_attempts', 0) for r in records),
+                     'forced_after_rejected_write': sum(1 for r in records if (r.get('write_rejection') or {}).get('forced_after_rejected_write')),
                      'protocol_violations': sum(len(r.get('protocol_violations', [])) for r in records),
                      'crashes': sum(1 for r in records if (r.get('error') or {}).get('kind') == 'harness_crash'),
                      'adapter_errors': sum(1 for r in records if (r.get('error') or {}).get('kind') == 'adapter_error'),
@@ -408,7 +438,7 @@ def summarize_run(records, manifest):
 def build_adapter(args):
     model = args.model
     if args.adapter == 'ollama':
-        num_predict = args.num_predict or (640 if args.prompt == 'v2' else 384)
+        num_predict = args.num_predict or (640 if P.protocol_of(args.prompt) == 'v2' else 384)
         return A.OllamaAdapter(model, options={'num_ctx': args.num_ctx, 'num_predict': num_predict}, keep_alive=args.keep_alive,
                                guard=G.PsiGuard(),
                                stop=(args.stop.split(',') if args.stop is not None else None), do_warmup=not args.no_warmup,
@@ -475,7 +505,7 @@ def main(argv=None):
     except ValueError as e:
         raise SystemExit('--evidence-bounds: %s' % e)
     prompt = P.get_prompt(args.prompt)
-    config = {'harness_version': P.HARNESS_VERSION, 'protocol': P.PROTOCOL_VERSION if args.prompt == 'v1' else 'turn-' + args.prompt, 'prompt_version': args.prompt, 'system_prompt_sha256': prompt['sha256'],
+    config = {'harness_version': P.HARNESS_VERSION, 'protocol': P.PROTOCOL_VERSION if args.prompt == 'v1' else _turn_protocol(args.prompt), 'prompt_version': args.prompt, 'system_prompt_sha256': prompt['sha256'],
               'turn_schema_sha256': sha256_bytes(canonical(P.TURN_SCHEMA).encode()), 'flat_schema_sha256': sha256_bytes(canonical(P.FLAT_TURN_SCHEMA).encode()),
               'turn_schema_v2_sha256': sha256_bytes(canonical(P.turn_schema('v2')).encode()), 'max_tool_calls': P.MAX_TOOL_CALLS,
               'tool_output_bytes': args.tool_output_bytes, 'tool_timeout_s': P.TOOL_TIMEOUT_S, 'ocr_model': args.ocr_model, 'replay': args.replay,
