@@ -15,6 +15,7 @@ import copy
 import hashlib
 
 from ... import evidence_v2 as EV2
+from ... import protocol as P
 from . import links as LK
 from . import presence as PR
 from . import rubric as RB
@@ -192,7 +193,7 @@ def render(observations, context=None, media_type=None, tools_offered=(), capabi
         return EV2.canon(dict(frame, evidence=b))
 
     def env_rest(b):
-        return EV2.tool_envelope('t6', tool, 'ok', False, b, 0, '\n' + 'BUDGET' * 40)
+        return EV2.tool_envelope('t6', tool, 'ok', False, b, 0, '\n' + P.BUDGET_MESSAGE)     # the same worst-case fetch envelope as evidence_v2.Session
     pages = EV2.paginate(header, units, env_first, env_rest, alias, 'evidence', budget,
                          retrieval=None if tools_offered else 'unavailable: no tool is offered, so the other pages cannot be fetched')
     reference, _placed = EV2.assemble(dict(header, page=None), units)
