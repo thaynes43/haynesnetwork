@@ -1,0 +1,450 @@
+{
+  "action_audit": {
+    "audit": {
+      "preconditions": [
+        "Full decode ran with status ok and reports truncation: 'File ended prematurely', out_time 4.13 s (t1)",
+        "File duration is 8.046 s and the content tags match Harbor Lights S1E2 (e1)",
+        "Managing app is sonarr, episode file 990202 is linked to episode 990102 (e3)"
+      ],
+      "readback": "Sonarr blocklist entry for this release and a new search queued for Harbor Lights S01E02, read back via the arr API.",
+      "target": "hl.s01e02.1080p.web.h264-grp.mkv",
+      "verify": "Success if the blocklist entry exists and a replacement grab appears. If the replacement fails or the blocklist entry is wrong, remove the entry in Sonarr and restore the file."
+    },
+    "claimed_preconditions": [
+      "Full decode ran with status ok and reports truncation: 'File ended prematurely', out_time 4.13 s (t1)",
+      "File duration is 8.046 s and the content tags match Harbor Lights S1E2 (e1)",
+      "Managing app is sonarr, episode file 990202 is linked to episode 990102 (e3)"
+    ],
+    "executed": false,
+    "execution_status": "proposed_not_executed",
+    "intent": {
+      "action": "blocklist_and_search",
+      "class": "corrupt_file",
+      "target": "hl.s01e02.1080p.web.h264-grp.mkv"
+    },
+    "note": "recorded proposal only; this harness never executes a write, and nothing was changed",
+    "outcome_step": null,
+    "preconditions": [
+      {
+        "basis": "computed",
+        "detail": "class 'corrupt_file', blocklist_and_search is for identity_mismatch/corrupt_file",
+        "id": "class_matches_action",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "target='hl.s01e02.1080p.web.h264-grp.mkv'",
+        "id": "target_named",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "the target contains the case's own filename",
+        "id": "target_in_context",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "cites ['e1', 'e3', 't1']; unknown refs []",
+        "id": "positive_evidence_cited",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "cited refs that did not run to completion (failure to run, timeout, partial, unavailable): []",
+        "id": "no_failed_tool_cited",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "cited results usable as support (ok, or damage the tool itself reported): ['t1', 'e1', 'e3']",
+        "id": "cited_evidence_supports",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "context.arr.app='sonarr'",
+        "id": "arr_app_present",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "a v2 write decision must carry the audit object",
+        "id": "audit_object_present",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "audit.target='hl.s01e02.1080p.web.h264-grp.mkv' target='hl.s01e02.1080p.web.h264-grp.mkv'",
+        "id": "audit_target_matches",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "the audit names what is read back and how success is checked",
+        "id": "readback_and_verify_stated",
+        "met": true
+      }
+    ],
+    "preconditions_unmet": false,
+    "readback_plan": "Sonarr blocklist entry for this release and a new search queued for Harbor Lights S01E02, read back via the arr API.",
+    "target": "hl.s01e02.1080p.web.h264-grp.mkv",
+    "unmet": [],
+    "verification_plan": "Success if the blocklist entry exists and a replacement grab appears. If the replacement fails or the blocklist entry is wrong, remove the entry in Sonarr and restore the file.",
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "tv-corrupt-001",
+  "case_sha256": "06a34437066d405b4683325dfff3a3b63509d699f8467f1847cf7f9f999e6d48",
+  "config_hash": "1339317d990493589919b3135342e869a3ed128cfb88b93e1cb56727934f96cb",
+  "decision": {
+    "action": "blocklist_and_search",
+    "audit": {
+      "preconditions": [
+        "Full decode ran with status ok and reports truncation: 'File ended prematurely', out_time 4.13 s (t1)",
+        "File duration is 8.046 s and the content tags match Harbor Lights S1E2 (e1)",
+        "Managing app is sonarr, episode file 990202 is linked to episode 990102 (e3)"
+      ],
+      "readback": "Sonarr blocklist entry for this release and a new search queued for Harbor Lights S01E02, read back via the arr API.",
+      "target": "hl.s01e02.1080p.web.h264-grp.mkv",
+      "verify": "Success if the blocklist entry exists and a replacement grab appears. If the replacement fails or the blocklist entry is wrong, remove the entry in Sonarr and restore the file."
+    },
+    "class": "corrupt_file",
+    "confidence": 0.88,
+    "evidence_refs": [
+      "e1",
+      "e3",
+      "t1"
+    ],
+    "reason": "The full decode (t1) reports 'File ended prematurely' and stops at 4.13 s of an 8.05 s file (e1), so the file is truncated. The tags match Harbor Lights S1E2 'Lamp Oil' (e1, e3) and sonarr manages the item (e3).",
+    "target": "hl.s01e02.1080p.web.h264-grp.mkv",
+    "type": "decision"
+  },
+  "decision_flags": [],
+  "evidence": {
+    "capabilities": [
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "ffprobe"
+      },
+      {
+        "calls": 1,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {
+          "ok": 1
+        },
+        "tool": "decode_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "frame_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "audio_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "ocr"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "epub_inspect"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "audiobook_inspect"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "arr_lookup"
+      }
+    ],
+    "gaps": [],
+    "gaps_cited": [],
+    "mode": "replay",
+    "note": "record only: not shown to the model, not scored. A gap is something the run did not verify; a damage finding is evidence, not a gap."
+  },
+  "evidence_mode": "replay",
+  "evidence_shown": [
+    "e1",
+    "e2",
+    "e3"
+  ],
+  "final_decision_valid": true,
+  "first_try": {
+    "failure_modes": [],
+    "first_reply_valid": true,
+    "note": "any repair, forced decision or protocol violation means the first try was not valid; later attempts are recorded separately in turns[].attempt",
+    "protocol_violations": 0,
+    "repair_prompts": 0,
+    "valid": true,
+    "valid_after_repair": false
+  },
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "db9f9e7ebc91d900eb2c5e60b67eb6db089aeeed303168a91bee860e6525dc2c",
+    "bytes": 49657,
+    "declared_sha256": "db9f9e7ebc91d900eb2c5e60b67eb6db089aeeed303168a91bee860e6525dc2c",
+    "kind": "local",
+    "verified": true
+  },
+  "fixture_hashes": {
+    "evidence_shown_sha256": {
+      "e1": "a64cb84230cd7a60d95d47ac783730cd3ec3748964548a71e0eae4c8236e9ddb",
+      "e2": "83bcfbbbe45d6912e6fd99a97696cb6cd9998d467cf52225e9493d1d7b0b9b78",
+      "e3": "b5cbf0a12048d0b08e703e961d3b70a1228d2d84cb80d29c3e564ba5367aa3a5"
+    },
+    "fixture": {
+      "actual_sha256": "db9f9e7ebc91d900eb2c5e60b67eb6db089aeeed303168a91bee860e6525dc2c",
+      "declared_sha256": "db9f9e7ebc91d900eb2c5e60b67eb6db089aeeed303168a91bee860e6525dc2c",
+      "kind": "local",
+      "verified": true
+    }
+  },
+  "forced": false,
+  "forced_reason": null,
+  "guard": {
+    "applied": [],
+    "final_changed": false,
+    "version": "v1"
+  },
+  "harness_git_sha": "45d951ca49cf1819a03e75c47fc21b395e2ee481",
+  "harness_version": "dev-c4",
+  "injected_failure": null,
+  "model_case_alias": "case-8a3abb26",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "outcome": null,
+  "prompt": {
+    "protocol": "turn-v2",
+    "schema_sent": false,
+    "sha256": "a2c3036e57d243a1c892b844a37796ec026e4ea449c4737bcbc3efd01591eedd",
+    "turn_schema_sha256": null,
+    "version": "v4"
+  },
+  "protocol_violations": [],
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "refs_to_non_ok_tools": [],
+  "repair_prompts": [],
+  "requested_model": "claude-haiku-5-5",
+  "response_model_ids": [
+    "claude-haiku-5-5"
+  ],
+  "run_id": "devc4-v4g-haiku-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "split": "dev",
+  "started_at": "2026-10-20T05:31:35.863583+00:00",
+  "suite_version": "dev-v1.1",
+  "tool_calls": [
+    {
+      "args": {
+        "full": true
+      },
+      "evidence_mode": "replay",
+      "id": "t1",
+      "mode": "replay",
+      "output": "{\"at_s\": 0, \"clean\": false, \"exit_code\": 0, \"frames\": 43, \"note\": \"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\", \"out_time\": \"00:00:04.133152\", \"quota_exhausted\": false, \"stderr\": \"[in#0/matroska,webm @ 0x0] File ended prematurely\", \"window_s\": \"full\"}",
+      "status": "ok",
+      "tool": "decode_sample",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.001,
+      "why": "e2 covered only the first 4 s of an 8 s file and reported 'File ended prematurely'. A full decode is needed to confirm damage across the whole file."
+    }
+  ],
+  "tool_modes": [
+    "replay"
+  ],
+  "turns": [
+    {
+      "attempt": "first",
+      "failure_modes": [],
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-haiku-5-5": {
+            "cacheCreationInputTokens": 1723,
+            "cacheReadInputTokens": 3627,
+            "canonicalModel": "claude-haiku-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.00072457,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 687,
+            "provider": "firstParty",
+            "thinkingTokens": 600,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 1,
+      "native": {
+        "duration_api_ms": 4207,
+        "duration_ms": 4309,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-haiku-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-8a3abb26\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990202, \"episodeId\": 990102, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 2, \"episode_title\": \"Lamp Oil\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"hl.s01e02.1080p.web.h264-grp.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E02\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Lamp Oil\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"49373\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"49657\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"2\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Lamp Oil\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"[in#0/matroska,webm @ 0x0] File ended prematurely\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 2, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":2,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Lamp Oil\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"hl.s01e02.1080p.web.h264-grp.mkv\\\",\\\"size\\\":90286},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"ocr\", \"arr_lookup\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself, and neither does this system: the action you choose is recorded as a proposal for a human-supervised system.\n\nREPLY FORMAT\nEvery reply of yours is exactly ONE JSON object and nothing else: no prose, no markdown fence, nothing after the closing brace. The first key is always \"type\". Use only the keys shown below, in that order. Never copy fields from a tool result (such as status, output or tool_calls_remaining) into your reply. Double-quoted keys and strings, every string closed, no trailing commas.\n\n1. Tool call (at most 6 per case, counting any call that is rejected):\n{\"type\":\"tool_call\",\"tool\":\"<a name from tools_available>\",\"why\":\"<=200 chars\",\"args\":{}}\nThis is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. Call only a tool named in tools_available; a call to any other tool does nothing, uses up one of your 6 calls and is recorded as a protocol violation. Tools act on this case's file only. Arguments: ffprobe {}; decode_sample {\"at\":seconds} or {\"full\":true} (a 4 s window, or the whole file); frame_sample {\"at\":seconds}; audio_sample {\"at\":seconds,\"stream\":0}; ocr {\"frame\":\"<name from frame_sample>\"} or {\"at\":seconds}; epub_inspect {}; audiobook_inspect {}; arr_lookup {}.\nEvery tool result has a status:\n- ok: the tool ran and returned its whole answer.\n- partial: the tool ran but returned a cut or incomplete answer; the missing part is unverified.\n- error: the tool ran and failed, or it ran and reported damage in the file; read the output to tell which (damage comes with the tool's own exit code or stage and message about the file; a plain failure message means it did not run properly).\n- timeout: the tool ran and did not finish; nothing was learned.\n- unavailable: the capability is absent (tool not offered, program or data missing, nothing recorded for this call); nothing ran and nothing was learned.\nResults are bounded to 8 KiB. Do not repeat a call that already came back error, timeout or unavailable. If tools_available is empty, make no tool call: decide on the evidence in the case.\n\n2. Final decision:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<string or null>\",\"reason\":\"<=400 chars, one or two sentences>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"]}\nclass is exactly one of: identity_mismatch, corrupt_file, decoder_incompatible, metadata_naming, order_edition_ambiguity, insufficient_evidence, healthy.\naction is exactly ONE of: none, escalate, blocklist_and_search, remap, rename, convert. Never combine two (for example \"remap and rename\" is invalid); if two different writes could be right, the action is escalate.\nCite evidence ids: e1.. for evidence in the case, t1.. for your own tool results.\nEvery decision object has all of the keys shown, including \"target\" and \"confidence\"; \"target\" is the named string for a write and null for none or escalate.\nWhen the action is a write (blocklist_and_search, remap, rename or convert), add a last key \"audit\", and \"target\" must be the same non-null string as audit.target:\n\"audit\":{\"target\":\"<the exact file, release, episode or entry the write applies to>\",\"preconditions\":[\"<a fact that makes this write safe and that you verified, with its evidence id>\"],\"readback\":\"<what will be read back afterwards to confirm the change>\",\"verify\":\"<how success or a need to undo will be recognised>\"}\nLength limits are enforced and a reply over a limit is rejected: write the target once and copy it into audit.target character for character (the two must be identical); audit.target at most 200 characters; preconditions 1 to 6 strings of at most 160 characters each; readback and verify at most 240 characters each; reason at most 400 characters. Be terse. Do not add \"audit\" for none or escalate. A precondition you did not verify is not a precondition: leave it out, and if the write then lacks a prerequisite, escalate instead.\n\nCLASSES (what is wrong with the item, decided from evidence)\n- identity_mismatch: the content is a different work, episode, edition or language than the catalog entry expects, that is, this release is not what was wanted. Needs content evidence (what the streams, tags, text, on-screen text or duration say it is), never the file name alone.\n- corrupt_file: the file is physically damaged: decode errors, truncation, a missing index, an unreadable archive, package or spine. The content is the expected one, but the bytes are damaged. Needs a tool that ran and reported the damage.\n- decoder_incompatible: the file is intact (it decodes cleanly in full) but uses a codec, profile, pixel format, audio layout or container that the stated client cannot play directly. Needs the stated client in the context and a clean full decode.\n- metadata_naming: the content is the right work and a good copy, but its name, tags, title, numbering or the *arr's episode or movie mapping for it is wrong or missing.\n- order_edition_ambiguity: the content is plausibly correct under more than one legitimate ordering, numbering or edition, and the evidence does not settle which one is wanted.\n- insufficient_evidence: the evidence cannot settle whether there is a defect, because the checks that matter failed, timed out, were unavailable or covered only part of the item, or because no check reaches the question.\n- healthy: no defect of any class was found: the integrity checks that ran (status ok) are clean and cover the item's main content, and nothing else (identity, content, the stated client, a tool finding) disagrees.\n\nACTIONS (the change each one proposes; the prerequisites must hold before you choose it)\n- none: no change. Only for healthy.\n- escalate: no change; hand the item to a human with your reason. Choose it whenever the evidence does not settle the class or the supported action: the evidence is insufficient or ambiguous, more than one write could be right, or a prerequisite of the write you would otherwise choose is missing. Say in the reason what was and was not verified.\n- blocklist_and_search: the *arr marks THIS release as bad and searches for a replacement; the current file is later replaced and cannot be recovered. Needs positive content evidence from checks that ran (identity_mismatch or corrupt_file), the item managed by an *arr (context.arr.app names it), and the release or file as target. Only the blocklist entry can be undone, so partial or failed evidence is never enough. Not for problems caused by the client, names or mapping.\n- remap: the *arr changes which item (episode, movie entry or edition) the existing file is linked to; the file's content and name stay as they are and nothing is downloaded. For a good copy that is linked to the wrong item. Needs the managed app, content evidence of what the file really is, evidence of the right target, and a target slot that is free (no other file linked to it); the target is that slot.\n- rename: only the file's name, path or tag text changes; the file stays linked to the same item. Needs verified identity (content evidence agrees with the item), the correct name known from the evidence, and a way back: record the current name so it can be renamed back.\n- convert: makes a compatible copy and leaves the original untouched. Needs class decoder_incompatible, a clean full decode of the source and the stated client; the target is the isolated copy.\n\nMANAGING APP (context.arr.app)\n- sonarr and radarr manage TV episodes and movies. lazylibrarian manages ebooks and audiobooks: for it, blocklist_and_search means fail this grab and search the format again. null means no managed write is supported for this item.\n- A managing app is a precondition you may cite for blocklist_and_search and remap; it is never a reason to act without positive evidence.\n\nEVIDENCE RULES\n1. Integrity evidence (probe, decode, package or stream checks) speaks only to corrupt_file. A clean result does not rule out decoder_incompatible (compare the codecs and container with the stated client), metadata_naming (compare names, tags, titles and numbering with the catalog) or identity_mismatch (compare what the content is with the catalog). Check each of these against whatever evidence reaches it.\n2. Healthy. If the integrity checks that ran with status ok are clean, the item is healthy, even when some are partial, as long as they cover the item's main content and the comparisons in rule 1 find nothing that disagrees. A capability that is unavailable (nothing ran) is not a finding. If no integrity check ran with status ok, or the only results for the parts in question are failed, timed out or injected failures, there is nothing to call healthy: insufficient_evidence with escalate. Metadata alone is not an integrity check.\n3. Evidence in the case (e1, e2, ...) with status ok counts like a tool result of yours; an empty tools_available is then not a gap by itself.\n4. Different work or mislabelled copy. Embedded or on-screen content (tags, package title and author, table of contents, on-screen text, duration) that names a different work, episode or language than the catalog entry means the release is not what was wanted: identity_mismatch. Content that is the expected work, with a wrong name, tag, title, number or episode mapping, is metadata_naming: rename for name or tag text, remap for a wrong item link. If the evidence does not show which of the two applies, escalate. A release name or file name alone is not content evidence. A complaint in notes_for_model is a report, not evidence.\n5. order_edition_ambiguity needs positive evidence in the record of two legitimate candidates (an edition list, an alias, two listed numberings the content fits); the mere possibility that another edition exists is not evidence.\n6. A write needs positive evidence for its class from checks that ran, the prerequisites of that action, and a named target. In the audit, the preconditions are facts you verified, with their evidence ids.\n7. Never cite a result as support if its tool did not run to completion: a failure to run, a timeout, an unavailable capability or partial output. Damage that a tool which did run reports about the file itself is evidence and may be cited. A result with status timeout, unavailable or partial, or a plain tool failure, is not listed in evidence_refs, not even to mention that it failed: say so in the reason in words. Your class and action must agree with your own reason.\n8. If a tool failed but other verified evidence settles the question, decide on that and say the tool failed. If it does not settle it, choose insufficient_evidence with escalate and name the unverified part in the reason.\n9. Use the offered tools to check before concluding. A sample is partial, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":4207,\"stop_reason\":\"end_turn\",\"session_id\":\"3857846c-a326-4edf-9e31-7db72f8693a2\",\"total_cost_usd\":0.00072457,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1723,\"cache_read_input_tokens\":3627,\"output_tokens\":687,\"output_tokens_details\":{\"thinking_tokens\":600},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1723,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":687,\"cache_read_input_tokens\":3627,\"cache_creation_input_tokens\":1723,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1723},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":687,\"cacheReadInputTokens\":3627,\"cacheCreationInputTokens\":1723,\"webSearchRequests\":0,\"costUSD\":0.00072457,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":600,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"decode_sample\\\",\\\"why\\\":\\\"e2 covered only the first 4 s of an 8 s file and reported 'File ended prematurely'. A full decode is needed to confirm damage across the whole file.\\\",\\\"args\\\":{\\\"full\\\":true}}\",\"ttft_ms\":4012,\"type\":\"result\",\"duration_ms\":4309,\"uuid\":\"0bb6fac4-1ebc-49f5-b233-453e6f943d43\",\"ttft_stream_ms\":1248,\"time_to_request_ms\":101,\"first_content_frame_ms\":1248,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "reply_valid": true,
+      "response_model": "claude-haiku-5-5",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"why\":\"e2 covered only the first 4 s of an 8 s file and reported 'File ended prematurely'. A full decode is needed to confirm damage across the whole file.\",\"args\":{\"full\":true}}",
+      "usage": {
+        "cache_creation_input_tokens": 1723,
+        "cache_read_input_tokens": 3627,
+        "cost_usd": 0.00072457,
+        "input_tokens": 2,
+        "output_tokens": 687
+      },
+      "validation_errors": [],
+      "wall_s": 5.051
+    },
+    {
+      "attempt": "first",
+      "failure_modes": [],
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-haiku-5-5": {
+            "cacheCreationInputTokens": 2057,
+            "cacheReadInputTokens": 3627,
+            "canonicalModel": "claude-haiku-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.00099937,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 1103,
+            "provider": "firstParty",
+            "thinkingTokens": 658,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 2,
+      "native": {
+        "duration_api_ms": 5328,
+        "duration_ms": 5362,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-haiku-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-8a3abb26\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990202, \"episodeId\": 990102, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 2, \"episode_title\": \"Lamp Oil\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"hl.s01e02.1080p.web.h264-grp.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E02\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"Lamp Oil\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"49373\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"49657\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"2\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"Lamp Oil\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"[in#0/matroska,webm @ 0x0] File ended prematurely\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 2, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":2,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Lamp Oil\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"hl.s01e02.1080p.web.h264-grp.mkv\\\",\\\"size\\\":90286},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"ocr\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"why\":\"e2 covered only the first 4 s of an 8 s file and reported 'File ended prematurely'. A full decode is needed to confirm damage across the whole file.\",\"args\":{\"full\":true}}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 0, \\\"clean\\\": false, \\\"exit_code\\\": 0, \\\"frames\\\": 43, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"out_time\\\": \\\"00:00:04.133152\\\", \\\"quota_exhausted\\\": false, \\\"stderr\\\": \\\"[in#0/matroska,webm @ 0x0] File ended prematurely\\\", \\\"window_s\\\": \\\"full\\\"}\", \"tool_calls_remaining\": 5}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself, and neither does this system: the action you choose is recorded as a proposal for a human-supervised system.\n\nREPLY FORMAT\nEvery reply of yours is exactly ONE JSON object and nothing else: no prose, no markdown fence, nothing after the closing brace. The first key is always \"type\". Use only the keys shown below, in that order. Never copy fields from a tool result (such as status, output or tool_calls_remaining) into your reply. Double-quoted keys and strings, every string closed, no trailing commas.\n\n1. Tool call (at most 6 per case, counting any call that is rejected):\n{\"type\":\"tool_call\",\"tool\":\"<a name from tools_available>\",\"why\":\"<=200 chars\",\"args\":{}}\nThis is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. Call only a tool named in tools_available; a call to any other tool does nothing, uses up one of your 6 calls and is recorded as a protocol violation. Tools act on this case's file only. Arguments: ffprobe {}; decode_sample {\"at\":seconds} or {\"full\":true} (a 4 s window, or the whole file); frame_sample {\"at\":seconds}; audio_sample {\"at\":seconds,\"stream\":0}; ocr {\"frame\":\"<name from frame_sample>\"} or {\"at\":seconds}; epub_inspect {}; audiobook_inspect {}; arr_lookup {}.\nEvery tool result has a status:\n- ok: the tool ran and returned its whole answer.\n- partial: the tool ran but returned a cut or incomplete answer; the missing part is unverified.\n- error: the tool ran and failed, or it ran and reported damage in the file; read the output to tell which (damage comes with the tool's own exit code or stage and message about the file; a plain failure message means it did not run properly).\n- timeout: the tool ran and did not finish; nothing was learned.\n- unavailable: the capability is absent (tool not offered, program or data missing, nothing recorded for this call); nothing ran and nothing was learned.\nResults are bounded to 8 KiB. Do not repeat a call that already came back error, timeout or unavailable. If tools_available is empty, make no tool call: decide on the evidence in the case.\n\n2. Final decision:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<string or null>\",\"reason\":\"<=400 chars, one or two sentences>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"]}\nclass is exactly one of: identity_mismatch, corrupt_file, decoder_incompatible, metadata_naming, order_edition_ambiguity, insufficient_evidence, healthy.\naction is exactly ONE of: none, escalate, blocklist_and_search, remap, rename, convert. Never combine two (for example \"remap and rename\" is invalid); if two different writes could be right, the action is escalate.\nCite evidence ids: e1.. for evidence in the case, t1.. for your own tool results.\nEvery decision object has all of the keys shown, including \"target\" and \"confidence\"; \"target\" is the named string for a write and null for none or escalate.\nWhen the action is a write (blocklist_and_search, remap, rename or convert), add a last key \"audit\", and \"target\" must be the same non-null string as audit.target:\n\"audit\":{\"target\":\"<the exact file, release, episode or entry the write applies to>\",\"preconditions\":[\"<a fact that makes this write safe and that you verified, with its evidence id>\"],\"readback\":\"<what will be read back afterwards to confirm the change>\",\"verify\":\"<how success or a need to undo will be recognised>\"}\nLength limits are enforced and a reply over a limit is rejected: write the target once and copy it into audit.target character for character (the two must be identical); audit.target at most 200 characters; preconditions 1 to 6 strings of at most 160 characters each; readback and verify at most 240 characters each; reason at most 400 characters. Be terse. Do not add \"audit\" for none or escalate. A precondition you did not verify is not a precondition: leave it out, and if the write then lacks a prerequisite, escalate instead.\n\nCLASSES (what is wrong with the item, decided from evidence)\n- identity_mismatch: the content is a different work, episode, edition or language than the catalog entry expects, that is, this release is not what was wanted. Needs content evidence (what the streams, tags, text, on-screen text or duration say it is), never the file name alone.\n- corrupt_file: the file is physically damaged: decode errors, truncation, a missing index, an unreadable archive, package or spine. The content is the expected one, but the bytes are damaged. Needs a tool that ran and reported the damage.\n- decoder_incompatible: the file is intact (it decodes cleanly in full) but uses a codec, profile, pixel format, audio layout or container that the stated client cannot play directly. Needs the stated client in the context and a clean full decode.\n- metadata_naming: the content is the right work and a good copy, but its name, tags, title, numbering or the *arr's episode or movie mapping for it is wrong or missing.\n- order_edition_ambiguity: the content is plausibly correct under more than one legitimate ordering, numbering or edition, and the evidence does not settle which one is wanted.\n- insufficient_evidence: the evidence cannot settle whether there is a defect, because the checks that matter failed, timed out, were unavailable or covered only part of the item, or because no check reaches the question.\n- healthy: no defect of any class was found: the integrity checks that ran (status ok) are clean and cover the item's main content, and nothing else (identity, content, the stated client, a tool finding) disagrees.\n\nACTIONS (the change each one proposes; the prerequisites must hold before you choose it)\n- none: no change. Only for healthy.\n- escalate: no change; hand the item to a human with your reason. Choose it whenever the evidence does not settle the class or the supported action: the evidence is insufficient or ambiguous, more than one write could be right, or a prerequisite of the write you would otherwise choose is missing. Say in the reason what was and was not verified.\n- blocklist_and_search: the *arr marks THIS release as bad and searches for a replacement; the current file is later replaced and cannot be recovered. Needs positive content evidence from checks that ran (identity_mismatch or corrupt_file), the item managed by an *arr (context.arr.app names it), and the release or file as target. Only the blocklist entry can be undone, so partial or failed evidence is never enough. Not for problems caused by the client, names or mapping.\n- remap: the *arr changes which item (episode, movie entry or edition) the existing file is linked to; the file's content and name stay as they are and nothing is downloaded. For a good copy that is linked to the wrong item. Needs the managed app, content evidence of what the file really is, evidence of the right target, and a target slot that is free (no other file linked to it); the target is that slot.\n- rename: only the file's name, path or tag text changes; the file stays linked to the same item. Needs verified identity (content evidence agrees with the item), the correct name known from the evidence, and a way back: record the current name so it can be renamed back.\n- convert: makes a compatible copy and leaves the original untouched. Needs class decoder_incompatible, a clean full decode of the source and the stated client; the target is the isolated copy.\n\nMANAGING APP (context.arr.app)\n- sonarr and radarr manage TV episodes and movies. lazylibrarian manages ebooks and audiobooks: for it, blocklist_and_search means fail this grab and search the format again. null means no managed write is supported for this item.\n- A managing app is a precondition you may cite for blocklist_and_search and remap; it is never a reason to act without positive evidence.\n\nEVIDENCE RULES\n1. Integrity evidence (probe, decode, package or stream checks) speaks only to corrupt_file. A clean result does not rule out decoder_incompatible (compare the codecs and container with the stated client), metadata_naming (compare names, tags, titles and numbering with the catalog) or identity_mismatch (compare what the content is with the catalog). Check each of these against whatever evidence reaches it.\n2. Healthy. If the integrity checks that ran with status ok are clean, the item is healthy, even when some are partial, as long as they cover the item's main content and the comparisons in rule 1 find nothing that disagrees. A capability that is unavailable (nothing ran) is not a finding. If no integrity check ran with status ok, or the only results for the parts in question are failed, timed out or injected failures, there is nothing to call healthy: insufficient_evidence with escalate. Metadata alone is not an integrity check.\n3. Evidence in the case (e1, e2, ...) with status ok counts like a tool result of yours; an empty tools_available is then not a gap by itself.\n4. Different work or mislabelled copy. Embedded or on-screen content (tags, package title and author, table of contents, on-screen text, duration) that names a different work, episode or language than the catalog entry means the release is not what was wanted: identity_mismatch. Content that is the expected work, with a wrong name, tag, title, number or episode mapping, is metadata_naming: rename for name or tag text, remap for a wrong item link. If the evidence does not show which of the two applies, escalate. A release name or file name alone is not content evidence. A complaint in notes_for_model is a report, not evidence.\n5. order_edition_ambiguity needs positive evidence in the record of two legitimate candidates (an edition list, an alias, two listed numberings the content fits); the mere possibility that another edition exists is not evidence.\n6. A write needs positive evidence for its class from checks that ran, the prerequisites of that action, and a named target. In the audit, the preconditions are facts you verified, with their evidence ids.\n7. Never cite a result as support if its tool did not run to completion: a failure to run, a timeout, an unavailable capability or partial output. Damage that a tool which did run reports about the file itself is evidence and may be cited. A result with status timeout, unavailable or partial, or a plain tool failure, is not listed in evidence_refs, not even to mention that it failed: say so in the reason in words. Your class and action must agree with your own reason.\n8. If a tool failed but other verified evidence settles the question, decide on that and say the tool failed. If it does not settle it, choose insufficient_evidence with escalate and name the unverified part in the reason.\n9. Use the offered tools to check before concluding. A sample is partial, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":5328,\"stop_reason\":\"end_turn\",\"session_id\":\"8d6aa58f-3791-4668-aa58-9dac60b4f61e\",\"total_cost_usd\":0.00099937,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":2057,\"cache_read_input_tokens\":3627,\"output_tokens\":1103,\"output_tokens_details\":{\"thinking_tokens\":658},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":2057,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":1103,\"cache_read_input_tokens\":3627,\"cache_creation_input_tokens\":2057,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":2057},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":1103,\"cacheReadInputTokens\":3627,\"cacheCreationInputTokens\":2057,\"webSearchRequests\":0,\"costUSD\":0.00099937,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":658,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"corrupt_file\\\",\\\"action\\\":\\\"blocklist_and_search\\\",\\\"target\\\":\\\"hl.s01e02.1080p.web.h264-grp.mkv\\\",\\\"reason\\\":\\\"The full decode (t1) reports 'File ended prematurely' and stops at 4.13 s of an 8.05 s file (e1), so the file is truncated. The tags match Harbor Lights S1E2 'Lamp Oil' (e1, e3) and sonarr manages the item (e3).\\\",\\\"confidence\\\":0.88,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e3\\\",\\\"t1\\\"],\\\"audit\\\":{\\\"target\\\":\\\"hl.s01e02.1080p.web.h264-grp.mkv\\\",\\\"preconditions\\\":[\\\"Full decode ran with status ok and reports truncation: 'File ended prematurely', out_time 4.13 s (t1)\\\",\\\"File duration is 8.046 s and the content tags match Harbor Lights S1E2 (e1)\\\",\\\"Managing app is sonarr, episode file 990202 is linked to episode 990102 (e3)\\\"],\\\"readback\\\":\\\"Sonarr blocklist entry for this release and a new search queued for Harbor Lights S01E02, read back via the arr API.\\\",\\\"verify\\\":\\\"Success if the blocklist entry exists and a replacement grab appears. If the replacement fails or the blocklist entry is wrong, remove the entry in Sonarr and restore the file.\\\"}}\",\"ttft_ms\":3707,\"type\":\"result\",\"duration_ms\":5362,\"uuid\":\"66a10cdd-79f6-44d5-af74-78e4387c816c\",\"ttft_stream_ms\":650,\"time_to_request_ms\":32,\"first_content_frame_ms\":650,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "reply_valid": true,
+      "response_model": "claude-haiku-5-5",
+      "text": "{\"type\":\"decision\",\"class\":\"corrupt_file\",\"action\":\"blocklist_and_search\",\"target\":\"hl.s01e02.1080p.web.h264-grp.mkv\",\"reason\":\"The full decode (t1) reports 'File ended prematurely' and stops at 4.13 s of an 8.05 s file (e1), so the file is truncated. The tags match Harbor Lights S1E2 'Lamp Oil' (e1, e3) and sonarr manages the item (e3).\",\"confidence\":0.88,\"evidence_refs\":[\"e1\",\"e3\",\"t1\"],\"audit\":{\"target\":\"hl.s01e02.1080p.web.h264-grp.mkv\",\"preconditions\":[\"Full decode ran with status ok and reports truncation: 'File ended prematurely', out_time 4.13 s (t1)\",\"File duration is 8.046 s and the content tags match Harbor Lights S1E2 (e1)\",\"Managing app is sonarr, episode file 990202 is linked to episode 990102 (e3)\"],\"readback\":\"Sonarr blocklist entry for this release and a new search queued for Harbor Lights S01E02, read back via the arr API.\",\"verify\":\"Success if the blocklist entry exists and a replacement grab appears. If the replacement fails or the blocklist entry is wrong, remove the entry in Sonarr and restore the file.\"}}",
+      "usage": {
+        "cache_creation_input_tokens": 2057,
+        "cache_read_input_tokens": 3627,
+        "cost_usd": 0.00099937,
+        "input_tokens": 2,
+        "output_tokens": 1103
+      },
+      "validation_errors": [],
+      "wall_s": 5.986
+    }
+  ],
+  "unverified_parts": [],
+  "usage": {
+    "cost_reported": true,
+    "cost_usd": 0.0017239400000000002,
+    "input_tokens": 4,
+    "output_tokens": 1790
+  },
+  "wall": {
+    "case_excl_load_s": 11.044,
+    "load_s": 0.0,
+    "tool_s": [
+      0.001
+    ],
+    "total_s": 11.044,
+    "turn_s": [
+      5.051,
+      5.986
+    ]
+  },
+  "write_rejection": {
+    "attempts": [],
+    "forced_after_rejected_write": false,
+    "note": "record only: a rejected write decision never became the decision; forced_after_rejected_write means the repair also failed and the harness forced insufficient_evidence/escalate",
+    "rejected_write_attempts": 0,
+    "repaired_to_valid_decision": false
+  }
+}

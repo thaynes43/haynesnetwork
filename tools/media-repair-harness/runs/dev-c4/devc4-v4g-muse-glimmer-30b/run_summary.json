@@ -1,0 +1,63 @@
+{
+  "aborted": null,
+  "cases_planned": 73,
+  "config_hash": "a644c34369c43800ab22cdcb1857b15adeef4df39a194da0fef34f3a8146137e",
+  "cost_usd": null,
+  "evidence": {
+    "gaps": 14,
+    "gaps_by_type": {
+      "incomplete": 2,
+      "not_run": 6,
+      "standing": 6
+    },
+    "tool_calls_by_evidence_mode": {
+      "replay": 129
+    }
+  },
+  "evidence_mode": "replay",
+  "guards": {
+    "applied_by_rule": {
+      "G-healthy": 6,
+      "G-write": 1
+    },
+    "decisions_changed": 7,
+    "version": "v1"
+  },
+  "harness_git": {
+    "branch": "agent/mrh-devc4-1020",
+    "dirty": false,
+    "sha": "4b8de9dfe45d66c2a1a1ab3bc5c6c64270f1e0c3"
+  },
+  "harness_version": "dev-c4",
+  "incomplete_records": {},
+  "latency_s_per_case": {
+    "max": 18.678,
+    "median": 10.013,
+    "min": 1.824
+  },
+  "prompt": {
+    "sha256": "a2c3036e57d243a1c892b844a37796ec026e4ea449c4737bcbc3efd01591eedd",
+    "version": "v4"
+  },
+  "records_complete": true,
+  "records_written": 73,
+  "requested_model": "muse-glimmer:30b",
+  "response_model_ids": [
+    "muse-glimmer:30b"
+  ],
+  "run_id": "devc4-v4g-muse-glimmer-30b",
+  "statement": "Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; this harness executed no write and changed no media, *arr, Plex or library state.",
+  "validity": {
+    "adapter_errors": 0,
+    "crashes": 0,
+    "final_decision_valid": 73,
+    "first_try_failure_modes": {},
+    "first_try_valid": 73,
+    "forced": 0,
+    "forced_after_rejected_write": 0,
+    "protocol_violations": 0,
+    "rejected_write_attempts": 0,
+    "repaired": 0
+  },
+  "writes_executed": 0
+}

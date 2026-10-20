@@ -63,6 +63,19 @@ Run options: `--prompt v1|v2|v3|v4` (system prompt + turn protocol; default v1; 
 (ollama; stop defaults per family: Qwen `<|im_end|>`, Muse `<|eot|>`; a run also writes `run_summary.json`: validity and completeness counts, no scoring), `--ollama-schema anyof|flat`, `--no-warmup`, `--ocr-model <vision tag on Prime>`,
 `--scratch <dir>` (frames and other media-derived artifacts; default `~/.cache/media-repair-harness/<run-id>`, never inside the run dir).
 
+## Decision guards (dev-c4, opt-in)
+
+`--guards v1` (default off) runs two deterministic checks on the model's final decision, after its last turn: **G-healthy** (a `healthy` / `none` decision when no integrity check ran with status `ok` in the evidence the model could see, the evaluator's ruling C2 as a boundary)
+and **G-write** (a write whose audit computes an unmet precondition, or that cites no usable evidence). A guard can only turn a decision into `insufficient_evidence` / `escalate`; the model's own decision is kept in the record field `guard`. Details: `CONTRACT-v2-proposal.md` section 9.
+
+```bash
+mrh-guard <run dir> --suite <suite dir> --out <new dir>             # apply the guards offline to existing records (copies; no model call)
+mrh-guard <guarded run dir> --restore --suite <suite dir> --out <new dir>   # the inverse: the model's original decisions back
+python3 tools/media-repair-harness/scripts/guard_whatif.py --suite <suite> --scratch <dir> --out <dir> <run dir> [<run dir> ...]   # guard + rescore several runs
+```
+
+dev-c4 measurements (dev split only, tuned, not a predictor of held-out; dev-v1.1 numbers did not predict held-out for prompt v3): `runs/dev-c4/README.md`.
+
 ## Layout
 
 | File (under `src/media_repair_harness/` unless noted) | Role |

@@ -1,5 +1,39 @@
 # Harness changelog
 
+## dev-c4 (candidate, OpenProject #142)
+
+Opt-in deterministic decision guards, prompt v4, and the fix for a local model calling tools no case offers. Not scoring: `score.py`, `CONTRACT.md`, `CONTRACT-v1.1.md`, the suites, labels and gates are untouched. Defaults are unchanged
+(prompt v1, no guards); prompts v1, v2 and v3 are byte-identical and the replay-identity golden is untouched (only `HARNESS_VERSION` moved to `dev-c4`). With guards off a record has the same fields as a dev-c3 record (`tests/test_v4.py`).
+
+* **Decision guards** (`--guards v1`, default off; `decision_guard.py`). Two deterministic checks on the FINAL decision, not model-visible, no case id, title or label. A guard can only turn a decision into `insufficient_evidence` / `escalate`; the final `reason` names the guard,
+  the model's own decision stays in the record field `guard{version, applied[{rule, original, reason}], final_changed}`, `forced` keeps its meaning. `decision`, `action_audit`, `decision_flags`, `bad_evidence_refs`, `refs_to_*` and `evidence.gaps_cited` describe the final decision.
+  * **G-healthy** (evaluator ruling C2 as a boundary): `healthy` / `none` with no integrity check that ran with status `ok` in the model-visible evidence (case evidence and its own tool results). Integrity checks by evidence type: `ffprobe`, `decode_sample`, `audio_sample`, `epub_inspect`, `audiobook_inspect`.
+    Identity and title records (`arr_lookup`, `ocr`, `prior_record`, `frame_sample`) are not. Failed, timeout, partial, unavailable and injected results do not count. It never fires when one ok integrity check exists, so partial but representative checks keep `healthy`.
+  * **G-write**: a write action (`blocklist_and_search`, `remap`, `rename`, `convert`) whose audit COMPUTES an unmet precondition (basis `computed`; claim text is never acted on; the text-matching `target_in_context` is excluded) or that cites no result usable as support (an `ok` result, or damage a tool reported).
+* **`mrh-guard <run dir> --suite <suite> --out <dir>`** applies the guards offline to existing run records (copies; the input is never modified; no model call); `--restore` is the inverse view of a guarded run. `scripts/guard_whatif.py` runs it over several runs and rescores with the unchanged `score.py`.
+  `--guards v1` also adds `guards` to the manifest config (only when on, so an unguarded run keeps its `config_hash` shape) and a `guards` block to `run_summary.json`.
+* **Prompt v4** (`--prompt v4`, new file `prompts/v4.txt`; same v2 turn protocol, `protocol_of('v4') == 'v2'`). Built from the class and action definitions shared by v2 and v3, not layered on v3, and shorter than v3. General changes from the review of v3 and from ruling C2:
+  integrity evidence speaks only to `corrupt_file` (a clean result does not rule out `decoder_incompatible`, `metadata_naming` or `identity_mismatch`); a different work is `identity_mismatch`, the right work with a wrong name, tag, number or mapping is `metadata_naming` (rename, or remap for a wrong item link), unclear means escalate;
+  the healthy boundary follows C2 and is stated neutrally (clean ok checks that cover the main content stay healthy even when some are partial, an `unavailable` capability is not a finding, no ok integrity check means `insufficient_evidence` / `escalate`); abstention is stated neutrally (escalate whenever the evidence does not settle the class or the supported action);
+  v3's push against escalating is gone; the decision always carries all keys, `target` included. `audit.ACTION_CLASSES_V4` lets `remap` go with `metadata_naming` as well as `identity_mismatch` and reads a client profile under `context.expected` (v1 to v3 `action_audit` is unchanged).
+* **Tool-not-offered replies (muse-glimmer:30b)**: the 17 violations in the evaluator's dev-c3 run all sit on the 11 cases with an empty `tools_available`. `tool_call_schema_v2` fell back to the full tool list for an empty list (an enum cannot be empty), so the grammar allowed tools no case offered. For v4 only
+  (`protocol.STRICT_TOOL_SCHEMA`), such a case gets a decision-only schema; v2 and v3 keep their old behaviour. Fresh muse run: violations 17 to 0, first-try valid 62/73 to 73/73. A hosted model, which gets no schema, can still make such a call; it is still a recorded violation.
+* **Tests**: `test_v4.py` (37: prompt text and absence of anti-escalation wording, text vs both dev suites, strict schema, guard unit tests with synthetic fixtures, guards-off byte identity, in-run vs offline agreement, `mrh-guard`), `test_dev_c4_runs.py` (committed runs are what their summaries say). Whole harness: 505 tests.
+  The wiring-smoke bundle limit moved from 120000 to 126000 characters (still under the 131072 single-argument limit) because the runner now imports `decision_guard`.
+
+### Measurement (dev-v1.1, replay; full detail in `runs/dev-c4/README.md`)
+
+**Dev-tuned, one sample, and not a predictor of held-out**: v3's dev results did not predict its held-out results (dev-v1.1: Sonnet and Haiku missed only G2; held-out-v1.1: G3 68.3% / 61.0%, G4 70% / 60%, G5 19.4% / 25.8%, G2 54.55% for both). v4 was run once per model and not iterated; the shipped `prompts/v4.txt` equals the measured text (file sha256 `48bad0e41baa113df432545566a34d3bc0d01e2c5bd0f27fe0bcedb923c73a8a`).
+
+* Offline what-if of `--guards v1` on the evaluator's six dev-c3 runs: 0 changes for Haiku, Sonnet and Opus; 1 for gpt-6-luna (G4 86.7% to 93.3%); qwen 6 changes (G4 40.0% to 73.3%, G3 93.4% to 91.8%); muse 4 (G4 33.3% to 53.3%, G3 90.2% to 88.5%). No correct truth-healthy decision was changed.
+* Fresh runs: Haiku (guards fired 0 times) G3 80.3%, G4 100%, G5 16.3%, G2 84.6%, i.e. worse than v3 on dev; qwen with guards G4 40% to 80%; muse G7 84.9% to 100%.
+
+### Known limits (dev-c4)
+
+* The guards cannot see an unsafe write that cites an `ok` result and names a managing app (muse's seven G1 cases). G-write also enforces the audit's "clean full decode" for `convert`, which cost one label-accepted decision on each of two local models on the dev split.
+* G-healthy depends on the evidence-type list `INTEGRITY_TOOLS`.
+* Everything from dev-c3's known limits still applies.
+
 ## dev-c3 (candidate, OpenProject #140)
 
 Less unnecessary abstention through general evidence rules, `lazylibrarian` as a managing app, record-only visibility for rejected writes, and contract-proposal text fixes. Not scoring: `score.py`, `CONTRACT.md`, `CONTRACT-v1.1.md`,
