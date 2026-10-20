@@ -1,7 +1,7 @@
 {
  "_comment": "Human-readable restatement of what is frozen. NOT the runner's manifest.json (which is compared with this file after each run; any frozen value that differs is reported as a deviation). Hash formats: case_order_sha256 = sha256('\\n'.join(ids)) with no trailing newline; case_sha256_table_sha256 = sha256(json.dumps({id: sha}, sort_keys=True)); prompt.assembled_sha256 is over the text sent (one trailing newline removed), prompt.file_sha256 over the file bytes. Null fields are filled by the runner.",
  "harness_version": "dev-c5",
- "frozen_code_commit": "97dd19ff",
+ "frozen_code_commit": "6c0df428",
  "suite": {
   "path": ".agents/context/media-repair-harness-2026-10-19/suite-dev-v1.1",
   "split": "dev",
@@ -108,7 +108,7 @@
   "page_contract": "pages-v1",
   "tools_behavior": "v2",
   "audit_version": "v2",
-  "started_aborted_scoring": "not scored; listed unscored (started-aborted/<case>.json); every rate over recorded cases",
+  "started_aborted_scoring": "not scored; listed unscored (started-aborted/<case>.json). Each gate keeps score.py's own denominator; G7 uses planned cases. Recorded, started-aborted and never-started counts are reported next to every gate.",
   "warmup": {
    "ollama_only": true,
    "endpoint": "/api/generate",
@@ -124,7 +124,7 @@
   "repair_prompts_per_case": 1,
   "after_failed_repair": "forced insufficient_evidence/escalate",
   "whole_case_rerun": false,
-  "model_call_failure": "recorded, forced escalate, no retry"
+  "model_call_failure": "recorded with its receipt, forced escalate, no retry; under the Haiku cost cap a failed call that reports no cost stops the run (cost_unreported) and a CLI budget stop is a cost-cap abort"
  },
  "runs": {
   "haiku": {
@@ -152,7 +152,7 @@
    "config_hash": null,
    "harness_git_sha": null,
    "started_at": null,
-   "cost_cap_enforcement": "remaining budget before each call; failed-call cost counts; unreported cost stops the run"
+   "cost_cap_enforcement": "remaining budget before each call; failed-call cost and tokens counted and kept; unreported cost stops the run; overshoot or unreported cost on any call (the last included) is a limit violation (exit 3); the CLI stopping at the lowered budget is a cost-cap abort (started-aborted)"
   },
   "qwen": {
    "run_id": "devc5-b-qwen3.8-27b",
@@ -180,7 +180,7 @@
    "harness_git_sha": null,
    "started_at": null,
    "require_digest_flag": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
-   "wall_cap_enforcement": "absolute deadline from before preflight; no call started unless its 120 s timeout fits; overshoot = cleanup only (unload <= 60 s)",
+   "wall_cap_enforcement": "absolute deadline from before preflight; checked before every call and case; no call started unless its 120 s timeout plus the 180 s cleanup reserve fits; an overrun is a wall_cap_exceeded limit violation (exit 3)",
    "flags_extra": "--require-digest aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813"
   }
  },
@@ -196,7 +196,9 @@
   "statements"
  ],
  "base_main_commit": "34e8589e",
- "frozen_src_tree_sha1": "5d3d718b2ea3b829385b3bf4a19717548b1ad12f",
+ "frozen_src_tree_sha1": "c93c524deb6a630a8770d1d10a7f957aa62daeec",
  "amendment_1": "Rebased onto main 34e8589e (PR #1025, guard-v3 support from typed execution; EPUB execution vs damage) before any model response. Only frozen_code_commit, base_main_commit and frozen_src_tree_sha1 changed; every hash, model, cap and rule is as first committed (d1c87066).",
- "amendment_2": "Pre-measurement review (Opus, Astra 12) before any model response: prompt v5 text changed, enforced caps, started-aborted records, registered warm-up, enforced digest. Changed: prompt hashes, frozen_code_commit, frozen_src_tree_sha1, claude config timeout_s, qwen --require-digest. Everything else as in amendment_1."
+ "amendment_2": "Pre-measurement review (Opus, Astra 12) before any model response: prompt v5 text changed, enforced caps, started-aborted records, registered warm-up, enforced digest. Changed: prompt hashes, frozen_code_commit, frozen_src_tree_sha1, claude config timeout_s, qwen --require-digest. Everything else as in amendment_1.",
+ "amendment_3": "Re-check of e43db99e (Opus, Astra 13) before any model response: failed-call receipts kept, denominator wording, final-call limit violations, wall cleanup reserve, CLI budget abort. Changed: frozen_code_commit, frozen_src_tree_sha1. Prompt hashes unchanged.",
+ "gates_note": "G10 = records passing score.py's G10 checks / records written (digest or not-applicable reason, response id, runtime version, harness commit, config hash, fixture hashes, raw I/O). Estimate-flag subset (b) is at most 44 of 73 cases (Opus: the estimate flags 29)."
 }
