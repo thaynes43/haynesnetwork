@@ -274,6 +274,11 @@ AMENDMENTS_V31 = (
      'EVERY marker is the target\'s; any contradicting marker is a disagreement; a rename\'s new value may not reuse a marker-shaped token (SxxEyy, NxNN) '
      'that is not the target\'s own, from the wrong current name or any other source',
      'why': 'a new name carrying the right and the wrong marker together met every prerequisite (AUDIT-ASTRA-19)'},
+    {'id': 'A31-13', 'changes': 'M5, M6 for multi-part audiobooks', 'text': 'each part of a multi-part audiobook is a naming-surface source: every part tag is checked for '
+     'explicit emptiness; a part\'s album and artist are compared with the catalog like the container tags (M5 identity, M6 naming); only a part\'s title, '
+     'which is a chapter name, is exempt from that comparison',
+     'why': 'an emptiness-only check let every part\'s album name another book while healthy passed; a title-to-book comparison flagged every chapter name '
+     '(the Opus review of 2355220b, the advisory review of e4448c07)'},
 )
 
 NEGATED_METHOD_RX = r'\b(?:no|not|without|unavailable|failed|missing|none|never|cannot|could ?n[o\']?t|unable|skipped)\b'

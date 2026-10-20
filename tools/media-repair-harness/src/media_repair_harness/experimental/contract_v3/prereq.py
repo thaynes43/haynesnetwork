@@ -174,6 +174,12 @@ class View:
                     for k in ('title', 'album', 'artist'):
                         for x in _items(tags.get(k)):
                             out.append((o['id'], 'declaration', 'tag_' + k, x))
+                for i, el in enumerate(f.get('files') or []):       # A31-13: each part's album and artist speak to the book; its title is a chapter name
+                    ptags = el.get('tags') if isinstance(el, dict) else None
+                    if isinstance(ptags, dict):
+                        for k in ('album', 'artist'):
+                            for x in _items(ptags.get(k)):
+                                out.append(('%s:files[%d]' % (o['id'], i), 'declaration', 'tag_' + k, x))
                 for s in f.get('streams') or []:
                     if isinstance(s, dict) and s.get('type') == 'audio' and isinstance(s.get('language'), str):
                         out.append((o['id'], 'declaration', 'stream_language', s['language']))
@@ -386,8 +392,8 @@ def check_named(v, check):
             parts = value if isinstance(value, list) else [value]
             if PR.state_of(value) == PR.EMPTY or any(isinstance(x, str) and PR.state_of(x) == PR.EMPTY for x in parts):
                 refs.append(ref + ':' + field + '_empty')     # an explicitly empty value or list, or an empty element (null and absent yield nothing)
-            elif ':files[' not in ref and any(isinstance(x, str) and 'disagree' in v.compare('declaration', field, x).values() for x in parts):
-                refs.append(ref + ':' + field)            # a part's own tags (chapter names) are checked for emptiness only, never compared with the book
+            elif not (':files[' in ref and field == 'tag_title') and any(isinstance(x, str) and 'disagree' in v.compare('declaration', field, x).values() for x in parts):
+                refs.append(ref + ':' + field)            # A31-13: only a part's TITLE (a chapter name) is exempt from the comparison; its album and artist are compared
         for o in v.of_tool('ffprobe', 'audiobook_inspect', 'epub_inspect'):
             p = v.presence.get(o['id']) or {}
             if 'tag_title' in surface and o['tool'] != 'epub_inspect' and (p.get('format.tags') == PR.EMPTY or p.get('tags') == PR.EMPTY):
