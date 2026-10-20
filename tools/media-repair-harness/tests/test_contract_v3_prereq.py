@@ -270,6 +270,15 @@ class SourceAndTargets(unittest.TestCase):
             occ = {p['id']: p['state'] for p in TG.audit_v3(d, self.remap_obs({'relativePath': 'x.mkv'}, order), ctx(), 'tv')['prerequisites']}
             self.assertEqual(occ['A-MAP-4'], 'unmet', order)
 
+    def test_without_a_catalog_episode_the_item_comes_from_the_record_of_this_file_in_any_order(self):
+        c = ctx(expected={'series': 'Alpha Show', 'runtime_s': 8})          # the context names no season or episode
+        d = self.decision('remap', 'identity_mismatch', {'kind': 'destination_slot', 'slot_ref': 'e5', 'slot_free_ref': 'e5'})
+        seen = set()
+        for order in (None, [0, 2, 1, 3], [2, 1, 0, 3], [3, 2, 1, 0]):
+            got = {p['id']: p['state'] for p in TG.audit_v3(d, self.remap_obs(None, order), c, 'tv')['prerequisites']}
+            seen.add((got['A-MAP-2'], got['A-MAP-3'], got['A-MAP-4']))
+        self.assertEqual(seen, {('met', 'met', 'met')})
+
     def test_a_free_record_of_another_item_cannot_stand_for_an_occupied_destination(self):
         d = self.decision('remap', 'identity_mismatch', {'kind': 'destination_slot', 'slot_ref': 'e5', 'slot_free_ref': 'e6'})
         got = {p['id']: p['state'] for p in TG.audit_v3(d, self.remap_obs({'relativePath': 'x.mkv'}), ctx(), 'tv')['prerequisites']}

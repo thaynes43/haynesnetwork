@@ -73,10 +73,17 @@ class View:
             eps.append((exp['season'], exp['episode']))
         if exp.get('author'):
             authors.append(str(exp['author']))
+        own_eps, own_titles = set(), set()
         for o in self.of_tool('arr_lookup'):
             f = self.facts.get(o['id']) or {}
             if not self.ran_ok(o) or not isinstance(f, dict):
                 continue
+            ep = f.get('episode')
+            if isinstance(ep, dict) and self.links_this_file(f):      # the record that links THIS file says which item it is (any order)
+                if isinstance(ep.get('season'), int) and isinstance(ep.get('episode'), int):
+                    own_eps.add((ep['season'], ep['episode']))
+                if ep.get('title'):
+                    own_titles.add(str(ep['title']))
             for k in ('work', 'series'):
                 if isinstance(f.get(k), str) and f[k]:
                     titles.append(f[k])
@@ -84,12 +91,21 @@ class View:
                 titles.append(str(f['movie']['title']))
             titles += [str(a) for a in (f.get('aliases') or []) + (f.get('alternate_titles') or []) if isinstance(a, str) and a]
             authors += [str(a) for a in f.get('authors') or [] if isinstance(a, str)]
-            ep = f.get('episode')
-            if isinstance(ep, dict) and isinstance(ep.get('season'), int) and isinstance(ep.get('episode'), int) and not eps:
-                eps.append((ep['season'], ep['episode']))
-            if isinstance(ep, dict) and ep.get('title') and not ep_titles:
-                ep_titles.append(str(ep['title']))
+        if not eps and len(own_eps) == 1:       # with no catalog episode in the context, only an unambiguous record of this file names the item; never the first record seen
+            eps = sorted(own_eps)
+        if not ep_titles and len(own_titles) == 1:
+            ep_titles = sorted(own_titles)
         return {'titles': titles, 'episodes': eps, 'episode_titles': ep_titles, 'authors': authors}
+
+    def links_this_file(self, f):
+        fl = f.get('file') if isinstance(f, dict) else None
+        if not isinstance(fl, dict):
+            return False
+        fname = self.context.get('filename')
+        ids = (self.context.get('arr') or {}).get('ids') or {}
+        rp = fl.get('relativePath') or fl.get('path')
+        return bool((isinstance(rp, str) and fname and norm(rp.split('/')[-1]) == norm(fname)) or
+                    (fl.get('id') is not None and fl.get('id') in [ids.get(k) for k in ('episodeFileId', 'movieFileId', 'bookId')]))
 
     # ------------------------------------------------------------------ identity-bearing statements: (ref, kind, typed, text)
     def statements(self):
