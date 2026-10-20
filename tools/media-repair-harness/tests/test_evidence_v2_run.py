@@ -1204,7 +1204,6 @@ class RegressionGolden(unittest.TestCase):
 
     @th.needs_suite
     def test_public_dev_renderings_equal_the_golden(self):
-        import os
         import make_evidence_v2_golden as M
         want = json.loads(self.GOLDEN.read_text())['public_dev']
         now = M.suites(Path(th.SUITE).parent)
@@ -1212,13 +1211,13 @@ class RegressionGolden(unittest.TestCase):
         home = set()
         for suite in ('suite', 'suite-dev-v1.1'):
             for case, _ in R.load_cases(Path(th.SUITE).parent / suite):
-                loc = (case.get('fixture') or {}).get('locator') or ''
-                if loc.startswith('~') and os.path.exists(os.path.expanduser(loc)):
+                if ((case.get('fixture') or {}).get('locator') or '').startswith('~'):
                     home.add('%s:%s' % (suite, hashlib.sha256(case['id'].encode()).hexdigest()[:12]))
         self.assertLessEqual(len(home), 8)
         for key, row in want.items():
             self.assertEqual(now[key]['case_sha256'], row['case_sha256'], key)
+            self.assertEqual(now[key]['initial'], row['initial'], key)
             if key in home:
-                continue                                  # the evaluator's home cache holds this file here: tools take another route, as in the replay-identity test
+                continue    # these fixtures sit in the evaluator's home cache: whether the file exists decides the route of the tools, so only the case-provided evidence is pinned
             self.assertEqual(now[key], row, key)
         self.assertEqual(len(want), 146)
