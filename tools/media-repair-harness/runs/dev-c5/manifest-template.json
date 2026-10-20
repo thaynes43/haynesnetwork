@@ -1,7 +1,7 @@
 {
- "_comment": "Frozen run manifest template for dev-c5 (PREREGISTRATION.md). Null fields are filled by the runner at run time (manifest.json); every other value is frozen.",
+ "_comment": "Human-readable restatement of what is frozen. NOT the runner's manifest.json (which is compared with this file after each run; any frozen value that differs is reported as a deviation). Hash formats: case_order_sha256 = sha256('\\n'.join(ids)) with no trailing newline; case_sha256_table_sha256 = sha256(json.dumps({id: sha}, sort_keys=True)); prompt.assembled_sha256 is over the text sent (one trailing newline removed), prompt.file_sha256 over the file bytes. Null fields are filled by the runner.",
  "harness_version": "dev-c5",
- "frozen_code_commit": "22f5bd23",
+ "frozen_code_commit": "97dd19ff",
  "suite": {
   "path": ".agents/context/media-repair-harness-2026-10-19/suite-dev-v1.1",
   "split": "dev",
@@ -86,8 +86,8 @@
  },
  "prompt": {
   "version": "v5",
-  "file_sha256": "3ea39017906d30ff72cfe579857c194517263d53cf5f13592309fa593572b71e",
-  "assembled_sha256": "9715dc4ca5de307899100764d481481cc7e2e2fd16641af45540a18e983dbab7",
+  "file_sha256": "4db2a64ccba83d2ae2fe3d6da9843369d49676019e39519a50464c8ad128e863",
+  "assembled_sha256": "0064e63389bae941508be01e10ab5ee607925105aeafa20dd3d81a00573bba26",
   "protocol": "turn-v2"
  },
  "scorer": {
@@ -107,7 +107,18 @@
   "max_model_calls_per_case": 18,
   "page_contract": "pages-v1",
   "tools_behavior": "v2",
-  "audit_version": "v2"
+  "audit_version": "v2",
+  "started_aborted_scoring": "not scored; listed unscored (started-aborted/<case>.json); every rate over recorded cases",
+  "warmup": {
+   "ollama_only": true,
+   "endpoint": "/api/generate",
+   "prompt": "Reply with OK",
+   "num_predict": 256,
+   "keep_alive": "2m",
+   "timeout_s": 900,
+   "receipt": "manifest.preflight.warmup",
+   "scored": false
+  }
  },
  "retry_repair": {
   "repair_prompts_per_case": 1,
@@ -121,7 +132,7 @@
    "adapter": "claude",
    "requested_model": "claude-haiku-5-5",
    "effort": null,
-   "max_budget_usd_per_call": 2.0,
+   "max_budget_usd_per_call": "min(2.0, remaining cost cap)",
    "claude_timeout_s": 240,
    "claude_flags": [
     "--tools",
@@ -140,13 +151,13 @@
    "model_digest": null,
    "config_hash": null,
    "harness_git_sha": null,
-   "started_at": null
+   "started_at": null,
+   "cost_cap_enforcement": "remaining budget before each call; failed-call cost counts; unreported cost stops the run"
   },
   "qwen": {
    "run_id": "devc5-b-qwen3.8-27b",
    "adapter": "ollama",
    "requested_model": "qwen3.8:27b",
-   "model_digest_required": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
    "ollama": {
     "num_ctx": 8192,
     "num_predict": 640,
@@ -167,10 +178,13 @@
    "runtime_version": null,
    "config_hash": null,
    "harness_git_sha": null,
-   "started_at": null
+   "started_at": null,
+   "require_digest_flag": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+   "wall_cap_enforcement": "absolute deadline from before preflight; no call started unless its 120 s timeout fits; overshoot = cleanup only (unload <= 60 s)",
+   "flags_extra": "--require-digest aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813"
   }
  },
- "context_overflow": "not prevented; flagged from reported counts per turn; all cases scored as recorded; a no-flag subset row reported; no rerun",
+ "context_overflow": "not prevented; flagged per turn from reported counts and from the estimate; all recorded cases scored as recorded; two subset rows (no reported flag; no reported and no estimate flag); estimate-only flags labelled possibly truncated; no rerun",
  "tables": [
   "run",
   "gates guarded-vs-guarded",
@@ -182,6 +196,7 @@
   "statements"
  ],
  "base_main_commit": "34e8589e",
- "frozen_src_tree_sha1": "16c26140ed5ea738835054b7975b53fb76d5f999",
- "amendment_1": "Rebased onto main 34e8589e (PR #1025, guard-v3 support from typed execution; EPUB execution vs damage) before any model response. Only frozen_code_commit, base_main_commit and frozen_src_tree_sha1 changed; every hash, model, cap and rule is as first committed (d1c87066)."
+ "frozen_src_tree_sha1": "5d3d718b2ea3b829385b3bf4a19717548b1ad12f",
+ "amendment_1": "Rebased onto main 34e8589e (PR #1025, guard-v3 support from typed execution; EPUB execution vs damage) before any model response. Only frozen_code_commit, base_main_commit and frozen_src_tree_sha1 changed; every hash, model, cap and rule is as first committed (d1c87066).",
+ "amendment_2": "Pre-measurement review (Opus, Astra 12) before any model response: prompt v5 text changed, enforced caps, started-aborted records, registered warm-up, enforced digest. Changed: prompt hashes, frozen_code_commit, frozen_src_tree_sha1, claude config timeout_s, qwen --require-digest. Everything else as in amendment_1."
 }
