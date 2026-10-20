@@ -2,13 +2,13 @@
 
 Owner: OpenProject story [#144](https://work.haynesnetwork.com/work_packages/144) (epic #48). Source: the Astra audit of the dev-c4 evidence and instructions (#143, sections 2 and 3, items P0) and
 its review. Everything here is **opt-in**: with the new options unset, every request, run record and scorer-read field is what `origin/main` 7abf11fb produced
-(`tests/testdata/legacy-e2e-golden.json`, the replay-identity golden and the prompt and schema digests). `HARNESS_VERSION` stays `dev-c4`; the candidate version bump belongs to the W19 freeze.
+(`tests/testdata/legacy-e2e-golden.json`, the replay-identity golden and the prompt and schema digests). `HARNESS_VERSION` stayed `dev-c4` in that change; W19 bumped it to `dev-c5` and added prompt v5, which is valid only with this format.
 
 ## Options and the versions they select
 
 | Option | Selects | Valid with |
 |---|---|---|
-| `--evidence-format v2` | evidence format v2 (typed layer, capabilities, pagination), **tools behaviour v2** (bugs a, d, e), **audit v2** (bug b) | prompt `v4` (and a future `v5`); guards off or `--guards v3` |
+| `--evidence-format v2` | evidence format v2 (typed layer, capabilities, pagination), **tools behaviour v2** (bugs a, d, e), **audit v2** (bug b) | prompt `v4` or `v5` (`v5` requires it); guards off or `--guards v3` |
 | `--guards v3` | G-healthy v3 (bug c); G-write as in v2 | any prompt, with or without the format |
 
 Anything else that uses a new option is refused up front with an explicit message (`run.check_option_combination`): `--evidence-format v2` with prompt v1, v2 or v3, and with `--guards v1` or `v2`. Unknown values are refused by the parser.

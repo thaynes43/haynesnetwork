@@ -1,0 +1,459 @@
+"""dev-c5 tests (W19): prompt v5 (new text on the v2 turn protocol, valid only with `--evidence-format v2`), the opt-in run caps, the synthetic PAIRED
+regressions that the frozen measurement relies on, and the proof that the scoring layer is unchanged.  Fake model replies only (ScriptedAdapter), synthetic generic
+fixtures; no model, no network.  What these tests check is what the HARNESS does and that the prompt TEXT carries the definitions and names no case; whether a
+model follows the text is measured on the dev split (runs/dev-c5), not here."""
+import hashlib
+import json
+import re
+import tempfile
+import unittest
+from pathlib import Path
+
+import ev2h
+import legacy_e2e as L
+import th
+from ev2h import case_with, dec, ev, obs, probe_out, decode_out, tc
+from media_repair_harness import adapters as A
+from media_repair_harness import audit as AU
+from media_repair_harness import evidence_v2 as EV2
+from media_repair_harness import leakguard
+from media_repair_harness import protocol as P
+from media_repair_harness import run as R
+from media_repair_harness import score_compat
+from test_v3 import need_both_suites, suite_cases, word
+
+OLD_SHA = {'v1': '30749f5dc7065a2ddd70967cd6888e91d237030e1b025bc6dac19ca51fed9ee8', 'v2': '351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a',
+           'v3': 'b1fd9e8558396dc288c8b66443a3363f29496032f1e32a0590a1245469e8061a', 'v4': 'a2c3036e57d243a1c892b844a37796ec026e4ea449c4737bcbc3efd01591eedd'}
+SCORE_PY_SHA256 = '5002f1d534535c2319602193a9fb561f0be914f29ea4bcc0fc840477d2eaa789'      # the evaluator's score.py (v1.1), as in the dev-c4 report
+SCORE_COMPAT_SHA256 = '2bdabb592c4db3229270d5aac049bba32d25810f5acba85a10ab6a4958cebe4d'   # unchanged since dev-c4: dev-c5 adds no line to it
+CTX = th.REPO_ROOT / '.agents' / 'context' / 'media-repair-harness-2026-10-19'
+DAMAGE = '[h264 @ 0x0] error while decoding MB 13 11, bytestream -5'
+WARNING = '[h264 @ 0x0] non-existing PPS 0 referenced'
+PROFILE = {'containers': ['matroska,webm'], 'video_codec': 'h264', 'video_pix_fmt': 'yuv420p', 'audio_codecs': ['aac'], 'max_audio_channels': 2}
+
+
+def v5_run(case, replies, **kw):
+    ts = th.TempSuite([case])
+    kw = dict({'evidence_format': 'v2', 'guards': 'v3', 'which': th.NO_BINARIES}, **kw)
+    rec, ad = ev2h.scripted_run(case, ts, replies, prompt='v5', **kw)
+    ts.cleanup()
+    return rec, ad
+
+
+class PromptV5(unittest.TestCase):
+    def setUp(self):
+        self.v5 = P.get_prompt('v5')['text']
+
+    def test_selectable_on_the_v2_turn_protocol_and_v1_to_v4_are_byte_identical(self):
+        self.assertEqual(P.PROMPT_VERSIONS, ('v1', 'v2', 'v3', 'v4', 'v5'))
+        self.assertEqual(P.DEFAULT_PROMPT, 'v1')
+        self.assertEqual(P.protocol_of('v5'), 'v2')
+        for v, sha in OLD_SHA.items():
+            self.assertEqual(P.get_prompt(v)['sha256'], sha, v)
+        self.assertEqual(len({P.get_prompt(v)['sha256'] for v in P.PROMPT_VERSIONS}), 5)
+        self.assertEqual(P.get_prompt('v5')['sha256'], hashlib.sha256(self.v5.encode()).hexdigest())
+        self.assertEqual(P.HARNESS_VERSION, 'dev-c5')
+
+    def test_the_per_case_schema_is_the_v4_one(self):
+        for tools in ([], None, ['ffprobe'], ['ffprobe', 'decode_sample', 'arr_lookup']):
+            for flat in (False, True):
+                self.assertEqual(P.turn_schema('v5', tools, flat=flat), P.turn_schema('v4', tools, flat=flat))
+        self.assertNotIn('tool_call', json.dumps(P.turn_schema('v5', [])))      # a case that offers no tool has no tool-call branch
+
+    def test_keeps_the_reply_format_and_the_enforced_limits(self):
+        for marker in ('REPLY FORMAT', 'CLASSES', 'ACTIONS', 'MANAGING APP', 'exactly ONE JSON object', 'at most 6 per case',
+                       'Every decision object has all of the keys shown, including "target" and "confidence"',
+                       'audit.target at most 200 characters; preconditions 1 to 6 strings of at most 160 characters each; readback and verify at most 240 characters each; reason at most 400 characters',
+                       'copy it into audit.target character for character', 'If tools_available is empty, make no tool call'):
+            self.assertIn(marker, self.v5, marker)
+        v4 = P.get_prompt('v4')['text']
+        # the schema paragraph is the v4 one, word for word
+        start = v4.index('2. Final decision:')
+        end = v4.index('CLASSES')
+        self.assertIn(v4[start:end].replace('\n\n', '\n').strip().split('\n')[-1], self.v5)
+
+    def test_defines_the_decisions_the_audit_asked_for(self):
+        # AUDIT-ASTRA-8 item 1: the integrity boundary
+        for text in ('Positive damage observations support corrupt_file', 'Clean observations support health only within their actual scope',
+                     'Integrity alone does not establish identity or client compatibility', 'An unknown identity does not cancel corruption that is independently evidenced',
+                     'clean results elsewhere never cancel positive damage'):
+            self.assertIn(text, self.v5, text)
+        # item 2: diagnosis versus action
+        self.assertIn('keep the evidenced class and choose escalate; use insufficient_evidence only when the diagnosis itself is unresolved', self.v5)
+        # item 3: the decisions, not just the field names
+        for text in ('Whether it is enough is your judgement and nothing certifies it', 'There is no fixed coverage percentage and no rule that the whole file must be checked',
+                     'A positive finding in a partly checked item is still a positive finding', 'Only the selected streams count',
+                     'They certify nothing, and neither does the absence of a known_defect finding', 'names no place, so do not invent one',
+                     'next is an opaque cursor', 'uses one of your 6 calls', 'Detail you have not seen is unseen', 'only ids that were actually shown to you',
+                     'do not fetch every page', 'neither clean nor damaged', 'not_stated and not_compared fields were not compared'):
+            self.assertIn(text, self.v5, text)
+        # execution against integrity, partial against presentation truncation, requested against completed scope, provenance, capabilities
+        for text in ('is separate from integrity', 'ok means the tool ran, never that the file is clean', 'A sampled window is not a partial result',
+                     'is presentation, not truncation', 'Work from the completed scope', 'the catalog', 'declarations', 'content (what was observed',
+                     'capabilities say, per offered tool'):
+            self.assertIn(text, self.v5, text)
+
+    def test_class_and_action_boundaries(self):
+        convert = re.search(r'- convert:.*', self.v5).group(0)
+        self.assertIn('The source need not decode cleanly in full', convert)
+        self.assertIn('leaves the original untouched', convert)
+        self.assertIn('Not a response to damage, names or identity', convert)
+        self.assertIn('never the file name, a tag or a duration alone', self.v5)
+        self.assertIn('Content verified as the expected work, with a wrong name, tag, title, number or mapping, is metadata_naming', self.v5)
+        self.assertIn('Observed content that names a different work', self.v5)
+        self.assertIn('Choose it whenever the evidence does not settle the class or the action', self.v5)
+
+    def test_q01_is_not_settled_and_no_mapping_examples_are_taught(self):
+        self.assertIn('If the evidence does not show which of the two applies, or the mapping is unclear, escalate', self.v5)
+        low = self.v5.lower()
+        for phrase in ('wrong episode', 'wrong-episode', 'episode mapping', 'episode link', 'wrong item link', 'different episode'):
+            self.assertNotIn(phrase, low, phrase)
+        self.assertNotIn('for example', re.search(r'metadata_naming:.*', self.v5).group(0))
+
+    def test_the_text_is_general_no_case_no_dev_numbers_no_internals(self):
+        low = self.v5.lower()
+        for token in ('injected', 'dev-c', 'dev-v', 'held-out', 'heldout', 'gates.md', 'g1', 'g2', 'g3', 'score.py', 'truth', 'solvable', 'v4 ', 'prompt v'):
+            self.assertNotIn(token, low, token)
+        self.assertEqual(re.findall(r'\b[a-z]+-[a-z]+-\d{3}\b', self.v5), [])
+        self.assertEqual(re.findall(r'\b\w+\.(?:mkv|mp4|epub|m4b|mp3|avi)\b', self.v5, re.I), [])
+        # every number in the text is a protocol constant: the call budget, the page size, the audit limits, the placeholder confidence, the example ids and the rule numbers
+        numbers = set(re.findall(r'(?<![A-Za-z_.])\d+(?:\.\d+)?', self.v5))
+        self.assertEqual(numbers - set('0123456789') - {'8192', '200', '160', '240', '400', '0.0'}, set(), sorted(numbers))
+
+    def test_the_text_names_no_case_of_either_public_dev_suite_and_the_leak_guard_passes(self):
+        n = 0
+        for d in need_both_suites():
+            for c in suite_cases(d):
+                n += 1
+                leakguard.check_system(c, self.v5)
+                ctx = c.get('context') or {}
+                tokens = [c['id'], re.sub(r'-\d+$', '', c['id']), c.get('family') or '', ((c.get('truth') or {}).get('ref') or ''), ctx.get('filename') or '']
+                if ' ' in str(ctx.get('title') or ''):
+                    tokens.append(str(ctx['title']))
+                exp = ctx.get('expected') or {}
+                for k in ('title', 'series', 'episode_title', 'author'):
+                    if isinstance(exp.get(k), str) and ' ' in exp[k]:
+                        tokens.append(exp[k])
+                tokens.append(Path(str(((c.get('fixture') or {}).get('locator')) or '')).name)
+                for t in tokens:
+                    if len(t) >= 6:
+                        self.assertIsNone(word(t).search(self.v5), (c['id'], t))
+        self.assertEqual(n, 146)
+
+    def test_it_is_longer_than_v4_but_inside_what_an_8192_token_local_context_can_hold(self):
+        # a local model sees system + conversation in num_ctx 8192 tokens; the pessimistic estimate the adapter flags with is 3 characters per token
+        self.assertGreater(len(self.v5), len(P.get_prompt('v4')['text']))
+        self.assertLess(len(self.v5) / 3.0, 5400)
+
+    def test_every_dev_case_first_message_plus_the_prompt_fits_the_context_estimate(self):
+        """The pre-registered context handling relies on this being rare: no first message of either public dev suite, with the v5 system prompt, reaches the 3-chars-per-token estimate of 8192."""
+        worst = 0
+        for d in need_both_suites():
+            for case in suite_cases(d):
+                ctx = None
+                view = P.case_view(case, [], case_alias='case-00000000')
+                import media_repair_harness.tools as T
+                fx = T.Fixture.from_case(case, d)
+                ctx = T.Context(case, fx, tempfile.mkdtemp(), suite_dir=d, which=th.NO_BINARIES, tools_behavior='v2')
+                evidence = []
+                for e in case.get('evidence', []):
+                    evidence.append(EV2.make_observation(e['id'], e['tool'], e.get('args', {}), e.get('status', 'ok'), e.get('output'), None, 'case'))
+                ses = EV2.Session('case-00000000', view['context'], view['media_type'], view['tools_available'])
+                block, _n = ses.initial(evidence)
+                msg = json.dumps({'case_id': 'case-00000000', 'media_type': view['media_type'], 'context': view['context'], 'tools_available': view['tools_available'],
+                                  'tool_call_budget': 6, 'capabilities': T.capabilities(ctx), 'evidence_format': 'v2', 'evidence': block}, ensure_ascii=False, separators=(',', ':'))
+                worst = max(worst, len(self.v5) + len(msg))
+        self.assertLess(worst / 3.0, 8192, worst)
+
+
+class RefusedWithTheLegacyFormat(unittest.TestCase):
+    def test_check_option_combination(self):
+        for guards in (None, 'v1', 'v2', 'v3'):
+            with self.assertRaises(ValueError) as cm:
+                R.check_option_combination('v5', None, guards)
+            self.assertIn('valid only with --evidence-format v2', str(cm.exception))
+        R.check_option_combination('v5', 'v2')
+        R.check_option_combination('v5', 'v2', 'v3')
+        with self.assertRaises(ValueError):
+            R.check_option_combination('v5', 'v2', 'v2')       # the existing guard-version rule still applies
+        for v in ('v1', 'v2', 'v3', 'v4'):                      # nothing earlier changed
+            R.check_option_combination(v, None)
+            R.check_option_combination(v, None, 'v3')
+        R.check_option_combination('v4', 'v2')
+        with self.assertRaises(ValueError):
+            R.check_option_combination('v3', 'v2')
+
+    def test_run_case_and_main_refuse_it_before_any_model_call(self):
+        case = case_with([])
+        ad = A.ScriptedAdapter('m', [dec()])
+        with self.assertRaises(ValueError):
+            R.run_case(case, 'x', ad, '.', tempfile.mkdtemp(), prompt_version='v5')
+        self.assertEqual(ad.calls, [])
+        ts = th.TempSuite([case])
+        out = Path(tempfile.mkdtemp()) / 'r1'
+        orig = R.build_adapter
+        R.build_adapter = lambda args: A.ScriptedAdapter('m', [dec()])
+        try:
+            with self.assertRaises(SystemExit) as cm:
+                R.main(['--suite', str(ts.root), '--adapter', 'scripted', '--model', 'm', '--out', str(out), '--scratch', tempfile.mkdtemp(), '--prompt', 'v5'])
+            self.assertIn('--evidence-format v2', str(cm.exception))
+            self.assertFalse(out.exists())
+        finally:
+            R.build_adapter = orig
+        ts.cleanup()
+
+    def test_a_v5_run_records_the_prompt_and_the_format_and_uses_the_v4_audit_tables(self):
+        case = case_with([ev('e1', 'arr_lookup', output='x')])
+        rec, ad = v5_run(case, [dec('insufficient_evidence', 'escalate')])
+        self.assertEqual((rec['harness_version'], rec['prompt']['version'], rec['prompt']['protocol']), ('dev-c5', 'v5', 'turn-v2'))
+        self.assertEqual(rec['prompt']['sha256'], P.get_prompt('v5')['sha256'])
+        self.assertEqual(ad.full[0]['system'], P.get_prompt('v5')['text'])
+        self.assertEqual((rec['evidence_format']['version'], rec['action_audit']['audit_version']), ('v2', 'v2'))
+        rec.update(harness_git_sha='x', config_hash='h')
+        self.assertEqual(R.record_missing_fields(rec), [])
+        d = th.decision('metadata_naming', 'remap', target='x')
+        self.assertEqual(P.validate_turn(dict(d, target='rel-1', audit={'target': 'rel-1', 'preconditions': ['p'], 'readback': 'r', 'verify': 'v'}), None, 'v5')[0], 'decision')
+        out = AU.compute(case_with([ev('e1', 'arr_lookup')]), d, [], prompt_version='v5')
+        self.assertNotIn('class_matches_action', out['unmet'])          # v5 reads the same class table as v4
+        self.assertIn('class_matches_action', AU.compute(case_with([ev('e1', 'arr_lookup')]), d, [], prompt_version='v3')['unmet'])
+
+
+class RunCaps(unittest.TestCase):
+    """`--max-total-cost-usd` and `--max-wall-s`: opt-in, enforceable, clean stop, nothing silently dropped."""
+
+    class Clock:
+        def __init__(self):
+            self.t = 0.0
+
+        def __call__(self):
+            return self.t
+
+    class Costed(A.ScriptedAdapter):
+        def __init__(self, replies, cost, clock=None, step=0.0):
+            super().__init__('m', replies)
+            self.cost, self.clock, self.step = cost, clock, step
+
+        def complete(self, system, messages, schema=None):
+            c = super().complete(system, messages, schema)
+            c.usage = dict(c.usage, cost_usd=self.cost)
+            if self.clock:
+                self.clock.t += self.step
+            return c
+
+    def run_main(self, cases, adapter, extra=()):
+        ts = th.TempSuite(cases)
+        out = Path(tempfile.mkdtemp()) / 'runs' / 'r1'
+        orig = R.build_adapter
+        R.build_adapter = lambda args: adapter
+        try:
+            code = R.main(['--suite', str(ts.root), '--adapter', 'scripted', '--model', 'm', '--out', str(out), '--scratch', tempfile.mkdtemp(), '--prompt', 'v4'] + list(extra))
+        finally:
+            R.build_adapter = orig
+        ts.cleanup()
+        return code, out
+
+    def cases(self, n):
+        return [case_with([ev('e1', 'arr_lookup', output='x')], cid='cap-%03d' % i) for i in range(1, n + 1)]
+
+    def test_no_caps_no_new_key_no_behaviour_change(self):
+        code, out = self.run_main(self.cases(3), self.Costed([dec()] * 3, 0.01))
+        man = json.loads((out / 'manifest.json').read_text())
+        self.assertEqual(code, 0)
+        self.assertNotIn('limits', man['config'])
+        self.assertNotIn('limits_state', man)
+        self.assertEqual(len(man['records_written']), 3)
+
+    def test_the_cost_cap_stops_before_it_would_be_reached_and_lists_the_cases_not_run(self):
+        code, out = self.run_main(self.cases(6), self.Costed([dec()] * 6, 0.25), ['--max-total-cost-usd', '0.60'])
+        man = json.loads((out / 'manifest.json').read_text())
+        self.assertEqual(code, 3)
+        self.assertEqual(man['config']['limits'], {'max_total_cost_usd': 0.6, 'max_wall_s': None})
+        self.assertIn('cost cap reached', man['aborted'])
+        self.assertEqual(man['records_written'], ['cap-001', 'cap-002'])          # a third case would have taken the total to 0.75
+        self.assertEqual([c for c in man['case_ids'] if c not in man['records_written']], ['cap-003', 'cap-004', 'cap-005', 'cap-006'])
+        self.assertLess(man['limits_state']['cost_usd'], 0.60)
+        self.assertEqual(man['limits_state']['stopped'], man['aborted'])
+        self.assertEqual(json.loads((out / 'run_summary.json').read_text())['aborted'], man['aborted'])
+
+    def test_the_wall_cap_counts_from_before_the_preflight_and_stops_cleanly(self):
+        clock = self.Clock()
+        orig = R.time.monotonic
+        # the limits object reads its own clock; patch the constructor default through the module
+        class Limits(R.RunLimits):
+            def __init__(self, *a, **kw):
+                super().__init__(*a, clock=clock, **kw)
+        R.RunLimits = Limits
+        try:
+            code, out = self.run_main(self.cases(6), self.Costed([dec()] * 6, 0.0, clock, 400.0), ['--max-wall-s', '1800'])
+        finally:
+            R.RunLimits = Limits.__mro__[1]
+        man = json.loads((out / 'manifest.json').read_text())
+        self.assertEqual(code, 3)
+        self.assertIn('wall-time cap reached', man['aborted'])
+        self.assertEqual(man['records_written'], ['cap-001', 'cap-002', 'cap-003', 'cap-004'])    # 4 x 400 s = 1600 s; a 5th (1600 + the slowest case, 400 s) would pass 1800 s
+        self.assertLess(man['limits_state']['elapsed_s'], 1800)
+        self.assertEqual(len(man['case_ids']) - len(man['records_written']), 2)
+
+    def test_a_cap_in_the_middle_of_a_case_leaves_that_case_without_a_record_and_listed_as_not_run(self):
+        code, out = self.run_main(self.cases(2), self.Costed([tc('arr_lookup'), tc('arr_lookup'), dec(), dec()], 0.30), ['--max-total-cost-usd', '0.50'])
+        man = json.loads((out / 'manifest.json').read_text())
+        self.assertEqual(code, 3)
+        self.assertEqual(man['records_written'], [])
+        self.assertEqual(man['case_ids'], ['cap-001', 'cap-002'])
+        self.assertIn('before a model call', man['aborted'])
+
+    def test_the_caps_are_part_of_the_config_hash(self):
+        _, a = self.run_main(self.cases(1), self.Costed([dec()], 0.0))
+        _, b = self.run_main(self.cases(1), self.Costed([dec()], 0.0), ['--max-total-cost-usd', '0.60', '--max-wall-s', '1800'])
+        self.assertNotEqual(json.loads((a / 'manifest.json').read_text())['config_hash'], json.loads((b / 'manifest.json').read_text())['config_hash'])
+
+
+class PairedRegressions(unittest.TestCase):
+    """Synthetic PAIRS: two inputs that differ in exactly one fact, run through the real runner with prompt v5, evidence format v2 and guards v3 and a scripted model that
+    always answers healthy.  The expected values are written by hand; they show what the evidence layer and the guard do with the one fact, not what a model does."""
+
+    HEALTHY = dec('healthy', 'none', refs=['e1', 'e2', 'e3'])
+
+    def window_case(self, stderr_at_4, cid='pair-001'):
+        evidence = [ev('e1', 'ffprobe', output=probe_out(duration='8.0')),
+                    ev('e2', 'decode_sample', output=decode_out(ss=0, t=4), args={'ss': 0, 't': 4}),
+                    ev('e3', 'decode_sample', output=decode_out(ss=4, t=4, stderr=stderr_at_4, out_time='00:00:04.000000'), args={'ss': 4, 't': 4})]
+        return case_with(evidence, cid=cid)
+
+    def test_pair_a_decoder_warning_versus_damage(self):
+        warn_rec, warn_ad = v5_run(self.window_case(WARNING), [self.HEALTHY])
+        dmg_rec, dmg_ad = v5_run(self.window_case(DAMAGE, 'pair-002'), [self.HEALTHY])
+        warn_first = json.loads(warn_ad.calls[0][0]['content'])['evidence']
+        dmg_first = json.loads(dmg_ad.calls[0][0]['content'])['evidence']
+        warn_f = [f for it in warn_first['items'] for f in it['findings']]
+        dmg_f = [f for it in dmg_first['items'] for f in it['findings']]
+        self.assertEqual([(f['kind'], f['known_defect']) for f in warn_f], [('decoder_warning', False)])
+        self.assertEqual([(f['kind'], f['known_defect']) for f in dmg_f], [('decoder_errors', True)])
+        self.assertEqual([a['type'] for a in warn_first['alerts']], [])                  # a warning raises no alert, only damage does
+        self.assertEqual([(a['type'], a['kind']) for a in dmg_first['alerts'] if a['type'] == 'defect'], [('defect', 'decoder_errors')])
+        warn_iv = [iv['state'] for it in warn_first['items'] for iv in it['scope'].get('intervals', [])]
+        self.assertNotIn('damaged', warn_iv)
+        self.assertEqual(dmg_first['coverage']['time']['unrecorded']['damaged'], [[4.0, 8.0]])
+        # the guard: a warning leaves the (clean) healthy answer alone; damage turns it into an escalation and keeps the original
+        self.assertEqual((warn_rec['decision']['class'], warn_rec['decision']['action'], warn_rec['guard']['final_changed']), ('healthy', 'none', False))
+        self.assertEqual((dmg_rec['decision']['class'], dmg_rec['decision']['action'], dmg_rec['guard']['final_changed']), ('insufficient_evidence', 'escalate', True))
+        self.assertEqual(dmg_rec['guard']['applied'][0]['original']['class'], 'healthy')
+        self.assertIn('e3', dmg_rec['decision']['reason'])
+
+    def test_pair_a_clean_results_elsewhere_do_not_cancel_damage_in_either_order(self):
+        a = self.window_case(DAMAGE)
+        b = self.window_case(DAMAGE, 'pair-003')
+        b['evidence'] = list(reversed(b['evidence']))
+        for case in (a, b):
+            rec, _ = v5_run(case, [dec('healthy', 'none', refs=[e['id'] for e in case['evidence']])])
+            self.assertEqual((rec['decision']['class'], rec['guard']['final_changed']), ('insufficient_evidence', True), case['id'])
+
+    def test_pair_b_selected_streams_decide_the_client_comparison(self):
+        def comparison(streams):
+            a = ev2h.analysis([obs('e1', 'ffprobe', 'ok', probe_out(streams=streams))], {'client_profile': PROFILE})
+            return a['client']
+        video = {'index': 0, 'codec_type': 'video', 'codec_name': 'h264', 'pix_fmt': 'yuv420p', 'width': 640, 'height': 480}
+        aac = {'index': 1, 'codec_type': 'audio', 'codec_name': 'aac', 'profile': 'LC', 'channels': 2, 'sample_rate': '48000'}
+        eac3 = {'index': 1, 'codec_type': 'audio', 'codec_name': 'eac3', 'channels': 6, 'sample_rate': '48000'}
+        commentary = {'index': 2, 'codec_type': 'audio', 'codec_name': 'eac3', 'channels': 6, 'sample_rate': '48000'}
+        one = comparison([video, aac])
+        self.assertEqual((one['summary']['unsupported'], one['summary']['complete']), (0, True))
+        self.assertEqual(one['selection']['audio']['how'], 'only_stream_of_type')
+        flipped = comparison([video, eac3])                        # the only difference is the one audio stream
+        self.assertEqual([r['field'] for r in flipped['rows'] if r['verdict'] == 'unsupported'], ['audio_codec', 'audio_channels'])
+        two = comparison([video, aac, commentary])                  # a second audio stream and no recorded selection: no overall claim, never a guess
+        self.assertEqual(two['selection']['audio']['how'], 'ambiguous')
+        self.assertFalse(two['summary']['complete'])
+        self.assertEqual(two['summary']['selection'], 'ambiguous')
+        def recorded(audio):
+            return ev2h.analysis([obs('e1', 'ffprobe', 'ok', {'streams': {'container': 'matroska,webm', 'video': {'codec_type': 'video', 'codec_name': 'h264', 'pix_fmt': 'yuv420p', 'width': 640, 'height': 480},
+                                                                       'selected_audio': audio}})], {'client_profile': PROFILE})['client']
+        ok, bad = recorded({'codec_type': 'audio', 'codec_name': 'aac', 'channels': 2}), recorded({'codec_type': 'audio', 'codec_name': 'eac3', 'channels': 6})
+        self.assertEqual(ok['selection']['audio']['how'], 'recorded')
+        self.assertEqual((ok['summary']['unsupported'], bad['summary']['unsupported']), (0, 2))     # the recorded selected stream alone flips the verdict
+
+    def test_pair_c_unknown_versus_clean(self):
+        def integrity(tool, output, **kw):
+            return ev2h.analysis([obs('e1', tool, 'ok', output, **kw)], {})['items']['e1'].integrity
+        self.assertEqual(integrity('ffprobe', probe_out()), 'clean')
+        self.assertEqual(integrity('ffprobe', {}), 'unknown')                                  # an empty answer is not a clean probe
+        self.assertEqual(integrity('decode_sample', decode_out()), 'clean')
+        self.assertEqual(integrity('decode_sample', {'exit_code': 0}), 'unknown')              # exit 0 alone certifies nothing
+        self.assertEqual(integrity('decode_sample', decode_out(stderr=WARNING)), 'unknown')    # a warning is neither clean nor damaged
+        self.assertEqual(integrity('decode_sample', decode_out(stderr='some message nobody classified')), 'unknown')
+        self.assertEqual(integrity('decode_sample', decode_out(stderr=DAMAGE)), 'damaged')
+        # through the runner: with only unknown integrity evidence a healthy answer is turned into an escalation; with a clean probe it stands
+        unknown_case = case_with([ev('e1', 'ffprobe', output={}), ev('e2', 'decode_sample', output=decode_out(stderr=WARNING))], cid='pair-004')
+        clean_case = case_with([ev('e1', 'ffprobe', output=probe_out()), ev('e2', 'decode_sample', output=decode_out(stderr=WARNING))], cid='pair-005')
+        unknown_rec, _ = v5_run(unknown_case, [dec('healthy', 'none', refs=['e1', 'e2'])])
+        clean_rec, _ = v5_run(clean_case, [dec('healthy', 'none', refs=['e1', 'e2'])])
+        self.assertEqual((unknown_rec['decision']['class'], unknown_rec['guard']['final_changed']), ('insufficient_evidence', True))
+        self.assertEqual((clean_rec['decision']['class'], clean_rec['guard']['final_changed']), ('healthy', False))
+
+    def test_pair_d_citations_resolve_only_to_emitted_ids(self):
+        case = case_with([], tools=('ffprobe', 'decode_sample'), cid='pair-006')
+        bad = '[in#0/matroska,webm @ 0x0] File ended prematurely'
+        ts = th.TempSuite([case])
+        rec_file = dict(L.REPLAY_FILE, sha256=hashlib.sha256(b'not really media' * 50).hexdigest(),
+                        decode_sample=dict(L.REPLAY_FILE['decode_sample'], **{'4': dict(L.DEC_BAD, stderr=bad)}))
+        ts.add_file('fixtures/probes/x.mkv.json', json.dumps(rec_file).encode())
+        ts.add_file('media/x.mkv', b'not really media' * 50)
+        case['fixture'] = {'kind': 'local', 'locator': 'media/x.mkv', 'sha256': hashlib.sha256(b'not really media' * 50).hexdigest()}
+        (ts.root / 'cases' / (case['id'] + '.json')).write_text(json.dumps(case))
+        script = lambda ref: [tc('decode_sample', {'at': 4}), dec('corrupt_file', 'escalate', refs=[ref])]
+        ok_rec, ok_ad = ev2h.scripted_run(case, ts, script('t1'), prompt='v5', evidence_format='v2', guards='v3', which=th.NO_BINARIES)
+        reply = json.loads(ok_ad.calls[-1][-1]['content'])['output']
+        emitted = [f['id'] for f in reply['findings']] if 'findings' in reply else []
+        self.assertTrue(emitted and emitted[0].startswith('t1.f'), reply.keys())
+        f_rec, _ = ev2h.scripted_run(case, ts, script(emitted[0]), prompt='v5', evidence_format='v2', guards='v3', which=th.NO_BINARIES)
+        n_rec, _ = ev2h.scripted_run(case, ts, script('t1.f99'), prompt='v5', evidence_format='v2', guards='v3', which=th.NO_BINARIES)
+        known = {'t1'}
+        resolve = EV2.reference_resolver(known, {emitted[0]: 't1'})
+        self.assertEqual(resolve([emitted[0]]), ['t1'])                  # an emitted finding id stands for its observation
+        self.assertEqual(resolve(['t1.f99']), ['t1.f99'])                # one that was never emitted stays a bad reference
+        self.assertEqual(f_rec['decision']['evidence_refs'], [emitted[0]])      # the decision is stored as written
+        self.assertEqual(n_rec['decision']['evidence_refs'], ['t1.f99'])
+        ts.cleanup()
+
+    def test_pair_d_a_page_fetch_costs_a_call_and_an_unread_page_is_unseen(self):
+        big = [{'start': str(i * 2), 'end': str(i * 2 + 2), 'title': 'Chapter %03d %s' % (i, 'x' * 40)} for i in range(160)]
+        case = L.tv_case('pair-007', evidence=[], tools_available=['ffprobe', 'decode_sample'])
+        ts = L.suite_with(case, probes=False)
+        rec_file = dict(L.REPLAY_FILE, sha256=hashlib.sha256(b'not really media' * 50).hexdigest(), ffprobe=dict(L.PROBE_REC, chapters=big))
+        ts.add_file('fixtures/probes/x.mkv.json', json.dumps(rec_file).encode())
+        _, ad0 = ev2h.scripted_run(case, ts, [tc('ffprobe'), dec()], prompt='v5', evidence_format='v2', which=th.NO_BINARIES)
+        page = json.loads(ad0.calls[-1][-1]['content'])['output']['page']
+        self.assertGreater(page['of'], 1)
+        self.assertTrue(page['next_costs_tool_call'])
+        rec1, ad1 = ev2h.scripted_run(case, ts, [tc('ffprobe'), dec()], prompt='v5', evidence_format='v2', which=th.NO_BINARIES)
+        rec2, ad2 = ev2h.scripted_run(case, ts, [tc('ffprobe'), tc('ffprobe', {'cursor': page['next']}), dec()], prompt='v5', evidence_format='v2', which=th.NO_BINARIES)
+        self.assertEqual(json.loads(ad1.calls[-1][-1]['content'])['tool_calls_remaining'], 5)
+        self.assertEqual(json.loads(ad2.calls[-1][-1]['content'])['tool_calls_remaining'], 4)          # the fetch used a call of the six
+        self.assertEqual([c['tool'] for c in rec2['tool_calls']], ['ffprobe', 'page'])
+        self.assertTrue(rec2['tool_calls'][1]['continuation'])
+        # a model that fetches nothing sees the split marker and a count of what is elsewhere, never the rest as if it were absent
+        first = json.loads(ad1.calls[-1][-1]['content'])['output']
+        self.assertTrue(any(k.endswith('_shown') or k == 'elsewhere' for k in json.dumps(first).split('"')) or 'elsewhere' in first['page'])
+        ts.cleanup()
+
+
+class ScoringIsUnchanged(unittest.TestCase):
+    """dev-c5 changes no scoring semantics: the evaluator's score.py and the compatibility layer are byte-identical to the dev-c4 ones, and a committed dev-c4 run rescored on
+    this tree (the new protocol and run modules are what score.py imports) reproduces its committed score.json exactly."""
+
+    def test_the_scorer_and_the_compatibility_layer_are_byte_identical(self):
+        self.assertEqual(hashlib.sha256(score_compat.score_path().read_bytes()).hexdigest(), SCORE_PY_SHA256)
+        self.assertEqual(hashlib.sha256(Path(score_compat.__file__).read_bytes()).hexdigest(), SCORE_COMPAT_SHA256)
+
+    def test_committed_dev_c4_runs_rescore_identically(self):
+        need_both_suites()
+        S = score_compat.load_score()
+        runs = th.COMPONENT / 'runs' / 'dev-c4'
+        for run in ('devc4-v4g-haiku-5-5', 'devc4-v4g-qwen3.8-27b'):
+            now = S.score(runs / run, CTX / 'suite-dev-v1.1')
+            old = json.loads((runs / run / 'score.json').read_text())
+            self.assertEqual(json.dumps(now, sort_keys=True), json.dumps(old, sort_keys=True), run)
+
+
+if __name__ == '__main__':
+    unittest.main()

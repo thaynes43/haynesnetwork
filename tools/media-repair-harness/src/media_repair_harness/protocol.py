@@ -3,16 +3,16 @@ import hashlib
 import json
 from pathlib import Path
 
-HARNESS_VERSION = 'dev-c4'  # recorded in every run record and manifest
+HARNESS_VERSION = 'dev-c5'  # recorded in every run record and manifest
 PROTOCOL_VERSION = 'v1'  # the v1 turn protocol (prompt v1); prompt v2 has its own, see PROMPT_VERSIONS
-PROMPT_VERSIONS = ('v1', 'v2', 'v3', 'v4')
+PROMPT_VERSIONS = ('v1', 'v2', 'v3', 'v4', 'v5')
 # Prompt text and turn protocol are versioned apart: v3 (dev-c3) is new prompt text on the unchanged v2 turn protocol (audit object,
 # tool_not_offered violations, per-case schema).  Anything that is about the protocol asks `protocol_of(version)`, not the prompt version.
-PROMPT_PROTOCOL = {'v1': 'v1', 'v2': 'v2', 'v3': 'v2', 'v4': 'v2'}
+PROMPT_PROTOCOL = {'v1': 'v1', 'v2': 'v2', 'v3': 'v2', 'v4': 'v2', 'v5': 'v2'}
 # Prompt versions whose per-case Ollama `format` schema is exact about the tool enum: a case that offers NO tool gets no tool-call branch at all.
 # v2 and v3 keep the dev-c2/dev-c3 behaviour (an empty tools_available fell back to the full tool list there, which is how muse-glimmer:30b called
 # tools no case offered on 11 dev cases); changing it for them would change what those prompts measure.
-STRICT_TOOL_SCHEMA = ('v4',)
+STRICT_TOOL_SCHEMA = ('v4', 'v5')
 DEFAULT_PROMPT = 'v1'  # stays v1 until checkpoint 2c
 PROMPT_DIR = Path(__file__).resolve().parent / 'prompts'
 MAX_TOOL_CALLS = 6
@@ -106,10 +106,10 @@ def protocol_of(prompt_version):
 def get_prompt(version=DEFAULT_PROMPT):
     """-> {'version', 'text', 'sha256'}.  v1 is SYSTEM_PROMPT above (unchanged, so its sha matches the checkpoint 1
     records); v2 is prompts/v2.txt and v3 (dev-c3) is prompts/v3.txt, each sent exactly as its file reads (one trailing newline removed).
-    v3 (dev-c3) and v4 (dev-c4) are new text on the v2 turn protocol, see protocol_of."""
+    v3 (dev-c3), v4 (dev-c4) and v5 (dev-c5; valid only with `--evidence-format v2`, see run.check_option_combination) are new text on the v2 turn protocol, see protocol_of."""
     if version == 'v1':
         text = SYSTEM_PROMPT
-    elif version in ('v2', 'v3', 'v4'):
+    elif version in ('v2', 'v3', 'v4', 'v5'):
         text = (PROMPT_DIR / (version + '.txt')).read_text(encoding='utf-8').rstrip('\n')
     else:
         raise ValueError('unknown prompt version %r (known: %s)' % (version, ', '.join(PROMPT_VERSIONS)))

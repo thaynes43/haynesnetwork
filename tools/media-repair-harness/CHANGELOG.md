@@ -1,8 +1,28 @@
 # Harness changelog
 
+## dev-c5 (candidate, OpenProject #146): prompt v5 on evidence format v2, run caps
+
+`HARNESS_VERSION` is `dev-c5`. Not scoring: `score.py`, `score_compat.py`, `CONTRACT.md`, the suites, labels and gates are untouched (hashes pinned in `tests/test_v5.py`). Prompts v1 to v4 are byte-identical (digests pinned); the legacy-compatibility golden
+(`tests/testdata/legacy-e2e-golden.json`) still matches with only the recorded version string pinned to the golden's `dev-c4`.
+
+* **Prompt v5** (`prompts/v5.txt`, new): valid only with `--evidence-format v2`; the runner refuses it with the legacy format before any model call (`run.check_option_combination`). Built from the GATES class and action definitions and the Astra audit's replacement diagnostic paragraph; it defines the format v2 fields
+  as decisions, not only as names: execution against integrity, `unknown` / `unclassified` / `decoder_warning` (certify nothing), partial against presentation truncation, requested against completed scope, per-stream coverage as the model's own judgement (no percentage, no full-file rule, not certified),
+  the client comparison (selected streams only, incomplete profiles), catalog against declarations against content, capabilities, stable evidence and finding ids and how to cite them, opaque cursors, the six-call budget and the schema, target, audit and length limits.
+  Class and action boundaries: positive damage supports `corrupt_file`, clean results support health only inside their scope and never cancel damage, integrity alone settles neither identity nor client compatibility, unknown identity does not cancel independently evidenced corruption; `convert` targets an isolated copy and needs no clean full decode;
+  `identity_mismatch` is different content, `metadata_naming` is verified-correct content with a wrong name, tags or mapping; when the class is established but the action's prerequisites are missing, keep the class and `escalate` (`insufficient_evidence` only when the diagnosis itself is unresolved).
+  Q-01 (wrong-episode mapping) is NOT settled: an unclear mapping is escalated and no mapping example is given. No case id, title, quoted case content or dev number appears (tests against both public suites). It speaks the v2 turn protocol, uses the v4 per-case tool-enum schema and the v4 audit class table.
+  It is 15.9 KB against v4's 11.0 KB, which costs a local 8192-token context; the pre-registered handling of that is in `runs/dev-c5/PREREGISTRATION.md`.
+* **Run caps** (opt-in, for the frozen measurement): `--max-total-cost-usd` and `--max-wall-s` stop a run CLEANLY (an `AbortRun`: exit 3, `aborted` in the manifest, the adapter's `finish()` still unloads what it loaded) before the cumulative reported cost, or the wall time counted from just before the adapter's
+  preflight (a model load included), would pass the cap, judged against the dearest and slowest case so far; a second check before each model call is the hard stop. Cases not run stay listed (`case_ids` minus `records_written`) and `limits_state` records cost, elapsed time and the reason. Without the options nothing changes (no new config key).
+* `audit.compute` reads the v4 class table for prompt v5 as for v4. `STRICT_TOOL_SCHEMA` includes v5.
+* Tests: `tests/test_v5.py` (prompt text and generality over both public suites, the refusal with the legacy format, the caps, the synthetic paired regressions for warning against damage, selected streams, unknown against clean and citation / pagination, and the scoring-unchanged proofs: score.py and score_compat.py hashes, and two committed dev-c4 runs rescored
+  to their committed score.json on this tree).
+* **Explicitly deferred to OpenProject #147 (not implemented here):** the identity comparison table (audit P1), the ordering / edition candidate table (audit P1) and richer content inspection (EPUB body, audiobook speech; audit P1).
+* Measurement: `runs/dev-c5/` (pre-registered; the combined candidate of prompt v5 and format v2 and guards v3 is measured, so a difference from dev-c4 cannot be attributed to the prompt or to the format).
+
 ## Unreleased (W18, OpenProject #144): evidence format v2, guards v3 and the audit bug fixes
 
-Opt-in; `HARNESS_VERSION` stays `dev-c4` (the candidate bump is the W19 freeze). Not scoring: `score.py`, `CONTRACT.md`, the suites, labels and gates are untouched. With the new options unset every request, run record and scorer-read field is what origin/main 7abf11fb produced
+Opt-in; `HARNESS_VERSION` stayed `dev-c4` for this change (the bump to `dev-c5` came with W19). Not scoring: `score.py`, `CONTRACT.md`, the suites, labels and gates are untouched. With the new options unset every request, run record and scorer-read field is what origin/main 7abf11fb produced
 (`tests/testdata/legacy-e2e-golden.json` over the replay, local, remote, live, pinned, EPUB and guard branches, plus the unchanged replay-identity golden and prompt digests). Full description: `docs/evidence-format-v2.md`.
 
 * **`--evidence-format v2`** (prompt v4 or a future v5; guards off or v3): typed findings per result (execution, findings, scope, unresolved, conflicts), a coverage matrix, a client comparison, a capability advertisement and compact nested presentation in an 8192-byte envelope with `pages-v1` pagination (opaque case-isolated cursors, a page fetch costs one of the 6 calls). It also selects **tools behaviour v2** and **audit v2**. New module `evidence_v2.py`; it never sees the case object.

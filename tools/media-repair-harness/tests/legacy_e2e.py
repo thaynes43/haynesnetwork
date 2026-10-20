@@ -22,6 +22,7 @@ sys.path.insert(0, str(HERE))
 import th  # noqa: E402
 import test_evidence as TE  # noqa: E402
 from media_repair_harness import adapters as A  # noqa: E402
+from media_repair_harness import protocol as P  # noqa: E402
 from media_repair_harness import run as R  # noqa: E402
 from media_repair_harness import tools as T  # noqa: E402
 
@@ -252,7 +253,19 @@ def scenario_prompt(version):
     return run(case, ts, replies, prompt=version, which=th.NO_BINARIES)
 
 
+GOLDEN_HARNESS_VERSION = 'dev-c4'   # the golden was generated before the dev-c5 version bump: pin the recorded version string, nothing else may differ
+
+
 def scenarios():
+    saved = P.HARNESS_VERSION
+    P.HARNESS_VERSION = GOLDEN_HARNESS_VERSION
+    try:
+        return _scenarios()
+    finally:
+        P.HARNESS_VERSION = saved
+
+
+def _scenarios():
     out = {}
     for v in ('v1', 'v2', 'v3', 'v4'):
         rec, ad = scenario_prompt(v)

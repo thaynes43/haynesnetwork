@@ -144,10 +144,11 @@ def resolve_evidence_raw(case, suite_dir, redactor=None):
     return shown
 
 
-# Option versions added by W18.  `--evidence-format v2` (typed evidence, tools behaviour v2, audit v2) goes with prompt v4 and a future v5 and with
+# Option versions added by W18.  `--evidence-format v2` (typed evidence, tools behaviour v2, audit v2) goes with prompt v4 and v5 (v5 requires it) and with
 # guards off or v3; `--guards v3` goes with any prompt.  Every other combination of a new option is refused up front, never silently reinterpreted.
 EVIDENCE_FORMATS = ('v2',)
 EVIDENCE_V2_PROMPTS = ('v4', 'v5')
+EVIDENCE_V2_ONLY_PROMPTS = ('v5',)   # dev-c5: v5 explains the format v2 fields, so it is refused with the legacy format (v1 to v4 are unchanged)
 EVIDENCE_V2_GUARDS = (None, 'v3')
 
 
@@ -155,6 +156,8 @@ def check_option_combination(prompt_version, evidence_format=None, guards=None, 
     """Raise ValueError (main turns it into a SystemExit) for an unsupported combination of the W18 options."""
     if evidence_format is not None and evidence_format not in EVIDENCE_FORMATS:
         raise ValueError('unknown evidence format %r (known: %s; unset keeps the legacy format)' % (evidence_format, ', '.join(EVIDENCE_FORMATS)))
+    if prompt_version in EVIDENCE_V2_ONLY_PROMPTS and evidence_format != 'v2':
+        raise ValueError('--prompt %s is valid only with --evidence-format v2 (it describes the typed evidence of format v2, which the legacy tool-result shape does not have)' % prompt_version)
     if evidence_format == 'v2':
         if prompt_version not in EVIDENCE_V2_PROMPTS:
             raise ValueError('--evidence-format v2 is accepted with prompt %s only (got %s): the earlier prompts describe the legacy tool-result shape' % (' or '.join(EVIDENCE_V2_PROMPTS), prompt_version))
@@ -583,6 +586,89 @@ def guard_summary(records):
             'decisions_changed': sum(1 for r in records if (r.get('guard') or {}).get('final_changed'))}
 
 
+class RunLimits:
+    """Opt-in hard caps on a whole run (dev-c5, W19), for the frozen measurement: `--max-total-cost-usd` (the cumulative cost the adapter reports) and
+    `--max-wall-s` (wall time from just before the adapter's preflight, a model load included).  Both stop the run CLEANLY with an AbortRun: the cases not run
+    stay listed in the manifest (`case_ids` minus `records_written`), nothing is rerun, and the adapter's `finish()` still unloads what it loaded.
+
+    Checked before each case against the dearest case (cost) and the slowest case (wall) seen so far, so the cap is not exceeded by a case that behaves like an earlier
+    one; and again before each model call (a hard stop, at most one call's cost or the 120 s Ollama call timeout past the cap, which a case slower than any earlier one can
+    reach).  A call that is cut by the second check leaves its case without a record, listed as not run.  With neither cap set the runner is unchanged."""
+
+    def __init__(self, max_cost_usd=None, max_wall_s=None, clock=time.monotonic):
+        self.max_cost_usd, self.max_wall_s, self.clock = max_cost_usd, max_wall_s, clock
+        self.started = None
+        self.cost = 0.0
+        self.case_cost = 0.0
+        self.max_case_cost = 0.0
+        self.max_call_cost = 0.0
+        self.case_started = None
+        self.max_case_wall = 0.0
+        self.calls = 0
+        self.stopped = None
+
+    @property
+    def enabled(self):
+        return self.max_cost_usd is not None or self.max_wall_s is not None
+
+    def config(self):
+        return {'max_total_cost_usd': self.max_cost_usd, 'max_wall_s': self.max_wall_s}
+
+    def start(self):
+        self.started = self.clock()
+
+    def elapsed(self):
+        return 0.0 if self.started is None else self.clock() - self.started
+
+    def _stop(self, why):
+        self.stopped = why
+        raise A.AbortRun(why)
+
+    def _check(self, cost_margin, wall_margin, where):
+        if self.max_cost_usd is not None and self.cost + cost_margin >= self.max_cost_usd:
+            self._stop('cost cap reached %s: cumulative reported cost $%.4f, cap $%.2f' % (where, self.cost, self.max_cost_usd))
+        if self.max_wall_s is not None and self.elapsed() + wall_margin >= self.max_wall_s:
+            self._stop('wall-time cap reached %s: %.0f s elapsed, cap %.0f s' % (where, self.elapsed(), self.max_wall_s))
+
+    def before_case(self):
+        now = self.clock()
+        if self.case_started is not None:
+            self.max_case_wall = max(self.max_case_wall, now - self.case_started)
+            self.max_case_cost = max(self.max_case_cost, self.case_cost)
+        self.case_started, self.case_cost = now, 0.0
+        self._check(self.max_case_cost, self.max_case_wall, 'before a case')
+
+    def before_call(self):
+        self._check(self.max_call_cost, 0.0, 'before a model call')
+
+    def after_call(self, completion):
+        c = ((getattr(completion, 'usage', None) or {}).get('cost_usd')) or 0.0
+        self.cost += c
+        self.case_cost += c
+        self.max_call_cost = max(self.max_call_cost, c)
+        self.calls += 1
+
+    def wrap(self, adapter):
+        """Hook the caps into the adapter instance (its class is untouched)."""
+        orig_before, orig_complete = adapter.before_case, adapter.complete
+
+        def before_case():
+            self.before_case()
+            return orig_before()
+
+        def complete(system, messages, schema=None):
+            self.before_call()
+            comp = orig_complete(system, messages, schema=schema) if schema is not None else orig_complete(system, messages)
+            self.after_call(comp)
+            return comp
+        adapter.before_case, adapter.complete = before_case, complete
+        return adapter
+
+    def state(self):
+        return {'cost_usd': round(self.cost, 6), 'elapsed_s': round(self.elapsed(), 1), 'model_calls': self.calls, 'max_case_cost_usd': round(self.max_case_cost, 6),
+                'max_case_wall_s': round(self.max_case_wall, 1), 'stopped': self.stopped, **self.config()}
+
+
 def build_adapter(args):
     model = args.model
     if args.adapter == 'ollama':
@@ -614,9 +700,11 @@ def main(argv=None):
     ap.add_argument('--num-ctx', type=int, default=A.DEFAULT_NUM_CTX, choices=list(A.ALLOWED_NUM_CTX), help='ollama context window; 4096 is the proven-safe value, 8192 the only other one allowed')
     ap.add_argument('--tool-output-bytes', type=int, default=P.TOOL_OUTPUT_BYTES, help='cap on one tool result shown to the model (lower it for small local contexts)')
     ap.add_argument('--num-predict', type=int, help='ollama output cap; default 384 for prompt v1, 640 for v2 (a write decision carries an audit object)')
-    ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c)')
+    ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c); v5 (dev-c5) is valid only with --evidence-format v2')
     ap.add_argument('--guards', choices=list(DG.GUARD_VERSIONS), default=None, help='opt-in deterministic decision guards (dev-c4); default off; v2 only relaxes two G-write checks (see CONTRACT-v2-proposal section 9); v3 (W18) also lets a known integrity defect in the shown evidence contradict a healthy decision (any prompt). A guard can only turn a decision into insufficient_evidence/escalate and keeps the original in the record field `guard`')
-    ap.add_argument('--evidence-format', choices=list(EVIDENCE_FORMATS), default=None, help='W18, opt-in: v2 shows the model typed evidence (execution, findings, scope, unresolved per result, a coverage matrix, a client comparison, tool capabilities, compact paginated structure) derived from the same results; also selects tools behaviour v2 and audit v2. Accepted with --prompt v4 (or a future v5) and --guards off or v3. Unset keeps the legacy format byte for byte')
+    ap.add_argument('--evidence-format', choices=list(EVIDENCE_FORMATS), default=None, help='W18, opt-in: v2 shows the model typed evidence (execution, findings, scope, unresolved per result, a coverage matrix, a client comparison, tool capabilities, compact paginated structure) derived from the same results; also selects tools behaviour v2 and audit v2. Accepted with --prompt v4 or v5 (v5 requires it) and --guards off or v3. Unset keeps the legacy format byte for byte')
+    ap.add_argument('--max-total-cost-usd', type=float, default=None, help='dev-c5: stop the run cleanly before the cumulative REPORTED cost would reach this cap (cases not run stay listed in the manifest); unset = no cap')
+    ap.add_argument('--max-wall-s', type=float, default=None, help='dev-c5: stop the run cleanly before this many wall-clock seconds (counted from just before the adapter preflight, a model load included) are used; unset = no cap')
     ap.add_argument('--keep-alive', default='2m')
     ap.add_argument('--stop', help='comma separated stop tokens (ollama); default per model family')
     ap.add_argument('--ollama-schema', choices=['anyof', 'flat'], default='anyof', help='format schema variant sent to Ollama')
@@ -668,6 +756,9 @@ def main(argv=None):
               'adapter_config': adapter.config()}
     if args.guards:
         config['guards'] = args.guards   # only when on: a run without guards has the same config (and config_hash) shape as before
+    limits = RunLimits(args.max_total_cost_usd, args.max_wall_s)
+    if limits.enabled:   # likewise only when set: a run without caps keeps its earlier config shape
+        config['limits'] = limits.config()
     if args.evidence_format:   # likewise only when on; the three versions it selects are recorded so the config hash tells the formats apart
         config.update(evidence_format=args.evidence_format, tools_behavior='v2', audit_version='v2', page_contract=EV2.PAGE_CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes))
     manifest = {'harness_version': P.HARNESS_VERSION, 'run_id': run_id, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'argv': sys.argv[1:] if argv is None else argv,
@@ -677,6 +768,9 @@ def main(argv=None):
     aborted = None
     records = []
     audit = None
+    if limits.enabled:
+        limits.wrap(adapter)
+        limits.start()
     try:
         manifest['preflight'] = adapter.preflight()
         manifest.update(adapter.describe())
@@ -713,6 +807,8 @@ def main(argv=None):
         if audit:
             audit.close()
         manifest['aborted'] = aborted
+        if limits.enabled:
+            manifest['limits_state'] = limits.state()
         manifest['finish'] = adapter.finish()
         manifest['ended_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         manifest['records_written'] = [r['case_id'] for r in records]
