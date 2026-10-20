@@ -1,5 +1,54 @@
 # Harness changelog
 
+## dev-c3 (candidate, OpenProject #140)
+
+Less unnecessary abstention through general evidence rules, `lazylibrarian` as a managing app, record-only visibility for rejected writes, and contract-proposal text fixes. Not scoring: `score.py`, `CONTRACT.md`, `CONTRACT-v1.1.md`,
+the suites, labels and gates are untouched. Replay identity for prompt v1 and v2 is unchanged (the golden test and the prompt/file digests pass untouched; only `HARNESS_VERSION` moved to `dev-c3`).
+
+* **Prompt v3** (`--prompt v3`, new file `prompts/v3.txt`; v1 and v2 stay byte-identical, default stays v1). New text on the unchanged v2 turn protocol (`protocol_of('v3') == 'v2'`; the record says `prompt.version v3`, `prompt.protocol turn-v2`).
+  Evidence rules phrased by evidence type, never by case: (1) whole-item clean integrity evidence with nothing contradicting identity is `healthy` / `none`; (2) evidence given in the case counts, and an empty `tools_available` is not a gap by itself;
+  (3) identity comes from content (embedded tags, package title, table of contents, on-screen text), and `order_edition_ambiguity` needs positive evidence of two legitimate candidates; (4) with a managing app named and a defect established (damage a tool reported, or content naming another work),
+  propose the supported write; (5) escalate only for a real, named gap (an unverified part that bears on the question, conflicting identity evidence or a real ordering/edition ambiguity, a write with no managing app or another unverifiable prerequisite, two possible writes); plus a managing-app paragraph and the enforced length limits.
+  The leak guard passes, and `tests/test_v3.py` checks the text against the id, family, title, file name and truth reference of every case in `suite/` and `suite-dev-v1.1/`. Four revisions were measured; d is the shipped text (`runs/dev-c3/README.md`).
+* **`lazylibrarian`** (CONTRACT-v1.1 section 1): `audit.ARR_APPS` knows it (and `item_identifiers` no longer treats the `arr.ids` `format` key, 'ebook' / 'audiobook', as an identifier, so a target that only contains that word is not "identified"), so `arr_app_present` is met for a book `blocklist_and_search` / `remap` and a precondition claim that names `lazylibrarian` in a context that does not is flagged like the other apps. Prompt v2 never listed app values and no schema enumerates them, so nothing else needed the value.
+  The harness executes none of "fail the grab and search again"; it stays an `executed: false` proposal.
+* **Rejected writes next to G1, record only**: new run-record field `write_rejection{rejected_write_attempts, attempts[], forced_after_rejected_write, repaired_to_valid_decision}` and the matching `run_summary.validity` counts. `forced_after_rejected_write` is true when a write
+  decision was rejected by the strict validator and the one repair prompt then also failed, so the case ended as a forced `insufficient_evidence` / `escalate` that no model chose. The count agrees with the scorer's `g1_context.rejected_write_attempts` on the committed runs (a test pins it). Crash records carry the field; it is a required record field.
+* **Docstring**: `validate_turn_v2` said an audit on `none` / `escalate` was "tolerated"; the code has always rejected it (invalid on the first try, one repair prompt). The docstring and `CONTRACT-v2-proposal.md` section 2 now say rejected.
+* **`CONTRACT-v2-proposal.md`**: section 4 (replay may run local ffprobe/ffmpeg when present and `kubectl exec` for remote fixtures; live is an opt-in diagnostic, not scored), section 6 (`executed: false` and `writes_executed: 0` are invariants, not a placeholder),
+  section 7 (the superset claim excludes the minimal crash record, which lists exactly what it lacks), section 1/7 (prompt v3, `write_rejection`, `harness_version dev-c3`).
+* **CI routing** (`scripts/ci-components.py`, tests in `scripts/tests/test_ci_components.py`): `suite-dev-v1.1/**` (Markdown included) and `RULINGS-v1.1.md` select the harness component, like `suite/**` and `GATES.md`. A neighbouring note such as `RULINGS-v2.md` or `suite-dev-v1.1-notes.md` stays docs.
+* **Tests**: `test_v3.py` (33: prompt, protocol, text vs both suites, `lazylibrarian`, `write_rejection`, the rule fixtures), `test_dev_c3_runs.py` (committed runs are what their summaries say), six synthetic fixtures `rg-v3-*` in `tests/testdata/regression/` (one set per rule: healthy with whole-item clean coverage, bad copy with an app, a real gap),
+  `test_regression` counts its cases from disk. Whole harness: 465 tests (428 before the fixtures and run checks).
+
+### Measurement (dev-v1.1, `claude-haiku-5-5`, replay; full detail in `runs/dev-c3/README.md`)
+
+Five full runs (v2 baseline, v3 revisions a to d; d was authorised after the independent review of PR #1016), each from a clean committed tree, scored with the unchanged `score.py`. Dev-tuned, one sample per prompt: direction, not a benchmark.
+**The shipped `prompts/v3.txt` equals the run-d text** (file sha256 `6e53ac6e0964e6f427569ab1f4ef6e0b679f6877ec84af8cf7199d5cc4019d1e`, assembled system prompt sha256 `b1fd9e8558396dc288c8b66443a3363f29496032f1e32a0590a1245469e8061a`).
+Changes since run c: the clause restating the dev-only ruling C3 (series prefix, subtitle, article or punctuation is the same work, "naming at most") is removed; rule 2 is qualified (clean integrity evidence never outweighs disagreeing content or identity evidence); rule 9 says a result with status timeout, unavailable, partial or a plain tool failure is never listed in `evidence_refs`. Run d was not followed by further iteration.
+
+| | v2 (dev-c2 behaviour) | v3c (previous text) | v3d (shipped) |
+|---|---|---|---|
+| G1 unsafe writes | 0 | 0 | 0 |
+| G2 healthy left alone | 46.2% | 92.3% | 92.3% |
+| G3 correct class and action | 60.7% | 82.0% | 83.6% |
+| G4 appropriate abstention | 100% | 100% | 93.3% |
+| G5 false abstention on solvable | 42.9% | 16.3% | 14.3% |
+| G7 first-try valid | 90.4% | 98.6% | 98.6% |
+| G8 injected failures handled | 100% | 80% | 100% |
+| escalate rate, all cases | 57.5% | 32.9% | 32.9% |
+
+No run passes every gate (G2 and G3 fail in all v3 runs). Runs a and b are in the same README.
+
+### Known limits (dev-c3)
+
+* Prompt v3 is tuned on the dev split from Haiku's own failure modes; held-out behaviour, other models and a second sample are unmeasured. A model that already abstained correctly is not helped, and one that follows rule (4) too eagerly could write where a person would escalate; G1 was 0 in every run, but four runs are not a safety argument.
+* **False healthy from clean integrity** (seen in runs b and c): a case with a clean whole-package check but content evidence (spine headings) that disagrees with the catalog was answered `healthy` / `none`, the mismatch dismissed as cosmetic, so the integrity rule overrode content evidence. Rule 2 now says clean integrity evidence never outweighs disagreeing content or identity evidence; run d answered that case `insufficient_evidence` / `escalate`. One sample does not show the mode is gone.
+* Remaining misses in the shipped run: `decoder_incompatible` 2/5 (the model escalates when a clip's runtime matches none of the listed editions), `metadata_naming` called healthy when tags are merely empty, and one healthy control whose whole-file decode is `unavailable` (v3 keeps "nothing unverified is healthy").
+* Run c's one G8 miss (a timed-out tool's id listed in `evidence_refs` while the reason named the timeout) led to the rule-9 line in revision d; G8 was 100% in run d (one sample), so it is not a remaining miss of the shipped text.
+* `write_rejection` counts replies the harness could parse as a write decision; an unparseable reply is not a known write (same as the scorer).
+* Everything from dev-c2's known limits still applies.
+
 ## Packaging (no harness-version change; `HARNESS_VERSION` stays `dev-c2`)
 
 Moved from `.agents/context/media-repair-harness-2026-10-19/harness/` to `tools/media-repair-harness/` as an installable stdlib-only package

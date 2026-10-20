@@ -21,6 +21,8 @@ model-visible case data only (context, pre-collected evidence, the run's own too
 import json
 import re
 
+from . import protocol as P
+
 WRITE_ACTIONS = ('blocklist_and_search', 'remap', 'rename', 'convert')
 EXECUTION_PROPOSED = 'proposed_not_executed'
 EXECUTION_NONE = 'no_write_proposed'
@@ -32,7 +34,8 @@ ACTION_CLASSES = {
     'convert': ('decoder_incompatible',),
 }
 NEEDS_ARR = ('blocklist_and_search', 'remap')
-ARR_APPS = ('sonarr', 'radarr', 'lidarr', 'readarr', 'bookshelf')
+# lazylibrarian: the estate's book and audiobook manager (CONTRACT-v1.1 section 1); a book write with it has its managing app.
+ARR_APPS = ('sonarr', 'radarr', 'lidarr', 'readarr', 'bookshelf', 'lazylibrarian')
 NON_OK = ('error', 'timeout', 'partial', 'unavailable')
 # Wording that states a prerequisite which the case data cannot confirm (claim_text checks)
 SLOT_FREE_WORDS = re.compile(r'\b(free|empty|unoccupied|vacant|no file|not linked|nothing linked|unlinked)\b', re.I)
@@ -65,6 +68,9 @@ def _context_texts(case):
 
 
 BROAD_SCOPE = re.compile(r'\b(all|every|each|any|entire|whole|everything|library|libraries|indexers?|series|seasons?|collection|catalog|catalogue)\b')
+# arr.ids keys that are descriptive text, not identifiers: `format` is 'ebook' / 'audiobook' (CONTRACT-v1.1), so a target that merely contains the word
+# 'audiobook' must not read as identified.  Everything else under arr.ids stays an identifier (bookId, movieFileId, episodeId, releaseId, ...).
+ID_SKIP_KEYS = ('note', 'format')
 ID_MIN_LEN = 4   # an id shorter than this ("1", "12") is a number, not an identifier
 
 
@@ -88,7 +94,7 @@ def item_identifiers(case):
         if len(stem) >= ID_MIN_LEN:
             ids.append(('filename', stem))
     for k, v in ((ctx.get('arr') or {}).get('ids') or {}).items():
-        if k != 'note' and isinstance(v, (str, int)) and not isinstance(v, bool) and len(_norm(v)) >= ID_MIN_LEN:
+        if k not in ID_SKIP_KEYS and isinstance(v, (str, int)) and not isinstance(v, bool) and len(_norm(v)) >= ID_MIN_LEN:
             ids.append(('id', _norm(v)))
     names = [x for x in (ctx.get('title'), exp.get('title'), exp.get('series')) if isinstance(x, str) and len(_norm(x)) >= ID_MIN_LEN]
     se, ep = exp.get('season'), exp.get('episode')
@@ -267,7 +273,7 @@ def compute(case, decision, tool_calls, forced=False, prompt_version='v1'):
         checks.append(_check('full_decode_ok', bool(full), 'an ok full decode_sample result: %s' % [s[0] for s in full]))
         checks.append(_check('copy_stated', bool(COPY_WORDS.search(audit_text)),
                              'the audit states the original stays untouched; nothing in the case can confirm it', basis='claim_text'))
-    if prompt_version == 'v2':
+    if P.protocol_of(prompt_version) == 'v2':
         checks.append(_check('audit_object_present', audit is not None, 'a v2 write decision must carry the audit object'))
         if audit is not None:
             same = _norm(audit.get('target')) == _norm(decision.get('target'))

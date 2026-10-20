@@ -3,9 +3,12 @@ import hashlib
 import json
 from pathlib import Path
 
-HARNESS_VERSION = 'dev-c2'  # recorded in every run record and manifest
+HARNESS_VERSION = 'dev-c3'  # recorded in every run record and manifest
 PROTOCOL_VERSION = 'v1'  # the v1 turn protocol (prompt v1); prompt v2 has its own, see PROMPT_VERSIONS
-PROMPT_VERSIONS = ('v1', 'v2')
+PROMPT_VERSIONS = ('v1', 'v2', 'v3')
+# Prompt text and turn protocol are versioned apart: v3 (dev-c3) is new prompt text on the unchanged v2 turn protocol (audit object,
+# tool_not_offered violations, per-case schema).  Anything that is about the protocol asks `protocol_of(version)`, not the prompt version.
+PROMPT_PROTOCOL = {'v1': 'v1', 'v2': 'v2', 'v3': 'v2'}
 DEFAULT_PROMPT = 'v1'  # stays v1 until checkpoint 2c
 PROMPT_DIR = Path(__file__).resolve().parent / 'prompts'
 MAX_TOOL_CALLS = 6
@@ -88,13 +91,22 @@ BUDGET_MESSAGE = ('Tool budget exhausted (6 of 6 used). No more tool calls are p
                   'Reply with your final decision object now.')
 
 
+def protocol_of(prompt_version):
+    """The turn protocol ('v1' or 'v2') a prompt version speaks.  Unknown versions raise (never a silent v1)."""
+    try:
+        return PROMPT_PROTOCOL[prompt_version]
+    except KeyError:
+        raise ValueError('unknown prompt version %r (known: %s)' % (prompt_version, ', '.join(PROMPT_VERSIONS)))
+
+
 def get_prompt(version=DEFAULT_PROMPT):
     """-> {'version', 'text', 'sha256'}.  v1 is SYSTEM_PROMPT above (unchanged, so its sha matches the checkpoint 1
-    records); v2 is prompts/v2.txt, sent exactly as the file reads (one trailing newline removed)."""
+    records); v2 is prompts/v2.txt and v3 (dev-c3) is prompts/v3.txt, each sent exactly as its file reads (one trailing newline removed).
+    v3 is new text on the v2 turn protocol, see protocol_of."""
     if version == 'v1':
         text = SYSTEM_PROMPT
-    elif version == 'v2':
-        text = (PROMPT_DIR / 'v2.txt').read_text(encoding='utf-8').rstrip('\n')
+    elif version in ('v2', 'v3'):
+        text = (PROMPT_DIR / (version + '.txt')).read_text(encoding='utf-8').rstrip('\n')
     else:
         raise ValueError('unknown prompt version %r (known: %s)' % (version, ', '.join(PROMPT_VERSIONS)))
     return {'version': version, 'text': text, 'sha256': hashlib.sha256(text.encode()).hexdigest()}
@@ -204,7 +216,9 @@ def tool_not_offered(obj, tools_available):
 
 def validate_turn_v2(obj, tools_available=None):
     """Return (kind, errors) for turn protocol v2.  Same shapes as v1, plus: a write action needs a named target and an
-    audit object whose target is that same target; an audit on none/escalate is tolerated if well formed and recorded."""
+    audit object whose target is that same target.  An audit on none/escalate is REJECTED (not tolerated): a decision that
+    claims no write may not carry a write's audit, so it is invalid on the first try and goes through the one repair prompt
+    (a second miss ends as a forced escalate).  Also what v3 uses: `protocol_of('v3')` is 'v2'."""
     errs = []
     if not isinstance(obj, dict):
         return None, ['reply is not a JSON object']
@@ -334,7 +348,7 @@ def _is_num(x):
 
 def validate_turn(obj, tools_available=None, prompt_version='v1'):
     """Return (kind, errors).  kind is 'tool_call', 'decision' or None; errors is a list of strings."""
-    if prompt_version == 'v2':
+    if protocol_of(prompt_version) == 'v2':
         return validate_turn_v2(obj, tools_available)
     errs = []
     if not isinstance(obj, dict):

@@ -1,0 +1,57 @@
+{
+  "context": {
+    "arr": {
+      "app": null,
+      "ids": {}
+    },
+    "expected": {
+      "language": "en",
+      "runtime_s": 5400
+    },
+    "notes_for_model": "Playback stops partway through.",
+    "title": "Example Movie Six"
+  },
+  "evidence": [
+    {
+      "args": {},
+      "id": "e1",
+      "output": "{\"exit_code\": 0, \"format\": {\"duration\": \"5400.0\", \"format_name\": \"matroska,webm\"}, \"stderr\": \"\", \"streams\": [{\"codec_name\": \"h264\", \"codec_type\": \"video\", \"index\": 0, \"pix_fmt\": \"yuv420p\", \"profile\": \"High\"}, {\"channels\": 2, \"codec_name\": \"aac\", \"codec_type\": \"audio\", \"index\": 1}]}",
+      "status": "ok",
+      "tool": "ffprobe"
+    },
+    {
+      "args": {
+        "full": true
+      },
+      "id": "e2",
+      "output": "{\"exit_code\": 1, \"quota_exhausted\": false, \"scope\": \"whole file\", \"stderr\": \"error while decoding; invalid data found when processing input\"}",
+      "status": "error",
+      "tool": "decode_sample"
+    }
+  ],
+  "family": "rg-v3-movie-noapp",
+  "fixture": {
+    "kind": "remote",
+    "locator": "recorded observation of a synthetic row; no media is reachable",
+    "sha256": null
+  },
+  "id": "rg-v3-movie-noapp-001",
+  "media_type": "movie",
+  "provenance": "new (harness regression data; synthetic, invented for this test)",
+  "solvable": false,
+  "split": "dev",
+  "suite_version": "harness-regression-v1",
+  "supported_actions": [
+    "escalate"
+  ],
+  "tools_available": [
+    "ffprobe",
+    "decode_sample",
+    "arr_lookup"
+  ],
+  "truth": {
+    "class": "corrupt_file",
+    "ref": "rule C: the damage is shown but no managing app is named, so no write is supported",
+    "source": "construction"
+  }
+}

@@ -225,8 +225,8 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
   site tests, build, harness tests and the image build; `lint-and-typecheck` and `build` then report as skipped,
   which satisfies branch protection, while `test` (the finalizer below) still runs and reports success. **CI routes by component
   (ADR-116):** `site` (`apps/`, `packages/`, root Node manifests and lockfile, Dockerfile) and `harness` (the media
-  repair harness in `tools/media-repair-harness/`; under `.agents/context/`, the harness's `harness/` and `suite/`
-  folders, its `GATES.md` and its non-Markdown files, and the whole `media-repair-actual-epub-2026-10-18/` EPUB
+  repair harness in `tools/media-repair-harness/`; under `.agents/context/`, the harness's `harness/`, `suite/` and
+  `suite-dev-v1.1/` folders, its `GATES.md` and `RULINGS-v1.1.md` and its non-Markdown files, and the whole `media-repair-actual-epub-2026-10-18/` EPUB
   source it imports; root Python packaging files). Shared CI files (`.github/**`, `scripts/ci-*`, `scripts/tests/**`) and any path no rule names
   select every component; a diff that cannot be listed from git selects them too (fail closed). The required
   `test` context is the always-reporting finalizer over `site-test`, `harness-test` and `ci-routing-tests`: green

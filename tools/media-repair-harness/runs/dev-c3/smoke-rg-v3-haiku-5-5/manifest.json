@@ -1,0 +1,103 @@
+{
+  "aborted": null,
+  "adapter": "claude",
+  "argv": [
+    "--suite",
+    "/home/dev/work/mrh-devc3-1020/tools/media-repair-harness/tests/testdata/regression",
+    "--adapter",
+    "claude",
+    "--model",
+    "claude-haiku-5-5",
+    "--prompt",
+    "v3",
+    "--cases",
+    "rg-v3-ebook-healthy-001,rg-v3-audiobook-healthy-001,rg-v3-ebook-badcopy-001,rg-v3-movie-badcopy-001,rg-v3-movie-noapp-001,rg-v3-audiobook-conflict-001",
+    "--out",
+    "/tmp/claude-1000/-home-dev-work-haynesnetwork-1019-191421/4a00c9aa-47a8-4e5c-84d0-6993c52880d2/scratchpad/runs/smoke-rg-v3-haiku-5-5",
+    "--scratch",
+    "/tmp/claude-1000/-home-dev-work-haynesnetwork-1019-191421/4a00c9aa-47a8-4e5c-84d0-6993c52880d2/scratchpad/scratch-rg"
+  ],
+  "case_ids": [
+    "rg-v3-audiobook-conflict-001",
+    "rg-v3-audiobook-healthy-001",
+    "rg-v3-ebook-badcopy-001",
+    "rg-v3-ebook-healthy-001",
+    "rg-v3-movie-badcopy-001",
+    "rg-v3-movie-noapp-001"
+  ],
+  "case_sha256": {
+    "rg-v3-audiobook-conflict-001": "f9771055164256673c6e9fbd094ec71ff882adbf6aabf583ea7bc5f8a01a7775",
+    "rg-v3-audiobook-healthy-001": "d68ceb1c38182f0680f118b67aeac01f9be72c0661c7b8a2859281a08e039885",
+    "rg-v3-ebook-badcopy-001": "5b3bcf627876fec7b3f149f0d0ddee7f6a13868e73ea17859415af17f1cc8a86",
+    "rg-v3-ebook-healthy-001": "3af7306c45ff4d537a9692d1380766851490d8202796564d86bf0c492f516bed",
+    "rg-v3-movie-badcopy-001": "04538e8b233ea0e185c0284425d424e98501263939180e6a96c7a44c3d41b5b5",
+    "rg-v3-movie-noapp-001": "fd644498eda1ad5aeb7ef15c7d7975c67fbf5c0abd6f6c2384479db47afaee75"
+  },
+  "config": {
+    "adapter_config": {
+      "adapter": "claude",
+      "effort": null,
+      "flags": [
+        "--tools",
+        "",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--disable-slash-commands",
+        "--setting-sources",
+        "",
+        "--no-session-persistence"
+      ],
+      "max_budget_usd": 2.0,
+      "model": "claude-haiku-5-5",
+      "output_format": "json"
+    },
+    "evidence_bounds": null,
+    "evidence_bounds_clamped": null,
+    "evidence_mode": "replay",
+    "flat_schema_sha256": "0cc08ff1de36f459c2654838e3dad024986815dd843572340b74a624ffb7d2eb",
+    "harness_version": "dev-c3",
+    "max_tool_calls": 6,
+    "ocr_model": null,
+    "prompt_version": "v3",
+    "protocol": "turn-v2",
+    "replay": "auto",
+    "system_prompt_sha256": "91e7da3ced5b257503427eb5153a7792b08d9afd79383390a039bbf47110faff",
+    "tool_output_bytes": 8192,
+    "tool_timeout_s": 60,
+    "turn_schema_sha256": "4d976ba5fc8f82af307a7cfb4f168db248b08ffb5e7bf2a82d11b2b9ce28790b",
+    "turn_schema_v2_sha256": "febb1ea15e399104d90772b01c6e4b51d7eb3dc66f5af951f8ff3e8cd882eb36"
+  },
+  "config_hash": "9ee1bc3f284ac9565904f202382cfa26e2e400baa5f78648d6a2ea0a2da5641d",
+  "ended_at": "2026-10-20T03:00:48.033029+00:00",
+  "finish": {},
+  "harness_git": {
+    "branch": "agent/mrh-devc3-1020",
+    "dirty": false,
+    "sha": "9a9c37ffe80e34d3c1bda62b7623f1a26c6789d3"
+  },
+  "harness_version": "dev-c3",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "preflight": {
+    "adapter": "claude",
+    "model_digest": null,
+    "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+    "requested_model": "claude-haiku-5-5",
+    "runtime_version": "2.1.299 (Claude Code)"
+  },
+  "python": "3.11.2",
+  "records_written": [
+    "rg-v3-audiobook-conflict-001",
+    "rg-v3-audiobook-healthy-001",
+    "rg-v3-ebook-badcopy-001",
+    "rg-v3-ebook-healthy-001",
+    "rg-v3-movie-badcopy-001",
+    "rg-v3-movie-noapp-001"
+  ],
+  "requested_model": "claude-haiku-5-5",
+  "run_id": "smoke-rg-v3-haiku-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "started_at": "2026-10-20T03:00:09.940001+00:00",
+  "suite_dir": "/home/dev/work/mrh-devc3-1020/tools/media-repair-harness/tests/testdata/regression"
+}
