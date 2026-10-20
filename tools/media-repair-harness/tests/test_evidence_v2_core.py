@@ -50,7 +50,9 @@ class TypedFindings(unittest.TestCase):
                 'output': {}, 'tool': 'probe'}
         d = derive_one(obs('t1', 'ffprobe', 'error', live))
         self.assertEqual(d.execution['cause'], 'input')
-        self.assertEqual(d.integrity, 'damaged')   # the collector itself says the INPUT is damaged
+        self.assertEqual((d.integrity, [f['known_defect'] for f in d.findings]), ('unknown', [False]))   # the collector's claim alone makes no defect
+        live['reason'] = 'ffprobe exited 1: moov atom not found'                                        # recognised damage does
+        self.assertEqual(derive_one(obs('t1', 'ffprobe', 'error', dict(live, stderr='[mov,mp4 @ 0x0] moov atom not found'))).integrity, 'damaged')
         live['cause'] = 'tool'
         d = derive_one(obs('t1', 'ffprobe', 'error', live))
         self.assertEqual(d.execution['cause'], 'tool')
@@ -166,7 +168,7 @@ class TypedFindings(unittest.TestCase):
         self.assertTrue(all(f['id'].startswith('t7.') for f in d.findings + d.conflicts))
 
     def test_epub_stage_matrix_follows_the_inspectors_own_stage_order(self):
-        d = derive_one(obs('e1', 'epub_inspect', 'error', {'bytes': 9, 'entries': 7, 'error': 'ParseError: x', 'stage': 'opf_parse', 'status': 'error'}))
+        d = derive_one(obs('e1', 'epub_inspect', 'error', {'bytes': 9, 'entries': 7, 'error': 'ParseError: not well-formed (invalid token): line 2, column 336', 'stage': 'opf_parse', 'status': 'error'}))
         self.assertEqual(d.package, {'zip_open': 'clean', 'zip_crc': 'clean', 'opf_parse': 'damaged', 'manifest': 'not_checked', 'spine': 'not_checked'})
         self.assertEqual([(f['kind'], f['location']['stage']) for f in d.findings], [('package_damage', 'opf_parse')])
         d = derive_one(obs('e1', 'epub_inspect', 'error', {'bytes': 9, 'error': 'weird', 'stage': 'brand_new_stage', 'status': 'error'}))
@@ -311,7 +313,7 @@ class CoverageMatrix(unittest.TestCase):
         self.assertEqual(c['container']['state'], 'damaged')
         c = self.cov(obs('e1', 'ffprobe', 'error', 'ffprobe failed: could not run'))
         self.assertEqual(c['container']['state'], 'unknown')
-        c = self.cov(obs('e1', 'epub_inspect', 'error', {'stage': 'zip_crc', 'error': 'bad', 'status': 'error'}))
+        c = self.cov(obs('e1', 'epub_inspect', 'error', {'stage': 'zip_crc', 'error': 'CRC mismatch in member OEBPS/c2.xhtml', 'status': 'error'}))
         self.assertEqual(c['package']['stages']['zip_open'], 'clean')
         self.assertEqual(c['package']['stages']['zip_crc'], 'damaged')
 
@@ -495,7 +497,7 @@ class GuardsV3(unittest.TestCase):
             self.assertIn('decoder_errors', DG.check_healthy_v3(self.healthy(), self.shown(*order), []))
 
     def test_a_damage_report_in_an_error_result_also_contradicts_healthy(self):
-        shown = self.shown(('e1', 'ffprobe', 'ok', probe_out(), {}), ('e2', 'epub_inspect', 'error', {'stage': 'zip_crc', 'error': 'bad member', 'status': 'error'}, {}))
+        shown = self.shown(('e1', 'ffprobe', 'ok', probe_out(), {}), ('e2', 'epub_inspect', 'error', {'stage': 'zip_crc', 'error': 'CRC mismatch in member OEBPS/c2.xhtml', 'status': 'error'}, {}))
         self.assertIn('package_damage', DG.check_healthy_v3(self.healthy(), shown, []))
 
     def test_clean_results_pass_and_unknown_fields_support_nothing(self):
@@ -730,8 +732,12 @@ class LiveBookSchemas(unittest.TestCase):
 
     def test_an_unreadable_part_is_a_defect_only_when_the_collector_says_the_input_is_at_fault(self):
         rec = live_audiobook([book_file(), book_file(probe='error')])
+        d = derive_one(obs('t1', 'audiobook_inspect', 'partial', rec, backend='live'))        # the collector's `input` cause alone is a claim, never a defect
+        self.assertEqual((d.integrity, d.findings[0]['kind'], d.findings[0]['known_defect']), ('unknown', 'part_probe_failed', False))
+        rec['output']['files'][1]['probe_reason'] = '[mov,mp4 @ 0x0] moov atom not found'        # recognised damage in the collector's own text is
         d = derive_one(obs('t1', 'audiobook_inspect', 'partial', rec, backend='live'))
         self.assertEqual((d.integrity, d.findings[0]['kind'], d.findings[0]['known_defect']), ('damaged', 'part_unreadable', True))
+        rec['output']['files'][1]['probe_reason'] = None
         rec['output']['files'][1]['probe_cause'] = 'tool'
         d = derive_one(obs('t1', 'audiobook_inspect', 'partial', rec, backend='live'))
         self.assertEqual((d.integrity, d.findings[0]['kind'], d.findings[0]['known_defect']), ('unknown', 'part_probe_failed', False))
@@ -756,7 +762,7 @@ class LiveBookSchemas(unittest.TestCase):
         d = derive_one(obs('t1', 'epub_inspect', 'ok', rec, backend='live'))
         self.assertEqual([(f['kind'], f['known_defect']) for f in d.findings if f['kind'] != 'package_invalid'], [('package_damage', True), ('package_warning', False)])
         self.assertEqual(d.integrity, 'damaged')
-        rec = live_epub(valid=False, status='error', cause='input', stage='opf_parse', error='ParseError: x', passed=('zip_open', 'zip_crc'))
+        rec = live_epub(valid=False, status='error', cause='input', stage='opf_parse', error='ParseError: not well-formed (invalid token): line 2, column 336', passed=('zip_open', 'zip_crc'))
         d = derive_one(obs('t1', 'epub_inspect', 'error', rec, backend='live'))
         self.assertEqual(d.package, {'zip_open': 'clean', 'zip_crc': 'clean', 'opf_parse': 'damaged', 'manifest': 'not_checked', 'spine': 'not_checked'})
         self.assertEqual(d.integrity, 'damaged')
@@ -773,9 +779,9 @@ class LiveBookSchemas(unittest.TestCase):
         for k in ('title', 'creator', 'language', 'identifier', 'entries', 'opf', 'spine_items', 'spine_characters'):
             self.assertEqual(a.facts[k], b.facts[k], k)
         self.assertEqual((a.integrity, a.package), (b.integrity, b.package))
-        rd = {'status': 'error', 'bytes': 9, 'entries': 7, 'error': 'ParseError: x', 'stage': 'opf_parse'}
+        rd = {'status': 'error', 'bytes': 9, 'entries': 7, 'error': 'ParseError: not well-formed (invalid token): line 2, column 336', 'stage': 'opf_parse'}
         a = derive_one(obs('t1', 'epub_inspect', 'error', rd, backend='local'))
-        b = derive_one(obs('t1', 'epub_inspect', 'error', live_epub(valid=False, status='error', cause='input', stage='opf_parse', error='ParseError: x', passed=('zip_open', 'zip_crc')), backend='live'))
+        b = derive_one(obs('t1', 'epub_inspect', 'error', live_epub(valid=False, status='error', cause='input', stage='opf_parse', error='ParseError: not well-formed (invalid token): line 2, column 336', passed=('zip_open', 'zip_crc')), backend='live'))
         self.assertEqual((a.integrity, a.package, [(f['kind'], f['known_defect'], f['location']['stage']) for f in a.findings]),
                          (b.integrity, b.package, [(f['kind'], f['known_defect'], f['location']['stage']) for f in b.findings if f['kind'] == 'package_damage']))
         replay_book = {'format': 'mov,mp4,m4a,3gp,3g2,mj2', 'duration_s': 20.0, 'bit_rate': '1', 'tags': {'album': 'The Lantern Road'}, 'audio_streams': [{'index': 0, 'codec_name': 'aac', 'channels': 1}],

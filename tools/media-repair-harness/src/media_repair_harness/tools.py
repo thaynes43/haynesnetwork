@@ -742,6 +742,25 @@ def _epub_stage(path):
     return None
 
 
+def _epub_assertion_wording(e):
+    """Tools behaviour v2: the vendored inspector's bare `assert`s say nothing, and one of them is the harness's own size cap (a healthy 9 MiB EPUB trips it), so the wording
+    names which check failed, read from the source line of the failing assert.  -> a fixed phrase; an unrecognised assert is `an unrecognised check`."""
+    import traceback
+    frames = [f for f in traceback.extract_tb(e.__traceback__) if str(f.filename).endswith('vendored_epub.py')]
+    src = (frames[-1].line or '') if frames else ''
+    if '8*1024*1024' in src or 'file_size for x in infos' in src:
+        return 'harness size cap exceeded (the inspector reads at most 8 MiB, 2000 members and 32 MiB uncompressed)'
+    if "z.read('mimetype')" in src:
+        return 'the mimetype entry is not application/epub+zip'
+    if 'len(set(' in src:
+        return 'duplicate member names in the archive'
+    if 'assert text' in src:
+        return 'a spine document has no text'
+    if src.strip() == 'assert spine':
+        return 'the spine is empty'
+    return 'an unrecognised check of the inspector failed'
+
+
 def tool_epub_inspect(args, ctx):
     if ctx.fixture.kind != 'local':
         return ToolResult('unavailable', 'no media fixture behind this case; the tool cannot run' if ctx.fixture.kind == 'none' else 'epub_inspect needs a local fixture; none is reachable for this case')
@@ -757,6 +776,8 @@ def tool_epub_inspect(args, ctx):
             d = _epub_module().inspect(path)
         except Exception as e:  # noqa: BLE001 - epub.py asserts on structural problems it checks itself
             staged = ('spine', '%s: %s' % (type(e).__name__, str(e)[:200]))
+            if ctx.tools_behavior == 'v2' and isinstance(e, AssertionError):
+                staged = ('spine', 'AssertionError: ' + _epub_assertion_wording(e))
     if staged:
         # damage is a finding about the file, in the suite's recorded shape (status error)
         return ToolResult('error', dict(base, status='error', stage=staged[0], error=staged[1]))

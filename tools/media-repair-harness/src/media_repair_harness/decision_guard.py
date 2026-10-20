@@ -123,11 +123,13 @@ def check_healthy_v3(decision, evidence_shown, tool_calls):
 V2_IGNORED = ('full_decode_ok',)
 
 
-def check_write(case, decision, tool_calls, prompt_version, forced=False, version='v1'):
-    """-> reason string when G-write fires, else None.  Only checks the audit computes from the case data count (basis `computed`)."""
+def check_write(case, decision, tool_calls, prompt_version, forced=False, version='v1', shown=None):
+    """-> reason string when G-write fires, else None.  Only checks the audit computes from the case data count (basis `computed`).  Guards v3 reads the audit-v2 support
+    (an error result supports a write only through a typed positive damage finding, never an execution failure); v1 and v2 keep the shape-based support."""
     if decision.get('action') not in P.WRITE_ACTIONS:
         return None
-    audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version, v4_tables=True)   # the guard reads the dev-c4 tables whatever prompt ran
+    audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version, v4_tables=True,        # the guard reads the dev-c4 tables whatever prompt ran
+                       audit_version='v2' if version == 'v3' else 'v1', shown=shown if version == 'v3' else None)
     unmet = [c['id'] for c in audit['preconditions'] if c.get('basis') == 'computed' and not c.get('met') and c['id'] not in TEXT_MATCH_CHECKS]
     if version != 'v1':   # v3 keeps the v2 G-write relaxations (the contract has no clean-full-decode prerequisite for an isolated copy)
         unmet = [i for i in unmet if i not in V2_IGNORED and not (i == 'no_failed_tool_cited' and 'cited_evidence_supports' not in unmet)]
@@ -158,7 +160,7 @@ def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=Fal
     reason = check_healthy_v3(decision, evidence_shown, tool_calls) if version == 'v3' else check_healthy(decision, evidence_shown, tool_calls)
     rule = RULE_HEALTHY
     if reason is None:
-        reason = check_write(case, decision, tool_calls, prompt_version, forced, version)
+        reason = check_write(case, decision, tool_calls, prompt_version, forced, version, evidence_shown)
         rule = RULE_WRITE
     if reason is not None:
         applied.append({'rule': rule, 'original': copy.deepcopy(original), 'reason': reason})

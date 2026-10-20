@@ -77,13 +77,15 @@ DAMAGE_ALLOW_LIST = (
     (r'Zip64 end of central directory record not found', 'Python zipfile.BadZipFile', None),
     (r'Overlapped entries: .+ \(possible zip bomb\)', 'Python zipfile.BadZipFile', None),
     (r'File name in directory .+ and header .+ differ', 'Python zipfile.BadZipFile (zipfile.py)', None),
-    (r'Error -3 while decompressing data(?:: .+)?', 'Python zlib.error: Z_DATA_ERROR (invalid block type, invalid distance, incorrect header check ...)', 'only data errors are damage'),
+    (r"Error -3 while decompressing data(?:: [a-z][a-z0-9 /,'-]*)?", 'Python zlib.error: Z_DATA_ERROR (invalid block type, invalid distance, incorrect header check ...)', 'only data errors are damage'),
     (r'Error -5 while decompressing data: incomplete or truncated stream', 'Python zlib.error: Z_BUF_ERROR text from Modules/zlibmodule.c', 'a truncated stream; -5 with any other text is unclassified'),
     (r'not well-formed \(invalid token\): line \d+, column \d+', 'expat via xml.etree.ElementTree.ParseError; public dev replay', None),
     (r'(?:no element found|mismatched tag|unclosed token|junk after document element|syntax error|unclosed CDATA section|duplicate attribute|undefined entity|unbound prefix): line \d+, column \d+',
      'expat error strings (pyexpat.ErrorString) via ParseError', None),
     (r'manifest names \d+ member\(s\) that are not in the archive.*', 'this harness: evidence/epubtool.py', None),
     (r'container\.xml names .+, which is not in the archive', 'this harness: evidence/epubtool.py', None),
+    (r'manifest names members that are not in the archive: .+', 'public dev replay (the recorded EPUB inspector)', None),
+    (r'manifest references missing member\(s\): .+', 'public dev replay (the recorded EPUB inspector)', None),
 )
 WARNING_ALLOW_LIST = (
     (r'Could not find codec parameters for stream \d+.*', 'libavformat/demux.c', 'also printed for healthy files (PGS subtitles, attachments)'),
@@ -101,7 +103,7 @@ WARNING_ALLOW_LIST = (
 EXECUTION_ALLOW_LIST = (
     r'Permission denied', r'No such file or directory', r'Operation not permitted', r'Input/output error', r'Cannot allocate memory', r'Read-only file system',
     r'Too many open files', r'Connection (?:refused|reset by peer|timed out)', r'Resource temporarily unavailable', r'Is a directory', r'Not a directory',
-    r'Stale file handle', r'Transport endpoint is not connected', r'Error -4 while decompressing data(?:: insufficient memory)?',
+    r'Stale file handle', r'Transport endpoint is not connected', r'Error -4 while decompressing data(?:: insufficient memory)?', r'MemoryError:?',
 )
 _DECODE_WRAPPER = r'(?:Error while decoding stream #\d+:\d+|Decoding error|Error submitting packet to decoder|Error while processing the decoded data for stream #\d+:\d+)'
 _TAIL = r'\.?\s*$'
@@ -111,7 +113,7 @@ _WARNING_RXS = [re.compile(r'(?:%s)%s' % (pat, _TAIL)) for pat, _src, _note in W
 _EXEC_RX = re.compile(r'(?:%s)(?:[:,;]\s.*)?%s' % ('|'.join(EXECUTION_ALLOW_LIST), _TAIL))
 _HEADER_RX = re.compile(r'error reading header(?:: (.*))?' + _TAIL)
 _BRACKETS_RX = re.compile(r'^(?:\[[^\]\n]*\]\s*)+')
-_PATH_PREFIX_RXS = (re.compile(r'^(?:pipe:\d+|in#\d+\S*|<input>)\s*:\s+'),
+_PATH_PREFIX_RXS = (re.compile(r'^(?:pipe:\d+|in#\d+\S*|<input>|container\.xml|package document)\s*:\s+'),
                     re.compile(r'^.{1,200}?\.(?:mkv|mp4|m4v|m4b|m4a|mp3|flac|ogg|opus|avi|webm|mov|epub|zip|wav|aac|ts)\s*:\s+', re.I),
                     re.compile(r'^[^\s:\[\]]*/[^:\[\]]{0,200}?:\s+'))
 _DECODE_WRAPPER_RX = re.compile(r'^' + _DECODE_WRAPPER + r': ')
@@ -204,6 +206,46 @@ def execution_error(text):
     """True when the diagnostic text has an execution-error line (permission, missing file, I/O ...) and no damage line."""
     classes = [c for _l, c in classify_text(text)]
     return 'execution' in classes and 'damage' not in classes
+
+
+# The EPUB collector appends ' in member <name>' to the message of a member that failed the CRC pass (stage zip_crc) and nowhere else.  Only that trailing suffix is removed,
+# only at that stage: a phrase "in member" inside a file name or in any other message is left alone (the name holds no ': ', so text after one is not a suffix).
+_MEMBER_SUFFIX_RX = re.compile(r'^(.*?\S) in member ([^\s:][^:]*)$')
+
+# Exact exception shapes of the harness's own EPUB inspectors that say the package itself is broken, scoped to the stage that produces them (not arbitrary KeyErrors or stages):
+#   opf_parse  a mandatory member is missing from the archive (container.xml, or the OPF the container names), the container has no rootfile
+#   spine      the spine names an item the manifest lacks, the mimetype entry is missing or wrong, a spine document has no text, the spine is empty, duplicate member names
+# and the one that is the harness's own size cap, which is not a finding about the file.
+_EPUB_STAGE_SHAPES = {
+    'opf_parse': (('damage', re.compile(r'(?:container\.xml: )?KeyError: "There is no item named \'[^\']+\' in the archive"')),
+                  ('damage', re.compile(r'StopIteration:?')),
+                  ('damage', re.compile(r'container\.xml: IndexError: list index out of range'))),
+    'spine': (('damage', re.compile(r"KeyError: '[^']*'")),
+              ('damage', re.compile(r'KeyError: "There is no item named \'mimetype\' in the archive"')),
+              ('damage', re.compile(r'AssertionError: (?:the mimetype entry is not application/epub\+zip|the spine is empty|a spine document has no text|duplicate member names in the archive)')),
+              ('execution', re.compile(r'AssertionError: harness size cap exceeded.*'))),
+}
+
+
+def epub_failure(stage, error):
+    """-> 'damage' | 'execution' | None for the error text of a failed EPUB stage, from the allow-lists and the stage-scoped shapes ONLY (never from the collector's own `cause`).
+    The same function reads the recorded (replay) and the live collector's text, so both paths agree."""
+    text = (str(error or '') if not isinstance(error, (list, tuple)) else '\n'.join(str(x) for x in error)).strip()
+    if not text:
+        return None
+    texts = [text]
+    if stage == 'zip_crc':
+        m = _MEMBER_SUFFIX_RX.match(text)
+        if m:
+            texts.append(m.group(1))       # (the text as written is tried too: 'CRC mismatch in member X' is itself an allow-listed message)
+    if any(execution_error(t) for t in texts):
+        return 'execution'
+    if any(damage_wording(t) for t in texts):
+        return 'damage'
+    for cls, rx in _EPUB_STAGE_SHAPES.get(stage, ()):
+        if any(rx.fullmatch(t) for t in texts):
+            return cls
+    return None
 
 
 def unclassified_lines(text):
@@ -423,9 +465,20 @@ def execution_of(obs, data):
         if is_live_record(data) and data.get('cause') in ('input', 'tool'):
             cause = data['cause']
             reason = data.get('reason')
+            if cause == 'input':
+                # the collector calls every non-OSError `input` (zlib out of memory, MemoryError ...): when its own error text is an execution failure it is one.  (Its `input` is a
+                # claim, kept as shown; it never makes a defect -- only recognised damage does.)
+                out_d = data.get('output') if isinstance(data.get('output'), dict) else {}
+                blob = [str(x) for x in (out_d.get('error'), data.get('stderr')) if x]
+                if (blob and execution_error(blob)) or epub_failure(out_d.get('stage'), out_d.get('error')) == 'execution':
+                    cause = 'tool'
         elif isinstance(data, dict) and ('stage' in data or 'exit_code' in data):
             blob = ' '.join(str(data.get(k) or '') for k in ('stderr', 'error'))
-            cause = 'tool' if execution_error(blob) else ('input' if (data.get('stage') in EPUB_STAGES or damage_wording(blob)) else UNKNOWN)      # an execution failure first, even at an EPUB stage
+            if data.get('stage') in EPUB_STAGES:
+                failure = epub_failure(data.get('stage'), data.get('error'))
+                cause = 'tool' if failure == 'execution' else ('input' if failure == 'damage' else UNKNOWN)      # a stage alone is not damage; an execution failure first
+            else:
+                cause = 'tool' if execution_error(blob) else ('input' if damage_wording(blob) else UNKNOWN)
         elif HARNESS_FAILURE_RX.search(text.strip()) or (execution_error(text) and not damage_wording(text)):
             cause = 'tool'
         else:
@@ -528,6 +581,7 @@ def _derive(obs, known_duration=None):
         _derive_record(d, data)
     else:
         _derive_record(d, data)
+    _error_record_damage(d, data)
     _plain_text_fallback(d, data)
     _finish(d, data)
     return d
@@ -547,6 +601,32 @@ def diagnostic_fragments(text):
     if not (t[:1] == '{' or re.match(r'^\[\s*[\{\["\d\]]', t)):      # (a libav `[name @ 0x...]` prefix is plain text, not a JSON array)
         return [t]
     return [m.group(1).replace('\\n', '\n').replace('\\"', '"').replace('", "', '\n').strip().strip('"').strip('[]').strip().strip('"') for m in DIAG_FIELD_RX.finditer(t)]
+
+
+_ERROR_RECORD_KIND = {'audio_sample': ('audio_decode_errors', 'audio'), 'audiobook_inspect': ('container_damage', 'container')}
+
+
+def _error_record_damage(d, data):
+    """A recorded `error` result of the tools whose success deriver does not read a failure ({exit_code, stderr, note}): the diagnostic lines are classified one by one and
+    recognised damage is a known defect, exactly as for ffprobe and decode (the same message, the same finding).  Anything unclassified stays unknown."""
+    obs = d.obs
+    if obs['tool'] not in ('audio_sample', 'audiobook_inspect', 'frame_sample', 'ocr') or obs['status'] != 'error' or not isinstance(data, dict) or is_live_record(data):
+        return
+    texts = [str(data[k]) for k in ('stderr', 'error') if isinstance(data.get(k), str) and data[k].strip()]
+    if not texts or any(f['known_defect'] for f in d.findings):
+        return
+    pairs = classify_text(texts)
+    for l, c in pairs:
+        d.diagnostics.append({'at_s': None, 'state': 'error', 'text': l, 'class': c or 'unclassified'})
+    damage = [l for l, c in pairs if c == 'damage']
+    if not damage:
+        return
+    kind, part = _ERROR_RECORD_KIND.get(obs['tool'], ('tool_error_damage', 'tool'))
+    d.finding(kind, '\n'.join(damage), {'part': part}, True)
+    if obs['tool'] in INTEGRITY_TOOLS:
+        d.integrity = 'damaged'
+    if part == 'container':
+        d.container = 'damaged'
 
 
 def _plain_text_fallback(d, data):
@@ -841,8 +921,8 @@ def _derive_epub(d, data):
         return
     stage, err = data.get('stage'), data.get('error')
     if data.get('status') == 'error' or stage:
-        if stage in EPUB_STAGES and ex.get('cause') == 'tool':
-            # the tool could not read the file (permission, I/O ...): an execution failure at that stage, not damage; the stages before it did pass
+        if stage in EPUB_STAGES and epub_failure(stage, err) != 'damage':
+            # the tool could not read the file (permission, I/O, memory, its own size cap ...) or said nothing recognisable: not damage; the stage is unknown, the stages before it did pass
             i = EPUB_STAGES.index(stage)
             d.package = {s: ('clean' if k < i else (UNKNOWN if k == i else 'not_checked')) for k, s in enumerate(EPUB_STAGES)}
             d.finding('package_error_unclassified', str(err or data), {'part': 'package', 'stage': stage}, False)
@@ -978,9 +1058,9 @@ def _derive_live(d, data, known_duration):
     else:
         d.integrity = 'not_integrity' if kind == 'frames' else UNKNOWN
         d.facts = {k: v for k, v in out.items() if isinstance(v, (str, int, float, bool)) and v is not None} or None
-    if d.execution.get('cause') == 'input' and d.execution['state'] == 'failed' and not any(f['known_defect'] for f in d.findings):
-        d.finding('input_failure', d.execution.get('reason') or 'the collector reports the input is damaged or unreadable', {'part': kind}, True)
-        d.integrity = 'damaged'
+    if d.execution.get('cause') == 'input' and d.execution['state'] == 'failed' and not any(f['known_defect'] for f in d.findings) and not any(f['kind'] == 'input_failure' for f in d.findings):
+        # the collector's `input` cause is its claim, shown as such; it never makes a defect by itself (a known defect needs recognised damage, as on the replay path)
+        d.finding('input_failure', d.execution.get('reason') or 'the collector reports the input is damaged or unreadable', {'part': kind}, False)
 
 
 def _live_decode(d, out):
@@ -1062,18 +1142,19 @@ def _live_epub(d, out):
     """The live EPUB collector's own schema: valid, stages_passed, stage / error on a failure, dc_* metadata, findings[{severity, what}]."""
     passed = [x for x in (out.get('stages_passed') or []) if x in EPUB_STAGES]
     failed_stage = out.get('stage') if out.get('stage') in EPUB_STAGES else None
+    stage_failure = epub_failure(failed_stage, out.get('error')) if failed_stage else None      # affirmative recognition, never the collector's `cause`
     pk = {}
     for i, st in enumerate(EPUB_STAGES):
         if st in passed:
             pk[st] = 'clean'
         elif st == failed_stage:
-            pk[st] = 'damaged' if d.execution.get('cause') == 'input' else UNKNOWN
+            pk[st] = 'damaged' if stage_failure == 'damage' else UNKNOWN
         else:
             pk[st] = 'not_checked' if (failed_stage or d.obs['status'] != 'ok') else UNKNOWN
     d.package = pk
     damage = False
     if failed_stage:
-        known = d.execution.get('cause') == 'input'
+        known = stage_failure == 'damage'
         d.finding('package_damage' if known else 'package_error_unclassified', '%s at stage %s' % (out.get('error') or 'the collector reported a failure', failed_stage),
                   {'part': 'package', 'stage': failed_stage}, known)
         damage = damage or known
@@ -1085,7 +1166,7 @@ def _live_epub(d, out):
     if out.get('valid') is False:
         d.finding('package_invalid', 'the EPUB collector reports valid:false', {'part': 'package'}, False)
         d.veto = {'kind': 'package_invalid', 'location': {'part': 'package'}, 'detail': 'the EPUB collector reports valid:false', 'known_defect': False}
-        damage = damage or d.execution.get('cause') == 'input' or any(f['known_defect'] for f in d.findings)
+        damage = damage or any(f['known_defect'] for f in d.findings)
     d.integrity = 'damaged' if damage else ('clean' if out.get('valid') is True and d.obs['status'] == 'ok' and passed else UNKNOWN)
     d.facts = {k: v for k, v in (
         ('title', out.get('dc_title')), ('creator', out.get('dc_creator')), ('language', out.get('dc_language')), ('identifier', out.get('dc_identifier')),
@@ -1111,8 +1192,7 @@ def _live_audiobook(d, out):
         unclassified = unclassified or pstate == 'unclassified'
         if f.get('probe') not in (None, 'ok'):
             cause = f.get('probe_cause')
-            known = cause == 'input'
-            known = known or pstate == 'damaged'
+            known = pstate == 'damaged' or damage_wording(f.get('probe_reason') or '')      # recognised damage only; the collector's `probe_cause: input` is a claim
             d.finding('part_unreadable' if known else 'part_probe_failed', '%s: ffprobe %s%s' % (label, f.get('probe'), (' (%s)' % f['probe_reason']) if f.get('probe_reason') else ''),
                       {'part': 'container', 'file': label}, known)
             damaged = damaged or known
