@@ -50,7 +50,9 @@ class TypedFindings(unittest.TestCase):
                 'output': {}, 'tool': 'probe'}
         d = derive_one(obs('t1', 'ffprobe', 'error', live))
         self.assertEqual(d.execution['cause'], 'input')
-        self.assertEqual(d.integrity, 'damaged')   # the collector itself says the INPUT is damaged
+        self.assertEqual((d.integrity, [f['known_defect'] for f in d.findings]), ('unknown', [False]))   # the collector's claim alone makes no defect
+        live['reason'] = 'ffprobe exited 1: moov atom not found'                                        # recognised damage does
+        self.assertEqual(derive_one(obs('t1', 'ffprobe', 'error', dict(live, stderr='[mov,mp4 @ 0x0] moov atom not found'))).integrity, 'damaged')
         live['cause'] = 'tool'
         d = derive_one(obs('t1', 'ffprobe', 'error', live))
         self.assertEqual(d.execution['cause'], 'tool')
@@ -730,8 +732,12 @@ class LiveBookSchemas(unittest.TestCase):
 
     def test_an_unreadable_part_is_a_defect_only_when_the_collector_says_the_input_is_at_fault(self):
         rec = live_audiobook([book_file(), book_file(probe='error')])
+        d = derive_one(obs('t1', 'audiobook_inspect', 'partial', rec, backend='live'))        # the collector's `input` cause alone is a claim, never a defect
+        self.assertEqual((d.integrity, d.findings[0]['kind'], d.findings[0]['known_defect']), ('unknown', 'part_probe_failed', False))
+        rec['output']['files'][1]['probe_reason'] = '[mov,mp4 @ 0x0] moov atom not found'        # recognised damage in the collector's own text is
         d = derive_one(obs('t1', 'audiobook_inspect', 'partial', rec, backend='live'))
         self.assertEqual((d.integrity, d.findings[0]['kind'], d.findings[0]['known_defect']), ('damaged', 'part_unreadable', True))
+        rec['output']['files'][1]['probe_reason'] = None
         rec['output']['files'][1]['probe_cause'] = 'tool'
         d = derive_one(obs('t1', 'audiobook_inspect', 'partial', rec, backend='live'))
         self.assertEqual((d.integrity, d.findings[0]['kind'], d.findings[0]['known_defect']), ('unknown', 'part_probe_failed', False))
