@@ -48,9 +48,11 @@ CPU-limited Job on synthetic fixtures (`testdata/wiring-smoke/wiring-smoke.json`
 
 ### Smoke (validity only, not a benchmark)
 
-`runs/smoke-dev-c2-claude-haiku-5-5-v2/`: `claude-haiku-5-5` through the claude adapter (same flags as the dev-c1 smoke), prompt v2, `--evidence replay`, the same 5 dev cases as
-`smoke-dev-c1-claude-haiku-5-5-v2`, run from the committed tree (git dirty flag false). Result: 5/5 records complete, 0 crashes, 0 forced, 0 repairs, 0 protocol violations, 5/5 first-try
-schema valid, response model id `claude-haiku-5-5`, cost about 0.0051 USD, 3 tool calls all `replay`, 1 recorded gap, no write executed. Pass rates were not computed; five cases say nothing about accuracy.
+`runs/smoke-dev-c2-claude-haiku-5-5-v2/` (re-run after the review fixes, replacing the first run): `claude-haiku-5-5` through the claude adapter (same flags as the dev-c1 smoke), prompt v2,
+`--evidence replay`, the same 5 dev cases as `smoke-dev-c1-claude-haiku-5-5-v2`, run from the committed tree at `dbb53548` (git dirty flag false). Result: 5/5 records complete, 0 crashes,
+0 forced, 0 protocol violations, response model id `claude-haiku-5-5`, 5/5 final decisions valid, cost about 0.006 USD, 4 tool calls all `replay`, 1 recorded gap, no write executed.
+**First-try validity was 3/5 this time** (2 repair prompts: one `why` over 200 characters, one `reason` over 400 characters; the first run had 5/5 and the dev-c1 smoke 5/5), so two runs of the same
+five cases already differ; the harness did not change what the model is sent. The length misses are not in `failure_modes` (those classify structural mistakes only). Pass rates were not computed.
 
 ### Known limits
 
