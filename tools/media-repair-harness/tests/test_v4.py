@@ -57,7 +57,7 @@ class PromptV4(unittest.TestCase):
         self.assertEqual([P.protocol_of(v) for v in ('v1', 'v2', 'v3', 'v4')], ['v1', 'v2', 'v2', 'v2'])
         self.assertEqual(len({P.get_prompt(v)['sha256'] for v in ('v1', 'v2', 'v3', 'v4')}), 4)
         with self.assertRaises(ValueError):
-            P.get_prompt('v6')
+            P.get_prompt('v7')
 
     def test_is_shorter_than_v3_and_keeps_the_reply_format(self):
         self.assertLess(len(self.v4), len(self.v3))

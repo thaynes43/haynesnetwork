@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "media-repair-harness"
-# Distribution version, independent of protocol.HARNESS_VERSION ("dev-c5"), which is what run records and manifests carry.
+# Distribution version, independent of protocol.HARNESS_VERSION ("dev-c6"), which is what run records and manifests carry.
 version = "0.3.0"
 description = "Read-only evidence and decision harness for media-repair models (stdlib only)"
 readme = "README.md"

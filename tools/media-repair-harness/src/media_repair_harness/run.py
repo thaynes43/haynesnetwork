@@ -146,16 +146,41 @@ def resolve_evidence_raw(case, suite_dir, redactor=None):
 
 # Option versions added by W18.  `--evidence-format v2` (typed evidence, tools behaviour v2, audit v2) goes with prompt v4 and v5 (v5 requires it) and with
 # guards off or v3; `--guards v3` goes with any prompt.  Every other combination of a new option is refused up front, never silently reinterpreted.
-EVIDENCE_FORMATS = ('v2',)
+EVIDENCE_FORMATS = ('v2', 'v3')
 EVIDENCE_V2_PROMPTS = ('v4', 'v5')
 EVIDENCE_V2_ONLY_PROMPTS = ('v5',)   # dev-c5: v5 explains the format v2 fields, so it is refused with the legacy format (v1 to v4 are unchanged)
 EVIDENCE_V2_GUARDS = (None, 'v3')
+# dev-c6: contract v3 is ONE version -- evidence format v3, turn protocol turn-v3, decision schema decision-v3 and audit v3 -- selected together by
+# `--evidence-format v3` and valid only with a prompt that declares it (v6).  Guards v3 (or none) apply unchanged: G-healthy reads the class, the action and
+# the shown observations, G-write the class, the action, evidence_refs and the context; neither reads the target, so contract v3 needs no new guard version.
+CONTRACT_V3_PROMPTS = ('v6',)
+CONTRACT_V3_GUARDS = (None, 'v3')
+
+
+def _ev3():
+    """evidence_v3 (contract v3), imported only by a run that selects it: every other configuration never imports the contract-v3 modules."""
+    from . import evidence_v3
+    return evidence_v3
 
 
 def check_option_combination(prompt_version, evidence_format=None, guards=None, tool_output_bytes=None):
     """Raise ValueError (main turns it into a SystemExit) for an unsupported combination of the W18 options."""
     if evidence_format is not None and evidence_format not in EVIDENCE_FORMATS:
         raise ValueError('unknown evidence format %r (known: %s; unset keeps the legacy format)' % (evidence_format, ', '.join(EVIDENCE_FORMATS)))
+    if prompt_version in CONTRACT_V3_PROMPTS and evidence_format != 'v3':
+        raise ValueError('--prompt %s declares contract v3 (decision-v3 targets, the v3 presentation) and is valid only with --evidence-format v3 (got %s)' % (
+            prompt_version, evidence_format or 'the legacy format'))
+    if evidence_format == 'v3':
+        if prompt_version not in CONTRACT_V3_PROMPTS:
+            raise ValueError('--evidence-format v3 is contract v3 (format v3, turn-v3, decision-v3 and audit v3 are one version) and is accepted with prompt %s only (got %s): '
+                             'the earlier prompts describe the v2 contract%s' % (' or '.join(CONTRACT_V3_PROMPTS), prompt_version,
+                                                                                ', and v5 explains evidence format v2 with the v2 target semantics' if prompt_version == 'v5' else ''))
+        if guards not in CONTRACT_V3_GUARDS:
+            raise ValueError('--evidence-format v3 is accepted with guards off or --guards v3 only (got --guards %s)' % guards)
+        if tool_output_bytes is not None and not EV2.MIN_WIRE_BYTES <= tool_output_bytes <= EV2.WIRE_BYTES:     # the same page contract (pages-v1)
+            raise ValueError('--evidence-format v3 uses --tool-output-bytes as the page budget (a message is paginated to fit it): it must be between %d and %d, got %s' % (
+                EV2.MIN_WIRE_BYTES, EV2.WIRE_BYTES, tool_output_bytes))
+        return
     if prompt_version in EVIDENCE_V2_ONLY_PROMPTS and evidence_format != 'v2':
         raise ValueError('--prompt %s is valid only with --evidence-format v2 (it describes the typed evidence of format v2, which the legacy tool-result shape does not have)' % prompt_version)
     if evidence_format == 'v2':
@@ -193,7 +218,9 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     """Run one case through the turn protocol.  Returns the run record (never raises for model/tool trouble)."""
     import shutil
     check_option_combination(prompt_version, evidence_format, guards, tool_output_bytes)
-    v2fmt = evidence_format == 'v2'
+    v3fmt = evidence_format == 'v3'
+    v2fmt = evidence_format == 'v2' or v3fmt   # the typed formats share tools behaviour v2, raw outputs, pagination and the reference resolver
+    EV3 = _ev3() if v3fmt else None
     started_wall = time.monotonic()
     started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     fixture = T.Fixture.from_case(case, suite_dir)
@@ -210,10 +237,13 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     if v2fmt:
         evidence = resolve_evidence_raw(case, suite_dir, ctx.redact)
         view = P.case_view(case, [], case_alias=model_alias)
-        session = EV2.Session(model_alias, view['context'], view['media_type'], view['tools_available'], budget=wire_budget)
         caps = T.capabilities(ctx)
+        if v3fmt:
+            session = EV3.Session(model_alias, view['context'], view['media_type'], view['tools_available'], caps, budget=wire_budget)
+        else:
+            session = EV2.Session(model_alias, view['context'], view['media_type'], view['tools_available'], budget=wire_budget)
         frame = {'case_id': view['case_id'], 'media_type': view['media_type'], 'context': view['context'], 'tools_available': view['tools_available'],
-                 'tool_call_budget': view['tool_call_budget'], 'capabilities': caps, 'evidence_format': EV2.FORMAT_VERSION}
+                 'tool_call_budget': view['tool_call_budget'], 'capabilities': caps, 'evidence_format': EV3.FORMAT_VERSION if v3fmt else EV2.FORMAT_VERSION}
         block, _npages = session.initial([EV2.make_observation(e['id'], e['tool'], e['args'], e['status'], e['output'], None, 'case') for e in evidence], frame)
         view = dict(frame, evidence=block)   # the first message as a whole is what the 8192-byte budget was applied to
     else:
@@ -233,14 +263,14 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     turns, tool_calls = [], []
     repairs, forced, forced_reason, error = [], False, None, None
     violations = []   # protocol violations (a tool call outside tools_available): answered with a tool result, never repaired
-    v2 = P.protocol_of(prompt_version) == 'v2'   # v2 and v3 speak the v2 turn protocol (v3 differs in prompt text only)
+    v2 = P.protocol_of(prompt_version) in P.V2_TURN_PROTOCOLS   # prompts v2 to v5 speak the v2 turn protocol; v6 speaks turn-v3, which keeps the v2 turn rules and changes the decision
     rejected_writes = []   # parseable write decisions the strict validator rejected (record only, see write_rejection below)
     decision = None
     load_s = 0.0
 
     def force(reason):
         nonlocal decision, forced, forced_reason
-        decision, forced, forced_reason = P.forced_decision(reason), True, reason
+        decision, forced, forced_reason = P.forced_decision_for(prompt_version, reason), True, reason
 
     n_calls = 0
     try:
@@ -264,7 +294,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
             obj, perr, diag = P.parse_reply(comp.text)
             kind, verrs = (None, [perr]) if perr else P.validate_turn(obj, case.get('tools_available'), prompt_version)
             offered_bad = P.tool_not_offered(obj, case.get('tools_available')) if (v2 and kind == 'tool_call') else None
-            modes = P.failure_modes(comp.text, obj, verrs, diag) if kind is None else (['tool_not_offered'] if offered_bad is not None else [])
+            modes = P.failure_modes_for(prompt_version, comp.text, obj, verrs, diag) if kind is None else (['tool_not_offered'] if offered_bad is not None else [])
             turn = dict(comp.to_dict(), n=len(turns) + 1, raw_request=comp.raw_request, raw_response=comp.raw_response,
                         parsed_type=kind, validation_errors=[e for e in verrs if e], **({'diagnostics': diag} if diag else {}),
                         attempt='repair' if repairs else 'first', reply_valid=(kind is not None and offered_bad is None), failure_modes=modes)
@@ -370,7 +400,10 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     if not usage['cost_reported']:
         usage['cost_usd'] = None
     response_models = sorted({str(t.get('response_model')) for t in turns if t.get('response_model')})
-    if v2fmt:
+    if v3fmt:
+        # audit v3 (contract v3): every diagnosis, action and role prerequisite with its state; a record, never a verdict (it changes no decision)
+        action_audit = EV3.action_audit(dict(decision, evidence_refs=refs_checked), evidence, tool_calls, view['context'], view['media_type'], caps, forced=forced)
+    elif v2fmt:
         audited = dict(decision, evidence_refs=refs_checked)   # a finding id (t2.f1) cites its observation (t2); the decision itself is recorded as the model wrote it
         action_audit = AU.compute(case, audited, tool_calls, forced=forced, prompt_version=prompt_version, audit_version='v2', shown=evidence)
     else:
@@ -404,7 +437,9 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     }
     if guard_rec is not None:
         record['guard'] = guard_rec
-    if v2fmt:
+    if v3fmt:
+        record['evidence_format'] = EV3.format_record(session, caps, evidence_format)
+    elif v2fmt:
         record['evidence_format'] = evidence_format_record(session, caps, evidence_format)
     ctxs = [t['meta']['context'] for t in turns if (t.get('meta') or {}).get('context')]
     if ctxs:
@@ -490,7 +525,10 @@ def _minimal_crash_record(case, case_sha, adapter, exc, prompt_version, evidence
             return getattr(obj, name, default)
         except Exception:  # noqa: BLE001
             return default
-    d = P.forced_decision('harness error before the run: ' + type(exc).__name__)
+    try:
+        d = P.forced_decision_for(prompt_version, 'harness error before the run: ' + type(exc).__name__)
+    except Exception:  # noqa: BLE001 - an unknown prompt version: the v1/v2 shape
+        d = P.forced_decision('harness error before the run: ' + type(exc).__name__)
     cid = case.get('id') if isinstance(case, dict) else None
     try:
         psha = P.get_prompt(prompt_version)['sha256']
@@ -515,7 +553,7 @@ def _minimal_crash_record(case, case_sha, adapter, exc, prompt_version, evidence
 
 
 def _crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay'):
-    d = P.forced_decision('harness error before the run: ' + type(exc).__name__)
+    d = P.forced_decision_for(prompt_version, 'harness error before the run: ' + type(exc).__name__)
     return {'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
             'split': case.get('split'), 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'evidence_mode': evidence_mode,
             'evidence': GP.evidence_summary(case, [], evidence_mode, d, live_kinds=T.LIVE_KINDS),
@@ -737,7 +775,7 @@ class RunLimits:
 def build_adapter(args):
     model = args.model
     if args.adapter == 'ollama':
-        num_predict = args.num_predict or (640 if P.protocol_of(args.prompt) == 'v2' else 384)
+        num_predict = args.num_predict or (640 if P.protocol_of(args.prompt) in P.V2_TURN_PROTOCOLS else 384)
         return A.OllamaAdapter(model, options={'num_ctx': args.num_ctx, 'num_predict': num_predict}, keep_alive=args.keep_alive,
                                guard=G.PsiGuard(), required_digest=getattr(args, 'require_digest', None),
                                stop=(args.stop.split(',') if args.stop is not None else None), do_warmup=not args.no_warmup,
@@ -765,9 +803,9 @@ def main(argv=None):
     ap.add_argument('--num-ctx', type=int, default=A.DEFAULT_NUM_CTX, choices=list(A.ALLOWED_NUM_CTX), help='ollama context window; 4096 is the proven-safe value, 8192 the only other one allowed')
     ap.add_argument('--tool-output-bytes', type=int, default=P.TOOL_OUTPUT_BYTES, help='cap on one tool result shown to the model (lower it for small local contexts)')
     ap.add_argument('--num-predict', type=int, help='ollama output cap; default 384 for prompt v1, 640 for v2 (a write decision carries an audit object)')
-    ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c); v5 (dev-c5) is valid only with --evidence-format v2')
+    ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c); v5 (dev-c5) is valid only with --evidence-format v2; v6 (dev-c6, contract v3) only with --evidence-format v3')
     ap.add_argument('--guards', choices=list(DG.GUARD_VERSIONS), default=None, help='opt-in deterministic decision guards (dev-c4); default off; v2 only relaxes two G-write checks (see CONTRACT-v2-proposal section 9); v3 (W18) also lets a known integrity defect in the shown evidence contradict a healthy decision (any prompt). A guard can only turn a decision into insufficient_evidence/escalate and keeps the original in the record field `guard`')
-    ap.add_argument('--evidence-format', choices=list(EVIDENCE_FORMATS), default=None, help='W18, opt-in: v2 shows the model typed evidence (execution, findings, scope, unresolved per result, a coverage matrix, a client comparison, tool capabilities, compact paginated structure) derived from the same results; also selects tools behaviour v2 and audit v2. Accepted with --prompt v4 or v5 (v5 requires it) and --guards off or v3. Unset keeps the legacy format byte for byte')
+    ap.add_argument('--evidence-format', choices=list(EVIDENCE_FORMATS), default=None, help='W18, opt-in: v2 shows the model typed evidence (execution, findings, scope, unresolved per result, a coverage matrix, a client comparison, tool capabilities, compact paginated structure) derived from the same results; also selects tools behaviour v2 and audit v2. Accepted with --prompt v4 or v5 (v5 requires it) and --guards off or v3. v3 (dev-c6) is contract v3 as one version: the v3 presentation (explicit empty values with a presence map, one deduplicated open list with available_check links), turn protocol turn-v3, decision schema decision-v3 and audit v3; only with --prompt v6 and --guards off or v3. Unset keeps the legacy format byte for byte')
     ap.add_argument('--max-total-cost-usd', type=float, default=None, help='dev-c5: stop the run cleanly before the cumulative REPORTED cost would reach this cap (cases not run stay listed in the manifest); unset = no cap')
     ap.add_argument('--max-wall-s', type=float, default=None, help='dev-c5: stop the run cleanly before this many wall-clock seconds (counted from just before the adapter preflight, a model load included) are used; unset = no cap')
     ap.add_argument('--require-digest', help='dev-c5, ollama: abort before anything is loaded unless the installed model digest equals this value (recorded in the adapter config and so in the config hash)')
@@ -825,7 +863,9 @@ def main(argv=None):
     limits = RunLimits(args.max_total_cost_usd, args.max_wall_s)
     if limits.enabled:   # likewise only when set: a run without caps keeps its earlier config shape
         config['limits'] = limits.config()
-    if args.evidence_format:   # likewise only when on; the three versions it selects are recorded so the config hash tells the formats apart
+    if args.evidence_format == 'v3':   # contract v3: every version it selects is recorded, so the config hash tells it apart from format v2
+        config.update(_ev3().CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes), decision_schema_sha256=sha256_bytes(canonical(P.turn_schema_v3(['ffprobe'])).encode()))
+    elif args.evidence_format:   # likewise only when on; the three versions it selects are recorded so the config hash tells the formats apart
         config.update(evidence_format=args.evidence_format, tools_behavior='v2', audit_version='v2', page_contract=EV2.PAGE_CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes))
     manifest = {'harness_version': P.HARNESS_VERSION, 'run_id': run_id, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'argv': sys.argv[1:] if argv is None else argv,
                 'harness_git': git_info(), 'config': config, 'config_hash': sha256_bytes(canonical(config).encode()),
