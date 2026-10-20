@@ -169,6 +169,12 @@
       },
       "synthetic_cases": 38,
       "solvable": 47
+    },
+    "truth_source": {
+      "deterministic": 17,
+      "construction": 18,
+      "authoritative_metadata": 8,
+      "human_adjudication": 4
     }
   },
   "counts_note": "identical to heldout-v1: no rule changed a truth label, a supported set, a tool list, a media type or a case count",
@@ -183,7 +189,7 @@
       "C6",
       "every ruling in ADJUDICATION-dev-v1.md (dev-case-specific)"
     ],
-    "source": ".agents/context/media-repair-harness-2026-10-19/ (evaluator rulings RULINGS-v1.1.md; general construction rules only)",
+    "source": ".agents/context/media-repair-harness-2026-10-19/RULINGS-v1.1.md (evaluator rulings; general construction rules C1, C2, C5 only; added by PR #1015)",
     "changes_by_rule": {
       "C1": {
         "cases_changed": 20,
@@ -225,22 +231,32 @@
     "other_generic": {
       "injected_tool_also_has_ok_precollected_evidence": 2,
       "injected_partial_mode_cases": 1,
-      "note": "both already known to the evaluator (validator notes; the injected-partial G8 gap is recorded in RULINGS-v1.1.md); neither is a construction error and neither was changed"
+      "note": "both already known to the evaluator (validator notes; the injected-partial G8 gap is recorded in .agents/context/media-repair-harness-2026-10-19/RULINGS-v1.1.md); neither is a construction error and neither was changed"
     }
   },
   "gates_minimums_check": {
     "min_cases_30": true,
     "healthy_ge_8": true,
     "abstain_ge_4": true,
+    "each_other_class_ge_2": true,
+    "each_media_ge_6": true,
     "inject_ge_3": true,
+    "offender_rows_ge_2_each": true,
     "offender_share_le_10pct": true,
+    "outcome_ge_3": true,
+    "real_library_ge_8": true,
     "counts": {
       "cases": 47,
       "healthy": 11,
       "abstain_class": 10,
       "inject_tool_failure": 5,
       "offender_rows": 4,
-      "offender_share_pct": 8.5
+      "offender_share_pct": 8.5,
+      "each_other_class_min": 4,
+      "each_media_min": 10,
+      "offender_rows_each": 2,
+      "outcome_steps": 8,
+      "real_library_cases": 9
     },
     "note": "minimums rechecked on v1.1 after the corrections; all pass"
   },
