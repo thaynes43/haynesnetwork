@@ -1,0 +1,60 @@
+{
+  "context": {
+    "arr": {
+      "app": "sonarr",
+      "ids": {}
+    },
+    "expected": {
+      "episode": 4,
+      "runtime_s": 1320,
+      "season": 1,
+      "series": "Example Show"
+    },
+    "notes_for_model": "Looks wrong to a viewer.",
+    "title": "Example Show"
+  },
+  "evidence": [
+    {
+      "args": {},
+      "id": "e1",
+      "output": "ffprobe: probe failed (host unavailable)",
+      "status": "error",
+      "tool": "ffprobe"
+    }
+  ],
+  "family": "rg-tv-failed-probe",
+  "fixture": {
+    "kind": "remote",
+    "locator": "recorded observation of a synthetic row; no media is reachable",
+    "sha256": null
+  },
+  "id": "rg-tv-failed-probe-001",
+  "media_type": "tv",
+  "provenance": "new (harness regression data; synthetic, invented for this test)",
+  "replay": [
+    {
+      "args": {
+        "at": 0
+      },
+      "output": "{\"exit_code\": 0, \"quota_exhausted\": false, \"scope\": \"4 s window\", \"stderr\": \"\"}",
+      "status": "ok",
+      "tool": "decode_sample"
+    }
+  ],
+  "solvable": false,
+  "split": "dev",
+  "suite_version": "harness-regression-v1",
+  "supported_actions": [
+    "escalate"
+  ],
+  "tools_available": [
+    "ffprobe",
+    "decode_sample",
+    "arr_lookup"
+  ],
+  "truth": {
+    "class": "insufficient_evidence",
+    "ref": "the recorded probe failed; only a window decodes",
+    "source": "construction"
+  }
+}

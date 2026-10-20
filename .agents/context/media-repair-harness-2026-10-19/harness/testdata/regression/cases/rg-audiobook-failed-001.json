@@ -1,0 +1,43 @@
+{
+  "context": {
+    "arr": {
+      "app": "bookshelf",
+      "ids": {}
+    },
+    "expected": {
+      "duration_s": 5400,
+      "title": "Example Audiobook Two"
+    },
+    "notes_for_model": "Stops partway through, says a listener.",
+    "title": "Example Audiobook Two"
+  },
+  "evidence": [],
+  "family": "rg-audiobook-failed",
+  "fixture": {
+    "kind": "remote",
+    "locator": "recorded observation of a synthetic row; no media is reachable",
+    "sha256": null
+  },
+  "id": "rg-audiobook-failed-001",
+  "inject_tool_failure": {
+    "mode": "error",
+    "tool": "audiobook_inspect"
+  },
+  "media_type": "audiobook",
+  "provenance": "new (harness regression data; synthetic, invented for this test)",
+  "solvable": false,
+  "split": "dev",
+  "suite_version": "harness-regression-v1",
+  "supported_actions": [
+    "escalate"
+  ],
+  "tools_available": [
+    "audiobook_inspect",
+    "arr_lookup"
+  ],
+  "truth": {
+    "class": "insufficient_evidence",
+    "ref": "the only inspection tool fails",
+    "source": "construction"
+  }
+}

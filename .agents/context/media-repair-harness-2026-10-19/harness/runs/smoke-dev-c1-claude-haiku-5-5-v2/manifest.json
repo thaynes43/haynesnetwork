@@ -1,0 +1,99 @@
+{
+  "aborted": null,
+  "adapter": "claude",
+  "argv": [
+    "--suite",
+    "/home/dev/work/mrh-harness-v2-1019/.agents/context/media-repair-harness-2026-10-19/suite",
+    "--split",
+    "dev",
+    "--cases",
+    "audiobook-corrupt-003,epub-insuff-001,tv-identity-004,epub-naming-001,movie-healthy-003",
+    "--adapter",
+    "claude",
+    "--model",
+    "claude-haiku-5-5",
+    "--prompt",
+    "v2",
+    "--out",
+    "/home/dev/work/mrh-harness-v2-1019/.agents/context/media-repair-harness-2026-10-19/harness/runs/smoke-dev-c1-claude-haiku-5-5-v2",
+    "--scratch",
+    "/tmp/claude-1000/mrh-smoke-scratch"
+  ],
+  "case_ids": [
+    "audiobook-corrupt-003",
+    "epub-insuff-001",
+    "epub-naming-001",
+    "movie-healthy-003",
+    "tv-identity-004"
+  ],
+  "case_sha256": {
+    "audiobook-corrupt-003": "2eb76362e05f273e2a64a82fa2f8d2e2eab2908b02cb3c1b89c1ab6e9c66163c",
+    "epub-insuff-001": "21b2ff2b49052763b6e8fd78004fe920300481229a76f804f88a9247a33a50ea",
+    "epub-naming-001": "06b795f0f93d76983c6d81b7b22f99219b4c2cb124202705256d90d4e9ce1755",
+    "movie-healthy-003": "c28b14a32223bc7ca5aba11a03e7ea3fa0f2aea25ec58d1688d59f823fa04cf4",
+    "tv-identity-004": "99adfa52b9d2c3c950285db0346f66c0b09acbbba50abfbedd49cfdd409d99ce"
+  },
+  "config": {
+    "adapter_config": {
+      "adapter": "claude",
+      "effort": null,
+      "flags": [
+        "--tools",
+        "",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--disable-slash-commands",
+        "--setting-sources",
+        "",
+        "--no-session-persistence"
+      ],
+      "max_budget_usd": 2.0,
+      "model": "claude-haiku-5-5",
+      "output_format": "json"
+    },
+    "flat_schema_sha256": "0cc08ff1de36f459c2654838e3dad024986815dd843572340b74a624ffb7d2eb",
+    "harness_version": "dev-c1",
+    "max_tool_calls": 6,
+    "ocr_model": null,
+    "prompt_version": "v2",
+    "protocol": "turn-v2",
+    "replay": "auto",
+    "system_prompt_sha256": "351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a",
+    "tool_output_bytes": 8192,
+    "tool_timeout_s": 60,
+    "turn_schema_sha256": "4d976ba5fc8f82af307a7cfb4f168db248b08ffb5e7bf2a82d11b2b9ce28790b",
+    "turn_schema_v2_sha256": "febb1ea15e399104d90772b01c6e4b51d7eb3dc66f5af951f8ff3e8cd882eb36"
+  },
+  "config_hash": "391caddaac7ffaaaae26202c358c3bd9c57aa1f3dea1052722a24181eab8158e",
+  "ended_at": "2026-10-19T23:30:40.863085+00:00",
+  "finish": {},
+  "harness_git": {
+    "branch": "agent/mrh-harness-v2-1019",
+    "dirty": false,
+    "sha": "74601657a62a127dfb4c7fbc406c24e5d0f32c27"
+  },
+  "harness_version": "dev-c1",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "preflight": {
+    "adapter": "claude",
+    "model_digest": null,
+    "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+    "requested_model": "claude-haiku-5-5",
+    "runtime_version": "2.1.299 (Claude Code)"
+  },
+  "python": "3.11.2",
+  "records_written": [
+    "audiobook-corrupt-003",
+    "epub-insuff-001",
+    "epub-naming-001",
+    "movie-healthy-003",
+    "tv-identity-004"
+  ],
+  "requested_model": "claude-haiku-5-5",
+  "run_id": "smoke-dev-c1-claude-haiku-5-5-v2",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "started_at": "2026-10-19T23:30:04.959893+00:00",
+  "suite_dir": "/home/dev/work/mrh-harness-v2-1019/.agents/context/media-repair-harness-2026-10-19/suite"
+}

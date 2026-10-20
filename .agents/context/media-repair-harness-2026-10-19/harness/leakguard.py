@@ -121,6 +121,27 @@ def find_leaks(case, text, extra_paths=()):
 
 
 REPAIR_PREFIX = 'Your last reply was rejected:'
+# Harness-authored text that is generic by construction (a validator error lists every allowed class and action, which are not
+# case-specific).  For these, only case-specific tokens count: case id and stem, family, fixture names, provenance, truth ref.
+# The class and action names are public protocol vocabulary.  Never put model- or case-derived free text into such a message.
+GENERIC_PREFIXES = (REPAIR_PREFIX,)
+GENERIC_KINDS = ('supported_action', 'truth_class')
+# What a static system prompt must never contain: this case's id (and its stem), file names and a long provenance string.
+# The title is NOT checked: a one-word title such as `Identity` is an ordinary protocol word and the model sees it in the case context anyway.
+#  Ordinary words are not checked: tokens shorter than 6 characters (an id such as `a`, a provenance tag such as `new`)
+# would match everyday words, so they are skipped; real case ids, titles and file names are longer.
+SYSTEM_MIN_LEN = 6
+
+
+def check_system(case, system, extra_paths=()):
+    """Guard for the static system prompt: it may name classes and actions, but never this case's id, file name or provenance."""
+    cid = str(case.get('id') or '')
+    cands = {'case_id': [cid], 'case_id_stem': [re.sub(r'-\d+$', '', cid)], 'fixture_name': fixture_basenames(case, extra_paths),
+             'provenance': [str(case.get('provenance') or '')]}   # the title is case context the model sees anyway: not checked
+    hits = sorted(kind for kind, toks in cands.items() if any(len(t) >= SYSTEM_MIN_LEN and _ci(t).search(system or '') for t in toks))
+    if hits:
+        raise LeakError('forbidden token(s) %s in the system prompt' % hits)
+
 
 
 def check_messages(case, messages, extra_paths=()):
@@ -131,11 +152,11 @@ def check_messages(case, messages, extra_paths=()):
             continue
         content = m.get('content', '')
         mine = toks
-        if content.startswith(REPAIR_PREFIX):
+        if content.startswith(GENERIC_PREFIXES):
             # The repair prompt quotes the validator's error, which lists every allowed action and class
             # (e.g. "action must be one of ... rename ..."). That generic enumeration is not a leak, and checking it
             # crashed two haiku cases on 2026-10-19 (G9). Everything case-specific is still checked.
-            mine = [(k, rx) for k, rx in toks if k not in ('supported_action', 'truth_class')]
+            mine = [(k, rx) for k, rx in toks if k not in GENERIC_KINDS]
         hits = sorted({kind for kind, rx in mine if rx.search(content)})
         if hits:
             raise LeakError('forbidden token(s) %s in model-bound message %d' % (hits, i + 1))

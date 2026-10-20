@@ -63,7 +63,7 @@ class Adapter:
     def before_case(self):
         pass
 
-    def complete(self, system, messages):
+    def complete(self, system, messages, schema=None):
         raise NotImplementedError
 
     def finish(self):
@@ -214,8 +214,8 @@ class OllamaAdapter(Adapter):
         if foreign:
             raise AbortRun('resident_owner_changed_no_eviction: %s' % foreign)
 
-    def complete(self, system, messages):
-        body = {'model': self.requested_model, 'stream': False, 'think': False, 'format': self.schema,
+    def complete(self, system, messages, schema=None):
+        body = {'model': self.requested_model, 'stream': False, 'think': False, 'format': schema if schema is not None else self.schema,
                 'keep_alive': self.keep_alive, 'options': dict(self.options, **({'stop': self.stop} if self.stop else {})),
                 'messages': [{'role': 'system', 'content': system}] + messages}
         started = time.monotonic()
@@ -286,7 +286,7 @@ class ClaudeAdapter(Adapter):
             cmd += ['--effort', self.effort]
         return cmd
 
-    def complete(self, system, messages):
+    def complete(self, system, messages, schema=None):
         prompt = render_transcript(messages)
         cmd = self.argv(system)
         started = time.monotonic()
@@ -364,7 +364,7 @@ class CodexAdapter(Adapter):
             cmd += ['-c', 'model_reasoning_effort="%s"' % self.effort]
         return cmd + ['-']
 
-    def complete(self, system, messages):
+    def complete(self, system, messages, schema=None):
         prompt = system + '\n\n---\n\n' + render_transcript(messages)
         cmd = self.argv()
         started = time.monotonic()
@@ -437,7 +437,7 @@ class ScriptedAdapter(Adapter):
         self.runtime_version = 'scripted-1'
         self.calls = []
 
-    def complete(self, system, messages):
+    def complete(self, system, messages, schema=None):
         self.calls.append(json.loads(json.dumps(messages)))
         if not self.replies:
             raise AdapterError('scripted adapter ran out of replies')

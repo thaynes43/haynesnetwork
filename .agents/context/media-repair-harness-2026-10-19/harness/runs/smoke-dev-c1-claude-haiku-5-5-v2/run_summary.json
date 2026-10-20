@@ -1,0 +1,41 @@
+{
+  "aborted": null,
+  "cases_planned": 5,
+  "config_hash": "391caddaac7ffaaaae26202c358c3bd9c57aa1f3dea1052722a24181eab8158e",
+  "cost_usd": 0.005539,
+  "harness_git": {
+    "branch": "agent/mrh-harness-v2-1019",
+    "dirty": false,
+    "sha": "74601657a62a127dfb4c7fbc406c24e5d0f32c27"
+  },
+  "harness_version": "dev-c1",
+  "incomplete_records": {},
+  "latency_s_per_case": {
+    "max": 10.347,
+    "median": 7.325,
+    "min": 4.979
+  },
+  "prompt": {
+    "sha256": "351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a",
+    "version": "v2"
+  },
+  "records_complete": true,
+  "records_written": 5,
+  "requested_model": "claude-haiku-5-5",
+  "response_model_ids": [
+    "claude-haiku-5-5"
+  ],
+  "run_id": "smoke-dev-c1-claude-haiku-5-5-v2",
+  "statement": "Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; this harness executed no write and changed no media, *arr, Plex or library state.",
+  "validity": {
+    "adapter_errors": 0,
+    "crashes": 0,
+    "final_decision_valid": 5,
+    "first_try_failure_modes": {},
+    "first_try_valid": 5,
+    "forced": 0,
+    "protocol_violations": 0,
+    "repaired": 0
+  },
+  "writes_executed": 0
+}

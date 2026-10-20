@@ -38,9 +38,21 @@ OCR_SCHEMA = {'type': 'object', 'properties': {'visible_text': {'type': 'string'
               'required': ['visible_text'], 'additionalProperties': False}
 
 
+# Status semantics (dev-c1), one rule for every tool:
+#   ok           the tool ran and returned the whole answer
+#   partial      the tool ran and returned a cut or incomplete answer
+#   error        the tool RAN (or its input was validated) and failed: a non-zero exit, a crash, bad arguments, a damaged file reported
+#                by the tool itself.  A finding about the media is an `error` result of a working tool.
+#   timeout      the tool ran and did not finish in time
+#   unavailable  the CAPABILITY is absent: the tool is not offered for the case, the binary, backend or fixture is missing, no
+#                recording exists to replay, or the recorded data cannot be used.  Nothing ran, so nothing was learned.
+# `unavailable` is never an empty success, and like error/timeout/partial it leaves the checked part UNVERIFIED (never healthy).
+STATUSES = ('ok', 'partial', 'error', 'timeout', 'unavailable')
+
+
 class ToolResult:
     def __init__(self, status, output, **extra):
-        assert status in ('ok', 'partial', 'error', 'timeout')
+        assert status in STATUSES
         self.status, self.output, self.extra = status, output, extra
 
     def bounded(self, redactor=None, cap=None):
@@ -160,26 +172,121 @@ def _run_local(ctx, argv, timeout=25):
 
 def _need_media(ctx):
     if ctx.fixture.kind == 'none':
-        return ToolResult('error', 'no media fixture behind this case; tool cannot run')
-    if ctx.fixture.kind == 'pinned':
-        return ToolResult('error', 'this case rests on a pinned historical observation; the media is not reachable from the harness (no live fixture)')
+        return ToolResult('unavailable', 'no media fixture behind this case; the tool cannot run')
     if ctx.fixture.kind == 'local' and not Path(ctx.fixture.path).is_file():
-        return ToolResult('error', 'fixture file missing')
+        return ToolResult('unavailable', 'fixture file missing; the tool cannot run')
     return None
 
 
+# ---- case-level replay for pinned real-media rows ---------------------------------------------------------------------
+# A pinned row is real library media known only from a recorded observation.  A tool call on it returns what was recorded
+# (the case's optional `replay` list, then its pre-collected evidence of the same tool) when the call matches, and an explicit
+# `unavailable` result otherwise.  Nothing is ever invented, and a recorded failure stays a failure.
+TIMED_TOOLS = ('decode_sample', 'frame_sample', 'audio_sample', 'ocr')
+
+
+def _evidence_output(ctx, e):
+    out, status = e.get('output'), e.get('status', 'ok')
+    if isinstance(out, dict) and 'ref' in out:
+        p = Path(out['ref'])
+        p = p if p.is_absolute() else Path(ctx.suite_dir or '.') / p
+        try:
+            data = p.read_bytes()
+        except OSError:
+            return 'evidence file missing', 'unavailable'
+        if out.get('sha256') and hashlib.sha256(data).hexdigest() != out['sha256']:
+            return 'evidence file failed its integrity check (hash mismatch); its content is not shown', 'unavailable'
+        out = data.decode('utf-8', errors='replace')
+    if not isinstance(out, str):
+        out = json.dumps(out, sort_keys=True, ensure_ascii=False)
+    try:
+        out = json.loads(out) if out.lstrip()[:1] in '{[' else out
+    except ValueError:
+        pass
+    return out, (status if status in STATUSES else 'ok')
+
+
+def _recorded(ctx, tool):
+    """-> [(source id, entry)]: the case's recorded observations of `tool`."""
+    found = [('replay', r) for r in (ctx.case.get('replay') or []) if isinstance(r, dict) and r.get('tool') == tool]
+    found += [(e.get('id'), e) for e in ctx.case.get('evidence', []) if e.get('tool') == tool]
+    return found
+
+
+def _entry_time(entry):
+    a = entry.get('args') or {}
+    try:
+        return _at(a)
+    except ValueError:
+        return None
+
+
+def _recorded_times(ctx, tool):
+    return sorted({_entry_time(e) for _, e in _recorded(ctx, tool) if not _is_full(e.get('args') or {}) and _entry_time(e) is not None})
+
+
+def _pinned_note(source):
+    return 'recorded observation (%s) of the real media; the media itself is not reachable, so nothing new was collected' % source
+
+
+def _pinned_unavailable(tool, ctx, what=''):
+    times = _recorded_times(ctx, tool) if tool in TIMED_TOOLS else []
+    hint = (' (recorded at: %s s)' % ', '.join('%g' % t for t in times)) if times else ''
+    return ToolResult('unavailable', 'no recorded observation of %s%s for this item%s; the media is not reachable and nothing was run' % (tool, (' ' + what) if what else '', hint), mode='pinned_replay')
+
+
+def _pinned(tool, args, ctx):
+    """Serve a tool call on a pinned row from the case's recorded observations."""
+    recs = _recorded(ctx, tool)
+    if tool in TIMED_TOOLS:
+        if tool == 'frame_sample':
+            at = _at(args)
+            if not any(_entry_time(e) == at for _, e in _recorded(ctx, 'ocr')):
+                return ToolResult('unavailable', 'no recorded observation of a frame at %g s for this item (recorded text readings at: %s); the media is not reachable and nothing was run' % (at, ', '.join('%g' % t for t in _recorded_times(ctx, 'ocr')) or 'none'), mode='pinned_replay')
+            name = 'frame@%g' % at
+            ctx.frames[name], ctx.frame_t[name] = None, at
+            return ToolResult('ok', {'frame': name, 'replay': True, 'note': 'no image is available; call ocr with this frame to read the recorded on-screen text'}, mode='pinned_replay')
+        if tool == 'ocr':
+            name = args.get('frame')
+            if name is not None:
+                if name not in ctx.frames:
+                    return ToolResult('error', 'unknown frame %r; call frame_sample first (known: %s)' % (name, sorted(ctx.frames)))
+                at = ctx.frame_t[name]
+            else:
+                at = _at(args)
+        else:
+            at = _at(args)
+        full = _is_full(args)
+        hit = [(src, e) for src, e in recs if (_is_full(e.get('args') or {}) if full else (not _is_full(e.get('args') or {}) and _entry_time(e) == at))]
+        if not hit:
+            return _pinned_unavailable(tool, ctx, 'for the whole file' if full else 'at %g s' % at)
+        src, e = hit[0]
+        out, status = _evidence_output(ctx, e)
+        if tool == 'ocr':
+            out = {'t_s': at, 'text': out if isinstance(out, str) else json.dumps(out, sort_keys=True), 'consensus': True, 'recorded_as': src, 'note': _pinned_note(src)}
+        else:
+            out = {'observation': out, 'recorded_as': src, 'note': _pinned_note(src)}
+        return ToolResult(status, out, mode='pinned_replay')
+    if not recs:
+        return _pinned_unavailable(tool, ctx)
+    src, e = recs[0]
+    out, status = _evidence_output(ctx, e)
+    return ToolResult(status, {'observation': out, 'recorded_as': src, 'note': _pinned_note(src)}, mode='pinned_replay')
+
+
 def _replay_record(ctx):
-    """The recorded probe results for a local fixture (suite/fixtures/probes/<name>.json), or an error string."""
+    """The recorded probe results for a local fixture (suite/fixtures/probes/<name>.json).
+    -> (record, None, None) or (None, reason, 'unavailable'): nothing recorded, or the recording does not match the fixture bytes (unusable data)."""
     if ctx.fixture.kind != 'local' or ctx.suite_dir is None:
-        return None, 'no replay file applies'
+        return None, 'no replay file applies', 'unavailable'
     p = Path(ctx.suite_dir) / 'fixtures' / 'probes' / (Path(ctx.fixture.path).name + '.json')
     if not p.is_file():
-        return None, 'no recorded replay for %s' % Path(ctx.fixture.path).name
+        return None, 'no recorded replay for this item', 'unavailable'
     rec = json.loads(p.read_text())
     actual = hashlib.sha256(Path(ctx.fixture.path).read_bytes()).hexdigest()
     if rec.get('sha256') and rec['sha256'] != actual:
-        return None, 'replay file does not match the fixture bytes (fixture changed since it was recorded)'
-    return rec, None
+        return None, 'replay file does not match the fixture bytes (fixture changed since it was recorded)', 'unavailable'
+    return rec, None, None
 
 
 def _backend(ctx, binary):
@@ -192,10 +299,10 @@ def _backend(ctx, binary):
     if ctx.replay != 'force' and ctx.which(binary):
         return 'local'
     if ctx.replay == 'off':
-        return ToolResult('error', '%s is not installed in this environment and replay is disabled' % binary)
-    rec, err = _replay_record(ctx)
+        return ToolResult('unavailable', '%s is not installed in this environment and replay is disabled' % binary)
+    rec, err, status = _replay_record(ctx)
     if rec is None:
-        return ToolResult('error', '%s is not installed in this environment and %s' % (binary, err))
+        return ToolResult(status, '%s is not installed in this environment and %s' % (binary, err))
     ctx.replay_rec = rec
     return 'replay'
 
@@ -366,7 +473,7 @@ def tool_audio_sample(args, ctx):
     if isinstance(be, ToolResult):
         return be
     if be == 'replay':
-        return ToolResult('error', 'no recorded replay for audio_sample in this suite (audio levels were not recorded)', mode='replay')
+        return _audio_replay(ctx, at, stream)
     if be == 'remote':
         info, wav, err = _run_remote(ctx, 'audio', at=at, stream=stream)
         if err:
@@ -381,6 +488,24 @@ def tool_audio_sample(args, ctx):
         return ToolResult('error', {'exit_code': (info or {}).get('exit_code'), 'stderr': ((info or {}).get('stderr') or '')[:1000], 'note': 'no audio produced'}, mode=be)
     stats.update(at_s=at, stream=stream, note='signal statistics only; no speech recognition was run')
     return ToolResult('ok', stats, mode=be)
+
+
+def _audio_replay(ctx, at, stream):
+    """Recorded audio levels (probes/<fixture>.json `audio_sample`: {"<ss>": {rms_dbfs, peak_dbfs, silent_fraction, ...}}), else `unavailable`."""
+    pr = ctx.replay_rec.get('ffprobe', {})
+    if pr.get('exit_code') not in (0, None):
+        return ToolResult('error', {'exit_code': pr.get('exit_code'), 'stderr': pr.get('stderr', '')[:1000], 'note': 'no audio produced'}, mode='replay')
+    if pr.get('streams') is not None and not any(x.get('codec_type') == 'audio' for x in pr['streams']):
+        return ToolResult('error', {'note': 'no audio produced: the file has no audio stream'}, mode='replay')
+    rec = ctx.replay_rec.get('audio_sample')
+    keys = sorted(int(k) for k in rec if str(k).isdigit()) if isinstance(rec, dict) else []
+    if not keys:
+        return ToolResult('unavailable', 'no recorded audio levels for this item (audio_sample was not recorded for it); nothing was run', mode='replay')
+    k = max([x for x in keys if x <= at] or keys[:1])
+    out = dict(rec[str(k)], at_s=float(k), stream=stream, note='replay: recorded signal statistics for the 4 s window at ss=%d; no speech recognition was run' % k)
+    if k != at:
+        out['requested_at_s'] = at
+    return ToolResult('ok', out, mode='replay')
 
 
 def wav_stats(data):
@@ -430,7 +555,7 @@ def tool_ocr(args, ctx):
         be = _backend(ctx, 'ffmpeg')
         return _ocr_replay(ctx, ctx.frame_t[name]) if be == 'replay' else be
     if ctx.ocr_backend is None:
-        return ToolResult('error', 'no OCR backend configured for this run (tesseract is not installed; pass --ocr-model)')
+        return ToolResult('unavailable', 'no OCR backend configured for this run (tesseract is not installed; the harness needs --ocr-model); nothing was run')
     png = Path(ctx.frames[name]).read_bytes()
     readings = []
     for _ in range(2):
@@ -447,14 +572,20 @@ def tool_ocr(args, ctx):
 def _ocr_replay(ctx, t):
     rec = getattr(ctx, 'replay_rec', None)
     if rec is None:
-        rec, err = _replay_record(ctx)
+        rec, err, status = _replay_record(ctx)
         if rec is None:
-            return ToolResult('error', err)
+            return ToolResult(status, err)
         ctx.replay_rec = rec
-    ft = rec.get('frame_text', [])
+    if 'frame_text' not in rec:
+        return ToolResult('unavailable', 'no recorded on-screen text for this item; nothing was run', mode='replay')
+    ft = rec['frame_text']
     text = next((e['text'] for e in ft if e['t0'] <= t < e['t1']), '') if isinstance(ft, list) else ''  # a string means no text was drawn
-    return ToolResult('ok', {'t_s': t, 'text': text, 'consensus': True,
-                             'note': 'replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time'}, mode='replay')
+    note = 'replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time'
+    out = {'t_s': t, 'text': text, 'consensus': True, 'note': note}
+    # The suite author's construction note for a string frame_text stays in the run record only (ToolResult extra); the
+    # model-visible output is what the call returned, as in v1.
+    extra = {'recorded_note': ft} if isinstance(ft, str) else {}
+    return ToolResult('ok', out, mode='replay', **extra)
 
 
 def ollama_ocr_backend(model, api):
@@ -520,10 +651,10 @@ def _epub_stage(path):
 
 def tool_epub_inspect(args, ctx):
     if ctx.fixture.kind != 'local':
-        return ToolResult('error', 'no media fixture behind this case; tool cannot run' if ctx.fixture.kind in ('none', 'pinned') else 'epub_inspect needs a local fixture')
+        return ToolResult('unavailable', 'no media fixture behind this case; the tool cannot run' if ctx.fixture.kind == 'none' else 'epub_inspect needs a local fixture; none is reachable for this case')
     path = ctx.fixture.path
     if not Path(path).is_file():
-        return ToolResult('error', 'fixture file missing')
+        return ToolResult('unavailable', 'fixture file missing; the tool cannot run')
     raw = Path(path).read_bytes()
     base = {'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
     staged = _epub_stage(path)
@@ -601,11 +732,15 @@ def call_tool(ctx, name, args):
     started = time.monotonic()
     inject = ctx.case.get('inject_tool_failure')
     if name not in REGISTRY or name not in ctx.case.get('tools_available', []):
-        res = ToolResult('error', 'tool %r is not available for this case' % name)
+        # the capability is absent for this case: `unavailable`, and the call itself is a protocol violation (recorded by the runner)
+        res = ToolResult('unavailable', 'tool %s is not offered for this case; nothing ran. Offered: %s' % (repr(name) if name in REGISTRY else 'requested', ', '.join(ctx.case.get('tools_available', [])) or 'none'),
+                         protocol_violation='tool_not_offered')
     elif inject and inject.get('tool') == name and inject.get('mode', 'error') in ('error', 'timeout'):
         res = _failure(inject['mode'], name, None)  # nothing is run: the failure is the whole result
     else:
         def work():
+            if ctx.fixture.kind == 'pinned' and name != 'arr_lookup':
+                return _pinned(name, args, ctx)
             return REGISTRY[name](args, ctx)
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         fut = pool.submit(work)

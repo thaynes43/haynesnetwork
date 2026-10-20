@@ -1,0 +1,41 @@
+{
+  "context": {
+    "arr": {
+      "app": "bookshelf",
+      "ids": {}
+    },
+    "expected": {
+      "author": "Ines Varga",
+      "edition": "either the first or the revised edition",
+      "language": "en",
+      "title": "The Lantern Ledger"
+    },
+    "notes_for_model": "The library holds one file; the catalog lists a first and a revised edition, and the request does not name one.",
+    "title": "The Lantern Ledger"
+  },
+  "evidence": [],
+  "family": "rg-epub-edition",
+  "fixture": {
+    "kind": "local",
+    "locator": "../fixtures/td-right.epub",
+    "sha256": "c81612f94791da592252c88f4cb008e470fefc9ac63c245d6218ec33a6a59b49"
+  },
+  "id": "rg-epub-edition-001",
+  "media_type": "epub",
+  "provenance": "new (harness regression data; synthetic, invented for this test)",
+  "solvable": false,
+  "split": "dev",
+  "suite_version": "harness-regression-v1",
+  "supported_actions": [
+    "escalate"
+  ],
+  "tools_available": [
+    "epub_inspect",
+    "arr_lookup"
+  ],
+  "truth": {
+    "class": "order_edition_ambiguity",
+    "ref": "two editions exist and nothing in the file says which is wanted",
+    "source": "construction"
+  }
+}

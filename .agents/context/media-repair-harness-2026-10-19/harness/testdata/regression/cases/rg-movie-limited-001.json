@@ -1,0 +1,47 @@
+{
+  "context": {
+    "arr": {
+      "app": "radarr",
+      "ids": {}
+    },
+    "expected": {
+      "language": "en",
+      "runtime_s": 5000
+    },
+    "notes_for_model": "A viewer reports a glitch.",
+    "title": "Example Movie Three"
+  },
+  "evidence": [
+    {
+      "args": {},
+      "id": "e1",
+      "output": "{\"exit_code\": 0, \"format\": {\"duration\": \"5000.0\", \"format_name\": \"matroska,webm\"}, \"stderr\": \"\", \"streams\": [{\"codec_name\": \"h264\", \"codec_type\": \"video\", \"index\": 0, \"pix_fmt\": \"yuv420p\", \"profile\": \"High\"}, {\"channels\": 2, \"codec_name\": \"aac\", \"codec_type\": \"audio\", \"index\": 1}]}",
+      "status": "ok",
+      "tool": "ffprobe"
+    }
+  ],
+  "family": "rg-movie-limited",
+  "fixture": {
+    "kind": "remote",
+    "locator": "recorded observation of a synthetic row; no media is reachable",
+    "sha256": null
+  },
+  "id": "rg-movie-limited-001",
+  "media_type": "movie",
+  "provenance": "new (harness regression data; synthetic, invented for this test)",
+  "solvable": false,
+  "split": "dev",
+  "suite_version": "harness-regression-v1",
+  "supported_actions": [
+    "escalate"
+  ],
+  "tools_available": [
+    "ffprobe",
+    "arr_lookup"
+  ],
+  "truth": {
+    "class": "insufficient_evidence",
+    "ref": "no decode tool is offered, so nothing can show the whole file decodes",
+    "source": "construction"
+  }
+}
