@@ -2,6 +2,7 @@
 capabilities / gaps record.  No ffmpeg, no network, no model: a fake collector runner (or a fake `collect`) stands in for the binaries
 and ScriptedAdapter for the model."""
 import json
+import os
 import tempfile
 import time
 import unittest
@@ -63,9 +64,22 @@ class ReplayIdentity(unittest.TestCase):
         self.assertIn('617e6ad4', golden['reference'])
         now = RI.digest_suite(SUITE)
         self.assertEqual(sorted(now), sorted(golden['cases']), 'the suite changed: the golden must be regenerated from the reference code')
+        # A few suite cases point at a file in the evaluator's home cache (`~/...`), which exists only on the machine that made the golden.
+        # Where it is absent (CI, a fresh checkout) the inspection tools take the recorded-replay route instead of reading the file, so
+        # their digests legitimately differ: compare the case file and the model-visible view for those, and the tool results only
+        # where the file is present.  The number of such cases is bounded so it cannot grow silently.
+        home_only = set()
+        for case, _ in R.load_cases(SUITE):
+            fx = case.get('fixture') or {}
+            loc = fx.get('locator') or ''
+            if fx.get('kind') == 'local' and loc.startswith('~') and not os.path.exists(os.path.expanduser(loc)):
+                home_only.add(RI.sha(case['id'])[:16])
+        self.assertLessEqual(len(home_only), 4, 'more cases than the known home-cache fixtures are missing their file')
         for key, want in golden['cases'].items():
             self.assertEqual(now[key]['case_sha256'], want['case_sha256'], 'case file changed: ' + key)
             self.assertEqual(now[key]['view'], want['view'], 'case view differs: ' + key)
+            if key in home_only:
+                continue
             self.assertEqual(now[key]['calls'], want['calls'], 'tool output differs: ' + key)
         self.assertEqual(len(now), 73)
 
