@@ -1,0 +1,461 @@
+{
+  "action_audit": {
+    "audit": null,
+    "claimed_preconditions": [],
+    "executed": false,
+    "execution_status": "no_write_proposed",
+    "intent": {
+      "action": "none",
+      "class": "healthy",
+      "target": null
+    },
+    "note": "recorded proposal only; this harness never executes a write, and nothing was changed",
+    "outcome_step": null,
+    "preconditions": [],
+    "preconditions_unmet": false,
+    "readback_plan": null,
+    "target": null,
+    "unmet": [],
+    "verification_plan": null,
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "movie-healthy-002",
+  "case_sha256": "9adb80e2a86545cc61408ced86cb889148fce891a6dcbd7602244e8204822a01",
+  "config_hash": "e43152e64b93b71ede6304094e1110bf1528c4635c75cb0e68f551de81cca8ed",
+  "context_check": {
+    "flags": [],
+    "max_prompt_tokens_estimated": 2997,
+    "max_prompt_tokens_reported": 2105,
+    "num_ctx": 8192,
+    "truncated_suspected": false,
+    "turns_checked": 1
+  },
+  "decision": {
+    "action": "none",
+    "class": "healthy",
+    "confidence": 0.85,
+    "evidence_refs": [
+      "e1"
+    ],
+    "reason": "The catalog entry for Moana lists Vaiana as an alias, and the prior adjudication record confirms the content title Vaiana matches the expected film. No tools are available to run further checks, but the alias evidence directly resolves the naming question.",
+    "target": null,
+    "type": "decision"
+  },
+  "decision_flags": [],
+  "evidence": {
+    "capabilities": [
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "ffprobe"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "decode_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "frame_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "audio_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "ocr"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "epub_inspect"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "audiobook_inspect"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "arr_lookup"
+      }
+    ],
+    "gaps": [],
+    "gaps_cited": [],
+    "mode": "replay",
+    "note": "record only: not shown to the model, not scored. A gap is something the run did not verify; a damage finding is evidence, not a gap."
+  },
+  "evidence_mode": "replay",
+  "evidence_shown": [
+    "e1"
+  ],
+  "final_decision_valid": true,
+  "first_try": {
+    "failure_modes": [],
+    "first_reply_valid": true,
+    "note": "any repair, forced decision or protocol violation means the first try was not valid; later attempts are recorded separately in turns[].attempt",
+    "protocol_violations": 0,
+    "repair_prompts": 0,
+    "valid": true,
+    "valid_after_repair": false
+  },
+  "first_try_valid": true,
+  "fixture": {
+    "declared_sha256": null,
+    "kind": "none",
+    "verified": "n/a"
+  },
+  "fixture_hashes": {
+    "evidence_shown_sha256": {
+      "e1": "fb2f05ed005d5c8c805f6c72e4eb2065390cb480b9e8ce5b32abc6c679355a0b"
+    },
+    "fixture": {
+      "actual_sha256": null,
+      "declared_sha256": null,
+      "kind": "none",
+      "verified": "n/a"
+    }
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "e27f23859418d6e2110fc90c8342c5420afc5264",
+  "harness_version": "dev-c2",
+  "injected_failure": null,
+  "model_case_alias": "case-94d90dad",
+  "model_digest": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+  "model_digest_na_reason": null,
+  "outcome": null,
+  "prompt": {
+    "protocol": "turn-v2",
+    "schema_sent": true,
+    "sha256": "351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a",
+    "turn_schema_sha256": "febb1ea15e399104d90772b01c6e4b51d7eb3dc66f5af951f8ff3e8cd882eb36",
+    "version": "v2"
+  },
+  "protocol_violations": [],
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "refs_to_non_ok_tools": [],
+  "repair_prompts": [],
+  "requested_model": "qwen3.8:27b",
+  "response_model_ids": [
+    "qwen3.8:27b"
+  ],
+  "run_id": "evaldevc2-qwen3.8-27b-v2",
+  "runtime_version": "0.40.6",
+  "split": "dev",
+  "started_at": "2026-10-20T01:30:50.897864+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [],
+  "tool_modes": [],
+  "turns": [
+    {
+      "attempt": "first",
+      "failure_modes": [],
+      "load_s": 0.003,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 8192,
+          "output_tokens": 83,
+          "prompt_chars": 8992,
+          "prompt_tokens_estimated": 2997,
+          "prompt_tokens_reported": 2105,
+          "truncated_suspected": false
+        }
+      },
+      "n": 1,
+      "native": {
+        "created_at": "2026-10-20T01:30:53.214808988Z",
+        "done_reason": "stop",
+        "eval_count": 83,
+        "eval_duration": 1591064000,
+        "load_duration": 2709293,
+        "prompt_eval_count": 2105,
+        "prompt_eval_duration": 597557000,
+        "total_duration": 2206878337
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "epub_inspect",
+                    "audiobook_inspect",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "why",
+                "args"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "reason",
+                "confidence",
+                "evidence_refs"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "audit": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "preconditions": {
+                      "items": {
+                        "maxLength": 160,
+                        "type": "string"
+                      },
+                      "maxItems": 6,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "readback": {
+                      "maxLength": 240,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "target": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "verify": {
+                      "maxLength": 240,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "target",
+                    "preconditions",
+                    "readback",
+                    "verify"
+                  ],
+                  "type": "object"
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "reason",
+                "confidence",
+                "evidence_refs",
+                "audit"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself, and neither does this system: the action you choose is recorded as a proposal for a human-supervised system.\n\nREPLY FORMAT\nEvery reply of yours is exactly ONE JSON object and nothing else: no prose, no markdown fence, nothing after the closing brace. The first key is always \"type\". Use only the keys shown below, in that order. Never copy fields from a tool result (such as status, output or tool_calls_remaining) into your reply. Double-quoted keys and strings, every string closed, no trailing commas.\n\n1. Tool call (at most 6 per case, counting any call that is rejected):\n{\"type\":\"tool_call\",\"tool\":\"<a name from tools_available>\",\"why\":\"<=200 chars\",\"args\":{}}\nThis is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. Call only a tool named in tools_available; a call to any other tool does nothing, uses up one of your 6 calls and is recorded as a protocol violation. Tools act on this case's file only. Arguments: ffprobe {}; decode_sample {\"at\":seconds} or {\"full\":true} (a 4 s window, or the whole file); frame_sample {\"at\":seconds}; audio_sample {\"at\":seconds,\"stream\":0}; ocr {\"frame\":\"<name from frame_sample>\"} or {\"at\":seconds}; epub_inspect {}; audiobook_inspect {}; arr_lookup {}.\nEvery tool result has a status:\n- ok: the tool ran and returned its whole answer.\n- partial: the tool ran but returned a cut or incomplete answer; the missing part is unverified.\n- error: the tool ran and failed, or it ran and reported damage in the file; read the output to tell which (damage comes with the tool's own exit code or stage and message about the file; a plain failure message means it did not run properly).\n- timeout: the tool ran and did not finish; nothing was learned.\n- unavailable: the capability is absent (tool not offered, program or data missing, nothing recorded for this call); nothing ran and nothing was learned.\nResults are bounded to 8 KiB. Do not repeat a call that already came back error, timeout or unavailable.\n\n2. Final decision:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<string or null>\",\"reason\":\"<=400 chars, one or two sentences>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"]}\nclass is exactly one of: identity_mismatch, corrupt_file, decoder_incompatible, metadata_naming, order_edition_ambiguity, insufficient_evidence, healthy.\naction is exactly ONE of: none, escalate, blocklist_and_search, remap, rename, convert. Never combine two (for example \"remap and rename\" is invalid); if two different writes could be right, the action is escalate.\nCite evidence ids: e1.. for evidence in the case, t1.. for your own tool results.\nWhen the action is a write (blocklist_and_search, remap, rename or convert), add a last key \"audit\", and \"target\" must be the same non-null string as audit.target:\n\"audit\":{\"target\":\"<the exact file, release, episode or entry the write applies to>\",\"preconditions\":[\"<a fact that makes this write safe and that you verified, with its evidence id>\"],\"readback\":\"<what will be read back afterwards to confirm the change>\",\"verify\":\"<how success or a need to undo will be recognised>\"}\nDo not add \"audit\" for none or escalate. A precondition you did not verify is not a precondition: leave it out, and if the write then lacks a prerequisite, escalate instead.\n\nCLASSES (what is wrong with the item, decided from evidence)\n- identity_mismatch: the content is a different work, episode, edition or language than the catalog entry expects. Needs content evidence (what the streams, tags, text, on-screen text or duration say it is), never the file name alone.\n- corrupt_file: the file is physically damaged: decode errors, truncation, a missing index, an unreadable archive, package or spine. The content is the expected one, but the bytes are damaged. Needs a tool that ran and reported the damage.\n- decoder_incompatible: the file is intact (it decodes cleanly in full) but uses a codec, profile, pixel format, audio layout or container that the stated client cannot play directly. Needs the stated client in the context and a clean full decode.\n- metadata_naming: the content is the right one and is in the right slot, but a name, tag, title or other metadata text is wrong or missing.\n- order_edition_ambiguity: the content is plausibly correct under more than one legitimate ordering, numbering or edition, and the evidence does not settle which one is wanted.\n- insufficient_evidence: the evidence cannot settle whether there is a defect, because the tools that matter failed, timed out, were unavailable or covered only part of the item, or because no evidence reaches the question.\n- healthy: every check that matters for this item ran, covered the whole item as far as the tools allow, and passed.\n\nACTIONS (the change each one proposes; the prerequisites must hold before you choose it)\n- none: no change. Only for healthy.\n- escalate: no change; hand the item to a human with your reason. Choose it when the evidence is insufficient or ambiguous, when more than one write could be right, when a prerequisite of the write you would otherwise choose is missing, or when part of the item is unverified and the verified part does not settle the question. Say in the reason what was and was not verified.\n- blocklist_and_search: the *arr marks THIS release as bad and searches for a replacement; the current file is later replaced and cannot be recovered. Needs positive content evidence from tools that ran (identity_mismatch or corrupt_file), the item managed by an *arr (context.arr.app names it), and the release or file as target. Recovery: only the blocklist entry can be undone, so partial or failed evidence is never enough. Not for problems caused by the client or by names.\n- remap: the *arr changes which item (episode, movie entry or edition) the existing file is linked to; the file's content and name stay as they are and nothing is downloaded. Needs the managed app, content evidence of what the file really is, evidence of the right target, and a target slot that is free (no other file linked to it); the target is that slot. Read back afterwards: the link shows the new target and the old slot shows what it should.\n- rename: only the file's name, path or tag text changes; the file stays linked to the same item. Needs verified identity (content evidence agrees with the item), the correct name known from the evidence, and a way back: record the current name so it can be renamed back.\n- convert: makes a compatible copy and leaves the original untouched. Needs class decoder_incompatible, a clean full decode of the source and the stated client; the target is the isolated copy.\n\nEVIDENCE RULES\n1. healthy requires every relevant check to have run and passed. Any part of the item that was not verified (a tool that failed, timed out, was unavailable or returned partial output, a segment not sampled, media that could not be reached) is unverified, never healthy.\n2. Decide only what the remaining verified evidence supports. If it supports a diagnosis, you may give it and cite only what was verified; if it does not, choose insufficient_evidence with escalate and name the unverified part in the reason.\n3. A write action needs positive evidence for its class from tools or evidence that ran, the prerequisites of that action above, and a named target.\n4. Never cite a result as support if its tool did not run to completion: a failure to run, a timeout, an unavailable capability or partial output. Damage that a tool which did run reports about the file itself is evidence and may be cited. If a tool failed, say so in the reason.\n5. When the evidence supports two different writes, escalate.\n6. Use tools to check before concluding. Do not conclude healthy from metadata alone when decode or content tools are offered.\n7. A sample is partial: a clean sample does not prove a whole file is healthy, and a file name alone never proves content. A wrong repair is worse than an escalation.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-94d90dad\", \"context\": {\"arr\": {\"app\": null, \"ids\": {}}, \"expected\": {\"aliases\": [\"Vaiana\"], \"title\": \"Moana\"}, \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Moana\"}, \"evidence\": [{\"args\": {\"id\": \"c11\"}, \"id\": \"e1\", \"output\": \"{\\\"evidence_method\\\":\\\"historical same-film alias adjudication\\\",\\\"observed\\\":{\\\"catalog_title\\\":\\\"Vaiana\\\",\\\"content_titles\\\":[\\\"Vaiana\\\"],\\\"evidence_method\\\":\\\"historical same-film alias adjudication\\\"}}\", \"status\": \"ok\", \"tool\": \"prior_record\", \"truncated\": false}], \"media_type\": \"movie\", \"tool_call_budget\": 6, \"tools_available\": []}",
+            "role": "user"
+          }
+        ],
+        "model": "qwen3.8:27b",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": 640,
+          "seed": 42,
+          "stop": [
+            "<|im_end|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"qwen3.8:27b\",\"created_at\":\"2026-10-20T01:30:53.214808988Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"healthy\\\",\\\"target\\\":null,\\\"reason\\\":\\\"The catalog entry for Moana lists Vaiana as an alias, and the prior adjudication record confirms the content title Vaiana matches the expected film. No tools are available to run further checks, but the alias evidence directly resolves the naming question.\\\",\\\"confidence\\\":0.85,\\\"evidence_refs\\\":[\\\"e1\\\"],\\\"action\\\":\\\"none\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":2206878337,\"load_duration\":2709293,\"prompt_eval_count\":2105,\"prompt_eval_cached_count\":1607,\"prompt_eval_duration\":597557000,\"eval_count\":83,\"eval_duration\":1591064000}",
+        "stderr": "",
+        "wall_seconds": 2.333247374743223
+      },
+      "reply_valid": true,
+      "response_model": "qwen3.8:27b",
+      "text": "{\"type\":\"decision\",\"class\":\"healthy\",\"target\":null,\"reason\":\"The catalog entry for Moana lists Vaiana as an alias, and the prior adjudication record confirms the content title Vaiana matches the expected film. No tools are available to run further checks, but the alias evidence directly resolves the naming question.\",\"confidence\":0.85,\"evidence_refs\":[\"e1\"],\"action\":\"none\"}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 2105,
+        "output_tokens": 83
+      },
+      "validation_errors": [],
+      "wall_s": 2.334
+    }
+  ],
+  "unverified_parts": [],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 2105,
+    "output_tokens": 83
+  },
+  "wall": {
+    "case_excl_load_s": 2.335,
+    "load_s": 0.003,
+    "tool_s": [],
+    "total_s": 2.338,
+    "turn_s": [
+      2.334
+    ]
+  }
+}
