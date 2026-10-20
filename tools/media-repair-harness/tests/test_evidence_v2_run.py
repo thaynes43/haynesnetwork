@@ -94,7 +94,7 @@ class LegacyCompatibility(unittest.TestCase):
         self.assertEqual(canon(P.turn_schema('v1')), '4d976ba5fc8f82af307a7cfb4f168db248b08ffb5e7bf2a82d11b2b9ce28790b')
         self.assertEqual(canon(P.turn_schema('v4', ['ffprobe', 'decode_sample'])), '140104f9b7e533e6ced99f69326e709e5994787b4b82ac015265a7ca73af8313')
         self.assertEqual(canon(P.turn_schema('v2', ['ffprobe'])), '87b8a7d50ff941030f48e829f8beb1953cb72b771897fe168d81312de006ef6e')
-        self.assertEqual(P.PROMPT_VERSIONS, ('v1', 'v2', 'v3', 'v4'))
+        self.assertEqual(P.PROMPT_VERSIONS[:4], ('v1', 'v2', 'v3', 'v4'))   # v5 (dev-c5) is added after them; v1 to v4 are the bytes above
 
     def test_legacy_results_keep_their_known_audit_bugs_under_the_legacy_version(self):
         """Fixes are versioned, not silent: a legacy local full decode is still the 4 s window and the legacy audit still trusts the requested arguments."""

@@ -59,7 +59,7 @@ python3 $C/tests/testdata/make_fixtures.py     # regenerates the three synthetic
 Evidence mode (dev-c2): `--evidence replay|live` (default `replay`: recorded and case-provided evidence exactly as in dev-c1) and, for live only, `--evidence-bounds '{"segments": 2}'`.
 `live` runs the bounded read-only collectors of `evidence/` on the case's own local media file; a case without a local media path that exists gets `unavailable` with the reason. See `CHANGELOG.md` (dev-c2).
 
-Run options: `--evidence-format v2` (W18, opt-in: typed evidence, capability advertisement and paginated presentation derived from the same results; also tools behaviour v2 and audit v2; with prompt v4 or a future v5, guards off or v3; see `docs/evidence-format-v2.md`), `--prompt v1|v2|v3|v4` (system prompt + turn protocol; default v1; v3 and v4 are dev-c3's and dev-c4's prompt text on the v2 turn protocol; version and sha256 are in every record), `--guards v1|v2|v3` (dev-c4, opt-in, default off; v3 is W18's defect-aware G-healthy: deterministic post-decision guards, see below), `--effort` (claude/codex), `--max-budget-usd` (claude per-call cap, default 2), `--num-ctx 8192 --num-predict 384 --keep-alive 2m --stop`
+Run options: `--evidence-format v2` (W18, opt-in: typed evidence, capability advertisement and paginated presentation derived from the same results; also tools behaviour v2 and audit v2; with prompt v4 or v5, guards off or v3; **prompt v5 requires it**, `--max-total-cost-usd` / `--max-wall-s`: opt-in run caps (dev-c5); see `docs/evidence-format-v2.md`), `--prompt v1|v2|v3|v4` (system prompt + turn protocol; default v1; v3 and v4 are dev-c3's and dev-c4's prompt text on the v2 turn protocol; version and sha256 are in every record), `--guards v1|v2|v3` (dev-c4, opt-in, default off; v3 is W18's defect-aware G-healthy: deterministic post-decision guards, see below), `--effort` (claude/codex), `--max-budget-usd` (claude per-call cap, default 2), `--num-ctx 8192 --num-predict 384 --keep-alive 2m --stop`
 (ollama; stop defaults per family: Qwen `<|im_end|>`, Muse `<|eot|>`; a run also writes `run_summary.json`: validity and completeness counts, no scoring), `--ollama-schema anyof|flat`, `--no-warmup`, `--ocr-model <vision tag on Prime>`,
 `--scratch <dir>` (frames and other media-derived artifacts; default `~/.cache/media-repair-harness/<run-id>`, never inside the run dir).
 
@@ -75,6 +75,10 @@ python3 tools/media-repair-harness/scripts/guard_whatif.py --suite <suite> --scr
 ```
 
 dev-c4 measurements (dev split only, tuned, not a predictor of held-out; dev-v1.1 numbers did not predict held-out for prompt v3): `runs/dev-c4/README.md`.
+
+## Prompt v5 and the dev-c5 measurement (opt-in)
+
+`--prompt v5` is valid only with `--evidence-format v2` (refused otherwise, before any model call); it explains the typed evidence, the pagination and the class and action boundaries (`prompts/v5.txt`, `CHANGELOG.md`, `CONTRACT-v2-proposal.md` section 10). `--max-total-cost-usd` and `--max-wall-s` cap a whole run and stop it cleanly. The one pre-registered, dev-tuned measurement of the combined candidate (prompt v5, format v2, guards v3) is `runs/dev-c5/` (`PREREGISTRATION.md` first, results after).
 
 ## Layout
 

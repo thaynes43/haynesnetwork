@@ -19,7 +19,15 @@ from .protocol import TURN_SCHEMA
 
 
 class AdapterError(Exception):
-    """A single model call failed (transport, CLI error, timeout).  The runner records it and moves on."""
+    """A single model call failed (transport, CLI error, timeout).  The runner records it and moves on.
+    `usage` is the receipt the failed call itself reported (a CLI error payload carries tokens and a cost), `cost_usd` its cost, else None;
+    `budget_exceeded` marks a CLI that stopped because the call's own `--max-budget-usd` was reached."""
+
+    def __init__(self, message='', cost_usd=None, usage=None, budget_exceeded=False):
+        super().__init__(message)
+        self.usage = usage
+        self.cost_usd = cost_usd if cost_usd is not None else ((usage or {}).get('cost_usd'))
+        self.budget_exceeded = budget_exceeded
 
 
 class AbortRun(Exception):
@@ -50,6 +58,7 @@ def render_transcript(messages):
 
 class Adapter:
     name = 'base'
+    cleanup_reserve_s = 0   # worst-case seconds `finish()` can take; a wall cap reserves it (dev-c5)
     runtime_version = None
     model_digest = None
     digest_na_reason = None
@@ -126,11 +135,14 @@ def context_check(options, native, chars):
 
 class OllamaAdapter(Adapter):
     name = 'ollama'
+    # finish(): the unload (60 s + 5 s grace), /api/ps (60 s + 5 s) and two 15 s snapshot commands, plus the guard's last sample: 180 s is the reserve
+    cleanup_reserve_s = 180
 
     def __init__(self, model, api=ot.api, snapshot=ot.snapshot, options=None, keep_alive='2m', stop=None,
                  schema=TURN_SCHEMA, schema_name='anyof', load_timeout=WARMUP_TIMEOUT_S, call_timeout=120, do_warmup=True,
-                 guard=None):
+                 guard=None, required_digest=None):
         super().__init__(model)
+        self.required_digest = required_digest   # dev-c5: abort the run before any load when the installed digest differs
         self.api, self.snapshot = api, snapshot
         self.options = ollama_options(options)
         self.keep_alive, self.stop = keep_alive, default_stop(model) if stop is None else stop
@@ -145,6 +157,7 @@ class OllamaAdapter(Adapter):
         return {'adapter': self.name, 'model': self.requested_model, 'options': self.options, 'stop': self.stop,
                 'think': False, 'keep_alive': self.keep_alive, 'stream': False, 'format': 'TURN_SCHEMA:' + self.schema_name,
                 'warmup_timeout_s': self.load_timeout, 'call_timeout_s': self.call_timeout,
+                **({'required_digest': self.required_digest} if self.required_digest else {}),
                 'psi_guard': ({'threshold': self.guard.threshold, 'interval_s': self.guard.interval, 'consecutive': self.guard.consecutive}
                               if self.guard else None)}
 
@@ -181,6 +194,8 @@ class OllamaAdapter(Adapter):
             raise AbortRun('model %s is not installed on Prime (this harness never pulls)' % self.requested_model)
         self.runtime_version = (ver or {}).get('version')
         self.model_digest = installed.get('digest')
+        if self.required_digest and str(self.model_digest).removeprefix('sha256:') != str(self.required_digest).removeprefix('sha256:'):
+            raise AbortRun('model digest differs from the frozen one: installed %s, required %s; nothing was loaded' % (self.model_digest, self.required_digest))
         self.model_info = {'details': installed.get('details'), 'size': installed.get('size')}
         if self.guard:
             self.guard.start()  # baseline pod identity + stall counter before the GPU is touched
@@ -270,7 +285,7 @@ class ClaudeAdapter(Adapter):
 
     def config(self):
         return {'adapter': self.name, 'model': self.requested_model, 'effort': self.effort, 'flags': CLAUDE_FLAGS,
-                'output_format': 'json', 'max_budget_usd': self.max_budget_usd}
+                'output_format': 'json', 'max_budget_usd': self.max_budget_usd, 'timeout_s': self.timeout}
 
     def preflight(self):
         if not shutil.which('claude'):
@@ -310,10 +325,12 @@ def parse_claude(raw, stderr, returncode, req, wall):
         d = json.loads(raw)
     except ValueError:
         raise AdapterError('claude CLI returned non-JSON (exit %s): %s' % (returncode, (raw or stderr)[:300]))
-    if d.get('is_error') or d.get('subtype', 'success') != 'success':
-        raise AdapterError('claude CLI error: %s' % json.dumps({k: d.get(k) for k in ('subtype', 'api_error_status', 'result', 'terminal_reason')})[:400])
-    models = list((d.get('modelUsage') or {}).keys())
     u = d.get('usage') or {}
+    if d.get('is_error') or d.get('subtype', 'success') != 'success':
+        receipt = {'input_tokens': u.get('input_tokens'), 'output_tokens': u.get('output_tokens'), 'cost_usd': d.get('total_cost_usd')}
+        raise AdapterError('claude CLI error: %s' % json.dumps({k: d.get(k) for k in ('subtype', 'api_error_status', 'result', 'terminal_reason')})[:400],
+                           usage=receipt, budget_exceeded=d.get('subtype') == 'error_max_budget_usd')
+    models = list((d.get('modelUsage') or {}).keys())
     usage = {'input_tokens': u.get('input_tokens'), 'output_tokens': u.get('output_tokens'),
              'cache_creation_input_tokens': u.get('cache_creation_input_tokens'), 'cache_read_input_tokens': u.get('cache_read_input_tokens'),
              'cost_usd': d.get('total_cost_usd')}

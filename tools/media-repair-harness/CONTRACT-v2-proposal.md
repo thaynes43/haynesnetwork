@@ -1,4 +1,4 @@
-# Harness contract v2: PROPOSAL (harness `dev-c4`)
+# Harness contract v2: PROPOSAL (harness `dev-c5`)
 
 **Status: proposal.** This file describes what the harness candidates dev-c1, dev-c2, dev-c3 and dev-c4 emit and accept, so that the independent evaluator can
 accept, amend or reject it as the next contract. It is written by the harness side and binds nothing: `CONTRACT.md` (v1), `score.py`, the suite, the labels
@@ -11,15 +11,15 @@ What differs from v1 is marked **new in dev-c1**, **new in dev-c2**, **new in de
 
 | field | where | value now |
 |---|---|---|
-| `harness_version` | every run record, manifest, `run_summary.json` | `dev-c4` (dev-c3, dev-c2, dev-c1 before; `protocol.HARNESS_VERSION`) |
+| `harness_version` | every run record, manifest, `run_summary.json` | `dev-c5` (dev-c4, dev-c3, dev-c2, dev-c1 before; `protocol.HARNESS_VERSION`) |
 | `record_version` | every run record | `1` (a full record is a superset of v1's, no field removed or renamed; the **minimal crash record** is not, see section 7) |
-| `prompt.version`, `prompt.sha256`, `prompt.protocol` | run record | `v1`, `v2`, `v3` (**new in dev-c3**) or `v4` (**new in dev-c4**), sha256 of the exact system text sent, `turn-v1` / `turn-v2` (v3 and v4 are new prompt text on the v2 turn protocol, so their `protocol` is `turn-v2`) |
+| `prompt.version`, `prompt.sha256`, `prompt.protocol` | run record | `v1`, `v2`, `v3` (**new in dev-c3**), `v4` (**new in dev-c4**) or `v5` (**new in dev-c5**), sha256 of the exact system text sent, `turn-v1` / `turn-v2` (v3, v4 and v5 are new prompt text on the v2 turn protocol, so their `protocol` is `turn-v2`) |
 | `prompt.turn_schema_sha256`, `prompt.schema_sent` | run record | hash of the schema actually sent, or `null` and `false` (only the Ollama adapter sends one) |
 | `config_hash` | run record, manifest | hash of the run configuration, including `harness_version`, `prompt_version`, `evidence_mode`, `evidence_bounds` and, only when guards are on, `guards` (**new in dev-c4**) |
 | `guards` | manifest `config` | `v1` only when the run used `--guards v1` (**new in dev-c4**); the key is absent otherwise, so an unguarded run keeps the config shape it had |
 | `evidence_mode` | run record, manifest `config`, `run_summary.json`, every tool call | `replay` or `live` (**new in dev-c2**) |
 
-Prompt v1 and v2 are byte-identical to dev-c2's and v3 to dev-c3's (pinned by digest in `tests/test_packaging.py`); v4 is a separate file. `protocol_of('v4') == 'v2'`: the turn protocol and the strict validator are unchanged. For v4 only, the per-case Ollama `format` schema is exact about the tool enum: a case that offers no tool (`tools_available == []`) gets no tool-call branch (v2 and v3 fall back to the full tool list there, which is how a local model called tools no case offered). A hosted model, which gets no schema, can still make such a call; it is still recorded as a `tool_not_offered` protocol violation and answered `unavailable`.
+Prompt v1 and v2 are byte-identical to dev-c2's, v3 to dev-c3's and v4 to dev-c4's (pinned by digest in `tests/test_packaging.py`); v5 (**new in dev-c5**) is a separate file that is valid only with `--evidence-format v2` and is refused with the legacy format. It uses v4's per-case tool-enum schema and class table, and defines the format v2 fields (section 10) as decisions: it does not settle Q-01. `protocol_of('v4') == 'v2'`: the turn protocol and the strict validator are unchanged. For v4 only, the per-case Ollama `format` schema is exact about the tool enum: a case that offers no tool (`tools_available == []`) gets no tool-call branch (v2 and v3 fall back to the full tool list there, which is how a local model called tools no case offered). A hosted model, which gets no schema, can still make such a call; it is still recorded as a `tool_not_offered` protocol violation and answered `unavailable`.
 
 A comparison across versions should compare `harness_version`, `prompt.sha256` and `evidence_mode` first: the same prompt text (v1) behaves differently under
 dev-c1 and dev-c2 only where noted in `CHANGELOG.md`.
@@ -207,3 +207,11 @@ unchanged `score.py`. It refuses a record whose `case_sha256` differs from the s
 * **Q-01 (for the evaluator to rule on).** Prompt v4 does not say how to choose between `identity_mismatch` (blocklist_and_search) and `metadata_naming` (rename, or remap) for a file linked to the wrong episode. Pairing `remap` with `metadata_naming` (the dev-c4 audit table for v4 and the guards accept it) may not match the label convention, where `remap` has so far been paired with `identity_mismatch`. v4 is not changed for this.
 * **v4 wording to fix in a v5:** "probe" counts as integrity evidence while the text also says "metadata alone is not"; "partial" is also a status name; the `insufficient_evidence` definition still says "covered only part"; "injected failures" is not visible to the model; the naming comparison has no threshold, so an alias can read as a defect.
 * **G-healthy is stricter than ruling C2.** It also fires when integrity tools were offered but not called and the case holds no integrity evidence, which could cost G2 where a model skips tools.
+
+## 10. Prompt v5 and evidence format v2 (**new in dev-c5**, opt-in)
+
+`--evidence-format v2` (W18; `docs/evidence-format-v2.md`) changes what a model is shown, and `--prompt v5` (W19) is the only prompt that explains it; v5 is refused without the format. v4 may still be used with the format (a measurement of the format alone).
+`--max-total-cost-usd` and `--max-wall-s` (dev-c5) are opt-in run caps: the run stops cleanly before the cap, the manifest lists the cases not run and `limits_state`. Neither changes a record's fields or any scorer-read value.
+What v5 asks of a model, in short: separate execution (did a tool run) from integrity (what it found); treat `unknown`, `*_unclassified` and `decoder_warning` as certifying nothing; judge coverage against the reported question (no percentage, no full-file rule); count only the selected streams for a client; weigh catalog, declarations and content differently;
+read a cursor as opaque and a page fetch as one of the six calls; cite only ids that were emitted. Positive damage supports `corrupt_file`; clean results never cancel it and support health only inside their scope; `convert` needs no clean full decode of the source; an established class with missing action prerequisites is kept and escalated.
+Q-01 remains open for the evaluator (v5 gives no ruling and no example). Deferred to OpenProject #147: the identity comparison table, the ordering / edition table and richer content inspection.

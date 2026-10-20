@@ -260,10 +260,10 @@ def _shown_observations(case, tool_calls, shown):
 
 
 def compute(case, decision, tool_calls, forced=False, prompt_version='v1', v4_tables=False, audit_version='v1', shown=None):
-    """-> the `action_audit` dict for one decision.  v4_tables (or prompt_version 'v4'): the dev-c4 class table for remap and the nested client profile.
+    """-> the `action_audit` dict for one decision.  v4_tables (or prompt_version 'v4' or 'v5'): the dev-c4 class table for remap and the nested client profile.
     audit_version 'v2' (W18, with `--evidence-format v2`): `full_decode_ok` is computed from what the decode actually did (observed completion to the end of
     the file, a clean result, no unmet request) instead of from the requested arguments; absent proof is not met.  'v1' is every earlier version unchanged."""
-    v4_tables = v4_tables or prompt_version == 'v4'
+    v4_tables = v4_tables or prompt_version in ('v4', 'v5')
     action = decision.get('action')
     write = action in WRITE_ACTIONS
     audit = decision.get('audit') if isinstance(decision.get('audit'), dict) else None
