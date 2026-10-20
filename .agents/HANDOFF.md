@@ -11,7 +11,8 @@
   (`sonnet-worker` = `claude-sonnet-5-5`; for Codex, the luna tiers). Read summaries and diffs, not whole logs.
 - Checkpoint 1 is merged under [context/media-repair-harness-2026-10-19/](context/media-repair-harness-2026-10-19/):
   - `GATES.md` (G1-G10, recorded before scoring), the dev suite `suite/` (73 cases), `harness/` (runner, adapters,
-    scorer, leak guard), and the sealed `heldout/` (47 cases; contents only in `~/.cache/media-repair-harness-1019/`,
+    scorer, leak guard; the code has since moved to `tools/media-repair-harness/`, test command
+    `tools/media-repair-harness/scripts/ci-test.sh`, see `harness/README.md`), and the sealed `heldout/` (47 cases; contents only in `~/.cache/media-repair-harness-1019/`,
     never opened before checkpoint 3).
   - `baseline/REPORT.md`: six models on dev; none passes. Qwen ties Opus on accuracy (86.4%) but makes 5 unsafe
     writes, with 50% abstention.

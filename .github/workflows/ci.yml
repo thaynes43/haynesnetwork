@@ -2,11 +2,19 @@ name: CI
 
 # Job names lint-and-typecheck, test and build are required status-check contexts (ADR-009): keep them stable.
 #
+# Components (ADR-116). `changes` lists the PR's files from git and scripts/ci-components.py maps them to the `site`
+# and `harness` components (the media repair harness under tools/). Each component has its own job(s):
+#   site     lint-and-typecheck, site-test, build       (pnpm; the three that were always here)
+#   harness  harness-test                                (Python 3.11 stdlib; tools/media-repair-harness)
+# The required context `test` is NOT a test job any more: it is the always-reporting, fail-closed FINALIZER over
+# site-test, harness-test and ci-routing-tests (the e2e-gate pattern). It is green only when every SELECTED job
+# succeeded, so the harness is gated through a context branch protection already requires. A selected job that is
+# skipped, cancelled or red makes `test` red. If `changes` cannot decide, every component is selected.
+#
 # Runner minutes go only where a change can break something (ADR-102):
-#   - `changes` lists the PR's files and runs scripts/ci-code-paths.sh over them. A PR with no code path (docs,
-#     agent notes, Markdown) skips every other job here. A job skipped by its `if:` reports as skipped, and a
-#     skipped check satisfies branch protection, so a docs-only PR still merges. If `changes` cannot decide,
-#     everything runs (fail safe). The release-please PR always runs in full.
+#   - A PR that selects no component (docs, agent notes, Markdown) skips the component jobs. A job skipped by its
+#     `if:` reports as skipped, and a skipped check satisfies branch protection, so a docs-only PR still merges.
+#     The release-please PR always runs in full.
 #   - `build-image` runs only when the PR changes an image input (scripts/ci-code-paths.sh --image: the Dockerfile,
 #     a package.json, the lockfile, ...), and on the release PR, so the image is proven before every release.
 #   - A push to main runs no checks: branch protection is strict, so the squash-merged tree is the tree the PR's
@@ -30,67 +38,40 @@ jobs:
   changes:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
-      pull-requests: read # list the PR's files
     outputs:
-      code: ${{ steps.decide.outputs.code }}
+      site: ${{ steps.decide.outputs.site }}
+      harness: ${{ steps.decide.outputs.harness }}
       image: ${{ steps.decide.outputs.image }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the merge-base diff needs both sides of the PR
       - name: Check the docs-only rules against their examples
         run: bash scripts/ci-code-paths.sh --self-test
-      - name: Decide whether this change touches code
+      - name: Decide which components this change touches
         id: decide
         env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
-          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if [[ "$HEAD_REF" == release-please--* ]]; then
-            printf 'code=true\nimage=true\n' >> "$GITHUB_OUTPUT"
-            echo "Release PR: everything runs."
-            exit 0
-          fi
-          # The files API returns at most 3000 files; past that the list is partial, so run everything.
-          if [ "${CHANGED_FILES:-0}" -ge 3000 ]; then
-            printf 'code=true\nimage=true\n' >> "$GITHUB_OUTPUT"
-            echo "$CHANGED_FILES changed files, more than the files API lists: everything runs."
-            exit 0
-          fi
-          # Renames list both names, so moving a file OUT of a code path still counts.
-          gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" \
-            --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/changed.txt"
-          echo "$(wc -l < "$RUNNER_TEMP/changed.txt") changed paths"
-          # Exit 0 = matched, 10 = nothing matched; anything else is a crash, and failing this step makes every
-          # job below run (their guard is `!= 'false'`), never skip.
-          rc=0; matched=$(bash scripts/ci-code-paths.sh < "$RUNNER_TEMP/changed.txt") || rc=$?
-          case $rc in
-            0) echo "code=true" >> "$GITHUB_OUTPUT"
-               echo "Code paths changed: lint, typecheck, tests and build run."
-               echo "$matched" ;;
-            10) echo "code=false" >> "$GITHUB_OUTPUT"
-                echo "Docs-only change: lint, typecheck, tests, build and the image build are skipped." ;;
-            *) echo "::error::scripts/ci-code-paths.sh exited $rc: everything runs."; exit 1 ;;
-          esac
-          rc=0; matched=$(bash scripts/ci-code-paths.sh --image < "$RUNNER_TEMP/changed.txt") || rc=$?
-          case $rc in
-            0) echo "image=true" >> "$GITHUB_OUTPUT"
-               echo "Image inputs changed, build-image runs:"
-               echo "$matched" ;;
-            10) echo "image=false" >> "$GITHUB_OUTPUT"
-                echo "No image input changed: build-image is skipped (the release PR builds it before any release)." ;;
-            *) echo "::error::scripts/ci-code-paths.sh --image exited $rc: everything runs."; exit 1 ;;
-          esac
+          # The file list comes from git (merge-base diff, a rename lists both names), not the paginated files API.
+          # Every failure inside the script (bad diff, short list, unknown path, too many files) selects every
+          # component. If the script itself cannot run, this step fails, `changes` is red, the component jobs run
+          # (their guard is `!= 'false'`) and the required `test` finalizer fails closed.
+          python3 scripts/ci-components.py classify \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --head-ref "$HEAD_REF" --expected-count "$CHANGED_FILES"
 
   lint-and-typecheck:
     needs: changes
-    # Skipped only when `changes` decided there is no code path; a failed decision runs it.
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.code != 'false' }}
+    # Skipped only when `changes` decided the site is not selected; a failed decision runs it. The `test` finalizer
+    # fails if this is skipped while the site is selected.
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.site != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -104,9 +85,10 @@ jobs:
       - run: pnpm lint:css
       - run: pnpm typecheck
 
-  test:
+  site-test:
+    # The site's unit tests (the job that used to be called `test`). The required context `test` is the finalizer below.
     needs: changes
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.code != 'false' }}
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.site != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -120,9 +102,74 @@ jobs:
       # first run downloads it, cached via the pnpm store thereafter.
       - run: pnpm test
 
+  harness-test:
+    # The media repair harness (tools/media-repair-harness): deterministic stdlib Python tests only. No model or GPU
+    # benchmark, Ollama, live service, real media or ffmpeg Job ever runs in PR CI. MRH_REQUIRE_SUITE=1 makes a
+    # missing public suite a failure instead of a skip.
+    needs: changes
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.harness != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run the harness tests
+        env:
+          MRH_REQUIRE_SUITE: "1"
+        run: bash tools/media-repair-harness/scripts/ci-test.sh
+
+  ci-routing-tests:
+    # The routing rules and the finalizer have their own tests (scripts/tests). Always runs on a PR: the required
+    # `test` context waits for it, so a broken routing rule can never route itself green.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+
+  test:
+    # THE REQUIRED CONTEXT `test` (ADR-009, ADR-116). Always reports on a pull request and fails closed: it is green
+    # only when `changes` succeeded and every job of every SELECTED component (and ci-routing-tests) succeeded. A
+    # selected job that failed, was cancelled or was skipped is red; an unselected component's jobs may be skipped.
+    # Keep the needs list equal to scripts/ci-components.py SITE_JOBS + HARNESS_JOBS + ALWAYS_JOBS (a routing test
+    # checks it). Do NOT rename this job without updating branch protection.
+    needs: [changes, lint-and-typecheck, site-test, build, harness-test, ci-routing-tests]
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require every selected component to be green
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          SITE: ${{ needs.changes.outputs.site }}
+          HARNESS: ${{ needs.changes.outputs.harness }}
+          R_LINT: ${{ needs.lint-and-typecheck.result }}
+          R_SITE_TEST: ${{ needs.site-test.result }}
+          R_BUILD: ${{ needs.build.result }}
+          R_HARNESS: ${{ needs.harness-test.result }}
+          R_ROUTING: ${{ needs.ci-routing-tests.result }}
+        run: |
+          python3 scripts/ci-components.py finalize \
+            --changes "$CHANGES" --site "$SITE" --harness "$HARNESS" \
+            --result "lint-and-typecheck=$R_LINT" --result "site-test=$R_SITE_TEST" --result "build=$R_BUILD" \
+            --result "harness-test=$R_HARNESS" --result "ci-routing-tests=$R_ROUTING"
+
   build:
     needs: changes
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.code != 'false' }}
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.site != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

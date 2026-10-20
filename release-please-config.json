@@ -6,7 +6,7 @@
     ".": {
       "package-name": "haynesnetwork",
       "bump-minor-pre-major": true,
-      "exclude-paths": [".agents", "docs"],
+      "exclude-paths": [".agents", "docs", "tools/media-repair-harness"],
       "changelog-sections": [
         {
           "type": "feat",
