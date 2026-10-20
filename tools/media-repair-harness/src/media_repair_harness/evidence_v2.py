@@ -44,6 +44,8 @@ DAMAGE_RX = re.compile(r'moov atom not found|invalid data found when processing 
                        r'not well-formed|bad zip|not a zip|error while decoding|cabac decode|concealing|invalid nal|missing picture', re.I)
 HARNESS_FAILURE_RX = re.compile(r'^(bad arguments|tool crashed|unknown frame|OCR backend failed|.{0,40} failed: could not run|.{0,40} exceeded the \d+ s tool timeout)', re.I)
 UNKNOWN = 'unknown'
+UNRECORDED = 'unrecorded'   # the stream selection of a decode window that its record does not state
+COLLECTOR_STREAMS = ['0:v:0', '0:a:0']   # what the live decode collector maps: the first video and the first audio stream
 EOF_TOLERANCE_S = 1.0     # container duration vs the decoded span: container rounding and unequal stream lengths, one constant for every case
 VIDEO_CODECS = ('h264', 'hevc', 'vp8', 'vp9', 'av1', 'mpeg2video', 'mpeg4', 'vc1')
 AUDIO_CODECS = ('aac', 'ac3', 'eac3', 'mp3', 'opus', 'flac', 'dts', 'truehd', 'vorbis', 'alac')
@@ -225,7 +227,7 @@ class Derived:
         self.findings, self.conflicts, self.unresolved = [], [], []
         self.scope = {'requested': {}, 'completed': {}}
         self.facts = None
-        self.intervals = []        # [{'stream', 'start_s', 'end_s', 'state', 'basis'}]  (decode-type windows)
+        self.intervals = []        # [{'streams': [...], 'start_s', 'end_s', 'state', 'basis'}]  (decode-type windows)
         self.integrity = UNKNOWN    # clean | damaged | unknown | not_integrity
         self.container = None       # clean | damaged | unknown (probe-type results)
         self.package = None         # {stage: state}
@@ -288,8 +290,8 @@ def _finish(d, data):
                    [f['id'] for f in d.findings if f['known_defect']])
     if ex['state'] == 'ran' and ex['status'] == 'partial':
         d.unresolved.append('the answer is incomplete (status partial); the missing part is unverified')
-    if ex['state'] in ('failed', 'timed_out', 'unavailable'):
-        d.unresolved.append('this call settled nothing about %s' % AREA.get(d.obs['tool'], 'its subject') + ('' if ex['state'] != 'failed' or ex.get('cause') != 'input' else ' beyond the reported failure'))
+    if ex['state'] in ('timed_out', 'unavailable') or (ex['state'] == 'failed' and not any(f['known_defect'] for f in d.findings)):
+        d.unresolved.append('this call settled nothing about %s' % AREA.get(d.obs['tool'], 'its subject'))
     if ex['output_truncated']:
         d.unresolved.append('the tool output was cut before it reached the model; the cut part is unseen')
     if d.integrity == UNKNOWN and d.obs['tool'] in INTEGRITY_TOOLS and ex['state'] == 'ran' and not any(f['known_defect'] for f in d.findings):
@@ -408,7 +410,7 @@ def _derive_decode(d, data, known_duration):
     quota = data.get('quota_exhausted') is True
     dur = known_duration
     sel = data.get('streams_selected')
-    stream = '+'.join(sel) if isinstance(sel, list) and sel else 'unrecorded'
+    streams = list(sel) if isinstance(sel, list) and sel else [UNRECORDED]
     d.scope['completed']['streams'] = list(sel) if isinstance(sel, list) and sel else UNKNOWN
     # requested versus completed
     if full_req and not result_is_full:
@@ -436,9 +438,8 @@ def _derive_decode(d, data, known_duration):
     # state
     state = None
     if code == 'timeout':
-        state = 'not_checked'
-        d.unresolved.append('the decode timed out; only what its output states was covered')
-    elif quota:
+        d.unresolved.append('the decode was stopped at its time limit; only the span it reports was covered')
+    if quota:
         state = 'not_checked'
         d.unresolved.append('the sampler stopped at its input quota: a quota-limited sample does not prove corruption')
     elif not blank:
@@ -456,15 +457,20 @@ def _derive_decode(d, data, known_duration):
         d.unresolved.append('the window decoded no frames (it starts at or beyond the end of the media, or the stream is empty)')
     elif code == 0 and stderr is not None:
         state = 'clean'
+    elif code == 'timeout':
+        state = 'clean' if (decoded is not None and decoded > 0 and stderr is not None) else 'not_checked'   # what ran before the stop, without errors, is a valid observation
     if state is None and code is None:
         d.unresolved.append('the recorded result states no exit code')
     if state in ('clean', 'damaged'):
         if end is None or end <= start:
             d.unresolved.append('the covered span is not recorded (no decoded duration); it is not counted as coverage')
         else:
-            d.intervals.append({'stream': stream, 'start_s': round(start, 3), 'end_s': round(end, 3), 'state': state, 'basis': basis})
+            d.intervals.append({'streams': streams, 'start_s': round(start, 3), 'end_s': round(end, 3), 'state': state, 'basis': basis})
             d.scope['completed'].update(start_s=round(start, 3), end_s=round(end, 3))
     d.integrity = {'clean': 'clean', 'damaged': 'damaged'}.get(state, UNKNOWN)
+    if full_req and not result_is_full:
+        d.completed_to_eof = False                    # a window answered a whole-file request: the whole file was not decoded
+        d.scope['completed']['to_end_of_file'] = False
     if result_is_full:
         eof = data.get('completed_to_eof')
         decoded_full = decoded
@@ -601,7 +607,7 @@ def _derive_live(d, data, known_duration):
         dur = fnum(out.get('duration_s'))
         d.duration_s = dur
         segs = out.get('segments') if isinstance(out.get('segments'), list) else []
-        sel = ['first_video', 'first_audio']
+        sel = list(COLLECTOR_STREAMS)
         for s in segs:
             if not isinstance(s, dict):
                 continue
@@ -610,9 +616,9 @@ def _derive_live(d, data, known_duration):
             st = s.get('state')
             end = a + (dec if dec is not None else (fnum(s.get('window_s')) or 0.0))
             if st == 'clean':
-                d.intervals.append({'stream': '+'.join(sel), 'start_s': a, 'end_s': round(end, 3), 'state': 'clean', 'basis': 'observed'})
+                d.intervals.append({'streams': sel, 'start_s': a, 'end_s': round(end, 3), 'state': 'clean', 'basis': 'observed'})
             elif st == 'errors':
-                d.intervals.append({'stream': '+'.join(sel), 'start_s': a, 'end_s': round(end, 3), 'state': 'damaged', 'basis': 'observed'})
+                d.intervals.append({'streams': sel, 'start_s': a, 'end_s': round(end, 3), 'state': 'damaged', 'basis': 'observed'})
                 d.finding('decoder_errors', '; '.join(s.get('errors') or []) or 'decoder errors', {'part': 'decode', 'start_s': a, 'end_s': round(end, 3)}, True)
             else:
                 d.unresolved.append('window at %g s: %s' % (a, st))
@@ -625,7 +631,7 @@ def _derive_live(d, data, known_duration):
             d.completed_to_eof = eof
             d.scope['completed']['to_end_of_file'] = eof
             if fst in ('clean', 'errors') and fdec:
-                d.intervals.append({'stream': '+'.join(sel), 'start_s': 0.0, 'end_s': fdec, 'state': 'clean' if fst == 'clean' else 'damaged', 'basis': 'full_decode'})
+                d.intervals.append({'streams': sel, 'start_s': 0.0, 'end_s': fdec, 'state': 'clean' if fst == 'clean' else 'damaged', 'basis': 'full_decode'})
             if fst == 'errors':
                 d.finding('decoder_errors', '; '.join(full.get('errors') or []) or 'full decode errors', {'part': 'decode', 'start_s': 0.0, 'end_s': fdec}, True)
         d.integrity = 'damaged' if any(i['state'] == 'damaged' for i in d.intervals) else ('clean' if any(i['state'] == 'clean' for i in d.intervals) else UNKNOWN)
@@ -695,13 +701,14 @@ def build_coverage(derived):
         cov['container'] = {'state': UNKNOWN, 'by': [d.obs['id'] for d in derived if d.obs['tool'] in ('ffprobe', 'audiobook_inspect')]}
     else:
         cov['container'] = {'state': 'not_checked'}
-    # time intervals per stream selection
+    # time intervals, one row per stream the results name (a window that names its streams counts for each of them; an unnamed selection is its own row)
     per = {}
     for d in derived:
         for iv in d.intervals:
-            slot = per.setdefault(iv['stream'], {'clean': [], 'damaged': [], 'by': set()})
-            slot[iv['state']].append((iv['start_s'], iv['end_s']))
-            slot['by'].add(d.obs['id'])
+            for key in iv['streams']:
+                slot = per.setdefault(key, {'clean': [], 'damaged': [], 'by': set()})
+                slot[iv['state']].append((iv['start_s'], iv['end_s']))
+                slot['by'].add(d.obs['id'])
     streams_cov = {}
     for key in sorted(per):
         slot = per[key]
@@ -713,7 +720,7 @@ def build_coverage(derived):
             row['checked_fraction'] = round(length(norm_intervals(clean + damaged)) / dur, 3) if dur else UNKNOWN
         else:
             row['not_checked'] = UNKNOWN
-        row['selection'] = 'recorded' if key != 'unrecorded' else UNKNOWN
+        row['selection'] = 'recorded' if key != UNRECORDED else UNKNOWN
         streams_cov[key] = row
     cov['time'] = streams_cov if streams_cov else {'state': 'not_checked'}
     # stream list (from the container's declaration) with a decode state per stream
@@ -724,24 +731,23 @@ def build_coverage(derived):
             break
     if sl is not None:
         rows = []
+        seen = {}
         for s in sl:
-            row = {'index': s.get('index'), 'type': s.get('type'), 'codec': s.get('codec')}
+            row = {k: v for k, v in (('index', s.get('index')), ('role', s.get('role')), ('type', s.get('type')), ('codec', s.get('codec'))) if v is not None}
+            typ = s.get('type')
+            k = seen.get(typ, 0)
+            seen[typ] = k + 1
+            name = '0:%s:%d' % ({'video': 'v', 'audio': 'a', 'subtitle': 's'}.get(typ, 'x'), k)
+            slot = per.get(name)
             if not per:
                 row['decode'] = 'not_checked'
-            elif set(per) == {'unrecorded'}:
+            elif slot is not None:
+                row['decode'] = 'damaged' if slot['damaged'] else 'checked_in_windows'
+            elif UNRECORDED in per:
                 row['decode'] = UNKNOWN
                 row['why'] = 'which streams the decode windows covered is not recorded'
             else:
-                sel_names = ' '.join(per)
-                tmap = {'video': ('first_video', '0:v:0'), 'audio': ('first_audio', '0:a:0')}
-                firsts = [x for x in sl if x.get('type') == s.get('type')]
-                is_first = bool(firsts) and firsts[0] is s
-                hit = s.get('type') in tmap and is_first and any(t in sel_names for t in tmap[s['type']])
-                if hit:
-                    any_damaged = any(slot['damaged'] for slot in per.values())
-                    row['decode'] = 'damaged' if any_damaged else 'checked_in_windows'
-                else:
-                    row['decode'] = 'not_checked'
+                row['decode'] = 'not_checked'
             rows.append(row)
         cov['streams'] = rows[:32]
         if len(rows) > 32:
@@ -768,8 +774,6 @@ def build_coverage(derived):
                 row['decode'] = UNKNOWN
             elif not per:
                 row['decode'] = 'not_checked'
-            elif set(per) == {'unrecorded'} and False:
-                row['decode'] = UNKNOWN
             else:
                 dmg = length(clip_to(dam, a, b))
                 chk = length(clip_to(cln, a, b)) + dmg
@@ -1128,6 +1132,8 @@ def _totals(units):
 def _finish_page(header, units, all_units, page_obj, totals):
     body, placed = assemble(header, units)
     for path, n in placed.items():
+        if n >= totals[(path, 'split')]:
+            continue   # the whole list is on this page: nothing to mark
         parent = body
         for p in path[:-1]:
             parent = parent[p]
@@ -1149,6 +1155,8 @@ def paginate(header, units, envelope, alias, source, budget=WIRE_BYTES):
     opaque stable cursor; fetching it is one tool call (`args {"cursor": ...}`).  A single page carries no `page` object.
     -> list of (body, cursor_of_this_page or None)."""
     totals = _totals(units)
+    if nbytes(envelope(_finish_page(header, [], units, None, totals))) > budget and header.get('alerts'):
+        header = dict(header, alerts=['%s:%s:%s' % (a.get('type'), a.get('id'), a.get('kind') or a.get('state')) for a in header['alerts']])   # shortest form; none is dropped
     probe = {'contract': PAGE_CONTRACT, 'n': 99, 'of': 99, 'next': 'c' + '0' * 15, 'next_costs_tool_call': True,
              'elsewhere': {'.'.join(p): n for (p, k), n in totals.items()}, 'conflicts_total': 99, 'oversize': [{'section': 'facts.x', 'bytes': 99999}]}
 
@@ -1258,6 +1266,12 @@ class Session:
         units += self._summary_units(an, True)
         pages = paginate(header, units, lambda b: canon(b), self.alias, 'evidence')
         first = pages[0][0]
+        if not self.tools and len(pages) > 1:
+            # nothing can be fetched when no tool is offered: say so instead of promising a page, keep the aggregate counts and the alerts
+            first['page'].pop('next', None)
+            first['page'].pop('next_costs_tool_call', None)
+            first['page']['retrieval'] = 'unavailable: no tool is offered, so the other pages cannot be fetched'
+            pages = pages[:1]
         for body, cur in pages[1:]:
             self.pages[cur] = (body, 'evidence')
         self.log.append({'id': 'evidence', 'kind': 'initial', 'pages': len(pages), 'bytes': [nbytes(b) for b, _ in pages]})

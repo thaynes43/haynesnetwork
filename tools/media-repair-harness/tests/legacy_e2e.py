@@ -180,7 +180,12 @@ def scenario_live():
     which = TE.which_with('ffmpeg', 'ffprobe')
     assert path.is_file()
     replies = [tc('ffprobe'), tc('decode_sample'), tc('decode_sample', {'full': True, 'at': 3}), tc('audio_sample', {'stream': 1}), dec('insufficient_evidence', 'escalate', ['t2'])]
-    return run(case, ts, replies, evidence_mode='live', evidence_runner=fake, evidence_which=which, which=lambda n: None)
+    from media_repair_harness import evidence as evcol
+    clock = lambda: 0.0     # a collector's elapsed_s is part of the text the model sees: a real clock would make the golden depend on machine speed
+
+    def collect(path, kinds, bounds, **kw):
+        return evcol.collect(path, kinds, bounds, clock=clock, **kw)
+    return run(case, ts, replies, evidence_mode='live', evidence_runner=fake, evidence_which=which, which=lambda n: None, collect=collect)
 
 
 def scenario_pinned():
