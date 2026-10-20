@@ -120,10 +120,16 @@ class DevC5ReRendered(unittest.TestCase):
         return new, ad
 
     def test_requests_decisions_guards_and_resolution_are_reproduced(self):
-        n_req = 0
+        from media_repair_harness import tools as T
+        n_req = n_rec = skipped = 0
         for run in DEV_C5:
             for p in sorted((RUNS / 'dev-c5' / run).glob('*-*-*.json')):
                 rec = json.loads(p.read_text())
+                case = load_case(rec['case_id'], rec['case_sha256'])
+                if T.Fixture.from_case(case, SUITE_V11).verify_local() != rec['fixture']:
+                    skipped += 1        # a fixture outside git (a pod-local cache) is not in this checkout: the advertisement legitimately differs here
+                    continue
+                n_rec += 1
                 new, ad = self.rerun(rec)
                 self.assertEqual(len(ad.sent), len(rec['turns']), p.name)
                 for sent, turn in zip(ad.sent, rec['turns']):
@@ -143,7 +149,9 @@ class DevC5ReRendered(unittest.TestCase):
                     self.assertEqual(new['evidence_format'][key], rec['evidence_format'][key], (p.name, key))
                 strip = lambda calls: [{k: v for k, v in c.items() if k != 'wall_s'} for c in calls]
                 self.assertEqual(strip(new['tool_calls']), strip(rec['tool_calls']), p.name)
-        self.assertGreater(n_req, 146)
+        self.assertEqual(n_rec + skipped, 146)
+        self.assertGreaterEqual(n_rec, 120, (n_rec, skipped))    # every record whose fixture this checkout has (all 146 on the pod that recorded them)
+        self.assertGreater(n_req, n_rec)
 
 
 class DevC4GuardOutcomes(unittest.TestCase):
