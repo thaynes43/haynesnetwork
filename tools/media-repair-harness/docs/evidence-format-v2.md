@@ -231,3 +231,7 @@ The allow-lists as of this pass (generated from `evidence_v2.py`):
 * `Error -4 while decompressing data(?:: insufficient memory)?`
 
 Audio findings use the same kinds as decode: a classified warning is `decoder_warning`; text nobody classified stays `audio_messages_unclassified`.
+
+## Page fetches carry their origin
+
+A page fetch is stored in `tool_calls` as `tool: page`, `continuation: true`, and now `pages_of` (the id of the observation it pages: a string, or a list for the pages of the first message, which cover every case-evidence item) with the origin's own `status` (the first one that is not ok when several), never a stamped ok. The one reference resolver (`evidence_v2.reference_resolver`, with `page_origin_map(tool_calls)`) and the audit map a cited page-call id to its origin(s), so `no_failed_tool_cited`, `cited_evidence_supports`, `refs_to_non_ok_tools` and G-write v3 read the origin's real status online, in `mrh-guard`, `apply_to_record` and `--restore`. A page call never counts as support of its own; a record written before this change (a page call without `pages_of`) is not support either. The wire envelope of a fetched page is unchanged.

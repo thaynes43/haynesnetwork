@@ -176,7 +176,7 @@ def make_resolver(case, tool_calls, session):
     if session is None:
         return lambda refs: list(refs or [])
     known = {e['id'] for e in case.get('evidence', [])} | {c['id'] for c in tool_calls}
-    return EV2.reference_resolver(known, session.finding_index())
+    return EV2.reference_resolver(known, session.finding_index(), EV2.page_origin_map(tool_calls))
 
 
 def result_message(call_id, tool, res, remaining):
@@ -292,9 +292,13 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
             if v2fmt and is_cursor_call(obj['args']) and obj['tool'] in (case.get('tools_available') or []) and obj['tool'] in P.TOOLS:
                 # a page fetch: not a tool run, but one of the 6 calls (stated in the page object); served from the pages this case's own session holds
                 status, text = session.fetch(obj['args']['cursor'], call_id, obj['tool'], remaining, suffix)
-                tool_calls.append({'id': call_id, 'turn': turn['n'], 'tool': 'page', 'args': safe_args(obj['args']), 'why': obj.get('why'), 'status': status,
-                                   'output': text, 'truncated': False, 'mode': 'pages', 'continuation': True, 'continuation_via': obj['tool'],
-                                   'evidence_mode': ctx.evidence_mode, 'wall_s': 0.0})
+                origins, origin_status = session.page_origin(obj['args']['cursor'])
+                page_call = {'id': call_id, 'turn': turn['n'], 'tool': 'page', 'args': safe_args(obj['args']), 'why': obj.get('why'), 'status': origin_status if origins else status,
+                             'output': text, 'truncated': False, 'mode': 'pages', 'continuation': True, 'continuation_via': obj['tool'],
+                             'evidence_mode': ctx.evidence_mode, 'wall_s': 0.0}
+                if origins:       # a page is the result it pages: it carries that result's id and status, it is never an ok result of its own
+                    page_call['pages_of'] = origins[0] if len(origins) == 1 else origins
+                tool_calls.append(page_call)
                 messages += [{'role': 'assistant', 'content': comp.text}, {'role': 'user', 'content': text}]
                 continue
             res = T.call_tool(ctx, obj['tool'], obj['args'])

@@ -10,7 +10,7 @@ import zipfile
 
 import ev2h
 import th
-from ev2h import analysis, derive_one, obs, probe_out, decode_out
+from ev2h import analysis, derive_one, obs, probe_out, decode_out, tc, dec
 from media_repair_harness import decision_guard as DG
 from media_repair_harness import evidence_v2 as EV2
 from test_evidence_v2_core import live_audiobook, book_file
@@ -423,3 +423,113 @@ class AudioWarningKindMatchesDecode(unittest.TestCase):
         self.assertEqual(([f['kind'] for f in w.findings], w.integrity), (['decoder_warning'], 'unknown'))
         u = derive_one(obs('t1', 'audio_sample', 'ok', live_audio(['something nobody has classified']), backend='live'))
         self.assertEqual(([f['kind'] for f in u.findings], u.integrity), (['audio_messages_unclassified'], 'unknown'))
+
+
+class PageCallsCarryTheirOrigin(unittest.TestCase):
+    """A page fetch is the result it pages: it records that result's id and status (never ok of its own), the one resolver and the audit read the origin, and the offline
+    paths agree with the run (advisory reviewer, run.py:296)."""
+
+    CITE = 'Harbor Lights - S01E02 - Lamp Oil.mkv'
+
+    def big_case(self, status):
+        import legacy_e2e as L
+        case = L.tv_case('qxp-001', evidence=[], tools_available=['ffprobe'], context={'title': 'Harbor Lights S01E02', 'filename': self.CITE, 'expected': {'series': 'Harbor Lights'},
+                                                                                       'arr': {'app': 'sonarr', 'ids': {'seriesId': 1}}, 'notes_for_model': 'n' * 3000})
+        ch = [{'start': str(i * 2), 'end': str(i * 2 + 2), 'title': 'Chapter %03d %s' % (i, 'x' * 40)} for i in range(120)]
+        case['evidence'] = [{'id': 'e%d' % i, 'tool': 'ffprobe', 'args': {}, 'status': status, 'output': json.dumps(dict(L.PROBE_REC, chapters=ch))} for i in range(1, 4)]
+        return case
+
+    def write(self, refs):
+        d = dec('corrupt_file', 'blocklist_and_search', refs, target=self.CITE)
+        d['audit'] = {'target': self.CITE, 'preconditions': ['the evidence shows damage'], 'readback': 'queue', 'verify': 'new file'}
+        return d
+
+    def runs(self, status, guards=None):
+        import legacy_e2e as L
+        from media_repair_harness import run as R
+        case = self.big_case(status)
+        ts = L.suite_with(case)
+        _rec, ad = ev2h.scripted_run(case, ts, [dec()], which=th.NO_BINARIES, evidence_format='v2')
+        cursor = json.loads(ad.calls[0][0]['content'])['evidence']['page']['next']
+        extra = {'guards': guards} if guards else {}
+        rec, _ad = ev2h.scripted_run(case, ts, [tc('ffprobe', {'cursor': cursor}), self.write(['t1'])], which=th.NO_BINARIES, evidence_format='v2', **extra)
+        shown = R.resolve_evidence_raw(case, ts.root)
+        ts.cleanup()
+        return case, rec, shown
+
+    def test_the_page_call_records_its_origin_and_the_origin_status(self):
+        for status in ('partial', 'ok'):
+            _case, rec, _shown = self.runs(status)
+            page = rec['tool_calls'][0]
+            self.assertTrue(page['continuation'])
+            self.assertEqual(page['pages_of'], ['e1', 'e2', 'e3'], status)
+            self.assertEqual(page['status'], status, status)           # the origin's own status, not a stamped ok
+
+    def test_a_write_citing_the_page_of_a_non_ok_result_is_flagged_and_escalated_and_the_ok_control_is_not(self):
+        for status in ('partial',):
+            _case, plain, _shown = self.runs(status)                                          # the audit of the unguarded run
+            pre = {c['id']: c['met'] for c in plain['action_audit']['preconditions']}
+            self.assertFalse(pre['cited_evidence_supports'], status)
+            self.assertFalse(pre['no_failed_tool_cited'], status)
+            self.assertEqual(sorted(plain['refs_to_non_ok_tools']), ['e1', 'e2', 'e3'], status)
+            _case, rec, _shown = self.runs(status, guards='v3')
+            self.assertEqual(rec['decision']['action'], 'escalate', status)                  # G-write v3
+            self.assertEqual(rec['guard']['applied'][0]['rule'], 'G-write', status)
+            self.assertEqual(rec['guard']['applied'][0]['original']['evidence_refs'], ['t1'])
+        _case, rec, _shown = self.runs('ok', guards='v3')                                      # control: a page of an ok result supports the write
+        pre = {c['id']: c['met'] for c in rec['action_audit']['preconditions']}
+        self.assertTrue(pre['cited_evidence_supports'] and pre['no_failed_tool_cited'])
+        self.assertEqual(rec['decision']['action'], 'blocklist_and_search')
+        self.assertFalse(rec['guard']['final_changed'])
+
+    def test_offline_reapply_and_restore_give_the_same_outcome_as_the_run(self):
+        from media_repair_harness import decision_guard as DG
+        for status in ('partial', 'ok'):
+            case, online, _s = self.runs(status, guards='v3')
+            case, plain, shown = self.runs(status)
+            off = DG.apply_to_record(plain, case, shown, 'v3')
+            self.assertEqual((off['decision']['action'], off['guard']['final_changed']), (online['decision']['action'], online['guard']['final_changed']), status)
+            self.assertEqual(off['guard']['final_changed'], status == 'partial')                  # escalated for the partial origin, untouched for the ok one
+            self.assertEqual({c['id']: c['met'] for c in off['action_audit']['preconditions']} if off['guard']['final_changed'] else None,
+                             {c['id']: c['met'] for c in online['action_audit']['preconditions']} if online['guard']['final_changed'] else None)
+            back = DG.restore_original(off, case, shown)
+            self.assertEqual(back['decision'], plain['decision'])
+
+    def test_the_resolver_maps_a_page_call_id_to_its_origin_and_the_audit_does_the_same_without_it(self):
+        from media_repair_harness import audit as AU
+        calls = [{'id': 't1', 'tool': 'ffprobe', 'args': {}, 'status': 'partial', 'output': '{}'},
+                 {'id': 't2', 'tool': 'page', 'args': {}, 'status': 'partial', 'output': 'x', 'continuation': True, 'pages_of': 't1'}]
+        pmap = EV2.page_origin_map(calls)
+        self.assertEqual(pmap, {'t2': ['t1']})
+        r = EV2.reference_resolver(['e1', 't1', 't2'], {'t1.f1': 't1'}, pmap)
+        self.assertEqual(r(['t2', 't1.f1', 'e1', 'zzz']), ['t1', 't1', 'e1', 'zzz'])
+        case = {'context': {'arr': {'app': 'sonarr'}}, 'evidence': []}
+        d = dec('corrupt_file', 'blocklist_and_search', ['t2'], target='f.mkv')
+        a = AU.compute(case, d, calls)                                  # no resolver at all: the audit itself reads the origin
+        self.assertIn('cited_evidence_supports', a['unmet'])
+        self.assertIn('no_failed_tool_cited', a['unmet'])
+
+    def test_a_page_of_an_ok_result_with_a_real_finding_supports_the_write(self):
+        from media_repair_harness import audit as AU
+        calls = [{'id': 't1', 'tool': 'decode_sample', 'args': {'at': 4}, 'status': 'ok', 'output': json.dumps(decode_out(ss=4, stderr='[h264 @ 0x0] error while decoding MB 1 2, bytestream -5')), 'mode': 'replay'},
+                 {'id': 't2', 'tool': 'page', 'args': {}, 'status': 'ok', 'output': 'x', 'continuation': True, 'pages_of': 't1'}]
+        case = {'context': {'arr': {'app': 'sonarr'}, 'filename': 'f.mkv'}, 'evidence': []}
+        d = dec('corrupt_file', 'blocklist_and_search', ['t2'], target='f.mkv')
+        a = AU.compute(case, d, calls)
+        self.assertNotIn('cited_evidence_supports', a['unmet'])
+        self.assertNotIn('no_failed_tool_cited', a['unmet'])
+        # a record from before the fix (a page call without its origin) never counts as support of its own
+        old = [calls[0], dict(calls[1])]
+        del old[1]['pages_of']
+        self.assertIn('cited_evidence_supports', AU.compute(case, dec('corrupt_file', 'blocklist_and_search', ['t2'], target='f.mkv'), old)['unmet'])
+
+    def test_session_reports_the_origin_of_a_known_cursor_only(self):
+        ses = EV2.Session('case-aaaaaaaa', {}, 'audiobook', ['audiobook_inspect', 'ffprobe'], budget=4096)
+        ses.initial([])
+        for status in ('partial', 'error', 'timeout', 'unavailable', 'ok'):
+            text, _n = ses.result(EV2.make_observation('t' + status[:2], 'audiobook_inspect', {}, status, json.dumps(big_book(12)), 'live', 'tool'), 't' + status[:2], 5)
+            page = json.loads(text.split('\n')[0])['output'].get('page')
+            if not page:                                         # (a failed result may be small enough for one page: nothing to page then)
+                continue
+            self.assertEqual(ses.page_origin(page['next']), (['t' + status[:2]], status), status)
+        self.assertEqual(ses.page_origin('c' + 'a' * 15), ([], 'error'))

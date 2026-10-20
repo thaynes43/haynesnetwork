@@ -187,7 +187,8 @@ def non_ok_evidence_ids(case, tool_calls):
 
 def unsupportive_ids(case, tool_calls):
     """Ids of results that must not be cited as support (see usable_as_support)."""
-    ids = {c['id'] for c in tool_calls if not usable_as_support(c.get('status'), c.get('output'), c.get('injected', False), (c.get('evidence') or {}).get('cause'))}
+    # (a page fetch is never a result of its own: citing one stands for the result it paged -- see `compute` -- and the page call's own id never supports anything)
+    ids = {c['id'] for c in tool_calls if c.get('continuation') or not usable_as_support(c.get('status'), c.get('output'), c.get('injected', False), (c.get('evidence') or {}).get('cause'))}
     ids |= {e['id'] for e in case.get('evidence', []) if not usable_as_support(e.get('status', 'ok'), e.get('output'))}
     return ids
 
@@ -212,14 +213,14 @@ def decision_flags(decision, parts):
 
 def _ok_sources(case, tool_calls):
     """[(id, tool, args, output text)] of results that came back ok."""
-    out = [(c['id'], c.get('tool'), c.get('args') or {}, str(c.get('output'))) for c in tool_calls if c.get('status') == 'ok']
+    out = [(c['id'], c.get('tool'), c.get('args') or {}, str(c.get('output'))) for c in tool_calls if c.get('status') == 'ok' and not c.get('continuation')]
     out += [(e['id'], e.get('tool'), e.get('args') or {}, str(e.get('output'))) for e in case.get('evidence', []) if e.get('status', 'ok') == 'ok']
     return out
 
 
 def _supportive_sources(case, tool_calls):
     return [(c['id'], c.get('tool'), c.get('args') or {}, str(c.get('output'))) for c in tool_calls
-            if usable_as_support(c.get('status'), c.get('output'), c.get('injected', False), (c.get('evidence') or {}).get('cause'))] + \
+            if not c.get('continuation') and usable_as_support(c.get('status'), c.get('output'), c.get('injected', False), (c.get('evidence') or {}).get('cause'))] + \
            [(e['id'], e.get('tool'), e.get('args') or {}, str(e.get('output'))) for e in case.get('evidence', [])
             if usable_as_support(e.get('status', 'ok'), e.get('output'))]
 
@@ -260,6 +261,8 @@ def compute(case, decision, tool_calls, forced=False, prompt_version='v1', v4_ta
     ctx = case.get('context') or {}
     arr_app = ((ctx.get('arr') or {}).get('app') or '').lower() or None
     refs = list(decision.get('evidence_refs') or [])
+    pmap = EV2.page_origin_map(tool_calls)           # a cited page fetch is the result it paged: every check below reads the origin's own status
+    refs = [x for r in refs for x in pmap.get(r, [r])]
     known = {e['id'] for e in case.get('evidence', [])} | {c['id'] for c in tool_calls}
     bad_ids = unsupportive_ids(case, tool_calls)
     ok_src = _ok_sources(case, tool_calls)

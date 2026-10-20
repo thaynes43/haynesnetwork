@@ -143,7 +143,7 @@ def record_resolver(record, evidence_shown):
         return lambda refs: list(refs or [])
     obs = shown_observations(evidence_shown, (record or {}).get('tool_calls'))
     known = [o['id'] for o in obs]
-    return EV2.reference_resolver(known, EV2.emitted_ids(EV2.analyze(obs, {})))
+    return EV2.reference_resolver(known, EV2.emitted_ids(EV2.analyze(obs, {})), EV2.page_origin_map((record or {}).get('tool_calls')))
 
 
 def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=False, version=GUARD_VERSION, resolve=None):

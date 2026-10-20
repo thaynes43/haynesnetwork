@@ -304,11 +304,28 @@ def safe_args(args):
     return out
 
 
-def reference_resolver(known_ids, emitted):
+def reference_resolver(known_ids, emitted, pages_of=None):
     """THE reference resolver (online runner, offline `mrh-guard` and `--restore` all use it): an observation id stands for itself; a finding / conflict id that was
-    actually emitted (`t1.f1`) stands for its observation; anything else (`t1.nonexistent`) is left as written, so it is a bad reference everywhere."""
+    actually emitted (`t1.f1`) stands for its observation; the id of a PAGE FETCH (`pages_of`: {page call id: [origin ids]}) stands for the observation(s) it paged, so every
+    check reads the origin's real status and never the page call's; anything else (`t1.nonexistent`) is left as written, so it is a bad reference everywhere."""
     known = set(known_ids)
-    return lambda refs: [r if r in known else emitted.get(r, r) for r in (refs or [])]
+    pages_of = pages_of or {}
+
+    def one(r):
+        if r in pages_of:
+            return list(pages_of[r])
+        return [r if r in known else emitted.get(r, r)]
+    return lambda refs: [x for r in (refs or []) for x in one(r)]
+
+
+def page_origin_map(tool_calls):
+    """{page call id: [origin observation ids]} from the run's tool calls (`pages_of` is a string for one origin, a list for the pages of the first message)."""
+    out = {}
+    for c in tool_calls or []:
+        po = c.get('pages_of')
+        if c.get('continuation') and po:
+            out[c.get('id')] = [po] if isinstance(po, str) else [x for x in po if isinstance(x, str)]
+    return out
 
 
 def emitted_ids(analysis_result):
@@ -2029,6 +2046,7 @@ class Session:
         self.alias, self.context, self.media_type, self.tools = alias, context, media_type, list(tools_offered or [])
         self.shown = []
         self.pages = {}            # cursor -> (page body, tool name for the echo)
+        self.page_ids = {}         # cursor -> [ids of the observations the page belongs to]
         self.last_cov = None
         self.last_client = None
         self.log = []              # auditable: [{'id', 'kind', 'pages', 'bytes'}]
@@ -2094,6 +2112,7 @@ class Session:
         first = pages[0][0]
         for body, cur in pages[1:]:
             self.pages[cur] = (body, 'evidence')
+            self.page_ids[cur] = [o['id'] for o in evidence_obs]
         self.log.append({'id': 'evidence', 'kind': 'initial', 'pages': len(pages), 'bytes': [nbytes(dict(frame, evidence=b)) for b, _ in pages[:1]] + [nbytes(self._worst_fetch_envelope()(b)) for b, _ in pages[1:]]})
         return first, len(pages)
 
@@ -2130,8 +2149,20 @@ class Session:
         pages = paginate(header, units, env, self._worst_fetch_envelope(), self.alias, call_id, self.budget)
         for body, cur in pages[1:]:
             self.pages[cur] = (body, obs['tool'])
+            self.page_ids[cur] = [obs['id']]
         self.log.append({'id': call_id, 'kind': 'result', 'pages': len(pages), 'bytes': [nbytes(env(pages[0][0]))] + [nbytes(self._worst_fetch_envelope()(b)) for b, _ in pages[1:]]})
         return env(pages[0][0]), len(pages)
+
+    def page_origin(self, cursor):
+        """-> (origin ids, origin status) of a known cursor, else ([], 'error').  The status is the origin's own (the first one that is not ok, when a page covers several),
+        so a page of a partial, error or timeout result is recorded as that result, never as ok."""
+        hit = self.pages.get(cursor) if isinstance(cursor, str) and CURSOR_RX.match(cursor) else None
+        if hit is None:
+            return [], 'error'
+        ids = self.page_ids.get(cursor, [])
+        by_id = {o['id']: o['status'] for o in self.shown}
+        statuses = [by_id.get(i, 'ok') for i in ids]
+        return list(ids), next((x for x in statuses if x != 'ok'), 'ok')
 
     def fetch(self, cursor, call_id, tool, remaining, suffix=''):
         """-> (status, wire text).  An unknown cursor (other case, other run, mangled) is an error that names no page content."""
