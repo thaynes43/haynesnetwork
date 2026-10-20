@@ -16,8 +16,8 @@
   "status": "SEALED. No case, fixture, replay record or evidence is in git. Contents are revealed only by the readiness run. heldout-v1 is retained unchanged. No candidate has been scored on either version.",
   "tarball": {
     "name": "heldout-v1.1.tar.gz",
-    "sha256": "f6bd427ff722f49befeac82c8e502ce46160c1a763b9c9b348b6084ee0c7a482",
-    "bytes": 4634419,
+    "sha256": "bc165708d2b87f50ccfa684aa4c58582ee0033fc17e2e90b602bf773f35f1568",
+    "bytes": 4634427,
     "location": "/home/dev/.cache/media-repair-harness-1019/heldout-v1.1/ (mode 700, pod PVC; outside git)",
     "recipe": "python3 gen/package_v1_1.py (same recipe as v1: sorted names, mtime 0, uid/gid 0, fixed modes, gzip mtime 0; members under heldout-v1.1/); rebuilt twice with an identical hash"
   },
@@ -25,18 +25,18 @@
     "total": 47,
     "sha256_by_opaque_index": {
       "h001": "7c630edf9d93c4cf72a45fa17cad2036f2cc2c942ae473eaa811c2df1edac358",
-      "h002": "efa3fe917bfa4f2053cc1173e88481c949705c004d37aa1972525f0ed05982bd",
+      "h002": "9c0eee8ba598dabb508e70d17c202f287e13cbbeae5a01c985709ec7455af01b",
       "h003": "832f69067d9fbf3d7eb40ed7bd7b6c84dd7bf082038514fe4ad1c5f8882cb7c3",
       "h004": "338345060ce991394b1f231354cf9d8b03b9e691254b5bb7619e184403b51ca8",
       "h005": "228739da5247f7b106048fa1b383cec50746ef1ce56a29568eaa0538e2cc13ff",
       "h006": "5bf83616768b99d1ceb88b16ced9df89a036f1447ab884768cd9bab876a03d9d",
       "h007": "289feef4b68836c5a3abf57a329730315aa3653b5fa748665cc609e2ed34ea7e",
       "h008": "dd42e9892363adaf551938b8a82b3abb72e921b60c33187fc6c62449192d30d7",
-      "h009": "7986d2fad3411acc95664b597cf8e78dc0623c0177f55c35c9afe34d586070aa",
+      "h009": "af4d0b28c7665d773b7710c7fefc97fa16b7716952ae6656f0328ba64c66a7f2",
       "h010": "01d7584b5a8d7c317ac4fcf2633e93a8bfea5ec256bffec0d52c9cc38532cb11",
       "h011": "1fd55687bd7db082690e753492efcc0dd57dc993b0c7e58d1200a9a48a02d377",
       "h012": "59fa15cdffe889543e086afab60907e013d5ef6faf33f83879444a6bc84380b8",
-      "h013": "59aeb6c0d7636d0a10fe0d4f605aba0e7f06c3877aaed1fddf9061f4e5ccdb43",
+      "h013": "eddedd6eafca1e8c7912fd2583f5668f48e12b92fe250c7a672784337a269b6a",
       "h014": "62a1c862ba619dd5df7c0b86198c734517960aad32fd1cd756d27aa6873b518b",
       "h015": "a182be329ce9d7fe1241f6dc6f05b1e762aadb228f3cb37b966db69a830b5444",
       "h016": "4d2bd424e2e0a434970361853b2eaa6d557ffc3f559e55f8f94fb1543be9d437",
@@ -44,10 +44,10 @@
       "h018": "6759fc993011f6b642458402a8e57602a0f8cf32319c1ff58cfecad827593230",
       "h019": "b55bb8a45e3bdffed8b5d78b54e4f21135b1c832ea532ac529025b8135bd9126",
       "h020": "280f9fe4df26885ea28449ad5860c752eb33d21727b8ae82bf3c1ff63e44155e",
-      "h021": "eed3c0035a0fff870c11a5307a9b2eeab3ad00bd10c0e8ef263c822a7cb4ed30",
+      "h021": "629d08678e2111e6ad8664c3717325d101b2e8db825dd3c8dd31d93cec2ba918",
       "h022": "a5f6f414f70a42d791367392924296bcc83d08ad8c5a288c866eab7b3db58e0f",
       "h023": "a21e43187e70022e125fe0d5f7a35a32d48a9d06ed4660887eef6a5b49a41da4",
-      "h024": "93eb084d7904812713abaae3cfa8db17c0c9babfe3634edd33870308bde91db9",
+      "h024": "9ab673f8ee337e3efa1d437ffb2cf2d60186f4350714633a79d88b3efee02883",
       "h025": "58a251d60e922c8847cbb410caf17cb80b67924e983d9571aaa6105ba92fcdb3",
       "h026": "0a614abaec8526bdefae2daed47db0bcf10e7407144a32d32db566bfd8e224a9",
       "h027": "a072572127082f7bf158ebc975cc0dc12f1cba487cad4e89966ab980aa1909ed",
@@ -58,19 +58,19 @@
       "h032": "83909512d8f07e474e40d9aef9619cec986c9686b8de7c3e24d4a81e89a4de9e",
       "h033": "2d8f2f4e309c4f86e979adeca5948588314ca77eb2f1c19aa50ad534d596b837",
       "h034": "32797319ca26eb38f76b15376fe315513666ed6a84c14372f6e9231070bc3324",
-      "h035": "85b26c507e7a006279198c800e0140787fc82427cfa26bc6698ebcd122955499",
+      "h035": "60a8e94daa77cd0a1590450e12962ea9ce41fd0ddec4b521630d512e1ba190f7",
       "h036": "bc9b325c9846eaee904629c9b0ec907b1e724e8c7ef11cb0d5e9dd974862d0f0",
       "h037": "d7f9a4902ebb4c80f5b8fc119b115a7b55da25a282595ef27948bd0fa99320bf",
       "h038": "af957798e44030866b54b55276a52bd20d4d5337976315034b46578cb714a4be",
-      "h039": "9aa9ea143cbad97733e9e6a9f8e5b25b196b964784be396f69e0e4b259564c19",
+      "h039": "63fecc29390ff1cb771db5e37176c2c388ddb05ba4d3536fa0d9d211f0143bac",
       "h040": "4e46cb1a455a5e8803d8c60916999c3789f922e0c7d02a3ce87782de65a883d8",
       "h041": "39f0163f32bdd862f806ce88e148fe767c8e26221bfbe69a9d0bf377714e73be",
-      "h042": "c8292ec8ee08be89c2d761b3fd68676db51f346993702d0ecc20481d005dcc97",
+      "h042": "cd5e2ce40ec205c4983eaed47c8a123607481dfef83be068fdc339b2120e5016",
       "h043": "1237d97f8532817f42e8b8a5c28588193db3d3c3f7a63d5a811b2bf0524d1d64",
       "h044": "a1a677289624085d0eb966507ebe0801eb68bb3f8151d014bfe0d028fcee7f91",
       "h045": "290c902f139329f2aed4471f73be0d410f83c99103077bf34b42d976682ee28c",
       "h046": "162359c53d22c952074cab30695e1ac7e28acd673f699b337b5a0f03708da96e",
-      "h047": "9cc44edb13a42b1526969d4f16cd0dea0e5d8cc43bd9f00fb5469238a312fcef"
+      "h047": "0ea428ebe0e9cbdf63cf11fc6505cfe8687e9f74f4dcc06c0818adeed5d1fb12"
     },
     "note": "sha256 of each case JSON file; the opaque index is the same one SEALED.json uses for heldout-v1 (the mapping to case ids stays in the sealed dir). Every hash differs from v1 because suite_version is part of every case file."
   },
@@ -171,7 +171,7 @@
       "solvable": 47
     }
   },
-  "counts_note": "identical to heldout-v1: no rule changed a truth label, a supported set, a media type or a case count",
+  "counts_note": "identical to heldout-v1: no rule changed a truth label, a supported set, a tool list, a media type or a case count",
   "rules": {
     "applied": [
       "C1",
@@ -198,16 +198,24 @@
         "change": "no healthy case lacked an integrity check: every healthy case carries a recorded probe or structure check in its evidence and offers callable tools"
       },
       "C5": {
-        "cases_changed": 9,
-        "tool_offers_removed": 18,
-        "by_tool": {
-          "ffprobe": 9,
-          "decode_sample": 9
-        },
-        "change": "removed from tools_available where the harness cannot serve recorded data for the case's fixture (the 9 real-library cases, known only through a pinned observation); their pre-collected evidence is unchanged. audio_sample was never offered in v1"
+        "cases_changed": 0,
+        "tool_offers_removed": 0,
+        "change": "none. Criterion (evaluator ruling): a tool is removed only if no call to it can return recorded data under the current harness (dev-c2, --evidence replay, including _pinned). Tested offline on the nine real-library (pinned observation) cases: ffprobe returned ok in 9 of 9 and decode_sample in 9 of 9 (at start 0 and at a recorded non-zero start; unavailable at an unrecorded start), so both stay offered. audio_sample was never offered in v1",
+        "pinned_replay_test": {
+          "cases": 9,
+          "ffprobe": {
+            "ok": 9,
+            "unavailable": 0
+          },
+          "decode_sample": {
+            "start_0_ok": 9,
+            "recorded_nonzero_start_ok": 9,
+            "unrecorded_start_unavailable": 9
+          }
+        }
       }
     },
-    "cases_with_a_corrections_list": 29,
+    "cases_with_a_corrections_list": 20,
     "fixture_bytes_changed": 0,
     "record": "each changed case carries a corrections list naming the rule and the fields changed (private, inside the tarball)"
   },
@@ -244,22 +252,21 @@
       "heldout-v1.1: 47 cases, 0 errors; committed fixtures 3309 KiB; healthy 11, abstain-class 10, inject 5, outcome 8, audiobook 10",
       "OK"
     ],
-    "patch_vs_v1": "VERSION heldout-v1.1; additive top-level key corrections; an evidence entry on a pinned-observation fixture may name a tool that is no longer in tools_available (needed by C5). The v1 validator is kept in the tarball as raw/suite_v1_validator.py.orig"
+    "patch_vs_v1": "VERSION heldout-v1.1 and an additive top-level key corrections. The v1 validator is kept in the tarball as raw/suite_v1_validator.py.orig"
   },
   "leak_guard": {
     "command": "the v1 leak sweep, unchanged, against the v1.1 suite (first request and every replay tool result); no model run",
     "cases": 47,
     "first_request_clean": 47,
     "first_request_leaks": 0,
-    "tool_result_checks": 954,
+    "tool_result_checks": 1062,
     "tool_result_leaks": 0,
-    "raw_view_leaks_every_case_control": 47,
-    "note": "fewer tool-result checks than v1 (1062) because C5 removed 18 tool offers"
+    "raw_view_leaks_every_case_control": 47
   },
   "generator_script_sha256": {
-    "apply_v1_1.py": "04f60a81f32301df11e7a24cf9b4a70207b32607e14075b62c7be86784d3b823",
+    "apply_v1_1.py": "23814d7eda1763dcdb61810d2159f22e78e309777941dc8f037f777343ba28ce",
     "package_v1_1.py": "196e9af259b7082ce247fd1d263a56c08567538ef17befeda6d8651d2d56a1a2",
-    "suite.py": "1dc561a00927eb74c0f2bae45650928f1dab7eeb3e283eebbbdcfe1cf08e0271",
+    "suite.py": "473312e9e211e884b2196681621efa04837e040c6937c955a8157b5a12f0ebd0",
     "suite_v1_validator.py.orig": "b0ad237adb064e84e59adfaed62b041d5d69d2c39250b583613fb52b58950c79"
   },
   "unchanged_from_v1": {

@@ -69,6 +69,6 @@ Each case SHA-256 in `SEALED.json` can be matched to the extracted file before s
 
 [`SEALED-v1.1.json`](SEALED-v1.1.json) seals a corrected copy of this suite. Tom authorized it on 2026-10-20: the evaluator audited `heldout-v1` privately and applied only the
 general construction rules C1 (managing app: LazyLibrarian for EPUB and audiobook cases), C2 (healthy controls with no integrity evidence) and C5 (tools offered with no recorded
-data). Counts: C1 changed 20 cases, C2 changed 0, C5 changed 9 cases (18 tool offers). Labels, supported sets, fixtures and case counts are unchanged, so every count in
+data). Counts: C1 changed 20 cases, C2 changed 0, C5 changed 0 (an offline test of the current harness showed every tool offered on the real-library cases can return recorded data, so none was removed). Labels, supported sets, fixtures and case counts are unchanged, so every count in
 `SEALED.json` still holds. `heldout-v1` is retained unchanged (tarball hash above), nothing from it was moved or edited, and no candidate has been scored on either version.
 The dev-case-specific rulings (C3, C6, `ADJUDICATION-dev-v1.md`) were not applied. The disclosure level is the same as for v1: hashes by opaque index, counts, no case contents.
