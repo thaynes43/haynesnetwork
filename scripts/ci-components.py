@@ -114,7 +114,7 @@ def classify_path(raw: str) -> str:
     if path.startswith(SHARED_PREFIXES) or path in SHARED_FILES:
         return SHARED
 
-    # 2. The harness: its own directory, the old in-tree location, its public suite and the EPUB source it imports.
+    # 2. The harness: its own directory, the old in-tree location, its public suites (suite/, suite-dev-v1.1/), GATES.md, RULINGS-v1.1.md and the EPUB source it imports.
     if path.startswith(HARNESS_DIR) or path.startswith(EPUB_CONTEXT):
         return HARNESS
     if path.startswith(HARNESS_CONTEXT):

@@ -20,7 +20,7 @@
 #   - anything under `.agents/` EXCEPT data files (`*.yaml`, `*.yml`, `*.json`): the unit tests parse
 #     `.agents/owed-checks.yaml` and `.agents/books-census-holds.yaml`, so those are code;
 #   - `LICENSE`, the VS Code workspace file and `.gitkeep` placeholders;
-#   - the media repair harness (ADR-116): `tools/media-repair-harness/`, its public suite and the EPUB source it
+#   - the media repair harness (ADR-116): `tools/media-repair-harness/`, its public suites (`suite/`, `suite-dev-v1.1/`), `GATES.md` and `RULINGS-v1.1.md`, and the EPUB source it
 #     imports under `.agents/context/`, and root Python packaging files. Nothing in the site's lint, tests, build or
 #     image reads them (`.dockerignore` keeps them out), so they are not SITE code. They have their own CI job;
 #     scripts/ci-components.py decides which components run and is the authority for ci.yml. This script keeps

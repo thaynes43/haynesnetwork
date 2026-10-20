@@ -18,7 +18,7 @@ its own deterministic CI. The current routing cannot do that safely:
 - `scripts/ci-code-paths.sh` decides "code or docs" for the site only. It calls `.agents` Python, text and fixtures
   docs, but `.agents` JSON and YAML code. A harness-only change to a JSON fixture therefore runs the whole site CI,
   and a harness-only change to Python skips every check. Nothing ever runs the Python tests.
-- The harness imports `.agents/context/media-repair-actual-epub-2026-10-18/epub.py` and reads the public suite. A path
+- The harness imports `.agents/context/media-repair-actual-epub-2026-10-18/epub.py` and reads the public suites (`suite/`, `suite-dev-v1.1/`). A path
   filter that names only the harness directory would miss both.
 - The required contexts are `lint-and-typecheck`, `test`, `build` and `e2e-gate`. Branch protection is out of scope
   here, so a new harness job that is not one of them would be advisory: a red harness would still merge.

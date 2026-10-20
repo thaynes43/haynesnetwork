@@ -43,7 +43,7 @@ pnpm build       # pnpm -r build (next build, standalone)      ── CI job: bu
   `packages/ui/src/theme/tokens.css`. Adding a color token means editing BOTH theme blocks
   AND `REQUIRED_TOKENS` in `tokenContract.ts`, or the token-contract test fails.
 - **`test` is a finalizer (ADR-116).** The required `test` context waits for `site-test` (the Vitest job),
-  `harness-test` (the media repair harness, only when `tools/media-repair-harness`, its public suite, the EPUB source
+  `harness-test` (the media repair harness, only when `tools/media-repair-harness`, its public suites (`suite/`, `suite-dev-v1.1/`), `GATES.md` and `RULINGS-v1.1.md`, the EPUB source
   or Python packaging files change) and `ci-routing-tests`, and is green only if every selected one succeeded. Run
   `python3 -m unittest discover -s scripts/tests` after editing `scripts/ci-components.py`, `scripts/ci-code-paths.sh`,
   `scripts/e2e-gate-paths.sh` or a workflow; `python3 scripts/ci-components.py classify --paths-file <file>` shows

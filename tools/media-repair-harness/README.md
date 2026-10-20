@@ -7,7 +7,7 @@ Owner: OpenProject story [#132](https://work.haynesnetwork.com/work_packages/132
 
 **Where things live (since the packaging move).** This is the durable home: `tools/media-repair-harness/`, an installable package
 (`pyproject.toml`, import name `media_repair_harness`, console scripts `mrh-run` and `mrh-score`). The assessment artifacts stay in
-`.agents/context/media-repair-harness-2026-10-19/` (`harness/runs/`, `harness/CONTRACT.md`, `harness/score.py`, `baseline/`, `suite/`, `GATES.md`,
+`.agents/context/media-repair-harness-2026-10-19/` (`harness/runs/`, `harness/CONTRACT.md`, `harness/score.py`, `baseline/`, `suite/`, `suite-dev-v1.1/`, `GATES.md`, `RULINGS-v1.1.md`,
 `heldout/`): the evaluator owns them and this component never edits them. The frozen candidates dev-c1 and dev-c2 ran from the old path
 (`.agents/context/media-repair-harness-2026-10-19/harness/`, flat modules); the move keeps `HARNESS_VERSION` (`dev-c2`), both prompt digests and the
 replay-identity digests byte for byte (`tests/test_packaging.py`, `tests/test_wiring.py`). Run records in `harness/runs/` name files at the old path.

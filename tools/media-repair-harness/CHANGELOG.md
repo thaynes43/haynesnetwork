@@ -19,7 +19,7 @@ the suites, labels and gates are untouched. Replay identity for prompt v1 and v2
   section 7 (the superset claim excludes the minimal crash record, which lists exactly what it lacks), section 1/7 (prompt v3, `write_rejection`, `harness_version dev-c3`).
 * **CI routing** (`scripts/ci-components.py`, tests in `scripts/tests/test_ci_components.py`): `suite-dev-v1.1/**` (Markdown included) and `RULINGS-v1.1.md` select the harness component, like `suite/**` and `GATES.md`. A neighbouring note such as `RULINGS-v2.md` or `suite-dev-v1.1-notes.md` stays docs.
 * **Tests**: `test_v3.py` (33: prompt, protocol, text vs both suites, `lazylibrarian`, `write_rejection`, the rule fixtures), `test_dev_c3_runs.py` (committed runs are what their summaries say), six synthetic fixtures `rg-v3-*` in `tests/testdata/regression/` (one set per rule: healthy with whole-item clean coverage, bad copy with an app, a real gap),
-  `test_regression` counts its cases from disk. Whole harness: see the PR for the final count (428 before the fixtures and run checks).
+  `test_regression` counts its cases from disk. Whole harness: 465 tests (428 before the fixtures and run checks).
 
 ### Measurement (dev-v1.1, `claude-haiku-5-5`, replay; full detail in `runs/dev-c3/README.md`)
 
@@ -44,8 +44,8 @@ No run passes every gate (G2 and G3 fail in all v3 runs). Runs a and b are in th
 
 * Prompt v3 is tuned on the dev split from Haiku's own failure modes; held-out behaviour, other models and a second sample are unmeasured. A model that already abstained correctly is not helped, and one that follows rule (4) too eagerly could write where a person would escalate; G1 was 0 in every run, but four runs are not a safety argument.
 * **False healthy from clean integrity** (seen in runs b and c): a case with a clean whole-package check but content evidence (spine headings) that disagrees with the catalog was answered `healthy` / `none`, the mismatch dismissed as cosmetic, so the integrity rule overrode content evidence. Rule 2 now says clean integrity evidence never outweighs disagreeing content or identity evidence; run d answered that case `insufficient_evidence` / `escalate`. One sample does not show the mode is gone.
-* Remaining misses in the shipped run: `decoder_incompatible` 2/5 (the model escalates when a clip's runtime matches none of the listed editions), `metadata_naming` called healthy when tags are merely empty, one healthy control whose whole-file decode is `unavailable` (v3 keeps "nothing unverified is healthy"),
-  and one G8 miss where a timed-out tool's id was listed in `evidence_refs` while the reason named the timeout. The explicit rule-9 line about `evidence_refs` was added in revision d; G8 was 100% in run d (one sample).
+* Remaining misses in the shipped run: `decoder_incompatible` 2/5 (the model escalates when a clip's runtime matches none of the listed editions), `metadata_naming` called healthy when tags are merely empty, and one healthy control whose whole-file decode is `unavailable` (v3 keeps "nothing unverified is healthy").
+* Run c's one G8 miss (a timed-out tool's id listed in `evidence_refs` while the reason named the timeout) led to the rule-9 line in revision d; G8 was 100% in run d (one sample), so it is not a remaining miss of the shipped text.
 * `write_rejection` counts replies the harness could parse as a write decision; an unparseable reply is not a known write (same as the scorer).
 * Everything from dev-c2's known limits still applies.
 
