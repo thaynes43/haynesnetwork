@@ -11,7 +11,7 @@ import hashlib
 import json
 from pathlib import Path
 
-import tools
+from . import tools
 
 
 def _path(inputs, key, suite_dir):

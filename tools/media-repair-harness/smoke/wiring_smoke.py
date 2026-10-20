@@ -16,11 +16,11 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE))   # live_smoke.py sits next to this file and puts the package on sys.path
 
-import adapters as A  # noqa: E402
-import run as R  # noqa: E402
-from evidence import live_smoke as LS  # noqa: E402
+import live_smoke as LS  # noqa: E402
+from media_repair_harness import adapters as A  # noqa: E402
+from media_repair_harness import run as R  # noqa: E402
 
 BEGIN, END = '===MRH-WIRING-SMOKE-BEGIN===', '===MRH-WIRING-SMOKE-END==='
 

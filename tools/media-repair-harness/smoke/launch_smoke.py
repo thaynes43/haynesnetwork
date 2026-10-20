@@ -18,7 +18,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 BEGIN, END = '===MRH-EVIDENCE-SMOKE-BEGIN===', '===MRH-EVIDENCE-SMOKE-END==='
-PACKAGE_FILES = ['__init__.py', 'core.py', 'avtools.py', 'epubtool.py', 'live_smoke.py']
+PACKAGE = HERE.parent / 'src' / 'media_repair_harness'
+PACKAGE_FILES = ['__init__.py', 'evidence/__init__.py', 'evidence/core.py', 'evidence/avtools.py', 'evidence/epubtool.py']
 NS = 'dev'
 
 
@@ -26,13 +27,14 @@ def bundle():
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode='w:gz') as t:
         for name in PACKAGE_FILES:
-            t.add(HERE / name, arcname='evidence/' + name, filter=lambda ti: (setattr(ti, 'uid', 0), setattr(ti, 'gid', 0), setattr(ti, 'mtime', 0), ti)[3])
+            t.add(PACKAGE / name, arcname='media_repair_harness/' + name, filter=lambda ti: (setattr(ti, 'uid', 0), setattr(ti, 'gid', 0), setattr(ti, 'mtime', 0), ti)[3])
+        t.add(HERE / 'live_smoke.py', arcname='smoke/live_smoke.py', filter=lambda ti: (setattr(ti, 'uid', 0), setattr(ti, 'gid', 0), setattr(ti, 'mtime', 0), ti)[3])
     return base64.b64encode(buf.getvalue()).decode()
 
 
 BOOT = ("import base64,io,os,sys,tarfile;"
         "tarfile.open(fileobj=io.BytesIO(base64.b64decode(os.environ['MRH_BUNDLE'])),mode='r:gz').extractall('/work');"
-        "os.execvp('python3',['python3','/work/evidence/live_smoke.py'])")
+        "os.execvp('python3',['python3','/work/smoke/live_smoke.py'])")
 
 
 def manifest(name, image, cpu):

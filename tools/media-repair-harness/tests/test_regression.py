@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import adapters as A
-import run as R
+from media_repair_harness import adapters as A
+from media_repair_harness import run as R
 import th
 
 SUITE = Path(__file__).resolve().parent / 'testdata' / 'regression'

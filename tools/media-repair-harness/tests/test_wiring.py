@@ -8,20 +8,20 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import adapters as A
-import audit as AU
-import evidence
-import gaps as GP
-import leakguard
-import protocol as P
-import replay_identity as RI
-import run as R
+from media_repair_harness import adapters as A
+from media_repair_harness import audit as AU
+from media_repair_harness import evidence
+from media_repair_harness import gaps as GP
+from media_repair_harness import leakguard
+from media_repair_harness import protocol as P
+from media_repair_harness import replay_identity as RI
+from media_repair_harness import run as R
 import th
-import tools as T
-from evidence import test_evidence as TE
+from media_repair_harness import tools as T
+import test_evidence as TE
 
 HERE = Path(__file__).resolve().parent
-SUITE = HERE.parent / 'suite'
+SUITE = th.SUITE
 GOLDEN = HERE / 'testdata' / 'replay-identity-dev-c1.json'
 FIX = th.TESTDATA / 'fixtures'
 NAME = 'flip-hevc-answer.mkv'   # a fixture name that encodes the answer, as the real suite's do
@@ -57,6 +57,7 @@ class ReplayIdentity(unittest.TestCase):
     """Replay is the default and must show the model exactly what dev-c1 showed: the digests below were computed from the dev-c1 tool
     layer (git 617e6ad4, before this wiring) over every dev-suite case, every offered tool and a fixed argument set."""
 
+    @th.needs_suite
     def test_every_dev_suite_case_shows_the_model_what_dev_c1_showed(self):
         golden = json.loads(GOLDEN.read_text())
         self.assertIn('617e6ad4', golden['reference'])

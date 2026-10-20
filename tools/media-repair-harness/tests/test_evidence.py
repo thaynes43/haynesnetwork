@@ -1,5 +1,5 @@
 """Unit tests for the evidence collectors.  No ffmpeg, no network: a fake runner stands in for every subprocess, and EPUBs are
-built with zipfile.  Run: nice -n 19 python3 -m unittest discover -s <harness dir> -p 'test_*.py'  (this folder is a package)."""
+built with zipfile.  Run: tools/media-repair-harness/scripts/ci-test.sh."""
 import json
 import os
 import sys
@@ -9,11 +9,9 @@ import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent))
-
-import evidence  # noqa: E402
-from evidence import avtools, core  # noqa: E402
-from evidence.core import RunResult  # noqa: E402
+from media_repair_harness import evidence  # noqa: E402
+from media_repair_harness.evidence import avtools, core  # noqa: E402
+from media_repair_harness.evidence.core import RunResult  # noqa: E402
 
 FFMPEG, FFPROBE, TESS = '/usr/bin/ffmpeg', '/usr/bin/ffprobe', '/usr/bin/tesseract'
 
@@ -921,7 +919,7 @@ class ReviewRegressionTests(Base):
         self.assertFalse(rec['output']['valid'])
 
     def test_epub_read_helper_counts_inflated_bytes_not_the_header(self):
-        from evidence import epubtool
+        from media_repair_harness.evidence import epubtool
         p = self.dir / 'z.zip'
         with zipfile.ZipFile(p, 'w', zipfile.ZIP_DEFLATED) as z:
             z.writestr('a', b'A' * 100000)

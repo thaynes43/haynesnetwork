@@ -2,7 +2,7 @@
 import json
 import unittest
 
-import audit as AU
+from media_repair_harness import audit as AU
 import th
 
 TV = th.make_case('tv-x', media='tv', context={

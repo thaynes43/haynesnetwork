@@ -83,12 +83,11 @@ Defaults and hard maxima are in `core.BOUND_SPEC` (a request above the hard maxi
 | `core.py` | bounds, subprocess runner, `Ctx`, record builder, `to_tool_result`, replay |
 | `avtools.py` | probe, decode, frames, audio, audiobook collectors |
 | `epubtool.py` | EPUB collector |
-| `test_evidence.py` | 100 unit tests (the last class is the regression set for the independent review of PR 1010): fake runner for every collector (ok, partial, timeout, missing binary, corrupt input), real zips for EPUB, real subprocess runner with tiny python children |
-| `live_smoke.py`, `launch_smoke.py` | the live smoke: generate synthetic fixtures and collect inside a CPU-limited Job, then fetch the records and delete the Job |
-| `testdata/live-smoke/` | records from that run, labelled live, with `RUN.json` (image digest, ffmpeg/ffprobe/python versions, fixture hashes) and `SUMMARY.md` |
+| `tests/test_evidence.py` | 100 unit tests (the last class is the regression set for the independent review of PR 1010): fake runner for every collector (ok, partial, timeout, missing binary, corrupt input), real zips for EPUB, real subprocess runner with tiny python children |
+| `smoke/live_smoke.py`, `smoke/launch_smoke.py` | the live smoke: generate synthetic fixtures and collect inside a CPU-limited Job, then fetch the records and delete the Job |
+| `tests/testdata/live-smoke/` | records from that run, labelled live, with `RUN.json` (image digest, ffmpeg/ffprobe/python versions, fixture hashes) and `SUMMARY.md` |
 
-Tests: `nice -n 19 python3 -m unittest discover -s <harness dir> -p 'test_*.py'` (this folder is a package, so the existing command finds them), or
-`python3 -m unittest discover -s <harness dir>/evidence -t <harness dir> -p 'test_*.py'` for these alone.
+Tests: `tools/media-repair-harness/scripts/ci-test.sh` (all harness tests), or `PYTHONPATH=tools/media-repair-harness/src python3 -m unittest discover -s tools/media-repair-harness/tests -t tools/media-repair-harness/tests -p 'test_evidence.py'` for these alone.
 
-Live smoke: `python3 launch_smoke.py --out testdata/live-smoke` (default image `ghcr.io/home-operations/bazarr:1.6.2`: python3 and ffmpeg 8.1.2, no tesseract; cpu limit 1, refuses above 2; the package travels in the Job spec as a base64 tarball,
+Live smoke: `python3 tools/media-repair-harness/smoke/launch_smoke.py --out tools/media-repair-harness/tests/testdata/live-smoke` (default image `ghcr.io/home-operations/bazarr:1.6.2`: python3 and ffmpeg 8.1.2, no tesseract; cpu limit 1, refuses above 2; the package travels in the Job spec as a base64 tarball,
 the Job is deleted at the end). The Job pod runs as non-root with the restricted pod security profile the `dev` namespace enforces.

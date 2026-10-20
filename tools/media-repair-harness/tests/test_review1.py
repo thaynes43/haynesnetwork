@@ -4,11 +4,11 @@ import json
 import tempfile
 import unittest
 
-import adapters as A
-import protocol as P
-import run as R
+from media_repair_harness import adapters as A
+from media_repair_harness import protocol as P
+from media_repair_harness import run as R
 import th
-import tools as T
+from media_repair_harness import tools as T
 from test_adapters import FakeOllama, snapshot
 from test_v2 import audit_obj, run_v2
 
@@ -34,7 +34,7 @@ class OrdinaryWordTitles(unittest.TestCase):
                 ts.cleanup()
 
     def test_case_ids_file_names_and_provenance_are_still_checked(self):
-        import leakguard as L
+        from media_repair_harness import leakguard as L
         case = th.make_case('movie-corrupt-001', provenance='new (a long synthetic provenance text)')
         case['fixture'] = {'kind': 'local', 'locator': 'media/hidden_name.mkv'}
         for leak in ('movie-corrupt-001', 'movie-corrupt', 'hidden_name.mkv', 'new (a long synthetic provenance text)'):

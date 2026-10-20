@@ -2,7 +2,7 @@ import json
 import subprocess
 import unittest
 
-import adapters as A
+from media_repair_harness import adapters as A
 import th
 
 S = th.TESTDATA / 'samples'

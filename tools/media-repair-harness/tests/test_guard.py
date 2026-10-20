@@ -3,11 +3,11 @@ import subprocess
 import threading
 import unittest
 
-import adapters as A
-import guard as G
-import ollama_transport as ot
+from media_repair_harness import adapters as A
+from media_repair_harness import guard as G
+from media_repair_harness import ollama_transport as ot
 import th
-import tools as T
+from media_repair_harness import tools as T
 from test_adapters import FakeOllama, snapshot
 
 

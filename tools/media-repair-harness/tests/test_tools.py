@@ -7,9 +7,9 @@ import unittest
 import wave
 from pathlib import Path
 
-import protocol as P
+from media_repair_harness import protocol as P
 import th
-import tools as T
+from media_repair_harness import tools as T
 
 FIX = th.TESTDATA / 'fixtures'
 

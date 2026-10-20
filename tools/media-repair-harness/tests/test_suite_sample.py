@@ -5,14 +5,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import adapters as A
-import outcomes
-import protocol as P
-import run as R
+from media_repair_harness import adapters as A
+from media_repair_harness import outcomes
+from media_repair_harness import protocol as P
+from media_repair_harness import run as R
 import th
-import tools as T
+from media_repair_harness import tools as T
 
-SAMPLE = th.HERE.parent / 'suite'
+SAMPLE = th.SUITE
 NO_BINARIES = lambda name: None
 
 
@@ -35,6 +35,7 @@ def call(ctx, tool, args=None):
     return r
 
 
+@th.needs_suite
 class ReplayMode(unittest.TestCase):
     def test_ffprobe_and_decode_replay_when_binaries_missing(self):
         case, ctx = ctx_for('tv-corrupt-003')
@@ -126,6 +127,7 @@ class ReplayMode(unittest.TestCase):
         self.assertEqual(rec['fixture']['verified'], True)
 
 
+@th.needs_suite
 class RealCases(unittest.TestCase):
     def test_pinned_fixture_cases_do_not_crash(self):
         case = load('tv-insuff-001')
@@ -197,6 +199,7 @@ class RealCases(unittest.TestCase):
         self.assertNotIn('error', rec)
 
 
+@th.needs_suite
 class OutcomeChecks(unittest.TestCase):
     def test_all_sampled_outcome_steps_match_expected(self):
         for cid in ('tv-outcome-001',):

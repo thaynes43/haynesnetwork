@@ -19,9 +19,10 @@ import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent))
+# Checkout: the package is under <component>/src.  Job bundle: it sits next to this folder.
+sys.path.insert(0, str(HERE.parent / 'src' if (HERE.parent / 'src' / 'media_repair_harness').is_dir() else HERE.parent))
 
-import evidence  # noqa: E402
+from media_repair_harness import evidence  # noqa: E402
 
 BEGIN, END = '===MRH-EVIDENCE-SMOKE-BEGIN===', '===MRH-EVIDENCE-SMOKE-END==='
 FF = ['nice', '-n', '19', 'ffmpeg', '-nostdin', '-y', '-hide_banner', '-loglevel', 'error', '-threads', '1']

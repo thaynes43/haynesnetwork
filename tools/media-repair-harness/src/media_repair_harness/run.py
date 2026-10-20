@@ -17,18 +17,20 @@ import time
 import traceback
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
+from . import adapters as A
+from . import audit as AU
+from . import gaps as GP
+from . import guard as G
+from . import leakguard
+from . import outcomes
+from . import protocol as P
+from . import tools as T
+from . import evidence as evcol
 
-import adapters as A  # noqa: E402
-import audit as AU  # noqa: E402
-import gaps as GP  # noqa: E402
-import guard as G  # noqa: E402
-import leakguard  # noqa: E402
-import outcomes  # noqa: E402
-import protocol as P  # noqa: E402
-import tools as T  # noqa: E402
-import evidence as evcol  # noqa: E402
+HERE = Path(__file__).resolve().parent
+# In a source checkout the component dir (tools/media-repair-harness, holding pyproject.toml) is what a run's git sha / dirty flag describe;
+# an installed copy has no git tree, so the sha comes from MRH_HARNESS_GIT_SHA when set (else it is recorded as missing, never invented).
+COMPONENT_DIR = HERE.parents[1] if (HERE.parents[1] / 'pyproject.toml').is_file() else HERE
 
 MAX_MODEL_CALLS = 2 * P.MAX_TOOL_CALLS + 6  # hard stop against loops: turns + repair + budget notice
 
@@ -43,10 +45,16 @@ def canonical(obj):
 
 def git_info():
     def g(*a):
-        r = subprocess.run(['git', '-C', str(HERE)] + list(a), capture_output=True, text=True)
+        try:
+            r = subprocess.run(['git', '-C', str(COMPONENT_DIR)] + list(a), capture_output=True, text=True)
+        except OSError:
+            return None
         return r.stdout.strip() if r.returncode == 0 else None
-    status = g('status', '--porcelain', '--', str(HERE))
-    return {'sha': g('rev-parse', 'HEAD'), 'dirty': bool(status), 'branch': g('rev-parse', '--abbrev-ref', 'HEAD')}
+    sha = g('rev-parse', 'HEAD')
+    if sha is None and os.environ.get('MRH_HARNESS_GIT_SHA'):
+        return {'sha': os.environ['MRH_HARNESS_GIT_SHA'], 'dirty': os.environ.get('MRH_HARNESS_GIT_DIRTY', '') == '1', 'branch': None}
+    status = g('status', '--porcelain', '--', str(COMPONENT_DIR))
+    return {'sha': sha, 'dirty': bool(status), 'branch': g('rev-parse', '--abbrev-ref', 'HEAD')}
 
 
 def find_cases_dir(suite):
@@ -454,7 +462,7 @@ def main(argv=None):
     adapter = build_adapter(args)
     ocr_backend = None
     if args.ocr_model:
-        import ollama_transport as ot
+        from . import ollama_transport as ot
         ocr_backend = T.ollama_ocr_backend(args.ocr_model, ot.api)
 
     evidence_bounds = json.loads(args.evidence_bounds) if args.evidence_bounds else {}

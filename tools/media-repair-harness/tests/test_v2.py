@@ -6,15 +6,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import adapters as A
-import audit as AU
-import leakguard as L
-import protocol as P
-import run as R
+from media_repair_harness import adapters as A
+from media_repair_harness import audit as AU
+from media_repair_harness import leakguard as L
+from media_repair_harness import protocol as P
+from media_repair_harness import run as R
 import th
 
 HERE = Path(__file__).resolve().parent
-SUITE_CASES = HERE.parent / 'suite' / 'cases'
+SUITE_CASES = th.SUITE / 'cases'
 REGRESSION = HERE / 'testdata' / 'regression'
 
 
@@ -79,6 +79,7 @@ class PromptV2(unittest.TestCase):
         for st in ('ok', 'partial', 'error', 'timeout', 'unavailable'):
             self.assertRegex(text, r'(?m)^- %s: ' % st)
 
+    @th.needs_suite
     def test_prompt_contains_no_suite_ids_titles_or_filenames(self):
         text = P.get_prompt('v2')['text']
         n = 0
@@ -96,6 +97,7 @@ class PromptV2(unittest.TestCase):
             for tok in (c['id'], (c['context'] or {}).get('title')):
                 self.assertIsNone(words(tok).search(text), tok)
 
+    @th.needs_suite
     def test_check_system_passes_the_prompt_for_every_case_and_catches_a_tailored_one(self):
         text = P.get_prompt('v2')['text']
         paths = sorted(SUITE_CASES.glob('*.json')) + sorted((REGRESSION / 'cases').glob('*.json'))

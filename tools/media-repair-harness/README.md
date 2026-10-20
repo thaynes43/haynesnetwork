@@ -1,8 +1,26 @@
 # Media repair harness: runner, adapters, tools, scorer
 
 Owner: OpenProject story [#132](https://work.haynesnetwork.com/work_packages/132) (epic #48). Normative interface:
-[`CONTRACT.md`](CONTRACT.md) (copy of the coordinator's contract v1). Gates: [`../GATES.md`](../GATES.md).
-Stdlib Python 3.11 only. Suite cases (`../suite/`) belong to W3; this directory owns the runner.
+[`CONTRACT.md`](../../.agents/context/media-repair-harness-2026-10-19/harness/CONTRACT.md) (copy of the coordinator's contract v1). Gates:
+[`GATES.md`](../../.agents/context/media-repair-harness-2026-10-19/GATES.md). Stdlib Python >= 3.11 only. Suite cases
+(`.agents/context/media-repair-harness-2026-10-19/suite/`) belong to W3; this component owns the runner.
+
+**Where things live (since the packaging move).** This is the durable home: `tools/media-repair-harness/`, an installable package
+(`pyproject.toml`, import name `media_repair_harness`, console scripts `mrh-run` and `mrh-score`). The assessment artifacts stay in
+`.agents/context/media-repair-harness-2026-10-19/` (`harness/runs/`, `harness/CONTRACT.md`, `harness/score.py`, `baseline/`, `suite/`, `GATES.md`,
+`heldout/`): the evaluator owns them and this component never edits them. The frozen candidates dev-c1 and dev-c2 ran from the old path
+(`.agents/context/media-repair-harness-2026-10-19/harness/`, flat modules); the move keeps `HARNESS_VERSION` (`dev-c2`), both prompt digests and the
+replay-identity digests byte for byte (`tests/test_packaging.py`, `tests/test_wiring.py`). Run records in `harness/runs/` name files at the old path.
+
+```
+tools/media-repair-harness/
+  pyproject.toml            package metadata (stdlib only, Python >= 3.11), entry points, package data (prompts/*.txt)
+  src/media_repair_harness/ the code (run, protocol, tools, evidence/, adapters, ...) + prompts/ + vendored_epub.py + score_compat.py
+  tests/                    unittest suite, th.py helpers, testdata/ (synthetic cases, fixtures, replay-identity golden, live-smoke records)
+  smoke/                    live-evidence smoke scripts that run inside a CPU-limited Job (never in CI)
+  scripts/ci-test.sh        THE deterministic test entry point (CI calls this); scripts/package-smoke.sh builds and checks an installed copy
+  docs/evidence-collectors.md, CHANGELOG.md, CONTRACT-v2-proposal.md
+```
 
 The harness never executes a write. Tools are read-only evidence collectors. A write action in a decision (`blocklist_and_search`,
 `remap`, `rename`, `convert`) is only recorded as an intent in the action audit (`executed: false`).
@@ -10,22 +28,30 @@ The harness never executes a write. Tools are read-only evidence collectors. A w
 ## Usage
 
 ```bash
-H=.agents/context/media-repair-harness-2026-10-19/harness
+C=tools/media-repair-harness                       # from the repo root
+A=.agents/context/media-repair-harness-2026-10-19  # assessment artifacts (suite, runs, score.py) stay here
+export PYTHONPATH=$C/src                           # or: pip install $C   (then use the mrh-run / mrh-score commands)
 # run (one record per case under --out; refuses a non-empty --out, failed runs are kept)
-python3 $H/run.py --suite <suite dir | cases dir> --adapter ollama|claude|codex|scripted --model <full id> [--cases a,b] [--split dev|heldout] --out $H/runs/<run-id>
-# score (writes score.json and score.md next to the records)
-python3 $H/score.py $H/runs/<run-id> --suite <suite dir>
-# tests (no model, no network, no GPU)
-nice -n 19 python3 -m unittest discover -s $H -p 'test_*.py'
+python3 -m media_repair_harness.run --suite <suite dir | cases dir> --adapter ollama|claude|codex|scripted --model <full id> [--cases a,b] [--split dev|heldout] --out $A/harness/runs/<run-id>
+# score (writes score.json and score.md next to the records; loads the evaluator-owned score.py by path, see score_compat.py)
+python3 -m media_repair_harness.score_compat $A/harness/runs/<run-id> --suite <suite dir>    # same as: mrh-score ...
+# tests (no model, no network, no GPU): serial, nice -n 19, prints the count, non-zero on any failure
+$C/scripts/ci-test.sh
+# installed-copy check (fresh venv outside the checkout; needs PyPI for the isolated build)
+$C/scripts/package-smoke.sh
 ```
 
-Examples (the harness' own test data in `testdata/`, four tiny synthetic cases):
+`ci-test.sh` finds the public dev suite repo-relative (`$A/suite`); `MRH_SUITE_DIR` points elsewhere. With `MRH_REQUIRE_SUITE=1` (CI sets it) a missing
+suite, evaluator `score.py` or EPUB source file FAILS instead of skipping. A run record's `harness_git_sha` comes from git in a checkout; an installed copy
+has no git tree, so set `MRH_HARNESS_GIT_SHA` (and `MRH_HARNESS_GIT_DIRTY=1` if needed) or the field is recorded as missing, never invented.
+
+Examples (the harness' own test data in `tests/testdata/`, four tiny synthetic cases):
 
 ```bash
-python3 $H/run.py --suite $H/testdata --adapter claude --model claude-haiku-5-5 --out $H/runs/testdata-haiku-5-5
-python3 $H/run.py --suite $H/testdata --adapter codex  --model gpt-6-luna  --out $H/runs/testdata-gpt-6-luna
-python3 $H/run.py --suite $H/testdata --adapter ollama --model qwen3.8:27b --out $H/runs/<id>     # read "GPU etiquette" first
-python3 $H/testdata/make_fixtures.py     # regenerates the three synthetic EPUBs deterministically
+python3 -m media_repair_harness.run --suite $C/tests/testdata --adapter claude --model claude-haiku-5-5 --out $A/harness/runs/testdata-haiku-5-5
+python3 -m media_repair_harness.run --suite $C/tests/testdata --adapter codex  --model gpt-6-luna  --out $A/harness/runs/testdata-gpt-6-luna
+python3 -m media_repair_harness.run --suite $C/tests/testdata --adapter ollama --model qwen3.8:27b --out $A/harness/runs/<id>     # read "GPU etiquette" first
+python3 $C/tests/testdata/make_fixtures.py     # regenerates the three synthetic EPUBs deterministically
 ```
 
 Evidence mode (dev-c2): `--evidence replay|live` (default `replay`: recorded and case-provided evidence exactly as in dev-c1) and, for live only, `--evidence-bounds '{"segments": 2}'`.
@@ -37,25 +63,26 @@ Run options: `--prompt v1|v2` (system prompt + turn protocol; default v1; versio
 
 ## Layout
 
-| File | Role |
+| File (under `src/media_repair_harness/` unless noted) | Role |
 |---|---|
 | `run.py` | Turn protocol loop, tool dispatch, failure injection, outcome step, run records, audit lines, manifest |
 | `protocol.py` | System prompt, JSON schemas (Ollama `format`), strict validator, forced decision, model-visible case view |
 | `adapters.py` | `OllamaAdapter`, `ClaudeAdapter`, `CodexAdapter`, `ScriptedAdapter` (tests) |
 | `tools.py` | Tool registry (ffprobe, decode_sample, frame_sample, audio_sample, ocr, epub_inspect, audiobook_inspect, arr_lookup) |
 | `outcomes.py` | Outcome-step checks (`epub_valid`, `epub_title_is`, `sha256_equals/differs`, `json_field_equals`) |
-| `score.py` | G1-G10, per-class accuracy, false diagnoses, false repairs, abstention, schema validity, tool failures, latency, cost; `score.json` + `score.md` |
+| `score_compat.py` (scorer: `.agents/context/media-repair-harness-2026-10-19/harness/score.py`, evaluator-owned, not moved) | loads score.py by explicit path and maps its flat `protocol` / `run` imports to this package; G1-G10, per-class accuracy, false diagnoses, false repairs, abstention, schema validity, tool failures, latency, cost; `score.json` + `score.md` |
 | `ollama_transport.py`, `remote_sampler.py` | Vendored transports (provenance below) |
 | `testdata/` | Synthetic cases, deterministic EPUB fixtures, recorded sample outputs of the CLIs (used by the parsing tests) |
 | `leakguard.py` | opaque case alias, fixture-name redaction and the pre-send leak guard |
 | `gaps.py` | dev-c2: capabilities and gaps (what a run could not verify, which call showed it, which harness tool would be needed); record only, never shown to the model |
-| `replay_identity.py`, `testdata/replay-identity-dev-c1.json` | dev-c2: sha256 digests, generated from the real dev-c1 code (`git archive 617e6ad4`), of the model-visible case view and every offered tool's rendered result for all 73 dev cases (fixed arguments, no ffmpeg on PATH), plus the v1/v2 system prompts, turn schemas, repair prompts and validator errors for a fixed list of bad replies, the budget notice, the not-offered message and bad-argument errors. Not covered: a machine that has ffprobe/ffmpeg, other arguments, adapters, record fields. `test_wiring.ReplayIdentity` recomputes and compares; the docstring of `replay_identity.py` is the exact list |
-| `wiring_smoke.py`, `launch_wiring_smoke.py`, `testdata/wiring-smoke/` | dev-c2: `run_case --evidence live` with a scripted adapter and real ffprobe/ffmpeg in a CPU-limited Job on synthetic fixtures (no model); the Job is deleted afterwards |
+| `replay_identity.py`, `tests/testdata/replay-identity-dev-c1.json` | dev-c2: sha256 digests, generated from the real dev-c1 code (`git archive 617e6ad4`), of the model-visible case view and every offered tool's rendered result for all 73 dev cases (fixed arguments, no ffmpeg on PATH), plus the v1/v2 system prompts, turn schemas, repair prompts and validator errors for a fixed list of bad replies, the budget notice, the not-offered message and bad-argument errors. Not covered: a machine that has ffprobe/ffmpeg, other arguments, adapters, record fields. `test_wiring.ReplayIdentity` recomputes and compares; the docstring of `replay_identity.py` is the exact list |
+| `smoke/wiring_smoke.py`, `smoke/launch_wiring_smoke.py`, `tests/testdata/wiring-smoke/` | dev-c2: `run_case --evidence live` with a scripted adapter and real ffprobe/ffmpeg in a CPU-limited Job on synthetic fixtures (no model); the Job is deleted afterwards |
 | `CONTRACT-v2-proposal.md` | dev-c2: proposal for the next contract (fields dev-c1/dev-c2 emit); for the evaluator to accept or reject, `CONTRACT.md` is untouched |
 | `audit.py`, `prompts/v2.txt` | dev-c1: action audit (proposal, preconditions computed met/unmet, never executed); prompt v2 (`--prompt v2`, default stays v1) |
-| `test_*.py`, `th.py` | unit tests and helpers (`test_leakguard.py`, `test_suite_sample.py` and `test_v2.py` read the merged W3 suite in `../suite`; `test_regression.py` drives the synthetic suite `testdata/regression/`, generated by `testdata/make_regression.py`, with fake model replies) |
+| `tests/test_*.py`, `tests/th.py` | unit tests and helpers (`test_leakguard.py`, `test_suite_sample.py`, `test_v2.py` and `test_wiring.py` read the public dev suite, located by `th.SUITE`; `test_regression.py` drives the synthetic suite `tests/testdata/regression/`, generated by `tests/testdata/make_regression.py`, with fake model replies; `test_packaging.py` pins versions, prompt digests, package data, the vendored EPUB module and the smoke bundles) |
+| `vendored_epub.py` | verbatim copy of `.agents/context/media-repair-actual-epub-2026-10-18/epub.py` with a provenance header; `tests/test_packaging.py` fails when the source and the copy diverge |
 | `CHANGELOG.md` | harness versions (`dev-c1` first), known limits |
-| `runs/` | Smoke and self-test run records (see table below) |
+| `runs/` (old location, `.agents/context/media-repair-harness-2026-10-19/harness/runs/`) | Smoke and self-test run records (see table below) |
 
 ## Protocol as implemented
 
@@ -155,7 +182,7 @@ Every status except `ok` leaves that part of the item unverified. A call to a to
 | `frame_sample` | frame name, size, sha256 (PNG kept in scratch only) | same |
 | `audio_sample` | RMS, peak, silent fraction of a 4 s mono 16 kHz sample (no speech recognition) | same + stdlib `wave` |
 | `ocr` | two OCR readings of a frame and an exact-match consensus | rule and prompt from `media-repair-av-identity-2026-10-18` (PR #1001); backend is a vision model on Prime (`--ocr-model`), otherwise the tool reports it is unavailable (Tesseract is not installed) |
-| `epub_inspect` | validity, CRC, titles, creators, languages, identifiers, spine with excerpts; structural damage is reported as `valid:false` with the problem | imports `media-repair-actual-epub-2026-10-18/epub.py` (PR #998) by path |
+| `epub_inspect` | validity, CRC, titles, creators, languages, identifiers, spine with excerpts; structural damage is reported as `valid:false` with the problem | uses `vendored_epub.py`, a verbatim copy of `media-repair-actual-epub-2026-10-18/epub.py` (PR #998) |
 | `audiobook_inspect` | duration, tags, audio streams, chapters | ffprobe `-show_chapters` (local or remote); `chapters` mode added to the remote sampler copy |
 | `arr_lookup` | **stub**: returns only the `context.arr` the case carries | no read-only Sonarr/Radarr path exists for the harness (no keys in the pod; all arr writes are confined to `packages/domain`). Say so in any report that uses it. |
 
@@ -164,7 +191,7 @@ Every status except `ok` leaves that part of the item unverified. A call to a to
 they have not been run against real media in this story.
 
 Provenance of reused code (all merged to main): `ollama_matrix.py` (PR #997) and `local_api.py` (PR #1002) -> `ollama_transport.py`;
-`sample_remote.py` (PR #1000) -> `remote_sampler.py`; `epub.py` (PR #998) imported; `ocr.py` consensus rule and prompt (PR #1001) re-implemented in `tools.py`.
+`sample_remote.py` (PR #1000) -> `remote_sampler.py`; `epub.py` (PR #998) vendored as `vendored_epub.py`; `ocr.py` consensus rule and prompt (PR #1001) re-implemented in `tools.py`.
 
 ## Interpretation notes (scorer)
 

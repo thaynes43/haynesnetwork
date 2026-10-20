@@ -3,7 +3,7 @@ from the case fixture, never from model arguments.  Every tool returns a ToolRes
 (8 KiB) and which finishes inside the tool timeout (60 s).
 
 Reuse (see README provenance table):
-  epub_inspect     -> .agents/context/media-repair-actual-epub-2026-10-18/epub.py (imported by path)
+  epub_inspect     -> vendored_epub.py, a verbatim copy of .agents/context/media-repair-actual-epub-2026-10-18/epub.py (provenance header inside)
   remote ffprobe / decode / frame / audio -> remote_sampler.py, copied from media-repair-av-2026-10-18/sample_remote.py
   ocr              -> consensus rule of media-repair-av-identity-2026-10-18 (two readings, exact equality
                       after whitespace normalisation), prompt and schema from its ocr-config.json
@@ -12,7 +12,6 @@ Reuse (see README provenance table):
 import array
 import base64
 import hashlib
-import importlib.util
 import json
 import os
 import re
@@ -25,15 +24,13 @@ import io
 import concurrent.futures
 import threading
 
-import leakguard
 from pathlib import Path
 
-import evidence as evcol
-from protocol import TOOL_OUTPUT_BYTES, TOOL_TIMEOUT_S
+from . import evidence as evcol
+from . import leakguard
+from .protocol import TOOL_OUTPUT_BYTES, TOOL_TIMEOUT_S
 
 HERE = Path(__file__).resolve().parent
-CONTEXT = HERE.parents[1]  # .agents/context
-EPUB_MODULE = CONTEXT / 'media-repair-actual-epub-2026-10-18' / 'epub.py'
 REMOTE_SAMPLER = HERE / 'remote_sampler.py'
 OCR_PROMPT = ('Transcribe only readable text literally visible in this image. If there is no readable text, '
               'return an empty string. Do not name objects, infer the episode, or guess. Return only the schema object.')
@@ -641,9 +638,8 @@ _epub = None
 def _epub_module():
     global _epub
     if _epub is None:
-        spec = importlib.util.spec_from_file_location('mrh_epub', EPUB_MODULE)
-        _epub = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(_epub)
+        from . import vendored_epub
+        _epub = vendored_epub
     return _epub
 
 

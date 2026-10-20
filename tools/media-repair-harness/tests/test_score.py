@@ -4,8 +4,20 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import score as S
+from media_repair_harness import score_compat
 import th
+
+S = None   # the evaluator-owned score.py, loaded by explicit path (see score_compat)
+
+
+def setUpModule():
+    global S
+    try:
+        S = score_compat.load_score()
+    except FileNotFoundError as e:
+        if th.os.environ.get('MRH_REQUIRE_SUITE') == '1':
+            raise AssertionError('%s; MRH_REQUIRE_SUITE=1 forbids skipping' % e)
+        raise th.unittest.SkipTest(str(e))
 
 
 def build_cases():

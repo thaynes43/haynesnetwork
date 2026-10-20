@@ -16,21 +16,24 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE / 'evidence'))
+sys.path.insert(0, str(HERE))
 import launch_smoke as L  # noqa: E402
 
 BEGIN, END = '===MRH-WIRING-SMOKE-BEGIN===', '===MRH-WIRING-SMOKE-END==='
-FILES = ['adapters.py', 'audit.py', 'gaps.py', 'guard.py', 'leakguard.py', 'outcomes.py', 'protocol.py', 'remote_sampler.py', 'ollama_transport.py', 'run.py',
-         'tools.py', 'wiring_smoke.py', 'prompts/v2.txt', 'prompts/v1.txt', 'evidence/__init__.py', 'evidence/core.py', 'evidence/avtools.py', 'evidence/epubtool.py',
-         'evidence/live_smoke.py']
+PACKAGE = HERE.parent / 'src' / 'media_repair_harness'
+FILES = ['__init__.py', 'adapters.py', 'audit.py', 'gaps.py', 'guard.py', 'leakguard.py', 'outcomes.py', 'protocol.py', 'remote_sampler.py', 'ollama_transport.py', 'run.py',
+         'tools.py', 'vendored_epub.py', 'prompts/v2.txt', 'evidence/__init__.py', 'evidence/core.py', 'evidence/avtools.py', 'evidence/epubtool.py']
+SMOKE_FILES = ['live_smoke.py', 'wiring_smoke.py']
 
 
 def bundle():
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode='w:gz') as t:
+        norm = lambda ti: (setattr(ti, 'uid', 0), setattr(ti, 'gid', 0), setattr(ti, 'mtime', 0), ti)[3]
         for name in FILES:
-            if (HERE / name).exists():
-                t.add(HERE / name, arcname='harness/' + name, filter=lambda ti: (setattr(ti, 'uid', 0), setattr(ti, 'gid', 0), setattr(ti, 'mtime', 0), ti)[3])
+            t.add(PACKAGE / name, arcname='media_repair_harness/' + name, filter=norm)
+        for name in SMOKE_FILES:
+            t.add(HERE / name, arcname='smoke/' + name, filter=norm)
     data = base64.b64encode(buf.getvalue()).decode()
     assert len(data) < 120000, 'bundle too large for one environment string: %d' % len(data)
     return data
@@ -38,7 +41,7 @@ def bundle():
 
 BOOT = ("import base64,io,os,tarfile;"
         "tarfile.open(fileobj=io.BytesIO(base64.b64decode(os.environ['MRH_BUNDLE'])),mode='r:gz').extractall('/work');"
-        "os.execvp('python3',['python3','/work/harness/wiring_smoke.py'])")
+        "os.execvp('python3',['python3','/work/smoke/wiring_smoke.py'])")
 
 
 def main():

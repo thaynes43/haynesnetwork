@@ -4,14 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import adapters as A
-import leakguard as L
-import protocol as P
-import run as R
+from media_repair_harness import adapters as A
+from media_repair_harness import leakguard as L
+from media_repair_harness import protocol as P
+from media_repair_harness import run as R
 import th
-import tools as T
+from media_repair_harness import tools as T
 
-SUITE = th.HERE.parent / 'suite'
+SUITE = th.SUITE
 NO_BINARIES = lambda name: None
 
 
@@ -125,6 +125,7 @@ class Guard(unittest.TestCase):
         self.assertTrue(rec['error']['leak_guard'])
 
 
+@th.needs_suite
 class SuiteSweep(unittest.TestCase):
     """All 73 merged suite cases: the first request and every replay tool output pass the guard."""
 

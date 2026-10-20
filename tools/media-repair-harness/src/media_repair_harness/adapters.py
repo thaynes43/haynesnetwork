@@ -14,8 +14,8 @@ import tempfile
 import time
 from pathlib import Path
 
-import ollama_transport as ot
-from protocol import TURN_SCHEMA
+from . import ollama_transport as ot
+from .protocol import TURN_SCHEMA
 
 
 class AdapterError(Exception):

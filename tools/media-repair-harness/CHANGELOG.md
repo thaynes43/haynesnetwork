@@ -1,5 +1,19 @@
 # Harness changelog
 
+## Packaging (no harness-version change; `HARNESS_VERSION` stays `dev-c2`)
+
+Moved from `.agents/context/media-repair-harness-2026-10-19/harness/` to `tools/media-repair-harness/` as an installable stdlib-only package
+(`media_repair_harness`, Python >= 3.11, console scripts `mrh-run` and `mrh-score`). Behaviour and everything the model sees are byte-identical to dev-c2
+(system prompt digests and the replay-identity golden are pinned in `tests/test_packaging.py` and `tests/test_wiring.py`). What changed around the code:
+
+* Flat `import tools` style imports became package-relative; the `sys.path` edits are gone. Tests import `media_repair_harness`.
+* `epub.py` is vendored as `vendored_epub.py` (verbatim, provenance header) instead of being imported by repo path; a test fails if the source and the copy diverge.
+* The evaluator-owned `score.py` / `CONTRACT.md` / `runs/` stay at the old location. `score_compat.load_score()` / `mrh-score` load `score.py` by path and map its flat
+  `protocol` / `run` imports to the package. Running the old `score.py` directly no longer works (its modules moved); use `mrh-score`.
+* `run.git_info()` describes the component directory (it used to describe the old harness folder); with no git tree (installed copy) it reads `MRH_HARNESS_GIT_SHA`.
+* Job smoke scripts moved to `smoke/` and bundle the package tree. Test entry point: `scripts/ci-test.sh`; installed-copy check: `scripts/package-smoke.sh`.
+* `MRH_SUITE_DIR` locates the public dev suite; `MRH_REQUIRE_SUITE=1` turns a missing suite / `score.py` / EPUB source into a failure instead of a skip.
+
 ## dev-c2 (candidate, OpenProject #135)
 
 Evidence wiring, `unavailable` everywhere, capabilities and gaps, and a contract proposal. Not scoring: `score.py`, `CONTRACT.md`, the suite, labels and gates are

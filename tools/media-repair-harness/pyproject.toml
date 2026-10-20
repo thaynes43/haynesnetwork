@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "media-repair-harness"
+# Distribution version, independent of protocol.HARNESS_VERSION ("dev-c2"), which is what run records and manifests carry.
+version = "0.2.0"
+description = "Read-only evidence and decision harness for media-repair models (stdlib only)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+mrh-run = "media_repair_harness.run:main"
+mrh-score = "media_repair_harness.score_compat:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# Resources the code loads at run time: the model-visible v2 system prompt and the stdin script piped to a remote host.
+media_repair_harness = ["prompts/*.txt"]

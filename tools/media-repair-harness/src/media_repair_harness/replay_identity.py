@@ -16,7 +16,7 @@ other than `CALLS`, adapters and the raw requests they build, the record fields 
 `evidence`), and anything live.
 
 The golden was generated from the dev-c1 code itself: `git archive 617e6ad4` extracted to a scratch directory, this file copied into its
-`harness/`, and `python3 replay_identity.py <that checkout's suite dir> > testdata/replay-identity-dev-c1.json` run there.  So the comparison
+`harness/`, and `python3 replay_identity.py <that checkout's suite dir> > testdata/replay-identity-dev-c1.json` run there (in this package: `python3 -m media_repair_harness.replay_identity <suite dir>`).  So the comparison
 is dev-c1's real output against the current tree's, not a self-comparison.  This file only uses names that exist in both trees.
 """
 import hashlib
@@ -25,12 +25,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
-
-import protocol as P  # noqa: E402
-import run as R  # noqa: E402
-import tools as T  # noqa: E402
+from . import protocol as P
+from . import run as R
+from . import tools as T
 
 # One fixed call list per tool; arguments are the public numeric/option ones.  ocr runs after frame_sample so its frame name exists.
 CALLS = {

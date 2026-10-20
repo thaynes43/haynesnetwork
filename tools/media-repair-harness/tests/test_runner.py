@@ -3,9 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import adapters as A
-import protocol as P
-import run as R
+from media_repair_harness import adapters as A
+from media_repair_harness import protocol as P
+from media_repair_harness import run as R
 import th
 
 

@@ -1,9 +1,9 @@
 """Live, bounded, read-only evidence collectors for the media repair harness (OpenProject #138).
 
-    from evidence import collect, to_tool_result
+    from media_repair_harness.evidence import collect, to_tool_result
     records = collect('/path/to/file.mkv', ['probe', 'decode'], {'segments': 2})
 
-See README.md in this folder for the record shape, the bounds and the limits.  Wired into tools.py / run.py from harness dev-c2 as the
+See tools/media-repair-harness/docs/evidence-collectors.md for the record shape, the bounds and the limits.  Wired into tools.py / run.py from harness dev-c2 as the
 opt-in `--evidence live` mode; the collectors themselves know nothing about cases.
 """
 import json

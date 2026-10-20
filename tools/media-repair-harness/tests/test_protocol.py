@@ -1,7 +1,7 @@
 import json
 import unittest
 
-import protocol as P
+from media_repair_harness import protocol as P
 
 GOOD_DECISION = {'type': 'decision', 'class': 'healthy', 'action': 'none', 'target': None, 'confidence': 0.9,
                  'evidence_refs': ['e1'], 'reason': 'fine'}
