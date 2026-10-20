@@ -107,6 +107,54 @@ Identity comparison (generic, deterministic): values are case-folded, accents re
 For a decision, the prefix is everything shown before it. An **uncalled available check** is a link candidate that is `available`, for an offered tool, with arguments valid for the advertisement, that repeats no call already made (and no call that failed, timed out or was unavailable), while the remaining budget at the decision is at least one. The count is a neutral observation about the transcript, never a recoverable error.
 <!-- END FROZEN RUBRIC contract-v3-rubric-1 -->
 
-## 10. Prototypes and tests
+## 10. Prototypes (experimental, not selectable)
 
-Filled in after the freeze; see the sections below.
+All under `src/media_repair_harness/experimental/contract_v3/`; nothing outside `experimental/` imports them (tested), and `run.EVIDENCE_FORMATS` is still `('v2',)`.
+
+| Module | What it does |
+|---|---|
+| `rubric.py` | the frozen rubric as data (`RUBRIC`, sha256 pinned): statement kinds, presence states, naming surfaces, material uncertainty M1 to M9, H1 to H4, identity levels, `CHECKS` (allowed and excluded kinds per check), diagnosis and action prerequisites, execution prerequisites, link and uncalled rules, forbidden output fields. Exported as JSON in `docs/contract-v3-prerequisites.json` |
+| `presence.py` | the six presence states per typed field of every typed source (ffprobe, audiobook_inspect, epub_inspect, decode_sample, audio_sample, ocr, the live collectors, arr_lookup, prior_record), `not_checked` / `unknown` per source, and exactly the explicit empty / null / false / zero values that the v2 filters dropped (`evidence_v2.py` probe filter, audiobook filter, EPUB filter, decode `error_lines`) |
+| `facts.py` | canonical atomic facts; the v3 presentation (`render`): items without per-item caveats, one `open` list of deduplicated unresolved statements with every source id and their `available_check`, facts with the explicit empties and a `presence` map, coverage and client comparison once, alerts and `open_total` on every page, paginated with the unchanged `pages-v1` code; `reassemble` and `facts_from_body` rebuild the canonical facts from the pages |
+| `links.py` | typed open items (each v2 unresolved template mapped to a scope; coverage rows not checked) and the pure link function |
+| `targets.py` | `decision-v3` validation (source binding, action-specific targets, executor-allocated copy), the all-or-nothing version check (no v3 element with prompts v1 to v5, v5 explicitly), and an audit v3 prototype that reports every prerequisite state and the execution prerequisites |
+| `prereq.py` | the checker: each prerequisite against actual values, execution state, scope, kind and provenance; outputs states and references only |
+| `uncalled.py` | the decision-prefix counter over recorded runs |
+
+Offline scripts (no model call): `scripts/contract_v3_uncalled.py`, `scripts/contract_v3_tension.py`, `scripts/contract_v3_sizes.py`.
+
+## 11. Tests
+
+| File | Area | Tests |
+|---|---|---|
+| `tests/test_contract_v3_facts.py` | presence states (six-way, every typed source, live records, not_checked / unknown), explicit empties restored and only those, paired negatives, deduplication with every source kept, conflicts and diagnostics local, pagination reassembly at 8192 / 4096 / 2560 with alerts and `open_total` on every page, neutral wording, no verdict field, leakage | 15 |
+| `tests/test_contract_v3_links.py` | links unchanged when uncalled clean / damaged / error recordings are swapped under the real advertisement, no result or budget input, advertised offsets only, zero / many / unknown / called / called_failed, template coverage, decision-prefix counting with arguments, budget, earlier calls and failures, page fetches | 7 |
+| `tests/test_contract_v3_prereq.py` | frozen rubric and document digests, no full decode and no integrity identity in the rubric, no verdict field, damage and support grade by execution state (partial, error with cause tool, decoder_warning, unclassified), healthy without full decode and with the remainder still unchecked, identity from content but not from tags, reported hashes, reported declarations or clean decodes, free text not a disagreement, consistent identifier and title substitution, observation permutation, naming surface empty versus absent versus null / false / zero, edition fit, source binding verified / different / missing, convert without a destination and with an invented one, remap free / occupied / unstated slot, rename old and new values, version combinations, the machine-readable table equal to the rubric | 19 |
+| `tests/test_contract_v3_baseline.py` | no production import of the prototypes, no v3 runner option, pinned dev-c4 / dev-c5 manifests, dev-c5 failed result kept, the 146 dev-c5 transcripts (both base runs; the restored views have identical transcripts) re-rendered offline with requests, decisions, guard outcomes, reference resolution, audit, capabilities, page logs and summaries equal to the records, and the 1101 dev-c4 records' guard outcomes reproduced, label-tension notes never read by any module | 7 |
+
+Expected values are written by hand from the synthetic observations, or derived from the raw recorded observations; none is produced by the code under test.
+
+## 12. Results
+
+**Uncalled available checks at the decision prefix (dev-c5, `docs/contract-v3-uncalled.json`).** Counted from the model's own decision (before guards), the two base runs (the restored views share their transcripts):
+
+| Run | Escalations | With at least one uncalled available check | Candidates counted | Escalations with no budget left |
+|---|---|---|---|---|
+| claude-haiku-5-5 | 34 | 8 | 20, all `decode_sample` (windows inside the unchecked time, or the recorded full decode) | 0 |
+| qwen3.8:27b | 17 | 7 | 23, all `decode_sample` | 0 |
+
+19 non-escalation decisions of each run also had one. These are transcript observations, not errors, and not a claim that calling the check would have changed the decision.
+
+**Neutral label-tension list (`docs/contract-v3-label-tension.md`, id and reason only).** 6 of 73 public dev cases: `audiobook-identity-001`, `audiobook-identity-002`, `epub-identity-001`, `epub-identity-002`, `movie-identity-001` (the identity_mismatch label needs a content observation that disagrees with the catalog; the case holds only declarations or reported claims and no offered tool yields content; two of them also have no evidenced source binding for their blocklist-only label), and `audiobook-naming-001` (the rename-only label needs content-verified identity, which no offered tool yields). Labels are unchanged and the contract is not weakened; the evaluator decides.
+
+**Size within the existing page limits (`docs/contract-v3-sizes.json`, the 73 dev-c5 first messages, same frame and page contract).** At 8192 bytes: v2 median 2569 / max 5439 bytes, v3 median 2877 / max 6836, one page each, 0 `PageBudgetError`. At 2560: v2 38 multi-page first messages, v3 54 (max 5 pages), 0 errors. v3 is larger mainly because of the `available_check` lists; smaller is not claimed.
+
+## 13. Limits and open questions
+
+* **Prototypes, not production.** Nothing here is wired into the runner, so no model has seen a v3 request, and the synthetic tests say nothing about scores. Wiring, a prompt that declares contract v3 (and explains `open`, `presence` and `available_check`), and any measurement are later stories.
+* **Free-text identity is judged, not computed.** The checker compares typed fields and episode markers; free text that names no catalog value is `not_comparable`, so a different work named only in free text is `unknown` to the checker. The model's judgement remains necessary there.
+* **Edition fit is by runtime only**; episode-order fit is not computed (two listed orders count as two candidates unless a choice settles them).
+* **Source binding** reads the managing app's file record (`relativePath`, file id). A case whose catalog record names no file leaves binding `unknown`, which is what two of the tension entries report.
+* **Q-01 stays open** (remap with identity_mismatch versus metadata_naming): the rubric accepts both, as v4 and the guards do.
+* **M9** (a complaint whose subject no observation reaches) is stated as `unknown` by the checker: whether an observation reaches a free-text complaint is judged.
+* The rubric text was written after the required reading of AUDIT-ASTRA-15, which names the truth of some dev cases; it names no case and contains no case-specific rule, and no suite label, truth field or scorer output was opened before the freeze commit `59e15d49`.

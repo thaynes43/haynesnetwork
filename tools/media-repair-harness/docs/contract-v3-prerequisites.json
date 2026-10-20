@@ -1,0 +1,673 @@
+{
+ "actions": {
+  "blocklist_and_search": {
+   "classes": [
+    "identity_mismatch",
+    "corrupt_file"
+   ],
+   "execution": [
+    "the release record still links the bound source",
+    "the blocklist entry is recorded so it can be removed"
+   ],
+   "prerequisites": [
+    {
+     "check": "managed_app",
+     "id": "A-BLK-1"
+    },
+    {
+     "check": "source_bound",
+     "id": "A-BLK-2"
+    },
+    {
+     "check": "support_grade_defect",
+     "id": "A-BLK-3",
+     "when_class": "corrupt_file"
+    },
+    {
+     "check": "identity_disagreement",
+     "id": "A-BLK-4",
+     "support_grade": true,
+     "when_class": "identity_mismatch"
+    }
+   ],
+   "source": "source_bound",
+   "target": {
+    "fields": [
+     "source_ref"
+    ],
+    "kind": "release_of_source"
+   }
+  },
+  "convert": {
+   "classes": [
+    "decoder_incompatible"
+   ],
+   "execution": [
+    "the executor allocates and names the isolated copy",
+    "the copy does not overwrite an existing file (no-overwrite)",
+    "the copy is validated against the stated client"
+   ],
+   "not_prerequisites": [
+    "a destination name from the model",
+    "a clean full decode of the source"
+   ],
+   "prerequisites": [
+    {
+     "check": "source_bound",
+     "id": "A-CNV-0"
+    },
+    {
+     "check": "stated_client",
+     "id": "A-CNV-1"
+    },
+    {
+     "check": "unsupported_selected_stream",
+     "id": "A-CNV-2"
+    }
+   ],
+   "source": "source_bound",
+   "target": {
+    "allocated_by": "executor",
+    "fields": [],
+    "kind": "isolated_copy"
+   }
+  },
+  "escalate": {
+   "classes": "any",
+   "execution": [],
+   "prerequisites": [],
+   "source": null,
+   "target": null
+  },
+  "none": {
+   "classes": [
+    "healthy"
+   ],
+   "execution": [],
+   "prerequisites": [],
+   "source": null,
+   "target": null
+  },
+  "remap": {
+   "classes": [
+    "identity_mismatch",
+    "metadata_naming"
+   ],
+   "execution": [
+    "the destination slot is still free at execution time (collision check)",
+    "no file is overwritten or deleted"
+   ],
+   "prerequisites": [
+    {
+     "check": "managed_app",
+     "id": "A-MAP-1"
+    },
+    {
+     "check": "source_bound",
+     "id": "A-MAP-2"
+    },
+    {
+     "check": "destination_evidenced",
+     "id": "A-MAP-3"
+    },
+    {
+     "check": "free_slot",
+     "id": "A-MAP-4"
+    }
+   ],
+   "source": "source_bound",
+   "target": {
+    "fields": [
+     "slot_ref",
+     "slot_free_ref"
+    ],
+    "kind": "destination_slot"
+   }
+  },
+  "rename": {
+   "classes": [
+    "metadata_naming"
+   ],
+   "execution": [
+    "the new name does not collide with another file",
+    "the old value is recorded for the undo"
+   ],
+   "prerequisites": [
+    {
+     "check": "source_bound",
+     "id": "A-REN-0"
+    },
+    {
+     "check": "identity_level",
+     "id": "A-REN-1",
+     "value": "content_verified"
+    },
+    {
+     "check": "old_value",
+     "id": "A-REN-2"
+    },
+    {
+     "check": "new_value",
+     "id": "A-REN-3"
+    }
+   ],
+   "source": "source_bound",
+   "target": {
+    "fields": [
+     "old_value",
+     "new_value"
+    ],
+    "kind": "rename_of_source"
+   }
+  }
+ },
+ "axes": [
+  "integrity",
+  "identity",
+  "naming",
+  "ordering",
+  "client"
+ ],
+ "checks": {
+  "declaration_disagreement": {
+   "kinds": [
+    "declaration",
+    "report_declaration",
+    "report_hash"
+   ],
+   "value": "a declared identity / edition value that disagrees with the catalog"
+  },
+  "destination_evidenced": {
+   "kinds": [
+    "content",
+    "report_content"
+   ],
+   "value": "content names the item the file really is, and the catalog lists that item"
+  },
+  "free_slot": {
+   "kinds": [
+    "catalog"
+   ],
+   "value": "a catalog record of the destination item shows NO linked file (explicit null / empty / hasFile false); absent is not evidence"
+  },
+  "identity_agreement": {
+   "kinds": [
+    "content",
+    "report_content"
+   ],
+   "never": [
+    "declaration",
+    "report_declaration",
+    "report_hash",
+    "integrity",
+    "integrity_signal",
+    "catalog"
+   ],
+   "value": "a content value that contains a catalog identity value (title, alias, episode title or marker)"
+  },
+  "identity_disagreement": {
+   "kinds": [
+    "content",
+    "report_content"
+   ],
+   "never": [
+    "declaration",
+    "report_declaration",
+    "report_hash",
+    "integrity",
+    "integrity_signal",
+    "catalog"
+   ],
+   "value": "a typed title / episode / author / language field, or an episode marker in text, that disagrees with every catalog value after aliases and orderings"
+  },
+  "located_defect": {
+   "execution": [
+    "ran",
+    "failed",
+    "timed_out"
+   ],
+   "kinds": [
+    "integrity"
+   ],
+   "value": "a finding with known_defect true and a location"
+  },
+  "managed_app": {
+   "kinds": [
+    "catalog"
+   ],
+   "value": "context.arr.app is a managing app (sonarr, radarr, lidarr, readarr, bookshelf, lazylibrarian)"
+  },
+  "naming_surface_defect": {
+   "kinds": [
+    "declaration"
+   ],
+   "value": "M6: an explicitly empty, or differing, naming-surface field (absent is NOT evidence: it is unknown)"
+  },
+  "new_value": {
+   "kinds": [
+    "catalog"
+   ],
+   "value": "the catalog value the naming surface should carry, populated and different from the old value"
+  },
+  "no_settling_choice": {
+   "kinds": [
+    "catalog"
+   ],
+   "value": "no case-supplied choice (series_order, library_episode_order, wanted / monitored edition) that selects one candidate"
+  },
+  "old_value": {
+   "kinds": [
+    "declaration",
+    "catalog"
+   ],
+   "value": "the current naming-surface value, populated"
+  },
+  "positively_clean": {
+   "execution": [
+    "ran"
+   ],
+   "kinds": [
+    "integrity"
+   ],
+   "value": "H1"
+  },
+  "source_bound": {
+   "kinds": [
+    "catalog"
+   ],
+   "value": "the managing app's record of the linked file (relativePath / file id) equals the case's file name or file id; for an unmanaged item the case item itself"
+  },
+  "stated_client": {
+   "kinds": [
+    "client"
+   ],
+   "value": "context.client_profile or context.expected.client_profile populated"
+  },
+  "support_grade_defect": {
+   "execution": [
+    "ran",
+    "failed"
+   ],
+   "kinds": [
+    "integrity"
+   ],
+   "value": "located_defect from a result that ran to completion (state ran, status ok), or an error result whose cause is not tool"
+  },
+  "two_candidates": {
+   "kinds": [
+    "catalog"
+   ],
+   "value": "two or more legitimate candidates listed by the case (editions, episode orders, aliases with different numbering)"
+  },
+  "unsupported_selected_stream": {
+   "kinds": [
+    "client",
+    "declaration"
+   ],
+   "value": "client_comparison row unsupported, selection recorded or only_stream_of_type"
+  }
+ },
+ "diagnosis": {
+  "corrupt_file": [
+   {
+    "check": "located_defect",
+    "id": "D-COR-1"
+   }
+  ],
+  "decoder_incompatible": [
+   {
+    "check": "stated_client",
+    "id": "D-DEC-1"
+   },
+   {
+    "check": "unsupported_selected_stream",
+    "id": "D-DEC-2"
+   }
+  ],
+  "healthy": [
+   {
+    "check": "H1",
+    "id": "D-OK-H1"
+   },
+   {
+    "check": "H2",
+    "id": "D-OK-H2"
+   },
+   {
+    "check": "H3",
+    "id": "D-OK-H3"
+   },
+   {
+    "check": "H4",
+    "id": "D-OK-H4"
+   }
+  ],
+  "identity_mismatch": [
+   {
+    "check": "identity_disagreement",
+    "id": "D-ID-1"
+   }
+  ],
+  "insufficient_evidence": [
+   {
+    "check": "none_established",
+    "id": "D-INS-1",
+    "value": "no other class established and healthy not established"
+   }
+  ],
+  "metadata_naming": [
+   {
+    "check": "naming_surface_defect",
+    "id": "D-NAME-1"
+   },
+   {
+    "check": "positively_clean",
+    "id": "D-NAME-2"
+   },
+   {
+    "check": "identity_level",
+    "id": "D-NAME-3",
+    "value": "uncontradicted or content_verified (contested or contradicted is not naming)"
+   }
+  ],
+  "order_edition_ambiguity": [
+   {
+    "check": "two_candidates",
+    "id": "D-ORD-1"
+   },
+   {
+    "check": "no_settling_choice",
+    "id": "D-ORD-2"
+   }
+  ]
+ },
+ "edition_attributes": [
+  "language",
+  "year",
+  "narrator",
+  "edition"
+ ],
+ "forbidden_fields": [
+  "sufficient",
+  "solvable",
+  "recommended_action",
+  "recommended",
+  "expected_class",
+  "truth",
+  "label",
+  "will_resolve"
+ ],
+ "healthy": [
+  {
+   "id": "H1",
+   "text": "at least one integrity result ran with status ok and is positively clean inside its stated scope (a parsed container with streams, a package with every stage clean, a decoded window with frames and no messages)"
+  },
+  {
+   "id": "H2",
+   "text": "no known_defect finding and no collector veto in any shown result, of any execution state"
+  },
+  {
+   "id": "H3",
+   "text": "no material uncertainty M1 to M9"
+  },
+  {
+   "id": "H4",
+   "text": "identity is uncontradicted (no M5); positive content confirmation of identity is NOT required for none, which changes nothing"
+  }
+ ],
+ "identity_attributes": [
+  "title",
+  "series",
+  "episode_number",
+  "episode_title",
+  "author"
+ ],
+ "identity_levels": {
+  "content_verified": "a content or report_content observation agrees with the catalog on an identity attribute and nothing contradicts it",
+  "contested": "only declarations, report_declaration or report_hash disagree with the catalog; no content observation settles it",
+  "contradicted_by_content": "a content or report_content observation disagrees with the catalog on an identity or edition attribute",
+  "uncontradicted": "nothing disagrees with the catalog, and no content observation confirms it"
+ },
+ "link_rules": {
+  "availability": [
+   "available",
+   "unavailable",
+   "unknown",
+   "called",
+   "called_failed"
+  ],
+  "cardinality": "zero, one or many candidates",
+  "inputs": [
+   "visible observations",
+   "advertised capabilities",
+   "TOOL_SEMANTICS"
+  ],
+  "meaning": "may inspect this scope; never will resolve it",
+  "never_inputs": [
+   "an uncalled result",
+   "truth, labels, provenance labels, solvability",
+   "remaining budget (counted separately)"
+  ],
+  "offsets": "every advertised offset whose window intersects the unresolved interval, in advertised order; \"any\" yields one template at the interval start; never an offset chosen by a recorded result"
+ },
+ "material_conflicts": [
+  "status_ok_with_defect",
+  "exit_zero_with_decoder_errors",
+  "decoded_span_shorter_than_duration",
+  "duration_mismatch"
+ ],
+ "material_uncertainty": [
+  {
+   "axis": "integrity",
+   "id": "M1",
+   "text": "no positively clean integrity result exists at the item's container or package level (every one failed, timed out, was unavailable, was unknown or was not made)"
+  },
+  {
+   "axis": "integrity",
+   "id": "M2",
+   "text": "an unclassified diagnostic (a finding kind ending _unclassified, probe_messages, input_failure, exit_nonzero_unclassified) inside a checked scope; a decoder_warning alone is not material and is not clean"
+  },
+  {
+   "axis": "integrity",
+   "id": "M3",
+   "text": "a material conflict (MATERIAL_CONFLICTS) in any shown result"
+  },
+  {
+   "axis": "integrity",
+   "id": "M4",
+   "text": "a signal that points INTO the unchecked remainder: a container duration that disagrees with the catalog runtime beyond tolerance, a decoded span shorter than the container duration, or a complaint (context.question) that names a part that was not checked"
+  },
+  {
+   "axis": "identity",
+   "id": "M5",
+   "text": "an identity or edition attribute of any declaration, content or report that disagrees with the catalog (after the case-supplied aliases, alternate titles, editions and orderings are applied) and is not settled by a content observation"
+  },
+  {
+   "axis": "naming",
+   "id": "M6",
+   "text": "a naming-surface declaration of this media type that is explicitly empty, or that differs from the catalog value"
+  },
+  {
+   "axis": "ordering",
+   "id": "M7",
+   "text": "two legitimate candidates (orderings, numberings or editions listed by the case) that the observations fit, with no case-supplied choice that settles them"
+  },
+  {
+   "axis": "client",
+   "id": "M8",
+   "text": "a stated client with an unknown verdict, an unread clause, or an ambiguous or unrecorded stream selection for a field it states"
+  },
+  {
+   "axis": "any",
+   "id": "M9",
+   "text": "a complaint (context.question) whose subject no shown observation reaches"
+  }
+ ],
+ "naming_surface": {
+  "audiobook": [
+   "file_name",
+   "tag_title",
+   "tag_album",
+   "tag_artist"
+  ],
+  "epub": [
+   "file_name",
+   "dc_title",
+   "dc_creator"
+  ],
+  "movie": [
+   "file_name"
+  ],
+  "tv": [
+   "file_name"
+  ]
+ },
+ "presence": [
+  "absent",
+  "null",
+  "empty",
+  "false",
+  "zero",
+  "populated"
+ ],
+ "provenance": [
+  "observed",
+  "recorded",
+  "reported",
+  "stated"
+ ],
+ "report_method_vocabulary": [
+  [
+   "report_hash",
+   "\\b(?:md5|sha-?1|sha-?256|hash(?:es)?|checksum)\\b"
+  ],
+  [
+   "report_declaration",
+   "\\b(?:opf|metadata|tags?|id3|file ?names?|title field|dc:\\w+|package document)\\b"
+  ],
+  [
+   "report_content",
+   "\\b(?:subtitles?|ocr|on-screen|opening cards?|title cards?|frames?|audio|speech|listen(?:ed|ing)?|transcripts?|body text|spine text|chapter text|read)\\b"
+  ]
+ ],
+ "runtime_tolerance": {
+  "fraction": 0.05,
+  "seconds": 1.0
+ },
+ "source_presence": [
+  "not_checked",
+  "unknown"
+ ],
+ "statement_kinds": [
+  "catalog",
+  "declaration",
+  "content",
+  "content_picture",
+  "integrity",
+  "integrity_signal",
+  "client",
+  "report_content",
+  "report_declaration",
+  "report_hash",
+  "report_unknown",
+  "complaint"
+ ],
+ "tool_semantics": {
+  "arr_lookup": {
+   "kinds": [
+    "catalog"
+   ],
+   "scopes": [
+    "catalog_record",
+    "slot_occupancy"
+   ]
+  },
+  "audio_sample": {
+   "kinds": [
+    "integrity_signal"
+   ],
+   "scopes": [
+    "audio_signal_at"
+   ]
+  },
+  "audiobook_inspect": {
+   "kinds": [
+    "integrity",
+    "declaration"
+   ],
+   "scopes": [
+    "container",
+    "declared_tags",
+    "declared_chapters",
+    "container_duration",
+    "client_fields"
+   ]
+  },
+  "decode_sample": {
+   "kinds": [
+    "integrity"
+   ],
+   "scopes": [
+    "decode_interval",
+    "whole_file_decode"
+   ]
+  },
+  "epub_inspect": {
+   "kinds": [
+    "integrity",
+    "declaration",
+    "content"
+   ],
+   "scopes": [
+    "package",
+    "epub_declarations",
+    "epub_body_heads"
+   ]
+  },
+  "ffprobe": {
+   "kinds": [
+    "integrity",
+    "declaration"
+   ],
+   "scopes": [
+    "container",
+    "stream_list",
+    "declared_tags",
+    "declared_chapters",
+    "container_duration",
+    "client_fields"
+   ]
+  },
+  "frame_sample": {
+   "kinds": [
+    "content_picture"
+   ],
+   "scopes": [
+    "picture_at"
+   ]
+  },
+  "ocr": {
+   "kinds": [
+    "content"
+   ],
+   "scopes": [
+    "on_screen_text_at"
+   ]
+  }
+ },
+ "uncalled_rules": [
+  "availability available",
+  "tool offered",
+  "arguments valid for the advertisement",
+  "not a repeat of a call already made",
+  "not a repeat of a call that failed, timed out or was unavailable",
+  "remaining budget >= 1 at the decision"
+ ],
+ "uninspectable_scopes": [
+  "stream_selection_of_window",
+  "epub_body_beyond_heads",
+  "speech",
+  "other"
+ ],
+ "version": "contract-v3-rubric-1"
+}
