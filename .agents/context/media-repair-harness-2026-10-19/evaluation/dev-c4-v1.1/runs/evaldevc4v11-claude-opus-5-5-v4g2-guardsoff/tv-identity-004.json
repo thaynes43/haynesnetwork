@@ -1,0 +1,541 @@
+{
+  "action_audit": {
+    "audit": {
+      "preconditions": [
+        "On-screen title card reads HARBOR LIGHTS / S01E03 / THE SALT WIND (t2)",
+        "Embedded tags: title The Salt Wind, episode_sort 3 (e1)",
+        "Catalog expects S01E04 Night Ferry; Sonarr manages the file, episodeFileId 990204 (e3)"
+      ],
+      "readback": "Sonarr blocklist shows this release, and episode 990104 shows the file removed and a search queued.",
+      "target": "Harbor Lights - S01E04 - Night Ferry.mkv",
+      "verify": "A new file for S01E04 has tags and title card reading Night Ferry/S01E04. If the blocklist entry was wrong, remove it."
+    },
+    "claimed_preconditions": [
+      "On-screen title card reads HARBOR LIGHTS / S01E03 / THE SALT WIND (t2)",
+      "Embedded tags: title The Salt Wind, episode_sort 3 (e1)",
+      "Catalog expects S01E04 Night Ferry; Sonarr manages the file, episodeFileId 990204 (e3)"
+    ],
+    "executed": false,
+    "execution_status": "proposed_not_executed",
+    "intent": {
+      "action": "blocklist_and_search",
+      "class": "identity_mismatch",
+      "target": "Harbor Lights - S01E04 - Night Ferry.mkv"
+    },
+    "note": "recorded proposal only; this harness never executes a write, and nothing was changed",
+    "outcome_step": null,
+    "preconditions": [
+      {
+        "basis": "computed",
+        "detail": "class 'identity_mismatch', blocklist_and_search is for identity_mismatch/corrupt_file",
+        "id": "class_matches_action",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "target='Harbor Lights - S01E04 - Night Ferry.mkv'",
+        "id": "target_named",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "the target contains the case's own filename/title+episode",
+        "id": "target_in_context",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "cites ['e1', 'e3', 't2']; unknown refs []",
+        "id": "positive_evidence_cited",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "cited refs that did not run to completion (failure to run, timeout, partial, unavailable): []",
+        "id": "no_failed_tool_cited",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "cited results usable as support (ok, or damage the tool itself reported): ['t2', 'e1', 'e3']",
+        "id": "cited_evidence_supports",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "context.arr.app='sonarr'",
+        "id": "arr_app_present",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "a v2 write decision must carry the audit object",
+        "id": "audit_object_present",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "audit.target='Harbor Lights - S01E04 - Night Ferry.mkv' target='Harbor Lights - S01E04 - Night Ferry.mkv'",
+        "id": "audit_target_matches",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "the audit names what is read back and how success is checked",
+        "id": "readback_and_verify_stated",
+        "met": true
+      }
+    ],
+    "preconditions_unmet": false,
+    "readback_plan": "Sonarr blocklist shows this release, and episode 990104 shows the file removed and a search queued.",
+    "target": "Harbor Lights - S01E04 - Night Ferry.mkv",
+    "unmet": [],
+    "verification_plan": "A new file for S01E04 has tags and title card reading Night Ferry/S01E04. If the blocklist entry was wrong, remove it.",
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "tv-identity-004",
+  "case_sha256": "f1115579046947fd2d177b1ac606eac8f434c12222dccc9aac41502b23699817",
+  "config_hash": "3f129a2304451bbe91e90d17fab2eebb5fa1dd0bce028d5ad81e777035d91fce",
+  "decision": {
+    "action": "blocklist_and_search",
+    "audit": {
+      "preconditions": [
+        "On-screen title card reads HARBOR LIGHTS / S01E03 / THE SALT WIND (t2)",
+        "Embedded tags: title The Salt Wind, episode_sort 3 (e1)",
+        "Catalog expects S01E04 Night Ferry; Sonarr manages the file, episodeFileId 990204 (e3)"
+      ],
+      "readback": "Sonarr blocklist shows this release, and episode 990104 shows the file removed and a search queued.",
+      "target": "Harbor Lights - S01E04 - Night Ferry.mkv",
+      "verify": "A new file for S01E04 has tags and title card reading Night Ferry/S01E04. If the blocklist entry was wrong, remove it."
+    },
+    "class": "identity_mismatch",
+    "confidence": 0.85,
+    "evidence_refs": [
+      "e1",
+      "e3",
+      "t2"
+    ],
+    "reason": "The container tags (title The Salt Wind, episode_sort 3), the chapter title and the on-screen title card (HARBOR LIGHTS / S01E03 / THE SALT WIND) all show this file is S01E03, not the expected S01E04 Night Ferry. Sonarr manages the item, so this release should be blocklisted and E04 searched again.",
+    "target": "Harbor Lights - S01E04 - Night Ferry.mkv",
+    "type": "decision"
+  },
+  "decision_flags": [],
+  "evidence": {
+    "capabilities": [
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "ffprobe"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "decode_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "frame_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "audio_sample"
+      },
+      {
+        "calls": 2,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {
+          "ok": 2
+        },
+        "tool": "ocr"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "epub_inspect"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "audiobook_inspect"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "arr_lookup"
+      }
+    ],
+    "gaps": [],
+    "gaps_cited": [],
+    "mode": "replay",
+    "note": "record only: not shown to the model, not scored. A gap is something the run did not verify; a damage finding is evidence, not a gap."
+  },
+  "evidence_mode": "replay",
+  "evidence_shown": [
+    "e1",
+    "e2",
+    "e3"
+  ],
+  "final_decision_valid": true,
+  "first_try": {
+    "failure_modes": [],
+    "first_reply_valid": true,
+    "note": "any repair, forced decision or protocol violation means the first try was not valid; later attempts are recorded separately in turns[].attempt",
+    "protocol_violations": 0,
+    "repair_prompts": 0,
+    "valid": true,
+    "valid_after_repair": false
+  },
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "533b1f8b2faf1d095d6b38f8d009c88f857d8ad09742671937fbc653ee0509b0",
+    "bytes": 89938,
+    "declared_sha256": "533b1f8b2faf1d095d6b38f8d009c88f857d8ad09742671937fbc653ee0509b0",
+    "kind": "local",
+    "verified": true
+  },
+  "fixture_hashes": {
+    "evidence_shown_sha256": {
+      "e1": "36347e643114c36f4980b4a4bbdd2fe75e9b1de22d3b4cef94e6c35e5be623a1",
+      "e2": "f1afac9e71dd1c6a14900ae19aef78bae8e9e17646992b51473269ed0097c5fb",
+      "e3": "70c591f4c85d43c1eed6b04c78ae55f87f94f8959dc98b18ff8628dd3cef4368"
+    },
+    "fixture": {
+      "actual_sha256": "533b1f8b2faf1d095d6b38f8d009c88f857d8ad09742671937fbc653ee0509b0",
+      "declared_sha256": "533b1f8b2faf1d095d6b38f8d009c88f857d8ad09742671937fbc653ee0509b0",
+      "kind": "local",
+      "verified": true
+    }
+  },
+  "forced": false,
+  "forced_reason": null,
+  "guard": {
+    "applied": [],
+    "final_changed": false,
+    "restored": true,
+    "version": "v2"
+  },
+  "harness_git_sha": "f38f605b56083491273e391d345f0a05233a9f4e",
+  "harness_version": "dev-c4",
+  "injected_failure": {
+    "mode": "timeout",
+    "tool": "frame_sample"
+  },
+  "model_case_alias": "case-97a741fd",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "outcome": null,
+  "prompt": {
+    "protocol": "turn-v2",
+    "schema_sent": false,
+    "sha256": "a2c3036e57d243a1c892b844a37796ec026e4ea449c4737bcbc3efd01591eedd",
+    "turn_schema_sha256": null,
+    "version": "v4"
+  },
+  "protocol_violations": [],
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "refs_to_non_ok_tools": [],
+  "repair_prompts": [],
+  "requested_model": "claude-opus-5-5",
+  "response_model_ids": [
+    "claude-opus-5-5"
+  ],
+  "run_id": "evaldevc4v11-claude-opus-5-5-v4g2",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "split": "dev",
+  "started_at": "2026-10-20T12:44:06.686590+00:00",
+  "suite_version": "dev-v1.1",
+  "tool_calls": [
+    {
+      "args": {
+        "at": 3
+      },
+      "evidence_mode": "replay",
+      "id": "t1",
+      "mode": "replay",
+      "output": "{\"consensus\": true, \"note\": \"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\", \"t_s\": 3.0, \"text\": \"\"}",
+      "status": "ok",
+      "tool": "ocr",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.001,
+      "why": "Embedded tags and chapters say 'The Salt Wind' (episode_sort 3), not E04 'Night Ferry'; check on-screen title text to see which episode the content really is."
+    },
+    {
+      "args": {
+        "at": 1
+      },
+      "evidence_mode": "replay",
+      "id": "t2",
+      "mode": "replay",
+      "output": "{\"consensus\": true, \"note\": \"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\", \"t_s\": 1.0, \"text\": \"HARBOR LIGHTS / S01E03 / THE SALT WIND\"}",
+      "status": "ok",
+      "tool": "ocr",
+      "truncated": false,
+      "turn": 2,
+      "wall_s": 0.001,
+      "why": "No text at 3 s; check the cold open for an on-screen title card that shows which episode the content really is."
+    }
+  ],
+  "tool_modes": [
+    "replay"
+  ],
+  "turns": [
+    {
+      "attempt": "first",
+      "failure_modes": [],
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-opus-5-5": {
+            "cacheCreationInputTokens": 1695,
+            "cacheReadInputTokens": 3627,
+            "canonicalModel": "claude-opus-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.018553399999999998,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 213,
+            "provider": "firstParty",
+            "thinkingTokens": 120,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 1,
+      "native": {
+        "duration_api_ms": 3538,
+        "duration_ms": 3581,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-opus-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-97a741fd\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990204, \"episodeId\": 990104, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 4, \"episode_title\": \"Night Ferry\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E04 - Night Ferry.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E04\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"The Salt Wind\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89423\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"89938\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"3\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"The Salt Wind\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 4, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":4,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Night Ferry\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E04 - Night Ferry.mkv\\\",\\\"size\\\":89938},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"ocr\", \"arr_lookup\"]}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself, and neither does this system: the action you choose is recorded as a proposal for a human-supervised system.\n\nREPLY FORMAT\nEvery reply of yours is exactly ONE JSON object and nothing else: no prose, no markdown fence, nothing after the closing brace. The first key is always \"type\". Use only the keys shown below, in that order. Never copy fields from a tool result (such as status, output or tool_calls_remaining) into your reply. Double-quoted keys and strings, every string closed, no trailing commas.\n\n1. Tool call (at most 6 per case, counting any call that is rejected):\n{\"type\":\"tool_call\",\"tool\":\"<a name from tools_available>\",\"why\":\"<=200 chars\",\"args\":{}}\nThis is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. Call only a tool named in tools_available; a call to any other tool does nothing, uses up one of your 6 calls and is recorded as a protocol violation. Tools act on this case's file only. Arguments: ffprobe {}; decode_sample {\"at\":seconds} or {\"full\":true} (a 4 s window, or the whole file); frame_sample {\"at\":seconds}; audio_sample {\"at\":seconds,\"stream\":0}; ocr {\"frame\":\"<name from frame_sample>\"} or {\"at\":seconds}; epub_inspect {}; audiobook_inspect {}; arr_lookup {}.\nEvery tool result has a status:\n- ok: the tool ran and returned its whole answer.\n- partial: the tool ran but returned a cut or incomplete answer; the missing part is unverified.\n- error: the tool ran and failed, or it ran and reported damage in the file; read the output to tell which (damage comes with the tool's own exit code or stage and message about the file; a plain failure message means it did not run properly).\n- timeout: the tool ran and did not finish; nothing was learned.\n- unavailable: the capability is absent (tool not offered, program or data missing, nothing recorded for this call); nothing ran and nothing was learned.\nResults are bounded to 8 KiB. Do not repeat a call that already came back error, timeout or unavailable. If tools_available is empty, make no tool call: decide on the evidence in the case.\n\n2. Final decision:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<string or null>\",\"reason\":\"<=400 chars, one or two sentences>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"]}\nclass is exactly one of: identity_mismatch, corrupt_file, decoder_incompatible, metadata_naming, order_edition_ambiguity, insufficient_evidence, healthy.\naction is exactly ONE of: none, escalate, blocklist_and_search, remap, rename, convert. Never combine two (for example \"remap and rename\" is invalid); if two different writes could be right, the action is escalate.\nCite evidence ids: e1.. for evidence in the case, t1.. for your own tool results.\nEvery decision object has all of the keys shown, including \"target\" and \"confidence\"; \"target\" is the named string for a write and null for none or escalate.\nWhen the action is a write (blocklist_and_search, remap, rename or convert), add a last key \"audit\", and \"target\" must be the same non-null string as audit.target:\n\"audit\":{\"target\":\"<the exact file, release, episode or entry the write applies to>\",\"preconditions\":[\"<a fact that makes this write safe and that you verified, with its evidence id>\"],\"readback\":\"<what will be read back afterwards to confirm the change>\",\"verify\":\"<how success or a need to undo will be recognised>\"}\nLength limits are enforced and a reply over a limit is rejected: write the target once and copy it into audit.target character for character (the two must be identical); audit.target at most 200 characters; preconditions 1 to 6 strings of at most 160 characters each; readback and verify at most 240 characters each; reason at most 400 characters. Be terse. Do not add \"audit\" for none or escalate. A precondition you did not verify is not a precondition: leave it out, and if the write then lacks a prerequisite, escalate instead.\n\nCLASSES (what is wrong with the item, decided from evidence)\n- identity_mismatch: the content is a different work, episode, edition or language than the catalog entry expects, that is, this release is not what was wanted. Needs content evidence (what the streams, tags, text, on-screen text or duration say it is), never the file name alone.\n- corrupt_file: the file is physically damaged: decode errors, truncation, a missing index, an unreadable archive, package or spine. The content is the expected one, but the bytes are damaged. Needs a tool that ran and reported the damage.\n- decoder_incompatible: the file is intact (it decodes cleanly in full) but uses a codec, profile, pixel format, audio layout or container that the stated client cannot play directly. Needs the stated client in the context and a clean full decode.\n- metadata_naming: the content is the right work and a good copy, but its name, tags, title, numbering or the *arr's episode or movie mapping for it is wrong or missing.\n- order_edition_ambiguity: the content is plausibly correct under more than one legitimate ordering, numbering or edition, and the evidence does not settle which one is wanted.\n- insufficient_evidence: the evidence cannot settle whether there is a defect, because the checks that matter failed, timed out, were unavailable or covered only part of the item, or because no check reaches the question.\n- healthy: no defect of any class was found: the integrity checks that ran (status ok) are clean and cover the item's main content, and nothing else (identity, content, the stated client, a tool finding) disagrees.\n\nACTIONS (the change each one proposes; the prerequisites must hold before you choose it)\n- none: no change. Only for healthy.\n- escalate: no change; hand the item to a human with your reason. Choose it whenever the evidence does not settle the class or the supported action: the evidence is insufficient or ambiguous, more than one write could be right, or a prerequisite of the write you would otherwise choose is missing. Say in the reason what was and was not verified.\n- blocklist_and_search: the *arr marks THIS release as bad and searches for a replacement; the current file is later replaced and cannot be recovered. Needs positive content evidence from checks that ran (identity_mismatch or corrupt_file), the item managed by an *arr (context.arr.app names it), and the release or file as target. Only the blocklist entry can be undone, so partial or failed evidence is never enough. Not for problems caused by the client, names or mapping.\n- remap: the *arr changes which item (episode, movie entry or edition) the existing file is linked to; the file's content and name stay as they are and nothing is downloaded. For a good copy that is linked to the wrong item. Needs the managed app, content evidence of what the file really is, evidence of the right target, and a target slot that is free (no other file linked to it); the target is that slot.\n- rename: only the file's name, path or tag text changes; the file stays linked to the same item. Needs verified identity (content evidence agrees with the item), the correct name known from the evidence, and a way back: record the current name so it can be renamed back.\n- convert: makes a compatible copy and leaves the original untouched. Needs class decoder_incompatible, a clean full decode of the source and the stated client; the target is the isolated copy.\n\nMANAGING APP (context.arr.app)\n- sonarr and radarr manage TV episodes and movies. lazylibrarian manages ebooks and audiobooks: for it, blocklist_and_search means fail this grab and search the format again. null means no managed write is supported for this item.\n- A managing app is a precondition you may cite for blocklist_and_search and remap; it is never a reason to act without positive evidence.\n\nEVIDENCE RULES\n1. Integrity evidence (probe, decode, package or stream checks) speaks only to corrupt_file. A clean result does not rule out decoder_incompatible (compare the codecs and container with the stated client), metadata_naming (compare names, tags, titles and numbering with the catalog) or identity_mismatch (compare what the content is with the catalog). Check each of these against whatever evidence reaches it.\n2. Healthy. If the integrity checks that ran with status ok are clean, the item is healthy, even when some are partial, as long as they cover the item's main content and the comparisons in rule 1 find nothing that disagrees. A capability that is unavailable (nothing ran) is not a finding. If no integrity check ran with status ok, or the only results for the parts in question are failed, timed out or injected failures, there is nothing to call healthy: insufficient_evidence with escalate. Metadata alone is not an integrity check.\n3. Evidence in the case (e1, e2, ...) with status ok counts like a tool result of yours; an empty tools_available is then not a gap by itself.\n4. Different work or mislabelled copy. Embedded or on-screen content (tags, package title and author, table of contents, on-screen text, duration) that names a different work, episode or language than the catalog entry means the release is not what was wanted: identity_mismatch. Content that is the expected work, with a wrong name, tag, title, number or episode mapping, is metadata_naming: rename for name or tag text, remap for a wrong item link. If the evidence does not show which of the two applies, escalate. A release name or file name alone is not content evidence. A complaint in notes_for_model is a report, not evidence.\n5. order_edition_ambiguity needs positive evidence in the record of two legitimate candidates (an edition list, an alias, two listed numberings the content fits); the mere possibility that another edition exists is not evidence.\n6. A write needs positive evidence for its class from checks that ran, the prerequisites of that action, and a named target. In the audit, the preconditions are facts you verified, with their evidence ids.\n7. Never cite a result as support if its tool did not run to completion: a failure to run, a timeout, an unavailable capability or partial output. Damage that a tool which did run reports about the file itself is evidence and may be cited. A result with status timeout, unavailable or partial, or a plain tool failure, is not listed in evidence_refs, not even to mention that it failed: say so in the reason in words. Your class and action must agree with your own reason.\n8. If a tool failed but other verified evidence settles the question, decide on that and say the tool failed. If it does not settle it, choose insufficient_evidence with escalate and name the unverified part in the reason.\n9. Use the offered tools to check before concluding. A sample is partial, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":3538,\"stop_reason\":\"end_turn\",\"session_id\":\"9ca1e7e2-7f14-49ea-8e63-446978dac2d5\",\"total_cost_usd\":0.018553399999999998,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1695,\"cache_read_input_tokens\":3627,\"output_tokens\":213,\"output_tokens_details\":{\"thinking_tokens\":120},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1695,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":213,\"cache_read_input_tokens\":3627,\"cache_creation_input_tokens\":1695,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1695},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-opus-5-5\":{\"inputTokens\":2,\"outputTokens\":213,\"cacheReadInputTokens\":3627,\"cacheCreationInputTokens\":1695,\"webSearchRequests\":0,\"costUSD\":0.018553399999999998,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":120,\"canonicalModel\":\"claude-opus-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"ocr\\\",\\\"why\\\":\\\"Embedded tags and chapters say 'The Salt Wind' (episode_sort 3), not E04 'Night Ferry'; check on-screen title text to see which episode the content really is.\\\",\\\"args\\\":{\\\"at\\\":3}}\",\"ttft_ms\":2607,\"type\":\"result\",\"duration_ms\":3581,\"uuid\":\"d95a9764-b7e0-47e9-9c1b-6a48e016ec4b\",\"ttft_stream_ms\":1387,\"time_to_request_ms\":38,\"first_content_frame_ms\":1388,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "reply_valid": true,
+      "response_model": "claude-opus-5-5",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"why\":\"Embedded tags and chapters say 'The Salt Wind' (episode_sort 3), not E04 'Night Ferry'; check on-screen title text to see which episode the content really is.\",\"args\":{\"at\":3}}",
+      "usage": {
+        "cache_creation_input_tokens": 1695,
+        "cache_read_input_tokens": 3627,
+        "cost_usd": 0.018553399999999998,
+        "input_tokens": 2,
+        "output_tokens": 213
+      },
+      "validation_errors": [],
+      "wall_s": 4.517
+    },
+    {
+      "attempt": "first",
+      "failure_modes": [],
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-opus-5-5": {
+            "cacheCreationInputTokens": 1953,
+            "cacheReadInputTokens": 3627,
+            "canonicalModel": "claude-opus-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0198174,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 173,
+            "provider": "firstParty",
+            "thinkingTokens": 108,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 2,
+      "native": {
+        "duration_api_ms": 3224,
+        "duration_ms": 3286,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-opus-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-97a741fd\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990204, \"episodeId\": 990104, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 4, \"episode_title\": \"Night Ferry\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E04 - Night Ferry.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E04\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"The Salt Wind\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89423\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"89938\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"3\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"The Salt Wind\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 4, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":4,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Night Ferry\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E04 - Night Ferry.mkv\\\",\\\"size\\\":89938},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"ocr\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"ocr\",\"why\":\"Embedded tags and chapters say 'The Salt Wind' (episode_sort 3), not E04 'Night Ferry'; check on-screen title text to see which episode the content really is.\",\"args\":{\"at\":3}}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ocr\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"consensus\\\": true, \\\"note\\\": \\\"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\\\", \\\"t_s\\\": 3.0, \\\"text\\\": \\\"\\\"}\", \"tool_calls_remaining\": 5}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself, and neither does this system: the action you choose is recorded as a proposal for a human-supervised system.\n\nREPLY FORMAT\nEvery reply of yours is exactly ONE JSON object and nothing else: no prose, no markdown fence, nothing after the closing brace. The first key is always \"type\". Use only the keys shown below, in that order. Never copy fields from a tool result (such as status, output or tool_calls_remaining) into your reply. Double-quoted keys and strings, every string closed, no trailing commas.\n\n1. Tool call (at most 6 per case, counting any call that is rejected):\n{\"type\":\"tool_call\",\"tool\":\"<a name from tools_available>\",\"why\":\"<=200 chars\",\"args\":{}}\nThis is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. Call only a tool named in tools_available; a call to any other tool does nothing, uses up one of your 6 calls and is recorded as a protocol violation. Tools act on this case's file only. Arguments: ffprobe {}; decode_sample {\"at\":seconds} or {\"full\":true} (a 4 s window, or the whole file); frame_sample {\"at\":seconds}; audio_sample {\"at\":seconds,\"stream\":0}; ocr {\"frame\":\"<name from frame_sample>\"} or {\"at\":seconds}; epub_inspect {}; audiobook_inspect {}; arr_lookup {}.\nEvery tool result has a status:\n- ok: the tool ran and returned its whole answer.\n- partial: the tool ran but returned a cut or incomplete answer; the missing part is unverified.\n- error: the tool ran and failed, or it ran and reported damage in the file; read the output to tell which (damage comes with the tool's own exit code or stage and message about the file; a plain failure message means it did not run properly).\n- timeout: the tool ran and did not finish; nothing was learned.\n- unavailable: the capability is absent (tool not offered, program or data missing, nothing recorded for this call); nothing ran and nothing was learned.\nResults are bounded to 8 KiB. Do not repeat a call that already came back error, timeout or unavailable. If tools_available is empty, make no tool call: decide on the evidence in the case.\n\n2. Final decision:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<string or null>\",\"reason\":\"<=400 chars, one or two sentences>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"]}\nclass is exactly one of: identity_mismatch, corrupt_file, decoder_incompatible, metadata_naming, order_edition_ambiguity, insufficient_evidence, healthy.\naction is exactly ONE of: none, escalate, blocklist_and_search, remap, rename, convert. Never combine two (for example \"remap and rename\" is invalid); if two different writes could be right, the action is escalate.\nCite evidence ids: e1.. for evidence in the case, t1.. for your own tool results.\nEvery decision object has all of the keys shown, including \"target\" and \"confidence\"; \"target\" is the named string for a write and null for none or escalate.\nWhen the action is a write (blocklist_and_search, remap, rename or convert), add a last key \"audit\", and \"target\" must be the same non-null string as audit.target:\n\"audit\":{\"target\":\"<the exact file, release, episode or entry the write applies to>\",\"preconditions\":[\"<a fact that makes this write safe and that you verified, with its evidence id>\"],\"readback\":\"<what will be read back afterwards to confirm the change>\",\"verify\":\"<how success or a need to undo will be recognised>\"}\nLength limits are enforced and a reply over a limit is rejected: write the target once and copy it into audit.target character for character (the two must be identical); audit.target at most 200 characters; preconditions 1 to 6 strings of at most 160 characters each; readback and verify at most 240 characters each; reason at most 400 characters. Be terse. Do not add \"audit\" for none or escalate. A precondition you did not verify is not a precondition: leave it out, and if the write then lacks a prerequisite, escalate instead.\n\nCLASSES (what is wrong with the item, decided from evidence)\n- identity_mismatch: the content is a different work, episode, edition or language than the catalog entry expects, that is, this release is not what was wanted. Needs content evidence (what the streams, tags, text, on-screen text or duration say it is), never the file name alone.\n- corrupt_file: the file is physically damaged: decode errors, truncation, a missing index, an unreadable archive, package or spine. The content is the expected one, but the bytes are damaged. Needs a tool that ran and reported the damage.\n- decoder_incompatible: the file is intact (it decodes cleanly in full) but uses a codec, profile, pixel format, audio layout or container that the stated client cannot play directly. Needs the stated client in the context and a clean full decode.\n- metadata_naming: the content is the right work and a good copy, but its name, tags, title, numbering or the *arr's episode or movie mapping for it is wrong or missing.\n- order_edition_ambiguity: the content is plausibly correct under more than one legitimate ordering, numbering or edition, and the evidence does not settle which one is wanted.\n- insufficient_evidence: the evidence cannot settle whether there is a defect, because the checks that matter failed, timed out, were unavailable or covered only part of the item, or because no check reaches the question.\n- healthy: no defect of any class was found: the integrity checks that ran (status ok) are clean and cover the item's main content, and nothing else (identity, content, the stated client, a tool finding) disagrees.\n\nACTIONS (the change each one proposes; the prerequisites must hold before you choose it)\n- none: no change. Only for healthy.\n- escalate: no change; hand the item to a human with your reason. Choose it whenever the evidence does not settle the class or the supported action: the evidence is insufficient or ambiguous, more than one write could be right, or a prerequisite of the write you would otherwise choose is missing. Say in the reason what was and was not verified.\n- blocklist_and_search: the *arr marks THIS release as bad and searches for a replacement; the current file is later replaced and cannot be recovered. Needs positive content evidence from checks that ran (identity_mismatch or corrupt_file), the item managed by an *arr (context.arr.app names it), and the release or file as target. Only the blocklist entry can be undone, so partial or failed evidence is never enough. Not for problems caused by the client, names or mapping.\n- remap: the *arr changes which item (episode, movie entry or edition) the existing file is linked to; the file's content and name stay as they are and nothing is downloaded. For a good copy that is linked to the wrong item. Needs the managed app, content evidence of what the file really is, evidence of the right target, and a target slot that is free (no other file linked to it); the target is that slot.\n- rename: only the file's name, path or tag text changes; the file stays linked to the same item. Needs verified identity (content evidence agrees with the item), the correct name known from the evidence, and a way back: record the current name so it can be renamed back.\n- convert: makes a compatible copy and leaves the original untouched. Needs class decoder_incompatible, a clean full decode of the source and the stated client; the target is the isolated copy.\n\nMANAGING APP (context.arr.app)\n- sonarr and radarr manage TV episodes and movies. lazylibrarian manages ebooks and audiobooks: for it, blocklist_and_search means fail this grab and search the format again. null means no managed write is supported for this item.\n- A managing app is a precondition you may cite for blocklist_and_search and remap; it is never a reason to act without positive evidence.\n\nEVIDENCE RULES\n1. Integrity evidence (probe, decode, package or stream checks) speaks only to corrupt_file. A clean result does not rule out decoder_incompatible (compare the codecs and container with the stated client), metadata_naming (compare names, tags, titles and numbering with the catalog) or identity_mismatch (compare what the content is with the catalog). Check each of these against whatever evidence reaches it.\n2. Healthy. If the integrity checks that ran with status ok are clean, the item is healthy, even when some are partial, as long as they cover the item's main content and the comparisons in rule 1 find nothing that disagrees. A capability that is unavailable (nothing ran) is not a finding. If no integrity check ran with status ok, or the only results for the parts in question are failed, timed out or injected failures, there is nothing to call healthy: insufficient_evidence with escalate. Metadata alone is not an integrity check.\n3. Evidence in the case (e1, e2, ...) with status ok counts like a tool result of yours; an empty tools_available is then not a gap by itself.\n4. Different work or mislabelled copy. Embedded or on-screen content (tags, package title and author, table of contents, on-screen text, duration) that names a different work, episode or language than the catalog entry means the release is not what was wanted: identity_mismatch. Content that is the expected work, with a wrong name, tag, title, number or episode mapping, is metadata_naming: rename for name or tag text, remap for a wrong item link. If the evidence does not show which of the two applies, escalate. A release name or file name alone is not content evidence. A complaint in notes_for_model is a report, not evidence.\n5. order_edition_ambiguity needs positive evidence in the record of two legitimate candidates (an edition list, an alias, two listed numberings the content fits); the mere possibility that another edition exists is not evidence.\n6. A write needs positive evidence for its class from checks that ran, the prerequisites of that action, and a named target. In the audit, the preconditions are facts you verified, with their evidence ids.\n7. Never cite a result as support if its tool did not run to completion: a failure to run, a timeout, an unavailable capability or partial output. Damage that a tool which did run reports about the file itself is evidence and may be cited. A result with status timeout, unavailable or partial, or a plain tool failure, is not listed in evidence_refs, not even to mention that it failed: say so in the reason in words. Your class and action must agree with your own reason.\n8. If a tool failed but other verified evidence settles the question, decide on that and say the tool failed. If it does not settle it, choose insufficient_evidence with escalate and name the unverified part in the reason.\n9. Use the offered tools to check before concluding. A sample is partial, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":3224,\"stop_reason\":\"end_turn\",\"session_id\":\"9945ef18-19ba-41aa-9b90-2cc1510ee91b\",\"total_cost_usd\":0.0198174,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1953,\"cache_read_input_tokens\":3627,\"output_tokens\":173,\"output_tokens_details\":{\"thinking_tokens\":108},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1953,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":173,\"cache_read_input_tokens\":3627,\"cache_creation_input_tokens\":1953,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1953},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-opus-5-5\":{\"inputTokens\":2,\"outputTokens\":173,\"cacheReadInputTokens\":3627,\"cacheCreationInputTokens\":1953,\"webSearchRequests\":0,\"costUSD\":0.0198174,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":108,\"canonicalModel\":\"claude-opus-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"ocr\\\",\\\"why\\\":\\\"No text at 3 s; check the cold open for an on-screen title card that shows which episode the content really is.\\\",\\\"args\\\":{\\\"at\\\":1}}\",\"ttft_ms\":3258,\"type\":\"result\",\"duration_ms\":3286,\"uuid\":\"026a10f5-b44b-44b3-8f3a-41d6950f0b51\",\"ttft_stream_ms\":1523,\"time_to_request_ms\":60,\"first_content_frame_ms\":1524,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "reply_valid": true,
+      "response_model": "claude-opus-5-5",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"ocr\",\"why\":\"No text at 3 s; check the cold open for an on-screen title card that shows which episode the content really is.\",\"args\":{\"at\":1}}",
+      "usage": {
+        "cache_creation_input_tokens": 1953,
+        "cache_read_input_tokens": 3627,
+        "cost_usd": 0.0198174,
+        "input_tokens": 2,
+        "output_tokens": 173
+      },
+      "validation_errors": [],
+      "wall_s": 4.06
+    },
+    {
+      "attempt": "first",
+      "failure_modes": [],
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-opus-5-5": {
+            "cacheCreationInputTokens": 2209,
+            "cacheReadInputTokens": 3627,
+            "canonicalModel": "claude-opus-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0327854,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 719,
+            "provider": "firstParty",
+            "thinkingTokens": 266,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 3,
+      "native": {
+        "duration_api_ms": 8999,
+        "duration_ms": 9039,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-opus-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "2.0",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\": \"case-97a741fd\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990204, \"episodeId\": 990104, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 4, \"episode_title\": \"Night Ferry\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E04 - Night Ferry.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E04\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[{\\\"end\\\":\\\"2.000000\\\",\\\"start\\\":\\\"0.000000\\\",\\\"title\\\":\\\"Cold open\\\"},{\\\"end\\\":\\\"8.000000\\\",\\\"start\\\":\\\"2.000000\\\",\\\"title\\\":\\\"The Salt Wind\\\"}],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89423\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"89938\\\",\\\"tags\\\":{\\\"episode_sort\\\":\\\"3\\\",\\\"season_number\\\":\\\"1\\\",\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"The Salt Wind\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": 4, \"season\": 1, \"series\": \"Harbor Lights\"}, \"id\": \"e3\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":{\\\"episode\\\":4,\\\"runtime_s\\\":8,\\\"season\\\":1,\\\"title\\\":\\\"Night Ferry\\\"},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E04 - Night Ferry.mkv\\\",\\\"size\\\":89938},\\\"series\\\":\\\"Harbor Lights\\\",\\\"series_order\\\":\\\"aired\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"ocr\", \"arr_lookup\"]}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"ocr\",\"why\":\"Embedded tags and chapters say 'The Salt Wind' (episode_sort 3), not E04 'Night Ferry'; check on-screen title text to see which episode the content really is.\",\"args\":{\"at\":3}}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"ocr\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"consensus\\\": true, \\\"note\\\": \\\"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\\\", \\\"t_s\\\": 3.0, \\\"text\\\": \\\"\\\"}\", \"tool_calls_remaining\": 5}\n\n[YOUR PREVIOUS REPLY]\n{\"type\":\"tool_call\",\"tool\":\"ocr\",\"why\":\"No text at 3 s; check the cold open for an on-screen title card that shows which episode the content really is.\",\"args\":{\"at\":1}}\n\n[HARNESS]\n{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"ocr\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"consensus\\\": true, \\\"note\\\": \\\"replay: the on-screen text known from how the fixture was generated (not OCR, not a model reading); empty means no text at that time\\\", \\\"t_s\\\": 1.0, \\\"text\\\": \\\"HARBOR LIGHTS / S01E03 / THE SALT WIND\\\"}\", \"tool_calls_remaining\": 4}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself, and neither does this system: the action you choose is recorded as a proposal for a human-supervised system.\n\nREPLY FORMAT\nEvery reply of yours is exactly ONE JSON object and nothing else: no prose, no markdown fence, nothing after the closing brace. The first key is always \"type\". Use only the keys shown below, in that order. Never copy fields from a tool result (such as status, output or tool_calls_remaining) into your reply. Double-quoted keys and strings, every string closed, no trailing commas.\n\n1. Tool call (at most 6 per case, counting any call that is rejected):\n{\"type\":\"tool_call\",\"tool\":\"<a name from tools_available>\",\"why\":\"<=200 chars\",\"args\":{}}\nThis is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. Call only a tool named in tools_available; a call to any other tool does nothing, uses up one of your 6 calls and is recorded as a protocol violation. Tools act on this case's file only. Arguments: ffprobe {}; decode_sample {\"at\":seconds} or {\"full\":true} (a 4 s window, or the whole file); frame_sample {\"at\":seconds}; audio_sample {\"at\":seconds,\"stream\":0}; ocr {\"frame\":\"<name from frame_sample>\"} or {\"at\":seconds}; epub_inspect {}; audiobook_inspect {}; arr_lookup {}.\nEvery tool result has a status:\n- ok: the tool ran and returned its whole answer.\n- partial: the tool ran but returned a cut or incomplete answer; the missing part is unverified.\n- error: the tool ran and failed, or it ran and reported damage in the file; read the output to tell which (damage comes with the tool's own exit code or stage and message about the file; a plain failure message means it did not run properly).\n- timeout: the tool ran and did not finish; nothing was learned.\n- unavailable: the capability is absent (tool not offered, program or data missing, nothing recorded for this call); nothing ran and nothing was learned.\nResults are bounded to 8 KiB. Do not repeat a call that already came back error, timeout or unavailable. If tools_available is empty, make no tool call: decide on the evidence in the case.\n\n2. Final decision:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<string or null>\",\"reason\":\"<=400 chars, one or two sentences>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"]}\nclass is exactly one of: identity_mismatch, corrupt_file, decoder_incompatible, metadata_naming, order_edition_ambiguity, insufficient_evidence, healthy.\naction is exactly ONE of: none, escalate, blocklist_and_search, remap, rename, convert. Never combine two (for example \"remap and rename\" is invalid); if two different writes could be right, the action is escalate.\nCite evidence ids: e1.. for evidence in the case, t1.. for your own tool results.\nEvery decision object has all of the keys shown, including \"target\" and \"confidence\"; \"target\" is the named string for a write and null for none or escalate.\nWhen the action is a write (blocklist_and_search, remap, rename or convert), add a last key \"audit\", and \"target\" must be the same non-null string as audit.target:\n\"audit\":{\"target\":\"<the exact file, release, episode or entry the write applies to>\",\"preconditions\":[\"<a fact that makes this write safe and that you verified, with its evidence id>\"],\"readback\":\"<what will be read back afterwards to confirm the change>\",\"verify\":\"<how success or a need to undo will be recognised>\"}\nLength limits are enforced and a reply over a limit is rejected: write the target once and copy it into audit.target character for character (the two must be identical); audit.target at most 200 characters; preconditions 1 to 6 strings of at most 160 characters each; readback and verify at most 240 characters each; reason at most 400 characters. Be terse. Do not add \"audit\" for none or escalate. A precondition you did not verify is not a precondition: leave it out, and if the write then lacks a prerequisite, escalate instead.\n\nCLASSES (what is wrong with the item, decided from evidence)\n- identity_mismatch: the content is a different work, episode, edition or language than the catalog entry expects, that is, this release is not what was wanted. Needs content evidence (what the streams, tags, text, on-screen text or duration say it is), never the file name alone.\n- corrupt_file: the file is physically damaged: decode errors, truncation, a missing index, an unreadable archive, package or spine. The content is the expected one, but the bytes are damaged. Needs a tool that ran and reported the damage.\n- decoder_incompatible: the file is intact (it decodes cleanly in full) but uses a codec, profile, pixel format, audio layout or container that the stated client cannot play directly. Needs the stated client in the context and a clean full decode.\n- metadata_naming: the content is the right work and a good copy, but its name, tags, title, numbering or the *arr's episode or movie mapping for it is wrong or missing.\n- order_edition_ambiguity: the content is plausibly correct under more than one legitimate ordering, numbering or edition, and the evidence does not settle which one is wanted.\n- insufficient_evidence: the evidence cannot settle whether there is a defect, because the checks that matter failed, timed out, were unavailable or covered only part of the item, or because no check reaches the question.\n- healthy: no defect of any class was found: the integrity checks that ran (status ok) are clean and cover the item's main content, and nothing else (identity, content, the stated client, a tool finding) disagrees.\n\nACTIONS (the change each one proposes; the prerequisites must hold before you choose it)\n- none: no change. Only for healthy.\n- escalate: no change; hand the item to a human with your reason. Choose it whenever the evidence does not settle the class or the supported action: the evidence is insufficient or ambiguous, more than one write could be right, or a prerequisite of the write you would otherwise choose is missing. Say in the reason what was and was not verified.\n- blocklist_and_search: the *arr marks THIS release as bad and searches for a replacement; the current file is later replaced and cannot be recovered. Needs positive content evidence from checks that ran (identity_mismatch or corrupt_file), the item managed by an *arr (context.arr.app names it), and the release or file as target. Only the blocklist entry can be undone, so partial or failed evidence is never enough. Not for problems caused by the client, names or mapping.\n- remap: the *arr changes which item (episode, movie entry or edition) the existing file is linked to; the file's content and name stay as they are and nothing is downloaded. For a good copy that is linked to the wrong item. Needs the managed app, content evidence of what the file really is, evidence of the right target, and a target slot that is free (no other file linked to it); the target is that slot.\n- rename: only the file's name, path or tag text changes; the file stays linked to the same item. Needs verified identity (content evidence agrees with the item), the correct name known from the evidence, and a way back: record the current name so it can be renamed back.\n- convert: makes a compatible copy and leaves the original untouched. Needs class decoder_incompatible, a clean full decode of the source and the stated client; the target is the isolated copy.\n\nMANAGING APP (context.arr.app)\n- sonarr and radarr manage TV episodes and movies. lazylibrarian manages ebooks and audiobooks: for it, blocklist_and_search means fail this grab and search the format again. null means no managed write is supported for this item.\n- A managing app is a precondition you may cite for blocklist_and_search and remap; it is never a reason to act without positive evidence.\n\nEVIDENCE RULES\n1. Integrity evidence (probe, decode, package or stream checks) speaks only to corrupt_file. A clean result does not rule out decoder_incompatible (compare the codecs and container with the stated client), metadata_naming (compare names, tags, titles and numbering with the catalog) or identity_mismatch (compare what the content is with the catalog). Check each of these against whatever evidence reaches it.\n2. Healthy. If the integrity checks that ran with status ok are clean, the item is healthy, even when some are partial, as long as they cover the item's main content and the comparisons in rule 1 find nothing that disagrees. A capability that is unavailable (nothing ran) is not a finding. If no integrity check ran with status ok, or the only results for the parts in question are failed, timed out or injected failures, there is nothing to call healthy: insufficient_evidence with escalate. Metadata alone is not an integrity check.\n3. Evidence in the case (e1, e2, ...) with status ok counts like a tool result of yours; an empty tools_available is then not a gap by itself.\n4. Different work or mislabelled copy. Embedded or on-screen content (tags, package title and author, table of contents, on-screen text, duration) that names a different work, episode or language than the catalog entry means the release is not what was wanted: identity_mismatch. Content that is the expected work, with a wrong name, tag, title, number or episode mapping, is metadata_naming: rename for name or tag text, remap for a wrong item link. If the evidence does not show which of the two applies, escalate. A release name or file name alone is not content evidence. A complaint in notes_for_model is a report, not evidence.\n5. order_edition_ambiguity needs positive evidence in the record of two legitimate candidates (an edition list, an alias, two listed numberings the content fits); the mere possibility that another edition exists is not evidence.\n6. A write needs positive evidence for its class from checks that ran, the prerequisites of that action, and a named target. In the audit, the preconditions are facts you verified, with their evidence ids.\n7. Never cite a result as support if its tool did not run to completion: a failure to run, a timeout, an unavailable capability or partial output. Damage that a tool which did run reports about the file itself is evidence and may be cited. A result with status timeout, unavailable or partial, or a plain tool failure, is not listed in evidence_refs, not even to mention that it failed: say so in the reason in words. Your class and action must agree with your own reason.\n8. If a tool failed but other verified evidence settles the question, decide on that and say the tool failed. If it does not settle it, choose insufficient_evidence with escalate and name the unverified part in the reason.\n9. Use the offered tools to check before concluding. A sample is partial, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":8999,\"stop_reason\":\"end_turn\",\"session_id\":\"ddc2f43d-a4d3-4237-856c-d056626d9fc8\",\"total_cost_usd\":0.0327854,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":2209,\"cache_read_input_tokens\":3627,\"output_tokens\":719,\"output_tokens_details\":{\"thinking_tokens\":266},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":2209,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":719,\"cache_read_input_tokens\":3627,\"cache_creation_input_tokens\":2209,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":2209},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-opus-5-5\":{\"inputTokens\":2,\"outputTokens\":719,\"cacheReadInputTokens\":3627,\"cacheCreationInputTokens\":2209,\"webSearchRequests\":0,\"costUSD\":0.0327854,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":266,\"canonicalModel\":\"claude-opus-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"identity_mismatch\\\",\\\"action\\\":\\\"blocklist_and_search\\\",\\\"target\\\":\\\"Harbor Lights - S01E04 - Night Ferry.mkv\\\",\\\"reason\\\":\\\"The container tags (title The Salt Wind, episode_sort 3), the chapter title and the on-screen title card (HARBOR LIGHTS / S01E03 / THE SALT WIND) all show this file is S01E03, not the expected S01E04 Night Ferry. Sonarr manages the item, so this release should be blocklisted and E04 searched again.\\\",\\\"confidence\\\":0.85,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e3\\\",\\\"t2\\\"],\\\"audit\\\":{\\\"target\\\":\\\"Harbor Lights - S01E04 - Night Ferry.mkv\\\",\\\"preconditions\\\":[\\\"On-screen title card reads HARBOR LIGHTS / S01E03 / THE SALT WIND (t2)\\\",\\\"Embedded tags: title The Salt Wind, episode_sort 3 (e1)\\\",\\\"Catalog expects S01E04 Night Ferry; Sonarr manages the file, episodeFileId 990204 (e3)\\\"],\\\"readback\\\":\\\"Sonarr blocklist shows this release, and episode 990104 shows the file removed and a search queued.\\\",\\\"verify\\\":\\\"A new file for S01E04 has tags and title card reading Night Ferry/S01E04. If the blocklist entry was wrong, remove it.\\\"}}\",\"ttft_ms\":5413,\"type\":\"result\",\"duration_ms\":9039,\"uuid\":\"a564aa40-29d4-4705-aa6b-f53ff805fb36\",\"ttft_stream_ms\":3035,\"time_to_request_ms\":34,\"first_content_frame_ms\":3035,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "reply_valid": true,
+      "response_model": "claude-opus-5-5",
+      "text": "{\"type\":\"decision\",\"class\":\"identity_mismatch\",\"action\":\"blocklist_and_search\",\"target\":\"Harbor Lights - S01E04 - Night Ferry.mkv\",\"reason\":\"The container tags (title The Salt Wind, episode_sort 3), the chapter title and the on-screen title card (HARBOR LIGHTS / S01E03 / THE SALT WIND) all show this file is S01E03, not the expected S01E04 Night Ferry. Sonarr manages the item, so this release should be blocklisted and E04 searched again.\",\"confidence\":0.85,\"evidence_refs\":[\"e1\",\"e3\",\"t2\"],\"audit\":{\"target\":\"Harbor Lights - S01E04 - Night Ferry.mkv\",\"preconditions\":[\"On-screen title card reads HARBOR LIGHTS / S01E03 / THE SALT WIND (t2)\",\"Embedded tags: title The Salt Wind, episode_sort 3 (e1)\",\"Catalog expects S01E04 Night Ferry; Sonarr manages the file, episodeFileId 990204 (e3)\"],\"readback\":\"Sonarr blocklist shows this release, and episode 990104 shows the file removed and a search queued.\",\"verify\":\"A new file for S01E04 has tags and title card reading Night Ferry/S01E04. If the blocklist entry was wrong, remove it.\"}}",
+      "usage": {
+        "cache_creation_input_tokens": 2209,
+        "cache_read_input_tokens": 3627,
+        "cost_usd": 0.0327854,
+        "input_tokens": 2,
+        "output_tokens": 719
+      },
+      "validation_errors": [],
+      "wall_s": 9.778
+    }
+  ],
+  "unverified_parts": [],
+  "usage": {
+    "cost_reported": true,
+    "cost_usd": 0.0711562,
+    "input_tokens": 6,
+    "output_tokens": 1105
+  },
+  "wall": {
+    "case_excl_load_s": 18.363,
+    "load_s": 0.0,
+    "tool_s": [
+      0.001,
+      0.001
+    ],
+    "total_s": 18.363,
+    "turn_s": [
+      4.517,
+      4.06,
+      9.778
+    ]
+  },
+  "write_rejection": {
+    "attempts": [],
+    "forced_after_rejected_write": false,
+    "note": "record only: a rejected write decision never became the decision; forced_after_rejected_write means the repair also failed and the harness forced insufficient_evidence/escalate",
+    "rejected_write_attempts": 0,
+    "repaired_to_valid_decision": false
+  }
+}
