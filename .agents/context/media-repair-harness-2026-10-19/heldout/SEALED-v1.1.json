@@ -1,0 +1,293 @@
+{
+  "suite_version": "heldout-v1.1",
+  "parent": {
+    "suite_version": "heldout-v1",
+    "sealed_manifest": "SEALED.json",
+    "tarball_sha256": "1ca3a39a75952b3848be936a31e8458d68a1f9cb03f924f4774987eb3bf37f01",
+    "status": "retained unchanged: the v1 tarball, its case hashes and SEALED.json are not modified and nothing under heldout-v1/ was touched"
+  },
+  "story": "https://work.haynesnetwork.com/work_packages/134",
+  "epic": "https://work.haynesnetwork.com/work_packages/48",
+  "builder": "sonnet-worker W15 (claude-sonnet-5-5) for the evaluator (claude-opus-5-5), coordinator session https://claude.ai/code/session_01K8EwSeoPBCV45Db9DKyYiR; v1 was built by W8",
+  "date": "2026-10-20",
+  "authorization": "Tom, 2026-10-20 (AskUserQuestion): the evaluator audits heldout-v1 privately, applies only the general rules C1, C2 and C5, and seals the result as heldout-v1.1",
+  "base_commit": "f7032d01 (origin/main)",
+  "gates": ".agents/context/media-repair-harness-2026-10-19/GATES.md (recorded before any v1 case was scored) (unchanged)",
+  "status": "SEALED. No case, fixture, replay record or evidence is in git. Contents are revealed only by the readiness run. heldout-v1 is retained unchanged. No candidate has been scored on either version.",
+  "tarball": {
+    "name": "heldout-v1.1.tar.gz",
+    "sha256": "bc165708d2b87f50ccfa684aa4c58582ee0033fc17e2e90b602bf773f35f1568",
+    "bytes": 4634427,
+    "location": "/home/dev/.cache/media-repair-harness-1019/heldout-v1.1/ (mode 700, pod PVC; outside git)",
+    "recipe": "python3 gen/package_v1_1.py (same recipe as v1: sorted names, mtime 0, uid/gid 0, fixed modes, gzip mtime 0; members under heldout-v1.1/); rebuilt twice with an identical hash"
+  },
+  "cases": {
+    "total": 47,
+    "sha256_by_opaque_index": {
+      "h001": "7c630edf9d93c4cf72a45fa17cad2036f2cc2c942ae473eaa811c2df1edac358",
+      "h002": "9c0eee8ba598dabb508e70d17c202f287e13cbbeae5a01c985709ec7455af01b",
+      "h003": "832f69067d9fbf3d7eb40ed7bd7b6c84dd7bf082038514fe4ad1c5f8882cb7c3",
+      "h004": "338345060ce991394b1f231354cf9d8b03b9e691254b5bb7619e184403b51ca8",
+      "h005": "228739da5247f7b106048fa1b383cec50746ef1ce56a29568eaa0538e2cc13ff",
+      "h006": "5bf83616768b99d1ceb88b16ced9df89a036f1447ab884768cd9bab876a03d9d",
+      "h007": "289feef4b68836c5a3abf57a329730315aa3653b5fa748665cc609e2ed34ea7e",
+      "h008": "dd42e9892363adaf551938b8a82b3abb72e921b60c33187fc6c62449192d30d7",
+      "h009": "af4d0b28c7665d773b7710c7fefc97fa16b7716952ae6656f0328ba64c66a7f2",
+      "h010": "01d7584b5a8d7c317ac4fcf2633e93a8bfea5ec256bffec0d52c9cc38532cb11",
+      "h011": "1fd55687bd7db082690e753492efcc0dd57dc993b0c7e58d1200a9a48a02d377",
+      "h012": "59fa15cdffe889543e086afab60907e013d5ef6faf33f83879444a6bc84380b8",
+      "h013": "eddedd6eafca1e8c7912fd2583f5668f48e12b92fe250c7a672784337a269b6a",
+      "h014": "62a1c862ba619dd5df7c0b86198c734517960aad32fd1cd756d27aa6873b518b",
+      "h015": "a182be329ce9d7fe1241f6dc6f05b1e762aadb228f3cb37b966db69a830b5444",
+      "h016": "4d2bd424e2e0a434970361853b2eaa6d557ffc3f559e55f8f94fb1543be9d437",
+      "h017": "de2d7db7a9b558464f15167cfd55de5b48b5945f0579acf397fdcd659d6fc53d",
+      "h018": "6759fc993011f6b642458402a8e57602a0f8cf32319c1ff58cfecad827593230",
+      "h019": "b55bb8a45e3bdffed8b5d78b54e4f21135b1c832ea532ac529025b8135bd9126",
+      "h020": "280f9fe4df26885ea28449ad5860c752eb33d21727b8ae82bf3c1ff63e44155e",
+      "h021": "629d08678e2111e6ad8664c3717325d101b2e8db825dd3c8dd31d93cec2ba918",
+      "h022": "a5f6f414f70a42d791367392924296bcc83d08ad8c5a288c866eab7b3db58e0f",
+      "h023": "a21e43187e70022e125fe0d5f7a35a32d48a9d06ed4660887eef6a5b49a41da4",
+      "h024": "9ab673f8ee337e3efa1d437ffb2cf2d60186f4350714633a79d88b3efee02883",
+      "h025": "58a251d60e922c8847cbb410caf17cb80b67924e983d9571aaa6105ba92fcdb3",
+      "h026": "0a614abaec8526bdefae2daed47db0bcf10e7407144a32d32db566bfd8e224a9",
+      "h027": "a072572127082f7bf158ebc975cc0dc12f1cba487cad4e89966ab980aa1909ed",
+      "h028": "591204298a6ab20250052ad74f99dc9508e3c31eca0acd64a38e8449c815851d",
+      "h029": "35b72471bc355c01204e84efb864ef9fe13d8e30bebd1d2ce8717f4ae12abcdd",
+      "h030": "16520455f790c01f4a0dbdc2f2881cd0c0a291f712d95d5e75277f19a9c8aee6",
+      "h031": "0db05b175ec8fa1fb54bab016ff340b3fb97a881d2d705d9fa93f5ef8ce40830",
+      "h032": "83909512d8f07e474e40d9aef9619cec986c9686b8de7c3e24d4a81e89a4de9e",
+      "h033": "2d8f2f4e309c4f86e979adeca5948588314ca77eb2f1c19aa50ad534d596b837",
+      "h034": "32797319ca26eb38f76b15376fe315513666ed6a84c14372f6e9231070bc3324",
+      "h035": "60a8e94daa77cd0a1590450e12962ea9ce41fd0ddec4b521630d512e1ba190f7",
+      "h036": "bc9b325c9846eaee904629c9b0ec907b1e724e8c7ef11cb0d5e9dd974862d0f0",
+      "h037": "d7f9a4902ebb4c80f5b8fc119b115a7b55da25a282595ef27948bd0fa99320bf",
+      "h038": "af957798e44030866b54b55276a52bd20d4d5337976315034b46578cb714a4be",
+      "h039": "63fecc29390ff1cb771db5e37176c2c388ddb05ba4d3536fa0d9d211f0143bac",
+      "h040": "4e46cb1a455a5e8803d8c60916999c3789f922e0c7d02a3ce87782de65a883d8",
+      "h041": "39f0163f32bdd862f806ce88e148fe767c8e26221bfbe69a9d0bf377714e73be",
+      "h042": "cd5e2ce40ec205c4983eaed47c8a123607481dfef83be068fdc339b2120e5016",
+      "h043": "1237d97f8532817f42e8b8a5c28588193db3d3c3f7a63d5a811b2bf0524d1d64",
+      "h044": "a1a677289624085d0eb966507ebe0801eb68bb3f8151d014bfe0d028fcee7f91",
+      "h045": "290c902f139329f2aed4471f73be0d410f83c99103077bf34b42d976682ee28c",
+      "h046": "162359c53d22c952074cab30695e1ac7e28acd673f699b337b5a0f03708da96e",
+      "h047": "0ea428ebe0e9cbdf63cf11fc6505cfe8687e9f74f4dcc06c0818adeed5d1fb12"
+    },
+    "note": "sha256 of each case JSON file; the opaque index is the same one SEALED.json uses for heldout-v1 (the mapping to case ids stays in the sealed dir). Every hash differs from v1 because suite_version is part of every case file."
+  },
+  "counts": {
+    "by_class": {
+      "corrupt_file": 9,
+      "decoder_incompatible": 4,
+      "healthy": 11,
+      "identity_mismatch": 9,
+      "insufficient_evidence": 6,
+      "metadata_naming": 4,
+      "order_edition_ambiguity": 4
+    },
+    "by_media_type": {
+      "audiobook": 10,
+      "epub": 10,
+      "movie": 13,
+      "tv": 14
+    },
+    "class_by_media_type": {
+      "corrupt_file": {
+        "movie": 2,
+        "tv": 2,
+        "epub": 3,
+        "audiobook": 2
+      },
+      "decoder_incompatible": {
+        "movie": 2,
+        "tv": 1,
+        "epub": 0,
+        "audiobook": 1
+      },
+      "healthy": {
+        "movie": 3,
+        "tv": 4,
+        "epub": 2,
+        "audiobook": 2
+      },
+      "identity_mismatch": {
+        "movie": 2,
+        "tv": 3,
+        "epub": 2,
+        "audiobook": 2
+      },
+      "insufficient_evidence": {
+        "movie": 2,
+        "tv": 2,
+        "epub": 1,
+        "audiobook": 1
+      },
+      "metadata_naming": {
+        "movie": 1,
+        "tv": 1,
+        "epub": 1,
+        "audiobook": 1
+      },
+      "order_edition_ambiguity": {
+        "movie": 1,
+        "tv": 1,
+        "epub": 1,
+        "audiobook": 1
+      }
+    },
+    "special": {
+      "healthy": 11,
+      "abstain_class_insufficient_or_order_edition": 10,
+      "insufficient_evidence": 6,
+      "order_edition_ambiguity": 4,
+      "inject_tool_failure": 5,
+      "inject_modes": {
+        "partial": 1,
+        "timeout": 2,
+        "error": 2
+      },
+      "outcome_step": 8,
+      "outcome_expected": {
+        "not_repaired": 4,
+        "repaired": 4
+      },
+      "offender_family_rows": {
+        "pokemon": 2,
+        "mickey": 2,
+        "share_of_suite_pct": 8.5,
+        "note": "different episodes and evidence than the dev rows; the three named offenders themselves (Pokemon E34, Mickey E45 and E46) are not in the suite"
+      },
+      "real_library_cases": 9,
+      "real_library_by_class": {
+        "decoder_incompatible": 1,
+        "healthy": 5,
+        "identity_mismatch": 2,
+        "insufficient_evidence": 1
+      },
+      "real_library_by_media": {
+        "movie": 3,
+        "tv": 6
+      },
+      "synthetic_cases": 38,
+      "solvable": 47
+    },
+    "truth_source": {
+      "deterministic": 17,
+      "construction": 18,
+      "authoritative_metadata": 8,
+      "human_adjudication": 4
+    }
+  },
+  "counts_note": "identical to heldout-v1: no rule changed a truth label, a supported set, a tool list, a media type or a case count",
+  "rules": {
+    "applied": [
+      "C1",
+      "C2",
+      "C5"
+    ],
+    "not_applied": [
+      "C3",
+      "C6",
+      "every ruling in ADJUDICATION-dev-v1.md (dev-case-specific)"
+    ],
+    "source": ".agents/context/media-repair-harness-2026-10-19/RULINGS-v1.1.md (evaluator rulings; general construction rules C1, C2, C5 only; added by PR #1015)",
+    "changes_by_rule": {
+      "C1": {
+        "cases_changed": 20,
+        "by_media_type": {
+          "epub": 10,
+          "audiobook": 10
+        },
+        "change": "context.arr.app set to lazylibrarian with synthetic ids (bookId, bookFileId); movie and TV cases already named radarr or sonarr (0 changed); arr_lookup evidence text did not contradict the change, so 0 evidence edits"
+      },
+      "C2": {
+        "cases_changed": 0,
+        "change": "no healthy case lacked an integrity check: every healthy case carries a recorded probe or structure check in its evidence and offers callable tools"
+      },
+      "C5": {
+        "cases_changed": 0,
+        "tool_offers_removed": 0,
+        "change": "none. Criterion (evaluator ruling): a tool is removed only if no call to it can return recorded data under the current harness (dev-c2, --evidence replay, including _pinned). Tested offline on the nine real-library (pinned observation) cases: ffprobe returned ok in 9 of 9 and decode_sample in 9 of 9 (at start 0 and at a recorded non-zero start; unavailable at an unrecorded start), so both stay offered. audio_sample was never offered in v1",
+        "pinned_replay_test": {
+          "cases": 9,
+          "ffprobe": {
+            "ok": 9,
+            "unavailable": 0
+          },
+          "decode_sample": {
+            "start_0_ok": 9,
+            "recorded_nonzero_start_ok": 9,
+            "unrecorded_start_unavailable": 9
+          }
+        }
+      }
+    },
+    "cases_with_a_corrections_list": 20,
+    "fixture_bytes_changed": 0,
+    "record": "each changed case carries a corrections list naming the rule and the fields changed (private, inside the tarball)"
+  },
+  "observed_not_fixed": {
+    "case_level_replay_key": 0,
+    "note": "no case, at any depth, carries a replay key; truth.ref text that mentions replay is not model-visible",
+    "other_generic": {
+      "injected_tool_also_has_ok_precollected_evidence": 2,
+      "injected_partial_mode_cases": 1,
+      "note": "both already known to the evaluator (validator notes; the injected-partial G8 gap is recorded in .agents/context/media-repair-harness-2026-10-19/RULINGS-v1.1.md); neither is a construction error and neither was changed"
+    }
+  },
+  "gates_minimums_check": {
+    "min_cases_30": true,
+    "healthy_ge_8": true,
+    "abstain_ge_4": true,
+    "each_other_class_ge_2": true,
+    "each_media_ge_6": true,
+    "inject_ge_3": true,
+    "offender_rows_ge_2_each": true,
+    "offender_share_le_10pct": true,
+    "outcome_ge_3": true,
+    "real_library_ge_8": true,
+    "counts": {
+      "cases": 47,
+      "healthy": 11,
+      "abstain_class": 10,
+      "inject_tool_failure": 5,
+      "offender_rows": 4,
+      "offender_share_pct": 8.5,
+      "each_other_class_min": 4,
+      "each_media_min": 10,
+      "offender_rows_each": 2,
+      "outcome_steps": 8,
+      "real_library_cases": 9
+    },
+    "note": "minimums rechecked on v1.1 after the corrections; all pass"
+  },
+  "validator": {
+    "command": "nice -n 19 python3 -I -B suite.py validate --suite-dir <private copy>",
+    "errors": 0,
+    "notes": 2,
+    "result": [
+      "heldout-v1.1: 47 cases, 0 errors; committed fixtures 3309 KiB; healthy 11, abstain-class 10, inject 5, outcome 8, audiobook 10",
+      "OK"
+    ],
+    "patch_vs_v1": "VERSION heldout-v1.1 and an additive top-level key corrections. The v1 validator is kept in the tarball as raw/suite_v1_validator.py.orig"
+  },
+  "leak_guard": {
+    "command": "the v1 leak sweep, unchanged, against the v1.1 suite (first request and every replay tool result); no model run",
+    "cases": 47,
+    "first_request_clean": 47,
+    "first_request_leaks": 0,
+    "tool_result_checks": 1062,
+    "tool_result_leaks": 0,
+    "raw_view_leaks_every_case_control": 47
+  },
+  "generator_script_sha256": {
+    "apply_v1_1.py": "23814d7eda1763dcdb61810d2159f22e78e309777941dc8f037f777343ba28ce",
+    "package_v1_1.py": "196e9af259b7082ce247fd1d263a56c08567538ef17befeda6d8651d2d56a1a2",
+    "suite.py": "473312e9e211e884b2196681621efa04837e040c6937c955a8157b5a12f0ebd0",
+    "suite_v1_validator.py.orig": "b0ad237adb064e84e59adfaed62b041d5d69d2c39250b583613fb52b58950c79"
+  },
+  "unchanged_from_v1": {
+    "fixtures_and_probes": "byte-identical (84 manifest files, 38 local case fixtures, verified by comparing the extracted trees)",
+    "families": 31,
+    "dev_overlap": []
+  }
+}
