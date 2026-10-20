@@ -11,7 +11,7 @@ cannot attribute any difference from dev-c4 to the prompt or to the format. dev-
 
 | Item | Frozen value |
 |---|---|
-| Frozen code commit | `8ee818c6` (`agent/mrh-devc5-1020`); the run starts from a clean checkout whose `src/` and `prompts/` are identical to it (`git diff 8ee818c6 HEAD -- tools/media-repair-harness/src` empty, checked and recorded before the first call) |
+| Frozen code commit | `22f5bd23` (`agent/mrh-devc5-1020`, rebased onto main `34e8589e`; see Amendment 1; originally `8ee818c6`, superseded); the run starts from a clean checkout whose `src/` and `prompts/` are identical to it (`git diff 22f5bd23 HEAD -- tools/media-repair-harness/src` empty, checked and recorded before the first call); `git ls-tree -r 22f5bd23 tools/media-repair-harness/src | sha1sum` = `16c26140ed5ea738835054b7975b53fb76d5f999` |
 | `HARNESS_VERSION` | `dev-c5` |
 | `prompts/v5.txt` file sha256 | `3ea39017906d30ff72cfe579857c194517263d53cf5f13592309fa593572b71e` |
 | Assembled system prompt sha256 (`prompt.sha256` in every record) | `9715dc4ca5de307899100764d481481cc7e2e2fd16641af45540a18e983dbab7` (15,876 characters) |
@@ -68,6 +68,12 @@ one resident model, serial, the PSI/restart guard on (a trip aborts the pass cle
 8. **Statements, verbatim in the report:** dev-tuned; one pass on correlated, previously tuned fixtures; neither significance nor generalisation; no readiness claim; B is a combined candidate so an effect is not attributable to the prompt or to the format; dev-c4 differs in prompt, evidence format, guards version and harness fixes; G6 measures fixture verification, not completed repairs.
 G2, G3 per class, G4 and G5 are of interest and are not targets. No other table, cut, ranking or threshold is added after the results.
 
-## 6. Hold
+## 6. Amendment 1 (committed before any model response; the original commit `d1c87066` is not rewritten)
+
+Why: PR #1025 (main `34e8589e`) fixed guard-v3 support (now derived from the typed execution) and the EPUB execution-versus-damage paths. It landed before any model response, and the measurement must run on that code, so the branch was rebased onto `34e8589e` (no conflicts; #1025's behaviour untouched).
+What changed in the frozen values: the base is now `34e8589e` (was `b708b96c`), the frozen code commit is now `22f5bd23` (was `8ee818c6`), and the `src/` tree hash is recorded above. What did NOT change, verified after the rebase: the assembled v5 prompt sha256 (`9715dc4c...bab7`), the `v5.txt` file sha256 (`3ea39017...b71e`), `score.py` (`5002f1d5...`), `score_compat.py` (`2bdabb59...`), `GATES.md`, the suite and case order hashes, the dev-c4 REPORT hash, models, digest, adapter settings, caps, retry, repair and abort rules, the context rule and the tables.
+`ci-test` (MRH_REQUIRE_SUITE=1) after the rebase: 817 tests OK (786 before; the difference is #1025's tests); routing tests: 79 OK. The older sentence in section 1 that says dev-c4 differs from B in "harness fixes" now also covers #1025's fix.
+
+## 7. Hold
 
 The coordinator placed a hold: no model call (smoke, Haiku, Ollama) until an explicit "measurement go" and until an independent re-review of the last two harness changes (the zlib classification and the page origin) has cleared. This file and `manifest-template.json` are committed during the hold.

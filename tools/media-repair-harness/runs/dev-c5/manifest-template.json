@@ -1,7 +1,7 @@
 {
  "_comment": "Frozen run manifest template for dev-c5 (PREREGISTRATION.md). Null fields are filled by the runner at run time (manifest.json); every other value is frozen.",
  "harness_version": "dev-c5",
- "frozen_code_commit": "8ee818c6",
+ "frozen_code_commit": "22f5bd23",
  "suite": {
   "path": ".agents/context/media-repair-harness-2026-10-19/suite-dev-v1.1",
   "split": "dev",
@@ -180,5 +180,8 @@
   "validity",
   "context and failures",
   "statements"
- ]
+ ],
+ "base_main_commit": "34e8589e",
+ "frozen_src_tree_sha1": "16c26140ed5ea738835054b7975b53fb76d5f999",
+ "amendment_1": "Rebased onto main 34e8589e (PR #1025, guard-v3 support from typed execution; EPUB execution vs damage) before any model response. Only frozen_code_commit, base_main_commit and frozen_src_tree_sha1 changed; every hash, model, cap and rule is as first committed (d1c87066)."
 }
