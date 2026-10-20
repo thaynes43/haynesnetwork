@@ -801,6 +801,72 @@ class RequestedFullNotProof(unittest.TestCase):
         self.assertFalse(self.met({'window_s': 'full', 'exit_code': 0, 'stderr': '', 'frames': 67, 'out_time': '00:00:08.000000', 'streams_selected': ['0:v:0', '0:a:0']}, duration='100'))
 
 
+class ClientGrammar(unittest.TestCase):
+    """Astra 5: only fully recognised statements are read; a restriction is never turned into support."""
+
+    def compare(self, video=None, audio=None, **kw):
+        prof = {'containers': ['matroska,webm']}
+        if video is not None:
+            prof['video'] = video
+        if audio is not None:
+            prof['audio'] = audio
+        prof.update(kw)
+        streams_ = streams(vcodec=kw.pop('vcodec', 'hevc'), acodec='ac3', ch=6)
+        a = analysis([obs('e1', 'ffprobe', 'ok', probe_out(streams=streams_))], {'client_profile': prof})
+        return a['client']
+
+    def verdicts(self, c):
+        return {r['field']: r['verdict'] for r in c['rows']}
+
+    def test_h264_only_no_hevc_does_not_make_hevc_supported(self):
+        for text in ('h264 only; no hevc support', 'h264, no hevc', 'h264 (not hevc)', 'hevc is not supported, h264 is', 'h264 except hevc', 'h264 or hevc only when transcoding'):
+            c = self.compare(video=text)
+            self.assertNotIn('video_codec', self.verdicts(c), text)       # nothing is compared from a clause that was not fully read
+            self.assertTrue(any(x.startswith('video: statement not read') for x in c['not_compared']), text)
+            self.assertFalse(c['summary']['complete'], text)
+        c = self.compare(video='h264')                                    # control: a fully recognised statement
+        self.assertEqual(self.verdicts(c)['video_codec'], 'unsupported')
+        c = self.compare(video='h264 or hevc, up to 1080p')
+        self.assertEqual(self.verdicts(c)['video_codec'], 'supported')
+
+    def test_audio_clauses_follow_the_same_rule(self):
+        c = self.compare(audio='aac and ac3, never eac3')
+        self.assertNotIn('audio_codec', self.verdicts(c))
+        c = self.compare(audio='aac, ac3 or eac3, up to 6 channels')
+        self.assertEqual((self.verdicts(c)['audio_codec'], self.verdicts(c)['audio_channels']), ('supported', 'supported'))
+        c = self.compare(audio='aac, up to 6 channels, stereo downmix only')
+        self.assertNotIn('audio_channels', self.verdicts(c))
+
+    def test_complete_is_narrow(self):
+        full = {'containers': ['matroska,webm'], 'video_codec': 'h264', 'video_pix_fmt': 'yuv420p', 'max_height': 1080, 'audio_codecs': ['aac'], 'max_audio_channels': 2}
+        out = probe_out(streams=streams())
+        c = analysis([obs('e1', 'ffprobe', 'ok', out)], {'client_profile': full})['client']
+        self.assertTrue(c['summary']['complete'])
+        # an unreadable extra field, an unknown stream field, an ambiguous selection, or a container that is not shown each keep it False
+        c = analysis([obs('e1', 'ffprobe', 'ok', out)], {'client_profile': dict(full, hdr='hdr10 only')})['client']
+        self.assertFalse(c['summary']['complete'])
+        bad_streams = [{'index': 0, 'codec_type': 'video', 'codec_name': 'h264'}, {'index': 1, 'codec_type': 'audio', 'codec_name': 'aac'}]
+        c = analysis([obs('e1', 'ffprobe', 'ok', probe_out(streams=bad_streams))], {'client_profile': full})['client']
+        self.assertFalse(c['summary']['complete'])
+        c = analysis([obs('e1', 'ffprobe', 'ok', probe_out(streams=streams(extra=[{'index': 2, 'codec_type': 'audio', 'codec_name': 'aac', 'channels': 2}])))], {'client_profile': full})['client']
+        self.assertFalse(c['summary']['complete'])
+        c = analysis([obs('e1', 'ffprobe', 'ok', out)], {'client_profile': {k: v for k, v in full.items() if k != 'containers'}})['client']
+        self.assertFalse(c['summary']['complete'])
+        self.assertIn('not a diagnosis', c['summary']['note'])
+
+    def test_explicit_codec_profile_comparison(self):
+        prof = {'containers': ['matroska,webm'], 'video_codec': 'h264', 'video_profiles': ['Main', 'High'], 'audio_codecs': ['aac'], 'audio_profiles': ['LC']}
+        ss = [{'index': 0, 'codec_type': 'video', 'codec_name': 'h264', 'profile': 'High 10'}, {'index': 1, 'codec_type': 'audio', 'codec_name': 'aac', 'profile': 'LC'}]
+        v = {r['field']: r['verdict'] for r in analysis([obs('e1', 'ffprobe', 'ok', probe_out(streams=ss))], {'client_profile': prof})['client']['rows']}
+        self.assertEqual((v['video_profile'], v['audio_profile']), ('unsupported', 'supported'))
+        ss[0]['profile'] = 'High'
+        v = {r['field']: r['verdict'] for r in analysis([obs('e1', 'ffprobe', 'ok', probe_out(streams=ss))], {'client_profile': prof})['client']['rows']}
+        self.assertEqual(v['video_profile'], 'supported')
+        del ss[0]['profile']
+        v = {r['field']: r['verdict'] for r in analysis([obs('e1', 'ffprobe', 'ok', probe_out(streams=ss))], {'client_profile': prof})['client']['rows']}
+        self.assertEqual(v['video_profile'], 'unknown')
+
+
 class Robustness(unittest.TestCase):
     """Malformed recorded or live data yields no typed fact and no exception: the layer never guesses and never stops a run."""
     OUTS = ['', 'null', '[]', '123', '"str"', '{}', '{"exit_code":"x"}', '{"stderr":123}', '{"stderr":["a"]}', '{"streams":"x"}', '{"streams":[1,2]}', '{"streams":{"video":1}}',
@@ -816,6 +882,15 @@ class Robustness(unittest.TestCase):
             o = obs('t1', tool, status, out, args)
             d = EV2.derive(o)
             self.assertIsNotNone(d.execution)
+            # the invariant itself: nothing in this table names damage in a recognised way, so nothing may be called damaged ...
+            self.assertNotEqual(d.integrity, 'damaged', (tool, status, out[:60]))
+            self.assertFalse([f for f in d.findings if f['known_defect']], (tool, status, out[:60]))
+            # ... and a clean verdict needs a positive observation: only the one table entry that states a decoded span (frames, out_time) may be clean
+            if d.integrity == 'clean':
+                self.assertIn((tool, status), (('decode_sample', 'ok'), ('decode_sample', 'partial')), (tool, status, out[:60]))
+                self.assertIn('out_time', out)
+            if status in ('error', 'timeout', 'unavailable'):
+                self.assertNotEqual(d.integrity, 'clean')
             ses = EV2.Session('case-0', {'client_profile': {'video': 'h264'}}, 'tv', [tool])
             ses.initial([o])
             text, n = ses.result(obs('t2', tool, status, out, args), 't2', 3)
@@ -825,7 +900,8 @@ class Robustness(unittest.TestCase):
 
     def test_an_unreadable_shape_is_reported_as_such(self):
         d = EV2.derive(obs('t1', 'decode_sample', 'ok', {'exit_code': 0, 'stderr': '', 'out_time': {'x': 1}}, {'at': 0}))
-        self.assertIn(d.integrity, ('unknown', 'clean'))
+        self.assertEqual(d.integrity, 'unknown')       # an unreadable decoded span is not a positive observation
+        self.assertEqual(d.findings, [])
         d = EV2.derive(obs('t1', 'ffprobe', 'ok', '{"coverage":{"verified":"x","not_verified":3},"output":{"segments":[1,2,{"at_s":"q"}]},"status":"ok"}'))
         self.assertEqual(d.integrity, 'unknown')
         self.assertTrue(any('shape this layer does not read' in u for u in d.unresolved))

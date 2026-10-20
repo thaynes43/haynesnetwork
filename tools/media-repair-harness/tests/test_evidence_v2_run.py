@@ -85,10 +85,15 @@ class LegacyCompatibility(unittest.TestCase):
         self.assertEqual(DGv(), ('v1', 'v2', 'v3'))
 
     def test_legacy_prompts_and_schemas_are_byte_identical(self):
-        # sha256 of the prompt texts and of the canonical schemas as shipped before W18 (the replay-identity golden covers v1 and v2; v3 and v4 are pinned here)
-        for version, sha in (('v4', '48bad0e41baa113df432545566a34d3bc0d01e2c5bd0f27fe0bcedb923c73a8a'),):
-            text = (Path(P.__file__).resolve().parent / 'prompts' / (version + '.txt')).read_bytes()
-            self.assertEqual(hashlib.sha256(text).hexdigest(), sha)
+        """The sha256 of each prompt text and of the per-case turn schemas, as they were on origin/main 7abf11fb (protocol.py and prompts/ are untouched by W18)."""
+        want = {'v1': '30749f5dc7065a2ddd70967cd6888e91d237030e1b025bc6dac19ca51fed9ee8', 'v2': '351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a',
+                'v3': 'b1fd9e8558396dc288c8b66443a3363f29496032f1e32a0590a1245469e8061a', 'v4': 'a2c3036e57d243a1c892b844a37796ec026e4ea449c4737bcbc3efd01591eedd'}
+        for version, sha in want.items():
+            self.assertEqual(P.get_prompt(version)['sha256'], sha, version)
+        canon = lambda o: hashlib.sha256(json.dumps(o, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        self.assertEqual(canon(P.turn_schema('v1')), '4d976ba5fc8f82af307a7cfb4f168db248b08ffb5e7bf2a82d11b2b9ce28790b')
+        self.assertEqual(canon(P.turn_schema('v4', ['ffprobe', 'decode_sample'])), '140104f9b7e533e6ced99f69326e709e5994787b4b82ac015265a7ca73af8313')
+        self.assertEqual(canon(P.turn_schema('v2', ['ffprobe'])), '87b8a7d50ff941030f48e829f8beb1953cb72b771897fe168d81312de006ef6e')
         self.assertEqual(P.PROMPT_VERSIONS, ('v1', 'v2', 'v3', 'v4'))
 
     def test_legacy_results_keep_their_known_audit_bugs_under_the_legacy_version(self):
@@ -1238,3 +1243,276 @@ class RegressionGolden(unittest.TestCase):
                 continue    # these fixtures sit in the evaluator's home cache: whether the file exists decides the route of the tools, so only the case-provided evidence is pinned
             self.assertEqual(now[key], row, key)
         self.assertEqual(len(want), 146)
+
+
+def replay_case(cid, mutate=None, evidence=None, **kw):
+    """The standard synthetic TV case with a recorded replay file; `mutate(rec)` changes the recording (uncalled results included)."""
+    case = L.tv_case(cid, **kw)
+    if evidence is not None:
+        case['evidence'] = evidence
+    ts = L.suite_with(case, probes=False)
+    rec = json.loads(json.dumps(L.REPLAY_FILE))
+    rec['sha256'] = hashlib.sha256(b'not really media' * 50).hexdigest()
+    if mutate:
+        mutate(rec)
+    ts.add_file('fixtures/probes/x.mkv.json', json.dumps(rec).encode())
+    return case, ts
+
+
+class CapabilityIndependence(unittest.TestCase):
+    """Astra 4 and Opus 4: the advertisement is built from operation metadata (which recordings and offsets exist), never from a result the model has not asked for.
+    Each variant changes ONE uncalled result and the advertisement must not move."""
+
+    def caps(self, mutate=None, **kw):
+        case, ts = replay_case('qxk-001', mutate, **kw)
+        fx = T.Fixture.from_case(case, ts.root)
+        ctx = T.Context(case, fx, tempfile.mkdtemp(), suite_dir=ts.root, which=th.NO_BINARIES, tools_behavior='v2')
+        out = T.capabilities(ctx)
+        ts.cleanup()
+        return out
+
+    def test_changing_any_uncalled_result_leaves_the_advertisement_unchanged(self):
+        base = self.caps()
+        variants = {
+            'ffprobe_without_video': lambda r: r['ffprobe'].update(streams=[s for s in r['ffprobe']['streams'] if s['codec_type'] != 'video']),
+            'ffprobe_failed': lambda r: r['ffprobe'].update(exit_code=1, stderr='moov atom not found'),
+            'ffprobe_empty': lambda r: r.update(ffprobe={}),
+            'full_decode_clean': lambda r: r['decode_sample']['full'].update(stderr='', frames=999),
+            'full_decode_damaged': lambda r: r['decode_sample']['full'].update(stderr='[h264 @ 0x0] error while decoding MB 1 1', exit_code=1),
+            'full_decode_structure': lambda r: r['decode_sample'].update(full=['not', 'a', 'dict']),
+            'window_results_changed': lambda r: [r['decode_sample'][k].update(stderr=SENTINEL, frames=0) for k in ('0', '4', '8')],
+            'window_structure': lambda r: r['decode_sample'].update({'4': None, '8': 'x'}),
+            'audio_levels': lambda r: r['audio_sample'].update({'0': {'rms_dbfs': -90.0, 'peak_dbfs': -80.0, 'silent_fraction': 1.0}}),
+            'audio_structure': lambda r: r['audio_sample'].update({'0': 'silent'}),
+            'frame_text_changed': lambda r: r.update(frame_text=[{'t0': 0, 't1': 2, 'text': SENTINEL + 'CARD'}]),
+        }
+        for name, mutate in variants.items():
+            self.assertEqual(self.caps(mutate), base, name)
+
+    def test_what_the_advertisement_does_report_follows_the_recording_metadata_only(self):
+        base = {c['tool']: c for c in self.caps()}
+        self.assertEqual(base['ocr']['recorded_reading_ranges_s'], [[0, 2]])              # the recorded OCR time ranges, never the text
+        self.assertNotIn('HARBOR', json.dumps(base))
+        moved = {c['tool']: c for c in self.caps(lambda r: r.update(frame_text=[{'t0': 5, 't1': 9, 'text': 'x'}]))}
+        self.assertEqual(moved['ocr']['recorded_reading_ranges_s'], [[5, 9]])
+        gone = {c['tool']: c for c in self.caps(lambda r: r['decode_sample'].pop('full'))}
+        self.assertEqual(gone['decode_sample']['full_decode'], 'not_recorded')
+        fewer = {c['tool']: c for c in self.caps(lambda r: r['decode_sample'].pop('8'))}
+        self.assertEqual(fewer['decode_sample']['offsets_s'], [0, 4])
+        self.assertEqual(base['frame_sample']['offsets_s'], 'any')
+
+    def test_pinned_replay_status_and_outputs_do_not_move_the_advertisement(self):
+        def pinned(status, output):
+            case = L.tv_case('qxk-002', evidence=[], fixture={'kind': 'remote', 'sha256': 'ab' * 32, 'locator': 'radarr movie 1 file 2'},
+                             replay=[{'tool': 'decode_sample', 'args': {'ss': 0, 't': 4}, 'status': status, 'output': output},
+                                     {'tool': 'ocr', 'args': {'ss': 1}, 'status': status, 'output': output}])
+            ts = th.TempSuite([case])
+            ctx = T.Context(case, T.Fixture.from_case(case, ts.root), tempfile.mkdtemp(), suite_dir=ts.root, which=th.NO_BINARIES, tools_behavior='v2')
+            out = T.capabilities(ctx)
+            ts.cleanup()
+            return out
+        base = pinned('ok', json.dumps(L.DEC_CLEAN))
+        for status, output in (('error', 'x'), ('timeout', ''), ('unavailable', 'nothing'), ('partial', json.dumps(L.DEC_BAD)), ('ok', json.dumps({'exit_code': 1, 'stderr': DAMAGE}))):
+            self.assertEqual(pinned(status, output), base, status)
+
+    def test_case_provided_evidence_does_not_change_the_advertisement_of_other_operations(self):
+        a = self.caps()
+        b = self.caps(evidence=[])
+        self.assertEqual(a, b)
+
+
+class UncalledStructureMutation(unittest.TestCase):
+    """Astra tests paragraph: mutate the STRUCTURE of uncalled results (not only a sentinel string); everything sent must be identical."""
+
+    def sent(self, mutate):
+        case, ts = replay_case('qxs-001', mutate, evidence=[])
+        rec, ad = ev2h.scripted_run(case, ts, [tc('ffprobe'), tc('decode_sample', {'at': 0}), dec()], which=th.NO_BINARIES, evidence_format='v2', guards='v3')
+        ts.cleanup()
+        return ad.sent_text(), rec
+
+    def test_the_complete_requests_do_not_depend_on_what_uncalled_results_look_like(self):
+        base, rec = self.sent(None)
+        variants = [
+            lambda r: r['decode_sample'].update({'4': None, '8': [], 'full': 'text'}),
+            lambda r: r['decode_sample']['4'].update(stderr=['a', 'b'], extra={'deep': {'x': [1, 2, 3]}}),
+            lambda r: r['decode_sample'].update(full={}),
+            lambda r: r.update(audio_sample={'0': 5}),
+            lambda r: r.update(audio_sample={'0': {'rms_dbfs': 'loud'}}),
+            lambda r: r.update(frame_text=[{'t0': 0, 't1': 2, 'text': ['nested', {'a': 1}]}]),
+            lambda r: r.update(frame_text=[{'t0': 0, 't1': 2, 'text': 'x' * 5000}]),
+            lambda r: r.update(unknown_future_key={'a': [1, 2, {'b': SENTINEL}]}),
+        ]
+        for i, mutate in enumerate(variants):
+            got, rec2 = self.sent(mutate)
+            self.assertEqual(got, base, i)
+            self.assertNotIn(SENTINEL, got)
+        self.assertEqual(rec['decision']['class'], 'insufficient_evidence')
+
+
+class GuardsSeeOnlyWhatWasShown(unittest.TestCase):
+    """Astra 4: a damage message beyond the displayed truncation boundary must not change a guard outcome; under format v2 the typed pages carry the whole text."""
+
+    def case_with_long_probe(self):
+        chapters = [{'start': str(i * 2), 'end': str(i * 2 + 2), 'title': 'Chapter %03d %s' % (i, 'x' * 40)} for i in range(300)]
+        probe = dict(L.PROBE_REC, chapters=chapters, stderr='[mov,mp4 @ 0x0] moov atom not found')
+
+        def mutate(rec):
+            rec['ffprobe'] = probe
+        return replay_case('cutdemo-001', mutate, evidence=[], tools_available=['ffprobe', 'decode_sample'])
+
+    def run_it(self, **kw):
+        case, ts = self.case_with_long_probe()
+        replies = [tc('decode_sample', {'at': 0}), tc('ffprobe'), dec('healthy', 'none', ['t1'])]
+        rec, ad = ev2h.scripted_run(case, ts, replies, which=th.NO_BINARIES, **kw)
+        ts.cleanup()
+        return rec, ad
+
+    def test_legacy_format_guards_read_the_cut_text_the_model_saw_not_the_whole_output(self):
+        rec, ad = self.run_it(guards='v3')
+        shown = json.loads(ad.calls[-1][-1]['content'])
+        self.assertTrue(shown['truncated'])
+        self.assertNotIn('moov atom', shown['output'])                       # the damage text sits past the cut: the model could not see it
+        self.assertNotIn('raw_output', rec['tool_calls'][1])                  # and the record holds no uncut text for the guard to read
+        self.assertEqual((rec['decision']['class'], rec['guard']['final_changed']), ('healthy', False))
+
+    def test_format_v2_shows_the_whole_text_through_its_typed_pages_so_the_guard_sees_the_defect(self):
+        rec, ad = self.run_it(evidence_format='v2', guards='v3')
+        shown = json.loads(ad.calls[-1][-1]['content'])
+        self.assertFalse(shown['truncated'])
+        self.assertTrue(any(a['type'] == 'defect' for a in shown['output']['alerts']))       # the defect is in the alerts of page one
+        self.assertIn('moov atom not found', json.dumps(shown))
+        self.assertEqual((rec['decision']['class'], rec['guard']['final_changed']), ('insufficient_evidence', True))
+
+    def test_all_four_format_and_guard_combinations(self):
+        want = {(None, None): 'healthy', (None, 'v3'): 'healthy', ('v2', None): 'healthy', ('v2', 'v3'): 'insufficient_evidence'}
+        for (fmt, g), cls in want.items():
+            rec, ad = self.run_it(**{k: v for k, v in (('evidence_format', fmt), ('guards', g)) if v})
+            self.assertEqual(rec['decision']['class'], cls, (fmt, g))
+        # with the damage inside the case's own (short) evidence, every guarded combination abstains and the unguarded ones keep the model's answer
+        for (fmt, g), cls in {(None, None): 'healthy', (None, 'v3'): 'insufficient_evidence', ('v2', None): 'healthy', ('v2', 'v3'): 'insufficient_evidence'}.items():
+            case = L.tv_case('qxc-001')
+            ts = L.suite_with(case)
+            rec, ad = ev2h.scripted_run(case, ts, [dec('healthy', 'none', ['e1'])], which=th.NO_BINARIES, **{k: v for k, v in (('evidence_format', fmt), ('guards', g)) if v})
+            self.assertEqual(rec['decision']['class'], cls, (fmt, g))
+            ts.cleanup()
+
+
+class ReferenceResolver(unittest.TestCase):
+    """Astra 6: one resolver; a finding id counts only if it was emitted; the guards see references through the same resolver."""
+
+    def write_decision(self, refs):
+        d = dec('corrupt_file', 'blocklist_and_search', refs, target='Harbor Lights - S01E02 - Lamp Oil.mkv')
+        d['audit'] = {'target': d['target'], 'preconditions': ['t1 shows decoder errors'], 'readback': 'queue', 'verify': 'new file'}
+        return d
+
+    def run_refs(self, refs, guards='v3', **kw):
+        case = L.tv_case('qxr-001', evidence=[])
+        ts = L.suite_with(case)
+        extra = {'guards': guards} if guards else {}
+        rec, ad = ev2h.scripted_run(case, ts, [tc('decode_sample', {'at': 4}), self.write_decision(refs)], which=th.NO_BINARIES, evidence_format='v2', **extra, **kw)
+        ts.cleanup()
+        return rec
+
+    def test_a_real_finding_id_is_accepted_everywhere_and_behaves_like_its_observation(self):
+        by_obs = self.run_refs(['t1'])
+        by_finding = self.run_refs(['t1.f1'])
+        by_conflict = self.run_refs(['t1.c1'])
+        for rec in (by_obs, by_finding, by_conflict):
+            self.assertEqual(rec['decision']['action'], 'blocklist_and_search')            # no guard fired
+            self.assertFalse(rec['guard']['final_changed'])
+            self.assertEqual(rec['bad_evidence_refs'], [])
+            self.assertTrue({c['id']: c['met'] for c in rec['action_audit']['preconditions']}['cited_evidence_supports'])
+        self.assertEqual(by_finding['decision']['evidence_refs'], ['t1.f1'])               # recorded as the model wrote it
+
+    def test_a_finding_id_that_was_never_emitted_is_a_bad_reference_and_the_guard_notices(self):
+        for ref in ('t1.nonexistent', 't1.f9', 't7.f1', 't1.'):
+            self.assertEqual(self.run_refs([ref], guards=None)['bad_evidence_refs'], [ref], ref)      # the record flags it ...
+            rec = self.run_refs([ref])
+            self.assertTrue(rec['guard']['final_changed'], ref)                                      # ... and the guard, which reads the same resolution, abstains
+            self.assertEqual(rec['guard']['applied'][0]['original']['evidence_refs'], [ref])
+            self.assertEqual(rec['decision']['action'], 'escalate')
+
+    def test_the_resolver_is_one_function(self):
+        case = L.tv_case('qxr-002', evidence=[])
+        calls = [{'id': 't1', 'tool': 'ffprobe'}]
+
+        class S:
+            def finding_index(self):
+                return {'t1.f1': 't1', 'e1.c1': 'e1'}
+        r = R.make_resolver(case, calls, S())
+        self.assertEqual(r(['e1', 't1', 't1.f1', 'e1.c1', 't1.f2', 'zzz']), ['e1', 't1', 't1', 'e1', 't1.f2', 'zzz'])
+        self.assertEqual(R.make_resolver(case, calls, None)(['t1.f1']), ['t1.f1'])               # the legacy format never rewrites a reference
+
+
+class WireBudget(unittest.TestCase):
+    """Astra 7 and Opus 1, 5: the first message as a whole, every fetched page (as the sixth call, notice included) and the page budget option."""
+
+    def big_case(self, notes=3000):
+        case = L.tv_case('qxw-001', evidence=[], context={'title': 'Harbor Lights S01E02', 'filename': 'Harbor Lights - S01E02 - Lamp Oil.mkv', 'expected': {'series': 'Harbor Lights'},
+                                                          'arr': {'app': 'sonarr', 'ids': {'seriesId': 1}}, 'notes_for_model': 'n' * notes})
+        ch = [{'start': str(i * 2), 'end': str(i * 2 + 2), 'title': 'Chapter %03d %s' % (i, 'x' * 40)} for i in range(120)]
+        case['evidence'] = [{'id': 'e%d' % i, 'tool': 'ffprobe', 'args': {}, 'status': 'ok', 'output': json.dumps(dict(L.PROBE_REC, chapters=ch))} for i in range(1, 4)]
+        return case
+
+    def test_the_first_message_as_a_whole_is_within_the_limit_and_every_item_is_reachable(self):
+        case = self.big_case()
+        ts = L.suite_with(case)
+        rec, ad = ev2h.scripted_run(case, ts, [dec()], which=th.NO_BINARIES, evidence_format='v2')
+        first = ad.calls[0][0]['content']
+        self.assertLessEqual(len(first.encode('utf-8')), EV2.WIRE_BYTES)                      # context and capabilities included
+        msg = json.loads(first)
+        self.assertGreater(msg['evidence']['page']['of'], 1)
+        view = P.case_view(case, [], case_alias=rec['model_case_alias'])
+        frame = {k: msg[k] for k in ('case_id', 'media_type', 'context', 'tools_available', 'tool_call_budget', 'capabilities', 'evidence_format')}
+        ses = EV2.Session(rec['model_case_alias'], view['context'], view['media_type'], view['tools_available'])
+        evs = [EV2.make_observation(e['id'], e['tool'], e['args'], e['status'], e['output'], None, 'case') for e in R.resolve_evidence_raw(case, ts.root)]
+        block, n = ses.initial(evs, frame)
+        self.assertEqual(json.dumps(dict(frame, evidence=block), ensure_ascii=False, separators=(',', ':')), first)      # the runner sent exactly this
+        seen = [i['id'] for i in block['items']]
+        chapters = {}
+        pages = [block]
+        cur = block['page'].get('next')
+        while cur:
+            status, text = ses.fetch(cur, 't6', 'audiobook_inspect', 0, '\n' + P.BUDGET_MESSAGE)
+            self.assertEqual(status, 'ok')
+            self.assertLessEqual(len(text.encode('utf-8')), EV2.WIRE_BYTES)                    # fetched as the sixth call with the notice
+            page = json.loads(text.split('\n')[0])['output']
+            pages.append(page)
+            seen += [i['id'] for i in page.get('items', [])]
+            cur = page.get('page', {}).get('next')
+        for pg in pages:
+            for eid, f in (pg.get('facts') or {}).items():
+                chapters.setdefault(eid, 0)
+                chapters[eid] += len(f.get('chapters', []))
+        self.assertEqual(sorted(seen), ['e1', 'e2', 'e3'])
+        self.assertEqual(chapters, {'e1': 120, 'e2': 120, 'e3': 120})                           # every chapter of every item is on some page
+        ts.cleanup()
+
+    def test_every_page_of_a_tool_reply_fits_when_fetched_as_the_sixth_call_with_the_longest_tool_name(self):
+        ses = EV2.Session('case-aaaaaaaa', {}, 'tv', ['ffprobe', 'audiobook_inspect', 'decode_sample'])
+        ses.initial([])
+        for tool in ('ffprobe', 'audiobook_inspect'):
+            text, n = ses.result(EV2.make_observation('t5', tool, {}, 'ok', json.dumps(probe_out(duration='600', chapters=[{'start': str(i), 'end': str(i + 1), 'title': 'T%03d %s' % (i, 'y' * 70)} for i in range(400)])), 'replay', 'tool'), 't5', 1)
+            texts = ev2h.fetch_all(ses, text)
+            self.assertGreater(len(texts), 2)
+            for t in texts:
+                self.assertLessEqual(len(t.encode('utf-8')), EV2.WIRE_BYTES, tool)
+                self.assertEqual(json.loads(t.split('\n')[0])['type'], 'tool_result')
+
+    def test_tool_output_bytes_is_the_page_budget_under_v2_and_is_recorded(self):
+        case = self.big_case(notes=200)
+        ts = L.suite_with(case)
+        rec, ad = ev2h.scripted_run(case, ts, [tc('ffprobe'), dec()], which=th.NO_BINARIES, evidence_format='v2', tool_output_bytes=4096)
+        for m in ad.calls[-1]:
+            if m['role'] == 'user':
+                self.assertLessEqual(len(m['content'].encode('utf-8')), 4096)
+        self.assertEqual(rec['evidence_format']['wire_bytes'], 4096)
+        ts.cleanup()
+        code, out, ts2 = OptionCombinations.run_main(OptionCombinations(), [case_with([])], [th.decision('insufficient_evidence', 'escalate', refs=[])], ['--evidence-format', 'v2', '--tool-output-bytes', '4096'])
+        self.assertEqual(json.loads((out / 'manifest.json').read_text())['config']['wire_bytes'], 4096)
+        self.assertEqual(json.loads((out / 'manifest.json').read_text())['config']['tool_output_bytes'], 4096)
+        ts2.cleanup()
+        for bad in (1000, 9000):
+            with self.assertRaises(ValueError):
+                R.check_option_combination('v4', 'v2', None, bad)
+        R.check_option_combination('v4', None, None, 100)             # legacy: any cap is as before

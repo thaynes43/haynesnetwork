@@ -17,8 +17,7 @@ a defect; incompatibility with a client is not corruption.
 Inputs (the narrow interface).  Everything is derived from `Observation` dicts (id, tool, args, status, output, backend, collector_truncated)
 and the model-visible case fields (context, media type, tools offered).  The case object is never passed in: no truth, accepted
 classes, supported actions, solvability, family, corrections, provenance, outcome step, injection flag or fixture path can reach the
-output, because no function here can see them.  A backend of `injected` (the harness-side marker of an injected failure) is mapped to
-unknown before anything is derived.
+output, because no function here can see them.  A backend of `injected` (the harness-side marker of an injected failure) is dropped (no backend is shown) before anything is derived.
 
 Honest unknowns.  A field the recorded data lacks is `unknown` (never clean, never damaged); an unrecognised error text stays raw with
 `known_defect: false`; a non-zero exit alone is not a defect; coverage describes checks performed and never a diagnosis or a
@@ -45,6 +44,8 @@ DAMAGE_RX = re.compile(r'moov atom not found|invalid data found when processing 
                        r'truncated|partial file|end of file|ended prematurely|unexpected eof|corrupt|header parsing failed|error reading header|damaged|checksum mismatch|crc mismatch|'
                        r'not well-formed|bad zip|not a zip|error while decoding|cabac decode|concealing|invalid nal|missing picture|non-existing p[ps]s|'
                        r'corrupt(ed)? (decoded )?frame|error splitting the input into nal|reference picture missing|invalid bitstream|invalid data found', re.I)
+# the harness's own cut markers contain words ("truncated") that are also damage wording; they are not part of what a tool reported
+HARNESS_MARKER_RX = re.compile(r'\.\.\.\[(?:output )?(?:truncated|cut off|\+\d+ chars[^\]]*)\]|\.\.\.\[excerpt cut[^\]]*\]|\.\.\.\[output truncated\]', re.I)
 HARNESS_FAILURE_RX = re.compile(r'^(bad arguments|tool crashed|unknown frame|OCR backend failed|.{0,40} failed: could not run|.{0,40} exceeded the \d+ s tool timeout)', re.I)
 UNKNOWN = 'unknown'
 UNRECORDED = 'unrecorded'   # the stream selection of a decode window that its record does not state
@@ -322,7 +323,7 @@ def _plain_text_fallback(d, data):
     if obs['tool'] in INTEGRITY_TOOLS and obs['status'] in ('ok', 'partial', 'error') and not HARNESS_FAILURE_RX.search(text.strip()):
         d.facts = {'raw': text}
         kind, part = _PLAIN_KIND[obs['tool']]
-        if DAMAGE_RX.search(text):
+        if DAMAGE_RX.search(HARNESS_MARKER_RX.sub(' ', text)):
             d.finding(kind, text, {'part': part}, True)
             d.integrity = 'damaged'
             if part == 'container':
@@ -338,6 +339,12 @@ def _finish(d, data):
     if len(ex.get('reason') or '') > 200:     # the header stays small; the whole text is a fact
         d.facts = dict(d.facts if isinstance(d.facts, dict) else {}, message=ex['reason'])
         ex['reason'] = ex['reason'][:200] + '...[whole text in facts.message]'
+    if ex['state'] != 'ran':      # a run that failed, timed out or never ran cannot certify anything clean, whatever its output text says
+        if d.integrity == 'clean':
+            d.integrity = UNKNOWN
+        if d.container == 'clean':
+            d.container = UNKNOWN
+        d.intervals = [iv for iv in d.intervals if iv['state'] != 'clean']      # (the stages a package inspector reports as passed before its failure stay: they are its own findings)
     if ex['state'] == 'ran' and ex['status'] == 'ok' and any(f['known_defect'] for f in d.findings):
         d.conflict('status_ok_with_defect', 'the tool reported status ok and also reported a defect: ok means the tool ran, not that the file has no defect',
                    [f['id'] for f in d.findings if f['known_defect']])
