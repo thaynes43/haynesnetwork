@@ -59,12 +59,21 @@ def guard_run(run_dir, suite, out_dir, restore=False, version=DG.GUARD_VERSION):
         (out_dir / (rec['case_id'] + '.json')).write_text(json.dumps(new, indent=2, ensure_ascii=False, sort_keys=True) + '\n')
         finals.append(new)
     manifest = json.loads((run_dir / 'manifest.json').read_text()) if (run_dir / 'manifest.json').is_file() else {}
-    manifest['guard_whatif'] = {'guards': version, 'source_run': run_dir.name, 'offline': True, 'model_calls': 0, 'restore': bool(restore),
+    source_guards = (manifest.get('config') or {}).get('guards')
+    if restore:
+        # the restored records hold the model's own decisions: the source's recorded guard setting no longer describes them
+        (manifest.get('config') or {}).pop('guards', None)
+    elif source_guards is not None and manifest.get('config'):
+        manifest['config']['guards'] = version    # re-guarding a guarded run: the copies carry the version applied here
+    manifest['guard_whatif'] = {'guards': None if restore else version, 'source_guards': source_guards, 'source_run': run_dir.name, 'offline': True, 'model_calls': 0, 'restore': bool(restore), 'source_run': run_dir.name, 'offline': True, 'model_calls': 0, 'restore': bool(restore),
                                 'note': ('records copied from a guarded run with the model\'s original decisions restored (the run scored as if guards were off)' if restore else
                                          'records copied from the source run with the decision guards applied offline') + '; nothing was re-run'}
     (out_dir / 'manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True, default=str) + '\n')
     summary = json.loads((run_dir / 'run_summary.json').read_text()) if (run_dir / 'run_summary.json').is_file() else {}
-    if not restore:
+    if restore:
+        if 'guards' in summary:     # the source's counts (decisions_changed ...) describe the guarded decisions, not these copies
+            summary['guards'] = {'version': None, 'restored_from': (summary['guards'] or {}).get('version'), 'decisions_changed': 0}
+    else:
         summary['guards'] = R.guard_summary(finals)
     (out_dir / 'run_summary.json').write_text(json.dumps(summary, indent=2, sort_keys=True, default=str) + '\n')
     with open(out_dir / 'audit.jsonl', 'w') as audit:

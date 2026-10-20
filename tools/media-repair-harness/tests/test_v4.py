@@ -491,6 +491,34 @@ class MainAndTool(unittest.TestCase):
             self.assertIn('case_sha256', str(cm.exception))
         ts.cleanup()
 
+    def test_restore_does_not_carry_the_source_guard_metadata(self):
+        cases = [case_with([ev('e1', 'prior_record')]), dict(case_with([ev('e1', 'ffprobe')]), id='g2')]
+        replies = [th.decision('healthy', 'none', refs=['e1']), th.decision('healthy', 'none', refs=['e1'])]
+        code, run, ts = self.run_main(cases, replies, ['--guards', 'v1'])
+        src_summary = json.loads((run / 'run_summary.json').read_text())
+        self.assertEqual(src_summary['guards']['decisions_changed'], 1)
+        self.assertEqual(json.loads((run / 'manifest.json').read_text())['config']['guards'], 'v1')
+        out = Path(tempfile.mkdtemp()) / 'restored'
+        guard_cli.guard_run(run, ts.root, out, restore=True)
+        # the restored copies hold the model's own decisions: no stale "1 decision changed" and no stale guard setting
+        self.assertEqual(json.loads((out / 'run_summary.json').read_text())['guards'], {'version': None, 'restored_from': 'v1', 'decisions_changed': 0})
+        man = json.loads((out / 'manifest.json').read_text())
+        self.assertNotIn('guards', man['config'])
+        self.assertEqual((man['guard_whatif']['guards'], man['guard_whatif']['source_guards'], man['guard_whatif']['restore']), (None, 'v1', True))
+        g1 = json.loads((out / 'g1.json').read_text())
+        self.assertEqual(g1['decision']['action'], 'none')
+        self.assertTrue(g1['guard']['restored'])
+        self.assertEqual(json.loads((run / 'manifest.json').read_text())['config']['guards'], 'v1')      # the source is untouched
+        # re-guarding a guarded run with another version records that version, not the source's
+        out2 = Path(tempfile.mkdtemp()) / 'reguarded'
+        guard_cli.guard_run(run, ts.root, out2, version='v2')
+        self.assertEqual(json.loads((out2 / 'manifest.json').read_text())['config']['guards'], 'v2')
+        self.assertEqual(json.loads((out2 / 'run_summary.json').read_text())['guards']['version'], 'v2')
+        # a run that never had guards gets no invented block on restore
+        code, plain, ts2 = self.run_main(cases[:1], replies[:1])
+        self.assertRaises(ValueError, guard_cli.guard_run, plain, ts2.root, Path(tempfile.mkdtemp()) / 'x', True)    # nothing to restore: no guard field
+        ts.cleanup(); ts2.cleanup()
+
     def test_guards_v2_is_selectable_in_run_and_recorded(self):
         cases = [case_with([ev('e1', 'prior_record')])]
         code, on, ts = self.run_main(cases, [th.decision('healthy', 'none', refs=['e1'])], ['--guards', 'v2'])
