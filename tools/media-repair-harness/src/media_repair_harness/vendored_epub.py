@@ -1,7 +1,7 @@
 # VENDORED COPY, do not edit here.
 # Source: .agents/context/media-repair-actual-epub-2026-10-18/epub.py (haynesnetwork repo, relative to the repo root)
 # Source sha256: 9bba46ca885b0f234fd0e5c4ba772df115e0de66dc0fd3613b5db0c8eede9260
-# Everything below the 'BEGIN VERBATIM' line is the source file byte for byte.  tests/test_vendored_epub.py fails when the source still
+# Everything below the 'BEGIN VERBATIM' line is the source file byte for byte.  the VendoredEpub class in tests/test_packaging.py fails when the source still
 # exists and differs from this copy.  To update, copy the source again and change the sha256 above.
 # ---- BEGIN VERBATIM ----
 """Read-only bounded EPUB structure and body extraction. Never extracts archive paths."""

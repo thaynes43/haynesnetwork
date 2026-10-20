@@ -32,6 +32,7 @@ def wdecision(cls='corrupt_file', action='blocklist_and_search', target='rel-1',
 def run_v2(case, replies, suite=None, **kw):
     ts = suite or th.TempSuite([case])
     ad = A.ScriptedAdapter('scripted-1', replies)
+    kw.setdefault('which', th.NO_BINARIES)
     rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), prompt_version='v2', run_id='r', **kw)
     return rec, ad, ts
 
@@ -117,7 +118,7 @@ class PromptV2(unittest.TestCase):
         orig = P.get_prompt
         P.get_prompt = lambda v='v2': dict(orig(v), text=orig(v)['text'] + ' see secret-case-001')
         try:
-            rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), prompt_version='v2', run_id='r')
+            rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), prompt_version='v2', run_id='r', which=th.NO_BINARIES)
         finally:
             P.get_prompt = orig
         self.assertEqual(rec['error']['kind'], 'harness_crash')
@@ -156,7 +157,7 @@ class StructuredOutput(unittest.TestCase):
                 return super().complete(system, messages, schema)
         case = th.make_case(tools_available=['arr_lookup'])
         ts = th.TempSuite([case])
-        R.run_case(case, 'sha', Spy('m', [th.decision()]), ts.root, tempfile.mkdtemp(), prompt_version='v2', run_id='r')
+        R.run_case(case, 'sha', Spy('m', [th.decision()]), ts.root, tempfile.mkdtemp(), prompt_version='v2', run_id='r', which=th.NO_BINARIES)
         self.assertEqual(seen['schema']['anyOf'][0]['properties']['tool']['enum'], ['arr_lookup'])
         ts.cleanup()
 
@@ -295,7 +296,7 @@ class ProtocolViolations(unittest.TestCase):
         case = th.make_case(tools_available=['arr_lookup'])
         ts = th.TempSuite([case])
         ad = A.ScriptedAdapter('m', [th.tool_call('ffprobe'), th.decision()])
-        rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp())
+        rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), which=th.NO_BINARIES)
         self.assertEqual(len(rec['repair_prompts']), 1)
         self.assertEqual(rec['tool_calls'], [])
         ts.cleanup()

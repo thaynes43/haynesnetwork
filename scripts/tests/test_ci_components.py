@@ -483,6 +483,100 @@ class Finalizer(unittest.TestCase):
         self.assertEqual(bad.returncode, 1, bad.stdout)
 
 
+class OutputInjection(unittest.TestCase):
+    """A changed file can be NAMED anything. No name may write, overwrite or end a $GITHUB_OUTPUT key (the last value
+    of a key wins in GitHub's parser), and none may start a workflow command in the log."""
+
+    NAMES = [
+        "a\nsite=false\nharness=false\nz=",
+        "a\rsite=false\rharness=false\r",
+        "a\r\nsite=false\r\nharness=false",
+        "x=y",
+        "site=false",
+        "harness=false",
+        "a\n::set-output name=site::false",
+        "a\n::stop-commands::tok\n",
+        "weird\x00name",
+    ]
+
+    def run_classify(self, name):
+        with tempfile.TemporaryDirectory() as t:
+            paths = Path(t, "p.txt")
+            # NUL-separated, the only format that can carry a newline inside a name
+            paths.write_bytes(name.encode().replace(b"\0", b"") + b"\0")
+            out = Path(t, "out.txt")
+            r = subprocess.run(
+                ["python3", str(SCRIPT), "classify", "--paths-file", str(paths), "--github-output", str(out)],
+                capture_output=True, text=True, cwd=REPO,
+            )
+            return r, out.read_text()
+
+    @staticmethod
+    def parse(text):
+        """GitHub's last-value-wins `key=value` lines (no heredoc delimiters are ever written)."""
+        values, order = {}, []
+        for line in text.splitlines():
+            key, sep, value = line.partition("=")
+            if sep:
+                values[key] = value
+                order.append(key)
+        return values, order
+
+    def test_hostile_names_cannot_deselect_a_component(self):
+        for name in self.NAMES:
+            with self.subTest(name=name):
+                r, text = self.run_classify(name)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                values, order = self.parse(text)
+                self.assertEqual((values["site"], values["harness"]), ("true", "true"))
+                self.assertEqual(order, ["site", "harness", "image", "docs", "shared", "degraded", "reason"])
+                self.assertEqual(len(text.splitlines()), 7)  # exactly one line per output, nothing extra
+                self.assertNotIn("\r", text)
+
+    def test_hostile_names_do_not_start_a_workflow_command_in_the_log(self):
+        for name in self.NAMES:
+            with self.subTest(name=name):
+                r, _ = self.run_classify(name)
+                for line in r.stdout.splitlines():
+                    self.assertFalse(line.startswith("::") and not line.startswith("::warning::component"), line)
+                self.assertNotIn("\r", r.stdout)
+
+    def test_selection_keys_are_only_literals(self):
+        d = cc.select_all("x\nsite=false")
+        lines = cc.output_lines(d)
+        self.assertEqual(lines[0:2], ["site=true", "harness=true"])
+        self.assertEqual(len(lines), 7)
+        d.site = "false\nharness=false"  # a corrupted decision still writes only literals
+        self.assertEqual(cc.output_lines(d)[0:2], ["site=true", "harness=true"])
+        d.outputs = lambda: {**cc.Decision.outputs(d), "site": "false\nharness=false"}  # a bug that bypassed flag()
+        with self.assertRaises(ValueError):
+            cc.output_lines(d)
+
+    def test_safe_text_escapes_controls_and_bounds_length(self):
+        t = cc.safe_text("a\nb\rc\x00d")
+        self.assertNotRegex(t, r"[\x00-\x1f]")
+        self.assertLess(len(cc.safe_text("x" * 5000)), 400)
+
+    def test_unknown_path_with_newline_in_the_decision_reason(self):
+        d = route("a\nsite=false\nharness=false")
+        self.assertEqual(sel(d), (True, True))
+        self.assertNotIn("\n", cc.output_lines(d)[-1])
+
+
+class FinalizerSelectionValues(unittest.TestCase):
+    def test_only_exact_false_deselects(self):
+        skipped = {"lint-and-typecheck": "skipped", "site-test": "skipped", "build": "skipped"}
+        self.assertEqual(fin("false", "true", **skipped), [])
+        for value in ("False", "FALSE", " false", "false ", "false\n", "0", "no", "", "null", "tru", "true\nsite=false"):
+            with self.subTest(value=repr(value)):
+                # read as "selected", so the skipped site jobs are an unexpected skip: red
+                self.assertTrue(fin(value, "true", **skipped))
+        harness_skipped = {"harness-test": "skipped"}
+        self.assertTrue(fin("true", "False", **harness_skipped))
+        self.assertTrue(fin("true", "", **harness_skipped))
+        self.assertEqual(fin("true", "false", **harness_skipped), [])
+
+
 class WorkflowAgreement(unittest.TestCase):
     """The workflow and the script must agree: a renamed or forgotten job would silently fall out of the gate."""
 

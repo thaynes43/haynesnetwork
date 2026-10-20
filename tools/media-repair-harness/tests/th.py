@@ -19,6 +19,11 @@ SUITE = Path(os.environ['MRH_SUITE_DIR']) if os.environ.get('MRH_SUITE_DIR') els
 EPUB_SOURCE = REPO_ROOT / '.agents' / 'context' / 'media-repair-actual-epub-2026-10-18' / 'epub.py'
 
 
+def NO_BINARIES(name):
+    """A `which` that finds nothing: tests never depend on whether the machine has ffmpeg/ffprobe on PATH (runners may)."""
+    return None
+
+
 def require_suite():
     """Called by every test that needs the public dev suite.  A missing suite SKIPS, except when MRH_REQUIRE_SUITE=1 (CI sets it),
     where it FAILS: a quietly skipped suite test must not read as green."""

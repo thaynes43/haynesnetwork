@@ -17,7 +17,8 @@ set +e
 nice -n 19 python3 -m unittest discover -s "$COMPONENT/tests" -t "$COMPONENT/tests" -p 'test_*.py' >"$LOG" 2>&1
 STATUS=$?
 set -e
-tail -n 40 "$LOG"
+# The WHOLE unittest output reaches the CI log: every traceback, not just the last lines.
+cat "$LOG"
 COUNT="$(sed -n 's/^Ran \([0-9][0-9]*\) tests\{0,1\} in .*/\1/p' "$LOG" | tail -n 1)"
 if [ -z "$COUNT" ]; then
   echo "ci-test: unittest did not report a test count (import error or crash); failing" >&2

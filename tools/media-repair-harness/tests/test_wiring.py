@@ -85,14 +85,14 @@ class ReplayIdentity(unittest.TestCase):
         a, b = [], []
         for sink, kw in ((a, {}), (b, {'evidence_mode': 'replay'})):
             ad = A.ScriptedAdapter('s', [th.tool_call('arr_lookup'), th.decision('healthy', 'none')])
-            R.run_case(case, 'sha', ad, tempfile.mkdtemp(), tempfile.mkdtemp(), run_id='r', prompt_version='v2', **kw)
+            R.run_case(case, 'sha', ad, tempfile.mkdtemp(), tempfile.mkdtemp(), run_id='r', prompt_version='v2', **{'which': th.NO_BINARIES, **kw})
             sink.append(ad.calls)
         self.assertEqual(a, b)
 
     def test_what_the_model_sees_has_no_mode_or_gap_fields(self):
         case = th.make_case(fixture={'kind': 'none'})
         ad = A.ScriptedAdapter('s', [th.tool_call('arr_lookup'), th.decision('healthy', 'none')])
-        rec = R.run_case(case, 'sha', ad, tempfile.mkdtemp(), tempfile.mkdtemp(), run_id='r', prompt_version='v2')
+        rec = R.run_case(case, 'sha', ad, tempfile.mkdtemp(), tempfile.mkdtemp(), run_id='r', prompt_version='v2', which=th.NO_BINARIES)
         shown = json.dumps(ad.calls)
         for word in ('evidence_mode', 'gaps', 'capabilities', 'live_ran', 'args_ignored'):
             self.assertNotIn(word, shown)
@@ -400,7 +400,7 @@ class ReviewFixes(unittest.TestCase):
                    stderr='in corrupt_file-01.m4b')
         case = media_case(media='audiobook', truth='corrupt_file', fixture={'kind': 'local', 'locator': 'media/book'}, tools_available=['audiobook_inspect'])
         ad = A.ScriptedAdapter('s', [th.tool_call('audiobook_inspect'), th.decision('insufficient_evidence', 'escalate', refs=['t1'])])
-        out = R.run_case(case, 'sha', ad, book.root, tempfile.mkdtemp(), run_id='r', prompt_version='v2', evidence_mode='live', collect=lambda *a, **k: [rec])
+        out = R.run_case(case, 'sha', ad, book.root, tempfile.mkdtemp(), run_id='r', prompt_version='v2', evidence_mode='live', which=th.NO_BINARIES, collect=lambda *a, **k: [rec])
         self.assertNotIn('error', out)                                    # no LeakError on a part named after a class or action
         self.assertEqual(out['tool_calls'][0]['status'], 'ok')
         shown = json.dumps(ad.calls)
@@ -441,7 +441,7 @@ class ReviewFixes(unittest.TestCase):
         ts = make_suite(case)
         decode = _rec('decode', 'ok', bounds={'segment_s': 4}, output={'segments': [{'at_s': 0.0}]})
         ad = A.ScriptedAdapter('s', [th.tool_call('decode_sample', {'at': 90}), th.decision('insufficient_evidence', 'escalate', refs=['t1'])])
-        rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='r', prompt_version='v2', evidence_mode='live', collect=lambda *a, **k: [decode])
+        rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='r', prompt_version='v2', evidence_mode='live', which=th.NO_BINARIES, collect=lambda *a, **k: [decode])
         self.assertIn('requested_not_honored', [g['type'] for g in rec['evidence']['gaps']])
         self.assertNotIn('gaps', json.dumps(ad.calls))
         ts.cleanup()
@@ -561,6 +561,7 @@ class CapabilitiesAndGaps(unittest.TestCase):
 class RunRecords(unittest.TestCase):
     def run_live(self, case, ts, replies, **kw):
         ad = A.ScriptedAdapter('s', replies)
+        kw.setdefault('which', th.NO_BINARIES)
         rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='r', prompt_version='v2', evidence_mode='live', **kw)
         return rec, ad
 

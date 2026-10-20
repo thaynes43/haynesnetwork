@@ -27,7 +27,7 @@ class OrdinaryWordTitles(unittest.TestCase):
             for prompt in ('v1', 'v2'):
                 case = th.make_case('plain-case', context={'title': title, 'expected': {}, 'arr': {'app': None, 'ids': {}}, 'notes_for_model': 'n'})
                 ts = th.TempSuite([case])
-                rec = R.run_case(case, 'sha', A.ScriptedAdapter('m', [th.decision()]), ts.root, tempfile.mkdtemp(), prompt_version=prompt, run_id='r')
+                rec = R.run_case(case, 'sha', A.ScriptedAdapter('m', [th.decision()]), ts.root, tempfile.mkdtemp(), prompt_version=prompt, run_id='r', which=th.NO_BINARIES)
                 self.assertNotIn('error', rec, (title, prompt))
                 self.assertFalse(rec['forced'], (title, prompt))
                 self.assertTrue(rec['first_try_valid'], (title, prompt))
@@ -48,7 +48,7 @@ class OcrReplayNote(unittest.TestCase):
 
     def test_construction_note_is_record_only(self):
         case = th.make_case(tools_available=['ocr'])
-        ctx = T.Context(case, T.Fixture('none'), tempfile.mkdtemp())
+        ctx = T.Context(case, T.Fixture('none'), tempfile.mkdtemp(), which=th.NO_BINARIES)
         ctx.replay_rec = {'frame_text': 'no text visible in any sampled frame (construction: plain background)'}
         res = T._ocr_replay(ctx, 1.0)
         d = res.bounded(ctx.redact)
@@ -63,7 +63,7 @@ class OcrReplayNote(unittest.TestCase):
 
     def test_list_frame_text_output_is_unchanged(self):
         case = th.make_case(tools_available=['ocr'])
-        ctx = T.Context(case, T.Fixture('none'), tempfile.mkdtemp())
+        ctx = T.Context(case, T.Fixture('none'), tempfile.mkdtemp(), which=th.NO_BINARIES)
         ctx.replay_rec = {'frame_text': [{'t0': 0, 't1': 4, 'text': 'TITLE CARD'}]}
         d = T._ocr_replay(ctx, 1.0).bounded()
         self.assertEqual(json.loads(d['output'])['text'], 'TITLE CARD')
@@ -79,7 +79,7 @@ class SchemaHashRecordsWhatWasSent(unittest.TestCase):
         ad = A.OllamaAdapter('qwen3.8:27b', api=fake, snapshot=snapshot(), do_warmup=False, **kw)
         case = th.make_case(tools_available=['arr_lookup'])
         ts = th.TempSuite([case])
-        rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), prompt_version=prompt, run_id='r')
+        rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), prompt_version=prompt, run_id='r', which=th.NO_BINARIES)
         sent = fake.calls[-1][1]['format']
         ts.cleanup()
         return rec, sent
@@ -107,7 +107,7 @@ class SchemaHashRecordsWhatWasSent(unittest.TestCase):
                 ad.name = name
                 case = th.make_case()
                 ts = th.TempSuite([case])
-                rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), prompt_version=prompt, run_id='r')
+                rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), prompt_version=prompt, run_id='r', which=th.NO_BINARIES)
                 self.assertEqual((rec['prompt']['turn_schema_sha256'], rec['prompt']['schema_sent']), (None, False), (name, prompt))
                 ts.cleanup()
 

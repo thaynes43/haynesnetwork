@@ -35,6 +35,8 @@ export PYTHONPATH=$C/src                           # or: pip install $C   (then 
 python3 -m media_repair_harness.run --suite <suite dir | cases dir> --adapter ollama|claude|codex|scripted --model <full id> [--cases a,b] [--split dev|heldout] --out $A/harness/runs/<run-id>
 # score (writes score.json and score.md next to the records; loads the evaluator-owned score.py by path, see score_compat.py)
 python3 -m media_repair_harness.score_compat $A/harness/runs/<run-id> --suite <suite dir>    # same as: mrh-score ...
+# NOTE: CONTRACT.md (evaluator-owned, unchanged) still shows `harness/score.py runs/<run-id>`. On this layout that direct command is
+# superseded by mrh-score / score_compat above, because score.py imports the old flat modules.
 # tests (no model, no network, no GPU): serial, nice -n 19, prints the count, non-zero on any failure
 $C/scripts/ci-test.sh
 # installed-copy check (fresh venv outside the checkout; needs PyPI for the isolated build)

@@ -103,7 +103,7 @@ class Guard(unittest.TestCase):
         ad = A.ScriptedAdapter('m', [th.decision()])
         ts = th.TempSuite([c])
         self.addCleanup(ts.cleanup)
-        rec = R.run_case(c, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='r')
+        rec = R.run_case(c, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='r', which=NO_BINARIES)
         self.assertEqual(ad.calls, [])                        # nothing was sent
         self.assertEqual(rec['error']['kind'], 'harness_crash')  # a harness error, not a model miss
         self.assertTrue(rec['error']['leak_guard'])
@@ -118,7 +118,7 @@ class Guard(unittest.TestCase):
             ad = A.ScriptedAdapter('m', [th.tool_call('arr_lookup'), th.decision()])
             ts = th.TempSuite([c])
             self.addCleanup(ts.cleanup)
-            rec = R.run_case(c, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='r')
+            rec = R.run_case(c, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='r', which=NO_BINARIES)
         finally:
             T.REGISTRY['arr_lookup'] = old
         self.assertEqual(len(ad.calls), 1)                    # first request went out, the second was blocked

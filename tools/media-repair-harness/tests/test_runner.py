@@ -13,6 +13,7 @@ def run_one(case, replies, suite=None, **kw):
     ts = suite or th.TempSuite([case])
     scratch = tempfile.mkdtemp()
     ad = A.ScriptedAdapter('scripted-1', replies)
+    kw.setdefault('which', th.NO_BINARIES)
     rec = R.run_case(case, 'sha', ad, ts.root, scratch, **kw)
     return rec, ad, ts
 

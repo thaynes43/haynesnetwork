@@ -15,6 +15,7 @@ FIX = th.TESTDATA / 'fixtures'
 
 
 def ctx_for(case, fixture, **kw):
+    kw.setdefault('which', th.NO_BINARIES)
     return T.Context(case, fixture, tempfile.mkdtemp(), **kw)
 
 

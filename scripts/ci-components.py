@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import json
 import os
 import subprocess
 import sys
@@ -165,8 +166,16 @@ class Decision:
             "docs": flag(self.docs),
             "shared": flag(self.shared),
             "degraded": flag(self.degraded),
-            "reason": self.reason,
+            "reason": safe_text(self.reason),
         }
+
+
+def safe_text(value: str, limit: int = 300) -> str:
+    """Free text that is safe on one `key=value` line of $GITHUB_OUTPUT and in workflow-command output: no raw
+    newline, carriage return or other control character survives (json escaping), and it is length-bounded. A changed
+    file can be NAMED anything, so no path may reach an output file or a log line unescaped."""
+    text = json.dumps(value, ensure_ascii=True)[1:-1]
+    return text if len(text) <= limit else text[:limit] + "...(truncated)"
 
 
 def select_all(reason: str, degraded: bool = True) -> Decision:
@@ -185,7 +194,7 @@ def classify_paths(paths: list[str], image_probe=None) -> Decision:
     unknown = [p for p, t in tagged if t == UNKNOWN]
     shared = [p for p, t in tagged if t == SHARED]
     if unknown or shared:
-        what = f"shared infrastructure ({shared[0]})" if shared else f"unrecognised path ({unknown[0]})"
+        what = f"shared infrastructure ({shared[0]!r})" if shared else f"unrecognised path ({unknown[0]!r})"
         image = image_probe(paths) if (image_probe and shared and not unknown) else True
         d = select_all(f"{what}: every component runs", degraded=False)
         d.image = image
@@ -282,8 +291,8 @@ def decide(
 
 
 def is_selected(flag: str) -> bool:
-    """`true` selects; `false` does not; anything else (empty because `changes` failed, garbage) fails closed."""
-    return flag.strip().lower() != "false"
+    """Only the exact string `false` deselects; `true`, empty (`changes` failed) and anything else select."""
+    return flag != "false"
 
 
 def finalize(changes: str, site: str, harness: str, results: dict[str, str]) -> list[str]:
@@ -312,8 +321,24 @@ def finalize(changes: str, site: str, harness: str, results: dict[str, str]) -> 
 # --- command line ------------------------------------------------------------------------------------------------
 
 
+SELECTION_KEYS = ("site", "harness", "image", "docs", "shared", "degraded")
+
+
+def output_lines(decision: Decision) -> list[str]:
+    """One `key=value` line per output. The selection keys are written only as the literals true/false, and the one
+    free-text key is escaped, so no line can start another key (output injection through a file name)."""
+    out = decision.outputs()
+    for key in SELECTION_KEYS:
+        if out[key] not in ("true", "false"):
+            raise ValueError(f"output {key} is not a literal true/false")
+    lines = [f"{k}={v}" for k, v in out.items()]
+    if len(lines) != len(out) or any(("\n" in l or "\r" in l) for l in lines):
+        raise ValueError("an output line contains a line break")
+    return lines
+
+
 def write_outputs(decision: Decision, github_output: str | None) -> None:
-    lines = [f"{k}={v}" for k, v in decision.outputs().items()]
+    lines = output_lines(decision)
     if github_output:
         with open(github_output, "a", encoding="utf-8") as fh:
             fh.write("\n".join(lines) + "\n")
@@ -329,12 +354,12 @@ def cmd_classify(args: argparse.Namespace) -> int:
         image_probe=image_probe_factory(),
     )
     for path, tag in decision.classified:
-        print(f"{tag:8} {path}")
+        print(f"{tag:8} {path!r}")
     print("---")
-    for k, v in decision.outputs().items():
-        print(f"{k}={v}")
+    for line in output_lines(decision):
+        print(line)
     if decision.degraded:
-        print(f"::warning::component classification fell back to everything: {decision.reason}")
+        print(f"::warning::component classification fell back to everything: {safe_text(decision.reason)}")
     write_outputs(decision, args.github_output)
     return 0
 
