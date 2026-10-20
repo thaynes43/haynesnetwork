@@ -235,7 +235,8 @@ class View:
 
     # ------------------------------------------------------------------ destination records (A31-8)
     def destinations(self):
-        """-> (state, marker or None, refs): the other item content names, and every complete catalog record of it (sorted)."""
+        """-> (state, marker or None, content refs, destination records): the other item content names, and every complete catalog record of it
+        (sorted).  The two lists are kept apart: only a record can fill a slot role."""
         cat = self.catalog()
         named, refs = set(), []
         for ref, kind, _field, text in self.statements():
@@ -245,13 +246,13 @@ class View:
                         named.add(m)
                         refs.append(ref)
         if not named:
-            return UNMET, None, []
+            return UNMET, None, [], []
         if len(named) > 1:
-            return UNKNOWN, None, sorted(set(refs))
+            return UNKNOWN, None, sorted(set(refs)), []
         m = next(iter(named))
         recs = sorted(o['id'] for o in self.of_tool('arr_lookup') if isinstance((self.facts.get(o['id']) or {}).get('episode'), dict)
                       and ((self.facts.get(o['id']) or {})['episode'].get('season'), (self.facts.get(o['id']) or {})['episode'].get('episode')) == m)
-        return (MET if recs else UNKNOWN), m, sorted(set(refs)) + recs
+        return (MET if recs else UNKNOWN), m, sorted(set(refs)), recs
 
 
 def _r(pid, check, state, refs=(), detail=''):
@@ -353,15 +354,15 @@ def check_named(v, check):
                 refs.append(o['id'] + ':dc_title_empty')
         return (MET, sorted(refs), '') if refs else (UNMET, [], 'no naming-surface field is explicitly empty or different (absent and null are not evidence)')
     if check == 'destination_evidenced':
-        st, _m, refs = v.destinations()
+        st, _m, crefs, recs = v.destinations()
+        refs = crefs + recs
         det = {MET: 'content names another item that the catalog lists', UNMET: 'no complete content observation names another item',
                UNKNOWN: 'content names another item that no complete record lists, or names more than one'}[st]
         return st, refs, det
     if check == 'free_slot':
-        st, m, refs = v.destinations()
+        st, m, crefs, recs = v.destinations()
         if st != MET:
-            return UNKNOWN, refs, 'no single evidenced destination item, so no record is the destination slot'
-        recs = [r for r in refs if r.startswith(('e', 't')) and r in v.facts and isinstance((v.facts.get(r) or {}).get('episode'), dict)]
+            return UNKNOWN, crefs, 'no single evidenced destination item, so no record is the destination slot'
         states = {}
         for r in recs:
             f = v.facts.get(r) or {}

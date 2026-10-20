@@ -108,6 +108,18 @@ class Item3TargetsBoundToQualifyingFacts(unittest.TestCase):
             o.insert(0, ob('e1', 'ffprobe', GOOD_PROBE))
         return o
 
+    def test_a_content_observation_cannot_fill_a_slot_role(self):
+        obs = [ob('e3', 'ocr', {'t_s': 1.0, 'text': 'ALPHA SHOW / S01E03 / SALT'}),
+               ob('e4', 'arr_lookup', arr(file={'relativePath': 'Alpha Show - S01E02 - Lamp.mkv'}, episode={'season': 1, 'episode': 2})),
+               ob('e5', 'arr_lookup', dict(arr(episode={'season': 1, 'episode': 3}), file=None))]
+        d = {'type': 'decision', 'class': 'identity_mismatch', 'action': 'remap', 'reason': 'r', 'confidence': 0.7, 'evidence_refs': ['e3'],
+             'source': {'ref': 'e4'}, 'target': {'kind': 'destination_slot', 'slot_ref': 'e3', 'slot_free_ref': 'e5'}}
+        self.assertEqual(audit_states(TG.audit_v3(d, obs, ctx(), 'tv'))['R-SLOT'], 'unmet')       # the OCR result is not a destination record
+        both_content = dict(d, target={'kind': 'destination_slot', 'slot_ref': 'e5', 'slot_free_ref': 'e3'})
+        self.assertEqual(audit_states(TG.audit_v3(both_content, obs, ctx(), 'tv'))['R-SLOT'], 'unmet')
+        good = dict(d, target={'kind': 'destination_slot', 'slot_ref': 'e5', 'slot_free_ref': 'e5'})
+        self.assertEqual(set(audit_states(TG.audit_v3(good, obs, ctx(), 'tv')).values()), {'met'})
+
     def test_rename_values_must_match_visible_facts(self):
         c = ctx(filename='Alpha Show - S01E05 - Lamp.mkv')
         unseen = audit_states(TG.audit_v3(self.rename('never-shown.mkv', 'also-invented.mkv'), self.naming_obs(), c, 'tv'))

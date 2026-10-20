@@ -121,8 +121,7 @@ def _role(v, check, decision, res):
         return (PQ.MET if ok else PQ.UNMET), [tgt.get('source_ref')], 'the release target is the bound source' if ok else 'the release target is not the cited source record'
     if check == 'slot_refs_are_destination':
         st, refs, _ = PQ.check_named(v, 'free_slot')
-        dst, _m, drefs = v.destinations()
-        recs = [r for r in drefs if r in v.facts]
+        _dst, _m, _content, recs = v.destinations()          # destination RECORDS only: a content observation never fills a slot role
         ok = tgt.get('slot_ref') in recs and tgt.get('slot_free_ref') in recs and (st != PQ.MET or tgt.get('slot_free_ref') in refs)
         return (PQ.MET if ok else PQ.UNMET), [tgt.get('slot_ref'), tgt.get('slot_free_ref')], 'the cited slot records are destination records' if ok else 'a cited slot reference is not a destination record'
     if check == 'old_value_visible':
