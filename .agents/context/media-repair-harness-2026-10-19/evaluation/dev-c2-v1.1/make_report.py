@@ -208,7 +208,8 @@ def main():
         w(table(rows, ['Case', 'Accepted classes', 'Supported actions'] + [short[m] for m in mods]))
         w('')
         if truth == 'healthy':
-            w('Left alone (healthy/none) per model: ' + '; '.join('%s %d/%d' % (m, sum(1 for cid in ids if (dec[m].get(cid) or {}).get('decision', {}).get('action') == 'none'), len(ids)) for m in mods) + '.\n')
+            w('Left alone (action `none`, the G2 test) per model: ' + '; '.join('%s %d/%d' % (m, sum(1 for cid in ids if (dec[m].get(cid) or {}).get('decision', {}).get('action') == 'none'), len(ids)) for m in mods) + '.\n')
+            w('Correct (class `healthy` and action `none`, the per-class count of section 3) per model: ' + '; '.join('%s %d/%d' % (m, sum(1 for cid in ids if (dec[m].get(cid) or {}).get('decision', {}).get('action') == 'none' and (dec[m].get(cid) or {}).get('decision', {}).get('class') == 'healthy'), len(ids)) for m in mods) + '.\n')
         else:
             w('Escalated per model: ' + '; '.join('%s %d/%d' % (m, sum(1 for cid in ids if (dec[m].get(cid) or {}).get('decision', {}).get('action') == 'escalate'), len(ids)) for m in mods) + '.\n')
     other = sorted(cid for cid, c in cases.items() if c['truth']['class'] not in ('healthy', 'insufficient_evidence') and 'healthy' in (c.get('accepted_classes') or []))
