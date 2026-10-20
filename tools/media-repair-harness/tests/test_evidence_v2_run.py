@@ -177,7 +177,7 @@ class ToolBugFixes(unittest.TestCase):
 
     def test_the_live_collectors_truncation_flag_is_kept_under_v2_and_dropped_under_v1(self):
         big = {'status': 'ok', 'tool': 'decode', 'harness_tool': 'decode_sample', 'tool_version': 'x', 'mode': 'live', 'elapsed_s': 0.1, 'bounds': {}, 'stderr': '',
-               'coverage': {'verified': ['v'], 'not_verified': ['n']}, 'input': None, 'output': {'blob': 'x' * 20000}}
+               'coverage': {'verified': ['v'], 'not_verified': ['n']}, 'input': None, 'output': {'blob': 'x' * (T.RAW_OUTPUT_CAP + 5000)}}
         calls = []
 
         def collect(path, kinds, bounds, **kw):

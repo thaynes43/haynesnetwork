@@ -41,9 +41,30 @@ INTEGRITY_TOOLS = ('ffprobe', 'decode_sample', 'audio_sample', 'epub_inspect', '
 EPUB_STAGES = ('zip_open', 'zip_crc', 'opf_parse', 'manifest', 'spine')
 # ffmpeg / libav wording that names damage to a file's structure or data.  General libav vocabulary, not case-specific; anything else stays unclassified.
 DAMAGE_RX = re.compile(r'moov atom not found|invalid data found when processing input|could not find codec parameters|consecutive mpeg audio frames|'
-                       r'truncated|partial file|end of file|ended prematurely|unexpected eof|corrupt|header parsing failed|error reading header|damaged|checksum mismatch|crc mismatch|'
-                       r'not well-formed|bad zip|not a zip|error while decoding|cabac decode|concealing|invalid nal|missing picture|non-existing p[ps]s|'
-                       r'corrupt(ed)? (decoded )?frame|error splitting the input into nal|reference picture missing|invalid bitstream|invalid data found', re.I)
+                       r'partial file|file ended prematurely|ended prematurely|unexpected (?:end of file|eof)|truncated (?:file|archive|central directory|data)|'
+                       r'(?:file|archive|stream|data|input|header) (?:is |are )?(?:corrupt(?:ed)?|damaged)|corrupt(?:ed)? (?:decoded )?(?:packet|frame|data|file|input|header|bitstream)|packet corrupt|'
+                       r'header parsing failed|error reading header|checksum mismatch|crc mismatch|bad crc|not well-formed|bad zip|not a zip file|error while decoding|cabac decode|'
+                       r'concealing|invalid nal|missing picture|reference picture missing|non-existing p[ps]s|error splitting the input into nal|invalid bitstream', re.I)
+# a diagnostic that says the opposite ("no corrupt frames found"), and the file names / paths that may sit inside a diagnostic ("Permission denied: corrupt.mkv")
+NEGATION_RX = re.compile(r"\b(?:no|not|without|never|zero|none|0|didn't|did not|cannot|can't|isn't|is not|free of)\b[^.;\n]{0,24}$", re.I)
+FILENAME_RX = re.compile(r"[^\s/]{0,80}(?:/[^\s/]{0,80})+|\b[\w.-]{1,80}\.(?:mkv|mp4|m4v|m4b|m4a|mp3|flac|ogg|opus|avi|webm|mov|epub|zip|wav|aac|ts)\b", re.I)
+EXECUTION_ERROR_RX = re.compile(r'permission denied|no such file or directory|operation not permitted|input/output error|cannot allocate memory|read-only file system|too many open files|'
+                                r'connection (?:refused|reset)|resource temporarily unavailable', re.I)
+
+
+def damage_wording(text):
+    """True when `text` (a DIAGNOSTIC: decoder / probe stderr, an inspector's error message, a collector's error line) affirmatively names damage.  File names and
+    paths inside it are removed first, and a negated mention ("no corrupt frames found") is not damage.  It is never applied to metadata, titles, tags, chapter names
+    or the harness's own notes -- callers pass only diagnostic fields."""
+    for raw in str(text or '').splitlines() or ['']:
+        for i in range(0, max(len(raw), 1), 1800):          # a very long line is read in overlapping windows (the patterns are short)
+            line = FILENAME_RX.sub(' ', HARNESS_MARKER_RX.sub(' ', raw[i:i + 2000]))
+            for m in DAMAGE_RX.finditer(line):
+                if not NEGATION_RX.search(line[:m.start()][-40:]):
+                    return True
+    return False
+
+
 # the harness's own cut markers contain words ("truncated") that are also damage wording; they are not part of what a tool reported
 HARNESS_MARKER_RX = re.compile(r'\.\.\.\[(?:output )?(?:truncated|cut off|\+\d+ chars[^\]]*)\]|\.\.\.\[excerpt cut[^\]]*\]|\.\.\.\[output truncated\]', re.I)
 HARNESS_FAILURE_RX = re.compile(r'^(bad arguments|tool crashed|unknown frame|OCR backend failed|.{0,40} failed: could not run|.{0,40} exceeded the \d+ s tool timeout)', re.I)
@@ -113,6 +134,46 @@ def parse_json(value):
         except ValueError:
             return None
     return None
+
+
+SAFE_ARG_KEYS = ('at', 'ss', 't', 'full', 'stream', 'frame', 'cursor')
+FRAME_NAME_RX = re.compile(r'^frame@[0-9]+(\.[0-9]+)?$')
+
+
+def safe_args(args):
+    """The part of a model-chosen args object that is echoed back in the typed result: known numeric / boolean options and a frame handle only.
+    Model-chosen text is never echoed (a legacy rule), so any other key or value is dropped."""
+    out = {}
+    for k in SAFE_ARG_KEYS:
+        v = (args or {}).get(k) if isinstance(args, dict) else None
+        if k in ('at', 'ss', 't') and (v == 'full' or (isinstance(v, (int, float)) and not isinstance(v, bool))):
+            out[k] = v
+        elif k == 'full' and isinstance(v, bool):
+            out[k] = v
+        elif k == 'stream' and isinstance(v, int) and not isinstance(v, bool):
+            out[k] = v
+        elif k == 'frame' and isinstance(v, str) and FRAME_NAME_RX.match(v):
+            out[k] = v
+        elif k == 'cursor' and isinstance(v, str) and CURSOR_RX.match(v):
+            out[k] = v
+    return out
+
+
+def reference_resolver(known_ids, emitted):
+    """THE reference resolver (online runner, offline `mrh-guard` and `--restore` all use it): an observation id stands for itself; a finding / conflict id that was
+    actually emitted (`t1.f1`) stands for its observation; anything else (`t1.nonexistent`) is left as written, so it is a bad reference everywhere."""
+    known = set(known_ids)
+    return lambda refs: [r if r in known else emitted.get(r, r) for r in (refs or [])]
+
+
+def emitted_ids(analysis_result):
+    out = {}
+    for d in analysis_result['items'].values():
+        for f in d.findings + d.conflicts:
+            out[f['id']] = d.obs['id']
+        if d.veto:
+            out[d.obs['id'] + '.veto'] = d.obs['id']
+    return out
 
 
 def make_observation(id, tool, args, status, output, backend=None, source='tool', collector_truncated=False):
@@ -202,8 +263,8 @@ def execution_of(obs, data):
             reason = data.get('reason')
         elif isinstance(data, dict) and ('stage' in data or 'exit_code' in data):
             blob = ' '.join(str(data.get(k) or '') for k in ('stderr', 'error'))
-            cause = 'input' if (data.get('stage') in EPUB_STAGES or DAMAGE_RX.search(blob)) else UNKNOWN
-        elif HARNESS_FAILURE_RX.search(text.strip()):
+            cause = 'input' if (data.get('stage') in EPUB_STAGES or damage_wording(blob)) else ('tool' if EXECUTION_ERROR_RX.search(blob) else UNKNOWN)
+        elif HARNESS_FAILURE_RX.search(text.strip()) or EXECUTION_ERROR_RX.search(text):
             cause = 'tool'
         else:
             cause = UNKNOWN
@@ -232,6 +293,8 @@ class Derived:
         self.scope = {'requested': {}, 'completed': {}}
         self.facts = None
         self.collector_coverage = None   # a live collector's own coverage vocabulary (verified / not_verified), shown as facts.coverage
+        self.known_duration = None
+        self.diagnostics = []       # every raw diagnostic text a collector reported, classified or not: [{'where', 'state', 'text'}]
         self.veto = None           # a collector's own negative verdict (EPUB valid:false) that vetoes healthy without being typed as a located defect
         self.parts = []            # audiobook parts: [{'n', 'probe', 'intervals', 'duration_s'}] (decode windows are per part, not on one timeline)
         self.intervals = []        # [{'streams': [...], 'start_s', 'end_s', 'state', 'basis'}]  (decode-type windows)
@@ -311,9 +374,21 @@ _PLAIN_KIND = {'ffprobe': ('container_damage', 'container'), 'audiobook_inspect'
                'audio_sample': ('audio_decode_errors', 'audio'), 'epub_inspect': ('package_damage', 'package')}
 
 
+DIAG_FIELD_RX = re.compile(r'"(?:stderr|error|errors|problems|probe_stderr|probe_reason)"\s*:\s*(\[[^\]]*\]?|"(?:[^"\\]|\\.)*"?)', re.S)
+
+
+def diagnostic_fragments(text):
+    """The diagnostic parts of an integrity output that could not be parsed.  Plain text (no leading brace) is the tool's own message and is one fragment; text that
+    looks like cut JSON contributes only the values of its diagnostic keys (stderr, error ...), so a title, a tag, a chapter name or a harness note inside it is never read."""
+    t = HARNESS_MARKER_RX.sub(' ', text).strip()
+    if t[:1] not in ('{', '['):
+        return [t]
+    return [m.group(1).replace('\\n', '\n').replace('\\"', '"') for m in DIAG_FIELD_RX.finditer(t)]
+
+
 def _plain_text_fallback(d, data):
-    """An integrity result whose output is not JSON (a plain message, or text cut by an injected failure) keeps its trimmed text as `facts.raw`; only an explicit
-    known damage wording in it is a defect, and anything else stays unclassified and unknown."""
+    """An integrity result whose output is not JSON (a plain message, or text cut by an injected failure) keeps its text as `facts.raw`; only affirmative damage
+    wording in a DIAGNOSTIC fragment of it is a defect (never a title, tag, chapter name, path or note), and anything else stays unclassified and unknown."""
     obs = d.obs
     if isinstance(data, (dict, list)) or d.facts is not None:
         return
@@ -323,8 +398,9 @@ def _plain_text_fallback(d, data):
     if obs['tool'] in INTEGRITY_TOOLS and obs['status'] in ('ok', 'partial', 'error') and not HARNESS_FAILURE_RX.search(text.strip()):
         d.facts = {'raw': text}
         kind, part = _PLAIN_KIND[obs['tool']]
-        if DAMAGE_RX.search(HARNESS_MARKER_RX.sub(' ', text)):
-            d.finding(kind, text, {'part': part}, True)
+        frags = [] if EXECUTION_ERROR_RX.search(text) else [f for f in diagnostic_fragments(text) if damage_wording(f)]
+        if frags:
+            d.finding(kind, frags[0], {'part': part}, True)
             d.integrity = 'damaged'
             if part == 'container':
                 d.container = 'damaged'
@@ -344,7 +420,8 @@ def _finish(d, data):
             d.integrity = UNKNOWN
         if d.container == 'clean':
             d.container = UNKNOWN
-        d.intervals = [iv for iv in d.intervals if iv['state'] != 'clean']      # (the stages a package inspector reports as passed before its failure stay: they are its own findings)
+        if ex['state'] != 'timed_out':        # a timeout keeps the windows its output positively shows (partial coverage); it just certifies nothing as a whole
+            d.intervals = [iv for iv in d.intervals if iv['state'] != 'clean']      # (the stages a package inspector reports as passed before its failure stay: they are its own findings)
     if ex['state'] == 'ran' and ex['status'] == 'ok' and any(f['known_defect'] for f in d.findings):
         d.conflict('status_ok_with_defect', 'the tool reported status ok and also reported a defect: ok means the tool ran, not that the file has no defect',
                    [f['id'] for f in d.findings if f['known_defect']])
@@ -417,7 +494,7 @@ def _derive_probe(d, data):
         d.probe = {'container': container, 'streams': sl, 'selection': selection}
         d.scope['completed'].update(streams=len(sl), chapters=len(chapters))
         if isinstance(stderr, str) and stderr.strip():
-            known = bool(DAMAGE_RX.search(stderr))
+            known = damage_wording(stderr)
             d.finding('probe_messages' if not known else 'container_damage', stderr, {'part': 'container'}, known)
             d.container = 'damaged' if known else UNKNOWN
         elif d.obs['status'] == 'ok' and container and sl and data.get('exit_code') in (0, None):
@@ -437,7 +514,7 @@ def _derive_probe(d, data):
 
 def _failed_exit(d, data, part):
     code, stderr = data.get('exit_code'), str(data.get('stderr') or '')
-    known = bool(DAMAGE_RX.search(stderr))
+    known = damage_wording(stderr)
     if known:
         d.finding('container_damage' if part == 'container' else 'decoder_errors', stderr, {'part': part, 'exit_code': code}, True)
         d.integrity = 'damaged'
@@ -514,7 +591,7 @@ def _derive_decode(d, data, known_duration):
         loc = {'part': 'decode', 'start_s': round(start, 3)}
         if end is not None:
             loc['end_s'] = round(end, 3)
-        if DAMAGE_RX.search(str(stderr)):
+        if damage_wording(stderr):
             f = d.finding('decoder_errors', str(stderr), loc, True)
             state = 'damaged'
             if code == 0:
@@ -670,7 +747,7 @@ def _derive_record(d, data):
 
 # ---- live collector records (shared vocabulary: coverage.verified / not_verified, cause input|tool)
 def _recognised(text):
-    return bool(DAMAGE_RX.search(str(text or '')))
+    return damage_wording(text)
 
 
 def _segment(d, seg, streams, label=None, part=None):
@@ -684,6 +761,8 @@ def _segment(d, seg, streams, label=None, part=None):
     loc = {'part': 'decode', 'start_s': a, 'end_s': end}
     if label:
         loc['file'] = label
+    for line in seg.get('errors') or []:        # every raw diagnostic is kept as a fact, whatever it turns out to mean
+        d.diagnostics.append({k: v for k, v in (('file', label), ('at_s', a), ('state', st), ('text', str(line))) if v is not None})
     if st == 'clean' and end > a:
         return {'streams': streams, 'start_s': a, 'end_s': end, 'state': 'clean', 'basis': 'observed'}
     if st == 'errors':
@@ -700,6 +779,7 @@ def _segment(d, seg, streams, label=None, part=None):
 
 
 def _derive_live(d, data, known_duration):
+    d.known_duration = known_duration
     out = data.get('output') if isinstance(data.get('output'), dict) else {}
     kind = data.get('tool') or d.obs['tool']
     cov = data.get('coverage') or {}
@@ -735,9 +815,23 @@ def _live_decode(d, out):
     if isinstance(full, dict) and full.get('performed'):
         fdec = fnum(full.get('decoded_s'))
         fst = full.get('state')
-        eof = True if fst in ('clean', 'errors') else (False if fst in ('timeout', 'spawn_error', 'output_cap') else None)
+        fdur = dur if dur is not None else d.known_duration
+        # the collector's `clean` / `errors` says the decode PROCESS finished; whether it reached the end of the file is the same affirmative check as for every backend:
+        # a decoded span that reaches the known duration (unknown span or duration leaves it unknown)
+        if fst in ('timeout', 'spawn_error', 'output_cap'):
+            eof = False
+        elif fst in ('clean', 'errors') and fdec and fdur:
+            if fdec + EOF_TOLERANCE_S < fdur:
+                eof = False
+                d.conflict('decoded_span_shorter_than_duration', 'the full decode ended at %.3f s but the container states %.3f s' % (fdec, fdur))
+            else:
+                eof = True
+        else:
+            eof = None
         d.completed_to_eof = eof
         d.scope['completed']['to_end_of_file'] = eof if eof is not None else UNKNOWN
+        if eof is not True:
+            d.unresolved.append('the full decode did not run to the end of the file' if eof is False else 'whether the full decode ran to the end of the file is not shown')
         if fst in ('clean', 'errors') and fdec:
             seg = {'at_s': 0.0, 'decoded_s': fdec, 'state': fst, 'errors': full.get('errors') or []}
             iv = _segment(d, seg, sel)
@@ -856,6 +950,8 @@ def _live_audio(d, out):
             if not isinstance(seg, dict):
                 continue
             if seg.get('state') == 'errors':
+                for line in seg.get('problems') or []:
+                    d.diagnostics.append({'at_s': seg.get('at_s'), 'state': 'errors', 'text': str(line)})
                 text = '; '.join(str(x) for x in (seg.get('problems') or [])) or 'audio decode errors'
                 known = _recognised(text)
                 d.finding('audio_decode_errors' if known else 'audio_messages_unclassified', text, {'part': 'audio', 'start_s': seg.get('at_s')}, known)
@@ -1057,7 +1153,7 @@ def parse_client(profile):
     """The stated client as comparable fields.  Structured keys are read directly; the prose forms ("h264, 8-bit yuv420p, up to 1080p",
     "aac, ac3 or eac3, up to 6 channels") are read by a small fixed grammar.  Anything not stated stays absent (never inferred)."""
     spec = {'containers': None, 'video_codecs': None, 'bit_depths': None, 'pix_fmts': None, 'max_width': None, 'max_height': None,
-            'audio_codecs': None, 'max_channels': None, 'layouts': None, 'video_profiles': None, 'audio_profiles': None, 'not_compared': []}
+            'audio_codecs': None, 'max_channels': None, 'layouts': None, 'video_profiles': None, 'audio_profiles': None, 'pix_by_codec': None, 'not_compared': []}
     if not isinstance(profile, dict):
         return spec
     c = profile.get('containers')
@@ -1114,31 +1210,44 @@ _PIX = r'\b(?:yuvj?\d{3}p\d*(?:le|be)?|nv12)\b'
 
 
 def _parse_video_prose(text, spec):
+    """Structure: `<codec> [<N>-bit ...] [<pixfmt> ...]` repeated, joined by `or` / `and` / commas, with at most one `up to <N>p`.  A depth or pixel format belongs to the
+    codec it FOLLOWS and is applied to that codec in the comparison; one that precedes every codec ("8-bit hevc"), a second `up to`, or any word the grammar does not know
+    makes the whole clause unread.  Every recognised token is therefore used in a comparison or the clause is not read at all."""
     t = text.lower()
     left = _residual(t, [re.compile(_VCODEC), re.compile(r'\d+-bit'), re.compile(_PIX), re.compile(r'up to \d{3,4}p')])
     if left:
         spec['not_compared'].append('video: statement not read (%s)' % ' '.join(left[:6]))
         return
     hits = [(m.start(), m.end(), _canon_codec(m.group(0))) for m in re.finditer(_VCODEC, t)]
+    heights = re.findall(r'up to (\d{3,4})p', t)
+    lead = t[:hits[0][0]] if hits else t
+    if len(heights) > 1 or (hits and (re.search(r'\d+-bit', lead) or re.search(_PIX, lead))) or (not hits and (re.search(r'\d+-bit', t) or re.search(_PIX, t))):
+        spec['not_compared'].append('video: statement not read (a bit depth, pixel format or limit with no codec it belongs to, or two limits)')
+        return
     if hits:
-        codecs = {}
+        codecs, pix = {}, {}
         for i, (st, e, name) in enumerate(hits):
             nxt = hits[i + 1][0] if i + 1 < len(hits) else len(t)
             seg = t[e:nxt].split('up to')[0]
             depths = {int(x) for x in re.findall(r'(\d+)-bit', seg)}
-            codecs[name] = depths or None
-            spec['pix_fmts'] = (spec['pix_fmts'] or set()) | set(re.findall(_PIX, seg)) or spec['pix_fmts']
+            if depths:
+                codecs[name] = (codecs.get(name) or set()) | depths
+            else:
+                codecs.setdefault(name, None)
+            ps = set(re.findall(_PIX, seg))
+            if ps:
+                pix[name] = pix.get(name, set()) | ps
         spec['video_codecs'] = codecs
-    m = re.search(r'up to (\d{3,4})p', t)
-    if m:
-        spec['max_height'] = int(m[1])
+        spec['pix_by_codec'] = pix or None
+    if heights:
+        spec['max_height'] = int(heights[0])
 
 
 def _parse_audio_prose(text, spec):
     t = text.lower()
     left = _residual(t, [re.compile(_ACODEC), re.compile(r'up to \d+ channels?')])
-    if left:
-        spec['not_compared'].append('audio: statement not read (%s)' % ' '.join(left[:6]))
+    if left or len(re.findall(r'up to \d+ channels?', t)) > 1:
+        spec['not_compared'].append('audio: statement not read (%s)' % (' '.join(left[:6]) or 'two channel limits'))
         return
     found = {_canon_codec(m.group(0)) for m in re.finditer(_ACODEC, t)}
     if found:
@@ -1214,8 +1323,10 @@ def compare_client(context, derived):
                 if allowed:
                     rows.append(_verdict('video_bit_depth', ref, depth, sorted(allowed), None if depth is None else depth in allowed,
                                          None if depth is not None else 'bit depth is not derivable from the stated pixel format'))
-                if spec['pix_fmts']:
-                    rows.append(_verdict('video_pix_fmt', ref, s.get('pix_fmt'), sorted(spec['pix_fmts']), None if s.get('pix_fmt') is None else str(s['pix_fmt']).lower() in spec['pix_fmts']))
+                pixset = (spec['pix_by_codec'] or {}).get(codec) if spec['pix_by_codec'] else None
+                pixset = pixset or spec['pix_fmts']
+                if pixset:
+                    rows.append(_verdict('video_pix_fmt', ref, s.get('pix_fmt'), sorted(pixset), None if s.get('pix_fmt') is None else str(s['pix_fmt']).lower() in pixset))
                 if spec['max_height'] is not None:
                     rows.append(_verdict('video_height_px', ref, s.get('height'), '<=%s' % spec['max_height'], None if s.get('height') is None else s['height'] <= spec['max_height']))
                 if spec['max_width'] is not None:
@@ -1300,24 +1411,37 @@ def full_decode_proof(observation, observations):
 
 
 # ------------------------------------------------------------------------------------------------------------------ presentation
-STRING_CAP = 400        # a string longer than this is shown as its first STRING_CAP characters plus a pointer; the whole string is a retrievable detail
-UNIT_MAX = 2400         # a unit larger than this (UTF-8 bytes) is split into smaller units, so every unit fits a page by itself
-CHUNK_BYTES = 1800      # the size of one chunk of a split string
+class PageBudgetError(ValueError):
+    """The wire budget cannot be met: even the identity, alerts and execution header of a message (with the context around it) do not fit.  Raised, never papered over."""
 
 
-def externalize(obj, prefix, details):
-    """Long strings keep their first STRING_CAP characters inline plus `...[+N chars: detail <id>]`; the whole string is stored in `details[<id>]` (a retrievable
-    unit of the pages), so nothing is clipped irreversibly."""
+class Limits:
+    """Unit, chunk and string limits scaled to the page budget, so a unit always fits a page by itself (8192 bytes: units of 2400, chunks of 1800, strings of 400 chars)."""
+
+    def __init__(self, budget=WIRE_BYTES):
+        self.budget = budget
+        self.unit = max(300, budget * 2400 // WIRE_BYTES)     # a unit larger than this (UTF-8 bytes) is split into smaller units
+        self.chunk = self.unit * 3 // 4                       # the size of one chunk of a split string
+        self.cap = max(40, min(400, self.unit // 5))          # a longer string is shown as its first `cap` characters plus a pointer; the whole string is a retrievable detail
+
+
+STRING_CAP, UNIT_MAX, CHUNK_BYTES = 400, 2400, 1800     # the 8192-byte values (kept for readers of the contract)
+
+
+def externalize(obj, prefix, details, lim=None):
+    """Long strings keep their first `cap` characters inline plus `...[+N chars: detail <id>]`; the whole string is stored in `details[<id>]` (a retrievable unit of
+    the pages), so nothing is clipped irreversibly."""
+    cap = (lim or Limits()).cap
     if isinstance(obj, str):
-        if len(obj) <= STRING_CAP:
+        if len(obj) <= cap:
             return obj
         key = '%s.d%d' % (prefix, len(details) + 1)
         details[key] = obj
-        return obj[:STRING_CAP] + '...[+%d chars: detail %s]' % (len(obj) - STRING_CAP, key)
+        return obj[:cap] + '...[+%d chars: detail %s]' % (len(obj) - cap, key)
     if isinstance(obj, list):
-        return [externalize(x, prefix, details) for x in obj]
+        return [externalize(x, prefix, details, lim) for x in obj]
     if isinstance(obj, dict):
-        return {k: externalize(v, prefix, details) for k, v in obj.items()}
+        return {k: externalize(v, prefix, details, lim) for k, v in obj.items()}
     return obj
 
 
@@ -1335,23 +1459,36 @@ def _chunks(text, nbytes_max=CHUNK_BYTES):
     return out
 
 
-def explode(path, value, mode='set'):
+def explode(path, value, mode='set', lim=None):
     """Units for `value` at `path`: one unit when it is small; otherwise a list is split per element, a dict per key and a string into chunks, recursively, so no
-    unit exceeds UNIT_MAX and nothing is dropped."""
-    if nbytes(value) <= UNIT_MAX:
+    unit exceeds the limit and nothing is dropped.  A list with an element too large to be one unit keeps every element's INDEX: its pieces travel under
+    `(path, ('#', i), key)` and are put back into the element with `_i == i`, so two records are never merged into one."""
+    lim = lim or Limits()
+    if nbytes(value) <= lim.unit:
         return [(path, mode, value)]
     if isinstance(value, list):
         out = []
-        for e in value:
-            out += explode(path, e, 'split')
+        if any(nbytes(e) > lim.unit for e in value):
+            for i, e in enumerate(value):
+                ip = path + (('#', i),)
+                if nbytes(e) <= lim.unit:
+                    out.append((ip, 'set', e if isinstance(e, dict) else {'value': e}))
+                elif isinstance(e, dict):
+                    for k, v in e.items():
+                        out += explode(ip + (k,), v, 'set', lim)
+                else:
+                    out += explode(ip + ('value',), e, 'set', lim)
+        else:
+            for e in value:
+                out.append((path, 'split', e))
         return out
     if isinstance(value, dict):
         out = []
         for k, v in value.items():
-            out += explode(path + (k,), v, 'set')
+            out += explode(path + (k,), v, 'set', lim)
         return out
     if isinstance(value, str):
-        return [(path, 'split', c) for c in _chunks(value)]
+        return [(path, 'split', c) for c in _chunks(value, lim.chunk)]
     return [(path, mode, value)]
 
 
@@ -1380,6 +1517,8 @@ def item_facts(d):
     facts = dict(d.facts) if isinstance(d.facts, dict) else ({'value': d.facts} if d.facts is not None else {})
     if d.collector_coverage:
         facts['coverage'] = d.collector_coverage
+    if d.diagnostics:
+        facts['diagnostics'] = d.diagnostics
     if d.parts:
         facts['parts'] = [{k: v for k, v in dict(p, intervals=[{kk: vv for kk, vv in iv.items() if kk != 'streams'} for iv in p['intervals']]).items() if v not in (None, [])} for p in d.parts]
     return facts
@@ -1396,7 +1535,7 @@ def alerts_for(derived):
             if f['known_defect']:
                 out.append({'type': 'defect', 'id': f['id'], 'kind': f['kind'], 'src': d.obs['id']})
         if d.veto:
-            out.append({'type': 'defect', 'id': d.obs['id'] + '.veto', 'kind': d.veto['kind'], 'src': d.obs['id']})
+            out.append({'type': 'collector_verdict', 'id': d.obs['id'] + '.veto', 'kind': d.veto['kind'], 'src': d.obs['id'], 'vetoes': 'healthy', 'known_defect': False})
     for d in derived:
         ex = d.execution
         if ex['state'] in ('failed', 'timed_out', 'unavailable'):
@@ -1417,33 +1556,64 @@ def cursor_for(alias, source, page, digest):
 CURSOR_RX = re.compile(r'^c[0-9a-f]{15}$')
 
 
-def _put(body, path, mode, value):
+def _pname(path):
+    return '.'.join(('[%d]' % p[1]) if isinstance(p, tuple) else str(p) for p in path)
+
+
+def _sname(path):
+    """A short, bounded name for a path in the page object's `elsewhere` (its first two keys; list indices left out), so the object stays small however many units there are."""
+    return '.'.join([str(p) for p in path if not isinstance(p, tuple)][:2])
+
+
+def _descend(body, path):
+    """The container that `path` (without its last component) leads to: dicts by key, list elements by their `_i` index (created when absent)."""
     cur = body
-    for p in path[:-1]:
-        cur = cur.setdefault(p, {})
-    if mode in ('append', 'split'):
-        cur.setdefault(path[-1], []).append(value)
+    for idx, p in enumerate(path[:-1]):
+        nxt = path[idx + 1]
+        if isinstance(p, tuple):
+            el = next((e for e in cur if e.get('_i') == p[1]), None)
+            if el is None:
+                el = {'_i': p[1]}
+                cur.append(el)
+            cur = el
+        else:
+            cur = cur.setdefault(p, [] if isinstance(nxt, tuple) else {})
+    return cur
+
+
+def _put(body, path, mode, value):
+    cur = _descend(body, path)
+    last = path[-1]
+    if isinstance(last, tuple):                      # a whole (small) element, or the remaining pieces of one, goes into the list element with that index
+        el = next((e for e in cur if e.get('_i') == last[1]), None)
+        if el is None:
+            el = {'_i': last[1]}
+            cur.append(el)
+        el.update(value)
+    elif mode in ('append', 'split'):
+        cur.setdefault(last, []).append(value)
     else:
-        cur[path[-1]] = value
+        cur[last] = value
 
 
-def facts_units(path, facts, details=None, prefix='x'):
+def facts_units(path, facts, details=None, prefix='x', lim=None):
     """Units for a facts value (long strings externalised into `details`, large structures exploded)."""
     details = {} if details is None else details
-    facts = externalize(facts, prefix, details)
+    facts = externalize(facts, prefix, details, lim)
     units = []
     if isinstance(facts, dict):
         for k, v in facts.items():
-            units += explode(path + (k,), v)
+            units += explode(path + (k,), v, 'set', lim)
     elif facts is not None:
-        units += explode(path, facts)
+        units += explode(path, facts, 'set', lim)
     return units
 
 
-def detail_units(details):
+def detail_units(details, lim=None):
+    lim = lim or Limits()
     out = []
     for key, text in details.items():
-        out += [(('details', key), 'split', c) for c in _chunks(text)] if nbytes(text) > UNIT_MAX else [(('details', key), 'set', text)]
+        out += [(('details', key), 'split', c) for c in _chunks(text, lim.chunk)] if nbytes(text) > lim.unit else [(('details', key), 'set', text)]
     return out
 
 
@@ -1470,10 +1640,9 @@ def _finish_page(header, units, all_units, page_obj, totals):
     for path, n in placed.items():
         if n >= totals[(path, 'split')]:
             continue   # the whole list is on this page: nothing to mark
-        parent = body
-        for p in path[:-1]:
-            parent = parent[p]
-        parent[path[-1] + '_shown'] = '%d of %d' % (n, totals[(path, 'split')])
+        if isinstance(path[-1], tuple):
+            continue
+        _descend(body, path)[path[-1] + '_shown'] = '%d of %d' % (n, totals[(path, 'split')])
     if page_obj is not None:
         body['page'] = page_obj
     else:
@@ -1489,20 +1658,25 @@ def paginate(header, units, env_first, env_rest, alias, source, budget=WIRE_BYTE
     middle.  Nothing is dropped: a long string is stored whole as a `details` unit (its inline prefix names it), a large structure is split into smaller units,
     and a split list says `<field>_shown: "n of N"`.  Every page carries `page{contract,source,n,of,next,next_costs_tool_call,elsewhere,alerts_total,conflicts_total}`:
     `elsewhere` counts what is on other pages; the alerts (conflicts first, with the ids of their details) are repeated on every page.  `next` is an opaque stable
-    cursor; fetching it is one tool call.  A single page carries no `page` object.  A unit that still cannot fit its page alone is placed alone and the page says
-    `exceeds_envelope` (only when the header or the context around it is itself near the limit).
+    cursor; fetching it is one tool call.  A single page carries no `page` object.  A unit (or the header with the context around it) that cannot fit raises
+    PageBudgetError: the message is refused, never sent over the limit.
     -> list of (body dict, cursor of this page or None)."""
     totals = _totals(units)
     if nbytes(env_first(_finish_page(header, [], units, None, totals))) > budget and header.get('alerts'):
         header = dict(header, alerts=['%s:%s:%s' % (a.get('type'), a.get('id'), a.get('kind') or a.get('state')) for a in header['alerts']])   # shortest form; none is dropped
+    worst = {}
+    for (p, k), n in totals.items():
+        worst[_sname(p)] = worst.get(_sname(p), 0) + n
     probe = {'contract': PAGE_CONTRACT, 'source': source, 'n': 99, 'of': 99, 'next': 'c' + '0' * 15, 'next_costs_tool_call': True,
-             'elsewhere': {'.'.join(p): n for (p, k), n in totals.items()}, 'alerts_total': 99, 'conflicts_total': 99}
+             'elsewhere': worst, 'alerts_total': 99, 'conflicts_total': 99}
 
     def fits(us, first):
         body = _finish_page(header, us, units, probe, totals)
         return nbytes((env_first if first else env_rest)(body)) <= budget
 
-    groups, cur, oversize = [], [], []
+    if not fits([], True):
+        raise PageBudgetError('the message cannot be made to fit %d bytes: its header (identity, alerts, execution) and the context around it are already too large' % budget)
+    groups, cur = [], []
     for u in units:
         first = not groups
         if fits(cur + [u], first):
@@ -1512,14 +1686,13 @@ def paginate(header, units, env_first, env_rest, alias, source, budget=WIRE_BYTE
             groups.append(cur)
             cur = [u]
             if not fits(cur, False):
-                oversize.append(len(groups))
+                raise PageBudgetError('a unit of %s (%d bytes) does not fit a %d byte page by itself' % (_pname(u[0]), nbytes(u[2]), budget))
         else:
-            cur = [u]
-            oversize.append(len(groups))
+            raise PageBudgetError('a unit of %s (%d bytes) does not fit the first %d byte page by itself' % (_pname(u[0]), nbytes(u[2]), budget))
     if cur or not groups:
         groups.append(cur)
     of = len(groups)
-    if of == 1 and not oversize:
+    if of == 1:
         return [(_finish_page(header, groups[0], units, None, totals), None)]
     alerts_total = len(header.get('alerts') or [])
     conflicts_total = sum(1 for a in (header.get('alerts') or []) if (a.get('type') == 'conflict' if isinstance(a, dict) else str(a).startswith('conflict:')))
@@ -1532,15 +1705,13 @@ def paginate(header, units, env_first, env_rest, alias, source, budget=WIRE_BYTE
         for (p, k), n in totals.items():
             rest = n - placed_here.get((p, k), 0)
             if rest:
-                elsewhere['.'.join(p)] = rest
+                elsewhere[_sname(p)] = elsewhere.get(_sname(p), 0) + rest
         pobj = {'contract': PAGE_CONTRACT, 'source': source, 'n': i + 1, 'of': of}
         if next_cursor:
             pobj['next'] = next_cursor
             pobj['next_costs_tool_call'] = True
         if elsewhere:
             pobj['elsewhere'] = elsewhere
-        if i in oversize:
-            pobj['exceeds_envelope'] = True
         pobj['alerts_total'] = alerts_total
         pobj['conflicts_total'] = conflicts_total
         body = _finish_page(header, us, units, pobj, totals)
@@ -1568,17 +1739,11 @@ class Session:
         self.last_client = None
         self.log = []              # auditable: [{'id', 'kind', 'pages', 'bytes'}]
         self.budget = budget
+        self.lim = Limits(budget)
 
     def finding_index(self):
         """{finding / conflict id: observation id} for everything actually emitted so far (the only ids a decision may cite besides observation ids)."""
-        an = self.analysis()
-        out = {}
-        for d in an['items'].values():
-            for f in d.findings + d.conflicts:
-                out[f['id']] = d.obs['id']
-            if d.veto:
-                out[d.obs['id'] + '.veto'] = d.obs['id']
-        return out
+        return emitted_ids(self.analysis())
 
     def analysis(self):
         return analyze(self.shown, self.context, self.media_type)
@@ -1593,14 +1758,14 @@ class Session:
         cov_text = canon(an['coverage'])
         if force or cov_text != self.last_cov:
             for k, v in an['coverage'].items():
-                units += explode(('coverage', k), v)
+                units += explode(('coverage', k), v, 'set', self.lim)
             self.last_cov = cov_text
         cl = an['client']
         if cl is not None:
             cl_text = canon(cl)
             if force or cl_text != self.last_client:
                 for k, v in cl.items():
-                    units += explode(('client_comparison', k), v)
+                    units += explode(('client_comparison', k), v, 'set', self.lim)
                 self.last_client = cl_text
         return units
 
@@ -1614,21 +1779,21 @@ class Session:
         units, details = [], {}
         for d in derived:
             core = item_core(d)
-            if nbytes(core) > UNIT_MAX:   # a large item travels as its identity and execution plus retrievable sections
+            if nbytes(core) > self.lim.unit:   # a large item travels as its identity and execution plus retrievable sections
                 small = {k: core[k] for k in ('id', 'tool', 'args', 'backend', 'execution') if k in core}
                 small['sections'] = 'findings, scope, unresolved and conflicts are in item_sections.' + d.obs['id']
                 units.append((('items',), 'append', small))
                 for sec in ('findings', 'scope', 'unresolved', 'conflicts'):
                     if core.get(sec):
-                        units += explode(('item_sections', d.obs['id'], sec), core[sec])
+                        units += explode(('item_sections', d.obs['id'], sec), core[sec], 'set', self.lim)
             else:
                 units.append((('items',), 'append', core))
         for d in derived:
             f = item_facts(d)
             if f:
-                units += facts_units(('facts', d.obs['id']), f, details, d.obs['id'])
+                units += facts_units(('facts', d.obs['id']), f, details, d.obs['id'], self.lim)
         units += self._summary_units(an, True)
-        units += detail_units(details)
+        units += detail_units(details, self.lim)
         frame = frame or {}
         pages = paginate(header, units, lambda b: canon(dict(frame, evidence=b)), self._worst_fetch_envelope(), self.alias, 'evidence', self.budget)
         first = pages[0][0]
@@ -1660,14 +1825,14 @@ class Session:
         units, details = [], {}
         for sec in ('conflicts', 'findings', 'unresolved'):
             for v in item.get(sec) or []:
-                units += explode((sec,), v, 'append')
+                units += explode((sec,), v, 'append', self.lim)
         for k, v in (item.get('scope') or {}).items():
-            units += explode(('scope', k), v)
+            units += explode(('scope', k), v, 'set', self.lim)
         f = item_facts(d)
         if f:
-            units += facts_units(('facts',), f, details, obs['id'])
+            units += facts_units(('facts',), f, details, obs['id'], self.lim)
         units += self._summary_units(an, False)
-        units += detail_units(details)
+        units += detail_units(details, self.lim)
         truncated = d.execution['output_truncated']
         status = obs['status']
 

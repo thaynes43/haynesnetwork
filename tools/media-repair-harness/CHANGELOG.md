@@ -11,6 +11,7 @@ Opt-in; `HARNESS_VERSION` stays `dev-c4` (the candidate bump is the W19 freeze).
 * New record fields only for the new options (`evidence_format`, `action_audit.audit_version`, `tool_calls[].raw_output`, `guard.version v3`); manifest `config` gains the versions only when on, so an unset run keeps its config hash.
 * `smoke/launch_wiring_smoke.py`: the bundle now travels in xz parts (`bundle_parts`) because the package outgrew one 128 KiB environment string.
 * Review fixes (Astra 3 and the independent review, see `docs/evidence-format-v2.md`, "Review fixes"): unknown stays unknown, live book schemas, affirmative full-decode proof, guards read only the shown text, capabilities from operation metadata, strict client grammar, one reference resolver, retrievable pagination within the 8192-byte budget, per-stream chapter coverage, `--tool-output-bytes` as the page budget, gzip wiring-smoke bundle capped at 240000 bytes.
+* Second fix pass: damage wording only in diagnostic fields (negation and file names handled), live full decode checked against the duration, structural client grammar, one reference resolver online and offline, index-preserving and budget-scaled pagination with a refusal instead of an overflow, raw diagnostics kept, timeouts keep partial coverage, `collector_verdict` alert for an EPUB veto, legacy golden pins prompts v1-v4. Tests: `test_evidence_v2_fixpass.py`.
 * Tests: `test_evidence_v2_core.py`, `test_evidence_v2_run.py`, helpers `ev2h.py`, `legacy_e2e.py`, `make_evidence_v2_golden.py`.
 
 ## dev-c4 (candidate, OpenProject #142)

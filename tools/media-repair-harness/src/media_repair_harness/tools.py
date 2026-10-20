@@ -968,7 +968,8 @@ def live_tool(tool, args, ctx):
     unmet = _unmet_requests(tool, args, ignored, rec) if rec['status'] != 'unavailable' or tool == 'ocr' else []
     if unmet:
         rec['request_note'] = _request_note(unmet)
-    tr = evcol.to_tool_result(rec, cap=ctx.output_cap or TOOL_OUTPUT_BYTES)
+    # tools behaviour v2 (format v2 pages its own output): the collector is cut at the raw cap, not at the 8 KiB legacy tool limit or the page budget
+    tr = evcol.to_tool_result(rec, cap=RAW_OUTPUT_CAP if ctx.tools_behavior == 'v2' else (ctx.output_cap or TOOL_OUTPUT_BYTES))
     extra = _live_extra(rec, ignored, unmet, cut)
     if ctx.tools_behavior == 'v2' and tr.get('truncated'):
         extra['collector_truncated'] = True   # the collector cut its own output; bounded() keeps that fact instead of recomputing it from the length

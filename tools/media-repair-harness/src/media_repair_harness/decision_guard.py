@@ -92,7 +92,7 @@ def shown_observations(evidence_shown, tool_calls):
     for c in tool_calls or []:
         if c.get('continuation'):    # a page fetch is not an observation
             continue
-        obs.append(EV2.make_observation(c.get('id'), c.get('tool'), c.get('args'), c.get('status'), c.get('raw_output', c.get('output')), c.get('mode'), 'tool',
+        obs.append(EV2.make_observation(c.get('id'), c.get('tool'), EV2.safe_args(c.get('args')), c.get('status'), c.get('raw_output', c.get('output')), c.get('mode'), 'tool',
                                         bool(c.get('collector_truncated'))))
     return obs
 
@@ -136,10 +136,24 @@ def check_write(case, decision, tool_calls, prompt_version, forced=False, versio
     return '%s proposed with unmet computed precondition(s): %s' % (decision.get('action'), ', '.join(unmet))
 
 
-def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=False, version=GUARD_VERSION):
-    """-> (final_decision, guard_record).  The input decision is never modified."""
+def record_resolver(record, evidence_shown):
+    """The resolver for a run record: a format-v2 record cites finding ids (`t1.f1`) that this run emitted, recomputed here from the same observations by the same
+    typed layer; any other record resolves nothing (references are never rewritten)."""
+    if not (record or {}).get('evidence_format'):
+        return lambda refs: list(refs or [])
+    obs = shown_observations(evidence_shown, (record or {}).get('tool_calls'))
+    known = [o['id'] for o in obs]
+    return EV2.reference_resolver(known, EV2.emitted_ids(EV2.analyze(obs, {})))
+
+
+def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=False, version=GUARD_VERSION, resolve=None):
+    """-> (final_decision, guard_record).  The input decision is never modified.  `resolve` (the one reference resolver) normalises the references the checks read;
+    the original decision, with its references as written, is what the record keeps."""
     if version not in GUARD_VERSIONS:
         raise ValueError('unknown guard version %r (known: %s)' % (version, ', '.join(GUARD_VERSIONS)))
+    original = decision
+    if resolve is not None and decision:
+        decision = dict(decision, evidence_refs=resolve(decision.get('evidence_refs')))
     applied = []
     reason = check_healthy_v3(decision, evidence_shown, tool_calls) if version == 'v3' else check_healthy(decision, evidence_shown, tool_calls)
     rule = RULE_HEALTHY
@@ -147,19 +161,23 @@ def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=Fal
         reason = check_write(case, decision, tool_calls, prompt_version, forced, version)
         rule = RULE_WRITE
     if reason is not None:
-        applied.append({'rule': rule, 'original': copy.deepcopy(decision), 'reason': reason})
+        applied.append({'rule': rule, 'original': copy.deepcopy(original), 'reason': reason})
         final = guard_escalation(rule, reason)
     else:
-        final = decision
+        final = original
     return final, {'version': version, 'applied': applied, 'final_changed': bool(applied)}
 
 
-def derived_fields(case, decision, tool_calls, evidence_shown, evidence_mode, prompt_version, forced, outcome_step):
-    """Record fields that are computed from the decision (run_case computes the same ones); used when a guard replaced it."""
+def derived_fields(case, decision, tool_calls, evidence_shown, evidence_mode, prompt_version, forced, outcome_step, resolve=None, v2=False):
+    """Record fields that are computed from the decision (run_case computes the same ones); used when a guard replaced it.  For a format-v2 record the references go
+    through the same resolver and the audit is audit v2, as in the run."""
     ev_ids = {e['id'] for e in evidence_shown}
     call_ids = {c['id'] for c in tool_calls}
-    refs = decision.get('evidence_refs', [])
-    action_audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version)
+    refs = resolve(decision.get('evidence_refs', [])) if resolve else decision.get('evidence_refs', [])
+    if v2:
+        action_audit = AU.compute(case, dict(decision, evidence_refs=refs), tool_calls, forced=forced, prompt_version=prompt_version, audit_version='v2', shown=evidence_shown)
+    else:
+        action_audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version)
     action_audit['outcome_step'] = outcome_step
     return {
         'decision_flags': AU.decision_flags(decision, AU.unverified_parts(case, tool_calls)),
@@ -180,13 +198,14 @@ def apply_to_record(record, case, evidence_shown, version=GUARD_VERSION):
         rec = restore_original(rec, case, evidence_shown)
         rec.pop('guard')
     pv = (rec.get('prompt') or {}).get('version') or P.DEFAULT_PROMPT
-    final, guard = apply(case, rec['decision'], rec.get('tool_calls') or [], evidence_shown, pv, bool(rec.get('forced')), version)
+    resolve = record_resolver(rec, evidence_shown)
+    final, guard = apply(case, rec['decision'], rec.get('tool_calls') or [], evidence_shown, pv, bool(rec.get('forced')), version, resolve=resolve)
     rec['guard'] = guard
     if guard['final_changed']:
         rec['decision'] = final
         outcome_step = (rec.get('action_audit') or {}).get('outcome_step')
         rec.update(derived_fields(case, final, rec.get('tool_calls') or [], evidence_shown, rec.get('evidence_mode', 'replay'), pv,
-                                  bool(rec.get('forced')), outcome_step))
+                                  bool(rec.get('forced')), outcome_step, resolve, bool(rec.get('evidence_format'))))
     return rec
 
 
@@ -202,6 +221,6 @@ def restore_original(record, case, evidence_shown):
         pv = (rec.get('prompt') or {}).get('version') or P.DEFAULT_PROMPT
         rec['decision'] = copy.deepcopy(orig)
         rec.update(derived_fields(case, orig, rec.get('tool_calls') or [], evidence_shown, rec.get('evidence_mode', 'replay'), pv,
-                                  bool(rec.get('forced')), (rec.get('action_audit') or {}).get('outcome_step')))
+                                  bool(rec.get('forced')), (rec.get('action_audit') or {}).get('outcome_step'), record_resolver(rec, evidence_shown), bool(rec.get('evidence_format'))))
     rec['guard'] = dict(guard, restored=True)
     return rec

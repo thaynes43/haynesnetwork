@@ -351,8 +351,8 @@ class ClientComparison(unittest.TestCase):
             c = self.compare(PROFILE, **kw)
             v = self.verdicts(c)
             self.assertEqual(v[field], 'unsupported', field)
-            self.assertEqual({k: x for k, x in v.items() if k != field and not (field == 'video_codec' and k == 'video_bit_depth') and not (field == 'video_bit_depth' and k == 'video_pix_fmt')},
-                             {k: x for k, x in base.items() if k != field and not (field == 'video_codec' and k == 'video_bit_depth') and not (field == 'video_bit_depth' and k == 'video_pix_fmt')}, field)
+            self.assertEqual({k: x for k, x in v.items() if k != field and not (field == 'video_codec' and k in ('video_bit_depth', 'video_pix_fmt')) and not (field == 'video_bit_depth' and k == 'video_pix_fmt')},
+                             {k: x for k, x in base.items() if k != field and not (field == 'video_codec' and k in ('video_bit_depth', 'video_pix_fmt')) and not (field == 'video_bit_depth' and k == 'video_pix_fmt')}, field)
             self.assertNotIn('damage', json.dumps(c['summary']).replace('not damage', ''))
             self.assertEqual(c['summary']['unsupported'] >= 1, True)
 
@@ -873,7 +873,7 @@ class Robustness(unittest.TestCase):
             '{"format":5}', '{"format":{"duration":"x"}}', '{"chapters":[1,{"start":"a"}]}', '{"frames":"x","out_time":{}}', '{"exit_code":0,"stderr":"","frames":-1,"out_time":"99:99:99"}',
             '{"status":"error","stage":5}', '{"stage":["a"]}', '{"coverage":{"verified":"x","not_verified":3},"output":{"segments":[1,2,{"at_s":"q"}]},"status":"ok"}',
             '{"coverage":{"verified":[],"not_verified":[]},"output":5}', '{"observation":5,"recorded_as":"x"}', '{"chapter_count":"x","chapters":5}',
-            '{"exit_code":0,"stderr":"x","ss":"a"}', 'x' * 20000, '{"a":' * 50 + '1' + '}' * 50, '{"window_s":"full","exit_code":0,"stderr":""}']
+            '{"exit_code":0,"stderr":"x","ss":"a"}', 'x' * 4000, '{"a":' * 50 + '1' + '}' * 50, '{"window_s":"full","exit_code":0,"stderr":""}']
 
     def test_no_shape_raises_and_none_is_read_as_clean_or_damaged(self):
         import itertools

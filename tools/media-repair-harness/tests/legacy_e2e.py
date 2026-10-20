@@ -46,7 +46,7 @@ def strip(obj):
 
 
 def digest(rec, adapter):
-    return {'requests': sha(adapter.calls), 'record': sha(strip(rec)), 'n_requests': len(adapter.calls),
+    return {'requests': sha(adapter.calls), 'sent': sha(adapter.full), 'record': sha(strip(rec)), 'n_requests': len(adapter.calls),
             'tool_results': sha([[c.get('status'), c.get('output'), c.get('truncated')] for c in rec['tool_calls']]),
             'decision': sha(rec['decision'])}
 
@@ -101,8 +101,20 @@ def suite_with(case, media=True, probes=True):
     return ts
 
 
+class Spy(A.ScriptedAdapter):
+    """Keeps what the model was sent in full: system prompt, messages and the schema."""
+
+    def __init__(self, model, replies):
+        super().__init__(model, replies)
+        self.full = []
+
+    def complete(self, system, messages, schema=None):
+        self.full.append({'system': system, 'messages': json.loads(json.dumps(messages)), 'schema': schema})
+        return super().complete(system, messages, schema)
+
+
 def run(case, ts, replies, prompt='v4', adapter_model='scripted-model', **kw):
-    ad = A.ScriptedAdapter(adapter_model, replies)
+    ad = Spy(adapter_model, replies)
     scratch = tempfile.mkdtemp()
     rec = R.run_case(case, 'sha-' + case['id'], ad, ts.root, scratch, run_id='golden', prompt_version=prompt, **kw)
     return rec, ad
@@ -232,8 +244,19 @@ def scenario_injected_and_guards():
     return out
 
 
+def scenario_prompt(version):
+    """The same replay case under each prompt version: pins the system text and the per-case schema that version sends."""
+    case = tv_case('gold-prompt-001')
+    ts = suite_with(case)
+    replies = [tc('ffprobe'), tc('decode_sample', {'at': 4}), dec('corrupt_file', 'escalate', ['e2', 't2'])]
+    return run(case, ts, replies, prompt=version, which=th.NO_BINARIES)
+
+
 def scenarios():
     out = {}
+    for v in ('v1', 'v2', 'v3', 'v4'):
+        rec, ad = scenario_prompt(v)
+        out['prompt_' + v] = digest(rec, ad)
     for name, fn in (('replay', scenario_replay), ('local', scenario_local), ('remote', scenario_remote), ('live', scenario_live), ('pinned', scenario_pinned),
                      ('epub_and_arr', scenario_epub_and_arr)):
         rec, ad = fn()

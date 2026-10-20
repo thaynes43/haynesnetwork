@@ -164,27 +164,7 @@ def check_option_combination(prompt_version, evidence_format=None, guards=None, 
             raise ValueError('--evidence-format v2 uses --tool-output-bytes as the page budget (a message is paginated to fit it): it must be between 2048 and %d, got %s' % (EV2.WIRE_BYTES, tool_output_bytes))
 
 
-SAFE_ARG_KEYS = ('at', 'ss', 't', 'full', 'stream', 'frame', 'cursor')
-FRAME_NAME_RX = re.compile(r'^frame@[0-9]+(\.[0-9]+)?$')
-
-
-def safe_args(args):
-    """The part of a model-chosen args object that is echoed back in the typed result: known numeric / boolean options and a frame handle only.
-    Model-chosen text is never echoed (a legacy rule), so any other key or value is dropped."""
-    out = {}
-    for k in SAFE_ARG_KEYS:
-        v = (args or {}).get(k)
-        if k in ('at', 'ss', 't') and (v == 'full' or (isinstance(v, (int, float)) and not isinstance(v, bool))):
-            out[k] = v
-        elif k == 'full' and isinstance(v, bool):
-            out[k] = v
-        elif k == 'stream' and isinstance(v, int) and not isinstance(v, bool):
-            out[k] = v
-        elif k == 'frame' and isinstance(v, str) and FRAME_NAME_RX.match(v):
-            out[k] = v
-        elif k == 'cursor' and isinstance(v, str) and EV2.CURSOR_RX.match(v):
-            out[k] = v
-    return out
+safe_args = EV2.safe_args
 
 
 def is_cursor_call(args):
@@ -192,14 +172,11 @@ def is_cursor_call(args):
 
 
 def make_resolver(case, tool_calls, session):
-    """The ONE reference resolver of a format-v2 run: an evidence / tool-result id stands for itself; a finding or conflict id (`t2.f1`) stands for its
-    observation only if it was actually emitted in this run (`t1.nonexistent` stays as written, so it is reported as a bad reference); anything else is
-    unchanged.  Legacy format: references are never rewritten."""
+    """The runner's use of the one resolver (`evidence_v2.reference_resolver`); the legacy format never rewrites a reference."""
     if session is None:
         return lambda refs: list(refs or [])
     known = {e['id'] for e in case.get('evidence', [])} | {c['id'] for c in tool_calls}
-    emitted = session.finding_index()
-    return lambda refs: [r if r in known else emitted.get(r, r) for r in (refs or [])]
+    return EV2.reference_resolver(known, session.finding_index())
 
 
 def result_message(call_id, tool, res, remaining):
@@ -348,11 +325,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     resolve = make_resolver(case, tool_calls, session)
     if guards:
         # the guards read references through the same resolver as the record: they see the decision with its references normalised, the record keeps the original
-        seen = dict(decision, evidence_refs=resolve(decision.get('evidence_refs'))) if (v2fmt and decision) else decision
-        final, guard_rec = DG.apply(case, seen, tool_calls, evidence, prompt_version, forced=forced, version=guards)
-        if guard_rec['final_changed']:
-            guard_rec['applied'][0]['original'] = copy.deepcopy(decision)
-            decision = final
+        final, guard_rec = DG.apply(case, decision, tool_calls, evidence, prompt_version, forced=forced, version=guards, resolve=resolve if v2fmt else None)
+        decision = final
 
     # First-try validity is strict and never repaired after the fact: every model reply up to the first repair prompt must have
     # been schema-valid, no tool call may have left tools_available, and the case must have ended in a real decision.
