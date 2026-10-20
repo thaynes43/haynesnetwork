@@ -129,7 +129,7 @@ class Deduplication(unittest.TestCase):
         self.assertEqual(sum(1 for t, _s in texts if t.startswith('nothing was decoded')), 1)
         for it in r['reference']['items']:
             self.assertNotIn('unresolved', it)                 # shown once, in `open`, never repeated per item
-        self.assertEqual(FX.facts_from_body(r['reference'], self.obs()), r['facts'])
+        self.assertEqual(FX.facts_from_body(r['reference']), r['facts'])
 
     def test_same_words_from_different_observations_stay_two_facts(self):
         facts, _ = FX.canonical_facts(self.obs(), {}, 'audiobook')
@@ -168,7 +168,7 @@ class PaginationReconstruction(unittest.TestCase):
             r = FX.render(obs, {}, 'tv', ['ffprobe', 'decode_sample', 'arr_lookup'], caps, budget=budget)
             self.assertTrue(all(b <= budget for b in r['page_bytes']), (budget, r['page_bytes']))
             body = FX.reassemble(r['pages'])
-            self.assertEqual(FX.facts_from_body(body, obs), r['facts'], budget)
+            self.assertEqual(FX.facts_from_body(body), r['facts'], budget)
             self.assertEqual([it['id'] for it in body['open']], [it['id'] for it in r['open']], budget)
             for p in r['pages']:                                    # page-local alerts and the count of open items, on every page
                 self.assertEqual(p['alerts'], r['pages'][0]['alerts'])

@@ -151,6 +151,7 @@ _FACT_KEY = {
     ('epub_inspect', 'entries'): 'entries',
     ('decode_sample', 'exit_code'): 'exit_code', ('decode_sample', 'frames'): 'frames', ('decode_sample', 'stderr'): 'error_lines',
     ('ocr', 'text'): 'text',
+    ('audio_sample', 'rms_dbfs'): 'rms_dbfs', ('audio_sample', 'peak_dbfs'): 'peak_dbfs', ('audio_sample', 'silent_fraction'): 'silent_fraction',
 }
 
 

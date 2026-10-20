@@ -221,3 +221,81 @@ def canonical_json():
 def sha256():
     import hashlib
     return hashlib.sha256(canonical_json().encode()).hexdigest()
+
+
+# ================================================================================================================================================
+# RUBRIC AMENDMENT v3.1 (contract-v3-rubric-3.1).  MADE AFTER LABELS HAD BEEN READ: the public dev labels were read for the tension list of
+# d25e7e92.  It answers the independent reviews of PR #1026 (AUDIT-ASTRA-17 and the Opus review).  Every change is general: none names or targets
+# a case.  `RUBRIC` above (v3.0, frozen in 59e15d49) is unchanged byte for byte and keeps its digest; the checker applies `RUBRIC_V31`.
+# ================================================================================================================================================
+RUBRIC_V31_VERSION = 'contract-v3-rubric-3.1'
+
+AMENDMENTS_V31 = (
+    {'id': 'A31-1', 'changes': 'H1', 'text': 'H1 counts only integrity-kind results (never integrity_signal such as audio levels) and needs a positively clean result at the '
+     'container or package level; a clean decode window extends the checked scope but never stands alone',
+     'why': 'v3.0 H1 accepted a lone decode window while M1 required a container or package level result; the two are reconciled on the stricter reading'},
+    {'id': 'A31-2', 'changes': 'healthy (new H5)', 'text': 'H5: no other class is established (all of its diagnosis prerequisites met); an established actionable '
+     'diagnosis, for example an unsupported selected stream for the stated client, excludes healthy',
+     'why': 'v3.0 let an established decoder incompatibility satisfy every healthy prerequisite at once'},
+    {'id': 'A31-3', 'changes': 'REPORT_METHOD_VOCABULARY', 'text': 'an evidence_method that is negated or says the observation was not made, failed or was unavailable '
+     '(no, not, without, unavailable, failed, missing, none, never, cannot, could not, unable, skipped) is report_unknown, whatever other words it holds',
+     'why': 'methods such as "no OCR performed" were promoted to report_content'},
+    {'id': 'A31-4', 'changes': 'eligibility (new)', 'text': 'a prerequisite is supported only by results that ran to completion (state ran, status ok) or by the case '
+     'context; the only exceptions are D-COR-1 (the positive findings of a partial or timed-out result, inside their scope) and A-BLK-3 (an error result whose '
+     'cause is not tool and that carries a located defect)',
+     'why': 'partial OCR and partial / error / timeout catalog records supported identity and source binding'},
+    {'id': 'A31-5', 'changes': 'identity comparison (section 8, M5)', 'text': 'identity is compared ATTRIBUTE BY ATTRIBUTE (title, episode number, episode title, '
+     'author, language, year); a content observation settles only the attributes it speaks to, so a declared disagreement on an attribute no content '
+     'addresses stays contested; list-valued declarations are compared element by element; language is compared by primary subtag with a fixed '
+     'ISO 639-1 / 639-2 table',
+     'why': 'a matching OCR title erased an unsettled year disagreement; list-valued EPUB titles and creators and a wrong language were ignored'},
+    {'id': 'A31-6', 'changes': 'identity comparison (section 8)', 'text': 'a typed field (not free text) also agrees when it is a run of two or more tokens of a catalog '
+     'name; a one-word fragment never agrees',
+     'why': 'the checker carried this exception without a rubric statement (review of d25e7e92)'},
+    {'id': 'A31-7', 'changes': 'D-ORD-2 / M7', 'text': 'a case-supplied choice settles candidates only when it names a listed candidate; context.expected.edition counts '
+     'as a case-supplied wanted edition',
+     'why': 'a nonexistent choice suppressed M7'},
+    {'id': 'A31-8', 'changes': 'A-MAP-4', 'text': 'the destination slot is free only when every shown complete record of the destination agrees that no file is linked; free '
+     'and occupied records that disagree leave the slot unresolved; a content observation naming two different other items leaves the destination unresolved',
+     'why': 'the result depended on which record id sorted first'},
+    {'id': 'A31-9', 'changes': 'writes (new R-* prerequisites)', 'text': 'a write needs its class\'s diagnosis prerequisites AND its action prerequisites; every cited '
+     'reference must qualify for its role (source.ref and a release target are a record that binds the source; slot_ref and slot_free_ref are destination '
+     'records); a rename\'s old_value equals a visible current naming-surface value and its new_value agrees with the catalog on every attribute it speaks to',
+     'why': 'the damage observation could serve as the source binding, unseen rename values passed, and a rename stood with its diagnosis unmet'},
+)
+
+NEGATED_METHOD_RX = r'\b(?:no|not|without|unavailable|failed|missing|none|never|cannot|could ?n[o\']?t|unable|skipped)\b'
+LANGUAGE_CODES = {'eng': 'en', 'fre': 'fr', 'fra': 'fr', 'ger': 'de', 'deu': 'de', 'spa': 'es', 'ita': 'it', 'jpn': 'ja', 'por': 'pt', 'rus': 'ru', 'chi': 'zh', 'zho': 'zh',
+                  'kor': 'ko', 'dut': 'nl', 'nld': 'nl', 'swe': 'sv', 'nor': 'no', 'dan': 'da', 'fin': 'fi', 'pol': 'pl', 'english': 'en', 'french': 'fr', 'german': 'de',
+                  'spanish': 'es', 'italian': 'it', 'japanese': 'ja'}
+COMPARED_ATTRIBUTES = ('title', 'episode_number', 'episode_title', 'author', 'language', 'year')
+HEALTHY_V31 = (
+    {'id': 'H1', 'text': 'a positively clean integrity-kind result at the container or package level (A31-1)'},
+    {'id': 'H2', 'text': HEALTHY[1]['text']},
+    {'id': 'H3', 'text': HEALTHY[2]['text']},
+    {'id': 'H4', 'text': HEALTHY[3]['text']},
+    {'id': 'H5', 'text': 'no other class is established (A31-2)'},
+)
+ELIGIBILITY_EXCEPTIONS = ('D-COR-1', 'A-BLK-3')
+ROLE_PREREQUISITES = {
+    'blocklist_and_search': ({'id': 'R-SRC', 'check': 'source_ref_qualifies'}, {'id': 'R-TGT', 'check': 'release_ref_is_source'}),
+    'remap': ({'id': 'R-SRC', 'check': 'source_ref_qualifies'}, {'id': 'R-SLOT', 'check': 'slot_refs_are_destination'}),
+    'rename': ({'id': 'R-SRC', 'check': 'source_ref_qualifies'}, {'id': 'R-OLD', 'check': 'old_value_visible'}, {'id': 'R-NEW', 'check': 'new_value_agrees'}),
+    'convert': ({'id': 'R-SRC', 'check': 'source_ref_qualifies'},),
+}
+UNMANAGED_SOURCE_REF = 'case_item'
+
+RUBRIC_V31 = dict(RUBRIC, version=RUBRIC_V31_VERSION, amends=RUBRIC_VERSION, amendments=AMENDMENTS_V31, healthy=HEALTHY_V31,
+                  negated_method_rx=NEGATED_METHOD_RX, language_codes=LANGUAGE_CODES, compared_attributes=COMPARED_ATTRIBUTES,
+                  eligibility_exceptions=ELIGIBILITY_EXCEPTIONS, role_prerequisites=ROLE_PREREQUISITES, unmanaged_source_ref=UNMANAGED_SOURCE_REF,
+                  diagnosis=dict(DIAGNOSIS, healthy=tuple({'id': 'D-OK-' + h['id'], 'check': h['id']} for h in HEALTHY_V31)))
+
+
+def canonical_json_v31():
+    import json
+    return json.dumps(RUBRIC_V31, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+
+
+def sha256_v31():
+    import hashlib
+    return hashlib.sha256(canonical_json_v31().encode()).hexdigest()

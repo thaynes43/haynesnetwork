@@ -128,7 +128,9 @@ def links_for(item, capabilities, shown, tools_offered, media_type=None):
     if st in NO_TOOL_SCOPES:
         return out
     if st == 'decode_interval':
-        ivs = item['scope'].get('intervals') or [[0.0, None]]
+        ivs = item['scope'].get('intervals')
+        if ivs is None:          # no list at all: the whole file; an explicitly EMPTY list means nothing is left unchecked, so no window candidate
+            ivs = [[0.0, None]]
         cap = caps.get('decode_sample') or {}
         for o in _interval_offsets(cap, ivs):
             out.append(_cand('decode_sample', {'at': o}, st, caps, shown, offered))

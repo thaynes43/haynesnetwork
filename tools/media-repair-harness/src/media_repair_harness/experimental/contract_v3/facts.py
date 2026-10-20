@@ -21,6 +21,7 @@ from . import presence as PR
 from . import rubric as RB
 
 FORMAT_VERSION = 'v3-prototype'
+NESTED_PART_RX = __import__('re').compile(r'^output\.files\.(\d+)\.(tags)$')
 
 _DECL_PATHS = ('tags', 'chapters', 'streams', 'container', 'duration_s', 'title', 'creator', 'language', 'identifier', 'opf', 'audio_streams',
                'chapter_count', 'files', 'stages_passed')
@@ -32,6 +33,8 @@ _INTEGRITY_PATHS = ('exit_code', 'frames', 'decoded_s', 'error_lines', 'stderr_l
 def report_kind(method):
     import re
     t = str(method or '')
+    if re.search(RB.NEGATED_METHOD_RX, t, re.I):
+        return 'report_unknown'            # rubric v3.1 A31-3: a negated or failed method ("no OCR performed", "OCR unavailable") reports no observation
     hits = [k for k, rx in RB.REPORT_METHOD_VOCABULARY if re.search(rx, t, re.I)]
     if 'report_hash' in hits:
         return 'report_hash'
@@ -74,11 +77,17 @@ def provenance(obs):
 
 
 def _leaves(value, prefix=''):
-    """Dict leaves as (dotted path, value); a list or a scalar is one leaf (its order is part of the fact)."""
+    """Dict leaves as (dotted path, value); a non-empty list of dicts is descended element by element (`path[i]`), so a value restored inside a nested
+    record is an added fact, not a changed one; any other list or a scalar is one leaf (its order is part of the fact)."""
     if isinstance(value, dict) and value:
         out = []
         for k, v in value.items():
             out += _leaves(v, prefix + ('.' if prefix else '') + str(k))
+        return out
+    if isinstance(value, list) and value and all(isinstance(x, dict) and x for x in value):
+        out = []
+        for i, x in enumerate(value):
+            out += _leaves(x, '%s[%d]' % (prefix, i))
         return out
     return [(prefix, value)]
 
@@ -100,10 +109,21 @@ def item_facts_v3(obs, d):
             continue
         out[key] = row['value']
         presence[key] = row['presence']
+    nested = []
+    for row in PR.observation_presence(obs):        # live audiobook parts: an explicitly empty or null part tag object is kept in that part's facts
+        m = NESTED_PART_RX.match(row['path'])
+        if not m or row['presence'] not in (PR.NULL, PR.EMPTY) or not isinstance(out.get('files'), list):
+            continue
+        n = int(m.group(1)) + 1
+        for i, el in enumerate(out['files']):
+            if isinstance(el, dict) and el.get('n') == n and m.group(2) not in el:
+                out['files'][i] = dict(el, **{m.group(2): row['value']})
+                presence['files[%d].%s' % (i, m.group(2))] = row['presence']
+                nested.append(dict(row, fact_key='files[%d].%s' % (i, m.group(2))))
     for row in PR.observation_presence(obs):
         if row['presence'] in (PR.NOT_CHECKED, PR.UNKNOWN):
             presence.setdefault(row['path'], row['presence'])
-    return out, presence, [r for r in added if '.' not in r['fact_key']]
+    return out, presence, [r for r in added if '.' not in r['fact_key']] + nested
 
 
 def canonical_facts(observations, context=None, media_type=None, version='v3'):
@@ -136,12 +156,34 @@ def canonical_facts(observations, context=None, media_type=None, version='v3'):
     if an['client'] is not None:
         for k, v in _leaves(an['client']):
             out.append(('client_comparison', None, 'client', 'derived', None, None, None, 'client_comparison', k, PR.state_of(v), EV2.canon(v)))
+    for key in alert_keys(EV2.alerts_for([an['items'][i] for i in an['order']])):
+        out.append(_alert_fact(key))
     return sorted(out, key=lambda t: EV2.canon(list(t))), an
+
+
+def _alert_fact(key):
+    return ('alerts', None, 'alert', 'derived', None, None, None, 'alerts', key, PR.POPULATED, EV2.canon(key))
+
+
+def alert_keys(alerts, alert_ids=None):
+    """`type:id:kind` for every alert, whichever tier the page shows them in: full objects, short strings, or groups plus the `alert_ids` units."""
+    out = []
+    for a in alerts or []:
+        if isinstance(a, str):
+            out.append(a)
+        elif isinstance(a, dict) and 'first_ids' in a:
+            ids = list(a['first_ids']) + list((alert_ids or {}).get('%s:%s' % (a.get('type'), a.get('kind')), []))
+            out += ['%s:%s:%s' % (a.get('type'), i, a.get('kind')) for i in ids]
+        elif isinstance(a, dict):
+            out.append('%s:%s:%s' % (a.get('type'), a.get('id'), a.get('kind') or a.get('state')))
+    return out
 
 
 def _core_v3(d, open_ids):
     core = EV2.item_core(d)
     core.pop('unresolved', None)
+    if d.veto:
+        core['veto'] = d.veto              # page-local with its item (the alert names it; this carries it)
     if open_ids:
         core['open'] = open_ids
     return core
@@ -163,7 +205,7 @@ def render(observations, context=None, media_type=None, tools_offered=(), capabi
     for d in derived:
         core = _core_v3(d, by_src.get(d.obs['id'], []))
         if EV2.nbytes(core) > lim.unit:
-            small = {k: core[k] for k in ('id', 'tool', 'args', 'backend', 'execution', 'open') if k in core}
+            small = {k: core[k] for k in ('id', 'tool', 'args', 'backend', 'execution', 'veto', 'open') if k in core}
             small['sections'] = 'findings, scope and conflicts are in item_sections.' + d.obs['id']
             units.append((('items',), 'append', small))
             for sec in ('findings', 'scope', 'conflicts'):
@@ -263,16 +305,22 @@ def _resolve(value, details):
     return value
 
 
-def facts_from_body(body, observations):
-    """Canonical atomic facts rebuilt from a (reassembled) v3 body alone, using the observations only for the statement kind and provenance of each id.
-    The inverse of render() for the facts it presents."""
+def _page_fact(it, section, path, value, presence=None, facts=None):
+    ex = it.get('execution') or {}
+    prov = 'reported' if it.get('tool') == 'prior_record' else ('observed' if it.get('backend') in ('local', 'remote', 'live') else 'recorded')
+    return (it['id'], it.get('tool'), statement_kind(it.get('tool'), section, path, facts), prov, ex.get('state'), ex.get('status'),
+            EV2.canon((it.get('scope') or {}).get('completed') or {}), section, path, presence or PR.state_of(value), EV2.canon(value))
+
+
+def facts_from_body(body):
+    """Canonical atomic facts rebuilt from a (reassembled) v3 body ALONE: no observation, no analysis.  The inverse of render() for everything it
+    presents: items (execution, findings, conflicts, veto, scope), the open items' unresolved statements per source, facts with presence, coverage,
+    client comparison and the alerts, in whichever tier the pages carry them.  A page that drops an alert or a veto reconstructs to different facts."""
     details = body.get('details') or {}
-    obs_by_id = {o['id']: o for o in observations}
     items = {it['id']: dict(it) for it in body.get('items') or []}
     for oid, secs in (body.get('item_sections') or {}).items():
-        items.setdefault(oid, {}).update(secs)
+        items.setdefault(oid, {'id': oid}).update(secs)
     out = []
-    an = EV2.analyze(observations)       # only for the completed scope string of each id (a fact's scope); no value is read from it
     unresolved = {}
     for it in body.get('open') or []:
         it = _resolve(it, details)
@@ -280,29 +328,29 @@ def facts_from_body(body, observations):
             for s in it['sources']:
                 unresolved.setdefault(s, []).append(it['text'])
     for oid, it in items.items():
-        o = obs_by_id[oid]
-        d = an['items'][oid]
         for k, v in (it.get('execution') or {}).items():
-            out.append(_fact(o, d, 'execution', k, v))
+            out.append(_page_fact(it, 'execution', k, v))
         for f in it.get('findings') or []:
-            out.append(_fact(o, d, 'findings', f['id'], f))
+            out.append(_page_fact(it, 'findings', f['id'], f))
         for c in it.get('conflicts') or []:
-            out.append(_fact(o, d, 'conflicts', c['id'], c))
-        if d.veto:
-            out.append(_fact(o, d, 'veto', oid + '.veto', d.veto))
+            out.append(_page_fact(it, 'conflicts', c['id'], c))
+        if it.get('veto'):
+            out.append(_page_fact(it, 'veto', oid + '.veto', it['veto']))
         for k, v in (it.get('scope') or {}).items():
-            out.append(_fact(o, d, 'scope', k, v))
+            out.append(_page_fact(it, 'scope', k, v))
         for u in unresolved.get(oid, []):
-            out.append(_fact(o, d, 'unresolved', 'unresolved', u))
+            out.append(_page_fact(it, 'unresolved', 'unresolved', u))
         facts = _resolve((body.get('facts') or {}).get(oid) or {}, details)
         presence = (body.get('presence') or {}).get(oid) or {}
         for path, v in _leaves(facts):
-            out.append(_fact(o, d, 'facts', path, v, presence.get(path), facts))
+            out.append(_page_fact(it, 'facts', path, v, presence.get(path), facts))
     for k, v in _leaves(body.get('coverage') or {}):
         out.append(('coverage', None, 'integrity', 'derived', None, None, None, 'coverage', k, PR.state_of(v), EV2.canon(v)))
     if body.get('client_comparison') is not None:
         for k, v in _leaves(body['client_comparison']):
             out.append(('client_comparison', None, 'client', 'derived', None, None, None, 'client_comparison', k, PR.state_of(v), EV2.canon(v)))
+    for key in alert_keys(body.get('alerts'), body.get('alert_ids')):
+        out.append(_alert_fact(key))
     return sorted(out, key=lambda t: EV2.canon(list(t)))
 
 

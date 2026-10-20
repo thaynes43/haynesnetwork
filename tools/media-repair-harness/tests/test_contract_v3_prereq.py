@@ -109,7 +109,7 @@ class Integrity(unittest.TestCase):
         good_probe = dict(PROBE, format=dict(PROBE['format'], tags={'title': 'Lamp'}))
         obs = [ob('e1', 'ffprobe', good_probe), ob('e2', 'decode_sample', CLEAN, args={'ss': 0, 't': 4})]
         res = PQ.check(obs, ctx(), 'tv')
-        self.assertEqual(states(res, 'diagnosis', 'healthy'), {'D-OK-H1': 'met', 'D-OK-H2': 'met', 'D-OK-H3': 'met', 'D-OK-H4': 'met'})
+        self.assertEqual(states(res, 'diagnosis', 'healthy'), {'D-OK-H1': 'met', 'D-OK-H2': 'met', 'D-OK-H3': 'met', 'D-OK-H4': 'met', 'D-OK-H5': 'met'})
         self.assertIn([4.0, 8.0], res and EV2.analyze(obs)['coverage']['time']['unrecorded']['not_checked'])   # the remainder stays listed as not checked
         long_ = PQ.check(obs, ctx(expected=dict(ctx()['expected'], runtime_s=60)), 'tv')                   # a signal into the remainder: runtime disagrees
         self.assertEqual(states(long_, 'diagnosis', 'healthy')['D-OK-H3'], 'unmet')
@@ -140,9 +140,9 @@ class Identity(unittest.TestCase):
             self.assertEqual(res['identity']['level'], 'uncontradicted', text)
         two = dict(PROBE, format=dict(PROBE['format'], tags={'title': 'Show Lamp'}))
         c = ctx(expected={'title': 'The Alpha Show Lamp', 'runtime_s': 8})
-        self.assertEqual([r['state'] for r in PQ.check([ob('e1', 'ffprobe', two)], c, 'audiobook')['identity']['comparisons'] if r['field'] == 'tag_title'], ['agree'])
+        self.assertEqual([r['attributes'].get('title') for r in PQ.check([ob('e1', 'ffprobe', two)], c, 'audiobook')['identity']['comparisons'] if r['field'] == 'tag_title'], ['agree'])
         one = dict(PROBE, format=dict(PROBE['format'], tags={'title': 'Lamp'}))
-        self.assertEqual([r['state'] for r in PQ.check([ob('e1', 'ffprobe', one)], c, 'audiobook')['identity']['comparisons'] if r['field'] == 'tag_title'], ['disagree'])
+        self.assertEqual([r['attributes'].get('title') for r in PQ.check([ob('e1', 'ffprobe', one)], c, 'audiobook')['identity']['comparisons'] if r['field'] == 'tag_title'], ['disagree'])
 
     def test_source_binding_reads_every_record_of_this_item(self):
         dest_first = [ob('e5', 'arr_lookup', arr(file={'relativePath': 'Alpha Show - S01E03 - Salt.mkv'}, episode={'season': 1, 'episode': 3})),
@@ -221,7 +221,7 @@ class SourceAndTargets(unittest.TestCase):
         d = self.decision('blocklist_and_search', 'corrupt_file', {'kind': 'release_of_source', 'source_ref': 'e4'})
         a = TG.audit_v3(d, self.obs(), ctx(), 'tv')
         self.assertEqual((a['schema_errors'], {p['id']: p['state'] for p in a['prerequisites']}),
-                         ([], {'A-CLASS': 'met', 'A-BLK-1': 'met', 'A-BLK-2': 'met', 'A-BLK-3': 'met'}))
+                         ([], {'A-CLASS': 'met', 'D-COR-1': 'met', 'A-BLK-1': 'met', 'A-BLK-2': 'met', 'A-BLK-3': 'met', 'R-SRC': 'met', 'R-TGT': 'met'}))
         other = TG.audit_v3(d, self.obs('Someone Else.mkv'), ctx(), 'tv')
         self.assertEqual({p['id']: p['state'] for p in other['prerequisites']}['A-BLK-2'], 'unmet')
         unknown = TG.audit_v3(d, self.obs()[:1], ctx(), 'tv')
@@ -239,7 +239,7 @@ class SourceAndTargets(unittest.TestCase):
         client = ctx(client_profile={'video': 'h264, 8-bit yuv420p, up to 1080p', 'audio': 'aac', 'containers': 'mkv'})
         a = TG.audit_v3(ok, [ob('e1', 'ffprobe', PROBE), ob('e4', 'arr_lookup', arr(file={'relativePath': 'Alpha Show - S01E02 - Lamp.mkv'}))], client, 'tv')
         got = {p['id']: p['state'] for p in a['prerequisites']}
-        self.assertEqual(got, {'A-CLASS': 'met', 'A-CNV-0': 'met', 'A-CNV-1': 'met', 'A-CNV-2': 'met'})     # no destination, no full decode among them
+        self.assertEqual(got, {'A-CLASS': 'met', 'D-DEC-1': 'met', 'D-DEC-2': 'met', 'A-CNV-0': 'met', 'A-CNV-1': 'met', 'A-CNV-2': 'met', 'R-SRC': 'met'})     # no destination, no full decode among them
         self.assertTrue(any('no-overwrite' in e['text'] for e in a['execution_prerequisites']))
 
     def test_remap_needs_an_evidenced_free_slot_and_an_occupied_one_is_still_refused(self):
@@ -247,7 +247,7 @@ class SourceAndTargets(unittest.TestCase):
                ob('e5', 'arr_lookup', arr(file=None, episode={'season': 1, 'episode': 3, 'title': 'Salt'}, hasFile=False))]
         d = self.decision('remap', 'identity_mismatch', {'kind': 'destination_slot', 'slot_ref': 'e5', 'slot_free_ref': 'e5'})
         got = {p['id']: p['state'] for p in TG.audit_v3(d, obs, ctx(), 'tv')['prerequisites']}
-        self.assertEqual(got, {'A-CLASS': 'met', 'A-MAP-1': 'met', 'A-MAP-2': 'met', 'A-MAP-3': 'met', 'A-MAP-4': 'met'})
+        self.assertEqual(got, {'A-CLASS': 'met', 'D-ID-1': 'met', 'A-MAP-1': 'met', 'A-MAP-2': 'met', 'A-MAP-3': 'met', 'A-MAP-4': 'met', 'R-SRC': 'met', 'R-SLOT': 'met'})
         occupied = copy.deepcopy(obs)
         occupied[2] = ob('e5', 'arr_lookup', arr(file={'relativePath': 'Alpha Show - S01E03 - Salt.mkv'}, episode={'season': 1, 'episode': 3, 'title': 'Salt'}))
         self.assertEqual({p['id']: p['state'] for p in TG.audit_v3(d, occupied, ctx(), 'tv')['prerequisites']}['A-MAP-4'], 'unmet')
@@ -284,7 +284,7 @@ class SourceAndTargets(unittest.TestCase):
         got = {p['id']: p['state'] for p in TG.audit_v3(d, self.remap_obs({'relativePath': 'x.mkv'}), ctx(), 'tv')['prerequisites']}
         self.assertEqual(got['A-MAP-4'], 'unmet')
         wrong_cite = {p['id']: p['state'] for p in TG.audit_v3(d, self.remap_obs(None), ctx(), 'tv')['prerequisites']}
-        self.assertEqual(wrong_cite['A-MAP-4'], 'unknown')          # the destination is free, but the proposal cites another record for it
+        self.assertEqual((wrong_cite['A-MAP-4'], wrong_cite['R-SLOT']), ('met', 'unmet'))      # the destination is free, but the proposal cites another record for it
 
     def test_rename_needs_old_and_new_values(self):
         self.assertTrue(TG.validate_decision_v3(self.decision('rename', 'metadata_naming', {'kind': 'rename_of_source', 'old_value': 'a.mkv', 'new_value': 'a.mkv'})))

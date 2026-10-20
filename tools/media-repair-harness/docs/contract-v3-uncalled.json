@@ -12,7 +12,7 @@
    "decisions": 73,
    "escalations": 34,
    "escalations_with_uncalled_available_check": 8,
-   "non_escalations_with_uncalled_available_check": 19,
+   "non_escalations_with_uncalled_available_check": 16,
    "rows": [
     {
      "action": "blocklist_and_search",
@@ -323,10 +323,8 @@
      "alias": "case-f18fe4e7",
      "calls_made": 0,
      "remaining": 6,
-     "tools": [
-      "decode_sample"
-     ],
-     "uncalled_available": 4
+     "tools": [],
+     "uncalled_available": 0
     },
     {
      "action": "escalate",
@@ -417,20 +415,16 @@
      "alias": "case-804b1b13",
      "calls_made": 0,
      "remaining": 6,
-     "tools": [
-      "decode_sample"
-     ],
-     "uncalled_available": 4
+     "tools": [],
+     "uncalled_available": 0
     },
     {
      "action": "convert",
      "alias": "case-0d9f2f7c",
      "calls_made": 0,
      "remaining": 6,
-     "tools": [
-      "decode_sample"
-     ],
-     "uncalled_available": 4
+     "tools": [],
+     "uncalled_available": 0
     },
     {
      "action": "blocklist_and_search",
@@ -658,14 +652,14 @@
   "qwen3.8:27b": {
    "budget_exhausted_escalations": 0,
    "by_scope": {
-    "decode_interval": 23
+    "decode_interval": 11
    },
    "by_tool": {
-    "decode_sample": 23
+    "decode_sample": 11
    },
    "decisions": 73,
    "escalations": 17,
-   "escalations_with_uncalled_available_check": 7,
+   "escalations_with_uncalled_available_check": 4,
    "non_escalations_with_uncalled_available_check": 19,
    "rows": [
     {
@@ -977,10 +971,8 @@
      "alias": "case-c3cf467a",
      "calls_made": 0,
      "remaining": 6,
-     "tools": [
-      "decode_sample"
-     ],
-     "uncalled_available": 4
+     "tools": [],
+     "uncalled_available": 0
     },
     {
      "action": "escalate",
@@ -1069,20 +1061,16 @@
      "alias": "case-f3060a7f",
      "calls_made": 0,
      "remaining": 6,
-     "tools": [
-      "decode_sample"
-     ],
-     "uncalled_available": 4
+     "tools": [],
+     "uncalled_available": 0
     },
     {
      "action": "escalate",
      "alias": "case-dc585c85",
      "calls_made": 0,
      "remaining": 6,
-     "tools": [
-      "decode_sample"
-     ],
-     "uncalled_available": 4
+     "tools": [],
+     "uncalled_available": 0
     },
     {
      "action": "blocklist_and_search",
