@@ -1,0 +1,194 @@
+{
+  "aborted": null,
+  "adapter": "ollama",
+  "argv": [
+    "--suite",
+    "/home/dev/work/mrh-eval-devc3-1019/.agents/context/media-repair-harness-2026-10-19/suite-dev-v1.1",
+    "--split",
+    "dev",
+    "--adapter",
+    "ollama",
+    "--model",
+    "qwen3.8:27b",
+    "--prompt",
+    "v3",
+    "--evidence",
+    "replay",
+    "--num-ctx",
+    "8192",
+    "--keep-alive",
+    "2m",
+    "--cases",
+    "tv-corrupt-001,tv-healthy-002",
+    "--out",
+    "/tmp/claude-1000/mrh-devc3/runs/evaldevc3v11-smoke-qwen3.8-27b-v3"
+  ],
+  "case_ids": [
+    "tv-corrupt-001",
+    "tv-healthy-002"
+  ],
+  "case_sha256": {
+    "tv-corrupt-001": "06a34437066d405b4683325dfff3a3b63509d699f8467f1847cf7f9f999e6d48",
+    "tv-healthy-002": "0962379a85358c985d5736b46dc8756d9d1d7df74b76d0d8dd2763ed98b60652"
+  },
+  "config": {
+    "adapter_config": {
+      "adapter": "ollama",
+      "call_timeout_s": 120,
+      "format": "TURN_SCHEMA:anyof",
+      "keep_alive": "2m",
+      "model": "qwen3.8:27b",
+      "options": {
+        "num_ctx": 8192,
+        "num_predict": 640,
+        "seed": 42,
+        "temperature": 0,
+        "use_mmap": false
+      },
+      "psi_guard": {
+        "consecutive": 2,
+        "interval_s": 30.0,
+        "threshold": 0.2
+      },
+      "stop": [
+        "<|im_end|>"
+      ],
+      "stream": false,
+      "think": false,
+      "warmup_timeout_s": 900
+    },
+    "evidence_bounds": null,
+    "evidence_bounds_clamped": null,
+    "evidence_mode": "replay",
+    "flat_schema_sha256": "0cc08ff1de36f459c2654838e3dad024986815dd843572340b74a624ffb7d2eb",
+    "harness_version": "dev-c3",
+    "max_tool_calls": 6,
+    "ocr_model": null,
+    "prompt_version": "v3",
+    "protocol": "turn-v2",
+    "replay": "auto",
+    "system_prompt_sha256": "b1fd9e8558396dc288c8b66443a3363f29496032f1e32a0590a1245469e8061a",
+    "tool_output_bytes": 8192,
+    "tool_timeout_s": 60,
+    "turn_schema_sha256": "4d976ba5fc8f82af307a7cfb4f168db248b08ffb5e7bf2a82d11b2b9ce28790b",
+    "turn_schema_v2_sha256": "febb1ea15e399104d90772b01c6e4b51d7eb3dc66f5af951f8ff3e8cd882eb36"
+  },
+  "config_hash": "268a4c1657b8379508089c1ab1dd4fc370e1d0ba9437858af242f5e6df1f0844",
+  "ended_at": "2026-10-20T04:34:37.519751+00:00",
+  "finish": {
+    "psi_guard": {
+      "baseline_pod": {
+        "container_id": "containerd://2be2910f0f78edf5ffa9a9fc48eaedd251eb75fbd0c8823907b1a18d693143a1",
+        "name": "ollama-prime-bc7bc7856-zgzjb",
+        "restarts": 1,
+        "uid": "73271983-b7af-4824-893c-26990c989329"
+      },
+      "blind_samples": 0,
+      "consecutive": 2,
+      "interval_s": 30.0,
+      "max_rate": 0.0,
+      "samples": 2,
+      "samples_detail": [
+        {
+          "pod": "ollama-prime-bc7bc7856-zgzjb",
+          "rate": null,
+          "restarts": 1,
+          "stall_s": 0.102783,
+          "t": 3222069.15
+        },
+        {
+          "pod": "ollama-prime-bc7bc7856-zgzjb",
+          "rate": 0.0,
+          "restarts": 1,
+          "stall_s": 0.102783,
+          "t": 3222091.687
+        }
+      ],
+      "source": "cgroup memory.pressure full total via kubectl exec (Prometheus unreachable from this pod)",
+      "threshold": 0.2,
+      "tripped": null
+    },
+    "residents_after": [],
+    "resources_after": {
+      "at": "2026-10-20T04:34:37.356302+00:00",
+      "compute_processes": "",
+      "compute_query_exit": 0,
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 4 MiB, 24121 MiB, 100 %\n33539780608\nMemTotal:       142070968 kB\nMemFree:        33284112 kB\nMemAvailable:   121885064 kB\n"
+    },
+    "unload_response": {
+      "created_at": "2026-10-20T04:34:36.447966417Z",
+      "done": true,
+      "done_reason": "unload",
+      "model": "qwen3.8:27b",
+      "response": ""
+    },
+    "unloaded": true
+  },
+  "harness_git": {
+    "branch": "HEAD",
+    "dirty": false,
+    "sha": "616e3bfcd18bebc662969ca0df3f5d83243d1cce"
+  },
+  "harness_version": "dev-c3",
+  "model_digest": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+  "model_digest_na_reason": null,
+  "preflight": {
+    "adapter": "ollama",
+    "loaded_by_us": true,
+    "model_digest": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+    "model_digest_na_reason": null,
+    "model_info": {
+      "details": {
+        "context_length": 262144,
+        "embedding_length": 5120,
+        "families": [
+          "qwen35"
+        ],
+        "family": "qwen35",
+        "format": "gguf",
+        "parameter_size": "27.3B",
+        "parent_model": "qwen3.8:27b-q4_K_M",
+        "quantization_level": "Q4_K_M",
+        "runner": "llamacpp"
+      },
+      "size": 17741872154
+    },
+    "psi_baseline": {
+      "pod": "ollama-prime-bc7bc7856-zgzjb",
+      "rate": null,
+      "restarts": 1,
+      "stall_s": 0.102783,
+      "t": 3222069.15
+    },
+    "requested_model": "qwen3.8:27b",
+    "residents_before": [],
+    "resources_before": {
+      "at": "2026-10-20T04:34:14.818990+00:00",
+      "compute_processes": "",
+      "compute_query_exit": 0,
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\n33534701568\nMemTotal:       142070968 kB\nMemFree:        33488720 kB\nMemAvailable:   122088264 kB\n"
+    },
+    "runtime_version": "0.40.6",
+    "warmup": {
+      "error": null,
+      "exit_code": 0,
+      "load_duration_ns": 4616905086,
+      "ok": true,
+      "wall_s": 5.109
+    }
+  },
+  "python": "3.11.2",
+  "records_written": [
+    "tv-corrupt-001",
+    "tv-healthy-002"
+  ],
+  "requested_model": "qwen3.8:27b",
+  "run_id": "evaldevc3v11-smoke-qwen3.8-27b-v3",
+  "runtime_version": "0.40.6",
+  "started_at": "2026-10-20T04:34:13.982420+00:00",
+  "suite_dir": "/home/dev/work/mrh-eval-devc3-1019/.agents/context/media-repair-harness-2026-10-19/suite-dev-v1.1"
+}
