@@ -294,6 +294,9 @@ stage (a missing line fails only the release image build, which is not a require
 - `pnpm test` — Vitest across packages (`@hnet/domain` has the first real test; others
   run `vitest run --passWithNoTests`).
 - `pnpm format` — Prettier write across the repo.
+- `tools/media-repair-harness/scripts/ci-test.sh` — the media repair harness's deterministic Python tests (stdlib
+  `unittest`, serial, `nice -n 19`; no model, GPU, ffmpeg or network; not part of `pnpm test`). Component README:
+  `tools/media-repair-harness/README.md`.
 
 Arriving with later tasks: `pnpm --filter web e2e` (Playwright),
 `pnpm --filter @hnet/db generate|migrate` (Drizzle).

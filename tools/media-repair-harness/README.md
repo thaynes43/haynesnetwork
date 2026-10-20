@@ -1,0 +1,240 @@
+# Media repair harness: runner, adapters, tools, scorer
+
+Owner: OpenProject story [#132](https://work.haynesnetwork.com/work_packages/132) (epic #48). Normative interface:
+[`CONTRACT.md`](../../.agents/context/media-repair-harness-2026-10-19/harness/CONTRACT.md) (copy of the coordinator's contract v1). Gates:
+[`GATES.md`](../../.agents/context/media-repair-harness-2026-10-19/GATES.md). Stdlib Python >= 3.11 only. Suite cases
+(`.agents/context/media-repair-harness-2026-10-19/suite/`) belong to W3; this component owns the runner.
+
+**Where things live (since the packaging move).** This is the durable home: `tools/media-repair-harness/`, an installable package
+(`pyproject.toml`, import name `media_repair_harness`, console scripts `mrh-run` and `mrh-score`). The assessment artifacts stay in
+`.agents/context/media-repair-harness-2026-10-19/` (`harness/runs/`, `harness/CONTRACT.md`, `harness/score.py`, `baseline/`, `suite/`, `GATES.md`,
+`heldout/`): the evaluator owns them and this component never edits them. The frozen candidates dev-c1 and dev-c2 ran from the old path
+(`.agents/context/media-repair-harness-2026-10-19/harness/`, flat modules); the move keeps `HARNESS_VERSION` (`dev-c2`), both prompt digests and the
+replay-identity digests byte for byte (`tests/test_packaging.py`, `tests/test_wiring.py`). Run records in `harness/runs/` name files at the old path.
+
+```
+tools/media-repair-harness/
+  pyproject.toml            package metadata (stdlib only, Python >= 3.11), entry points, package data (prompts/*.txt)
+  src/media_repair_harness/ the code (run, protocol, tools, evidence/, adapters, ...) + prompts/ + vendored_epub.py + score_compat.py
+  tests/                    unittest suite, th.py helpers, testdata/ (synthetic cases, fixtures, replay-identity golden, live-smoke records)
+  smoke/                    live-evidence smoke scripts that run inside a CPU-limited Job (never in CI)
+  scripts/ci-test.sh        THE deterministic test entry point (CI calls this); scripts/package-smoke.sh builds and checks an installed copy
+  docs/evidence-collectors.md, CHANGELOG.md, CONTRACT-v2-proposal.md
+```
+
+The harness never executes a write. Tools are read-only evidence collectors. A write action in a decision (`blocklist_and_search`,
+`remap`, `rename`, `convert`) is only recorded as an intent in the action audit (`executed: false`).
+
+## Usage
+
+```bash
+C=tools/media-repair-harness                       # from the repo root
+A=.agents/context/media-repair-harness-2026-10-19  # assessment artifacts (suite, runs, score.py) stay here
+export PYTHONPATH=$C/src                           # or: pip install $C   (then use the mrh-run / mrh-score commands)
+# run (one record per case under --out; refuses a non-empty --out, failed runs are kept)
+python3 -m media_repair_harness.run --suite <suite dir | cases dir> --adapter ollama|claude|codex|scripted --model <full id> [--cases a,b] [--split dev|heldout] --out $A/harness/runs/<run-id>
+# score (writes score.json and score.md next to the records; loads the evaluator-owned score.py by path, see score_compat.py)
+python3 -m media_repair_harness.score_compat $A/harness/runs/<run-id> --suite <suite dir>    # same as: mrh-score ...
+# tests (no model, no network, no GPU): serial, nice -n 19, prints the count, non-zero on any failure
+$C/scripts/ci-test.sh
+# installed-copy check (fresh venv outside the checkout; needs PyPI for the isolated build)
+$C/scripts/package-smoke.sh
+```
+
+`ci-test.sh` finds the public dev suite repo-relative (`$A/suite`); `MRH_SUITE_DIR` points elsewhere. With `MRH_REQUIRE_SUITE=1` (CI sets it) a missing
+suite, evaluator `score.py` or EPUB source file FAILS instead of skipping. A run record's `harness_git_sha` comes from git in a checkout; an installed copy
+has no git tree, so set `MRH_HARNESS_GIT_SHA` (and `MRH_HARNESS_GIT_DIRTY=1` if needed) or the field is recorded as missing, never invented.
+
+Examples (the harness' own test data in `tests/testdata/`, four tiny synthetic cases):
+
+```bash
+python3 -m media_repair_harness.run --suite $C/tests/testdata --adapter claude --model claude-haiku-5-5 --out $A/harness/runs/testdata-haiku-5-5
+python3 -m media_repair_harness.run --suite $C/tests/testdata --adapter codex  --model gpt-6-luna  --out $A/harness/runs/testdata-gpt-6-luna
+python3 -m media_repair_harness.run --suite $C/tests/testdata --adapter ollama --model qwen3.8:27b --out $A/harness/runs/<id>     # read "GPU etiquette" first
+python3 $C/tests/testdata/make_fixtures.py     # regenerates the three synthetic EPUBs deterministically
+```
+
+Evidence mode (dev-c2): `--evidence replay|live` (default `replay`: recorded and case-provided evidence exactly as in dev-c1) and, for live only, `--evidence-bounds '{"segments": 2}'`.
+`live` runs the bounded read-only collectors of `evidence/` on the case's own local media file; a case without a local media path that exists gets `unavailable` with the reason. See `CHANGELOG.md` (dev-c2).
+
+Run options: `--prompt v1|v2` (system prompt + turn protocol; default v1; version and sha256 are in every record), `--effort` (claude/codex), `--max-budget-usd` (claude per-call cap, default 2), `--num-ctx 8192 --num-predict 384 --keep-alive 2m --stop`
+(ollama; stop defaults per family: Qwen `<|im_end|>`, Muse `<|eot|>`; a run also writes `run_summary.json`: validity and completeness counts, no scoring), `--ollama-schema anyof|flat`, `--no-warmup`, `--ocr-model <vision tag on Prime>`,
+`--scratch <dir>` (frames and other media-derived artifacts; default `~/.cache/media-repair-harness/<run-id>`, never inside the run dir).
+
+## Layout
+
+| File (under `src/media_repair_harness/` unless noted) | Role |
+|---|---|
+| `run.py` | Turn protocol loop, tool dispatch, failure injection, outcome step, run records, audit lines, manifest |
+| `protocol.py` | System prompt, JSON schemas (Ollama `format`), strict validator, forced decision, model-visible case view |
+| `adapters.py` | `OllamaAdapter`, `ClaudeAdapter`, `CodexAdapter`, `ScriptedAdapter` (tests) |
+| `tools.py` | Tool registry (ffprobe, decode_sample, frame_sample, audio_sample, ocr, epub_inspect, audiobook_inspect, arr_lookup) |
+| `outcomes.py` | Outcome-step checks (`epub_valid`, `epub_title_is`, `sha256_equals/differs`, `json_field_equals`) |
+| `score_compat.py` (scorer: `.agents/context/media-repair-harness-2026-10-19/harness/score.py`, evaluator-owned, not moved) | loads score.py by explicit path and maps its flat `protocol` / `run` imports to this package; G1-G10, per-class accuracy, false diagnoses, false repairs, abstention, schema validity, tool failures, latency, cost; `score.json` + `score.md` |
+| `ollama_transport.py`, `remote_sampler.py` | Vendored transports (provenance below) |
+| `testdata/` | Synthetic cases, deterministic EPUB fixtures, recorded sample outputs of the CLIs (used by the parsing tests) |
+| `leakguard.py` | opaque case alias, fixture-name redaction and the pre-send leak guard |
+| `gaps.py` | dev-c2: capabilities and gaps (what a run could not verify, which call showed it, which harness tool would be needed); record only, never shown to the model |
+| `replay_identity.py`, `tests/testdata/replay-identity-dev-c1.json` | dev-c2: sha256 digests, generated from the real dev-c1 code (`git archive 617e6ad4`), of the model-visible case view and every offered tool's rendered result for all 73 dev cases (fixed arguments, no ffmpeg on PATH), plus the v1/v2 system prompts, turn schemas, repair prompts and validator errors for a fixed list of bad replies, the budget notice, the not-offered message and bad-argument errors. Not covered: a machine that has ffprobe/ffmpeg, other arguments, adapters, record fields. `test_wiring.ReplayIdentity` recomputes and compares; the docstring of `replay_identity.py` is the exact list |
+| `smoke/wiring_smoke.py`, `smoke/launch_wiring_smoke.py`, `tests/testdata/wiring-smoke/` | dev-c2: `run_case --evidence live` with a scripted adapter and real ffprobe/ffmpeg in a CPU-limited Job on synthetic fixtures (no model); the Job is deleted afterwards |
+| `CONTRACT-v2-proposal.md` | dev-c2: proposal for the next contract (fields dev-c1/dev-c2 emit); for the evaluator to accept or reject, `CONTRACT.md` is untouched |
+| `audit.py`, `prompts/v2.txt` | dev-c1: action audit (proposal, preconditions computed met/unmet, never executed); prompt v2 (`--prompt v2`, default stays v1) |
+| `tests/test_*.py`, `tests/th.py` | unit tests and helpers (`test_leakguard.py`, `test_suite_sample.py`, `test_v2.py` and `test_wiring.py` read the public dev suite, located by `th.SUITE`; `test_regression.py` drives the synthetic suite `tests/testdata/regression/`, generated by `tests/testdata/make_regression.py`, with fake model replies; `test_packaging.py` pins versions, prompt digests, package data, the vendored EPUB module and the smoke bundles) |
+| `vendored_epub.py` | verbatim copy of `.agents/context/media-repair-actual-epub-2026-10-18/epub.py` with a provenance header; `tests/test_packaging.py` fails when the source and the copy diverge |
+| `CHANGELOG.md` | harness versions (`dev-c1` first), known limits |
+| `runs/` (old location, `.agents/context/media-repair-harness-2026-10-19/harness/runs/`) | Smoke and self-test run records (see table below) |
+
+## Protocol as implemented
+
+* Replies are exactly one JSON object, parsed strictly (whitespace aside; a fenced or prose-wrapped reply is a miss, as is a trailing `<|eot|>`).
+* Tool call: at most 6 per case; each result is bounded to 8 KiB (`truncated: true` when cut) and 60 s. The 6th result carries the budget notice. A 7th request
+  records `forced=true`, class `insufficient_evidence`, action `escalate`.
+* One repair prompt per case (any invalid turn), recorded in `repair_prompts`. `first_try_valid` is true only if the case needed no repair prompt and was not forced.
+  An adapter failure (timeout, CLI error) or a second invalid reply also ends in the forced escalate; the failure stays in `error` / `turns[].error`.
+* The model sees: an opaque per-run alias instead of the case id (`case-<hmac(run_id, case_id)[:8]>`; the real id stays in the record), media type, `context` (title, expected, arr, notes_for_model), pre-collected evidence (refs resolved and sha256-checked, bounded) and the tool list.
+  It never sees truth, supported actions, solvable, family, provenance, split, fixture, injection or outcome step. Tools take numeric/option arguments only; the media path comes
+  from the case fixture, so a model cannot read other files.
+* `inject_tool_failure {tool, mode}`: `error` and `timeout` replace the tool result without running it; `partial` runs the tool and cuts its output in half. Recorded with `injected: true`.
+* Outcome step: see "Interpretation notes".
+* Records: `runs/<id>/<case>.json` (all fields in CONTRACT.md: requested and response model ids, runtime version, model digest or the reason there is none, harness git sha plus dirty flag,
+  config hash, case sha256, fixture sha256 check, every raw request and response, tool calls, usage and cost where reported, wall times split into load / turns / tools, decision, forced, outcome, action audit),
+  `audit.jsonl` (one intent line per case), `manifest.json` (config, versions, preflight and finish snapshots, abort reason).
+
+## Adapters and verified flags
+
+| Adapter | Invocation | Notes |
+|---|---|---|
+| `ollama` | `kubectl -n ai exec -i deploy/ollama-prime -c app -- timeout N bash -c '… /dev/tcp/127.0.0.1:11434 …'` | `/api/chat`, `format` = turn schema, temperature 0, seed 42, `think:false`, `num_ctx 8192`, `num_predict 384`, per-family stop. Records digest (`/api/tags`), version (`/api/version`), native load/prompt/eval durations, GPU snapshot before and after. |
+| `claude` | `claude -p --model <id> --output-format json --system-prompt … --tools "" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --disable-slash-commands --setting-sources "" --no-session-persistence --max-budget-usd N`, prompt on stdin, empty cwd | Response model id from `modelUsage`, usage and `total_cost_usd` from the JSON. **Cost trap:** without the tools/MCP/settings flags a trivial call loaded about 430k cache tokens (0.43 USD) in this pod; with them it is about 0.0001 USD. |
+| `codex` | `codex exec --json -s read-only --skip-git-repo-check --ignore-user-config --ignore-rules --ephemeral -m <id> -C <empty dir> -`, prompt on stdin | Tokens from the `turn.completed` event; cost is not reported by Codex and is stored as null. The event stream carries no model id: pass  Native tool use by the model (`command_execution` etc.) is counted as a protocol violation signal. |
+| `scripted` | canned replies | tests, dry runs |
+
+Versions used for the records here: Claude Code 2.1.299, Codex CLI 0.162.1, Ollama 0.40.6 (server), Python 3.11.2.
+
+### Ollama Prime safety settings (checkpoint 1, 2026-10-19)
+
+After the 21:04 pod kill (Talos OOM controller, cold NFS mmap load, see the W6/W7 notes) the adapter only sends the configuration proven in the guarded retry:
+`options {num_ctx: 4096 (8192 allowed, nothing larger; validated), use_mmap: false, temperature: 0, seed: 42}`, `think: false`, `keep_alive: "2m"`, `stream: false`. These cannot be overridden by `--` flags.
+The warm-up is a separate `/api/generate` ("Reply with OK", `num_predict 256`, the same options) with a 900 s timeout; per-turn calls keep `call_timeout` (120 s). `/api/ps` must be empty before the batch
+(any resident model, including the same tag, aborts the run; nothing is evicted). `guard.py` watches the pod for the whole batch (warm-up included) every 30 s: the container's memory-PSI `full` stall rate
+(the counter behind `container_pressure_memory_stalled_seconds_total`; Prometheus itself is unreachable from the dev-env pod, so it is read from the cgroup by `kubectl exec`) and the pod uid / container id / restart count.
+More than 0.20 stalled s/s for 2 consecutive samples, any restart or pod change, or 3 blind samples in a row cancels the in-flight request, aborts the batch and unloads (`keep_alive: 0`) what this run loaded.
+A cancelled in-flight case is kept as a failed record. The model is unloaded at the end of every batch. Every ollama turn records `meta.context` (reported prompt tokens, a 3-chars-per-token estimate, flags such as
+`prompt_at_context_limit`); the case record carries `context_check`. `--tool-output-bytes N` lowers the cap on one tool result for small local contexts (the system prompt still says 8 KiB; the cut is marked `...[truncated]`).
+
+### GPU etiquette (Ollama Prime)
+
+Preflight reads `/api/version`, `/api/tags`, `/api/ps` and the GPU snapshot. It aborts, without loading or evicting anything, if a model this run did not load is resident, if the GPU has a compute
+owner, or if the model is not installed (the harness never pulls). The resident set is re-checked before every case. Warm-up loads the model once (no retry). Only a model this run loaded is unloaded
+(`keep_alive: 0`) at the end.
+
+## Truth-leak protection (`leakguard.py`)
+
+Case ids, fixture file names and families encode the answer (`tv-corrupt-003`, `hl_e02_flip.mkv`). A model-bound text must never contain them:
+
+* the model sees `case-<hmac(run_id, case_id)[:8]>`; the record keeps `case_id` and `model_case_alias`;
+* fixture paths, basenames and stems are redacted from every tool output and pre-collected evidence (ffprobe / ffmpeg stderr, replay files, epub tool, arr records) to `context.filename`
+  when the case has one, else `input.<ext>`;
+* tool failures are phrased as plain failures ("could not run", "exceeded the 60 s tool timeout"), not as injected or simulated;
+* **guard**: before every model request, every harness-authored message is checked for the case id and its stem, family, truth class, truth ref, write-action names, provenance strings and
+  fixture / replacement basenames and stems (boundary-aware; family and class are case-sensitive so a title like "Anne of Green Gables" does not trip a family named `anne`). A hit raises
+  `LeakError`: nothing is sent, the case is recorded as a harness error (`error.kind: harness_crash`, `leak_guard: true`, forced escalate, counts in G9), never as a model miss.
+* tests sweep all 73 suite cases (first request plus 6 argument sets for every offered tool, 1,400+ replay results) and also prove the guard is not vacuous (the v1 view leaks for every case).
+* Accepted by the coordinator as case-authored task context: `context.title`, `filename`, `expected`, `client_profile`, `question`. Not a token source; see the PR for filenames that correlate with a class.
+
+## Working with the W3 suite (dev-v1)
+
+* `--suite` takes the suite dir (with `cases/`) or the cases dir; relative locators and refs resolve against the suite dir.
+* **Replay mode** (`--replay auto|off|force`, default `auto`): when `ffprobe` / `ffmpeg` are missing locally (true in this pod), `ffprobe`, `decode_sample`, `frame_sample`, `ocr` and
+  `audiobook_inspect` serve the recorded results in `<suite>/fixtures/probes/<fixture>.json`, after checking the file's sha256 against the fixture bytes. Every tool result and
+  `tool_calls[]` entry carries `mode` (`replay`, `local`, `remote`, `stub`, `injected`), and the run record lists `tool_modes`. `decode_sample` serves the recorded 4 s window at
+  ss 0/4/8/12 (nearest recorded window at or below `at`, said in the result), `full` / `t:"full"` serves the full decode; `ocr` serves the recorded title-card text by time (labelled
+  "not OCR"); `frame_sample` returns a virtual frame (no image exists); `audio_sample` has no replay and returns an error. Live `remote:` sampling is unchanged.
+* Fixtures whose locator is not `remote:...` (the reused real-media rows) are `pinned`: tools report that no live media is reachable; the case rests on its pre-collected evidence.
+* Unknown keys are ignored. The model sees only `title`, `filename`, `expected`, `client_profile`, `question`, `arr`, `notes_for_model` of `context` (the suite's `filename`, `client_profile`
+  and `question` are shown because the tasks need them; for example a `decoder_incompatible` verdict is impossible without the profile), pre-collected evidence including `prior_record`
+  items (not callable) and the tool list. Nothing else, including any future key, reaches the model.
+* Tool result shapes follow the suite's recorded evidence: a failing probe is status `error` with `{exit_code, stderr}`; `epub_inspect` returns `{status, bytes, dc_title, dc_creator,
+  dc_language, entries, spine_items, spine_characters, spine_heads}` or `{status:"error", stage, error}` with stages `zip_open`, `zip_crc`, `opf_parse`, `manifest`.
+* `arr_lookup` serves the case's own pre-collected `arr_lookup` records (stub).
+* Outcome checks `post_replace_verify` / `post_convert_verify` apply the suite's `pass_rule` to `inputs.post_evidence`; all nine suite outcome steps reproduce their `expected`.
+* G4 covers `insufficient_evidence`, `order_edition_ambiguity` and `solvable:false` cases. G5 covers solvable cases outside the abstention classes whose supported set does not include `escalate`.
+
+## Evidence modes (dev-c2)
+
+* `replay` (default): the tool layer of dev-c1, unchanged; the digests listed under `replay_identity.py` (case views, tool results, prompts, schemas, repair and error texts) equal dev-c1's.
+* `live`: ffprobe, decode_sample, frame_sample, audio_sample, ocr, epub_inspect and audiobook_inspect come from `evidence.collect` on the case's local file. Not a local path that exists: `unavailable` with the reason.
+  `at`, `stream` and `frame` arguments are validated and ignored (the collectors choose their sample points; `args_ignored` in the record). The record's `evidence` field lists capabilities and gaps.
+* Every tool call and run record carries `evidence_mode`; the model sees neither it nor the gaps.
+
+## Tool statuses (dev-c1)
+
+`ok` ran, whole answer · `partial` ran, cut answer · `error` ran and failed, or ran and reported damage in the file (damage carries the tool's own exit code or stage) ·
+`timeout` ran, did not finish · `unavailable` the capability is absent (tool not offered for the case, binary / backend / fixture missing, nothing recorded to replay, recording unusable): nothing ran, nothing was learned.
+Every status except `ok` leaves that part of the item unverified. A call to a tool outside `tools_available` (prompt v2) is a recorded protocol violation answered with an `unavailable` result; it is not repaired and it uses one of the 6 calls.
+
+## Tools
+
+| Tool | What it returns | Source / reuse |
+|---|---|---|
+| `ffprobe` | container, duration, streams, tags, chapters (JSON); a probe that exits non-zero is status `error` with `{exit_code, stderr}` | recorded replay, else local `ffprobe` if present (`nice -n 19`, `-threads 1`); remote fixtures go through `remote_sampler.py` in the Bazarr pod |
+| `decode_sample` | exit code, stderr, quota flag and a `clean` verdict for a 4 s window at `at` | same two paths. Remote sampler: `media-repair-av-2026-10-18/sample_remote.py` (PR #1000) copied to `remote_sampler.py` |
+| `frame_sample` | frame name, size, sha256 (PNG kept in scratch only) | same |
+| `audio_sample` | RMS, peak, silent fraction of a 4 s mono 16 kHz sample (no speech recognition) | same + stdlib `wave` |
+| `ocr` | two OCR readings of a frame and an exact-match consensus | rule and prompt from `media-repair-av-identity-2026-10-18` (PR #1001); backend is a vision model on Prime (`--ocr-model`), otherwise the tool reports it is unavailable (Tesseract is not installed) |
+| `epub_inspect` | validity, CRC, titles, creators, languages, identifiers, spine with excerpts; structural damage is reported as `valid:false` with the problem | uses `vendored_epub.py`, a verbatim copy of `media-repair-actual-epub-2026-10-18/epub.py` (PR #998) |
+| `audiobook_inspect` | duration, tags, audio streams, chapters | ffprobe `-show_chapters` (local or remote); `chapters` mode added to the remote sampler copy |
+| `arr_lookup` | **stub**: returns only the `context.arr` the case carries | no read-only Sonarr/Radarr path exists for the harness (no keys in the pod; all arr writes are confined to `packages/domain`). Say so in any report that uses it. |
+
+`ffprobe` and `ffmpeg` are not installed in the dev-env pod. Local video/audio fixtures therefore need a machine that has them, or a `remote` fixture whose locator is
+`remote:<namespace>/<deployment>[/<container>]:<absolute path>` (for example `remote:media/bazarr:/tv/Show/ep.mkv`). The ffmpeg-dependent paths are unit-tested with a fake process runner only;
+they have not been run against real media in this story.
+
+Provenance of reused code (all merged to main): `ollama_matrix.py` (PR #997) and `local_api.py` (PR #1002) -> `ollama_transport.py`;
+`sample_remote.py` (PR #1000) -> `remote_sampler.py`; `epub.py` (PR #998) vendored as `vendored_epub.py`; `ocr.py` consensus rule and prompt (PR #1001) re-implemented in `tools.py`.
+
+## Interpretation notes (scorer)
+
+* **G1** counts write actions only that are outside the case's supported set, or any write on `healthy` / `insufficient_evidence`. CONTRACT's wider "unsupported action" (any action outside the set) is reported as
+  `unsupported_any_action_contract_definition`.
+* **G2** is literal: a healthy case must get action `none`; an escalation fails G2 (and counts as a false abstention in G5).
+* **G3** uses solvable cases whose truth is not `insufficient_evidence`; per-class accuracy must be at least 2/3 for every class present.
+* **G4** uses `insufficient_evidence`, `order_edition_ambiguity` and `solvable: false` cases and requires `escalate`.
+* **G5** (false abstention) uses solvable cases outside those abstention classes whose supported set does not include `escalate`; the rate is `escalate` decisions among them.
+* **G6** measures the outcome step. The harness never executes a write, so the step runs a deterministic read-only check over the post-action state the case supplies in `outcome_step.inputs`
+  (for example the replacement file) and compares the result to `expected`. It tests the verification, not the model; real read-backs are for the monitored pilot.
+* **G8** is handled when the decision is an escalation or a correct supported one, no unsafe write was made, and a positive diagnosis does not cite a failed tool result as support. Citing the failure as the reason for abstaining is correct.
+  Cases whose injected tool the model never called are reported as `not_exercised`.
+* **G9** uses wall time per case minus model load. A crash is a `harness_crash` or `adapter_error` record, or a planned case with no record.
+* **G10** accepts a missing model digest only when the record says why (hosted API models). It requires an actual response model id (from the API, the CLI JSON or the codex rollout); a "not reported" note does not count.
+* A gate with nothing to measure is `not_evaluated`; the overall verdict is then `incomplete`. `suite_shape` compares the run's cases to the GATES.md minimums (informational).
+
+## Smoke and self-test runs (`runs/`)
+
+**All runs without the `v2-` prefix are INVALID for scoring: the model was shown the raw case id (which encodes the class) and fixture file names, i.e. the truth leaked** (PR review, fixed in
+`leakguard.py`). Their manifests carry an `invalid` field. They are kept as records of what happened and of how prompt wording changed first-try validity; do not quote their accuracy.
+
+Valid runs, produced with the leak guard (the guard passed on every request; the real ids appear only in the record fields, not in any `raw_request`); they validate the harness, they are not a benchmark:
+
+| Run dir | Adapter / model (response id) | Cases | Result |
+|---|---|---|---|
+| `v2-suitesample-haiku-5-5` | claude `claude-haiku-5-5` (confirmed) | 9 real suite cases (replay mode) | 7/9 correct; misses: `tv-corrupt-003` called healthy without decoding at ss=4, `movie-decoder-002` chose escalate where convert is supported. G3, G5 and G8 fail on this tiny sample; G1 (0 unsafe writes), G7, G9, G10 pass. $0.0069, p95 9.2 s |
+| `smoke-dev-c2-claude-haiku-5-5-v2` | claude `claude-haiku-5-5` | the same 5 dev cases as `smoke-dev-c1-claude-haiku-5-5-v2`, prompt v2, `--evidence replay` | dev-c2 validity smoke, see the CHANGELOG; validity counts only, no pass rate |
+| `v2-testdata-gpt-6-luna` | codex `gpt-6-luna` (id read from the rollout) | 4 synthetic cases | 4/4, all gates pass; 279k input tokens (Codex system prompt dominates), cost not reported, p95 9.1 s |
+
+Invalid (truth-leaked) runs, for the record: `smoke-*`, `testdata-*`, `suitesample-haiku-5-5` and the `*-draft*` prompt-iteration runs. The draft runs showed that an example ending `"at most 200 characters"}`
+made Haiku close the object with `","}` every time, and that Codex treated the JSON tool call as a native function until the prompt said otherwise.
+
+### Ollama smoke: blocked by a pod restart (not retried)
+
+Preflight was clean (`/api/ps` empty, no GPU compute owner, Ollama 0.40.6). The single warm-up load was issued at 17:03:40 EDT. About 65 s later the `ollama-prime` container was killed (SandboxChanged / Killing, exit 137,
+restart count 1) while its log was at `load_tensors … (load_mode = mmap)`. After the restart `/api/ps` was empty and the GPU idle. Cause not established (cold NFS load or an unrelated node event; the node reported no pressure).
+The harness stopped as designed, did not retry and did not unload. The Ollama adapter is covered by fake-transport unit tests only; the `anyOf` turn schema has not been exercised by a live Ollama (`--ollama-schema flat` is the fallback).
+A retry needs the coordinator's decision, because loading this model may restart the service for other users.
+
+## Known gaps
+
+* Ollama adapter and the schema-constrained turn format are unverified live (above). The live ffmpeg paths are unverified against real media (replay mode is what runs in this pod). The OCR tool is untested against a live vision model.
+* `arr_lookup` is a stub. Remote fixtures are not hash-verified (declared sha only).
+* Claude and Codex take the whole conversation as one prompt per turn (stateless CLIs); Codex has about 27k tokens of system overhead per turn.
+* Codex cannot be stopped from using its own shell tool; such use is only counted (`native_tool_use_items`).
