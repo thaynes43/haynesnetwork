@@ -250,9 +250,10 @@ class RunCaps(unittest.TestCase):
     class Costed(A.ScriptedAdapter):
         """A scripted model whose every call reports `cost` dollars, takes `step` fake seconds and has a call timeout of `timeout` (as a real adapter has)."""
 
-        def __init__(self, replies, cost, clock=None, step=0.0, timeout=120, preflight_s=0.0, budget=None):
+        def __init__(self, replies, cost, clock=None, step=0.0, timeout=120, preflight_s=0.0, budget=None, finish_s=0.0, reserve=0):
             super().__init__('m', replies)
             self.cost, self.clock, self.step, self.call_timeout, self.preflight_s = cost, clock, step, timeout, preflight_s
+            self.finish_s, self.cleanup_reserve_s = finish_s, reserve
             self.budgets = []
             if budget is not None:
                 self.max_budget_usd = budget
@@ -260,6 +261,11 @@ class RunCaps(unittest.TestCase):
         def preflight(self):
             if self.clock:
                 self.clock.t += self.preflight_s
+            return {}
+
+        def finish(self):
+            if self.clock:
+                self.clock.t += self.finish_s       # the unload, status and snapshot calls of a real adapter
             return {}
 
         def complete(self, system, messages, schema=None):
@@ -347,6 +353,94 @@ class RunCaps(unittest.TestCase):
         self.assertIn('the spend cannot be metered', man['aborted'])
         self.assertEqual((man['records_written'], man['never_started']), (['cap-001'], ['cap-002', 'cap-003']))   # the call that reported no cost is kept; the run stops after it
         self.assertEqual(man['limits_state']['cost_unreported'], 'a call reported no cost')
+
+    def test_a_failed_calls_tokens_and_cost_are_kept_in_the_record_the_totals_and_the_summary(self):
+        class Failing(self.Costed):
+            def complete(self, system, messages, schema=None):
+                self.calls.append(messages)
+                raise A.AdapterError('claude CLI error: {}', usage={'input_tokens': 123, 'output_tokens': 7, 'cost_usd': 0.40})
+        code, out = self.run_main(self.cases(1), Failing([], 0.0), ['--max-total-cost-usd', '0.60'])
+        rec = json.loads((out / 'cap-001.json').read_text())
+        self.assertEqual((rec['usage']['input_tokens'], rec['usage']['output_tokens'], rec['usage']['cost_usd'], rec['usage']['cost_reported']), (123, 7, 0.40, True))
+        self.assertEqual(rec['turns'][0]['usage'], {'input_tokens': 123, 'output_tokens': 7, 'cost_usd': 0.40})
+        summary = json.loads((out / 'run_summary.json').read_text())
+        self.assertAlmostEqual(summary['cost_usd'], 0.40)
+        self.assertEqual(self.manifest(out)['limits_state']['cost_usd'], 0.4)
+        # the same receipt through the real parser
+        try:
+            A.parse_claude(json.dumps({'is_error': True, 'subtype': 'error_during_execution', 'total_cost_usd': 0.40, 'usage': {'input_tokens': 123, 'output_tokens': 7}}), '', 1, {}, 0.1)
+        except A.AdapterError as e:
+            self.assertEqual((e.usage, e.cost_usd, e.budget_exceeded), ({'input_tokens': 123, 'output_tokens': 7, 'cost_usd': 0.40}, 0.40, False))
+
+    def test_the_receipt_of_a_failed_call_counts_toward_the_run_total_across_cases(self):
+        class Fail2(self.Costed):
+            def complete(self, system, messages, schema=None):
+                self.calls.append(messages)
+                if len(self.calls) == 1:
+                    raise A.AdapterError('claude CLI error: {}', usage={'input_tokens': 50, 'output_tokens': 2, 'cost_usd': 0.30})
+                return super().complete(system, messages, schema)
+        # a failed first call forces the case to escalate; use two cases: the second is cut by the cap and its partial must carry usage
+        code, out = self.run_main(self.cases(3), Fail2([dec()] * 3, 0.20), ['--max-total-cost-usd', '0.60'])
+        man = self.manifest(out)
+        self.assertEqual(code, 3)
+        self.assertAlmostEqual(man['limits_state']['cost_usd'], 0.5)
+        self.assertEqual(man['records_written'], ['cap-001', 'cap-002'])
+        self.assertEqual(json.loads((out / 'run_summary.json').read_text())['cost_usd'], 0.5)
+
+    def test_the_cli_stopping_at_the_lowered_budget_is_a_cost_cap_abort_not_a_forced_escalate(self):
+        class OverBudget(self.Costed):
+            def complete(self, system, messages, schema=None):
+                self.calls.append(messages)
+                raise A.AdapterError('claude CLI error: {"subtype": "error_max_budget_usd"}', usage={'input_tokens': 900, 'output_tokens': 11, 'cost_usd': 0.35}, budget_exceeded=True)
+        code, out = self.run_main(self.cases(2), OverBudget([], 0.0), ['--max-total-cost-usd', '0.60'])
+        man = self.manifest(out)
+        self.assertEqual(code, 3)
+        self.assertEqual((man['records_written'], man['started_aborted'], man['never_started']), ([], ['cap-001'], ['cap-002']))
+        self.assertIn('cost cap reached by a call', man['aborted'])
+        part = json.loads((out / 'started-aborted' / 'cap-001.json').read_text())
+        self.assertEqual((part['usage']['input_tokens'], part['usage']['cost_usd']), (900, 0.35))
+        self.assertIn('cost_cap_budget_exceeded', part['turns'][0]['failure_modes'])
+        self.assertFalse((out / 'cap-001.json').exists())
+        self.assertAlmostEqual(self.manifest(out)['limits_state']['cost_usd'], 0.35)
+        # without a cap the same error stays an ordinary adapter error: a recorded, forced case
+        code, out = self.run_main(self.cases(1), OverBudget([], 0.0))
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads((out / 'cap-001.json').read_text())['forced'])
+
+    def test_the_final_call_cannot_overshoot_or_go_unmetered_without_a_flag(self):
+        code, out = self.run_main(self.cases(1), self.Costed([dec()], 0.70), ['--max-total-cost-usd', '0.60'])
+        man = self.manifest(out)
+        self.assertEqual((code, man['records_written']), (3, ['cap-001']))                      # the case is a scored record AND the run is flagged
+        self.assertEqual([v['kind'] for v in man['limit_violations']], ['cost_cap_exceeded'])
+        self.assertIn('cost_cap_exceeded', man['aborted'])
+        self.assertEqual(json.loads((out / 'run_summary.json').read_text())['limit_violations'][0]['kind'], 'cost_cap_exceeded')
+        code, out = self.run_main(self.cases(1), self.Costed([dec()], None), ['--max-total-cost-usd', '0.60'])
+        man = self.manifest(out)
+        self.assertEqual((code, [v['kind'] for v in man['limit_violations']]), (3, ['cost_unreported']))
+        self.assertTrue(man['aborted'].startswith('cost_unreported'))
+
+    def test_wall_probe_fifteen_119_second_calls_plus_a_110_second_cleanup_stay_inside_1800(self):
+        clock = self.Clock()
+        ad = self.Costed([dec()] * 40, 0.0, clock, step=119.0, timeout=120, finish_s=110.0, reserve=180)      # unload 50 s + status 50 s + snapshot 10 s
+        code, out = self.run_main(self.cases(30), ad, ['--max-wall-s', '1800'], clock)
+        man = self.manifest(out)
+        st = man['limits_state']
+        self.assertEqual(code, 3)
+        self.assertIn('wall-time cap reached', man['aborted'])
+        self.assertEqual(man['limit_violations'], [])
+        self.assertLessEqual(st['elapsed_after_cleanup_s'], 1800.0)
+        self.assertEqual(len(man['records_written']), 13)                  # a call starts only while elapsed + 120 s timeout + 180 s cleanup reserve < 1800
+        self.assertEqual(len(man['records_written']) + len(man['started_aborted']) + len(man['never_started']), 30)
+
+    def test_wall_probe_a_cleanup_that_runs_over_is_a_flagged_violation_not_success(self):
+        clock = self.Clock()
+        ad = self.Costed([dec()] * 40, 0.0, clock, step=119.0, timeout=120, finish_s=400.0, reserve=180)
+        code, out = self.run_main(self.cases(30), ad, ['--max-wall-s', '1800'], clock)
+        man = self.manifest(out)
+        self.assertEqual(code, 3)
+        self.assertEqual([v['kind'] for v in man['limit_violations']], ['wall_cap_exceeded'])
+        self.assertGreater(man['limits_state']['elapsed_after_cleanup_s'], 1800.0)
+        self.assertIn('wall_cap_exceeded', man['aborted'])
 
     def test_a_claude_call_gets_the_remaining_budget_as_its_own_cli_budget(self):
         ad = self.Costed([tc('arr_lookup'), dec()], 0.10, budget=2.0)

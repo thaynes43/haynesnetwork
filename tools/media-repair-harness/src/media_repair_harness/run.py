@@ -256,7 +256,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
             except A.AdapterError as e:
                 error = {'kind': 'adapter_error', 'message': str(e)[:500]}
                 turns.append({'n': len(turns) + 1, 'error': str(e)[:500], 'attempt': 'repair' if repairs else 'first', 'reply_valid': False,
-                              'failure_modes': ['adapter_error'], **({'cost_usd': e.cost_usd} if getattr(e, 'cost_usd', None) is not None else {})})
+                              'failure_modes': ['adapter_error'],
+                              **({'usage': e.usage or {'cost_usd': e.cost_usd}} if (getattr(e, 'usage', None) or getattr(e, 'cost_usd', None) is not None) else {})})   # the failed call's own receipt (tokens, cost) is kept
                 force('model call failed: ' + str(e)[:200])
                 break
             load_s += comp.load_s
@@ -321,6 +322,10 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                              {'role': 'user', 'content': result_message(call_id, shown_tool, res, remaining) +
                               ('' if remaining else '\n' + P.BUDGET_MESSAGE)}]
     except A.AbortRun as e:
+        fc = getattr(e, 'failed_call', None)    # the call that triggered the abort (a CLI stopped at its lowered budget) keeps its receipt
+        if fc:
+            turns.append({'n': len(turns) + 1, 'error': fc['error'], 'attempt': 'repair' if repairs else 'first', 'reply_valid': False,
+                          'failure_modes': ['adapter_error', 'cost_cap_budget_exceeded'], **({'usage': fc['usage']} if fc.get('usage') else {})})
         # a STARTED case that the run's abort cut short is never lost: turns, tool calls, usage and the reason travel with the exception (main writes them to started-aborted/)
         e.partial = started_aborted_record(case, case_sha, adapter, prompt, run_id, started_at, time.monotonic() - started_wall, turns, tool_calls, repairs, str(e),
                                            evidence_mode, evidence_format)
@@ -594,6 +599,7 @@ def summarize_run(records, manifest, partials=()):
                      'gaps': sum(len((r.get('evidence') or {}).get('gaps', [])) for r in records),
                      'gaps_by_type': _count(g['type'] for r in records for g in (r.get('evidence') or {}).get('gaps', []))},
         **({'guards': guard_summary(records)} if any('guard' in r for r in records) else {}),
+        **({'limit_violations': manifest['limit_violations']} if manifest.get('limit_violations') else {}),
         **({'evidence_format': manifest['config']['evidence_format']} if manifest['config'].get('evidence_format') else {}),
         'writes_executed': 0,
         'statement': 'Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; '
@@ -664,7 +670,8 @@ class RunLimits:
 
     @staticmethod
     def call_bound(adapter):
-        return getattr(adapter, 'call_timeout', None) or getattr(adapter, 'timeout', None) or 0.0
+        """The longest a call can take plus the cleanup that must still fit after it (`cleanup_reserve_s`: the Ollama unload, status and snapshot)."""
+        return (getattr(adapter, 'call_timeout', None) or getattr(adapter, 'timeout', None) or 0.0) + (getattr(adapter, 'cleanup_reserve_s', 0) or 0)
 
     def before_case(self, adapter=None):
         self.check('before a case', self.call_bound(adapter) if adapter is not None else 0.0)   # a case whose first call could not finish in time is never started
@@ -698,11 +705,29 @@ class RunLimits:
                 comp = orig_complete(system, messages, schema=schema) if schema is not None else orig_complete(system, messages)
             except A.AdapterError as e:
                 self.account(getattr(e, 'cost_usd', None))
+                if self.max_cost_usd is not None and getattr(e, 'budget_exceeded', False):
+                    # the CLI stopped the call at its own lowered budget: that is the cost cap, not a model failure, and not a scored forced escalate
+                    ab = A.AbortRun('cost cap reached by a call: the Claude CLI stopped it at its per-call budget (cumulative reported cost $%.4f of $%.2f)' % (self.cost, self.max_cost_usd))
+                    ab.failed_call = {'error': str(e)[:500], 'usage': e.usage or ({'cost_usd': e.cost_usd} if e.cost_usd is not None else None)}
+                    self.stopped = str(ab)
+                    raise ab
                 raise
             self.account((getattr(comp, 'usage', None) or {}).get('cost_usd'))
             return comp
         adapter.before_case, adapter.complete = before_case, complete
         return adapter
+
+    def violations(self):
+        """Limit violations, judged at the very end (after the cleanup): a final call can overshoot a cap or report no cost with no later check to stop it.
+        A violation is recorded and makes the exit status non-zero; it is never reported as success."""
+        out = []
+        if self.unreported:
+            out.append({'kind': 'cost_unreported', 'detail': self.unreported})
+        if self.max_cost_usd is not None and self.cost > self.max_cost_usd:
+            out.append({'kind': 'cost_cap_exceeded', 'detail': 'cumulative reported cost $%.4f over the $%.2f cap' % (self.cost, self.max_cost_usd)})
+        if self.max_wall_s is not None and self.elapsed() > self.max_wall_s:
+            out.append({'kind': 'wall_cap_exceeded', 'detail': '%.0f s elapsed after the cleanup, over the %.0f s cap' % (self.elapsed(), self.max_wall_s)})
+        return out
 
     def state(self):
         return {'cost_usd': round(self.cost, 6), 'elapsed_s': round(self.elapsed(), 1), 'model_calls': self.calls, 'max_call_cost_usd': round(self.max_call_cost, 6),
@@ -859,6 +884,12 @@ def main(argv=None):
         manifest['finish'] = adapter.finish()
         if limits.enabled:
             manifest['limits_state']['elapsed_after_cleanup_s'] = round(limits.elapsed(), 1)
+            manifest['limits_state']['cost_usd'] = round(limits.cost, 6)
+            manifest['limit_violations'] = limits.violations()
+            if manifest['limit_violations']:
+                text = '; '.join('%s: %s' % (v['kind'], v['detail']) for v in manifest['limit_violations'])
+                aborted = text if not aborted else '%s [limit violation] %s' % (aborted, text)
+                manifest['aborted'] = aborted
         manifest['ended_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         manifest['records_written'] = [r['case_id'] for r in records]
         manifest['started_aborted'] = [p['case_id'] for p in partials]

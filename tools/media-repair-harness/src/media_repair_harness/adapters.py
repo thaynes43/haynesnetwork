@@ -20,11 +20,14 @@ from .protocol import TURN_SCHEMA
 
 class AdapterError(Exception):
     """A single model call failed (transport, CLI error, timeout).  The runner records it and moves on.
-    `cost_usd` is the cost the failed call itself reported (a CLI error payload carries one), else None."""
+    `usage` is the receipt the failed call itself reported (a CLI error payload carries tokens and a cost), `cost_usd` its cost, else None;
+    `budget_exceeded` marks a CLI that stopped because the call's own `--max-budget-usd` was reached."""
 
-    def __init__(self, message='', cost_usd=None):
+    def __init__(self, message='', cost_usd=None, usage=None, budget_exceeded=False):
         super().__init__(message)
-        self.cost_usd = cost_usd
+        self.usage = usage
+        self.cost_usd = cost_usd if cost_usd is not None else ((usage or {}).get('cost_usd'))
+        self.budget_exceeded = budget_exceeded
 
 
 class AbortRun(Exception):
@@ -55,6 +58,7 @@ def render_transcript(messages):
 
 class Adapter:
     name = 'base'
+    cleanup_reserve_s = 0   # worst-case seconds `finish()` can take; a wall cap reserves it (dev-c5)
     runtime_version = None
     model_digest = None
     digest_na_reason = None
@@ -131,6 +135,8 @@ def context_check(options, native, chars):
 
 class OllamaAdapter(Adapter):
     name = 'ollama'
+    # finish(): the unload (60 s + 5 s grace), /api/ps (60 s + 5 s) and two 15 s snapshot commands, plus the guard's last sample: 180 s is the reserve
+    cleanup_reserve_s = 180
 
     def __init__(self, model, api=ot.api, snapshot=ot.snapshot, options=None, keep_alive='2m', stop=None,
                  schema=TURN_SCHEMA, schema_name='anyof', load_timeout=WARMUP_TIMEOUT_S, call_timeout=120, do_warmup=True,
@@ -319,11 +325,12 @@ def parse_claude(raw, stderr, returncode, req, wall):
         d = json.loads(raw)
     except ValueError:
         raise AdapterError('claude CLI returned non-JSON (exit %s): %s' % (returncode, (raw or stderr)[:300]))
-    if d.get('is_error') or d.get('subtype', 'success') != 'success':
-        raise AdapterError('claude CLI error: %s' % json.dumps({k: d.get(k) for k in ('subtype', 'api_error_status', 'result', 'terminal_reason')})[:400],
-                           cost_usd=d.get('total_cost_usd'))
-    models = list((d.get('modelUsage') or {}).keys())
     u = d.get('usage') or {}
+    if d.get('is_error') or d.get('subtype', 'success') != 'success':
+        receipt = {'input_tokens': u.get('input_tokens'), 'output_tokens': u.get('output_tokens'), 'cost_usd': d.get('total_cost_usd')}
+        raise AdapterError('claude CLI error: %s' % json.dumps({k: d.get(k) for k in ('subtype', 'api_error_status', 'result', 'terminal_reason')})[:400],
+                           usage=receipt, budget_exceeded=d.get('subtype') == 'error_max_budget_usd')
+    models = list((d.get('modelUsage') or {}).keys())
     usage = {'input_tokens': u.get('input_tokens'), 'output_tokens': u.get('output_tokens'),
              'cache_creation_input_tokens': u.get('cache_creation_input_tokens'), 'cache_read_input_tokens': u.get('cache_read_input_tokens'),
              'cost_usd': d.get('total_cost_usd')}
