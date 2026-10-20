@@ -40,109 +40,173 @@ MIN_WIRE_BYTES = 2560   # the smallest page budget accepted: every case of both 
 INTEGRITY_TOOLS = ('ffprobe', 'decode_sample', 'audio_sample', 'epub_inspect', 'audiobook_inspect')
 # the package stages the EPUB inspector reports, in the order it checks them (a failure at one stage leaves the later ones unchecked)
 EPUB_STAGES = ('zip_open', 'zip_crc', 'opf_parse', 'manifest', 'spine')
-# DAMAGE ALLOW-LIST.  A diagnostic LINE is damage only if, after its `[name @ 0x...]` / `pipe:N:` / `in#N` / path prefix (and an exception-type or ffmpeg wrapper) is
-# stripped, it STARTS with one of these fixed messages.  Each is the text a library actually emits (source given), or text seen in the public dev replay data; there is no
-# negation logic and no bare-word matching: anything else is unclassified.  A line is judged on its own, so one line can never erase another.
+# DIAGNOSTIC ALLOW-LISTS.  A diagnostic LINE is classified only if, after its decoration is stripped (`[name @ 0x...]`, `pipe:N:`, `in#N`, a recognised file name or path
+# followed by ":", an exception type, an ffmpeg wrapper), the REST OF THE LINE IS exactly one of these fixed messages (its documented continuation included): both ends are
+# anchored, so a message that merely begins a longer sentence or a file name ("moov atom not found.mkv: Permission denied") matches nothing.  There is no negation logic and no
+# bare-word matching.  Each entry is (pattern, source, note).  Sources are the library message texts or the public dev replay data; FFmpeg templates are not pinned to a
+# version and were not checked against a binary on this pod (none is installed) -- they are listed by source file.
+#   damage            a message that says the file's bytes or structure are broken: a known defect.
+#   decoder_warning   a message real decoders also print for healthy or merely unusual files, or one that names a failed operation without a cause: NOT a defect, not clean,
+#                     integrity unknown, never vetoes healthy on its own, kept in diagnostics.
+#   execution         the tool could not read (permission, I/O ...): a tool failure, never damage.
+# Anything else is unclassified (kept in diagnostics, integrity unknown).
 DAMAGE_ALLOW_LIST = (
-    (r'moov atom not found', 'libavformat/mov.c; public dev replay'),
-    (r'Invalid data found when processing input', 'AVERROR_INVALIDDATA (libavutil/error.c); public dev replay'),
-    (r'EBML header parsing failed', 'libavformat/matroskadec.c; public dev replay'),
-    (r'(?:stream \d+, offset 0x[0-9a-fA-F]+: )?partial file', 'libavformat/mov.c'),
-    (r'Element at 0x[0-9a-fA-F]+ ending at 0x[0-9a-fA-F]+ exceeds containing master element ending at 0x[0-9a-fA-F]+', 'libavformat/matroskadec.c; public dev replay'),
-    (r'File ended prematurely(?: at pos\. \d+ \(0x[0-9a-fA-F]+\))?', 'libavformat/matroskadec.c; public dev replay'),
-    (r'Failed to find two consecutive MPEG audio frames', 'libavformat/mp3dec.c; public dev replay'),
-    (r'error reading header', 'libavformat/mov.c'),
-    (r'Could not find codec parameters for stream \d+', 'libavformat/demux.c'),
-    (r'error while decoding MB \d+ \d+, bytestream -?\d+', 'libavcodec/h264_slice.c'),
-    (r'cabac decode of qscale diff failed at \d+ \d+', 'libavcodec/h264_cabac.c; public dev replay'),
-    (r'corrupted macroblock \d+ \d+ \(total_coeff=-?\d+\)', 'libavcodec/h264_cavlc.c'),
-    (r'concealing \d+ DC, \d+ AC, \d+ MV errors in [IPBS] frame', 'libavcodec/error_resilience.c'),
-    (r'ac-tex damaged at \d+ \d+', 'libavcodec/mpeg12dec.c, mpeg4videodec.c'),
-    (r'Invalid NAL unit size \(\d+ > \d+\)', 'libavcodec/h2645_parse.c'),
-    (r'Error splitting the input into NAL units', 'libavcodec/h2645_parse.c'),
-    (r'non-existing PPS \d+ referenced', 'libavcodec/h264_slice.c'),
-    (r'missing picture in access unit with size \d+', 'libavcodec/h264dec.c'),
-    (r'corrupt decoded frame in stream \d+', 'fftools/ffmpeg.c'),
-    (r'corrupt input packet in stream \d+', 'fftools/ffmpeg.c'),
-    (r'Packet corrupt \(stream = \d+, dts = \S+\)', 'libavformat/mpegts.c'),
-    (r'Bad CRC-32 for file .+', 'Python zipfile.BadZipFile'),
-    (r'CRC mismatch in member .+', 'this harness: tools._epub_stage (zipfile.testzip)'),
-    (r'File is not a zip file', 'Python zipfile.BadZipFile'),
-    (r'Truncated (?:central directory|file header)', 'Python zipfile.BadZipFile'),
-    (r'Bad (?:offset for central directory|magic number for (?:central directory|file header))', 'Python zipfile.BadZipFile'),
-    (r'Corrupt (?:zip64 )?extra field.*', 'Python zipfile.BadZipFile'),
-    (r'Corrupt zip64 end of central directory (?:locator|record)', 'Python zipfile.BadZipFile'),
-    (r'Zip64 end of central directory record not found', 'Python zipfile.BadZipFile'),
-    (r'Overlapped entries: .+ \(possible zip bomb\)', 'Python zipfile.BadZipFile'),
-    (r'not well-formed \(invalid token\): line \d+, column \d+', 'expat via xml.etree.ElementTree.ParseError; public dev replay'),
-    (r'no element found: line \d+, column \d+', 'expat via ParseError'),
-    (r'(?:mismatched tag|unclosed token|junk after document element|syntax error|unclosed CDATA section): line \d+, column \d+', 'expat via ParseError'),
-    (r'manifest names \d+ member\(s\) that are not in the archive', 'this harness: evidence/epubtool.py'),
-    (r'container\.xml names .+, which is not in the archive', 'this harness: evidence/epubtool.py'),
+    (r'moov atom not found', 'libavformat/mov.c; public dev replay', None),
+    (r'Invalid data found when processing input', 'AVERROR_INVALIDDATA (libavutil/error.c); public dev replay', 'a known defect for an open or demux failure; under a decode wrapper it is a decoder_warning'),
+    (r'EBML header parsing failed', 'libavformat/matroskadec.c; public dev replay', None),
+    (r'(?:stream \d+, offset 0x[0-9a-fA-F]+: )?partial file', 'libavformat/mov.c', None),
+    (r'File ended prematurely(?: at pos\. \d+ \(0x[0-9a-fA-F]+\))?', 'libavformat/matroskadec.c; public dev replay', None),
+    (r'Failed to find two consecutive MPEG audio frames', 'libavformat/mp3dec.c; public dev replay', None),
+    (r'error while decoding MB \d+ \d+, bytestream -?\d+', 'libavcodec/h264_slice.c; public dev replay', None),
+    (r'cabac decode of qscale diff failed at \d+ \d+', 'libavcodec/h264_cabac.c; public dev replay', None),
+    (r'corrupted macroblock \d+ \d+ \(total_coeff=-?\d+\)', 'libavcodec/h264_cavlc.c', None),
+    (r'concealing \d+ DC, \d+ AC, \d+ MV errors in [IPBS] frame', 'libavcodec/error_resilience.c', 'not emitted at the collectors\' log level (-v error)'),
+    (r'ac-tex damaged at \d+ \d+', 'libavcodec/mpeg12dec.c, mpeg4videodec.c', None),
+    (r'Invalid NAL unit size \(\d+ > \d+\)', 'libavcodec/h2645_parse.c', None),
+    (r'Error splitting the input into NAL units', 'libavcodec/h2645_parse.c', None),
+    (r'corrupt decoded frame(?: in stream \d+)?', 'fftools/ffmpeg.c (the stream index is absent from FFmpeg 6.1)', None),
+    (r'corrupt input packet in stream \d+', 'fftools/ffmpeg.c', 'not emitted at the collectors\' log level (-v error)'),
+    (r'Packet corrupt \(stream = \d+, dts = \S+\)', 'libavformat/demux.c', 'not emitted at the collectors\' log level (-v error)'),
+    (r'Bad CRC-32 for file .+', 'Python zipfile.BadZipFile', None),
+    (r'CRC mismatch in member .+', 'this harness: tools._epub_stage (zipfile.testzip)', None),
+    (r'File is not a zip file', 'Python zipfile.BadZipFile', None),
+    (r'Truncated (?:central directory|file header)', 'Python zipfile.BadZipFile', None),
+    (r'Bad (?:offset for central directory|magic number for (?:central directory|file header))', 'Python zipfile.BadZipFile', None),
+    (r'Corrupt (?:zip64 )?extra field.*', 'Python zipfile.BadZipFile', None),
+    (r'Corrupt zip64 end of central directory (?:locator|record)', 'Python zipfile.BadZipFile', None),
+    (r'Zip64 end of central directory record not found', 'Python zipfile.BadZipFile', None),
+    (r'Overlapped entries: .+ \(possible zip bomb\)', 'Python zipfile.BadZipFile', None),
+    (r'File name in directory .+ and header .+ differ', 'Python zipfile.BadZipFile (zipfile.py)', None),
+    (r'Error -\d+ while decompressing data(?:: .+)?', 'Python zlib.error (zlib inflate)', None),
+    (r'not well-formed \(invalid token\): line \d+, column \d+', 'expat via xml.etree.ElementTree.ParseError; public dev replay', None),
+    (r'(?:no element found|mismatched tag|unclosed token|junk after document element|syntax error|unclosed CDATA section|duplicate attribute|undefined entity|unbound prefix): line \d+, column \d+',
+     'expat error strings (pyexpat.ErrorString) via ParseError', None),
+    (r'manifest names \d+ member\(s\) that are not in the archive.*', 'this harness: evidence/epubtool.py', None),
+    (r'container\.xml names .+, which is not in the archive', 'this harness: evidence/epubtool.py', None),
+)
+WARNING_ALLOW_LIST = (
+    (r'Could not find codec parameters for stream \d+.*', 'libavformat/demux.c', 'also printed for healthy files (PGS subtitles, attachments)'),
+    (r'error reading header', 'libavformat/mov.c', 'a failed operation without a cause; with a following execution-error line it is an execution failure'),
+    (r'non-existing PPS \d+ referenced', 'libavcodec/h264_slice.c', 'printed at a seek start on healthy streams'),
+    (r'missing picture in access unit with size \d+', 'libavcodec/h264dec.c', 'printed for SEI/AUD-only access units'),
+    (r'Element at 0x[0-9a-fA-F]+ ending at 0x[0-9a-fA-F]+ exceeds containing master element ending at 0x[0-9a-fA-F]+', 'libavformat/matroskadec.c; public dev replay', 'the demuxer resynchronises; such files often play'),
+    (r'Error parsing NAL unit #\d+', 'libavcodec/hevc/hevcdec.c', 'FFmpeg source file; template not checked against a binary here'),
+    (r'Could not find ref with POC -?\d+', 'libavcodec/hevc/refs.c', 'FFmpeg source file; template not checked against a binary here'),
+    (r'channel element \d+\.\d+ is not allocated', 'libavcodec/aac/aacdec.c', 'FFmpeg source file; template not checked against a binary here'),
+    (r'Input buffer exhausted before END element found', 'libavcodec/aac/aacdec.c', 'FFmpeg source file; template not checked against a binary here'),
+    (r'frame sync error', 'libavcodec/ac3dec.c', 'FFmpeg source file; template not checked against a binary here'),
+    (r'CRC error at PTS -?\d+', 'libavcodec/flacdec.c', 'FFmpeg source file; template not checked against a binary here'),
 )
 EXECUTION_ALLOW_LIST = (
     r'Permission denied', r'No such file or directory', r'Operation not permitted', r'Input/output error', r'Cannot allocate memory', r'Read-only file system',
-    r'Too many open files', r'Connection (?:refused|reset by peer)', r'Resource temporarily unavailable', r'Is a directory', r'Not a directory',
+    r'Too many open files', r'Connection (?:refused|reset by peer|timed out)', r'Resource temporarily unavailable', r'Is a directory', r'Not a directory',
+    r'Stale file handle', r'Transport endpoint is not connected',
 )
-_DAMAGE_RXS = [re.compile(r'(?:%s)' % pat) for pat, _src in DAMAGE_ALLOW_LIST]
-_EXEC_RX = re.compile(r'(?:%s)' % '|'.join(EXECUTION_ALLOW_LIST))
+_DECODE_WRAPPER = r'(?:Error while decoding stream #\d+:\d+|Decoding error|Error submitting packet to decoder|Error while processing the decoded data for stream #\d+:\d+)'
+_TAIL = r'\.?\s*$'
+_INVALID_DATA = re.compile(r'Invalid data found when processing input' + _TAIL)
+_DAMAGE_RXS = [re.compile(r'(?:%s)%s' % (pat, _TAIL)) for pat, _src, _note in DAMAGE_ALLOW_LIST if not pat.startswith('Invalid data found')]
+_WARNING_RXS = [re.compile(r'(?:%s)%s' % (pat, _TAIL)) for pat, _src, _note in WARNING_ALLOW_LIST]
+_EXEC_RX = re.compile(r'(?:%s)(?:[:,;]\s.*)?%s' % ('|'.join(EXECUTION_ALLOW_LIST), _TAIL))
+_HEADER_RX = re.compile(r'error reading header(?:: (.*))?' + _TAIL)
 _BRACKETS_RX = re.compile(r'^(?:\[[^\]\n]*\]\s*)+')
 _PATH_PREFIX_RXS = (re.compile(r'^(?:pipe:\d+|in#\d+\S*|<input>)\s*:\s+'),
                     re.compile(r'^.{1,200}?\.(?:mkv|mp4|m4v|m4b|m4a|mp3|flac|ogg|opus|avi|webm|mov|epub|zip|wav|aac|ts)\s*:\s+', re.I),
                     re.compile(r'^[^\s:\[\]]*/[^:\[\]]{0,200}?:\s+'))
-_WRAPPER_RX = re.compile(r'^(?:(?:Error opening input(?: files?)?|Error during demuxing|Decoding error|Error submitting packet to decoder|Error while decoding stream #\d+:\d+|'
-                         r'Error while processing the decoded data for stream #\d+:\d+): |(?:zipfile\.)?BadZipFile: |(?:xml\.etree\.ElementTree\.)?ParseError: |'
-                         r'\w*Error: (?:\[Errno \d+\] )?)')
+_DECODE_WRAPPER_RX = re.compile(r'^' + _DECODE_WRAPPER + r': ')
+_OTHER_WRAPPER_RX = re.compile(r'^(?:(?:Error opening input(?: files?)?|Error during demuxing): |(?:zipfile\.)?BadZipFile: |(?:xml\.etree\.ElementTree\.)?ParseError: |(?:zlib\.)?error: |'
+                               r'\w*Error: (?:\[Errno \d+\] )?)')
 
 
 def _candidates(line):
-    """The message of a diagnostic line with its decoration removed, in every reasonable reading: with/without the bracket prefix, a stream / pipe / file-path prefix and an
-    exception-type or ffmpeg wrapper.  Matching is anchored at the start of each candidate."""
-    seen, todo = set(), [line.strip()[:1000]]
+    """The message of a diagnostic line with its decoration removed, in every reasonable reading: -> {(candidate, under_decode_wrapper)}.  Matching is anchored at BOTH ends of
+    each candidate (see the patterns), so a recognised message followed by anything else ("moov atom not found.mkv: Permission denied") matches nothing."""
+    seen, todo = set(), [(line.strip()[:1000], False)]
     while todo:
-        cur = todo.pop()
-        if cur in seen or len(seen) > 24:
+        cur, dec = todo.pop()
+        if (cur, dec) in seen or len(seen) > 40:
             continue
-        seen.add(cur)
-        for rx in (_BRACKETS_RX, _WRAPPER_RX) + _PATH_PREFIX_RXS:
+        seen.add((cur, dec))
+        for rx in (_BRACKETS_RX, _OTHER_WRAPPER_RX) + _PATH_PREFIX_RXS:
             m = rx.match(cur)
             if m and m.end() < len(cur):
-                todo.append(cur[m.end():].strip())
+                todo.append((cur[m.end():].strip(), dec))
+        m = _DECODE_WRAPPER_RX.match(cur)
+        if m and m.end() < len(cur):
+            todo.append((cur[m.end():].strip(), True))
     return seen
 
 
 def classify_line(line):
-    """'damage' | 'execution' | None for ONE diagnostic line (None: unclassified).  Damage is checked first, per line, so an execution error elsewhere never hides it."""
+    """'damage' | 'warning' | 'execution' | None for ONE diagnostic line (None: unclassified).  A line is judged on its own, so nothing elsewhere can change it."""
     cands = _candidates(line)
-    if any(rx.match(c) for rx in _DAMAGE_RXS for c in cands):
+    if any(rx.match(c) for rx in _DAMAGE_RXS for c, _d in cands):
         return 'damage'
-    if any(_EXEC_RX.match(c) for c in cands):
+    if any(_INVALID_DATA.match(c) and not dec for c, dec in cands):
+        return 'damage'
+    if any(_INVALID_DATA.match(c) and dec for c, dec in cands):
+        return 'warning'
+    for c, _d in cands:
+        m = _HEADER_RX.match(c)
+        if m:
+            return 'execution' if (m.group(1) and _EXEC_RX.match(m.group(1))) else 'warning'
+    if any(rx.match(c) for rx in _WARNING_RXS for c, _d in cands):
+        return 'warning'
+    if any(_EXEC_RX.match(c) for c, _d in cands):
         return 'execution'
     return None
 
 
 def _lines(text):
+    """Lines of a diagnostic: `text` is a string, or a LIST of strings (the elements a collector reported) -- every element is split into lines on its own and no element is
+    ever joined to another before classification."""
+    items = text if isinstance(text, (list, tuple)) else [text]
     out = []
-    for raw in HARNESS_MARKER_RX.sub(' ', str(text or '')).splitlines()[:400]:
-        if raw.strip():
-            out.append(raw)
+    for item in items:
+        for raw in HARNESS_MARKER_RX.sub(' ', str(item if item is not None else '')).splitlines()[:400]:
+            if raw.strip():
+                out.append(raw)
     return out
 
 
+def classify_text(text):
+    """-> [(line, class)] for every line of every element; each line is classified on its own.  The one cross-line rule: an `error reading header` line directly followed by an
+    execution-error line is itself an execution failure ("let the following error-code line decide"); it can only turn that one warning into an execution failure."""
+    items = text if isinstance(text, (list, tuple)) else [text]
+    pairs = []
+    for item in items:
+        pairs += [(l, classify_line(l)) for l in _lines(str(item if item is not None else ''))]
+    for i, (l, c) in enumerate(pairs):
+        if c == 'warning' and _HEADER_RX.match(l.strip().split('] ')[-1].strip()) and i + 1 < len(pairs) and pairs[i + 1][1] == 'execution':
+            pairs[i] = (l, 'execution')
+    return pairs
+
+
+def strongest(pairs):
+    """'damage' > 'warning' > 'unclassified' (some line is neither) > 'execution' (only execution errors) > None (nothing)."""
+    classes = [c for _l, c in pairs]
+    for want in ('damage', 'warning'):
+        if want in classes:
+            return want
+    if None in classes:
+        return 'unclassified'
+    return 'execution' if classes else None
+
+
 def damage_wording(text):
-    """True when at least one line of the DIAGNOSTIC `text` (decoder / probe stderr, an inspector's error, a collector's error line) is an allow-listed damage message.
-    Never called on metadata, titles, tags, chapter names or the harness's own notes."""
-    return any(classify_line(l) == 'damage' for l in _lines(text))
+    """True when at least one line of the DIAGNOSTIC `text` (decoder / probe stderr, an inspector's error, a collector's error line; a string or a list of them) is an
+    allow-listed damage message.  Never called on metadata, titles, tags, chapter names or the harness's own notes."""
+    return any(c == 'damage' for _l, c in classify_text(text))
 
 
 def execution_error(text):
     """True when the diagnostic text has an execution-error line (permission, missing file, I/O ...) and no damage line."""
-    kinds = [classify_line(l) for l in _lines(text)]
-    return 'execution' in kinds and 'damage' not in kinds
+    classes = [c for _l, c in classify_text(text)]
+    return 'execution' in classes and 'damage' not in classes
 
 
 def unclassified_lines(text):
-    return [l for l in _lines(text) if classify_line(l) is None]
+    return [l for l, c in classify_text(text) if c is None]
 
 
 # the harness's own cut markers contain words ("truncated") that are also damage wording; they are not part of what a tool reported
@@ -343,7 +407,7 @@ def execution_of(obs, data):
             reason = data.get('reason')
         elif isinstance(data, dict) and ('stage' in data or 'exit_code' in data):
             blob = ' '.join(str(data.get(k) or '') for k in ('stderr', 'error'))
-            cause = 'input' if (data.get('stage') in EPUB_STAGES or damage_wording(blob)) else ('tool' if execution_error(blob) else UNKNOWN)
+            cause = 'tool' if execution_error(blob) else ('input' if (data.get('stage') in EPUB_STAGES or damage_wording(blob)) else UNKNOWN)      # an execution failure first, even at an EPUB stage
         elif HARNESS_FAILURE_RX.search(text.strip()) or (execution_error(text) and not damage_wording(text)):
             cause = 'tool'
         else:
@@ -462,7 +526,7 @@ def diagnostic_fragments(text):
     """The diagnostic parts of an integrity output that could not be parsed.  Plain text (no leading brace) is the tool's own message and is one fragment; text that
     looks like cut JSON contributes only the values of its diagnostic keys (stderr, error ...), so a title, a tag, a chapter name or a harness note inside it is never read."""
     t = HARNESS_MARKER_RX.sub(' ', text).strip()
-    if t[:1] not in ('{', '['):
+    if not (t[:1] == '{' or re.match(r'^\[\s*[\{\["\d\]]', t)):      # (a libav `[name @ 0x...]` prefix is plain text, not a JSON array)
         return [t]
     return [m.group(1).replace('\\n', '\n').replace('\\"', '"').replace('", "', '\n').strip().strip('"').strip('[]').strip().strip('"') for m in DIAG_FIELD_RX.finditer(t)]
 
@@ -675,11 +739,19 @@ def _derive_decode(d, data, known_duration):
         loc = {'part': 'decode', 'start_s': round(start, 3)}
         if end is not None:
             loc['end_s'] = round(end, 3)
-        if damage_wording(stderr):
-            f = d.finding('decoder_errors', str(stderr), loc, True)
+        pairs = classify_text(str(stderr))
+        for l, c in pairs:
+            d.diagnostics.append({'part': 'decode', 'text': l, 'class': c or 'unclassified'})
+        verdict = strongest(pairs)
+        if verdict == 'damage':
+            f = d.finding('decoder_errors', '\n'.join(l for l, c in pairs if c == 'damage'), loc, True)
             state = 'damaged'
             if code == 0:
                 d.conflict('exit_zero_with_decoder_errors', 'the decoder exited 0 but printed errors: an exit code of zero does not mean the data decoded cleanly', [f['id']])
+        elif verdict == 'warning':
+            d.finding('decoder_warning', '\n'.join(l for l, c in pairs if c == 'warning'), loc, False)
+            state = 'unclassified'
+            d.unresolved.append('the decoder printed a message that healthy files also produce (decoder_warning): it is not a defect and not a clean result')
         else:
             d.finding('decoder_messages_unclassified', str(stderr), loc, False)
             state = 'unclassified'
@@ -751,7 +823,12 @@ def _derive_epub(d, data):
         return
     stage, err = data.get('stage'), data.get('error')
     if data.get('status') == 'error' or stage:
-        if stage in EPUB_STAGES:
+        if stage in EPUB_STAGES and ex.get('cause') == 'tool':
+            # the tool could not read the file (permission, I/O ...): an execution failure at that stage, not damage; the stages before it did pass
+            i = EPUB_STAGES.index(stage)
+            d.package = {s: ('clean' if k < i else (UNKNOWN if k == i else 'not_checked')) for k, s in enumerate(EPUB_STAGES)}
+            d.finding('package_error_unclassified', str(err or data), {'part': 'package', 'stage': stage}, False)
+        elif stage in EPUB_STAGES:
             i = EPUB_STAGES.index(stage)
             d.package = {s: ('clean' if k < i else ('damaged' if k == i else 'not_checked')) for k, s in enumerate(EPUB_STAGES)}
             d.finding('package_damage', '%s at stage %s' % (err or 'the package inspector reported a failure', stage), {'part': 'package', 'stage': stage}, True)
@@ -830,13 +907,10 @@ def _derive_record(d, data):
 
 
 # ---- live collector records (shared vocabulary: coverage.verified / not_verified, cause input|tool)
-def _recognised(text):
-    return damage_wording(text)
-
-
 def _segment(d, seg, streams, label=None, part=None):
-    """One sampled decode window of a live collector (video decode, or an audiobook part).  Returns the interval it contributes, or None.  Only recognised
-    damage wording makes a window damaged; other collector `errors` stay unclassified (not clean, not damaged); short, timed-out and capped windows cover nothing."""
+    """One sampled decode window of a live collector (video decode, or an audiobook part).  Returns the interval it contributes, or None.  Every ELEMENT of `errors` is
+    classified on its own (never joined first): any damage line makes the window damaged, a decoder_warning or unrecognised text leaves it unclassified (not clean, not
+    damaged); short, timed-out and capped windows cover nothing."""
     a = fnum(seg.get('at_s')) or 0.0
     dec = fnum(seg.get('decoded_s'))
     st = seg.get('state')
@@ -845,16 +919,22 @@ def _segment(d, seg, streams, label=None, part=None):
     loc = {'part': 'decode', 'start_s': a, 'end_s': end}
     if label:
         loc['file'] = label
-    for line in seg.get('errors') or []:        # every raw diagnostic is kept as a fact, whatever it turns out to mean
-        d.diagnostics.append({k: v for k, v in (('file', label), ('at_s', a), ('state', st), ('text', str(line))) if v is not None})
+    errors = [str(x) for x in (seg.get('errors') or [])]
+    pairs = classify_text(errors)
+    for l, c in pairs:        # every raw diagnostic is kept as a fact, whatever it turns out to mean
+        d.diagnostics.append({k: v for k, v in (('file', label), ('at_s', a), ('state', st), ('text', l), ('class', c or 'unclassified')) if v is not None})
     if st == 'clean' and end > a:
         return {'streams': streams, 'start_s': a, 'end_s': end, 'state': 'clean', 'basis': 'observed'}
     if st == 'errors':
-        text = '; '.join(str(x) for x in (seg.get('errors') or [])) or ('exit code %s' % seg.get('exit_code') if seg.get('exit_code') not in (None, 0) else 'decoder errors, text not recorded')
-        if _recognised(text):
-            d.finding('decoder_errors', text, loc, True)
+        verdict = strongest(pairs) if pairs else None
+        if verdict == 'damage':
+            d.finding('decoder_errors', '\n'.join(l for l, c in pairs if c == 'damage'), loc, True)
             state = 'damaged'
+        elif verdict == 'warning':
+            d.finding('decoder_warning', '\n'.join(l for l, c in pairs if c == 'warning'), loc, False)
+            state = 'unclassified'
         else:
+            text = '\n'.join(errors) or ('exit code %s' % seg.get('exit_code') if seg.get('exit_code') not in (None, 0) else 'decoder errors, text not recorded')
             d.finding('decoder_messages_unclassified', text, loc, False)
             state = 'unclassified'
         return {'streams': streams, 'start_s': a, 'end_s': end, 'state': state, 'basis': 'observed'} if end > a else None
@@ -931,16 +1011,16 @@ def _live_decode(d, out):
 def _stderr_state(d, text, loc, damage_kind, seen=()):
     """Classify a collector's stderr text line by line with the allow-list: every line is kept in diagnostics; an allow-listed damage line is a defect (`damaged`), any
     other non-blank line leaves the check `unclassified` (neither clean nor damaged).  -> 'damaged' | 'unclassified' | None (nothing to say)."""
-    lines = [l for l in _lines(text) if l.strip() not in seen]
-    if not lines:
+    pairs = [(l, c) for l, c in classify_text(text) if l.strip() not in seen]
+    if not pairs:
         return None
-    for l in lines:
-        d.diagnostics.append(dict({k: v for k, v in loc.items() if k in ('part', 'file')}, text=l, **{'class': classify_line(l) or 'unclassified'}))
-    bad = [l for l in lines if classify_line(l) == 'damage']
+    for l, c in pairs:
+        d.diagnostics.append(dict({k: v for k, v in loc.items() if k in ('part', 'file')}, text=l, **{'class': c or 'unclassified'}))
+    bad = [l for l, c in pairs if c == 'damage']
     if bad:
         d.finding(damage_kind, '\n'.join(bad), loc, True)
         return 'damaged'
-    d.finding('probe_messages', '\n'.join(lines), loc, False)
+    d.finding('probe_messages', '\n'.join(l for l, _c in pairs), loc, False)
     return 'unclassified'
 
 
@@ -1065,10 +1145,12 @@ def _live_audio(d, out):
             if not isinstance(seg, dict):
                 continue
             if seg.get('state') == 'errors':
-                for line in seg.get('problems') or []:
-                    d.diagnostics.append({'at_s': seg.get('at_s'), 'state': 'errors', 'text': str(line)})
-                text = '; '.join(str(x) for x in (seg.get('problems') or [])) or 'audio decode errors'
-                known = _recognised(text)
+                problems = [str(x) for x in (seg.get('problems') or [])]
+                pairs = classify_text(problems)
+                for l, c in pairs:
+                    d.diagnostics.append({'at_s': seg.get('at_s'), 'state': 'errors', 'text': l, 'class': c or 'unclassified'})
+                known = strongest(pairs) == 'damage'
+                text = '\n'.join(l for l, c in pairs if c == 'damage') if known else ('\n'.join(problems) or 'audio decode errors')
                 d.finding('audio_decode_errors' if known else 'audio_messages_unclassified', text, {'part': 'audio', 'start_s': seg.get('at_s')}, known)
                 bad = bad or known
             elif seg.get('state') in ('ok', 'near_silent'):
@@ -1435,8 +1517,8 @@ def compare_client(context, derived):
                     rows.append(_verdict('video_profile', ref, pr, sorted(spec['video_profiles']), None if pr is None else str(pr).lower() in spec['video_profiles']))
                 depth = s.get('bit_depth')
                 allowed = spec['video_codecs'].get(codec) if (spec['video_codecs'] and codec) else None
-                if allowed:
-                    rows.append(_verdict('video_bit_depth', ref, depth, sorted(allowed), None if depth is None else depth in allowed,
+                if allowed:       # a stated depth is a MAXIMUM ("hevc 10-bit" plays 8-bit and 10-bit, not 12-bit)
+                    rows.append(_verdict('video_bit_depth', ref, depth, '<=%d' % max(allowed), None if depth is None else depth <= max(allowed),
                                          None if depth is not None else 'bit depth is not derivable from the stated pixel format'))
                 pixset = (spec['pix_by_codec'] or {}).get(codec) if spec['pix_by_codec'] else None
                 pixset = pixset or spec['pix_fmts']
@@ -1780,6 +1862,25 @@ def _alert_tiers(alerts):
     return tiers
 
 
+def _index_siblings(units, path):
+    """Give every dict element of the list at `path` its own index (`('#', i)` = its position among ALL the list's elements, counting the ones already split), so that
+    dividing one element can never renumber or merge another."""
+    out, idx, last = [], 0, None
+    for u in units:
+        up, mode, val = u
+        if up == path and mode in ('split', 'append'):
+            out.append((path + (('#', idx),), 'set', val) if isinstance(val, dict) else u)
+            idx += 1
+        elif len(up) > len(path) and up[:len(path)] == path and isinstance(up[len(path)], tuple):
+            j = up[len(path)][1]
+            if j != last:
+                last, idx = j, j + 1
+            out.append(u)
+        else:
+            out.append(u)
+    return out
+
+
 def _split_further(units, i):
     """Replace the unit at index `i` by smaller units (half the size), keeping what it belongs to: a `set` value is exploded, a string is chunked, a dict element of a split list
     is exploded under its own list index.  -> the new unit list, or None when the unit cannot be divided."""
@@ -1790,8 +1891,9 @@ def _split_further(units, i):
     small = Limits()
     small.unit, small.chunk, small.cap = max(40, size // 2), max(30, size // 3), small.cap
     if mode in ('split', 'append') and isinstance(value, dict):
-        k = sum(1 for u in units[:i] if u[0] == path and u[1] in ('split', 'append'))
-        new = explode(path + (('#', k),), value, 'set', small)
+        units = _index_siblings(units, path)          # one index per element, assigned once for the whole list
+        path, mode, value = units[i]
+        new = explode(path, value, 'set', small)
     elif mode == 'split' and isinstance(value, str):
         new = [(path, 'split', c) for c in _chunks(value, small.chunk)]
     elif mode in ('split', 'append'):
@@ -1823,14 +1925,17 @@ def paginate(header, units, env_first, env_rest, alias, source, budget=WIRE_BYTE
     extra_units = []
     hdr = header
     for tier_alerts, tier_units in _alert_tiers(full_alerts) if full_alerts else [(full_alerts, [])]:
-        hdr = dict(header, alerts=tier_alerts)
+        hdr = dict(header, alerts=tier_alerts)         # (the full alerts take at most a quarter of a page; the rest is shortened and stays retrievable)
         extra_units = tier_units
         empty = _finish_page(hdr, [], [], None, {})
-        if max(nbytes(env_first(empty)), nbytes(env_rest(empty))) + 380 <= budget:       # (380: the page object of a multi-page message)
+        if max(nbytes(env_first(empty)), nbytes(env_rest(empty))) + 380 <= budget and nbytes(tier_alerts) <= budget // 4:       # (380: the page object of a multi-page message)
             break
     units = units + extra_units
     for _attempt in range(400):
         totals = _totals(units)
+        whole = _finish_page(hdr, units, units, None, totals)
+        if nbytes(env_first(whole)) <= budget:      # everything fits one message: no page object, no retrieval sentence
+            return [(whole, None)]
         worst = {}
         for (p, k), n in totals.items():
             worst[_sname(p)] = worst.get(_sname(p), 0) + n
@@ -1869,8 +1974,8 @@ def paginate(header, units, env_first, env_rest, alias, source, budget=WIRE_BYTE
     if cur or not groups:
         groups.append(cur)
     of = len(groups)
-    if of == 1 and not retrieval:
-        return [(_finish_page(hdr, groups[0], units, None, totals), None)]
+    if of == 1:
+        return [(_finish_page(hdr, groups[0], units, None, totals), None)]       # (a single page needs neither a page object nor the retrieval sentence)
     if retrieval:
         placed_here = _totals(groups[0])
         elsewhere = {}

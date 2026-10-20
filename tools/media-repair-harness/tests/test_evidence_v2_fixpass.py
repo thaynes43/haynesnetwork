@@ -35,10 +35,9 @@ ALLOW_LISTED = (
     'Packet corrupt (stream = 0, dts = 1234).', "BadZipFile: Bad CRC-32 for file 'OEBPS/ch01.xhtml'", 'CRC mismatch in member OEBPS/ch01.xhtml', 'Truncated central directory',
     'BadZipFile: Truncated file header', 'BadZipFile: Bad magic number for central directory', 'BadZipFile: Corrupt extra field 0001 (size=4)', 'BadZipFile: File is not a zip file',
     'Failed to find two consecutive MPEG audio frames.', 'cabac decode of qscale diff failed at 12 34', 'Invalid NAL unit size (1234 > 99).', 'Error splitting the input into NAL units.',
-    'non-existing PPS 0 referenced', 'missing picture in access unit with size 1234', 'error reading header', 'Could not find codec parameters for stream 0 (Video: h264): unspecified size',
     'ParseError: not well-formed (invalid token): line 2, column 336', 'ParseError: no element found: line 1, column 0',
-    'Element at 0x1f ending at 0x2f exceeds containing master element ending at 0x20', 'manifest names 2 member(s) that are not in the archive: [\'a\']',
-    'Error while decoding stream #0:0: Invalid data found when processing input', 'Decoding error: Invalid data found when processing input',
+    'manifest names 2 member(s) that are not in the archive: [\'a\']',
+    'Error opening input files: Invalid data found when processing input', 'Error during demuxing: Invalid data found when processing input',
 )
 NOT_DAMAGE = (
     'corrupt frames: 0', 'corrupt frames were not found', 'no corrupt frames found', 'Found 0 corrupt frames', 'file is not corrupt', 'without corrupt packets',

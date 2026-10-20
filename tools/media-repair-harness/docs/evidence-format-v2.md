@@ -83,6 +83,8 @@ Expected values are written by hand from synthetic observations; the public-suit
 
 ## Third fix pass (Astra 5 and the re-review of 4328e342)
 
+(The allow-list table below is the third-pass list; the fourth pass revised it, see the tables at the end of this document.)
+
 * **Damage recognition is a positive allow-list** (`DAMAGE_ALLOW_LIST`), replacing the negation heuristic. A diagnostic LINE (decoder / probe stderr, an inspector's error, a collector's error line; cut JSON contributes only the values of its `stderr` / `error` keys) is damage only if, after its decoration is stripped (`[name @ 0x...]`, `pipe:N:`, `in#N`, `<input>:`, a file path, an exception type, an ffmpeg wrapper such as `Error while decoding stream #0:0:`), it STARTS with one of the fixed messages below. Each line is classified on its own, so a permission line, a title or a note can never erase a damage line elsewhere. Anything unmatched is `unclassified`: kept in `facts.diagnostics`, integrity unknown. There is no negation logic and no bare-word matching ("corrupt frames: 0" and "pipe:0: Invalid data found" both come out right by construction). Sources are the library message texts (and the public dev replay data); no phrasing is invented.
 
 | Pattern (anchored at the start of the message) | Source |
@@ -142,3 +144,86 @@ Execution errors have their own anchored patterns, also per line (a tool failure
 * **Accepted minimum budget: `MIN_WIRE_BYTES` = 2560.** Over both public dev suites (first message and default replies of every case) `PageBudgetError` counts are: 2048 bytes: 32 runs (11 + 5 cases); 2304: 6 runs (2 + 1 cases); 2560, 2816, 3072, 4096, 8192: 0. The runner refuses `--tool-output-bytes` below 2560 (and above 8192) under format v2.
 * **Client restrictions after `up to`** are consumed: a depth or pixel format after the limit belongs to the codec before it and is compared ("hevc up to 1080p, 8-bit" against a 10-bit file is unsupported).
 * **Timeout wording** separates the windows the call observed from the unfinished remainder.
+
+## Fourth fix pass (Astra 4-6 and the re-review of 3ffd3ece)
+
+* **Per-element classification.** The messages a collector reports as an array (`segments[].errors`, an audiobook part's `error_lines`, an audio segment's `problems`) are never joined before classification: every element, and every line of every element, is classified on its own. The order of the array cannot change the verdict (permutation tests over the decode, audiobook and audio arrays). The one cross-line rule: an `error reading header` line directly followed by an execution-error line (for example `Input/output error`) is itself an execution failure; alone it is a `decoder_warning`.
+* **File names do not spell messages.** A recognised `<path or file name>:` prefix is stripped, and a message is matched at BOTH ends: after the message only an optional full stop, or its documented continuation (`: line N, column N`, `at pos. N (0xN)`), is allowed. `moov atom not found.mkv: Permission denied` and `File is not a zip file.epub: Permission denied` are execution failures; `moov atom not found in the cache directory` matches nothing.
+* **A new class, `decoder_warning`.** A message real decoders also print for healthy or merely unusual files, or one that names a failed operation without a cause. It is not clean, not a known defect (`known_defect: false`, finding kind `decoder_warning`), integrity stays unknown, it never vetoes healthy on its own (a real damage line still does), and it stays in `facts.diagnostics` with class `warning`. Moved to it: `Invalid data found when processing input` under a decode wrapper (`Error while decoding stream #0:0:`, `Decoding error:`; it stays damage when bare, after `pipe:N:` or a file name, or after `Error opening input files:` / `Error during demuxing:`), `non-existing PPS`, `missing picture in access unit`, `Element at ... exceeds containing master element`, `Could not find codec parameters` (also printed for healthy PGS subtitle streams) and `error reading header`.
+* **Allow-list corrections.** `concealing`, `corrupt input packet` and `Packet corrupt` stay but are marked "not emitted at the collectors' log level (-v error)"; `Packet corrupt` is attributed to libavformat/demux.c; `corrupt decoded frame` is accepted with or without `in stream N`. Added (sourceable messages only): zipfile `File name in directory ... and header ... differ`; zlib `Error -3 while decompressing data`; expat `duplicate attribute`, `undefined entity`, `unbound prefix`; execution errors `Stale file handle`, `Transport endpoint is not connected`, `Connection timed out`; a small set of HEVC / AAC / AC3 / FLAC decoder messages as warnings (FFmpeg source templates, not checked against a binary: none is installed on the pod). The tests build the Python and expat texts from real in-memory exceptions.
+* **Split elements keep their own index.** `_split_further` indexes every sibling of a list once any is divided (the position among ALL elements, already-divided ones included), so two divided siblings can no longer both read `_i = 0` and merge.
+* **One page, no retrieval text.** The sentence that tells a model without tools that the rest is not retrievable is added only when the evidence takes more than one page. A first message that fits one page has no `page` object and no sentence (the 22 public no-tools first messages do not change).
+* **A stated bit depth is a maximum.** "hevc 10-bit" and "hevc up to 1080p, 10-bit" support an 8-bit file and reject a 12-bit one.
+* **An EPUB execution failure is checked before the stage.** A local `PermissionError` / `OSError` at `zip_open` is `cause: tool` (package stages unknown, no `package_error` finding); a `BadZipFile` at the same stage stays damage.
+* **The full alerts take at most a quarter of a page** (budget // 4); otherwise they are shortened in tiers and the rest stays retrievable as `alert_ids`. A live 25-part audiobook with a defect in every decode window needs 12 pages at 8192 bytes and 28 at 4096.
+* **`PageBudgetError` over both public dev suites** (first message and default replies of every case): 0 at 8192 and 0 at 2560.
+
+The allow-lists as of this pass (generated from `evidence_v2.py`):
+
+### Damage (a known defect, integrity damaged)
+
+| Pattern (anchored at both ends of the message) | Source | Note |
+|---|---|---|
+| `moov atom not found` | libavformat/mov.c; public dev replay |  |
+| `Invalid data found when processing input` | AVERROR_INVALIDDATA (libavutil/error.c); public dev replay | a known defect for an open or demux failure; under a decode wrapper it is a decoder_warning |
+| `EBML header parsing failed` | libavformat/matroskadec.c; public dev replay |  |
+| `(?:stream \d+, offset 0x[0-9a-fA-F]+: )?partial file` | libavformat/mov.c |  |
+| `File ended prematurely(?: at pos\. \d+ \(0x[0-9a-fA-F]+\))?` | libavformat/matroskadec.c; public dev replay |  |
+| `Failed to find two consecutive MPEG audio frames` | libavformat/mp3dec.c; public dev replay |  |
+| `error while decoding MB \d+ \d+, bytestream -?\d+` | libavcodec/h264_slice.c; public dev replay |  |
+| `cabac decode of qscale diff failed at \d+ \d+` | libavcodec/h264_cabac.c; public dev replay |  |
+| `corrupted macroblock \d+ \d+ \(total_coeff=-?\d+\)` | libavcodec/h264_cavlc.c |  |
+| `concealing \d+ DC, \d+ AC, \d+ MV errors in [IPBS] frame` | libavcodec/error_resilience.c | not emitted at the collectors' log level (-v error) |
+| `ac-tex damaged at \d+ \d+` | libavcodec/mpeg12dec.c, mpeg4videodec.c |  |
+| `Invalid NAL unit size \(\d+ > \d+\)` | libavcodec/h2645_parse.c |  |
+| `Error splitting the input into NAL units` | libavcodec/h2645_parse.c |  |
+| `corrupt decoded frame(?: in stream \d+)?` | fftools/ffmpeg.c (the stream index is absent from FFmpeg 6.1) |  |
+| `corrupt input packet in stream \d+` | fftools/ffmpeg.c | not emitted at the collectors' log level (-v error) |
+| `Packet corrupt \(stream = \d+, dts = \S+\)` | libavformat/demux.c | not emitted at the collectors' log level (-v error) |
+| `Bad CRC-32 for file .+` | Python zipfile.BadZipFile |  |
+| `CRC mismatch in member .+` | this harness: tools._epub_stage (zipfile.testzip) |  |
+| `File is not a zip file` | Python zipfile.BadZipFile |  |
+| `Truncated (?:central directory\|file header)` | Python zipfile.BadZipFile |  |
+| `Bad (?:offset for central directory\|magic number for (?:central directory\|file header))` | Python zipfile.BadZipFile |  |
+| `Corrupt (?:zip64 )?extra field.*` | Python zipfile.BadZipFile |  |
+| `Corrupt zip64 end of central directory (?:locator\|record)` | Python zipfile.BadZipFile |  |
+| `Zip64 end of central directory record not found` | Python zipfile.BadZipFile |  |
+| `Overlapped entries: .+ \(possible zip bomb\)` | Python zipfile.BadZipFile |  |
+| `File name in directory .+ and header .+ differ` | Python zipfile.BadZipFile (zipfile.py) |  |
+| `Error -\d+ while decompressing data(?:: .+)?` | Python zlib.error (zlib inflate) |  |
+| `not well-formed \(invalid token\): line \d+, column \d+` | expat via xml.etree.ElementTree.ParseError; public dev replay |  |
+| `(?:no element found\|mismatched tag\|unclosed token\|junk after document element\|syntax error\|unclosed CDATA section\|duplicate attribute\|undefined entity\|unbound prefix): line \d+, column \d+` | expat error strings (pyexpat.ErrorString) via ParseError |  |
+| `manifest names \d+ member\(s\) that are not in the archive.*` | this harness: evidence/epubtool.py |  |
+| `container\.xml names .+, which is not in the archive` | this harness: evidence/epubtool.py |  |
+
+### Decoder warning (not clean, not a defect, integrity unknown, kept)
+
+| Pattern (anchored at both ends of the message) | Source | Note |
+|---|---|---|
+| `Could not find codec parameters for stream \d+.*` | libavformat/demux.c | also printed for healthy files (PGS subtitles, attachments) |
+| `error reading header` | libavformat/mov.c | a failed operation without a cause; with a following execution-error line it is an execution failure |
+| `non-existing PPS \d+ referenced` | libavcodec/h264_slice.c | printed at a seek start on healthy streams |
+| `missing picture in access unit with size \d+` | libavcodec/h264dec.c | printed for SEI/AUD-only access units |
+| `Element at 0x[0-9a-fA-F]+ ending at 0x[0-9a-fA-F]+ exceeds containing master element ending at 0x[0-9a-fA-F]+` | libavformat/matroskadec.c; public dev replay | the demuxer resynchronises; such files often play |
+| `Error parsing NAL unit #\d+` | libavcodec/hevc/hevcdec.c | FFmpeg source file; template not checked against a binary here |
+| `Could not find ref with POC -?\d+` | libavcodec/hevc/refs.c | FFmpeg source file; template not checked against a binary here |
+| `channel element \d+\.\d+ is not allocated` | libavcodec/aac/aacdec.c | FFmpeg source file; template not checked against a binary here |
+| `Input buffer exhausted before END element found` | libavcodec/aac/aacdec.c | FFmpeg source file; template not checked against a binary here |
+| `frame sync error` | libavcodec/ac3dec.c | FFmpeg source file; template not checked against a binary here |
+| `CRC error at PTS -?\d+` | libavcodec/flacdec.c | FFmpeg source file; template not checked against a binary here |
+
+### Execution errors (a tool failure, never damage)
+
+* `Permission denied`
+* `No such file or directory`
+* `Operation not permitted`
+* `Input/output error`
+* `Cannot allocate memory`
+* `Read-only file system`
+* `Too many open files`
+* `Connection (?:refused|reset by peer|timed out)`
+* `Resource temporarily unavailable`
+* `Is a directory`
+* `Not a directory`
+* `Stale file handle`
+* `Transport endpoint is not connected`

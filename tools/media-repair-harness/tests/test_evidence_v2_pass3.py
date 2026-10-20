@@ -17,7 +17,7 @@ from media_repair_harness import run as R
 from media_repair_harness import tools as T
 from test_evidence_v2_core import live_audiobook, book_file, live_epub
 
-ERR = '[mp3float @ 0x55d5c0a8e0c0] Error while decoding stream #0:0: Invalid data found when processing input'
+ERR = '[mp3 @ 0x55d5c0a8e0c0] Failed to find two consecutive MPEG audio frames.'
 
 
 def live_probe(stderr='', status='ok', streams=True):

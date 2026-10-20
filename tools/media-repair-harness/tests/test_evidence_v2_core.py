@@ -658,8 +658,10 @@ class UnknownStaysUnknown(unittest.TestCase):
         d = derive_one(obs('t1', 'audiobook_inspect', 'partial', cut))
         self.assertEqual((d.integrity, d.facts), ('unknown', {'raw': cut}))
         self.assertTrue(any('plain text' in u for u in d.unresolved))
-        d = derive_one(obs('t1', 'decode_sample', 'ok', 'Error while decoding stream #0:0: Invalid data found when processing input', {'at': 0}))
+        d = derive_one(obs('t1', 'decode_sample', 'ok', '[h264 @ 0x0] error while decoding MB 13 11, bytestream -5', {'at': 0}))
         self.assertEqual((d.integrity, d.findings[0]['kind']), ('damaged', 'decoder_errors'))
+        d = derive_one(obs('t1', 'decode_sample', 'ok', 'Error while decoding stream #0:0: Invalid data found when processing input', {'at': 0}))      # under a decode wrapper: only a warning
+        self.assertEqual((d.integrity, d.findings), ('unknown', []))
 
 
 def live_audiobook(files, status='ok', parts=None, tags=None):

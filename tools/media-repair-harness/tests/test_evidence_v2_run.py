@@ -619,7 +619,7 @@ class Rendering(unittest.TestCase):
         self.assertEqual(env['status'], 'ok')
 
     def test_conflicts_are_never_dropped_to_fit_and_every_page_names_them(self):
-        stderr = '\n'.join('[h264 @ 0x0] error while decoding MB %d 11, bytestream -5 %s' % (i, 'z' * 150) for i in range(3))
+        stderr = '\n'.join('[h264 @ 0x0] error while decoding MB %d 11, bytestream -5' % i for i in range(40))
         many = [obs('e%d' % i, 'decode_sample', 'ok', decode_out(ss=i * 4, stderr=stderr), {'ss': i * 4, 't': 4}, source='case') for i in range(1, 5)]
         ses, text, n = self.render(obs('t1', 'arr_lookup', 'ok', {'big': ['q' * 200] * 120}), evidence=many)
         pages = [json.loads(text)] + [json.loads(ses.fetch(c, 't2', 'ffprobe', 3)[1]) for c in sorted(ses.pages)]
@@ -983,7 +983,10 @@ class PublicSuite(unittest.TestCase):
                     continue
                 if stderr and stderr.strip():
                     self.assertEqual([f['kind'] for f in d.findings], ['decoder_errors'], case['id'])
-                    self.assertIn(stderr.splitlines()[0][:60], d.findings[0]['detail'])
+                    damage_lines = [l for l in stderr.splitlines() if EV2.classify_line(l) == 'damage']
+                    self.assertTrue(damage_lines, case['id'])
+                    self.assertIn(damage_lines[0][:60], d.findings[0]['detail'])
+                    self.assertIn(stderr.splitlines()[0][:60], json.dumps(EV2.item_facts(d)))      # every other line stays a fact
                     self.assertIn('status_ok_with_defect', [c['kind'] for c in d.conflicts], case['id'])
                 else:
                     self.assertEqual(d.findings, [], case['id'])
