@@ -377,9 +377,6 @@ class AlertShareAndHeaderRefusal(unittest.TestCase):
         self.assertEqual(len(pages), 1)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 def zlib_exception(data):
     import zlib
@@ -533,3 +530,7 @@ class PageCallsCarryTheirOrigin(unittest.TestCase):
                 continue
             self.assertEqual(ses.page_origin(page['next']), (['t' + status[:2]], status), status)
         self.assertEqual(ses.page_origin('c' + 'a' * 15), ([], 'error'))
+
+
+if __name__ == '__main__':
+    unittest.main()

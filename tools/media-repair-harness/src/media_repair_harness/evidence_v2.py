@@ -77,13 +77,15 @@ DAMAGE_ALLOW_LIST = (
     (r'Zip64 end of central directory record not found', 'Python zipfile.BadZipFile', None),
     (r'Overlapped entries: .+ \(possible zip bomb\)', 'Python zipfile.BadZipFile', None),
     (r'File name in directory .+ and header .+ differ', 'Python zipfile.BadZipFile (zipfile.py)', None),
-    (r'Error -3 while decompressing data(?:: .+)?', 'Python zlib.error: Z_DATA_ERROR (invalid block type, invalid distance, incorrect header check ...)', 'only data errors are damage'),
+    (r"Error -3 while decompressing data(?:: [a-z][a-z0-9 /,'-]*)?", 'Python zlib.error: Z_DATA_ERROR (invalid block type, invalid distance, incorrect header check ...)', 'only data errors are damage'),
     (r'Error -5 while decompressing data: incomplete or truncated stream', 'Python zlib.error: Z_BUF_ERROR text from Modules/zlibmodule.c', 'a truncated stream; -5 with any other text is unclassified'),
     (r'not well-formed \(invalid token\): line \d+, column \d+', 'expat via xml.etree.ElementTree.ParseError; public dev replay', None),
     (r'(?:no element found|mismatched tag|unclosed token|junk after document element|syntax error|unclosed CDATA section|duplicate attribute|undefined entity|unbound prefix): line \d+, column \d+',
      'expat error strings (pyexpat.ErrorString) via ParseError', None),
     (r'manifest names \d+ member\(s\) that are not in the archive.*', 'this harness: evidence/epubtool.py', None),
     (r'container\.xml names .+, which is not in the archive', 'this harness: evidence/epubtool.py', None),
+    (r'manifest names members that are not in the archive: .+', 'public dev replay (the recorded EPUB inspector)', None),
+    (r'manifest references missing member\(s\): .+', 'public dev replay (the recorded EPUB inspector)', None),
 )
 WARNING_ALLOW_LIST = (
     (r'Could not find codec parameters for stream \d+.*', 'libavformat/demux.c', 'also printed for healthy files (PGS subtitles, attachments)'),
@@ -101,7 +103,7 @@ WARNING_ALLOW_LIST = (
 EXECUTION_ALLOW_LIST = (
     r'Permission denied', r'No such file or directory', r'Operation not permitted', r'Input/output error', r'Cannot allocate memory', r'Read-only file system',
     r'Too many open files', r'Connection (?:refused|reset by peer|timed out)', r'Resource temporarily unavailable', r'Is a directory', r'Not a directory',
-    r'Stale file handle', r'Transport endpoint is not connected', r'Error -4 while decompressing data(?:: insufficient memory)?',
+    r'Stale file handle', r'Transport endpoint is not connected', r'Error -4 while decompressing data(?:: insufficient memory)?', r'MemoryError:?',
 )
 _DECODE_WRAPPER = r'(?:Error while decoding stream #\d+:\d+|Decoding error|Error submitting packet to decoder|Error while processing the decoded data for stream #\d+:\d+)'
 _TAIL = r'\.?\s*$'
@@ -111,10 +113,11 @@ _WARNING_RXS = [re.compile(r'(?:%s)%s' % (pat, _TAIL)) for pat, _src, _note in W
 _EXEC_RX = re.compile(r'(?:%s)(?:[:,;]\s.*)?%s' % ('|'.join(EXECUTION_ALLOW_LIST), _TAIL))
 _HEADER_RX = re.compile(r'error reading header(?:: (.*))?' + _TAIL)
 _BRACKETS_RX = re.compile(r'^(?:\[[^\]\n]*\]\s*)+')
-_PATH_PREFIX_RXS = (re.compile(r'^(?:pipe:\d+|in#\d+\S*|<input>)\s*:\s+'),
+_PATH_PREFIX_RXS = (re.compile(r'^(?:pipe:\d+|in#\d+\S*|<input>|container\.xml|package document)\s*:\s+'),
                     re.compile(r'^.{1,200}?\.(?:mkv|mp4|m4v|m4b|m4a|mp3|flac|ogg|opus|avi|webm|mov|epub|zip|wav|aac|ts)\s*:\s+', re.I),
                     re.compile(r'^[^\s:\[\]]*/[^:\[\]]{0,200}?:\s+'))
 _DECODE_WRAPPER_RX = re.compile(r'^' + _DECODE_WRAPPER + r': ')
+_MEMBER_SUFFIX_RX = re.compile(r'^(.*?\S)\s+in member\s+\S.*$')      # the EPUB collector appends ' in member <name>' to a failed member's message
 _OTHER_WRAPPER_RX = re.compile(r'^(?:(?:Error opening input(?: files?)?|Error during demuxing): |(?:zipfile\.)?BadZipFile: |(?:xml\.etree\.ElementTree\.)?ParseError: |(?:zlib\.)?error: |'
                                r'\w*Error: (?:\[Errno \d+\] )?)')
 
@@ -135,6 +138,9 @@ def _candidates(line):
         m = _DECODE_WRAPPER_RX.match(cur)
         if m and m.end() < len(cur):
             todo.append((cur[m.end():].strip(), True))
+        m = _MEMBER_SUFFIX_RX.match(cur)
+        if m:
+            todo.append((m.group(1).strip(), dec))
     return seen
 
 
@@ -423,9 +429,15 @@ def execution_of(obs, data):
         if is_live_record(data) and data.get('cause') in ('input', 'tool'):
             cause = data['cause']
             reason = data.get('reason')
+            if cause == 'input':
+                # the collector calls every non-OSError `input` (zlib out of memory, MemoryError ...): when its own error text is an execution failure it is one
+                out_d = data.get('output') if isinstance(data.get('output'), dict) else {}
+                blob = [str(x) for x in (out_d.get('error'), data.get('stderr')) if x]
+                if blob and execution_error(blob):
+                    cause = 'tool'
         elif isinstance(data, dict) and ('stage' in data or 'exit_code' in data):
             blob = ' '.join(str(data.get(k) or '') for k in ('stderr', 'error'))
-            cause = 'tool' if execution_error(blob) else ('input' if (data.get('stage') in EPUB_STAGES or damage_wording(blob)) else UNKNOWN)      # an execution failure first, even at an EPUB stage
+            cause = 'tool' if execution_error(blob) else ('input' if damage_wording(blob) else UNKNOWN)      # an execution failure first, even at an EPUB stage; a stage alone is not damage
         elif HARNESS_FAILURE_RX.search(text.strip()) or (execution_error(text) and not damage_wording(text)):
             cause = 'tool'
         else:
@@ -841,8 +853,8 @@ def _derive_epub(d, data):
         return
     stage, err = data.get('stage'), data.get('error')
     if data.get('status') == 'error' or stage:
-        if stage in EPUB_STAGES and ex.get('cause') == 'tool':
-            # the tool could not read the file (permission, I/O ...): an execution failure at that stage, not damage; the stages before it did pass
+        if stage in EPUB_STAGES and ex.get('cause') in ('tool', UNKNOWN):
+            # the tool could not read the file (permission, I/O, memory ...) or said nothing recognisable: not damage; the stage is unknown, the stages before it did pass
             i = EPUB_STAGES.index(stage)
             d.package = {s: ('clean' if k < i else (UNKNOWN if k == i else 'not_checked')) for k, s in enumerate(EPUB_STAGES)}
             d.finding('package_error_unclassified', str(err or data), {'part': 'package', 'stage': stage}, False)

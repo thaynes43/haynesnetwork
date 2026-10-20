@@ -37,7 +37,7 @@ def synthetic():
                                  [obs('t1', 'decode_sample', 'ok', decode_out(ss=4, stderr=DAMAGE), {'at': 4}), obs('t2', 'decode_sample', 'ok', decode_out(), {'at': 0})]),
         'failures': ([], [obs('t1', 'ffprobe', 'error', 'ffprobe failed: could not run'), obs('t2', 'decode_sample', 'timeout', 'decode_sample exceeded the 60 s tool timeout', {'at': 0}),
                           obs('t3', 'audio_sample', 'unavailable', 'no recorded audio levels for this item')]),
-        'epub': ([obs('e1', 'epub_inspect', 'error', {'bytes': 3301, 'entries': 7, 'error': 'ParseError: x', 'stage': 'opf_parse', 'status': 'error'}, source='case')], []),
+        'epub': ([obs('e1', 'epub_inspect', 'error', {'bytes': 3301, 'entries': 7, 'error': 'ParseError: not well-formed (invalid token): line 2, column 336', 'stage': 'opf_parse', 'status': 'error'}, source='case')], []),
         'big_probe_paginated': ([], [obs('t1', 'ffprobe', 'ok', probe_out(duration='600', chapters=chapters))]),
         'unicode': ([], [obs('t1', 'arr_lookup', 'ok', {'note': '章' * 900, 'emoji': ['😀' * 40] * 30})]),
     }

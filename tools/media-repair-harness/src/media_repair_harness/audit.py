@@ -185,11 +185,32 @@ def non_ok_evidence_ids(case, tool_calls):
     return ids
 
 
-def unsupportive_ids(case, tool_calls):
-    """Ids of results that must not be cited as support (see usable_as_support)."""
+def typed_error_support(observations):
+    """Audit v2 / guards v3: {id: may it be cited as support} for every `error` result, from the TYPED layer instead of from the shape of its JSON.  An error result supports a
+    write only when the tool itself ran and reported a positive damage finding about the file (a known defect) and its typed execution cause is not `tool`; an execution failure
+    (permission, I/O, memory, the collector's own cap ...) and anything unclassified never does, whatever keys its JSON has (`stage`, `exit_code`)."""
+    errors = [o for o in observations if o.get('status') == 'error']
+    if not errors:
+        return {}
+    items = EV2.analyze(list(observations), {})['items']
+    out = {}
+    for o in errors:
+        d = items.get(o['id'])
+        out[o['id']] = bool(d and d.execution.get('cause') != 'tool' and any(f.get('known_defect') for f in d.findings))
+    return out
+
+
+def _usable(status, output, injected, cause, oid, typed):
+    if typed is not None and status == 'error' and not injected and oid in typed:
+        return typed[oid]
+    return usable_as_support(status, output, injected, cause)
+
+
+def unsupportive_ids(case, tool_calls, typed=None):
+    """Ids of results that must not be cited as support (see usable_as_support; `typed` is the audit-v2 map of `typed_error_support`)."""
     # (a page fetch is never a result of its own: citing one stands for the result it paged -- see `compute` -- and the page call's own id never supports anything)
-    ids = {c['id'] for c in tool_calls if c.get('continuation') or not usable_as_support(c.get('status'), c.get('output'), c.get('injected', False), (c.get('evidence') or {}).get('cause'))}
-    ids |= {e['id'] for e in case.get('evidence', []) if not usable_as_support(e.get('status', 'ok'), e.get('output'))}
+    ids = {c['id'] for c in tool_calls if c.get('continuation') or not _usable(c.get('status'), c.get('output'), c.get('injected', False), (c.get('evidence') or {}).get('cause'), c['id'], typed)}
+    ids |= {e['id'] for e in case.get('evidence', []) if not _usable(e.get('status', 'ok'), e.get('output'), False, None, e['id'], typed)}
     return ids
 
 
@@ -218,11 +239,11 @@ def _ok_sources(case, tool_calls):
     return out
 
 
-def _supportive_sources(case, tool_calls):
+def _supportive_sources(case, tool_calls, typed=None):
     return [(c['id'], c.get('tool'), c.get('args') or {}, str(c.get('output'))) for c in tool_calls
-            if not c.get('continuation') and usable_as_support(c.get('status'), c.get('output'), c.get('injected', False), (c.get('evidence') or {}).get('cause'))] + \
+            if not c.get('continuation') and _usable(c.get('status'), c.get('output'), c.get('injected', False), (c.get('evidence') or {}).get('cause'), c['id'], typed)] + \
            [(e['id'], e.get('tool'), e.get('args') or {}, str(e.get('output'))) for e in case.get('evidence', [])
-            if usable_as_support(e.get('status', 'ok'), e.get('output'))]
+            if _usable(e.get('status', 'ok'), e.get('output'), False, None, e['id'], typed)]
 
 
 def _shown_observations(case, tool_calls, shown):
@@ -264,9 +285,10 @@ def compute(case, decision, tool_calls, forced=False, prompt_version='v1', v4_ta
     pmap = EV2.page_origin_map(tool_calls)           # a cited page fetch is the result it paged: every check below reads the origin's own status
     refs = [x for r in refs for x in pmap.get(r, [r])]
     known = {e['id'] for e in case.get('evidence', [])} | {c['id'] for c in tool_calls}
-    bad_ids = unsupportive_ids(case, tool_calls)
+    typed = typed_error_support(_shown_observations(case, tool_calls, shown)) if audit_version == 'v2' else None     # audit v2: support from the typed layer
+    bad_ids = unsupportive_ids(case, tool_calls, typed)
     ok_src = _ok_sources(case, tool_calls)
-    ok_cited = [s for s in _supportive_sources(case, tool_calls) if s[0] in refs]
+    ok_cited = [s for s in _supportive_sources(case, tool_calls, typed) if s[0] in refs]
     audit_text = ' '.join([str(audit.get('readback') or ''), str(audit.get('verify') or '')] + out['claimed_preconditions']) if audit else ''
     checks = []
     allowed = (ACTION_CLASSES_V4 if v4_tables else ACTION_CLASSES)[action]

@@ -297,7 +297,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                              'output': text, 'truncated': False, 'mode': 'pages', 'continuation': True, 'continuation_via': obj['tool'],
                              'evidence_mode': ctx.evidence_mode, 'wall_s': 0.0}
                 if origins:       # a page is the result it pages: it carries that result's id and status, it is never an ok result of its own
-                    page_call['pages_of'] = origins[0] if len(origins) == 1 else origins
+                    page_call['pages_of'] = origins
                 tool_calls.append(page_call)
                 messages += [{'role': 'assistant', 'content': comp.text}, {'role': 'user', 'content': text}]
                 continue
