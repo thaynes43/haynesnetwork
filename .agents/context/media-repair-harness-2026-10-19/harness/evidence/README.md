@@ -2,8 +2,8 @@
 
 Read-only collectors that run the real `ffprobe` / `ffmpeg` / `tesseract` (when present) or stdlib zip and XML code on one input
 and return honest records: what was verified, what was **not**, which bounds applied, and why anything failed. Stdlib Python only
-(3.11 and 3.14 exercised). **Not wired into `tools.py` or `run.py`**; `to_tool_result` shows how a record maps onto the harness'
-tool-result shape so the wiring story can do it later.
+(3.11 and 3.14 exercised). Wired into `tools.py` / `run.py` from harness `dev-c2` as the opt-in `--evidence live` mode (see `../CHANGELOG.md`);
+the collectors themselves still know nothing about cases.
 
 ```python
 import sys; sys.path.insert(0, '<harness dir>')
@@ -11,12 +11,12 @@ from evidence import collect, to_tool_result
 records = collect('/path/to/file.mkv', ['probe', 'decode', 'frames', 'audio'], {'segments': 2})     # one record per kind, in order
 records = collect('/path/to/book/', ['audiobook'])                                                  # folder of parts, or a list of part files
 records = collect('/path/to/b.epub', ['epub'])
-tool_result = to_tool_result(records[0], cap=8192)       # {status, output (JSON text, bounded), truncated, mode, wall_s, tool, evidence_status}
+tool_result = to_tool_result(records[0], cap=8192)       # {status, output (JSON text, bounded), truncated, mode, wall_s, tool}
 ```
 
-`collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=None, scratch_dir=None)` never raises for a bad input or a
+`collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=None, scratch_dir=None, cancel=None)` never raises for a bad input or a
 crashed collector (that becomes an `error` record); it raises `ValueError` only for programmer errors (unknown kind, unknown or ill-typed bound).
-`runner` and `which` are injection points for tests.
+`runner` and `which` are injection points for tests. `cancel` (a `threading.Event`, dev-c2): once set no further subprocess is started, and `kill_active(thread_id)` kills the process group the given thread is waiting on; the harness uses both when its own tool timeout fires, so a live collection never keeps running beside the next call.
 
 ## Kinds
 
@@ -41,15 +41,14 @@ stderr (scrubbed, capped excerpt), elapsed_s, output {structured findings}, reas
   `partial` = some part of the plan did not run or finish (cap, deadline, timeout, missing optional binary, unknown duration, a frame produced with errors, an audiobook part that could not be read), and `coverage.not_verified` and `reason` say which;
   `timeout` = nothing finished inside its timeout; `unavailable` = a required binary is missing (`reason` names it, nothing was run, `coverage.verified` is empty);
   `error` = it could not do its job. `cause` separates **`input`** (the file is damaged or unreadable: ffprobe exits non-zero, not a zip, a CRC failure, the OPF or a manifest member is broken; the suite's recorded
-  stages `zip_open`, `zip_crc`, `opf_parse`, `manifest`) from **`tool`** (a binary could not start, output cap hit, JSON unparsable, collector crashed).
+  stages `zip_open`, `zip_crc`, `opf_parse`, `manifest`) from **`tool`** (a binary could not start, output cap hit, JSON unparsable, collector crashed, **a collector limit** such as `epub_max_members` or an oversized container.xml / OPF, **an environment error** such as a permission or I/O error). Only `input` is a finding about the file; a consumer must never treat `tool` as damage.
 * Nothing is called healthy. A clean sample says so in `not_verified` ("a clean sample does not prove whole-file health"); `ok` on `decode` with `clean: true` means the sampled windows were clean and nothing more.
 * **mode** is `live` for anything run now. `replay` is only produced from a recording passed as `replay=` (records list, `{kind: record}` dict, or a JSON file with `{"records": [...]}`): the recorded record is served with `mode: "replay"`,
   `recorded_from`, and is refused (`unavailable`) when the input's size and head/tail hashes differ from the recording's `input`, **and when the recording has no `input` fingerprint at all** (reason "recording has no input fingerprint"): a stripped or hand-built recording cannot pass as evidence about any file. Kinds absent from the recording run live.
 * `input` is a **partial** fingerprint only (size, SHA-256 of the first and last MiB). The whole file is never hashed or read except where a collector decodes it.
 * Paths never appear in output: the input path and base name are replaced by `<input>` in stderr excerpts and errors (`output` carries only the base names the parts of an audiobook have, in `files[].name`).
 * `to_tool_result` puts status, reason, cause, replay_note, bounds_clamped, coverage and stderr first and `output` last; when the text exceeds the cap it is `output` that is cut (a string ending in `...[output truncated]`), so the object stays valid JSON.
-* `to_tool_result`: `unavailable` becomes tool-result status `error` with `evidence_status: "unavailable"` beside it, because the harness' `ToolResult` knows `ok|partial|error|timeout` only. The wiring story should either add `unavailable`
-  to `ToolResult` or keep that mapping.
+* `to_tool_result` passes the status through. Until dev-c1 it delivered `unavailable` as `error` plus `evidence_status`, because the harness' `ToolResult` did not know `unavailable`; it does now, so the workaround is gone (dev-c2) and `unavailable` keeps its meaning: nothing ran, nothing was learned, the checked part stays unverified.
 
 ## Bounds and safety
 

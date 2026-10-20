@@ -3,7 +3,8 @@
     from evidence import collect, to_tool_result
     records = collect('/path/to/file.mkv', ['probe', 'decode'], {'segments': 2})
 
-See README.md in this folder for the record shape, the bounds and the limits.  Not wired into tools.py or run.py.
+See README.md in this folder for the record shape, the bounds and the limits.  Wired into tools.py / run.py from harness dev-c2 as the
+opt-in `--evidence live` mode; the collectors themselves know nothing about cases.
 """
 import json
 import os
@@ -13,10 +14,10 @@ import time
 from pathlib import Path
 
 from .core import (BOUND_SPEC, HARNESS_TOOL, KINDS, STATUSES, Ctx, RunResult, as_replay, fingerprint, make_record, resolve_bounds,
-                   subprocess_runner, to_tool_result)
+                   subprocess_runner, to_tool_result, kill_active)
 from . import avtools, epubtool
 
-__all__ = ['collect', 'load_replay', 'to_tool_result', 'KINDS', 'STATUSES', 'BOUND_SPEC', 'RunResult', 'subprocess_runner', 'resolve_bounds']
+__all__ = ['collect', 'load_replay', 'to_tool_result', 'KINDS', 'STATUSES', 'BOUND_SPEC', 'RunResult', 'subprocess_runner', 'resolve_bounds', 'kill_active']
 
 
 def load_replay(source):
@@ -48,10 +49,13 @@ def _fingerprint(inputs, max_files):
         files = [p for p in inputs if p.is_file()][:max_files]
     if not files:
         return None
-    return {'kind': 'files', 'count': len(files), 'files': [fingerprint(p) for p in files], 'partial_fingerprint_only': True}
+    prints = [fp for fp in (fingerprint(p) for p in files) if fp]   # an unreadable part has no fingerprint
+    if not prints:
+        return None
+    return {'kind': 'files', 'count': len(prints), 'files': prints, 'partial_fingerprint_only': True}
 
 
-def collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=None, scratch_dir=None, clock=time.monotonic):
+def collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=None, scratch_dir=None, clock=time.monotonic, cancel=None):
     """Collect evidence about `path` and return one record per kind (order kept); never raises for a bad input.
 
     path     a file; for 'audiobook' also a folder of parts or a list of part files
@@ -59,6 +63,7 @@ def collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=No
     bounds   overrides of core.BOUND_SPEC (clamped to the hard maxima; unknown names raise ValueError)
     runner   subprocess runner (tests inject a fake); which = shutil.which replacement
     replay   recorded records (see load_replay): kinds present there are served as mode `replay`, the rest run live
+    cancel   a threading.Event; once set no further subprocess is started (the caller's own timeout fired)
     """
     kinds = list(kinds) if kinds else list(KINDS)
     for k in kinds:
@@ -70,7 +75,7 @@ def collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=No
     fp = _fingerprint(inputs, int(resolved['max_files']))
     out = []
     with tempfile.TemporaryDirectory(prefix='mrh-evidence-', dir=scratch_dir) as scratch:
-        ctx = Ctx(str(inputs[0]) if len(inputs) == 1 else str(inputs[0].parent), resolved, runner or subprocess_runner, which or shutil.which, scratch, clock)
+        ctx = Ctx(str(inputs[0]) if len(inputs) == 1 else str(inputs[0].parent), resolved, runner or subprocess_runner, which or shutil.which, scratch, clock, cancel)
         for p_ in inputs:
             ctx.add_name(str(p_))
         for kind in kinds:

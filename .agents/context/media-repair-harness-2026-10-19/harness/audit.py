@@ -152,14 +152,17 @@ def _check(cid, met, detail, basis='computed'):
     return {'id': cid, 'met': bool(met), 'basis': basis, 'detail': detail}
 
 
-def usable_as_support(status, output, injected=False):
+def usable_as_support(status, output, injected=False, cause=None):
     """May a result be cited as support for a diagnosis?  ok: yes.  partial / timeout / unavailable / an injected failure: no, the
     tool did not run to completion.  error: only when it is a finding about the file itself, i.e. the tool ran and reported
-    damage in its structured shape (an exit code or a stage with the tool's own message); a plain failure message is not."""
+    damage in its structured shape (an exit code or a stage with the tool's own message); a plain failure message is not.
+    A live collector record says so itself: `cause: input` (the file is damaged or unreadable) is a finding, `cause: tool` is not."""
     if status == 'ok':
         return True
     if status != 'error' or injected:
         return False
+    if cause is not None:
+        return cause == 'input'
     try:
         d = json.loads(output) if isinstance(output, str) else output
     except ValueError:
@@ -175,7 +178,7 @@ def non_ok_evidence_ids(case, tool_calls):
 
 def unsupportive_ids(case, tool_calls):
     """Ids of results that must not be cited as support (see usable_as_support)."""
-    ids = {c['id'] for c in tool_calls if not usable_as_support(c.get('status'), c.get('output'), c.get('injected', False))}
+    ids = {c['id'] for c in tool_calls if not usable_as_support(c.get('status'), c.get('output'), c.get('injected', False), (c.get('evidence') or {}).get('cause'))}
     ids |= {e['id'] for e in case.get('evidence', []) if not usable_as_support(e.get('status', 'ok'), e.get('output'))}
     return ids
 
@@ -207,7 +210,7 @@ def _ok_sources(case, tool_calls):
 
 def _supportive_sources(case, tool_calls):
     return [(c['id'], c.get('tool'), c.get('args') or {}, str(c.get('output'))) for c in tool_calls
-            if usable_as_support(c.get('status'), c.get('output'), c.get('injected', False))] + \
+            if usable_as_support(c.get('status'), c.get('output'), c.get('injected', False), (c.get('evidence') or {}).get('cause'))] + \
            [(e['id'], e.get('tool'), e.get('args') or {}, str(e.get('output'))) for e in case.get('evidence', [])
             if usable_as_support(e.get('status', 'ok'), e.get('output'))]
 

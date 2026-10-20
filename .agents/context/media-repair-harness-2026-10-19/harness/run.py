@@ -22,11 +22,13 @@ sys.path.insert(0, str(HERE))
 
 import adapters as A  # noqa: E402
 import audit as AU  # noqa: E402
+import gaps as GP  # noqa: E402
 import guard as G  # noqa: E402
 import leakguard  # noqa: E402
 import outcomes  # noqa: E402
 import protocol as P  # noqa: E402
 import tools as T  # noqa: E402
+import evidence as evcol  # noqa: E402
 
 MAX_MODEL_CALLS = 2 * P.MAX_TOOL_CALLS + 6  # hard stop against loops: turns + repair + budget notice
 
@@ -109,7 +111,7 @@ def result_message(call_id, tool, res, remaining):
 
 
 def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto', run_id='', tool_output_bytes=None,
-             prompt_version=P.DEFAULT_PROMPT):
+             prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None, evidence_bounds=None):
     """Run one case through the turn protocol.  Returns the run record (never raises for model/tool trouble)."""
     import shutil
     started_wall = time.monotonic()
@@ -117,7 +119,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     fixture = T.Fixture.from_case(case, suite_dir)
     fixture_info = fixture.verify_local()
     ctx = T.Context(case, fixture, Path(scratch) / case['id'], runner=runner, which=which or shutil.which, ocr_backend=ocr_backend,
-                    suite_dir=suite_dir, replay=replay)
+                    suite_dir=suite_dir, replay=replay, evidence_mode=evidence_mode, collect=collect, evidence_runner=evidence_runner,
+                    evidence_which=evidence_which, evidence_bounds=evidence_bounds)
     if tool_output_bytes:
         ctx.output_cap = tool_output_bytes
     evidence = resolve_evidence(case, suite_dir, ctx.redact)
@@ -235,6 +238,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     action_audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version)
     action_audit['outcome_step'] = outcome
     parts = AU.unverified_parts(case, tool_calls)
+    evidence_summary = GP.evidence_summary(case, tool_calls, evidence_mode, decision, live_kinds=T.LIVE_KINDS)
     record = {
         'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
         'split': case.get('split'), 'started_at': started_at,
@@ -246,6 +250,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
         'fixture': fixture_info, 'evidence_shown': [e['id'] for e in evidence],
         'fixture_hashes': {'fixture': {k: fixture_info.get(k) for k in ('kind', 'declared_sha256', 'actual_sha256', 'verified')},
                            'evidence_shown_sha256': {e['id']: sha256_bytes(str(e['output']).encode()) for e in evidence}},
+        'evidence_mode': evidence_mode, 'evidence': evidence_summary,
         'turns': turns, 'tool_calls': tool_calls, 'tool_modes': sorted({c.get('mode') for c in tool_calls if c.get('mode')}), 'repair_prompts': repairs,
         'decision': decision, 'forced': forced, 'forced_reason': forced_reason, 'first_try_valid': first_try_valid, 'first_try': first_try,
         'final_decision_valid': decision is not None and not forced, 'protocol_violations': violations,
@@ -269,10 +274,49 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     return record
 
 
-def crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT):
+def crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay'):
+    """A failed record for a case that could not run.  Never raises: if the full record cannot be built (a malformed case file breaks one of
+    the computed fields), a minimal record with every required field is written instead, so the next case still runs."""
+    try:
+        return _crash_record(case, case_sha, adapter, exc, prompt_version, evidence_mode)
+    except Exception as e2:  # noqa: BLE001 - the last line of defence of the batch loop
+        return _minimal_crash_record(case, case_sha, adapter, exc, prompt_version, evidence_mode, e2)
+
+
+def _minimal_crash_record(case, case_sha, adapter, exc, prompt_version, evidence_mode, e2):
+    def get(obj, name, default=None):
+        try:
+            return getattr(obj, name, default)
+        except Exception:  # noqa: BLE001
+            return default
+    d = P.forced_decision('harness error before the run: ' + type(exc).__name__)
+    cid = case.get('id') if isinstance(case, dict) else None
+    try:
+        psha = P.get_prompt(prompt_version)['sha256']
+    except Exception:  # noqa: BLE001
+        psha = None
+    return {'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': str(cid), 'case_sha256': case_sha, 'evidence_mode': evidence_mode,
+            'evidence': {'mode': evidence_mode, 'capabilities': [], 'gaps': [], 'gaps_cited': [], 'note': 'minimal crash record'},
+            'prompt': {'version': prompt_version, 'sha256': psha, 'protocol': 'turn-' + str(prompt_version), 'turn_schema_sha256': None, 'schema_sent': False},
+            'requested_model': get(adapter, 'requested_model'), 'response_model_ids': [], 'runtime_version': get(adapter, 'runtime_version'),
+            'turns': [], 'tool_calls': [], 'repair_prompts': [], 'decision': d, 'forced': True, 'forced_reason': d['reason'], 'first_try_valid': False,
+            'first_try': {'valid': False, 'first_reply_valid': False, 'failure_modes': ['harness_error_before_run'], 'repair_prompts': 0, 'protocol_violations': 0,
+                          'valid_after_repair': False, 'note': 'the case never reached a model'},
+            'final_decision_valid': False, 'protocol_violations': [], 'unverified_parts': [], 'decision_flags': [], 'fixture_hashes': None,
+            'usage': {'input_tokens': 0, 'output_tokens': 0, 'cost_usd': None, 'cost_reported': False},
+            'wall': {'total_s': 0.0, 'load_s': 0.0, 'case_excl_load_s': 0.0, 'turn_s': [], 'tool_s': []}, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'action_audit': {'execution_status': 'no_write_proposed', 'executed': False, 'write_intent': False,
+                             'intent': {'class': d['class'], 'action': d['action'], 'target': None}, 'target': None, 'outcome_step': None,
+                             'note': 'recorded proposal only; this harness never executes a write, and nothing was changed; minimal crash record'},
+            'error': {'kind': 'harness_crash', 'message': '%s: %s' % (type(exc).__name__, exc), 'secondary': '%s: %s' % (type(e2).__name__, e2),
+                      'traceback': traceback.format_exc()[-1500:]}}
+
+
+def _crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay'):
     d = P.forced_decision('harness error before the run: ' + type(exc).__name__)
     return {'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
-            'split': case.get('split'), 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'split': case.get('split'), 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'evidence_mode': evidence_mode,
+            'evidence': GP.evidence_summary(case, [], evidence_mode, d, live_kinds=T.LIVE_KINDS),
             'prompt': {'version': prompt_version, 'sha256': P.get_prompt(prompt_version)['sha256'], 'protocol': 'turn-' + prompt_version, 'turn_schema_sha256': None, 'schema_sent': False},
             'requested_model': adapter.requested_model, 'response_model_ids': [], 'runtime_version': adapter.runtime_version,
             'model_digest': adapter.model_digest, 'model_digest_na_reason': adapter.digest_na_reason if not adapter.model_digest else None,
@@ -290,7 +334,7 @@ def crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT):
 
 REQUIRED_RECORD_FIELDS = ('record_version', 'harness_version', 'harness_git_sha', 'case_id', 'case_sha256', 'prompt', 'requested_model', 'response_model_ids',
                           'runtime_version', 'config_hash', 'fixture_hashes', 'turns', 'tool_calls', 'decision', 'forced', 'first_try_valid', 'first_try',
-                          'usage', 'wall', 'action_audit')
+                          'usage', 'wall', 'action_audit', 'evidence_mode', 'evidence')
 
 
 def record_missing_fields(rec):
@@ -310,6 +354,13 @@ def record_missing_fields(rec):
         if (rec['action_audit'] or {}).get('executed') is not False:
             missing.append('action_audit.executed')
     return missing
+
+
+def _count(items):
+    out = {}
+    for i in items:
+        out[i] = out.get(i, 0) + 1
+    return dict(sorted(out.items(), key=lambda kv: str(kv[0])))
 
 
 def summarize_run(records, manifest):
@@ -336,6 +387,10 @@ def summarize_run(records, manifest):
         'records_complete': not incomplete, 'incomplete_records': incomplete,
         'cost_usd': round(sum((r['usage'].get('cost_usd') or 0.0) for r in records), 6) if any(r['usage'].get('cost_reported') for r in records) else None,
         'latency_s_per_case': {'min': walls[0] if walls else None, 'median': walls[len(walls) // 2] if walls else None, 'max': walls[-1] if walls else None},
+        'evidence_mode': manifest['config'].get('evidence_mode'),
+        'evidence': {'tool_calls_by_evidence_mode': _count(c.get('evidence_mode') for r in records for c in r['tool_calls']),
+                     'gaps': sum(len((r.get('evidence') or {}).get('gaps', [])) for r in records),
+                     'gaps_by_type': _count(g['type'] for r in records for g in (r.get('evidence') or {}).get('gaps', []))},
         'writes_executed': 0,
         'statement': 'Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; '
                      'this harness executed no write and changed no media, *arr, Plex or library state.',
@@ -378,6 +433,8 @@ def main(argv=None):
     ap.add_argument('--stop', help='comma separated stop tokens (ollama); default per model family')
     ap.add_argument('--ollama-schema', choices=['anyof', 'flat'], default='anyof', help='format schema variant sent to Ollama')
     ap.add_argument('--replay', choices=['auto', 'off', 'force'], default='auto', help='serve recorded ffprobe/decode/title-card results from <suite>/fixtures/probes when ffprobe/ffmpeg are missing (auto), never, or always')
+    ap.add_argument('--evidence', choices=list(T.EVIDENCE_MODES), default='replay', help='replay (default): the tool layer as in dev-c1, recorded results; live: bounded read-only collectors on the case\'s own local media file (a case without one gets `unavailable`)')
+    ap.add_argument('--evidence-bounds', help='live mode: JSON object of collector bounds (see evidence/core.py BOUND_SPEC), e.g. \'{"segments": 2}\'; clamped to the hard maxima, unknown names are refused')
     ap.add_argument('--no-warmup', action='store_true')
     ap.add_argument('--ocr-model', help='vision model on Prime for the ocr tool')
     ap.add_argument('--codex-ephemeral', action='store_true', help='codex: do not keep the rollout (then no response model id can be recorded and G10 fails)')
@@ -400,11 +457,22 @@ def main(argv=None):
         import ollama_transport as ot
         ocr_backend = T.ollama_ocr_backend(args.ocr_model, ot.api)
 
+    evidence_bounds = json.loads(args.evidence_bounds) if args.evidence_bounds else {}
+    if not isinstance(evidence_bounds, dict):
+        raise SystemExit('--evidence-bounds must be a JSON object')
+    if evidence_bounds and args.evidence != 'live':
+        raise SystemExit('--evidence-bounds only applies with --evidence live')
+    try:
+        evcol_resolved, evcol_clamped = evcol.resolve_bounds(evidence_bounds)
+    except ValueError as e:
+        raise SystemExit('--evidence-bounds: %s' % e)
     prompt = P.get_prompt(args.prompt)
     config = {'harness_version': P.HARNESS_VERSION, 'protocol': P.PROTOCOL_VERSION if args.prompt == 'v1' else 'turn-' + args.prompt, 'prompt_version': args.prompt, 'system_prompt_sha256': prompt['sha256'],
               'turn_schema_sha256': sha256_bytes(canonical(P.TURN_SCHEMA).encode()), 'flat_schema_sha256': sha256_bytes(canonical(P.FLAT_TURN_SCHEMA).encode()),
               'turn_schema_v2_sha256': sha256_bytes(canonical(P.turn_schema('v2')).encode()), 'max_tool_calls': P.MAX_TOOL_CALLS,
               'tool_output_bytes': args.tool_output_bytes, 'tool_timeout_s': P.TOOL_TIMEOUT_S, 'ocr_model': args.ocr_model, 'replay': args.replay,
+              'evidence_mode': args.evidence, 'evidence_bounds': evidence_bounds if args.evidence == 'live' else None,
+              'evidence_bounds_clamped': evcol_clamped if args.evidence == 'live' else None,
               'adapter_config': adapter.config()}
     manifest = {'harness_version': P.HARNESS_VERSION, 'run_id': run_id, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'argv': sys.argv[1:] if argv is None else argv,
                 'harness_git': git_info(), 'config': config, 'config_hash': sha256_bytes(canonical(config).encode()),
@@ -426,12 +494,13 @@ def main(argv=None):
                 break
             try:
                 rec = run_case(case, sha, adapter, suite_dir, scratch, ocr_backend=ocr_backend, replay=args.replay, run_id=run_id,
-                               tool_output_bytes=args.tool_output_bytes, prompt_version=args.prompt)
+                               tool_output_bytes=args.tool_output_bytes, prompt_version=args.prompt, evidence_mode=args.evidence,
+                               evidence_bounds=evidence_bounds)
             except A.AbortRun as e:
                 aborted = str(e)
                 break
             except Exception as e:  # noqa: BLE001 - e.g. a malformed case file: keep a failed record, go on
-                rec = crash_record(case, sha, adapter, e, args.prompt)
+                rec = crash_record(case, sha, adapter, e, args.prompt, args.evidence)
             rec.update(run_id=run_id, harness_git_sha=manifest['harness_git']['sha'], config_hash=manifest['config_hash'])
             (out / (case['id'] + '.json')).write_text(json.dumps(rec, indent=2, ensure_ascii=False, sort_keys=True) + '\n')
             audit.write(canonical({'run_id': run_id, 'case_id': case['id'], 'case_sha256': sha, 'at': rec['started_at'],

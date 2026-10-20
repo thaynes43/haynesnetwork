@@ -1,7 +1,7 @@
 """EPUB structural collector (stdlib only: zipfile and xml.etree).  Read-only; nothing is extracted to disk.
 
 Stages follow the suite's recorded evidence: zip_open, zip_crc, opf_parse, manifest.  A failure in one of these is
-status `error` with cause `input` (the file is damaged; same convention as a failing ffprobe).  Later problems
+status `error` with cause `input` (the file is damaged; same convention as a failing ffprobe), or cause `tool` when the collector's own limit or the environment (a size cap, a permission error) stopped it.  Later problems
 (spine, XHTML, mimetype) are findings inside an `ok` record with `valid: false`."""
 import posixpath
 import sys
@@ -41,6 +41,11 @@ def _read(z, name, cap):
     return data
 
 
+def _cause(e):
+    """Why a read failed: the collector's own cap or the environment (permissions, I/O) says nothing about the file (`tool`); a damaged archive does (`input`)."""
+    return 'tool' if isinstance(e, (TooBig, OSError)) else 'input'
+
+
 def _err(e):
     return '%s: %s' % (type(e).__name__, str(e)[:200])
 
@@ -70,17 +75,17 @@ def collect_epub(ctx, started):
     try:
         z = zipfile.ZipFile(path)  # opened read-only
     except Exception as e:  # noqa: BLE001 - BadZipFile, OSError, anything the zip layer raises
-        return fail('zip_open', _err(e))
+        return fail('zip_open', _err(e), cause=_cause(e))
     with z:
         infos = z.infolist()
         out['entries'] = len(infos)
         if len(infos) > b['epub_max_members']:
-            return fail('zip_open', 'archive has %d members, over the epub_max_members cap of %d; not read' % (len(infos), b['epub_max_members']))
+            return fail('zip_open', 'archive has %d members, over the epub_max_members cap of %d; not read (the collector\'s own limit, not a finding about the file)' % (len(infos), b['epub_max_members']), cause='tool')
         declared = sum(i.file_size for i in infos)
         out['uncompressed_bytes_declared'] = declared
         partial = []
         # --- zip_crc: stream every member through the CRC check, within the byte cap
-        read_total, checked, crc_fail = 0, 0, None
+        read_total, checked, crc_fail, crc_cause = 0, 0, None, 'input'
         for i in infos:
             if i.is_dir():
                 checked += 1
@@ -103,10 +108,11 @@ def collect_epub(ctx, started):
                 checked += 1
             except Exception as e:  # noqa: BLE001 - Bad CRC-32, truncated member, unsupported compression
                 crc_fail = '%s in member %s' % (_err(e), i.filename)
+                crc_cause = _cause(e)
                 break
         out['crc_members_checked'] = checked
         if crc_fail:
-            return fail('zip_crc', crc_fail, ['central directory readable (%d members)' % len(infos)])
+            return fail('zip_crc', crc_fail, ['central directory readable (%d members)' % len(infos)], cause=crc_cause)
         out['stages_passed'] = ['zip_open', 'zip_crc']
         cov_ok.append('zip central directory read; CRC-32 verified for %d of %d member(s)' % (checked, len(infos)))
         # --- mimetype
@@ -140,7 +146,7 @@ def collect_epub(ctx, started):
             rootfiles = [x for x in root.iter() if _local(x.tag) == 'rootfile']
             opf = rootfiles[0].attrib['full-path']
         except Exception as e:  # noqa: BLE001
-            return fail('opf_parse', 'container.xml: %s' % _err(e), cov_ok)
+            return fail('opf_parse', 'container.xml: %s' % _err(e), cov_ok, cause=_cause(e))
         out['opf'] = opf
         if opf not in names:
             return fail('opf_parse', 'container.xml names %s, which is not in the archive' % opf, cov_ok)
@@ -150,7 +156,7 @@ def collect_epub(ctx, started):
                 return fail('opf_parse', 'the package document has entity declarations; not parsed (the collector refuses them)', cov_ok, cause='tool')
             pkg = ET.fromstring(raw_o)
         except Exception as e:  # noqa: BLE001
-            return fail('opf_parse', 'package document: %s' % _err(e), cov_ok)
+            return fail('opf_parse', 'package document: %s' % _err(e), cov_ok, cause=_cause(e))
         out['stages_passed'].append('opf_parse')
         cov_ok.append('container.xml and the package document (OPF) parse')
         out.update(dc_title=_texts(pkg, 'title'), dc_creator=_texts(pkg, 'creator'), dc_language=_texts(pkg, 'language'), dc_identifier=_texts(pkg, 'identifier'))

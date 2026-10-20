@@ -1,5 +1,91 @@
 # Harness changelog
 
+## dev-c2 (candidate, OpenProject #135)
+
+Evidence wiring, `unavailable` everywhere, capabilities and gaps, and a contract proposal. Not scoring: `score.py`, `CONTRACT.md`, the suite, labels and gates are
+untouched. Builds on dev-c1 (#1009) and the live collectors (#1010). Default stays `--evidence replay`, and replay is byte-for-byte what dev-c1 showed the model.
+
+### Evidence mode (`--evidence replay|live`, default `replay`)
+
+* **replay** is dev-c1's tool layer unchanged. `test_wiring.ReplayIdentity` recomputes, for all 73 dev cases, the sha256 of every offered tool's rendered result (as
+  `run.result_message` sends it, fixed argument set, no ffmpeg on PATH) plus the model-visible case view, and demands equality with
+  `testdata/replay-identity-dev-c1.json`, generated from the dev-c1 code before any dev-c2 edit to `tools.py` (`replay_identity.py` is the generator).
+* **live** serves `ffprobe`, `decode_sample`, `frame_sample`, `audio_sample`, `ocr`, `epub_inspect` and `audiobook_inspect` from `evidence.collect` on the case's own local media
+  file (`tools.live_tool`). No fixture, pinned real media, remote host, a path that does not exist, or a directory for a single-file tool: `unavailable` with the reason, and
+  nothing is run. `arr_lookup` is unchanged. The collector deadline is 45 s (`LIVE_DEADLINE_S`), so a slow file ends `partial` inside the 60 s tool timeout; the outer timeout still
+  turns a hung collector into `timeout`. `--evidence-bounds '{"segments": 2}'` overrides collector bounds (clamped to the hard maxima, unknown names refused; live only).
+  `frame_sample` runs the frames collector with OCR off, `ocr` with OCR on; without tesseract `ocr` is `unavailable` (the frames decoded, the text was not read), as in replay with no OCR backend.
+* Every tool result and run record says which mode: `evidence_mode` (`replay`|`live`) on each `tool_calls[]` entry, in the record, in the manifest `config` (so in `config_hash`)
+  and in `run_summary.json`. `mode` on a call keeps its dev-c1 meaning (how the answer was produced: `live`, `local`, `remote`, `replay`, `pinned_replay`, `stub`, `injected`).
+  Neither is shown to the model: `run.result_message` still sends only type, id, tool, status, truncated, output and calls remaining.
+* A live damage finding (`error` with collector `cause: input`) is usable as support in the action audit, like a replay `error` that carries the tool's own `exit_code` / `stage`;
+  a tool-side `error` is not. Live calls are kept per call in `tool_calls[].evidence` (kind, coverage, reason, cause, bounds, input fingerprint without the file name) and
+  `args_ignored` (model arguments such as `at` that live collection validates but does not use: the collectors choose their own sample points).
+
+### `unavailable` is first-class
+
+`evidence.core.to_tool_result` no longer turns `unavailable` into `error` plus `evidence_status`; the status passes through and `evidence_status` is gone (dev-c1 said the wiring
+story should do exactly this). `test_evidence` was updated for it; `tools.STATUSES` and `evidence.STATUSES` are asserted equal.
+
+### Capabilities and gaps (record only)
+
+`gaps.py`, run record field `evidence` (mode, `capabilities[]`, `gaps[]`, `gaps_cited[]`): what was not verified, which call showed it (a citeable `t<n>`), its type (`not_run`,
+`incomplete`, `standing`), the area, the reason and the harness tool that would be needed. Never shown to the model, never changes a decision, not scored. A damage finding is evidence,
+not a gap. `run_summary.json` counts gaps. `evidence_mode` and `evidence` are required record fields (`record_missing_fields`).
+
+### Contract proposal
+
+`CONTRACT-v2-proposal.md`: a proposal for the evaluator to accept or reject (decision fields, the write-action audit object with `proposed_not_executed`, proposal vs executed vs verified,
+tool statuses, capability and gap records, version fields). `CONTRACT.md` is not edited; nothing in it describes scoring.
+
+### Tests
+
+`test_wiring.py` (46 tests): replay identity over the dev suite, explicit replay equals default, no mode or gap field reaches the model, live with a fake collector runner and a fake
+`collect` (ok, missing binary, damaged input, timeout, hung collector, partial, missing path, no fixture / pinned / remote, directory, injected failure, bounds mapping, bad arguments, output cap,
+OCR without an engine), a real EPUB through the real collector, leak guard (names redacted; a leaking message still raises), `unavailable` status, gaps, run records through `run_case`
+and `main`. Whole harness: 379 tests (333 before). `wiring_smoke.py` + `launch_wiring_smoke.py` ran `run_case --evidence live` with a scripted adapter and the real ffprobe/ffmpeg in a
+CPU-limited Job on synthetic fixtures (`testdata/wiring-smoke/wiring-smoke.json`; Job deleted).
+
+### Smoke (validity only, not a benchmark)
+
+`runs/smoke-dev-c2-claude-haiku-5-5-v2/` (re-run after the review fixes, replacing the first run): `claude-haiku-5-5` through the claude adapter (same flags as the dev-c1 smoke), prompt v2,
+`--evidence replay`, the same 5 dev cases as `smoke-dev-c1-claude-haiku-5-5-v2`, run from the committed tree at `dbb53548` (git dirty flag false). Result: 5/5 records complete, 0 crashes,
+0 forced, 0 protocol violations, response model id `claude-haiku-5-5`, 5/5 final decisions valid, cost about 0.006 USD, 4 tool calls all `replay`, 1 recorded gap, no write executed.
+**First-try validity was 3/5 this time** (2 repair prompts: one `why` over 200 characters, one `reason` over 400 characters; the first run had 5/5 and the dev-c1 smoke 5/5), so two runs of the same
+five cases already differ; the harness did not change what the model is sent. The length misses are not in `failure_modes` (those classify structural mistakes only). Pass rates were not computed.
+
+### Known limits
+
+* **Live mode needs local media.** The dev suite's own cases are replay-shaped (recorded probe results, pinned real media), so a `--evidence live` run over it yields mostly `unavailable`;
+  live is meant for cases that carry a local media path, such as the synthetic fixtures or a future suite built from generated media. It has run for real only on the wiring-smoke fixtures.
+* Live `ok` means the collection plan ran, not that the media is healthy; sampling finds damage only where it samples (see `evidence/README.md` limits). tesseract is not in the smoke image,
+  so live OCR has only fake-runner coverage.
+* `at`, `stream` and `frame` arguments have no effect in live mode (recorded in `args_ignored`); replay serves the nearest recorded window instead.
+* The replay-identity digests cover the fixed argument set in `replay_identity.CALLS` and the case view, with no ffmpeg on PATH; they do not cover a run on a machine that has ffprobe (the local route is unchanged code).
+* Gap `needed_tool` for `standing` gaps is a keyword hint on the collector's wording. `ocr` and `frame_sample` share the frames collector, so one `ocr` call repeats the frame decode.
+* Everything from dev-c1's known limits still applies (`score.py` predates `unavailable`; `claim_text` checks are English keyword matches; per-case structured output for Ollama is untested live).
+
+### Review fixes (independent review of PR #1011)
+
+Replay was verified identical to dev-c1; the findings below were all in live mode, the evidence package or the checks. Version stays `dev-c2`.
+
+1. **EPUB `cause`.** A collector limit (`epub_max_members`, an oversized container.xml / OPF) and any `OSError` (permission, I/O) while opening or reading the archive are now `cause: tool`; only a
+   damaged archive stays `input`. `gaps.is_damage_finding` follows the record's `cause` first, so a `tool` cause is a gap, never a finding; `audit.usable_as_support` already refuses it. Tests: member cap, an
+   unreadable (mode 0) file, an oversized OPF, a genuinely corrupt archive still `input`. Found on the way: `fingerprint` raised on an unreadable file, so `collect()` raised instead of returning an error record; it now returns no fingerprint.
+2. **Part names.** Every file and folder name under a folder item is replaced (`part-NN.ext`, `folder-NN`, also the stems and the JSON-escaped forms) in the redactor that runs when the result is bounded, before the leak guard; a part named
+   after a class or an action neither reaches the model nor raises `LeakError`. Test: names that are class and action words, through `run_case`. Proposal section 3 updated.
+3. **Serial runs.** `--evidence-bounds deadline_s` above `LIVE_DEADLINE_S` (45 s) is cut to it and listed in `bounds_clamped`. When the outer tool timeout fires on a live call, `call_tool` sets a cancel event
+   (`Ctx.run` starts no further subprocess), kills the process group the collector thread is waiting on (`evidence.kill_active`) and waits for the thread, so the next call starts alone. Tests: a cooperative hung collector, and a
+   real shell-script `ffprobe` whose `sleep` child is verified dead after the timeout.
+4. **Unhonored offsets.** In live mode a requested `at` / `ss` / `t` that falls in no sampled window, an audio `stream` other than the first, or a `frame` name now produces a `request_note` in the tool result (generic wording, the
+   windows actually sampled) and `request_unmet` in the call record; `gaps.py` records a `requested_not_honored` gap for it. A requested offset inside a sampled window counts as honored.
+5. **Crash records.** `gaps.evidence_summary` tolerates `tools_available: null`; `crash_record` never raises (a minimal record with every required field, `error.secondary` naming the second failure, is the fallback); `call_tool` tolerates
+   a null tool list. Test: a null-`tools_available` case and a forced `_crash_record` failure, each followed by a case that runs normally in the same batch.
+6. **Replay-identity coverage.** The golden is regenerated from the real dev-c1 tree (`git archive 617e6ad4` into a scratch directory, `replay_identity.py` copied in and run there) and now also digests the v1 and v2 system
+   prompts, the turn schemas, repair prompts and validator errors / failure modes for 11 bad replies, the budget notice, the forced decision, the not-offered message and six bad-argument errors. The README row and the
+   `replay_identity.py` docstring list exactly what is and is not covered (not: a machine with ffprobe/ffmpeg, other arguments, adapters, record fields).
+7. **Docs and folder fingerprints.** `evidence/__init__.py` no longer says "not wired". For a folder item `evidence.input` keeps per-part size and head/tail hashes (no names) in `files[]`; the proposal says so.
+
 ## dev-c1 (candidate, OpenProject #136) 
 
 Prompt v2, protocol and audit. Builds on W10's WIP (prompt v2 draft, `unavailable` status, pinned replay, `audit.py`). Not scoring: `score.py`,

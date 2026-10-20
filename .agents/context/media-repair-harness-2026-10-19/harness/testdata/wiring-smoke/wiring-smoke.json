@@ -1,0 +1,913 @@
+{
+ "cases": {
+  "ws-epub-1": {
+   "action_audit_executed": false,
+   "decision": {
+    "action": "escalate",
+    "class": "insufficient_evidence",
+    "confidence": 0.5,
+    "evidence_refs": [
+     "t1"
+    ],
+    "reason": "wiring smoke: scripted decision citing the tool results",
+    "target": null,
+    "type": "decision"
+   },
+   "error": null,
+   "evidence": {
+    "capabilities": [
+     {
+      "calls": 1,
+      "live_kind": "probe",
+      "offered": true,
+      "statuses": {
+       "error": 1
+      },
+      "tool": "ffprobe"
+     },
+     {
+      "calls": 0,
+      "live_kind": "decode",
+      "offered": true,
+      "statuses": {},
+      "tool": "decode_sample"
+     },
+     {
+      "calls": 0,
+      "live_kind": "frames",
+      "offered": true,
+      "statuses": {},
+      "tool": "frame_sample"
+     },
+     {
+      "calls": 0,
+      "live_kind": "audio",
+      "offered": true,
+      "statuses": {},
+      "tool": "audio_sample"
+     },
+     {
+      "calls": 0,
+      "live_kind": "frames",
+      "offered": true,
+      "statuses": {},
+      "tool": "ocr"
+     },
+     {
+      "calls": 1,
+      "live_kind": "epub",
+      "offered": true,
+      "statuses": {
+       "error": 1
+      },
+      "tool": "epub_inspect"
+     },
+     {
+      "calls": 0,
+      "live_kind": "audiobook",
+      "offered": false,
+      "statuses": {},
+      "tool": "audiobook_inspect"
+     },
+     {
+      "calls": 0,
+      "live_kind": null,
+      "offered": true,
+      "statuses": {},
+      "tool": "arr_lookup"
+     }
+    ],
+    "gaps": [
+     {
+      "area": "stages after zip_open were not reached",
+      "call": "t1",
+      "evidence_mode": "live",
+      "id": "g1",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "error",
+      "tool": "epub_inspect",
+      "type": "standing"
+     },
+     {
+      "area": "reading quality, typography and rendering: no reader was run",
+      "call": "t1",
+      "evidence_mode": "live",
+      "id": "g2",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "error",
+      "tool": "epub_inspect",
+      "type": "standing"
+     },
+     {
+      "area": "DRM or encryption: not looked for beyond a missing-member check",
+      "call": "t1",
+      "evidence_mode": "live",
+      "id": "g3",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "error",
+      "tool": "epub_inspect",
+      "type": "standing"
+     },
+     {
+      "area": "whether the content is the right book: only the declared metadata and structure were read",
+      "call": "t1",
+      "evidence_mode": "live",
+      "id": "g4",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "error",
+      "tool": "epub_inspect",
+      "type": "standing"
+     },
+     {
+      "area": "container, streams, duration and tags (ffprobe error)",
+      "call": "t2",
+      "evidence_mode": "live",
+      "id": "g5",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "error",
+      "tool": "ffprobe",
+      "type": "standing"
+     },
+     {
+      "area": "stream contents: nothing was decoded",
+      "call": "t2",
+      "evidence_mode": "live",
+      "id": "g6",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "error",
+      "tool": "ffprobe",
+      "type": "standing"
+     },
+     {
+      "area": "stream changes beyond the first ~5 MB analysed (probesize 5000000)",
+      "call": "t2",
+      "evidence_mode": "live",
+      "id": "g7",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "error",
+      "tool": "ffprobe",
+      "type": "standing"
+     }
+    ],
+    "gaps_cited": [
+     "g1",
+     "g2",
+     "g3",
+     "g4"
+    ],
+    "mode": "live",
+    "note": "record only: not shown to the model, not scored. A gap is something the run did not verify; a damage finding is evidence, not a gap."
+   },
+   "evidence_mode": "live",
+   "first_try_valid": true,
+   "forced": false,
+   "missing_fields": [],
+   "tool_calls": [
+    {
+     "args": {},
+     "args_ignored": null,
+     "evidence_mode": "live",
+     "id": "t1",
+     "live_ran": true,
+     "mode": "live",
+     "output": "{\"status\": \"error\", \"reason\": \"zip_open: BadZipFile: File is not a zip file\", \"cause\": \"input\", \"mode\": \"live\", \"tool\": \"epub\", \"tool_version\": \"python 3.14.7 zipfile+xml.etree (stdlib)\", \"coverage\": {\"verified\": [\"the check stopped at stage zip_open\"], \"not_verified\": [\"stages after zip_open were not reached\", \"reading quality, typography and rendering: no reader was run\", \"DRM or encryption: not looked for beyond a missing-member check\", \"whether the content is the right book: only the declared metadata and structure were read\"]}, \"stderr\": \"\", \"bounds\": {\"stderr_excerpt_bytes\": 1500, \"epub_max_members\": 5000, \"epub_max_uncompressed_bytes\": 134217728, \"epub_max_member_bytes\": 8388608, \"epub_max_opf_bytes\": 2097152, \"epub_max_xhtml_docs\": 200}, \"elapsed_s\": 0.0, \"output\": {\"valid\": false, \"stages_passed\": [], \"findings\": [], \"stage\": \"zip_open\", \"error\": \"BadZipFile: File is not a zip file\"}}",
+     "status": "error",
+     "tool": "epub_inspect",
+     "truncated": false,
+     "wall_s": 0.002
+    },
+    {
+     "args": {},
+     "args_ignored": null,
+     "evidence_mode": "live",
+     "id": "t2",
+     "live_ran": true,
+     "mode": "live",
+     "output": "{\"status\": \"error\", \"reason\": \"ffprobe exited 1: the container could not be read\", \"cause\": \"input\", \"mode\": \"live\", \"tool\": \"probe\", \"tool_version\": \"ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers\", \"coverage\": {\"verified\": [], \"not_verified\": [\"container, streams, duration and tags (ffprobe error)\", \"stream contents: nothing was decoded\", \"stream changes beyond the first ~5 MB analysed (probesize 5000000)\"]}, \"stderr\": \"<input>: Invalid data found when processing input\", \"bounds\": {\"timeout_s\": 20, \"max_stdout_bytes\": 4194304, \"max_stderr_bytes\": 65536, \"stderr_excerpt_bytes\": 1500}, \"elapsed_s\": 0.069, \"output\": {\"exit_code\": 1}}",
+     "status": "error",
+     "tool": "ffprobe",
+     "truncated": false,
+     "wall_s": 0.071
+    }
+   ]
+  },
+  "ws-missing-1": {
+   "action_audit_executed": false,
+   "decision": {
+    "action": "escalate",
+    "class": "insufficient_evidence",
+    "confidence": 0.5,
+    "evidence_refs": [
+     "t1"
+    ],
+    "reason": "wiring smoke: scripted decision citing the tool results",
+    "target": null,
+    "type": "decision"
+   },
+   "error": null,
+   "evidence": {
+    "capabilities": [
+     {
+      "calls": 1,
+      "live_kind": "probe",
+      "offered": true,
+      "statuses": {
+       "unavailable": 1
+      },
+      "tool": "ffprobe"
+     },
+     {
+      "calls": 1,
+      "live_kind": "decode",
+      "offered": true,
+      "statuses": {
+       "unavailable": 1
+      },
+      "tool": "decode_sample"
+     },
+     {
+      "calls": 0,
+      "live_kind": "frames",
+      "offered": true,
+      "statuses": {},
+      "tool": "frame_sample"
+     },
+     {
+      "calls": 0,
+      "live_kind": "audio",
+      "offered": true,
+      "statuses": {},
+      "tool": "audio_sample"
+     },
+     {
+      "calls": 0,
+      "live_kind": "frames",
+      "offered": true,
+      "statuses": {},
+      "tool": "ocr"
+     },
+     {
+      "calls": 0,
+      "live_kind": "epub",
+      "offered": true,
+      "statuses": {},
+      "tool": "epub_inspect"
+     },
+     {
+      "calls": 0,
+      "live_kind": "audiobook",
+      "offered": false,
+      "statuses": {},
+      "tool": "audiobook_inspect"
+     },
+     {
+      "calls": 0,
+      "live_kind": null,
+      "offered": true,
+      "statuses": {},
+      "tool": "arr_lookup"
+     }
+    ],
+    "gaps": [
+     {
+      "area": "container, stream and chapter metadata: not verified",
+      "call": "t1",
+      "evidence_mode": "live",
+      "id": "g1",
+      "needed_note": "rerun where the capability is present; nothing was learned from this call",
+      "needed_tool": "ffprobe",
+      "reason": "the case names a local media path that does not exist; live evidence was not collected and nothing ran",
+      "status": "unavailable",
+      "tool": "ffprobe",
+      "type": "not_run"
+     },
+     {
+      "area": "decodability of the sampled windows: not verified",
+      "call": "t2",
+      "evidence_mode": "live",
+      "id": "g2",
+      "needed_note": "rerun where the capability is present; nothing was learned from this call",
+      "needed_tool": "decode_sample",
+      "reason": "the case names a local media path that does not exist; live evidence was not collected and nothing ran",
+      "status": "unavailable",
+      "tool": "decode_sample",
+      "type": "not_run"
+     }
+    ],
+    "gaps_cited": [
+     "g1"
+    ],
+    "mode": "live",
+    "note": "record only: not shown to the model, not scored. A gap is something the run did not verify; a damage finding is evidence, not a gap."
+   },
+   "evidence_mode": "live",
+   "first_try_valid": true,
+   "forced": false,
+   "missing_fields": [],
+   "tool_calls": [
+    {
+     "args": {},
+     "args_ignored": null,
+     "evidence_mode": "live",
+     "id": "t1",
+     "live_ran": false,
+     "mode": "live",
+     "output": "the case names a local media path that does not exist; live evidence was not collected and nothing ran",
+     "status": "unavailable",
+     "tool": "ffprobe",
+     "truncated": false,
+     "wall_s": 0.002
+    },
+    {
+     "args": {},
+     "args_ignored": null,
+     "evidence_mode": "live",
+     "id": "t2",
+     "live_ran": false,
+     "mode": "live",
+     "output": "the case names a local media path that does not exist; live evidence was not collected and nothing ran",
+     "status": "unavailable",
+     "tool": "decode_sample",
+     "truncated": false,
+     "wall_s": 0.0
+    }
+   ]
+  },
+  "ws-video-1": {
+   "action_audit_executed": false,
+   "decision": {
+    "action": "escalate",
+    "class": "insufficient_evidence",
+    "confidence": 0.5,
+    "evidence_refs": [
+     "t2",
+     "t5"
+    ],
+    "reason": "wiring smoke: scripted decision citing the tool results",
+    "target": null,
+    "type": "decision"
+   },
+   "error": null,
+   "evidence": {
+    "capabilities": [
+     {
+      "calls": 1,
+      "live_kind": "probe",
+      "offered": true,
+      "statuses": {
+       "ok": 1
+      },
+      "tool": "ffprobe"
+     },
+     {
+      "calls": 2,
+      "live_kind": "decode",
+      "offered": true,
+      "statuses": {
+       "ok": 2
+      },
+      "tool": "decode_sample"
+     },
+     {
+      "calls": 1,
+      "live_kind": "frames",
+      "offered": true,
+      "statuses": {
+       "ok": 1
+      },
+      "tool": "frame_sample"
+     },
+     {
+      "calls": 1,
+      "live_kind": "audio",
+      "offered": true,
+      "statuses": {
+       "ok": 1
+      },
+      "tool": "audio_sample"
+     },
+     {
+      "calls": 1,
+      "live_kind": "frames",
+      "offered": true,
+      "statuses": {
+       "unavailable": 1
+      },
+      "tool": "ocr"
+     },
+     {
+      "calls": 0,
+      "live_kind": "epub",
+      "offered": true,
+      "statuses": {},
+      "tool": "epub_inspect"
+     },
+     {
+      "calls": 0,
+      "live_kind": "audiobook",
+      "offered": false,
+      "statuses": {},
+      "tool": "audiobook_inspect"
+     },
+     {
+      "calls": 0,
+      "live_kind": null,
+      "offered": true,
+      "statuses": {},
+      "tool": "arr_lookup"
+     }
+    ],
+    "gaps": [
+     {
+      "area": "stream contents: nothing was decoded",
+      "call": "t1",
+      "evidence_mode": "live",
+      "id": "g1",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "ok",
+      "tool": "ffprobe",
+      "type": "standing"
+     },
+     {
+      "area": "stream changes beyond the first ~5 MB analysed (probesize 5000000)",
+      "call": "t1",
+      "evidence_mode": "live",
+      "id": "g2",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "ok",
+      "tool": "ffprobe",
+      "type": "standing"
+     },
+     {
+      "area": "the rest of the file was not decoded; a clean sample does not prove whole-file health",
+      "call": "t2",
+      "evidence_mode": "live",
+      "id": "g3",
+      "needed_note": "a full decode (decode_sample with full), capped by the tool",
+      "needed_tool": "decode_sample",
+      "reason": null,
+      "status": "ok",
+      "tool": "decode_sample",
+      "type": "standing"
+     },
+     {
+      "area": "subtitle and data streams were not decoded",
+      "call": "t2",
+      "evidence_mode": "live",
+      "id": "g4",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "ok",
+      "tool": "decode_sample",
+      "type": "standing"
+     },
+     {
+      "area": "audio between the sampled segments",
+      "call": "t3",
+      "evidence_mode": "live",
+      "id": "g5",
+      "needed_note": "a full decode (decode_sample with full), capped by the tool",
+      "needed_tool": "decode_sample",
+      "reason": null,
+      "status": "ok",
+      "tool": "audio_sample",
+      "type": "standing"
+     },
+     {
+      "area": "speech content: levels only, no speech recognition",
+      "call": "t3",
+      "evidence_mode": "live",
+      "id": "g6",
+      "needed_note": "no harness tool checks speech",
+      "needed_tool": null,
+      "reason": null,
+      "status": "ok",
+      "tool": "audio_sample",
+      "type": "standing"
+     },
+     {
+      "area": "whether the language tag matches the spoken language",
+      "call": "t3",
+      "evidence_mode": "live",
+      "id": "g7",
+      "needed_note": "no harness tool checks speech",
+      "needed_tool": null,
+      "reason": null,
+      "status": "ok",
+      "tool": "audio_sample",
+      "type": "standing"
+     },
+     {
+      "area": "frames between the sampled offsets",
+      "call": "t4",
+      "evidence_mode": "live",
+      "id": "g8",
+      "needed_note": "a full decode (decode_sample with full), capped by the tool",
+      "needed_tool": "decode_sample",
+      "reason": null,
+      "status": "ok",
+      "tool": "frame_sample",
+      "type": "standing"
+     },
+     {
+      "area": "whether any frame is the right picture: only decodability and text were looked at",
+      "call": "t4",
+      "evidence_mode": "live",
+      "id": "g9",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "ok",
+      "tool": "frame_sample",
+      "type": "standing"
+     },
+     {
+      "area": "on-screen text was not read (OCR off)",
+      "call": "t4",
+      "evidence_mode": "live",
+      "id": "g10",
+      "needed_note": "an OCR reading of the frames",
+      "needed_tool": "ocr",
+      "reason": null,
+      "status": "ok",
+      "tool": "frame_sample",
+      "type": "standing"
+     },
+     {
+      "area": "frames between the sampled offsets",
+      "call": "t5",
+      "evidence_mode": "live",
+      "id": "g11",
+      "needed_note": "rerun where the capability is present; nothing was learned from this call",
+      "needed_tool": "ocr",
+      "reason": "no OCR engine is installed (tesseract not found on PATH); the on-screen text was not read",
+      "status": "unavailable",
+      "tool": "ocr",
+      "type": "not_run"
+     },
+     {
+      "area": "whether any frame is the right picture: only decodability and text were looked at",
+      "call": "t5",
+      "evidence_mode": "live",
+      "id": "g12",
+      "needed_note": "rerun where the capability is present; nothing was learned from this call",
+      "needed_tool": "ocr",
+      "reason": "no OCR engine is installed (tesseract not found on PATH); the on-screen text was not read",
+      "status": "unavailable",
+      "tool": "ocr",
+      "type": "not_run"
+     },
+     {
+      "area": "on-screen text was not read (tesseract not found on PATH)",
+      "call": "t5",
+      "evidence_mode": "live",
+      "id": "g13",
+      "needed_note": "rerun where the capability is present; nothing was learned from this call",
+      "needed_tool": "ocr",
+      "reason": "no OCR engine is installed (tesseract not found on PATH); the on-screen text was not read",
+      "status": "unavailable",
+      "tool": "ocr",
+      "type": "not_run"
+     },
+     {
+      "area": "other video and audio streams, subtitles and data streams were not decoded",
+      "call": "t6",
+      "evidence_mode": "live",
+      "id": "g14",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "ok",
+      "tool": "decode_sample",
+      "type": "standing"
+     }
+    ],
+    "gaps_cited": [
+     "g3",
+     "g4",
+     "g11",
+     "g12",
+     "g13"
+    ],
+    "mode": "live",
+    "note": "record only: not shown to the model, not scored. A gap is something the run did not verify; a damage finding is evidence, not a gap."
+   },
+   "evidence_mode": "live",
+   "first_try_valid": true,
+   "forced": false,
+   "missing_fields": [],
+   "tool_calls": [
+    {
+     "args": {},
+     "args_ignored": null,
+     "evidence_mode": "live",
+     "id": "t1",
+     "live_ran": true,
+     "mode": "live",
+     "output": "{\"status\": \"ok\", \"mode\": \"live\", \"tool\": \"probe\", \"tool_version\": \"ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers\", \"coverage\": {\"verified\": [\"container and stream headers parse\", \"stream list, duration, tags, chapters as declared by the container\"], \"not_verified\": [\"stream contents: nothing was decoded\", \"stream changes beyond the first ~5 MB analysed (probesize 5000000)\"]}, \"stderr\": \"\", \"bounds\": {\"timeout_s\": 20, \"max_stdout_bytes\": 4194304, \"max_stderr_bytes\": 65536, \"stderr_excerpt_bytes\": 1500}, \"elapsed_s\": 0.152, \"output\": {\"format\": \"matroska,webm\", \"duration_s\": 12.046, \"bytes\": 190966.0, \"bit_rate\": \"126824\", \"tags\": {\"encoder\": \"Lavf62.12.102\"}, \"streams\": [{\"index\": 0, \"type\": \"video\", \"codec\": \"h264\", \"profile\": \"Constrained Baseline\", \"pix_fmt\": \"yuv420p\", \"width\": 256, \"height\": 192}, {\"index\": 1, \"type\": \"audio\", \"codec\": \"aac\", \"profile\": \"LC\", \"channels\": 1, \"channel_layout\": \"mono\", \"sample_rate\": \"22050\", \"language\": \"eng\"}], \"stream_count\": 2, \"chapter_count\": 0, \"chapters\": [], \"findings\": []}}",
+     "status": "ok",
+     "tool": "ffprobe",
+     "truncated": false,
+     "wall_s": 0.163
+    },
+    {
+     "args": {},
+     "args_ignored": null,
+     "evidence_mode": "live",
+     "id": "t2",
+     "live_ran": true,
+     "mode": "live",
+     "output": "{\"status\": \"ok\", \"mode\": \"live\", \"tool\": \"decode\", \"tool_version\": \"ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers\", \"coverage\": {\"verified\": [\"4 segment(s) of up to 4s decoded (head, tail and 3 spread offsets); 16.0s decoded (133% of the duration)\"], \"not_verified\": [\"the rest of the file was not decoded; a clean sample does not prove whole-file health\", \"subtitle and data streams were not decoded\"]}, \"stderr\": \"\", \"bounds\": {\"timeout_s\": 20, \"max_stdout_bytes\": 4194304, \"max_stderr_bytes\": 65536, \"stderr_excerpt_bytes\": 1500, \"deadline_s\": 45, \"segments\": 3, \"segment_s\": 4, \"max_segments\": 10, \"full_decode\": false, \"full_max_bytes\": 67108864, \"full_timeout_s\": 60}, \"elapsed_s\": 0.339, \"output\": {\"segments_planned\": 4, \"segments_run\": 4, \"segments_skipped_deadline\": 0, \"segments_clean\": 4, \"segments_with_errors\": 0, \"segments_short\": 0, \"segments_timeout\": 0, \"segments_spawn_error\": 0, \"segments_output_cap\": 0, \"decoder_error_lines\": 0, \"decoded_s\": 15.982, \"sampled_fraction\": 1.327, \"segments\": [{\"at_s\": 0.0, \"window_s\": 4, \"elapsed_s\": 0.067, \"exit_code\": 0, \"frames\": 40, \"decoded_s\": 4.0, \"error_lines\": 0, \"errors\": [], \"state\": \"clean\", \"expected_s\": 4.0}, {\"at_s\": 3.011, \"window_s\": 4, \"elapsed_s\": 0.067, \"exit_code\": 0, \"frames\": 39, \"decoded_s\": 4.0, \"error_lines\": 0, \"errors\": [], \"state\": \"clean\", \"expected_s\": 4.0}, {\"at_s\": 6.023, \"window_s\": 4, \"elapsed_s\": 0.067, \"exit_code\": 0, \"frames\": 39, \"decoded_s\": 4.0, \"error_lines\": 0, \"errors\": [], \"state\": \"clean\", \"expected_s\": 4.0}, {\"at_s\": 8.046, \"window_s\": 4, \"elapsed_s\": 0.067, \"exit_code\": 0, \"frames\": 39, \"decoded_s\": 3.982, \"error_lines\": 0, \"errors\": [], \"state\": \"clean\", \"expected_s\": 4.0}], \"clean\": true, \"duration_s\": 12.046, \"full\": null, \"findings\": []}}",
+     "status": "ok",
+     "tool": "decode_sample",
+     "truncated": false,
+     "wall_s": 0.341
+    },
+    {
+     "args": {},
+     "args_ignored": null,
+     "evidence_mode": "live",
+     "id": "t3",
+     "live_ran": true,
+     "mode": "live",
+     "output": "{\"status\": \"ok\", \"mode\": \"live\", \"tool\": \"audio\", \"tool_version\": \"ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers\", \"coverage\": {\"verified\": [\"4 segment(s) of up to 4s decoded across 1 audio stream(s): mean and max level, silence runs of at least 0.5s below -50dB\", \"language and title tags read from the container\"], \"not_verified\": [\"audio between the sampled segments\", \"speech content: levels only, no speech recognition\", \"whether the language tag matches the spoken language\"]}, \"stderr\": \"\", \"bounds\": {\"timeout_s\": 20, \"max_stdout_bytes\": 4194304, \"max_stderr_bytes\": 65536, \"stderr_excerpt_bytes\": 1500, \"deadline_s\": 45, \"segments\": 3, \"segment_s\": 4, \"max_segments\": 10, \"max_audio_streams\": 2, \"silence_noise_db\": -50, \"silence_min_s\": 0.5}, \"elapsed_s\": 0.37, \"output\": {\"duration_s\": 12.046, \"streams\": [{\"index\": 1, \"codec\": \"aac\", \"channels\": 1, \"sample_rate\": \"22050\", \"language\": \"eng\", \"segments\": [{\"at_s\": 0.0, \"elapsed_s\": 0.066, \"mean_db\": -21.1, \"max_db\": -16.1, \"silent_s\": 0.0, \"silence_runs\": 0, \"window_s\": 4.0, \"silent_fraction\": 0.0, \"exit_code\": 0, \"problem_lines\": 0, \"state\": \"ok\"}, {\"at_s\": 3.011, \"elapsed_s\": 0.067, \"mean_db\": -21.1, \"max_db\": -17.7, \"silent_s\": 0.0, \"silence_runs\": 0, \"window_s\": 4.0, \"silent_fraction\": 0.0, \"exit_code\": 0, \"problem_lines\": 0, \"state\": \"ok\"}, {\"at_s\": 6.023, \"elapsed_s\": 0.066, \"mean_db\": -21.1, \"max_db\": -17.7, \"silent_s\": 0.0, \"silence_runs\": 0, \"window_s\": 4.0, \"silent_fraction\": 0.0, \"exit_code\": 0, \"problem_lines\": 0, \"state\": \"ok\"}, {\"at_s\": 8.046, \"elapsed_s\": 0.067, \"mean_db\": -21.1, \"max_db\": -17.5, \"silent_s\": 0.0, \"silence_runs\": 0, \"window_s\": 4.0, \"silent_fraction\": 0.0, \"exit_code\": 0, \"problem_lines\": 0, \"state\": \"ok\"}]}], \"silence_threshold_db\": -50, \"silence_min_s\": 0.5, \"findings\": []}}",
+     "status": "ok",
+     "tool": "audio_sample",
+     "truncated": false,
+     "wall_s": 0.372
+    },
+    {
+     "args": {},
+     "args_ignored": null,
+     "evidence_mode": "live",
+     "id": "t4",
+     "live_ran": true,
+     "mode": "live",
+     "output": "{\"status\": \"ok\", \"mode\": \"live\", \"tool\": \"frames\", \"tool_version\": \"ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers\", \"coverage\": {\"verified\": [\"3 frame(s) decoded at spread offsets (scaled to width 640); pictures not kept\"], \"not_verified\": [\"frames between the sampled offsets\", \"whether any frame is the right picture: only decodability and text were looked at\", \"on-screen text was not read (OCR off)\"]}, \"stderr\": \"\", \"bounds\": {\"timeout_s\": 20, \"max_stdout_bytes\": 4194304, \"max_stderr_bytes\": 65536, \"stderr_excerpt_bytes\": 1500, \"deadline_s\": 45, \"frames\": 3, \"frame_width\": 640, \"ocr\": \"off\", \"ocr_timeout_s\": 20, \"ocr_max_chars\": 400}, \"elapsed_s\": 0.454, \"output\": {\"duration_s\": 12.046, \"frames\": [{\"at_s\": 0.5, \"state\": \"ok\", \"width\": 640, \"height\": 480, \"bytes\": 132416, \"sha256\": \"9908863708aed78b03512c40f5d9bce0c82ab43c10470cf166973cee4523554f\"}, {\"at_s\": 6.023, \"state\": \"ok\", \"width\": 640, \"height\": 480, \"bytes\": 142006, \"sha256\": \"9a0513755ed07c31d5cad2375c9927478296834f79f3e8096fdf3c6a1242a4dd\"}, {\"at_s\": 11.546, \"state\": \"ok\", \"width\": 640, \"height\": 480, \"bytes\": 139079, \"sha256\": \"af7dfc36fb7befd8884920b18aa3fc0ef2494d4fb60b340072f6d4b53559b18c\"}], \"frames_ok\": 3, \"frames_with_errors\": 0, \"distinct_frames\": 3, \"findings\": [], \"ocr\": \"off\"}}",
+     "status": "ok",
+     "tool": "frame_sample",
+     "truncated": false,
+     "wall_s": 0.456
+    },
+    {
+     "args": {},
+     "args_ignored": null,
+     "evidence_mode": "live",
+     "id": "t5",
+     "live_ran": true,
+     "mode": "live",
+     "output": "{\"status\": \"unavailable\", \"reason\": \"no OCR engine is installed (tesseract not found on PATH); the on-screen text was not read\", \"mode\": \"live\", \"tool\": \"frames\", \"tool_version\": \"ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers\", \"coverage\": {\"verified\": [\"3 frame(s) decoded at spread offsets (scaled to width 640); pictures not kept\"], \"not_verified\": [\"frames between the sampled offsets\", \"whether any frame is the right picture: only decodability and text were looked at\", \"on-screen text was not read (tesseract not found on PATH)\"]}, \"stderr\": \"\", \"bounds\": {\"timeout_s\": 20, \"max_stdout_bytes\": 4194304, \"max_stderr_bytes\": 65536, \"stderr_excerpt_bytes\": 1500, \"deadline_s\": 45, \"frames\": 3, \"frame_width\": 640, \"ocr\": \"auto\", \"ocr_timeout_s\": 20, \"ocr_max_chars\": 400}, \"elapsed_s\": 0.455, \"output\": {\"duration_s\": 12.046, \"frames\": [{\"at_s\": 0.5, \"state\": \"ok\", \"width\": 640, \"height\": 480, \"bytes\": 132416, \"sha256\": \"9908863708aed78b03512c40f5d9bce0c82ab43c10470cf166973cee4523554f\", \"ocr\": {\"state\": \"unavailable\", \"reason\": \"tesseract not found on PATH\"}}, {\"at_s\": 6.023, \"state\": \"ok\", \"width\": 640, \"height\": 480, \"bytes\": 142006, \"sha256\": \"9a0513755ed07c31d5cad2375c9927478296834f79f3e8096fdf3c6a1242a4dd\", \"ocr\": {\"state\": \"unavailable\", \"reason\": \"tesseract not found on PATH\"}}, {\"at_s\": 11.546, \"state\": \"ok\", \"width\": 640, \"height\": 480, \"bytes\": 139079, \"sha256\": \"af7dfc36fb7befd8884920b18aa3fc0ef2494d4fb60b340072f6d4b53559b18c\", \"ocr\": {\"state\": \"unavailable\", \"reason\": \"tesseract not found on PATH\"}}], \"frames_ok\": 3, \"frames_with_errors\": 0, \"distinct_frames\": 3, \"findings\": [], \"ocr\": \"unavailable\"}}",
+     "status": "unavailable",
+     "tool": "ocr",
+     "truncated": false,
+     "wall_s": 0.456
+    },
+    {
+     "args": {
+      "full": true
+     },
+     "args_ignored": null,
+     "evidence_mode": "live",
+     "id": "t6",
+     "live_ran": true,
+     "mode": "live",
+     "output": "{\"status\": \"ok\", \"mode\": \"live\", \"tool\": \"decode\", \"tool_version\": \"ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers\", \"coverage\": {\"verified\": [\"4 segment(s) of up to 4s decoded (head, tail and 3 spread offsets); 16.0s decoded (133% of the duration)\", \"full decode of the first video and first audio stream ran to the end (clean)\"], \"not_verified\": [\"other video and audio streams, subtitles and data streams were not decoded\"]}, \"stderr\": \"\", \"bounds\": {\"timeout_s\": 20, \"max_stdout_bytes\": 4194304, \"max_stderr_bytes\": 65536, \"stderr_excerpt_bytes\": 1500, \"deadline_s\": 45, \"segments\": 3, \"segment_s\": 4, \"max_segments\": 10, \"full_decode\": true, \"full_max_bytes\": 67108864, \"full_timeout_s\": 60}, \"elapsed_s\": 0.439, \"output\": {\"segments_planned\": 4, \"segments_run\": 4, \"segments_skipped_deadline\": 0, \"segments_clean\": 4, \"segments_with_errors\": 0, \"segments_short\": 0, \"segments_timeout\": 0, \"segments_spawn_error\": 0, \"segments_output_cap\": 0, \"decoder_error_lines\": 0, \"decoded_s\": 15.982, \"sampled_fraction\": 1.327, \"segments\": [{\"at_s\": 0.0, \"window_s\": 4, \"elapsed_s\": 0.066, \"exit_code\": 0, \"frames\": 40, \"decoded_s\": 4.0, \"error_lines\": 0, \"errors\": [], \"state\": \"clean\", \"expected_s\": 4.0}, {\"at_s\": 3.011, \"window_s\": 4, \"elapsed_s\": 0.067, \"exit_code\": 0, \"frames\": 39, \"decoded_s\": 4.0, \"error_lines\": 0, \"errors\": [], \"state\": \"clean\", \"expected_s\": 4.0}, {\"at_s\": 6.023, \"window_s\": 4, \"elapsed_s\": 0.067, \"exit_code\": 0, \"frames\": 39, \"decoded_s\": 4.0, \"error_lines\": 0, \"errors\": [], \"state\": \"clean\", \"expected_s\": 4.0}, {\"at_s\": 8.046, \"window_s\": 4, \"elapsed_s\": 0.067, \"exit_code\": 0, \"frames\": 39, \"decoded_s\": 3.982, \"error_lines\": 0, \"errors\": [], \"state\": \"clean\", \"expected_s\": 4.0}], \"clean\": true, \"duration_s\": 12.046, \"full\": {\"at_s\": null, \"window_s\": null, \"elapsed_s\": 0.066, \"exit_code\": 0, \"frames\": 120, \"decoded_s\": 12.0, \"error_lines\": 0, \"errors\": [], \"state\": \"clean\", \"performed\": true}, \"findings\": []}}",
+     "status": "ok",
+     "tool": "decode_sample",
+     "truncated": false,
+     "wall_s": 0.441
+    }
+   ]
+  },
+  "ws-video-2": {
+   "action_audit_executed": false,
+   "decision": {
+    "action": "escalate",
+    "class": "insufficient_evidence",
+    "confidence": 0.5,
+    "evidence_refs": [
+     "t2",
+     "t3"
+    ],
+    "reason": "wiring smoke: scripted decision citing the tool results",
+    "target": null,
+    "type": "decision"
+   },
+   "error": null,
+   "evidence": {
+    "capabilities": [
+     {
+      "calls": 1,
+      "live_kind": "probe",
+      "offered": true,
+      "statuses": {
+       "ok": 1
+      },
+      "tool": "ffprobe"
+     },
+     {
+      "calls": 2,
+      "live_kind": "decode",
+      "offered": true,
+      "statuses": {
+       "ok": 2
+      },
+      "tool": "decode_sample"
+     },
+     {
+      "calls": 0,
+      "live_kind": "frames",
+      "offered": true,
+      "statuses": {},
+      "tool": "frame_sample"
+     },
+     {
+      "calls": 0,
+      "live_kind": "audio",
+      "offered": true,
+      "statuses": {},
+      "tool": "audio_sample"
+     },
+     {
+      "calls": 0,
+      "live_kind": "frames",
+      "offered": true,
+      "statuses": {},
+      "tool": "ocr"
+     },
+     {
+      "calls": 0,
+      "live_kind": "epub",
+      "offered": true,
+      "statuses": {},
+      "tool": "epub_inspect"
+     },
+     {
+      "calls": 0,
+      "live_kind": "audiobook",
+      "offered": false,
+      "statuses": {},
+      "tool": "audiobook_inspect"
+     },
+     {
+      "calls": 0,
+      "live_kind": null,
+      "offered": true,
+      "statuses": {},
+      "tool": "arr_lookup"
+     }
+    ],
+    "gaps": [
+     {
+      "area": "stream contents: nothing was decoded",
+      "call": "t1",
+      "evidence_mode": "live",
+      "id": "g1",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "ok",
+      "tool": "ffprobe",
+      "type": "standing"
+     },
+     {
+      "area": "stream changes beyond the first ~5 MB analysed (probesize 5000000)",
+      "call": "t1",
+      "evidence_mode": "live",
+      "id": "g2",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "ok",
+      "tool": "ffprobe",
+      "type": "standing"
+     },
+     {
+      "area": "the rest of the file was not decoded; a clean sample does not prove whole-file health",
+      "call": "t2",
+      "evidence_mode": "live",
+      "id": "g3",
+      "needed_note": "a full decode (decode_sample with full), capped by the tool",
+      "needed_tool": "decode_sample",
+      "reason": null,
+      "status": "ok",
+      "tool": "decode_sample",
+      "type": "standing"
+     },
+     {
+      "area": "subtitle and data streams were not decoded",
+      "call": "t2",
+      "evidence_mode": "live",
+      "id": "g4",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "ok",
+      "tool": "decode_sample",
+      "type": "standing"
+     },
+     {
+      "area": "other video and audio streams, subtitles and data streams were not decoded",
+      "call": "t3",
+      "evidence_mode": "live",
+      "id": "g5",
+      "needed_note": "no further harness tool covers this",
+      "needed_tool": null,
+      "reason": null,
+      "status": "ok",
+      "tool": "decode_sample",
+      "type": "standing"
+     }
+    ],
+    "gaps_cited": [
+     "g3",
+     "g4",
+     "g5"
+    ],
+    "mode": "live",
+    "note": "record only: not shown to the model, not scored. A gap is something the run did not verify; a damage finding is evidence, not a gap."
+   },
+   "evidence_mode": "live",
+   "first_try_valid": true,
+   "forced": false,
+   "missing_fields": [],
+   "tool_calls": [
+    {
+     "args": {},
+     "args_ignored": null,
+     "evidence_mode": "live",
+     "id": "t1",
+     "live_ran": true,
+     "mode": "live",
+     "output": "{\"status\": \"ok\", \"mode\": \"live\", \"tool\": \"probe\", \"tool_version\": \"ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers\", \"coverage\": {\"verified\": [\"container and stream headers parse\", \"stream list, duration, tags, chapters as declared by the container\"], \"not_verified\": [\"stream contents: nothing was decoded\", \"stream changes beyond the first ~5 MB analysed (probesize 5000000)\"]}, \"stderr\": \"\", \"bounds\": {\"timeout_s\": 20, \"max_stdout_bytes\": 4194304, \"max_stderr_bytes\": 65536, \"stderr_excerpt_bytes\": 1500}, \"elapsed_s\": 0.118, \"output\": {\"format\": \"matroska,webm\", \"duration_s\": 12.046, \"bytes\": 190966.0, \"bit_rate\": \"126824\", \"tags\": {\"encoder\": \"Lavf62.12.102\"}, \"streams\": [{\"index\": 0, \"type\": \"video\", \"codec\": \"h264\", \"profile\": \"Constrained Baseline\", \"pix_fmt\": \"yuv420p\", \"width\": 256, \"height\": 192}, {\"index\": 1, \"type\": \"audio\", \"codec\": \"aac\", \"profile\": \"LC\", \"channels\": 1, \"channel_layout\": \"mono\", \"sample_rate\": \"22050\", \"language\": \"eng\"}], \"stream_count\": 2, \"chapter_count\": 0, \"chapters\": [], \"findings\": []}}",
+     "status": "ok",
+     "tool": "ffprobe",
+     "truncated": false,
+     "wall_s": 0.121
+    },
+    {
+     "args": {},
+     "args_ignored": null,
+     "evidence_mode": "live",
+     "id": "t2",
+     "live_ran": true,
+     "mode": "live",
+     "output": "{\"status\": \"ok\", \"mode\": \"live\", \"tool\": \"decode\", \"tool_version\": \"ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers\", \"coverage\": {\"verified\": [\"4 segment(s) of up to 4s decoded (head, tail and 3 spread offsets); 15.4s decoded (128% of the duration)\"], \"not_verified\": [\"the rest of the file was not decoded; a clean sample does not prove whole-file health\", \"subtitle and data streams were not decoded\"]}, \"stderr\": \"[in#0/matroska,webm @ 0x7fad5968e340] Unknown-sized element at 0x19b00 inside parent with finite size\\n[in#0/matroska,webm @ 0x7fbb02705340] Unknown-sized element at 0x19b00 inside parent with finite size\", \"bounds\": {\"timeout_s\": 20, \"max_stdout_bytes\": 4194304, \"max_stderr_bytes\": 65536, \"stderr_excerpt_bytes\": 1500, \"deadline_s\": 45, \"segments\": 3, \"segment_s\": 4, \"max_segments\": 10, \"full_decode\": false, \"full_max_bytes\": 67108864, \"full_timeout_s\": 60}, \"elapsed_s\": 0.37, \"output\": {\"segments_planned\": 4, \"segments_run\": 4, \"segments_skipped_deadline\": 0, \"segments_clean\": 2, \"segments_with_errors\": 2, \"segments_short\": 0, \"segments_timeout\": 0, \"segments_spawn_error\": 0, \"segments_output_cap\": 0, \"decoder_error_lines\": 2, \"decoded_s\": 15.38, \"sampled_fraction\": 1.277, \"segments\": [{\"at_s\": 0.0, \"window_s\": 4, \"elapsed_s\": 0.066, \"exit_code\": 0, \"frames\": 40, \"decoded_s\": 4.0, \"error_lines\": 0, \"errors\": [], \"state\": \"clean\", \"expected_s\": 4.0}, {\"at_s\": 3.011, \"window_s\": 4, \"elapsed_s\": 0.066, \"exit_code\": 0, \"frames\": 34, \"decoded_s\": 3.398, \"error_lines\": 1, \"errors\": [\"[in#0/matroska,webm @ 0x7fad5968e340] Unknown-sized element at 0x19b00 inside parent with finite size\"], \"state\": \"errors\", \"expected_s\": 4.0}, {\"at_s\": 6.023, \"window_s\": 4, \"elapsed_s\": 0.066, \"exit_code\": 0, \"frames\": 24, \"decoded_s\": 4.0, \"error_lines\": 1, \"errors\": [\"[in#0/matroska,webm @ 0x7fbb02705340] Unknown-sized element at 0x19b00 inside parent with finite size\"], \"state\": \"errors\", \"expected_s\": 4.0}, {\"at_s\": 8.046, \"window_s\": 4, \"elapsed_s\": 0.067, \"exit_code\": 0, \"frames\": 39, \"decoded_s\": 3.982, \"error_lines\": 0, \"errors\": [], \"state\": \"clean\", \"expected_s\": 4.0}], \"clean\": false, \"duration_s\": 12.046, \"full\": null, \"findings\": [\"2 of 4 sampled segments produced decoder errors\"]}}",
+     "status": "ok",
+     "tool": "decode_sample",
+     "truncated": false,
+     "wall_s": 0.372
+    },
+    {
+     "args": {
+      "full": true
+     },
+     "args_ignored": null,
+     "evidence_mode": "live",
+     "id": "t3",
+     "live_ran": true,
+     "mode": "live",
+     "output": "{\"status\": \"ok\", \"mode\": \"live\", \"tool\": \"decode\", \"tool_version\": \"ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers\", \"coverage\": {\"verified\": [\"4 segment(s) of up to 4s decoded (head, tail and 3 spread offsets); 15.4s decoded (128% of the duration)\", \"full decode of the first video and first audio stream ran to the end (errors)\"], \"not_verified\": [\"other video and audio streams, subtitles and data streams were not decoded\"]}, \"stderr\": \"[in#0/matroska,webm @ 0x7f9e271be340] Unknown-sized element at 0x19b00 inside parent with finite size\\n[in#0/matroska,webm @ 0x7f0623c5d340] Unknown-sized element at 0x19b00 inside parent with finite size\", \"bounds\": {\"timeout_s\": 20, \"max_stdout_bytes\": 4194304, \"max_stderr_bytes\": 65536, \"stderr_excerpt_bytes\": 1500, \"deadline_s\": 45, \"segments\": 3, \"segment_s\": 4, \"max_segments\": 10, \"full_decode\": true, \"full_max_bytes\": 67108864, \"full_timeout_s\": 60}, \"elapsed_s\": 0.438, \"output\": {\"segments_planned\": 4, \"segments_run\": 4, \"segments_skipped_deadline\": 0, \"segments_clean\": 2, \"segments_with_errors\": 2, \"segments_short\": 0, \"segments_timeout\": 0, \"segments_spawn_error\": 0, \"segments_output_cap\": 0, \"decoder_error_lines\": 2, \"decoded_s\": 15.38, \"sampled_fraction\": 1.277, \"segments\": [{\"at_s\": 0.0, \"window_s\": 4, \"elapsed_s\": 0.066, \"exit_code\": 0, \"frames\": 40, \"decoded_s\": 4.0, \"error_lines\": 0, \"errors\": [], \"state\": \"clean\", \"expected_s\": 4.0}, {\"at_s\": 3.011, \"window_s\": 4, \"elapsed_s\": 0.066, \"exit_code\": 0, \"frames\": 34, \"decoded_s\": 3.398, \"error_lines\": 1, \"errors\": [\"[in#0/matroska,webm @ 0x7f9e271be340] Unknown-sized element at 0x19b00 inside parent with finite size\"], \"state\": \"errors\", \"expected_s\": 4.0}, {\"at_s\": 6.023, \"window_s\": 4, \"elapsed_s\": 0.067, \"exit_code\": 0, \"frames\": 24, \"decoded_s\": 4.0, \"error_lines\": 1, \"errors\": [\"[in#0/matroska,webm @ 0x7f0623c5d340] Unknown-sized element at 0x19b00 inside parent with finite size\"], \"state\": \"errors\", \"expected_s\": 4.0}, {\"at_s\": 8.046, \"window_s\": 4, \"elapsed_s\": 0.067, \"exit_code\": 0, \"frames\": 39, \"decoded_s\": 3.982, \"error_lines\": 0, \"errors\": [], \"state\": \"clean\", \"expected_s\": 4.0}], \"clean\": false, \"duration_s\": 12.046, \"full\": {\"at_s\": null, \"window_s\": null, \"elapsed_s\": 0.067, \"exit_code\": 0, \"frames\": 105, \"decoded_s\": 12.0, \"error_lines\": 1, \"errors\": [\"[in#0/matroska,webm @ 0x7fa5ad06a340] Unknown-sized element at 0x19b00 inside parent with finite size\"], \"state\": \"errors\", \"performed\": true}, \"findings\": [\"2 of 4 sampled segments produced decoder errors\", \"full decode produced 1 error line(s)\"]}}",
+     "status": "ok",
+     "tool": "decode_sample",
+     "truncated": false,
+     "wall_s": 0.441
+    }
+   ]
+  }
+ },
+ "elapsed_s": 3.49,
+ "ffmpeg": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers",
+ "ffprobe": "ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers",
+ "generation_notes": [],
+ "job": {
+  "cpu_limit": 1,
+  "image": "ghcr.io/home-operations/bazarr:1.6.2",
+  "image_id": "ghcr.io/home-operations/bazarr@sha256:17dc1cff22e99694ffbfb06555526cb47a66b362b4d6c982f06b557f7caae2bb",
+  "memory_limit": "1Gi",
+  "name": "mrh-wiring-smoke-1792456200",
+  "namespace": "dev"
+ },
+ "label": "LIVE: harness run_case in --evidence live mode with a scripted adapter (no model), real ffprobe/ffmpeg inside a CPU-limited batch Job, synthetic fixtures; not replay, not real library media",
+ "python": "3.14.7",
+ "tesseract": "not installed in the Job image"
+}

@@ -15,6 +15,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -22,10 +23,12 @@ import time
 import wave
 import io
 import concurrent.futures
+import threading
 
 import leakguard
 from pathlib import Path
 
+import evidence as evcol
 from protocol import TOOL_OUTPUT_BYTES, TOOL_TIMEOUT_S
 
 HERE = Path(__file__).resolve().parent
@@ -113,19 +116,50 @@ class Fixture:
                 'verified': (self.sha256 is None or h.hexdigest() == self.sha256), 'bytes': p.stat().st_size}
 
 
+# Evidence modes (dev-c2).  `replay` (default) is the tool layer of dev-c1 unchanged: recorded probe results, recorded observations of pinned
+# media, case-provided records, and the local ffprobe/ffmpeg route when those binaries exist.  `live` runs the bounded read-only collectors
+# of `evidence/` on the case's own local media file; a case without a local media path that exists gets `unavailable` with the reason.
+EVIDENCE_MODES = ('replay', 'live')
+# harness tool -> collector kind of `evidence/` (frame_sample and ocr share the `frames` collector; the model never sees a picture either way)
+LIVE_KINDS = {'ffprobe': 'probe', 'decode_sample': 'decode', 'frame_sample': 'frames', 'ocr': 'frames', 'audio_sample': 'audio',
+              'epub_inspect': 'epub', 'audiobook_inspect': 'audiobook'}
+# the collector finishes by itself inside the tool timeout, so a slow file is reported `partial`, not killed from outside
+LIVE_DEADLINE_S = TOOL_TIMEOUT_S - 15
+
+
 class Context:
     def __init__(self, case, fixture, scratch, runner=subprocess.run, which=shutil.which, ocr_backend=None,
-                 suite_dir=None, replay='auto'):
+                 suite_dir=None, replay='auto', evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None,
+                 evidence_bounds=None):
         assert replay in ('auto', 'off', 'force')
+        assert evidence_mode in EVIDENCE_MODES, evidence_mode
+        self.evidence_mode = evidence_mode
+        # live-mode seams: `collect` replaces evidence.collect, `evidence_runner` / `evidence_which` are the collectors' own runner and which
+        self.collect, self.evidence_runner, self.evidence_which = collect, evidence_runner, evidence_which
+        self.evidence_bounds = dict(evidence_bounds or {})
         self.case, self.fixture, self.scratch = case, fixture, Path(scratch)
         self.runner, self.which, self.ocr_backend = runner, which, ocr_backend
         self.suite_dir, self.replay, self.replay_rec = suite_dir, replay, None
         self.output_cap = None  # per-run cap on one tool result (None = protocol default)
         extra = [fixture.path] if getattr(fixture, 'path', None) else []
-        self.redact = lambda text: leakguard.redact(text, case, extra)
+        self._redact_extra = extra
+        self.name_map = []     # live folder items: [(name, neutral replacement)] for every file and folder name under the item
+        self.cancel, self.live_thread = None, None   # live mode: set by call_tool so an outer timeout can stop the collector's child
         self.forbidden_extra = extra
         self.frames, self.frame_t = {}, {}  # name -> path (None = virtual replay frame), name -> seconds
         self.scratch.mkdir(parents=True, exist_ok=True)
+
+
+def _redact(self, text):
+    """Fixture path / name redaction (leakguard), after the neutral names for the files and folders under a folder item (live mode)."""
+    if isinstance(text, str):
+        for name, repl in self.name_map:
+            for form in ({name, json.dumps(name, ensure_ascii=False)[1:-1]}):
+                text = re.sub(r'(?<![A-Za-z0-9])' + re.escape(form) + r'(?![A-Za-z0-9])', lambda m: repl, text)
+    return leakguard.redact(text, self.case, self._redact_extra)
+
+
+Context.redact = _redact
 
 
 def _num(args, key, default, lo, hi):
@@ -711,6 +745,173 @@ def tool_arr_lookup(args, ctx):
     return ToolResult('ok', {'stub': True, 'arr': arr, 'note': 'case-provided context only; no live arr call was made'}, mode='stub')
 
 
+# ---- live evidence mode (dev-c2) ----------------------------------------------------------------------------------------
+def _live_unavailable(ctx, why):
+    return ToolResult('unavailable', why + '; live evidence was not collected and nothing ran', mode='live', live_ran=False)
+
+
+def _live_gate(tool, ctx):
+    """None when live collection may run for this case, else the `unavailable` ToolResult (with the reason)."""
+    kind = ctx.fixture.kind
+    if kind == 'none':
+        return _live_unavailable(ctx, 'no media fixture behind this case')
+    if kind == 'pinned':
+        return _live_unavailable(ctx, 'this case holds only a recorded observation of real library media; no local media path exists')
+    if kind == 'remote':
+        return _live_unavailable(ctx, 'the media is on a remote host; live collection needs a local media path')
+    path = Path(ctx.fixture.path)
+    if not path.exists():
+        return _live_unavailable(ctx, 'the case names a local media path that does not exist')
+    if tool != 'audiobook_inspect' and not path.is_file():
+        return _live_unavailable(ctx, '%s needs one media file; the case path is not a regular file' % tool)
+    return None
+
+
+def _live_name_map(path):
+    """Neutral names for every file and folder under a folder item, so no part name (it can encode the answer, or hold a class word) reaches
+    the model: relative paths first, then folder names, then file names and stems.  -> [(name, replacement)] longest first."""
+    root = Path(path)
+    if not root.is_dir():
+        return []
+    files = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames.sort()
+        files += [Path(dirpath) / n for n in sorted(filenames)]
+        if len(files) >= 1000:
+            break
+    pairs, dirs = {}, {}
+    for i, f in enumerate(files[:1000], 1):
+        repl = 'part-%02d%s' % (i, f.suffix)
+        rel = f.relative_to(root)
+        pairs[rel.as_posix()] = repl
+        pairs[f.name] = repl
+        if len(f.stem) >= 4 and not f.stem.isdigit():
+            pairs[f.stem] = 'part-%02d' % i
+        for d in rel.parts[:-1]:
+            dirs.setdefault(d, 'folder-%02d' % (len(dirs) + 1))
+    pairs.update(dirs)
+    return sorted(pairs.items(), key=lambda kv: (-len(kv[0]), kv[0]))
+
+
+def _live_bounds(tool, args, ctx):
+    """-> (bounds for evidence.collect, args that were accepted but have no effect in live mode, bounds the harness cut)."""
+    bounds = {'deadline_s': LIVE_DEADLINE_S}
+    bounds.update(ctx.evidence_bounds)
+    cut = []
+    # the collector must end inside the tool timeout (the outer limit): a larger deadline is cut to it and said so
+    if bounds['deadline_s'] > LIVE_DEADLINE_S:
+        cut.append({'bound': 'deadline_s', 'requested': bounds['deadline_s'], 'used': LIVE_DEADLINE_S, 'by': 'harness tool timeout'})
+        bounds['deadline_s'] = LIVE_DEADLINE_S
+    ignored = []
+    if tool in ('decode_sample', 'frame_sample', 'audio_sample', 'ocr'):
+        for key in ('at', 'ss', 't'):
+            if key in args and args[key] != 'full':
+                _num(args, key, 0, 0, 86400 * 4)       # same argument check as replay: a bad number is a bad-arguments error
+                ignored.append(key)
+    if tool == 'audio_sample' and 'stream' in args:
+        _num(args, 'stream', 0, 0, 127)
+        ignored.append('stream')
+    if tool == 'ocr' and 'frame' in args:
+        ignored.append('frame')
+    if tool == 'decode_sample':
+        if _is_full(args):
+            bounds['full_decode'] = True
+    if tool == 'frame_sample':
+        bounds['ocr'] = 'off'
+    if tool == 'ocr':
+        bounds['ocr'] = 'auto'
+    return bounds, ignored, cut
+
+
+def _sampled_offsets(obj, found=None):
+    """Every `at_s` in a collector output (the windows or frames it actually sampled), sorted."""
+    found = set() if found is None else found
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k == 'at_s' and isinstance(v, (int, float)) and not isinstance(v, bool):
+                found.add(round(float(v), 3))
+            else:
+                _sampled_offsets(v, found)
+    elif isinstance(obj, list):
+        for v in obj:
+            _sampled_offsets(v, found)
+    return sorted(found)
+
+
+def _unmet_requests(tool, args, ignored, rec):
+    """Requests the live collector did not honor: [{arg, requested, sampled_at_s?, reason}].  A requested offset that falls inside a window the
+    collector happened to sample is honored; anything else is not."""
+    out = []
+    sampled = _sampled_offsets(rec.get('output') or {})
+    width = 0.5 if tool in ('frame_sample', 'ocr') else float((rec.get('bounds') or {}).get('segment_s') or 4)
+    for key in ('at', 'ss', 't'):
+        if key in ignored and key in args:
+            at = float(args[key])
+            if not any(s <= at < s + width for s in sampled):
+                out.append({'arg': key, 'requested': at, 'sampled_at_s': sampled[:12]})
+    if 'stream' in ignored and int(args.get('stream', 0)) != 0:
+        out.append({'arg': 'stream', 'requested': int(args['stream'])})
+    if 'frame' in ignored:
+        out.append({'arg': 'frame', 'requested': 'a frame from an earlier call'})
+    return out
+
+
+def _request_note(unmet):
+    """Generic text for the model: what was requested, that live collection did not honor it, and what was sampled instead."""
+    parts = []
+    for u in unmet:
+        if u['arg'] in ('at', 'ss', 't'):
+            where = ('; sampled instead at (seconds): %s' % ', '.join('%g' % s for s in u['sampled_at_s'])) if u.get('sampled_at_s') else '; no window was sampled'
+            parts.append('the requested offset %g s was not honored (live collection chooses its own sample windows)%s' % (u['requested'], where))
+        elif u['arg'] == 'stream':
+            parts.append('the requested audio stream %s was not honored (live collection examines the first audio streams in order)' % u['requested'])
+        else:
+            parts.append('the requested frame name was not used (live collection keeps no frames between calls)')
+    return '; '.join(parts)
+
+
+def _live_extra(rec, ignored, unmet=(), cut=()):
+    fp = rec.get('input') or {}
+    if fp.get('kind') == 'files':   # per-part size and hashes, no names (a part name can encode the answer)
+        fp = {'kind': 'files', 'count': fp.get('count'), 'partial_fingerprint_only': True,
+              'files': [{k: v for k, v in f.items() if k != 'name'} for f in (fp.get('files') or [])]}
+    else:
+        fp = {k: v for k, v in fp.items() if k != 'name'}   # a file name can encode the answer; the sizes and hashes stay
+    extra = {'evidence': {'kind': rec['tool'], 'status': rec['status'], 'coverage': rec['coverage'], 'reason': rec.get('reason'),
+                          'cause': rec.get('cause'), 'tool_version': rec.get('tool_version'), 'bounds': rec.get('bounds'),
+                          'bounds_clamped': rec.get('bounds_clamped'), 'input': fp, 'elapsed_s': rec.get('elapsed_s')}}
+    if ignored:
+        extra['args_ignored'] = ignored
+    if unmet:
+        extra['request_unmet'] = list(unmet)
+    return extra
+
+
+def live_tool(tool, args, ctx):
+    """One live collection for `tool` on the case's local media file -> ToolResult.  Read-only; the file never comes from the model."""
+    bad = _live_gate(tool, ctx)
+    if bad:
+        return bad
+    bounds, ignored, cut = _live_bounds(tool, args, ctx)
+    ctx.name_map = _live_name_map(ctx.fixture.path)
+    ctx.live_thread = threading.get_ident()
+    collect = ctx.collect or evcol.collect
+    recs = collect(ctx.fixture.path, [LIVE_KINDS[tool]], bounds, runner=ctx.evidence_runner, which=ctx.evidence_which, scratch_dir=ctx.scratch, cancel=ctx.cancel)
+    rec = dict(recs[0])
+    if cut:
+        rec['bounds_clamped'] = list(rec.get('bounds_clamped') or []) + cut
+    out_ = rec.get('output') or {}
+    if tool == 'ocr' and rec['status'] in ('ok', 'partial') and isinstance(out_, dict) and out_.get('ocr') == 'unavailable':
+        # the frames decoded, but reading text is what `ocr` is for and no OCR engine exists here: the capability is absent
+        rec.update(status='unavailable', reason='no OCR engine is installed (tesseract not found on PATH); the on-screen text was not read'
+                   + ('' if recs[0]['status'] == 'ok' else '; the frame collection was also partial'))
+    unmet = _unmet_requests(tool, args, ignored, rec) if rec['status'] != 'unavailable' or tool == 'ocr' else []
+    if unmet:
+        rec['request_note'] = _request_note(unmet)
+    tr = evcol.to_tool_result(rec, cap=ctx.output_cap or TOOL_OUTPUT_BYTES)
+    return ToolResult(tr['status'], tr['output'], mode=tr['mode'], live_ran=rec['mode'] == 'live', **_live_extra(rec, ignored, unmet, cut))
+
+
 REGISTRY = {'ffprobe': tool_ffprobe, 'decode_sample': tool_decode_sample, 'frame_sample': tool_frame_sample,
             'audio_sample': tool_audio_sample, 'ocr': tool_ocr, 'epub_inspect': tool_epub_inspect,
             'audiobook_inspect': tool_audiobook_inspect, 'arr_lookup': tool_arr_lookup}
@@ -727,27 +928,50 @@ def _failure(mode, tool, real_result):
     raise ValueError('unknown failure mode %r' % mode)
 
 
+def _stop_collector(ctx, fut):
+    """The outer tool timeout fired on a live collection: stop it so the next call starts alone (runs stay serial).  No further subprocess
+    is started (cancel), the one running is killed with its process group, and the collector thread is given a moment to return."""
+    ctx.cancel.set()
+    for _ in range(50):   # the thread may not have started its child yet, or may start one between two checks
+        if ctx.live_thread is not None:
+            evcol.kill_active(ctx.live_thread)
+        try:
+            fut.result(timeout=0.1)
+            return
+        except concurrent.futures.TimeoutError:
+            continue
+        except Exception:  # noqa: BLE001 - whatever the collector raised after being stopped is not the run's concern
+            return
+
+
 def call_tool(ctx, name, args):
     """Run one tool call; always returns a bounded dict {status, output, truncated, wall_s, ...}.  Never raises."""
     started = time.monotonic()
     inject = ctx.case.get('inject_tool_failure')
-    if name not in REGISTRY or name not in ctx.case.get('tools_available', []):
+    offered = ctx.case.get('tools_available') or []
+    if name not in REGISTRY or name not in offered:
         # the capability is absent for this case: `unavailable`, and the call itself is a protocol violation (recorded by the runner)
-        res = ToolResult('unavailable', 'tool %s is not offered for this case; nothing ran. Offered: %s' % (repr(name) if name in REGISTRY else 'requested', ', '.join(ctx.case.get('tools_available', [])) or 'none'),
+        res = ToolResult('unavailable', 'tool %s is not offered for this case; nothing ran. Offered: %s' % (repr(name) if name in REGISTRY else 'requested', ', '.join(offered) or 'none'),
                          protocol_violation='tool_not_offered')
     elif inject and inject.get('tool') == name and inject.get('mode', 'error') in ('error', 'timeout'):
         res = _failure(inject['mode'], name, None)  # nothing is run: the failure is the whole result
     else:
         def work():
+            if ctx.evidence_mode == 'live' and name in LIVE_KINDS:
+                return live_tool(name, args, ctx)
             if ctx.fixture.kind == 'pinned' and name != 'arr_lookup':
                 return _pinned(name, args, ctx)
             return REGISTRY[name](args, ctx)
+        ctx.cancel = threading.Event() if ctx.evidence_mode == 'live' else None
+        ctx.live_thread = None
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         fut = pool.submit(work)
         try:
             res = fut.result(timeout=TOOL_TIMEOUT_S + 5)
         except concurrent.futures.TimeoutError:
             res = ToolResult('timeout', '%s exceeded the %d s tool timeout' % (name, TOOL_TIMEOUT_S))
+            if ctx.cancel is not None:
+                _stop_collector(ctx, fut)
         except ValueError as e:
             res = ToolResult('error', 'bad arguments: %s' % e)
         except Exception as e:  # noqa: BLE001 - tool boundary
@@ -757,5 +981,6 @@ def call_tool(ctx, name, args):
         if inject and inject.get('tool') == name:
             res = _failure(inject.get('mode', 'error'), name, res)
     out = res.bounded(ctx.redact, cap=ctx.output_cap)
+    out['evidence_mode'] = ctx.evidence_mode   # record only; result_message (what the model sees) never carries it
     out['wall_s'] = round(time.monotonic() - started, 3)
     return out

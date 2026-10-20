@@ -12,6 +12,7 @@ import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -101,6 +102,28 @@ class RunResult:
         self.elapsed_s, self.stdout_truncated, self.stderr_truncated, self.error = elapsed_s, stdout_truncated, stderr_truncated, error
 
 
+# Child process groups that are running right now, by the thread that started them.  `kill_active(thread_id)` lets a caller whose own
+# timeout fired (the harness' outer tool timeout) end the child instead of leaving it running next to the next call.
+_ACTIVE = {}
+_ACTIVE_LOCK = threading.Lock()
+
+
+def kill_active(thread_id):
+    """SIGKILL the process group the given thread is waiting on, if any.  True when something was signalled."""
+    with _ACTIVE_LOCK:
+        proc = _ACTIVE.get(thread_id)
+    if proc is None:
+        return False
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except OSError:
+        try:
+            proc.kill()
+        except OSError:
+            return False
+    return True
+
+
 def subprocess_runner(argv, *, timeout_s, max_stdout, max_stderr, cwd=None, max_file=0):
     """Run argv (no shell) at nice 19, in its own process group, with a hard timeout and capped output.
 
@@ -125,6 +148,8 @@ def subprocess_runner(argv, *, timeout_s, max_stdout, max_stderr, cwd=None, max_
         except OSError as e:
             return RunResult(error='%s: %s' % (type(e).__name__, e), elapsed_s=time.monotonic() - started)
         timed_out = False
+        with _ACTIVE_LOCK:
+            _ACTIVE[threading.get_ident()] = proc
         try:
             proc.wait(timeout=timeout_s)
         except subprocess.TimeoutExpired:
@@ -134,6 +159,9 @@ def subprocess_runner(argv, *, timeout_s, max_stdout, max_stderr, cwd=None, max_
             except OSError:
                 proc.kill()
             proc.wait()
+        finally:
+            with _ACTIVE_LOCK:
+                _ACTIVE.pop(threading.get_ident(), None)
         elapsed = time.monotonic() - started
         out.seek(0)
         err.seek(0)
@@ -153,8 +181,9 @@ class Deadline:
 class Ctx:
     """Everything a collector needs for one collect() call.  Not shared between calls."""
 
-    def __init__(self, path, bounds, runner, which, scratch, clock=time.monotonic):
+    def __init__(self, path, bounds, runner, which, scratch, clock=time.monotonic, cancel=None):
         self.path, self.bounds, self.runner, self.which, self.scratch, self.clock = str(path), bounds, runner, which, Path(scratch), clock
+        self.cancel = cancel   # threading.Event: once set, no further subprocess is started
         self.versions, self.cache = {}, {}
         self.names = {self.path, os.path.basename(self.path)}
         self._n = 0
@@ -164,6 +193,8 @@ class Ctx:
 
     def run(self, argv, timeout_s=None, deadline=None, max_file=0):
         """-> RunResult.  The timeout never exceeds the time left on the collector's deadline."""
+        if self.cancel is not None and self.cancel.is_set():
+            return RunResult(error='cancelled: the caller\'s timeout was reached', elapsed_s=0.0)
         t = float(timeout_s or self.bounds['timeout_s'])
         if deadline is not None:
             t = min(t, max(0.1, deadline.left()))
@@ -211,11 +242,14 @@ def fingerprint(path, window=MIB):
     p = Path(path)
     if not p.is_file():
         return None
-    size = p.stat().st_size
-    with open(p, 'rb') as f:
-        head = f.read(min(window, size))
-        f.seek(max(0, size - window))
-        tail = f.read(window)
+    try:
+        size = p.stat().st_size
+        with open(p, 'rb') as f:
+            head = f.read(min(window, size))
+            f.seek(max(0, size - window))
+            tail = f.read(window)
+    except OSError:   # unreadable (permissions, I/O): no fingerprint; the collector then reports the failure itself
+        return None
     return {'name': p.name, 'bytes': size, 'head_1m_sha256': hashlib.sha256(head).hexdigest(),
             'tail_1m_sha256': hashlib.sha256(tail).hexdigest(), 'partial_fingerprint_only': True}
 
@@ -260,14 +294,14 @@ def tool_error(tool, ctx, started, reason, **kw):
 def to_tool_result(rec, cap=8192):
     """A record in the harness' tool-result shape ({status, output text, truncated, mode, wall_s, ...}).
 
-    The harness' ToolResult knows ok|partial|error|timeout only, so `unavailable` is delivered as `error`
-    with `evidence_status: "unavailable"` kept beside it (nothing is relabelled healthy).
+    The status is passed through unchanged: `unavailable` is a first-class tool-result status in the harness (dev-c2), so it is
+    no longer relabelled `error` with an `evidence_status` beside it.  Nothing is relabelled healthy.
 
     The text is one JSON object whose keys are in priority order: status, reason, cause, replay_note, bounds_clamped,
     coverage, stderr and the rest first, `output` last.  When the text exceeds `cap`, `output` is the part that is cut
     (it becomes a string ending in a marker), so a reader never loses the status, the reason or what was not verified."""
     status = rec['status']
-    order = ('status', 'reason', 'cause', 'mode', 'tool', 'tool_version', 'replay_note', 'recorded_from', 'bounds_clamped', 'coverage',
+    order = ('status', 'reason', 'cause', 'request_note', 'mode', 'tool', 'tool_version', 'replay_note', 'recorded_from', 'bounds_clamped', 'coverage',
              'stderr', 'bounds', 'elapsed_s')
     body = {k: rec[k] for k in order if k in rec}
     dump = lambda d: json.dumps(d, ensure_ascii=False)
@@ -292,8 +326,8 @@ def to_tool_result(rec, cap=8192):
                 break
             room -= excess + 4
     text = dump(dict(body, output=output))
-    out = {'status': 'error' if status == 'unavailable' else status, 'output': text, 'truncated': truncated,
-           'mode': rec['mode'], 'wall_s': rec['elapsed_s'], 'tool': rec['tool'], 'evidence_status': status}
+    out = {'status': status, 'output': text, 'truncated': truncated,
+           'mode': rec['mode'], 'wall_s': rec['elapsed_s'], 'tool': rec['tool']}
     if rec.get('tool_version'):
         out['tool_version'] = rec['tool_version']
     return out

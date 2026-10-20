@@ -1,0 +1,51 @@
+{
+  "aborted": null,
+  "cases_planned": 5,
+  "config_hash": "2c3f488ca7b899d9d54161b7014f7ea32a086227b364341726441c030e35d529",
+  "cost_usd": 0.006227,
+  "evidence": {
+    "gaps": 1,
+    "gaps_by_type": {
+      "not_run": 1
+    },
+    "tool_calls_by_evidence_mode": {
+      "replay": 4
+    }
+  },
+  "evidence_mode": "replay",
+  "harness_git": {
+    "branch": "agent/mrh-wiring-1019",
+    "dirty": false,
+    "sha": "dbb535485bfe3fda4c41a19124c1e335df807df6"
+  },
+  "harness_version": "dev-c2",
+  "incomplete_records": {},
+  "latency_s_per_case": {
+    "max": 13.943,
+    "median": 7.941,
+    "min": 4.324
+  },
+  "prompt": {
+    "sha256": "351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a",
+    "version": "v2"
+  },
+  "records_complete": true,
+  "records_written": 5,
+  "requested_model": "claude-haiku-5-5",
+  "response_model_ids": [
+    "claude-haiku-5-5"
+  ],
+  "run_id": "smoke-dev-c2-claude-haiku-5-5-v2",
+  "statement": "Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; this harness executed no write and changed no media, *arr, Plex or library state.",
+  "validity": {
+    "adapter_errors": 0,
+    "crashes": 0,
+    "final_decision_valid": 5,
+    "first_try_failure_modes": {},
+    "first_try_valid": 3,
+    "forced": 0,
+    "protocol_violations": 0,
+    "repaired": 2
+  },
+  "writes_executed": 0
+}

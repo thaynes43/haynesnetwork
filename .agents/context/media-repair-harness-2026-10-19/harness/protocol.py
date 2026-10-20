@@ -3,7 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 
-HARNESS_VERSION = 'dev-c1'  # recorded in every run record and manifest
+HARNESS_VERSION = 'dev-c2'  # recorded in every run record and manifest
 PROTOCOL_VERSION = 'v1'  # the v1 turn protocol (prompt v1); prompt v2 has its own, see PROMPT_VERSIONS
 PROMPT_VERSIONS = ('v1', 'v2')
 DEFAULT_PROMPT = 'v1'  # stays v1 until checkpoint 2c
