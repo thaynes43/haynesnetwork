@@ -101,7 +101,8 @@ def protocol_of(prompt_version):
 
 def get_prompt(version=DEFAULT_PROMPT):
     """-> {'version', 'text', 'sha256'}.  v1 is SYSTEM_PROMPT above (unchanged, so its sha matches the checkpoint 1
-    records); v2 is prompts/v2.txt, sent exactly as the file reads (one trailing newline removed)."""
+    records); v2 is prompts/v2.txt and v3 (dev-c3) is prompts/v3.txt, each sent exactly as its file reads (one trailing newline removed).
+    v3 is new text on the v2 turn protocol, see protocol_of."""
     if version == 'v1':
         text = SYSTEM_PROMPT
     elif version in ('v2', 'v3'):

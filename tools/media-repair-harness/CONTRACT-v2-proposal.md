@@ -124,7 +124,7 @@ gaps_cited[]:   ids of gaps whose `call` appears in the decision's evidence_refs
 
 ## 6. Write actions: proposal, execution, verification
 
-The harness executes no write: no change to media, Sonarr, Radarr, Plex, Lidarr, Bookshelf or any library. Every record carries `action_audit` (**new in dev-c1**), also written as
+The harness executes no write: no change to media, Sonarr, Radarr, Plex, Lidarr, Bookshelf, LazyLibrarian or any library. Every record carries `action_audit` (**new in dev-c1**), also written as
 one line per case to `audit.jsonl`:
 
 ```

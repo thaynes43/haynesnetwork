@@ -3,6 +3,7 @@
 no model, no network.  What these tests can check is what the HARNESS does with the rules' evidence types and that the prompt TEXT carries
 the rules and names no case; whether a model follows the text is measured by the evaluator, not here."""
 import json
+import os
 import re
 import tempfile
 import unittest
@@ -20,6 +21,16 @@ HERE = Path(__file__).resolve().parent
 REGRESSION = HERE / 'testdata' / 'regression'
 CTX = th.REPO_ROOT / '.agents' / 'context' / 'media-repair-harness-2026-10-19'
 V11 = CTX / 'suite-dev-v1.1'
+
+
+def need_both_suites():
+    """dev-v1 and dev-v1.1.  A missing suite SKIPS, except under MRH_REQUIRE_SUITE=1 (CI), where it FAILS: 73 + 73 = 146 cases must be there."""
+    th.require_suite()
+    if not (V11 / 'cases').is_dir() or not any((V11 / 'cases').glob('*.json')):
+        if os.environ.get('MRH_REQUIRE_SUITE') == '1':
+            raise AssertionError('dev-v1.1 suite not found at %s; MRH_REQUIRE_SUITE=1 forbids skipping' % V11)
+        raise unittest.SkipTest('dev-v1.1 suite not found')
+    return [th.SUITE, V11]
 
 
 def load(cid):
@@ -108,8 +119,7 @@ class PromptV3(unittest.TestCase):
         self.assertNotIn('"', self.v3.split('EVIDENCE RULES')[1])   # no quoted example strings in the rules
 
     def test_the_text_names_no_case_of_either_dev_suite(self):
-        th.require_suite()
-        dirs = [th.SUITE] + ([V11] if (V11 / 'cases').is_dir() else [])
+        dirs = need_both_suites()
         n = 0
         for d in dirs:
             for c in suite_cases(d):
@@ -126,7 +136,18 @@ class PromptV3(unittest.TestCase):
                 for t in tokens:
                     if len(t) >= 6:
                         self.assertIsNone(word(t).search(self.v3), (cid, t))
-        self.assertGreaterEqual(n, 73)
+        self.assertEqual(n, 146)   # 73 dev-v1 + 73 dev-v1.1
+
+    def test_no_dev_only_ruling_is_restated_and_the_general_qualifiers_are_there(self):
+        # RULINGS-v1.1 C3 is case-specific and dev-only: its series-prefix clause must not be in the shipped text
+        for gone in ('series prefix', 'naming at most', 'subtitle, article'):
+            self.assertNotIn(gone, self.v3, gone)
+        # rule 2 is qualified: clean integrity evidence never outweighs disagreeing content or identity evidence
+        self.assertIn('Clean integrity evidence never outweighs content evidence', self.v3)
+        self.assertIn('the item is not healthy on integrity alone, and rule 4 applies', self.v3)
+        # a result that did not run to completion is not support, not even as a mention
+        for marker in ('must not be listed in evidence_refs as support', 'leave its id out of evidence_refs'):
+            self.assertIn(marker, self.v3, marker)
 
     def test_a_v3_record_says_so(self):
         rec, ad = run_v3('rg-v3-ebook-healthy-001', [call('epub_inspect'), th.decision('healthy', 'none', refs=['t1'])])
@@ -186,10 +207,21 @@ class ManagingAppLazyLibrarian(unittest.TestCase):
         got, a = self.met(self.ctx_case('lazylibrarian'), d)
         self.assertNotIn('claim:lazylibrarian_not_in_context', a['unmet'])
 
+    def test_the_format_word_is_not_an_identifier(self):
+        case = self.ctx_case('lazylibrarian', {'bookId': 'll-990001', 'format': 'audiobook', 'note': 'fictional ids'})
+        ids, _, _ = AU.item_identifiers(case)
+        self.assertEqual([v for k, v in ids if k == 'id'], ['ll 990001'])      # the format word and the note are not identifiers
+        status, _ = AU.target_identity(case, 'the audiobook')
+        self.assertNotEqual(status, 'identified')
+        status, _ = AU.target_identity(case, 'ebook')
+        self.assertNotEqual(status, 'identified')
+        self.assertEqual(AU.target_identity(case, 'll-990001')[0], 'identified')   # the real id still identifies
+        # the other id keys keep working (series / episode / movie ids are not touched by the skip list)
+        tv = v2_case(context={'title': 'Some Show', 'expected': {}, 'arr': {'app': 'sonarr', 'ids': {'seriesId': 880001, 'episodeFileId': 880203}}, 'notes_for_model': 'n'})
+        self.assertEqual(AU.target_identity(tv, 'file 880203')[0], 'identified')
+
     def test_the_v11_suite_uses_only_app_values_the_harness_knows(self):
-        th.require_suite()
-        if not (V11 / 'cases').is_dir():
-            self.skipTest('dev-v1.1 suite not found')
+        need_both_suites()
         apps = {((c.get('context') or {}).get('arr') or {}).get('app') for c in suite_cases(V11)}
         self.assertIn('lazylibrarian', apps)
         self.assertEqual({a for a in apps if a and a not in AU.ARR_APPS}, set())

@@ -68,6 +68,9 @@ def _context_texts(case):
 
 
 BROAD_SCOPE = re.compile(r'\b(all|every|each|any|entire|whole|everything|library|libraries|indexers?|series|seasons?|collection|catalog|catalogue)\b')
+# arr.ids keys that are descriptive text, not identifiers: `format` is 'ebook' / 'audiobook' (CONTRACT-v1.1), so a target that merely contains the word
+# 'audiobook' must not read as identified.  Everything else under arr.ids stays an identifier (bookId, movieFileId, episodeId, releaseId, ...).
+ID_SKIP_KEYS = ('note', 'format')
 ID_MIN_LEN = 4   # an id shorter than this ("1", "12") is a number, not an identifier
 
 
@@ -91,7 +94,7 @@ def item_identifiers(case):
         if len(stem) >= ID_MIN_LEN:
             ids.append(('filename', stem))
     for k, v in ((ctx.get('arr') or {}).get('ids') or {}).items():
-        if k != 'note' and isinstance(v, (str, int)) and not isinstance(v, bool) and len(_norm(v)) >= ID_MIN_LEN:
+        if k not in ID_SKIP_KEYS and isinstance(v, (str, int)) and not isinstance(v, bool) and len(_norm(v)) >= ID_MIN_LEN:
             ids.append(('id', _norm(v)))
     names = [x for x in (ctx.get('title'), exp.get('title'), exp.get('series')) if isinstance(x, str) and len(_norm(x)) >= ID_MIN_LEN]
     se, ep = exp.get('season'), exp.get('episode')
