@@ -135,8 +135,10 @@ class View:
         if mk and cat['episodes']:
             return 'agree' if any(m in cat['episodes'] for m in mk) else 'disagree'
         names = cat['titles'] + cat['episode_titles'] + (cat['authors'] if typed in ('dc_creator', 'tag_artist') else [])
-        if any(contains(text, n) for n in names) or any(contains(n, text) for n in names):
+        if any(contains(text, n) for n in names):
             return 'agree'
+        if typed is not None and len(norm(text).split()) >= 2 and any(contains(n, text) for n in names):
+            return 'agree'          # a typed field that is a run of two or more tokens of a catalog name ("Lantern Road"); never one word, never free text
         if typed is not None and names:
             return 'disagree'
         return 'not_comparable'
@@ -204,19 +206,26 @@ def check_named(v, check, when_support=False):
             return MET, ['case item'], 'unmanaged item: the case item itself'
         fname = v.context.get('filename')
         ids = (v.context.get('arr') or {}).get('ids') or {}
-        for o in v.of_tool('arr_lookup'):
+        cat = v.catalog()
+        links, other = [], []
+        for o in v.of_tool('arr_lookup'):           # every record is read (order independent); a record of ANOTHER item (a destination) is not about the source
             f = v.facts.get(o['id']) or {}
+            ep = f.get('episode') if isinstance(f, dict) else None
+            if isinstance(ep, dict) and cat['episodes'] and (ep.get('season'), ep.get('episode')) not in cat['episodes']:
+                continue
             fl = f.get('file') if isinstance(f, dict) else None
             if isinstance(fl, dict):
                 rp = fl.get('relativePath') or fl.get('path')
-                if isinstance(rp, str) and fname and norm(rp.split('/')[-1]) == norm(fname):
-                    return MET, [o['id']], 'the managed record links a file of this name'
                 fid = fl.get('id')
-                if fid is not None and fid in [ids.get(k) for k in ('episodeFileId', 'movieFileId', 'bookId')]:
-                    return MET, [o['id']], 'the managed record links this file id'
-                if isinstance(rp, str) and fname:
-                    return UNMET, [o['id']], 'the managed record links a different file name'
-        return UNKNOWN, [], 'no shown managed record states which file it links'
+                if (isinstance(rp, str) and fname and norm(rp.split('/')[-1]) == norm(fname)) or (fid is not None and fid in [ids.get(k) for k in ('episodeFileId', 'movieFileId', 'bookId')]):
+                    links.append(o['id'])
+                elif isinstance(rp, str) and fname:
+                    other.append(o['id'])
+        if links:
+            return MET, sorted(links), 'the managed record of this item links this file'
+        if other:
+            return UNMET, sorted(other), 'the managed record of this item links a different file'
+        return UNKNOWN, [], 'no shown managed record of this item states which file it links'
     if check == 'identity_disagreement':
         level, rows = v.identity()
         refs = [r['ref'] for r in rows if r['kind'] in ('content', 'report_content') and r['state'] == 'disagree']
@@ -250,23 +259,25 @@ def check_named(v, check, when_support=False):
             if kind in ('content', 'report_content'):
                 for m in markers(text):
                     if cat['episodes'] and m not in cat['episodes']:
-                        for o in v.of_tool('arr_lookup'):
-                            ep = (v.facts.get(o['id']) or {}).get('episode')
-                            if isinstance(ep, dict) and (ep.get('season'), ep.get('episode')) == m:
-                                return MET, [ref, o['id']], 'content names another item that the catalog lists'
+                        hits = sorted(o['id'] for o in v.of_tool('arr_lookup') if isinstance((v.facts.get(o['id']) or {}).get('episode'), dict)
+                                      and ((v.facts.get(o['id']) or {})['episode'].get('season'), (v.facts.get(o['id']) or {})['episode'].get('episode')) == m)
+                        if hits:
+                            return MET, [ref, hits[0]], 'content names another item that the catalog lists'
                         return UNKNOWN, [ref], 'content names another item; no shown catalog record lists it'
         return UNMET, [], 'no content observation names another item'
     if check == 'free_slot':
-        for o in v.of_tool('arr_lookup'):
-            f = v.facts.get(o['id']) or {}
-            p = v.presence.get(o['id']) or {}
-            if not isinstance(f, dict) or not isinstance(f.get('episode'), dict):
-                continue
-            if f.get('hasFile') is False or p.get('file') in (PR.NULL, PR.EMPTY) or (f['episode'].get('hasFile') is False):
-                return MET, [o['id']], 'the destination record shows no linked file'
-            if p.get('file') == PR.POPULATED or f['episode'].get('hasFile') is True:
-                return UNMET, [o['id']], 'the destination record shows a linked file (it would be overwritten)'
-        return UNKNOWN, [], 'no shown record states whether the destination slot is free (absent is not evidence)'
+        st, refs, _ = check_named(v, 'destination_evidenced')
+        if st != MET:
+            return UNKNOWN, [], 'no evidenced destination item, so no record is the destination slot'
+        dest = refs[1]
+        f = v.facts.get(dest) or {}
+        p = v.presence.get(dest) or {}
+        ep = f.get('episode') if isinstance(f.get('episode'), dict) else {}
+        if p.get('file') == PR.POPULATED or ep.get('hasFile') is True or f.get('hasFile') is True:
+            return UNMET, [dest], 'the destination record shows a linked file (it would be overwritten)'
+        if f.get('hasFile') is False or p.get('file') in (PR.NULL, PR.EMPTY) or ep.get('hasFile') is False:
+            return MET, [dest], 'the destination record shows no linked file'
+        return UNKNOWN, [dest], 'the destination record does not state whether a file is linked (absent is not evidence)'
     if check == 'old_value':
         return (MET, ['context.filename'], '') if PR.state_of(v.context.get('filename')) == PR.POPULATED else (UNMET, [], 'the current name is not shown')
     if check == 'new_value':

@@ -21,9 +21,10 @@ TARGET_KINDS = {'blocklist_and_search': ('release_of_source', ('source_ref',)), 
                 'rename': ('rename_of_source', ('old_value', 'new_value')), 'convert': ('isolated_copy', ('allocated_by',))}
 
 
-def check_contract_combination(prompt_version, evidence_format=None, protocol=None, audit=None, target_semantics=None, guards=None, declared=PROMPTS_DECLARING_V3):
+def check_contract_combination(prompt_version, evidence_format=None, protocol=None, audit=None, target_semantics=None, guards=None, declared=PROMPTS_DECLARING_V3,
+                               schema=None):
     """Raise ValueError for a combination that mixes contract v3 with anything else.  `declared` lists the prompts that declare contract v3."""
-    parts = {'evidence_format': evidence_format, 'protocol': protocol, 'audit': audit, 'target_semantics': target_semantics}
+    parts = {'evidence_format': evidence_format, 'protocol': protocol, 'audit': audit, 'target_semantics': target_semantics, 'schema': schema}
     v3 = {k for k, val in parts.items() if val == CONTRACT[k]}
     if not v3:
         RUN.check_option_combination(prompt_version, evidence_format, guards)       # the existing rule, unchanged
@@ -107,10 +108,10 @@ def audit_v3(decision, observations, context=None, media_type=None, capabilities
         if p.get('when_class') and p['when_class'] != cls:
             continue
         pre.append({k: p[k] for k in ('id', 'check', 'state', 'refs', 'detail')})
-    if action == 'remap':           # the destination's free-slot evidence must be the record the proposal cites
+    if action == 'remap':           # the cited slot and its free-slot evidence must both be the record of the destination the content names
         fs = next((p for p in pre if p['check'] == 'free_slot'), None)
-        if fs and fs['state'] == PQ.MET and tgt.get('slot_free_ref') not in fs['refs']:
-            fs.update(state=PQ.UNKNOWN, detail='the cited slot_free_ref is not the record that shows the slot free')
+        if fs and fs['state'] == PQ.MET and not (tgt.get('slot_ref') in fs['refs'] and tgt.get('slot_free_ref') in fs['refs']):
+            fs.update(state=PQ.UNKNOWN, detail='the cited slot_ref / slot_free_ref is not the destination record that shows the slot free')
     classes = RB.ACTIONS[action]['classes']
     pre.insert(0, {'id': 'A-CLASS', 'check': 'class_for_action', 'state': PQ.MET if cls in classes else PQ.UNMET, 'refs': [], 'detail': 'classes for %s: %s' % (action, ', '.join(classes))})
     out['prerequisites'] = pre

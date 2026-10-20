@@ -134,6 +134,25 @@ class Identity(unittest.TestCase):
         cards = ob('e3', 'prior_record', {'evidence_method': 'reported embedded subtitle opening cards', 'observed': {'content_titles': ['Totally Different Work']}})
         self.assertEqual(states(PQ.check([cards], ctx(), 'tv'), 'diagnosis', 'identity_mismatch'), {'D-ID-1': 'met'})
 
+    def test_a_fragment_of_a_catalog_name_is_not_agreement(self):
+        for text in ('SHOW', 'THE', 'Part'):
+            res = PQ.check([ob('e2', 'ocr', {'t_s': 1.0, 'text': text})], ctx(), 'tv')
+            self.assertEqual(res['identity']['level'], 'uncontradicted', text)
+        two = dict(PROBE, format=dict(PROBE['format'], tags={'title': 'Show Lamp'}))
+        c = ctx(expected={'title': 'The Alpha Show Lamp', 'runtime_s': 8})
+        self.assertEqual([r['state'] for r in PQ.check([ob('e1', 'ffprobe', two)], c, 'audiobook')['identity']['comparisons'] if r['field'] == 'tag_title'], ['agree'])
+        one = dict(PROBE, format=dict(PROBE['format'], tags={'title': 'Lamp'}))
+        self.assertEqual([r['state'] for r in PQ.check([ob('e1', 'ffprobe', one)], c, 'audiobook')['identity']['comparisons'] if r['field'] == 'tag_title'], ['disagree'])
+
+    def test_source_binding_reads_every_record_of_this_item(self):
+        dest_first = [ob('e5', 'arr_lookup', arr(file={'relativePath': 'Alpha Show - S01E03 - Salt.mkv'}, episode={'season': 1, 'episode': 3})),
+                      ob('e4', 'arr_lookup', arr(file={'relativePath': 'Alpha Show - S01E02 - Lamp.mkv'}, episode={'season': 1, 'episode': 2}))]
+        for obs in (dest_first, list(reversed(dest_first))):
+            self.assertEqual(states(PQ.check(obs, ctx(), 'tv'), 'actions', 'blocklist_and_search')['A-BLK-2'], 'met')
+        self.assertEqual(states(PQ.check(dest_first[:1], ctx(), 'tv'), 'actions', 'blocklist_and_search')['A-BLK-2'], 'unknown')
+        by_id = [ob('e4', 'arr_lookup', arr(file={'relativePath': 'renamed.mkv', 'id': 7}, episode={'season': 1, 'episode': 2}))]
+        self.assertEqual(states(PQ.check(by_id, ctx(), 'tv'), 'actions', 'blocklist_and_search')['A-BLK-2'], 'met')
+
     def test_free_text_that_mentions_nothing_is_not_a_disagreement(self):
         res = PQ.check([ob('e2', 'ocr', {'t_s': 1.0, 'text': 'EXIT'})], ctx(), 'tv')
         self.assertEqual(res['identity']['level'], 'uncontradicted')
@@ -236,6 +255,28 @@ class SourceAndTargets(unittest.TestCase):
         silent[2] = ob('e5', 'arr_lookup', {'app': 'sonarr', 'episode': {'season': 1, 'episode': 3, 'title': 'Salt'}})
         self.assertEqual({p['id']: p['state'] for p in TG.audit_v3(d, silent, ctx(), 'tv')['prerequisites']}['A-MAP-4'], 'unknown')   # absent is not evidence
 
+    def remap_obs(self, dest_file, order=None):
+        src = ob('e4', 'arr_lookup', arr(file={'relativePath': 'Alpha Show - S01E02 - Lamp.mkv'}, episode={'season': 1, 'episode': 2, 'title': 'Lamp'}))
+        dest = ob('e5', 'arr_lookup', dict(arr(episode={'season': 1, 'episode': 3, 'title': 'Salt'}), file=dest_file))     # an explicit null file: no linked file
+        other = ob('e6', 'arr_lookup', dict(arr(episode={'season': 1, 'episode': 9, 'title': 'Far'}), file=None))
+        obs = [ob('e3', 'ocr', {'t_s': 1.0, 'text': 'ALPHA SHOW / S01E03 / SALT'}), src, dest, other]
+        return [obs[i] for i in order] if order else obs
+
+    def test_free_slot_reads_the_destination_record_whatever_the_order(self):
+        d = self.decision('remap', 'identity_mismatch', {'kind': 'destination_slot', 'slot_ref': 'e5', 'slot_free_ref': 'e5'})
+        for order in (None, [0, 2, 1, 3], [3, 1, 2, 0], [2, 3, 0, 1]):
+            got = {p['id']: p['state'] for p in TG.audit_v3(d, self.remap_obs(None, order), ctx(), 'tv')['prerequisites']}
+            self.assertEqual((got['A-MAP-2'], got['A-MAP-3'], got['A-MAP-4']), ('met', 'met', 'met'), order)       # the source's own linked file is not the destination
+            occ = {p['id']: p['state'] for p in TG.audit_v3(d, self.remap_obs({'relativePath': 'x.mkv'}, order), ctx(), 'tv')['prerequisites']}
+            self.assertEqual(occ['A-MAP-4'], 'unmet', order)
+
+    def test_a_free_record_of_another_item_cannot_stand_for_an_occupied_destination(self):
+        d = self.decision('remap', 'identity_mismatch', {'kind': 'destination_slot', 'slot_ref': 'e5', 'slot_free_ref': 'e6'})
+        got = {p['id']: p['state'] for p in TG.audit_v3(d, self.remap_obs({'relativePath': 'x.mkv'}), ctx(), 'tv')['prerequisites']}
+        self.assertEqual(got['A-MAP-4'], 'unmet')
+        wrong_cite = {p['id']: p['state'] for p in TG.audit_v3(d, self.remap_obs(None), ctx(), 'tv')['prerequisites']}
+        self.assertEqual(wrong_cite['A-MAP-4'], 'unknown')          # the destination is free, but the proposal cites another record for it
+
     def test_rename_needs_old_and_new_values(self):
         self.assertTrue(TG.validate_decision_v3(self.decision('rename', 'metadata_naming', {'kind': 'rename_of_source', 'old_value': 'a.mkv', 'new_value': 'a.mkv'})))
         self.assertTrue(TG.validate_decision_v3(self.decision('rename', 'metadata_naming', {'kind': 'rename_of_source', 'old_value': 'a.mkv'})))
@@ -244,7 +285,7 @@ class SourceAndTargets(unittest.TestCase):
 
 
 class Versions(unittest.TestCase):
-    V3 = dict(evidence_format='v3', protocol='turn-v3', audit='v3', target_semantics='v3')
+    V3 = dict(evidence_format='v3', protocol='turn-v3', audit='v3', target_semantics='v3', schema='decision-v3')
 
     def test_unchanged_v5_with_the_v3_target_semantics_is_refused(self):
         with self.assertRaises(ValueError) as e:
@@ -262,6 +303,14 @@ class Versions(unittest.TestCase):
         TG.check_contract_combination('v6-draft', declared=('v6-draft',), **self.V3)          # a prompt that declares v3: accepted
         with self.assertRaises(ValueError):
             TG.check_contract_combination('v6-draft', declared=('v6-draft',), guards='v3', **self.V3)
+
+    def test_the_decision_schema_is_part_of_the_one_version(self):
+        mixed = dict(self.V3, schema='decision-v2')
+        with self.assertRaises(ValueError) as e:
+            TG.check_contract_combination('v6-draft', declared=('v6-draft',), **mixed)
+        self.assertIn('schema', str(e.exception))
+        with self.assertRaises(ValueError):
+            TG.check_contract_combination('v5', evidence_format='v2', guards='v3', schema='decision-v3')
 
     def test_without_v3_the_existing_rules_decide_unchanged(self):
         TG.check_contract_combination('v5', evidence_format='v2', guards='v3')
