@@ -1,0 +1,418 @@
+{
+  "action_audit": {
+    "audit": {
+      "preconditions": [
+        "e1.f1: located package_damage at package/zip_open, known_defect true",
+        "e2: lazylibrarian manages bookId ll-990504 for this work"
+      ],
+      "readback": "Read the lazylibrarian record for ll-990504: the release is in the blocklist and a format search is queued.",
+      "target": "Tolland, Mira - [Lantern Cycle 01] The Lantern Road.epub",
+      "verify": "If the blocklist entry is absent or the replacement search does not start, escalate; the blocklist entry can be removed to undo."
+    },
+    "audit_version": "v2",
+    "claimed_preconditions": [
+      "e1.f1: located package_damage at package/zip_open, known_defect true",
+      "e2: lazylibrarian manages bookId ll-990504 for this work"
+    ],
+    "executed": false,
+    "execution_status": "proposed_not_executed",
+    "intent": {
+      "action": "blocklist_and_search",
+      "class": "corrupt_file",
+      "target": "Tolland, Mira - [Lantern Cycle 01] The Lantern Road.epub"
+    },
+    "note": "recorded proposal only; this harness never executes a write, and nothing was changed",
+    "outcome_step": null,
+    "preconditions": [
+      {
+        "basis": "computed",
+        "detail": "class 'corrupt_file', blocklist_and_search is for identity_mismatch/corrupt_file",
+        "id": "class_matches_action",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "target='Tolland, Mira - [Lantern Cycle 01] The Lantern Road.epub'",
+        "id": "target_named",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "the target contains the case's own filename/title",
+        "id": "target_in_context",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "cites ['e1', 'e1', 'e2']; unknown refs []",
+        "id": "positive_evidence_cited",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "cited refs that did not run to completion (failure to run, timeout, partial, unavailable): []",
+        "id": "no_failed_tool_cited",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "cited results usable as support (ok, or damage the tool itself reported): ['e1', 'e2']",
+        "id": "cited_evidence_supports",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "context.arr.app='lazylibrarian'",
+        "id": "arr_app_present",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "a v2 write decision must carry the audit object",
+        "id": "audit_object_present",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "audit.target='Tolland, Mira - [Lantern Cycle 01] The Lantern Road.epub' target='Tolland, Mira - [Lantern Cycle 01] The Lantern Road.epub'",
+        "id": "audit_target_matches",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "the audit names what is read back and how success is checked",
+        "id": "readback_and_verify_stated",
+        "met": true
+      }
+    ],
+    "preconditions_unmet": false,
+    "readback_plan": "Read the lazylibrarian record for ll-990504: the release is in the blocklist and a format search is queued.",
+    "target": "Tolland, Mira - [Lantern Cycle 01] The Lantern Road.epub",
+    "unmet": [],
+    "verification_plan": "If the blocklist entry is absent or the replacement search does not start, escalate; the blocklist entry can be removed to undo.",
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "epub-corrupt-002",
+  "case_sha256": "ff4e7f03f1f40eed0e9a3e2f1af9f9bd79f8aa100372fb3a0a6bab81f6aa6113",
+  "config_hash": "7b731df508fc1b9e64d17696f9cf3b52b5795a42b533b4429b730d6fc8450f91",
+  "decision": {
+    "action": "blocklist_and_search",
+    "audit": {
+      "preconditions": [
+        "e1.f1: located package_damage at package/zip_open, known_defect true",
+        "e2: lazylibrarian manages bookId ll-990504 for this work"
+      ],
+      "readback": "Read the lazylibrarian record for ll-990504: the release is in the blocklist and a format search is queued.",
+      "target": "Tolland, Mira - [Lantern Cycle 01] The Lantern Road.epub",
+      "verify": "If the blocklist entry is absent or the replacement search does not start, escalate; the blocklist entry can be removed to undo."
+    },
+    "class": "corrupt_file",
+    "confidence": 0.85,
+    "evidence_refs": [
+      "e1.f1",
+      "e1",
+      "e2"
+    ],
+    "reason": "e1.f1 is a located known_defect at package/zip_open (BadZipFile, 1980 bytes read vs 3300 recorded in e2). e1 failed with cause input, so the damage finding is citable. e2 confirms lazylibrarian manages this book (ll-990504).",
+    "target": "Tolland, Mira - [Lantern Cycle 01] The Lantern Road.epub",
+    "type": "decision"
+  },
+  "decision_flags": [],
+  "evidence": {
+    "capabilities": [
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "ffprobe"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "decode_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "frame_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "audio_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "ocr"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "epub_inspect"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "audiobook_inspect"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "arr_lookup"
+      }
+    ],
+    "gaps": [],
+    "gaps_cited": [],
+    "mode": "replay",
+    "note": "record only: not shown to the model, not scored. A gap is something the run did not verify; a damage finding is evidence, not a gap."
+  },
+  "evidence_format": {
+    "audit_version": "v2",
+    "capabilities": [
+      {
+        "available": true,
+        "backend": "local",
+        "tool": "epub_inspect"
+      },
+      {
+        "available": true,
+        "backend": "stub",
+        "note": "case-provided records only",
+        "tool": "arr_lookup"
+      }
+    ],
+    "final_summary": {
+      "client_comparison": null,
+      "coverage": {
+        "container": {
+          "state": "not_checked"
+        },
+        "duration_s": "unknown",
+        "package": {
+          "by": [
+            "e1"
+          ],
+          "stages": {
+            "manifest": "not_checked",
+            "opf_parse": "not_checked",
+            "spine": "not_checked",
+            "zip_crc": "not_checked",
+            "zip_open": "damaged"
+          }
+        },
+        "time": {
+          "state": "not_checked"
+        }
+      }
+    },
+    "format_contract": "v2",
+    "messages": [
+      {
+        "bytes": [
+          2248
+        ],
+        "id": "evidence",
+        "kind": "initial",
+        "pages": 1
+      }
+    ],
+    "note": "derived only from the observations shown to the model; no truth, label, provenance or hidden injection field is an input",
+    "page_contract": "pages-v1",
+    "tools_behavior": "v2",
+    "version": "v2",
+    "wire_bytes": 8192
+  },
+  "evidence_mode": "replay",
+  "evidence_shown": [
+    "e1",
+    "e2"
+  ],
+  "final_decision_valid": true,
+  "first_try": {
+    "failure_modes": [],
+    "first_reply_valid": true,
+    "note": "any repair, forced decision or protocol violation means the first try was not valid; later attempts are recorded separately in turns[].attempt",
+    "protocol_violations": 0,
+    "repair_prompts": 0,
+    "valid": true,
+    "valid_after_repair": false
+  },
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "f418a35c68389aa96ad7f45362c1d29c1a7e5041378eb4c5b2d3353c9fe389ac",
+    "bytes": 1980,
+    "declared_sha256": "f418a35c68389aa96ad7f45362c1d29c1a7e5041378eb4c5b2d3353c9fe389ac",
+    "kind": "local",
+    "verified": true
+  },
+  "fixture_hashes": {
+    "evidence_shown_sha256": {
+      "e1": "caf222e82ae89319f03529fcc793c337de1720d11b8ed230038c9757102ae9c4",
+      "e2": "b7e9ceb2862b3a1430c884faba39c57fe9f739595647d26f24c3896ba7985e4f"
+    },
+    "fixture": {
+      "actual_sha256": "f418a35c68389aa96ad7f45362c1d29c1a7e5041378eb4c5b2d3353c9fe389ac",
+      "declared_sha256": "f418a35c68389aa96ad7f45362c1d29c1a7e5041378eb4c5b2d3353c9fe389ac",
+      "kind": "local",
+      "verified": true
+    }
+  },
+  "forced": false,
+  "forced_reason": null,
+  "guard": {
+    "applied": [],
+    "final_changed": false,
+    "version": "v3"
+  },
+  "harness_git_sha": "9003be9bbd7704c24f3c8f95fcfb7aeb3b91bc89",
+  "harness_version": "dev-c5",
+  "injected_failure": null,
+  "model_case_alias": "case-e0570c61",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "outcome": null,
+  "prompt": {
+    "protocol": "turn-v2",
+    "schema_sent": false,
+    "sha256": "0064e63389bae941508be01e10ab5ee607925105aeafa20dd3d81a00573bba26",
+    "turn_schema_sha256": null,
+    "version": "v5"
+  },
+  "protocol_violations": [],
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "refs_to_non_ok_tools": [
+    "e1"
+  ],
+  "repair_prompts": [],
+  "requested_model": "claude-haiku-5-5",
+  "response_model_ids": [
+    "claude-haiku-5-5"
+  ],
+  "run_id": "devc5-b-haiku-5-5",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "split": "dev",
+  "started_at": "2026-10-20T20:14:56.930825+00:00",
+  "suite_version": "dev-v1.1",
+  "tool_calls": [],
+  "tool_modes": [],
+  "turns": [
+    {
+      "attempt": "first",
+      "failure_modes": [],
+      "load_s": 0.0,
+      "meta": {
+        "model_usage": {
+          "claude-haiku-5-5": {
+            "cacheCreationInputTokens": 1560,
+            "cacheReadInputTokens": 5348,
+            "canonicalModel": "claude-haiku-5-5",
+            "contextWindow": 1000000,
+            "costBasis": "list",
+            "costUSD": 0.0012291799999999999,
+            "inputTokens": 2,
+            "maxOutputTokens": 128000,
+            "outputTokens": 1727,
+            "provider": "firstParty",
+            "thinkingTokens": 1347,
+            "webSearchRequests": 0
+          }
+        }
+      },
+      "n": 1,
+      "native": {
+        "duration_api_ms": 8382,
+        "duration_ms": 8420,
+        "num_turns": 1,
+        "permission_denials": [],
+        "stop_reason": "end_turn"
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "claude",
+          "-p",
+          "--model",
+          "claude-haiku-5-5",
+          "--output-format",
+          "json",
+          "--system-prompt",
+          "<system>",
+          "--max-budget-usd",
+          "0.5806079199999999",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "{\"mcpServers\":{}}",
+          "--disable-slash-commands",
+          "--setting-sources",
+          "",
+          "--no-session-persistence"
+        ],
+        "prompt": "[CASE]\n{\"case_id\":\"case-e0570c61\",\"media_type\":\"epub\",\"context\":{\"title\":\"The Lantern Road\",\"filename\":\"Tolland, Mira - [Lantern Cycle 01] The Lantern Road.epub\",\"expected\":{\"title\":\"The Lantern Road\",\"author\":\"Mira Tolland\",\"language\":\"en\"},\"arr\":{\"app\":\"lazylibrarian\",\"ids\":{\"bookId\":\"ll-990504\",\"format\":\"ebook\",\"note\":\"fictional ids\"}},\"notes_for_model\":\"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\"},\"tools_available\":[\"epub_inspect\",\"arr_lookup\"],\"tool_call_budget\":6,\"capabilities\":[{\"tool\":\"epub_inspect\",\"backend\":\"local\",\"available\":true},{\"tool\":\"arr_lookup\",\"backend\":\"stub\",\"available\":true,\"note\":\"case-provided records only\"}],\"evidence_format\":\"v2\",\"evidence\":{\"alerts\":[{\"type\":\"defect\",\"id\":\"e1.f1\",\"kind\":\"package_damage\",\"src\":\"e1\"},{\"type\":\"execution\",\"id\":\"e1\",\"state\":\"failed\",\"cause\":\"input\"}],\"items\":[{\"id\":\"e1\",\"tool\":\"epub_inspect\",\"args\":{\"fixture\":\"file\"},\"execution\":{\"state\":\"failed\",\"status\":\"error\",\"cause\":\"input\",\"completion\":\"none\",\"output_truncated\":false},\"findings\":[{\"id\":\"e1.f1\",\"kind\":\"package_damage\",\"known_defect\":true,\"location\":{\"part\":\"package\",\"stage\":\"zip_open\"},\"detail\":\"BadZipFile: File is not a zip file at stage zip_open\",\"src\":\"e1\"}],\"scope\":{\"requested\":{\"what\":\"archive, package and spine structure\"},\"completed\":{\"entries\":null,\"bytes\":1980,\"failed_stage\":\"zip_open\"}},\"unresolved\":[]},{\"id\":\"e2\",\"tool\":\"arr_lookup\",\"args\":{\"app\":\"lazylibrarian\",\"work\":\"The Lantern Road\"},\"execution\":{\"state\":\"ran\",\"status\":\"ok\",\"completion\":\"complete\",\"output_truncated\":false},\"findings\":[],\"scope\":{},\"unresolved\":[\"this result is a record or reading, not an integrity check\"]}],\"facts\":{\"e1\":{\"bytes\":1980,\"error\":\"BadZipFile: File is not a zip file\"},\"e2\":{\"aliases\":[],\"app\":\"lazylibrarian\",\"authors\":[\"Mira Tolland\"],\"file_size_bytes\":3300,\"language\":\"en\",\"series\":\"Lantern Cycle\",\"series_position\":1,\"work\":\"The Lantern Road\"}},\"coverage\":{\"duration_s\":\"unknown\",\"container\":{\"state\":\"not_checked\"},\"time\":{\"state\":\"not_checked\"},\"package\":{\"stages\":{\"zip_open\":\"damaged\",\"zip_crc\":\"not_checked\",\"opf_parse\":\"not_checked\",\"manifest\":\"not_checked\",\"spine\":\"not_checked\"},\"by\":[\"e1\"]}}}}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.",
+        "system_prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself, and neither does this system: the action you choose is recorded as a proposal for a human-supervised system.\n\nREPLY FORMAT\nEvery reply of yours is exactly ONE JSON object and nothing else: no prose, no markdown fence, nothing after the closing brace. The first key is always \"type\". Use only the keys shown below, in that order. Never copy fields from a tool result (such as status, output or tool_calls_remaining) into your reply. Double-quoted keys and strings, every string closed, no trailing commas.\n\n1. Tool call (at most 6 per case, counting any call that is rejected and any page fetch):\n{\"type\":\"tool_call\",\"tool\":\"<a name from tools_available>\",\"why\":\"<=200 chars\",\"args\":{}}\nThis is not a native function call: your whole reply is that JSON object; the harness runs the tool and sends the result in its next message. Call only a tool named in tools_available; a call to any other tool does nothing, uses up one of your 6 calls and is recorded as a protocol violation. Tools act on this case's file only. Arguments: ffprobe {}; decode_sample {\"at\":seconds} or {\"full\":true} (a short window, or a request for the whole file; the result states what was actually decoded); frame_sample {\"at\":seconds}; audio_sample {\"at\":seconds,\"stream\":0}; ocr {\"frame\":\"<name from frame_sample>\"} or {\"at\":seconds}; epub_inspect {}; audiobook_inspect {}; arr_lookup {}. To read the next page of a result, send args {\"cursor\":\"<its page.next>\"} (see PAGES).\nIf tools_available is empty, make no tool call: decide on the evidence in the case. Do not repeat a call that already failed, timed out or was unavailable.\n\n2. Final decision:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<string or null>\",\"reason\":\"<=400 chars, one or two sentences>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"]}\nclass is exactly one of: identity_mismatch, corrupt_file, decoder_incompatible, metadata_naming, order_edition_ambiguity, insufficient_evidence, healthy.\naction is exactly ONE of: none, escalate, blocklist_and_search, remap, rename, convert. Never combine two (for example \"remap and rename\" is invalid); if two different writes could be right, the action is escalate.\nEvery decision object has all of the keys shown, including \"target\" and \"confidence\"; \"target\" is the named string for a write and null for none or escalate.\nWhen the action is a write (blocklist_and_search, remap, rename or convert), add a last key \"audit\", and \"target\" must be the same non-null string as audit.target:\n\"audit\":{\"target\":\"<the exact file, release, episode or entry the write applies to>\",\"preconditions\":[\"<a fact that makes this write safe and that you verified, with its evidence id>\"],\"readback\":\"<what will be read back afterwards to confirm the change>\",\"verify\":\"<how success or a need to undo will be recognised>\"}\nLength limits are enforced and a reply over a limit is rejected: write the target once and copy it into audit.target character for character (the two must be identical); audit.target at most 200 characters; preconditions 1 to 6 strings of at most 160 characters each; readback and verify at most 240 characters each; reason at most 400 characters. Be terse. Do not add \"audit\" for none or escalate. A precondition you did not verify is not a precondition: leave it out, and if the write then lacks a prerequisite, escalate instead.\n\nTHE EVIDENCE\nCase evidence is e1, e2, ...; your tool results are t1, t2, .... A finding has an id like t2.f1, a conflict t2.c1, a collector veto t2.veto. Cite in evidence_refs only ids that were actually shown to you; an id you never saw is a bad reference. Each result has:\n- execution (did the tool run) is separate from integrity (what it found about the file): state (ran, failed, timed_out, unavailable), the raw status (ok, partial, error, timeout, unavailable) and, for a failure, a cause: input, tool or unknown. A cause is the collector's claim about why it failed, not proof of damage: damage is a known_defect finding, never a cause alone. ok means the tool ran, never that the file is clean. A failure to run proves nothing about the media, and an unavailable result taught nothing. completion says whether the tool's own answer is whole: partial means the tool itself returned an incomplete answer. A partial or timed-out result can keep positive observations that bear on the diagnosis (its findings, the intervals it did check); what it did not finish stays unresolved. A completed sample may have status ok, but its coverage stays bounded: its scope says what it covered. output_truncated means the tool or collector cut its own text. A long text or list cut only for display (\"...[+N chars\", \"_shown\") is presentation, not truncation: the rest can be paged.\n- findings: each has a kind, location, raw detail and known_defect. known_defect true is positive damage at that location. known_defect false is neither damage nor clean: decoder_warning, decoder_messages_unclassified, probe_messages and any kind ending _unclassified are messages nobody classified, or that healthy files also print. They certify nothing, and neither does the absence of a known_defect finding. Anything marked unknown or not recorded is neither clean nor damaged.\n- scope: requested against completed (window, streams, package stages, intervals marked clean or damaged). Work from the completed scope; a clean result is clean only inside it. unresolved lists what the result could not settle. conflicts mark a result that contradicts itself or its status (ok with a defect, exit 0 with decoder errors): damage is not cancelled by an ok status or an exit code. facts hold the parsed values.\nAcross the item:\n- alerts come first and repeat on every page. A collector verdict that vetoes healthy (for example an inspector reporting the package invalid) is not a located defect: it blocks \"healthy\" and names no place, so do not invent one; look for a located finding or leave the question unresolved.\n- coverage records which parts were checked clean, found damaged or not checked, per stream, interval, chapter and package stage. It is a record, never a verdict. Whether it is enough is your judgement and nothing certifies it: judge it against the reported question and the streams, chapters or package checks that bear on it. There is no fixed coverage percentage and no rule that the whole file must be checked. A positive finding in a partly checked item is still a positive finding; name the unresolved checks that matter.\n- client_comparison appears only when the case states a client: each selected stream field is supported, unsupported or unknown. Only the selected streams count, not other streams in the file. It covers only the fields it lists (not_stated and not_compared fields were not compared), and an ambiguous or unrecorded stream selection cannot support an overall claim. Unsupported means the client cannot play it directly; that is not damage, and an all-supported comparison does not show the file is intact.\n- Weigh three kinds of statement differently: the catalog (what the case and managing app say the item should be), declarations (what the file says about itself: tags, titles, names, package metadata, which can be wrong either way) and content (what was observed by decoding, reading or listening). A name, tag or duration alone does not show which work a file contains.\n- capabilities say, per offered tool, whether it is available, which offsets were recorded and whether a full decode exists; a call outside them comes back unavailable and still costs a call.\n\nPAGES\nEvery message is at most 8192 bytes. Evidence that does not fit is split: the message has a page object (n, of, next, elsewhere), a list says \"<field>_shown\":\"n of N\", a long text ends \"...[+N chars...]\". Detail you have not seen is unseen: neither clean nor damaged. next is an opaque cursor: copy it exactly, never build or edit one. Reading a page is a tool call (any offered tool) and uses one of your 6 calls. A page fetch retrieves evidence that already exists; it does not rerun a check. The outer status ok of a page reply means only that the retrieval worked: read the origin's own execution inside it and cite the evidence ids; citing a page stands for the observations it came from and never upgrades their support. Spend the calls on the missing evidence that matters most to the decision; do not fetch every page. A case that offers no tool cannot read further pages.\n\nCLASSES (what is wrong with the item, decided from evidence)\n- identity_mismatch: the observed content is a different work, episode, edition or language than the catalog expects, that is, this release is not what was wanted. Needs content evidence (what the streams, text, on-screen text or audio say it is), never the file name, a tag or a duration alone.\n- corrupt_file: the file is physically damaged: decode errors, truncation, a missing index, an unreadable archive, package or spine. Needs a positive damage observation (a finding with known_defect true) from a tool that ran; an execution cause alone is not damage. A sampled result still proves damage where it found it.\n- decoder_incompatible: the selected streams use a codec, profile, pixel format, bit depth, audio layout or container that the stated client cannot play directly, shown by an unsupported comparison on those streams. Needs the stated client in the context. It does not need a clean decode of the whole source.\n- metadata_naming: the content is verified to be the right work and a good copy, but its name, path, tags, title, numbering or the *arr's mapping for it is wrong or missing.\n- order_edition_ambiguity: the content is plausibly correct under more than one legitimate ordering, numbering or edition, and the evidence does not settle which one is wanted.\n- insufficient_evidence: the diagnosis itself is unresolved: the checks that matter failed, timed out, were unavailable or were not made, or the evidence conflicts, or no check reaches the question.\n- healthy: the checks relevant to the reported question are clean inside their actual scope; there is no positive damage anywhere, no collector veto, no unresolved conflict and no material unresolved check; nothing else (identity, tags, the stated client) disagrees. At least one integrity result must be positively clean; metadata alone is not an integrity check.\n\nACTIONS (the change each one proposes; the prerequisites must hold before you choose it)\n- none: no change. Only for healthy.\n- escalate: no change; hand the item to a human with your reason. Choose it whenever the evidence does not settle the class or the action: the evidence is insufficient or ambiguous, more than one write could be right, or a prerequisite of the write you would otherwise choose is missing. When the class is established but the action's prerequisites are missing, keep the evidenced class and choose escalate; use insufficient_evidence only when the diagnosis itself is unresolved. Say in the reason what was and was not verified.\n- blocklist_and_search: the *arr marks THIS release as bad and searches for a replacement; the current file is later replaced and cannot be recovered. Needs positive evidence from results you can cite (rule 7): identity_mismatch from content, or corrupt_file from located damage; the item managed by an *arr (context.arr.app names it); and the release or file as target. Only the blocklist entry can be undone, so evidence from partial or timed-out results alone, or from a failure with no known_defect finding or with cause tool, never justifies the write (keep the class and escalate). Not for problems caused by the client, names or mapping.\n- remap: the *arr changes which item the existing file is linked to; the file's content and name stay as they are and nothing is downloaded. For a good copy that is linked to the wrong item. Needs the managed app, content evidence of what the file really is, evidence of the right target, and a target slot that is free (no other file linked to it); the target is that slot.\n- rename: only the file's name, path or tag text changes; the file stays linked to the same item. Needs verified identity (content evidence agrees with the item), the correct name known from the evidence, and a way back: record the current name so it can be renamed back.\n- convert: makes a compatible copy and leaves the original untouched; the target is the isolated copy. Needs class decoder_incompatible, the stated client, and an unsupported comparison on the selected streams with a recorded, unambiguous stream selection. The source need not decode cleanly in full, because the original is not modified. Not a response to damage, names or identity.\n\nMANAGING APP (context.arr.app)\n- sonarr and radarr manage TV episodes and movies. lazylibrarian manages ebooks and audiobooks: for it, blocklist_and_search means fail this grab and search the format again. null means no managed write is supported for this item.\n- A managing app is a precondition for blocklist_and_search and remap; it is never a reason to act without positive evidence.\n\nDECISION RULES\n1. Integrity. Positive damage observations support corrupt_file. Clean observations support health only within their actual scope, and clean results elsewhere never cancel positive damage. Integrity alone does not establish identity or client compatibility: a clean result does not rule out decoder_incompatible (compare the selected streams with the stated client), metadata_naming (compare names, tags, titles and numbering with the catalog) or identity_mismatch (compare the observed content with the catalog). An unknown identity does not cancel corruption that is independently evidenced.\n2. Healthy. Failed, timed out, unavailable, unclassified, warning-only and unchecked parts are not clean, and a capability that is unavailable (nothing ran) is not a finding. If no relevant integrity check ran, or the only results for the parts in question failed or are unresolved, there is nothing to call healthy: insufficient_evidence with escalate. Do not invent checks the question does not need.\n3. Evidence in the case (e1, e2, ...) that ran counts like a tool result of yours; an empty tools_available is then not a gap by itself.\n4. Different work or mislabelled copy. Observed content that names a different work, episode, edition or language than the catalog entry means the release is not what was wanted: identity_mismatch. Content verified as the expected work, with a wrong name, tag, title, number or mapping, is metadata_naming. If the evidence does not show which of the two applies, or the mapping is unclear, escalate. A release name or file name alone is not content evidence, and a complaint in notes_for_model is a report, not evidence.\n5. order_edition_ambiguity needs positive evidence of two legitimate candidates (an edition list, an alias, two listed numberings the content fits); the mere possibility that another edition exists is not evidence. Apply any ordering or edition choice the case supplies before reading a numbering or length difference as a defect.\n6. A write needs positive evidence for its class, the prerequisites of that action and a named target. In the audit, the preconditions are facts you verified, with their evidence ids. If a prerequisite is missing, escalate and keep the class the evidence supports.\n7. Citing. List in evidence_refs the results that support your claim: results that ran to completion (state ran, status ok), or an error result that carries a known_defect finding and whose cause is other than tool. A partial or timed-out result keeps its positive observations for your diagnosis (describe them in the reason), cannot support a write on its own and is not listed; never list an unavailable result or a failure with cause tool, not even to mention that it failed: say so in the reason in words. Action prerequisites still apply. Your class and action must agree with your own reason.\n8. If a tool failed but other verified evidence settles the question, decide on that and say the tool failed. If it does not settle it, choose escalate and name the unverified part in the reason, with insufficient_evidence if the diagnosis is unresolved, or the evidenced class if only the action is.\n9. Use the offered tools to check before concluding. A completed sample may have status ok, but its coverage stays bounded, and a file name alone never proves content."
+      },
+      "raw_response": "{\"duration_api_ms\":8382,\"stop_reason\":\"end_turn\",\"session_id\":\"e37ff9ec-3fc3-4821-8830-752f1adc5212\",\"total_cost_usd\":0.0012291799999999999,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1560,\"cache_read_input_tokens\":5348,\"output_tokens\":1727,\"output_tokens_details\":{\"thinking_tokens\":1347},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1560,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":1727,\"cache_read_input_tokens\":5348,\"cache_creation_input_tokens\":1560,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1560},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":1727,\"cacheReadInputTokens\":5348,\"cacheCreationInputTokens\":1560,\"webSearchRequests\":0,\"costUSD\":0.0012291799999999999,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":1347,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"corrupt_file\\\",\\\"action\\\":\\\"blocklist_and_search\\\",\\\"target\\\":\\\"Tolland, Mira - [Lantern Cycle 01] The Lantern Road.epub\\\",\\\"reason\\\":\\\"e1.f1 is a located known_defect at package/zip_open (BadZipFile, 1980 bytes read vs 3300 recorded in e2). e1 failed with cause input, so the damage finding is citable. e2 confirms lazylibrarian manages this book (ll-990504).\\\",\\\"confidence\\\":0.85,\\\"evidence_refs\\\":[\\\"e1.f1\\\",\\\"e1\\\",\\\"e2\\\"],\\\"audit\\\":{\\\"target\\\":\\\"Tolland, Mira - [Lantern Cycle 01] The Lantern Road.epub\\\",\\\"preconditions\\\":[\\\"e1.f1: located package_damage at package/zip_open, known_defect true\\\",\\\"e2: lazylibrarian manages bookId ll-990504 for this work\\\"],\\\"readback\\\":\\\"Read the lazylibrarian record for ll-990504: the release is in the blocklist and a format search is queued.\\\",\\\"verify\\\":\\\"If the blocklist entry is absent or the replacement search does not start, escalate; the blocklist entry can be removed to undo.\\\"}}\",\"ttft_ms\":6998,\"type\":\"result\",\"duration_ms\":8420,\"uuid\":\"82cd5f82-11ea-4f63-bd4c-894611180c5f\",\"ttft_stream_ms\":839,\"time_to_request_ms\":33,\"first_content_frame_ms\":839,\"queued_turn_count\":0,\"result_index\":0}\n",
+      "reply_valid": true,
+      "response_model": "claude-haiku-5-5",
+      "text": "{\"type\":\"decision\",\"class\":\"corrupt_file\",\"action\":\"blocklist_and_search\",\"target\":\"Tolland, Mira - [Lantern Cycle 01] The Lantern Road.epub\",\"reason\":\"e1.f1 is a located known_defect at package/zip_open (BadZipFile, 1980 bytes read vs 3300 recorded in e2). e1 failed with cause input, so the damage finding is citable. e2 confirms lazylibrarian manages this book (ll-990504).\",\"confidence\":0.85,\"evidence_refs\":[\"e1.f1\",\"e1\",\"e2\"],\"audit\":{\"target\":\"Tolland, Mira - [Lantern Cycle 01] The Lantern Road.epub\",\"preconditions\":[\"e1.f1: located package_damage at package/zip_open, known_defect true\",\"e2: lazylibrarian manages bookId ll-990504 for this work\"],\"readback\":\"Read the lazylibrarian record for ll-990504: the release is in the blocklist and a format search is queued.\",\"verify\":\"If the blocklist entry is absent or the replacement search does not start, escalate; the blocklist entry can be removed to undo.\"}}",
+      "usage": {
+        "cache_creation_input_tokens": 1560,
+        "cache_read_input_tokens": 5348,
+        "cost_usd": 0.0012291799999999999,
+        "input_tokens": 2,
+        "output_tokens": 1727
+      },
+      "validation_errors": [],
+      "wall_s": 9.459
+    }
+  ],
+  "unverified_parts": [
+    {
+      "id": "e1",
+      "source": "evidence",
+      "status": "error",
+      "tool": "epub_inspect"
+    }
+  ],
+  "usage": {
+    "cost_reported": true,
+    "cost_usd": 0.0012291799999999999,
+    "input_tokens": 2,
+    "output_tokens": 1727
+  },
+  "wall": {
+    "case_excl_load_s": 9.47,
+    "load_s": 0.0,
+    "tool_s": [],
+    "total_s": 9.47,
+    "turn_s": [
+      9.459
+    ]
+  },
+  "write_rejection": {
+    "attempts": [],
+    "forced_after_rejected_write": false,
+    "note": "record only: a rejected write decision never became the decision; forced_after_rejected_write means the repair also failed and the harness forced insufficient_evidence/escalate",
+    "rejected_write_attempts": 0,
+    "repaired_to_valid_decision": false
+  }
+}
