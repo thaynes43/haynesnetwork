@@ -86,7 +86,7 @@ Run options: `--prompt v1|v2|v3` (system prompt + turn protocol; default v1; v3 
 | `vendored_epub.py` | verbatim copy of `.agents/context/media-repair-actual-epub-2026-10-18/epub.py` with a provenance header; `tests/test_packaging.py` fails when the source and the copy diverge |
 | `CHANGELOG.md` | harness versions (`dev-c1` first), known limits |
 | `runs/` (old location, `.agents/context/media-repair-harness-2026-10-19/harness/runs/`) | Smoke and self-test run records (see table below) |
-| `runs/dev-c3/` (this component) | dev-c3 measurement: the four Haiku dev-v1.1 runs (v2 baseline and three v3 revisions) with their `score.json` / `score.md`, `_runner.log`, `README.md`. Development evidence only, see CHANGELOG |
+| `runs/dev-c3/` (this component) | dev-c3 measurement: the five Haiku dev-v1.1 runs (v2 baseline and four v3 revisions) with their `score.json` / `score.md`, `_runner.log`, `README.md`. Development evidence only, see CHANGELOG |
 
 ## Protocol as implemented
 

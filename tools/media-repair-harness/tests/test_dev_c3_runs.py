@@ -8,7 +8,7 @@ from media_repair_harness import protocol as P
 import th
 
 RUNS = th.COMPONENT / 'runs' / 'dev-c3'
-V3_RUNS = ('devc3-v3a-haiku-5-5', 'devc3-v3b-haiku-5-5', 'devc3-v3c-haiku-5-5')
+V3_RUNS = ('devc3-v3a-haiku-5-5', 'devc3-v3b-haiku-5-5', 'devc3-v3c-haiku-5-5', 'devc3-v3d-haiku-5-5')
 ALL_RUNS = ('devc3-base-haiku-5-5-v2',) + V3_RUNS
 
 
@@ -17,7 +17,7 @@ def records(run):
 
 
 class CommittedRuns(unittest.TestCase):
-    def test_four_full_dev_runs_with_one_model_and_a_clean_tree(self):
+    def test_five_full_dev_runs_with_one_model_and_a_clean_tree(self):
         for run in ALL_RUNS:
             recs = records(run)
             self.assertEqual(len(recs), 73, run)
@@ -33,7 +33,7 @@ class CommittedRuns(unittest.TestCase):
                 self.assertEqual(rec['evidence_mode'], 'replay')
 
     def test_prompt_versions_and_digests_match_the_records(self):
-        want = {'devc3-base-haiku-5-5-v2': ('v2', P.get_prompt('v2')['sha256']), 'devc3-v3c-haiku-5-5': ('v3', P.get_prompt('v3')['sha256'])}
+        want = {'devc3-base-haiku-5-5-v2': ('v2', P.get_prompt('v2')['sha256']), 'devc3-v3d-haiku-5-5': ('v3', P.get_prompt('v3')['sha256'])}
         for run, (version, sha) in want.items():
             for rec in records(run).values():
                 self.assertEqual((rec['prompt']['version'], rec['prompt']['sha256']), (version, sha), run)
@@ -42,11 +42,12 @@ class CommittedRuns(unittest.TestCase):
                 self.assertEqual((rec['prompt']['version'], rec['prompt']['protocol']), ('v3', 'turn-v2'), run)
         # the two earlier v3 texts are kept next to the runs, and they are what those runs sent
         import hashlib
-        for run, name in (('devc3-v3a-haiku-5-5', 'v3a.txt'), ('devc3-v3b-haiku-5-5', 'v3b.txt'), ('devc3-v3c-haiku-5-5', 'v3c-shipped-as-v3.txt')):
+        for run, name in (('devc3-v3a-haiku-5-5', 'v3a.txt'), ('devc3-v3b-haiku-5-5', 'v3b.txt'), ('devc3-v3c-haiku-5-5', 'v3c.txt'), ('devc3-v3d-haiku-5-5', 'v3d.txt')):
             text = (RUNS / 'prompts' / name).read_text(encoding='utf-8').rstrip('\n')
             sha = hashlib.sha256(text.encode()).hexdigest()
             self.assertEqual({r['prompt']['sha256'] for r in records(run).values()}, {sha}, run)
-        self.assertEqual((RUNS / 'prompts' / 'v3c-shipped-as-v3.txt').read_bytes(), (P.PROMPT_DIR / 'v3.txt').read_bytes())
+        # the shipped prompt IS the run-d text, byte for byte
+        self.assertEqual((RUNS / 'prompts' / 'v3d.txt').read_bytes(), (P.PROMPT_DIR / 'v3.txt').read_bytes())
 
     def test_write_rejection_field_matches_the_scorers_g1_context(self):
         for run in V3_RUNS:
