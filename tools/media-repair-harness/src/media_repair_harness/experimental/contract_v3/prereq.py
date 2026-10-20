@@ -203,7 +203,7 @@ class View:
         if 'episode_number' in speaks and cat['episodes']:
             mk = markers(text)
             if mk:
-                out['episode_number'] = 'agree' if any(m in cat['episodes'] for m in mk) else 'disagree'
+                out['episode_number'] = 'agree' if all(m in cat['episodes'] for m in mk) else 'disagree'      # A31-12: every asserted marker must match
         if 'author' in speaks and cat['authors']:
             hit = any(contains(text, a) for a in cat['authors'])
             if hit or field is not None:
@@ -217,6 +217,32 @@ class View:
                 out['title'] = 'agree'
             elif field in TYPED_TITLE_FIELDS:
                 out['title'] = 'disagree'          # a typed title field naming no catalog value (section 8); a file name or free text naming none is not comparable
+        return out
+
+    def naming_values(self):
+        """-> [(ref, field, raw value)] of every naming-field value of COMPLETE results, as the facts hold it (a string, a list, an empty list): the
+        file name, EPUB title and creator (replay and live), container tags title / album / artist, and each live audiobook part's tags.  A null value or
+        an absent key yields nothing (null and absent are not empty)."""
+        out = []
+        if 'filename' in self.context and isinstance(self.context['filename'], (str, list)):
+            out.append(('context.filename', 'file_name', self.context['filename']))
+        for o in self.obs:
+            if not self.complete(o):
+                continue
+            f = self.facts.get(o['id']) or {}
+            if not isinstance(f, dict):
+                continue
+            if o['tool'] == 'epub_inspect':
+                for k, field in (('title', 'dc_title'), ('creator', 'dc_creator')):
+                    if k in f and isinstance(f[k], (str, list)):
+                        out.append((o['id'], field, f[k]))
+            if o['tool'] in ('ffprobe', 'audiobook_inspect'):
+                tag_sets = [('', f.get('tags'))] + [('files[%d].' % i, el.get('tags')) for i, el in enumerate(f.get('files') or []) if isinstance(el, dict)]
+                for where, tags in tag_sets:
+                    if isinstance(tags, dict):
+                        for k in ('title', 'album', 'artist'):
+                            if k in tags and isinstance(tags[k], (str, list)):
+                                out.append((o['id'] + (':' + where.rstrip('.') if where else ''), 'tag_' + k, tags[k]))
         return out
 
     def incomplete_contradictions(self):
@@ -354,12 +380,14 @@ def check_named(v, check):
     if check == 'naming_surface_defect':
         surface = RB.NAMING_SURFACE.get(v.media_type, ('file_name',))
         refs = []
-        for ref, kind, field, text in v.statements():
-            if field in surface and kind == 'declaration':
-                if PR.state_of(text) == PR.EMPTY:                 # an explicitly empty value of a naming field (null and absent are not statements)
-                    refs.append(ref + ':' + field + '_empty')
-                elif 'disagree' in v.compare(kind, field, text).values():
-                    refs.append(ref + ':' + field)
+        for ref, field, value in v.naming_values():
+            if field not in surface:
+                continue
+            parts = value if isinstance(value, list) else [value]
+            if PR.state_of(value) == PR.EMPTY or any(isinstance(x, str) and PR.state_of(x) == PR.EMPTY for x in parts):
+                refs.append(ref + ':' + field + '_empty')     # an explicitly empty value or list, or an empty element (null and absent yield nothing)
+            elif any(isinstance(x, str) and 'disagree' in v.compare('declaration', field, x).values() for x in parts):
+                refs.append(ref + ':' + field)
         for o in v.of_tool('ffprobe', 'audiobook_inspect', 'epub_inspect'):
             p = v.presence.get(o['id']) or {}
             if 'tag_title' in surface and o['tool'] != 'epub_inspect' and (p.get('format.tags') == PR.EMPTY or p.get('tags') == PR.EMPTY):

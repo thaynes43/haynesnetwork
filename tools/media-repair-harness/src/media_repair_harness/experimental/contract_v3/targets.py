@@ -142,6 +142,7 @@ def _role(v, check, decision, res):
 
 
 EXT_RX = re.compile(r'\.([A-Za-z0-9]{2,4})$')
+MARKER_TOKEN_RX = re.compile(r'^(?:s\d{1,3}e\d{1,4}|\d{1,3}x\d{1,4})$')
 
 
 def visible_tokens(v):
@@ -168,8 +169,12 @@ def visible_tokens(v):
     for _ref, kind, field, text in v.statements():
         if kind == 'declaration' and field in surface:
             walk(text)
+    right = set()
     for s_, e_ in v.catalog()['episodes']:
-        toks.update({'s%02de%02d' % (s_, e_), 's%de%d' % (s_, e_), '%dx%02d' % (s_, e_), '%02d' % e_, '%02d' % s_})
+        right |= {'s%02de%02d' % (s_, e_), 's%de%d' % (s_, e_), '%dx%02d' % (s_, e_), '%dx%d' % (s_, e_)}
+        toks.update({'%02d' % e_, '%02d' % s_})
+    # A31-12: a marker-shaped token (from the wrong current name, a catalog record of it, anything) that is not the target's own marker is never reusable
+    toks = {x for x in toks if not MARKER_TOKEN_RX.match(x)} | right
     return toks
 
 

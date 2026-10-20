@@ -270,6 +270,10 @@ AMENDMENTS_V31 = (
      'comparison of D-DEC-2 and A-CNV-2) is computed from complete results only; an incomplete result that contradicts (an attribute that disagrees with '
      'the catalog, an unsupported client field) is material uncertainty (M5, M8): it blocks healthy and supports nothing',
      'why': 'a partial probe established incompatibility, and a partial OCR naming another episode was discarded so healthy passed (AUDIT-ASTRA-18)'},
+    {'id': 'A31-12', 'changes': 'identity comparison (episode markers); R-NEW', 'text': 'a value that asserts several episode markers agrees on the episode only when '
+     'EVERY marker is the target\'s; any contradicting marker is a disagreement; a rename\'s new value may not reuse a marker-shaped token (SxxEyy, NxNN) '
+     'that is not the target\'s own, from the wrong current name or any other source',
+     'why': 'a new name carrying the right and the wrong marker together met every prerequisite (AUDIT-ASTRA-19)'},
 )
 
 NEGATED_METHOD_RX = r'\b(?:no|not|without|unavailable|failed|missing|none|never|cannot|could ?n[o\']?t|unable|skipped)\b'
