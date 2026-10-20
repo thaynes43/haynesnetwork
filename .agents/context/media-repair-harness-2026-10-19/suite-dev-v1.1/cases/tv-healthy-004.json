@@ -1,0 +1,88 @@
+{
+ "id": "tv-healthy-004",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "tv",
+ "family": "hl-e04",
+ "truth": {
+  "class": "healthy",
+  "source": "construction",
+  "ref": "scene-release style filename that looks unreliable, but the content is E04 'Night Ferry' (card, tags, chapters) and decodes clean; replay fixtures/probes/hl_e04_nightferry.mkv.json sha256 adebca5de5ec"
+ },
+ "supported_actions": [
+  "none"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Harbor Lights S01E04",
+  "filename": "hl.s01e04.1080p.web.h264-grp.mkv",
+  "expected": {
+   "series": "Harbor Lights",
+   "season": 1,
+   "episode": 4,
+   "episode_title": "Night Ferry",
+   "runtime_s": 8,
+   "language": "en"
+  },
+  "arr": {
+   "app": "sonarr",
+   "ids": {
+    "seriesId": 990001,
+    "episodeId": 990104,
+    "episodeFileId": 990204,
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "2bef8e12d0fe64a59cf5e12a15034ae66576f7e5aff49efec8ddf31141b48884",
+  "bytes": 90073,
+  "locator": "fixtures/media/hl_e04_nightferry.mkv"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"chapters\":[{\"end\":\"2.000000\",\"start\":\"0.000000\",\"title\":\"Cold open\"},{\"end\":\"8.000000\",\"start\":\"2.000000\",\"title\":\"Night Ferry\"}],\"exit_code\":0,\"format\":{\"bit_rate\":\"89558\",\"duration\":\"8.046000\",\"format_name\":\"matroska,webm\",\"size\":\"90073\",\"tags\":{\"episode_sort\":\"4\",\"season_number\":\"1\",\"show\":\"Harbor Lights\",\"title\":\"Night Ferry\"}},\"stderr\":\"\",\"streams\":[{\"codec_name\":\"h264\",\"codec_type\":\"video\",\"height\":192,\"index\":0,\"pix_fmt\":\"yuv420p\",\"profile\":\"High\",\"tags\":{},\"width\":256},{\"channels\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"index\":1,\"profile\":\"LC\",\"sample_rate\":\"22050\",\"tags\":{}}]}"
+  },
+  {
+   "id": "e2",
+   "tool": "decode_sample",
+   "args": {
+    "ss": 0,
+    "t": 4
+   },
+   "status": "ok",
+   "output": "{\"exit_code\":0,\"frames\":40,\"out_time\":\"00:00:04.000000\",\"ss\":0,\"stderr\":\"\",\"t\":4}"
+  },
+  {
+   "id": "e3",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "sonarr",
+    "series": "Harbor Lights",
+    "season": 1,
+    "episode": 4
+   },
+   "status": "ok",
+   "output": "{\"app\":\"sonarr\",\"episode\":{\"episode\":4,\"runtime_s\":8,\"season\":1,\"title\":\"Night Ferry\"},\"file\":{\"relativePath\":\"hl.s01e04.1080p.web.h264-grp.mkv\",\"size\":90073},\"series\":\"Harbor Lights\",\"series_order\":\"aired\"}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "decode_sample",
+  "frame_sample",
+  "ocr",
+  "arr_lookup"
+ ],
+ "provenance": "new",
+ "corrections": [
+  "C5: audio_sample removed from tools_available (no replay data for this case)"
+ ]
+}

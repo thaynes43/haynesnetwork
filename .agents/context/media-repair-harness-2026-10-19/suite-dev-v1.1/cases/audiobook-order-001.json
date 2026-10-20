@@ -1,0 +1,80 @@
+{
+ "id": "audiobook-order-001",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "audiobook",
+ "family": "lr-edition",
+ "truth": {
+  "class": "order_edition_ambiguity",
+  "source": "authoritative_metadata",
+  "ref": "the record lists two editions with the same narrator and the same 20 s runtime and the library has no wanted edition; the tags do not name an edition, so which one this file is (and whether it is the wanted one) is not settled; replay fixtures/probes/lr.m4b.json sha256 3b827059b6cc"
+ },
+ "supported_actions": [
+  "escalate",
+  "none"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "The Lantern Road (audiobook)",
+  "filename": "The Lantern Road.m4b",
+  "expected": {
+   "title": "The Lantern Road",
+   "author": "Mira Tolland",
+   "narrator": "Ellis Marr",
+   "duration_s": 20,
+   "chapters": 4,
+   "language": "en"
+  },
+  "arr": {
+   "app": "lazylibrarian",
+   "ids": {
+    "bookId": "ll-990504",
+    "format": "audiobook",
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "a230ec54b2c5d5974d5cca2884a3202cc4a0df18e1766645f0cbac274773dd3e",
+  "bytes": 63930,
+  "locator": "fixtures/media/lr.m4b"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"chapters\":[{\"end\":\"5.000000\",\"start\":\"0.000000\",\"title\":\"Opening Credits\"},{\"end\":\"10.000000\",\"start\":\"5.000000\",\"title\":\"Chapter 1 Rain\"},{\"end\":\"15.000000\",\"start\":\"10.000000\",\"title\":\"Chapter 2 Salt\"},{\"end\":\"20.000000\",\"start\":\"15.000000\",\"title\":\"Chapter 3 Lanterns\"}],\"exit_code\":0,\"format\":{\"bit_rate\":\"25572\",\"duration\":\"20.000000\",\"format_name\":\"mov,mp4,m4a,3gp,3g2,mj2\",\"size\":\"63930\",\"tags\":{\"album\":\"The Lantern Road\",\"artist\":\"Mira Tolland\",\"composer\":\"Ellis Marr\",\"date\":\"2019\",\"genre\":\"Audiobook\",\"title\":\"The Lantern Road\"}},\"stderr\":\"\",\"streams\":[{\"bit_rate\":\"24103\",\"channels\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"index\":0,\"profile\":\"LC\",\"sample_rate\":\"22050\",\"tags\":{\"language\":\"und\"}}]}"
+  },
+  {
+   "id": "e2",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "lazylibrarian",
+    "work": "The Lantern Road"
+   },
+   "status": "ok",
+   "output": "{\"app\":\"lazylibrarian\",\"authors\":[\"Mira Tolland\"],\"chapter_titles\":[\"Opening Credits\",\"Chapter 1 Rain\",\"Chapter 2 Salt\",\"Chapter 3 Lanterns\"],\"editions\":{\"Dramatised\":{\"narrator\":\"Ellis Marr\",\"runtime_s\":20},\"Unabridged\":{\"narrator\":\"Ellis Marr\",\"runtime_s\":20}},\"narrators\":[\"Ellis Marr\"],\"runtime_s\":20,\"wanted_edition\":null,\"work\":\"The Lantern Road\"}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "audiobook_inspect",
+  "arr_lookup"
+ ],
+ "provenance": "new",
+ "corrections": [
+  "C1: context.arr.app null -> lazylibrarian with synthetic ids; arr_lookup e2 app None -> 'lazylibrarian'",
+  "C6-11: accepted_classes [order_edition_ambiguity, healthy]; supported_actions [escalate] -> [escalate, none] (no wanted edition is stated)",
+  "C5: audio_sample removed from tools_available (no replay data for this case)"
+ ],
+ "accepted_classes": [
+  "order_edition_ambiguity",
+  "healthy"
+ ]
+}

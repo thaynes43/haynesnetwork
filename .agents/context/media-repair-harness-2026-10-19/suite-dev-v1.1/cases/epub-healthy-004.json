@@ -1,0 +1,69 @@
+{
+ "id": "epub-healthy-004",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "epub",
+ "family": "lr-epub",
+ "truth": {
+  "class": "healthy",
+  "source": "construction",
+  "ref": "gen_epub.py lr_good.epub: OPF title/author equal the record, 3 chapters, valid ZIP/manifest/spine"
+ },
+ "supported_actions": [
+  "none"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "The Lantern Road",
+  "filename": "Mira Tolland - The Lantern Road.epub",
+  "expected": {
+   "title": "The Lantern Road",
+   "author": "Mira Tolland",
+   "language": "en"
+  },
+  "arr": {
+   "app": "lazylibrarian",
+   "ids": {
+    "bookId": "ll-990504",
+    "format": "ebook",
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "15ac8ee4c1a70746a38506961920c49ee16d415f44273e57e97b7a4a4588edbd",
+  "bytes": 3300,
+  "locator": "fixtures/media/lr_good.epub"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "epub_inspect",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "ok",
+   "output": "{\"bytes\":3300,\"dc_creator\":[\"Mira Tolland\"],\"dc_language\":[\"en\"],\"dc_title\":[\"The Lantern Road\"],\"entries\":7,\"opf\":\"OEBPS/content.opf\",\"spine_characters\":1329,\"spine_heads\":[\"Chapter 1: Rain Chapter 1: Rain\",\"Chapter 2: Salt Chapter 2: Salt\",\"Chapter 3: Lanterns Chapter 3: Lanterns\"],\"spine_items\":3,\"status\":\"ok\"}"
+  },
+  {
+   "id": "e2",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "lazylibrarian",
+    "work": "The Lantern Road"
+   },
+   "status": "ok",
+   "output": "{\"aliases\":[],\"app\":\"lazylibrarian\",\"authors\":[\"Mira Tolland\"],\"language\":\"en\",\"series\":\"Lantern Cycle\",\"series_position\":1,\"work\":\"The Lantern Road\"}"
+  }
+ ],
+ "tools_available": [
+  "epub_inspect",
+  "arr_lookup"
+ ],
+ "provenance": "new",
+ "corrections": [
+  "C1: context.arr.app null -> lazylibrarian with synthetic ids; arr_lookup e2 app 'readarr-like' -> 'lazylibrarian'"
+ ]
+}

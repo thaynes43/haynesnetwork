@@ -1,0 +1,76 @@
+{
+ "id": "movie-corrupt-002",
+ "suite_version": "dev-v1.1",
+ "split": "dev",
+ "media_type": "movie",
+ "family": "qo-corrupt",
+ "truth": {
+  "class": "corrupt_file",
+  "source": "deterministic",
+  "ref": "zero-length file (0 bytes) where the arr records ~1.2 GB; ffprobe: EBML header parsing failed; replay fixtures/probes/qo_zero.mkv.json sha256 e01de00361ba"
+ },
+ "supported_actions": [
+  "blocklist_and_search"
+ ],
+ "solvable": true,
+ "context": {
+  "title": "Quiet Orbit (2019)",
+  "filename": "Quiet Orbit (2019).mkv",
+  "expected": {
+   "title": "Quiet Orbit",
+   "year": 2019,
+   "aliases": [
+    "Orbite Silencieuse"
+   ],
+   "runtime_s": 8,
+   "language": "en"
+  },
+  "arr": {
+   "app": "radarr",
+   "ids": {
+    "movieId": 990301,
+    "movieFileId": 990401,
+    "note": "fictional ids"
+   }
+  },
+  "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+ },
+ "fixture": {
+  "kind": "local",
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "bytes": 0,
+  "locator": "fixtures/media/qo_zero.mkv"
+ },
+ "evidence": [
+  {
+   "id": "e1",
+   "tool": "ffprobe",
+   "args": {
+    "fixture": "file"
+   },
+   "status": "error",
+   "output": "{\"exit_code\":1,\"stderr\":\"[matroska,webm @ 0x0] EBML header parsing failed\\nmedia/qo_zero.mkv: Invalid data found when processing input\"}"
+  },
+  {
+   "id": "e2",
+   "tool": "arr_lookup",
+   "args": {
+    "app": "radarr",
+    "movie": "Quiet Orbit"
+   },
+   "status": "ok",
+   "output": "{\"alternate_titles\":[\"Orbite Silencieuse\"],\"app\":\"radarr\",\"editions\":{\"Extended Cut\":{\"runtime_s\":12},\"Theatrical\":{\"runtime_s\":8}},\"file\":{\"relativePath\":\"Quiet Orbit (2019).mkv\",\"size\":1200000000},\"movie\":\"Quiet Orbit\",\"year\":2019}"
+  }
+ ],
+ "tools_available": [
+  "ffprobe",
+  "decode_sample",
+  "frame_sample",
+  "ocr",
+  "arr_lookup"
+ ],
+ "provenance": "new",
+ "corrections": [
+  "C5: audio_sample removed from tools_available (no replay data for this case)"
+ ]
+}
