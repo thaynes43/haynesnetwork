@@ -48,6 +48,7 @@ OCR_SCHEMA = {'type': 'object', 'properties': {'visible_text': {'type': 'string'
 #                recording exists to replay, or the recorded data cannot be used.  Nothing ran, so nothing was learned.
 # `unavailable` is never an empty success, and like error/timeout/partial it leaves the checked part UNVERIFIED (never healthy).
 STATUSES = ('ok', 'partial', 'error', 'timeout', 'unavailable')
+RAW_OUTPUT_CAP = 1 << 20   # the largest uncut tool text kept for the typed layer
 
 
 class ToolResult:
@@ -55,17 +56,21 @@ class ToolResult:
         assert status in STATUSES
         self.status, self.output, self.extra = status, output, extra
 
-    def bounded(self, redactor=None, cap=None):
+    def bounded(self, redactor=None, cap=None, keep_raw=False):
         text = self.output if isinstance(self.output, str) else json.dumps(self.output, sort_keys=True, ensure_ascii=False)
         if redactor:
             text = redactor(text)  # fixture names encode the answer; redact before bounding
         raw = text.encode('utf-8')
         limit = cap or TOOL_OUTPUT_BYTES
-        truncated = len(raw) > limit
-        if truncated:
+        truncated = len(raw) > limit or bool(self.extra.get('collector_truncated'))   # collector_truncated: tools behaviour v2 only
+        full_text = text
+        if len(raw) > limit:
             marker = ' ...[truncated]'
             text = raw[:limit - len(marker.encode())].decode('utf-8', errors='ignore') + marker
-        return {'status': self.status, 'output': text, 'truncated': truncated, **self.extra}
+        out = {'status': self.status, 'output': text, 'truncated': truncated, **self.extra}
+        if keep_raw:   # evidence format v2 / guards v3: the whole redacted text, for the typed layer and the audit (record field, never sent as is)
+            out['raw_output'] = full_text if len(full_text.encode('utf-8')) <= RAW_OUTPUT_CAP else full_text.encode('utf-8')[:RAW_OUTPUT_CAP].decode('utf-8', errors='ignore')
+        return out
 
 
 class Fixture:
@@ -117,6 +122,7 @@ class Fixture:
 # media, case-provided records, and the local ffprobe/ffmpeg route when those binaries exist.  `live` runs the bounded read-only collectors
 # of `evidence/` on the case's own local media file; a case without a local media path that exists gets `unavailable` with the reason.
 EVIDENCE_MODES = ('replay', 'live')
+TOOLS_BEHAVIORS = ('v1', 'v2')
 # harness tool -> collector kind of `evidence/` (frame_sample and ocr share the `frames` collector; the model never sees a picture either way)
 LIVE_KINDS = {'ffprobe': 'probe', 'decode_sample': 'decode', 'frame_sample': 'frames', 'ocr': 'frames', 'audio_sample': 'audio',
               'epub_inspect': 'epub', 'audiobook_inspect': 'audiobook'}
@@ -127,10 +133,16 @@ LIVE_DEADLINE_S = TOOL_TIMEOUT_S - 15
 class Context:
     def __init__(self, case, fixture, scratch, runner=subprocess.run, which=shutil.which, ocr_backend=None,
                  suite_dir=None, replay='auto', evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None,
-                 evidence_bounds=None):
+                 evidence_bounds=None, tools_behavior='v1', keep_raw=False):
         assert replay in ('auto', 'off', 'force')
         assert evidence_mode in EVIDENCE_MODES, evidence_mode
+        assert tools_behavior in TOOLS_BEHAVIORS, tools_behavior
         self.evidence_mode = evidence_mode
+        # tools behaviour (W18): v1 is every earlier harness version byte for byte; v2 (selected by `--evidence-format v2`) fixes the audit's tool bugs:
+        # a full decode is a real full decode or says what window it actually ran (never a 4 s window reported as full), the collector's truncation
+        # flag survives, and sampled coverage is the union of the windows.
+        self.tools_behavior = tools_behavior
+        self.keep_raw = keep_raw   # attach the uncut redacted text to each tool result (record field `raw_output`)
         # live-mode seams: `collect` replaces evidence.collect, `evidence_runner` / `evidence_which` are the collectors' own runner and which
         self.collect, self.evidence_runner, self.evidence_which = collect, evidence_runner, evidence_which
         self.evidence_bounds = dict(evidence_bounds or {})
@@ -436,29 +448,80 @@ def _decode_verdict(at, window, info, extra=None):
     return result
 
 
+def _progress_seconds(stdout):
+    """Decoded seconds and frame count from `ffmpeg -progress pipe:1` text (bytes or str); (None, None) when absent."""
+    text = stdout.decode('utf-8', 'replace') if isinstance(stdout, (bytes, bytearray)) else (stdout or '')
+    secs = frames = None
+    for line in text.splitlines():
+        k, _, v = line.partition('=')
+        v = v.strip()
+        if k == 'out_time_us' and v.lstrip('-').isdigit():
+            secs = int(v) / 1e6
+        elif k == 'frame' and v.isdigit():
+            frames = int(v)
+    return secs, frames
+
+
+V2_STREAMS = ['0:v:0', '0:a:0']   # what the local decode maps (first video and first audio stream)
+
+
+def _decode_full_local(ctx):
+    """Tools behaviour v2: a real full decode of the first video and first audio stream, inside the existing 25 s limit.  It either reaches the
+    end of the file (`completed_to_eof` true, window `full`) or says what it did cover and what was requested (status partial, the actual window)."""
+    argv = [ctx.which('ffmpeg'), '-nostdin', '-v', 'error', '-threads', '1', '-i', ctx.fixture.path, '-map', '0:v:0?', '-map', '0:a:0?', '-sn', '-dn',
+            '-progress', 'pipe:1', '-nostats', '-f', 'null', '-']
+    info, out = _run_local(ctx, argv, timeout=LOCAL_FULL_TIMEOUT_S)
+    secs, frames = _progress_seconds(out)
+    out_time = None if secs is None else '%02d:%02d:%09.6f' % (secs // 3600, (secs % 3600) // 60, secs % 60)
+    rec = {'exit_code': info['exit_code'], 'stderr': info.get('stderr', ''), 'frames': frames, 'out_time': out_time}
+    if info['exit_code'] == 'timeout':
+        verdict = _decode_verdict(0, round(secs or 0.0, 3), rec, {'requested': 'full', 'completed_to_eof': False, 'streams_selected': list(V2_STREAMS),
+                                                                    'request_unmet': {'requested': 'full decode of the whole file', 'completed': 'the first %.1f s' % (secs or 0.0),
+                                                                                      'reason': 'the %d s local decode limit was reached' % LOCAL_FULL_TIMEOUT_S}})
+        return ToolResult('partial', verdict, mode='local')
+    verdict = _decode_verdict(0, 'full', rec, {'completed_to_eof': info['exit_code'] == 0, 'streams_selected': list(V2_STREAMS)})
+    return ToolResult('ok', verdict, mode='local')
+
+
+LOCAL_FULL_TIMEOUT_S = 25   # unchanged limit of the local decode; a full request never raises it
+
+
 def tool_decode_sample(args, ctx):
     at = _at(args)
     be = _backend(ctx, 'ffmpeg')
     if isinstance(be, ToolResult):
         return be
+    v2 = ctx.tools_behavior == 'v2'
     if be == 'replay':
         rec = ctx.replay_rec['decode_sample']
         if _is_full(args):
+            if v2 and 'full' not in rec:
+                return ToolResult('unavailable', 'no recorded full decode for this item; nothing was run', mode='replay')
             return ToolResult('ok', _decode_verdict(0, 'full', rec['full']), mode='replay')
         keys = sorted(int(k) for k in rec if k.isdigit())
         k = max([x for x in keys if x <= at] or keys[:1])
         extra = {} if k == int(at) and at == int(at) else {'requested_at_s': at, 'note_window': 'replay serves the recorded window at ss=%d (recorded: %s)' % (k, keys)}
         return ToolResult('ok', _decode_verdict(k, rec[str(k)].get('t', 4), rec[str(k)], extra), mode='replay')
     if be == 'remote':
+        if v2 and _is_full(args):
+            # the remote sampler reads at most 8 MiB and runs 25 s: a whole-file decode is not possible there.  Run the window it can run and say so.
+            info, out, err = _run_remote(ctx, 'decode', at=0.0)
+            if err:
+                return ToolResult('timeout' if err == 'timeout' else 'error', err, mode='remote')
+            return ToolResult('partial', _decode_verdict(0.0, 4, info or {}, {'requested': 'full', 'completed_to_eof': False, 'streams_selected': ['0:v:0', '0:a:0'],
+                                                                              'request_unmet': {'requested': 'full decode of the whole file', 'completed': 'a 4 s window at 0 s',
+                                                                                                'reason': 'the remote sampler reads at most 8 MiB and runs 25 s'}}), mode='remote')
         info, out, err = _run_remote(ctx, 'decode', at=at)
         if err:
             return ToolResult('timeout' if err == 'timeout' else 'error', err, mode='remote')
-        return ToolResult('ok', _decode_verdict(at, 4, info or {}), mode='remote')
+        return ToolResult('ok', _decode_verdict(at, 4, info or {}, {'streams_selected': ['0:v:0', '0:a:0']} if v2 else None), mode='remote')
+    if v2 and _is_full(args):
+        return _decode_full_local(ctx)
     info, out = _run_local(ctx, [ctx.which('ffmpeg'), '-nostdin', '-v', 'error', '-threads', '1', '-ss', str(at), '-i', ctx.fixture.path,
                                  '-t', '4', '-map', '0:v:0?', '-map', '0:a:0?', '-sn', '-dn', '-f', 'null', '-'])
     if info['exit_code'] == 'timeout':
         return ToolResult('timeout', 'decode timed out after 25 s', mode='local')
-    return ToolResult('ok', _decode_verdict(at, 4, info), mode='local')
+    return ToolResult('ok', _decode_verdict(at, 4, info, {'streams_selected': list(V2_STREAMS)} if v2 else None), mode='local')
 
 
 def tool_frame_sample(args, ctx):
@@ -892,7 +955,8 @@ def live_tool(tool, args, ctx):
     ctx.name_map = _live_name_map(ctx.fixture.path)
     ctx.live_thread = threading.get_ident()
     collect = ctx.collect or evcol.collect
-    recs = collect(ctx.fixture.path, [LIVE_KINDS[tool]], bounds, runner=ctx.evidence_runner, which=ctx.evidence_which, scratch_dir=ctx.scratch, cancel=ctx.cancel)
+    kw = {'coverage_union': True} if ctx.tools_behavior == 'v2' else {}
+    recs = collect(ctx.fixture.path, [LIVE_KINDS[tool]], bounds, runner=ctx.evidence_runner, which=ctx.evidence_which, scratch_dir=ctx.scratch, cancel=ctx.cancel, **kw)
     rec = dict(recs[0])
     if cut:
         rec['bounds_clamped'] = list(rec.get('bounds_clamped') or []) + cut
@@ -904,8 +968,103 @@ def live_tool(tool, args, ctx):
     unmet = _unmet_requests(tool, args, ignored, rec) if rec['status'] != 'unavailable' or tool == 'ocr' else []
     if unmet:
         rec['request_note'] = _request_note(unmet)
-    tr = evcol.to_tool_result(rec, cap=ctx.output_cap or TOOL_OUTPUT_BYTES)
-    return ToolResult(tr['status'], tr['output'], mode=tr['mode'], live_ran=rec['mode'] == 'live', **_live_extra(rec, ignored, unmet, cut))
+    # tools behaviour v2 (format v2 pages its own output): the collector is cut at the raw cap, not at the 8 KiB legacy tool limit or the page budget
+    tr = evcol.to_tool_result(rec, cap=RAW_OUTPUT_CAP if ctx.tools_behavior == 'v2' else (ctx.output_cap or TOOL_OUTPUT_BYTES))
+    extra = _live_extra(rec, ignored, unmet, cut)
+    if ctx.tools_behavior == 'v2' and tr.get('truncated'):
+        extra['collector_truncated'] = True   # the collector cut its own output; bounded() keeps that fact instead of recomputing it from the length
+    return ToolResult(tr['status'], tr['output'], mode=tr['mode'], live_ran=rec['mode'] == 'live', **extra)
+
+
+# ---- capability advertisement (evidence format v2) ----------------------------------------------------------------------
+# What replay can actually return, before a tool is called: the backend, whether the call can run at all, the recorded offsets and whether a
+# whole-file decode exists.  It reads no recorded RESULT (only which offsets / entries exist), so it cannot show a finding or the outcome of an
+# operation that was not called.  It mirrors `_backend` without running anything.
+def capability(ctx, name):
+    cap = {'tool': name}
+    live = ctx.evidence_mode == 'live' and name in LIVE_KINDS
+    if name == 'arr_lookup':
+        cap.update(backend='stub', available=True, note='case-provided records only')
+        return cap
+    if live:
+        bad = _live_gate(name, ctx)
+        cap['backend'] = 'live'
+        if bad is not None:
+            cap.update(available=False, why=bad.output)
+            return cap
+        cap['available'] = True
+        if name in TIMED_TOOLS:
+            cap['offsets_s'] = 'chosen by the collector; a requested offset is checked and not used'
+        if name == 'decode_sample':
+            cap['full_decode'] = 'on request, capped by size and time'
+        return cap
+    if ctx.fixture.kind == 'pinned':
+        cap['backend'] = 'pinned_replay'
+        recs = _recorded(ctx, name)
+        if name == 'frame_sample':
+            times = _recorded_times(ctx, 'ocr')
+            cap.update(available=bool(times), offsets_s=times)
+        elif name == 'ocr':
+            times = _recorded_times(ctx, 'ocr')
+            cap.update(available=bool(times), offsets_s=times)
+        elif name in TIMED_TOOLS:
+            times = _recorded_times(ctx, name)
+            cap.update(available=bool(recs), offsets_s=times)
+            if name == 'decode_sample':
+                cap['full_decode'] = 'recorded' if any(_is_full(e.get('args') or {}) for _, e in recs) else 'not_recorded'
+        else:
+            cap['available'] = bool(recs)
+        return cap
+    bad = _need_media(ctx)
+    if bad is not None:
+        cap.update(backend=None, available=False, why=bad.output)
+        return cap
+    if name == 'epub_inspect':
+        cap.update(backend='local', available=ctx.fixture.kind == 'local')
+        return cap
+    binary = 'ffprobe' if name in ('ffprobe', 'audiobook_inspect') else 'ffmpeg'
+    if ctx.fixture.kind == 'remote':
+        cap.update(backend='remote', available=True)
+        if name == 'decode_sample':
+            cap.update(window_s=4, full_decode='not_possible (the remote sampler reads at most 8 MiB and runs 25 s)' if ctx.tools_behavior == 'v2' else 'requested as a 4 s window')
+        return cap
+    if ctx.replay != 'force' and ctx.which(binary):
+        cap.update(backend='local', available=True)
+        if name == 'decode_sample':
+            cap.update(window_s=4, full_decode='bounded run (%d s limit)' % LOCAL_FULL_TIMEOUT_S if ctx.tools_behavior == 'v2' else 'requested as a 4 s window')
+        return cap
+    cap['backend'] = 'replay'
+    if ctx.replay == 'off':
+        cap.update(available=False, why='%s is not installed in this environment and replay is disabled' % binary)
+        return cap
+    rec, err, _status = _replay_record(ctx)
+    if rec is None:
+        cap.update(available=False, why=err)
+        return cap
+    cap['available'] = True
+    if name == 'decode_sample':
+        dec = rec.get('decode_sample') or {}
+        cap.update(offsets_s=sorted(int(k) for k in dec if str(k).isdigit()), window_s=4, full_decode='recorded' if 'full' in dec else 'not_recorded')
+    elif name == 'audio_sample':
+        aud = rec.get('audio_sample')
+        offs = sorted(int(k) for k in aud if str(k).isdigit()) if isinstance(aud, dict) else []
+        cap.update(available=bool(offs), offsets_s=offs)
+        if not offs:
+            cap['why'] = 'not recorded for this item'
+    elif name == 'frame_sample':
+        # independent operation metadata only: the recording exists.  Whether it holds a video stream is a property of an uncalled ffprobe RESULT and is not read here.
+        cap.update(offsets_s='any', note='a frame exists only if the file has a video stream; that is known when the tool is called')
+    elif name == 'ocr':
+        ft = rec.get('frame_text')
+        ranges = [[e.get('t0'), e.get('t1')] for e in ft if isinstance(e, dict)] if isinstance(ft, list) else []
+        # the time ranges that have a recorded reading (metadata of the recording), never the text; an offset outside them returns an empty reading
+        cap.update(available='frame_text' in rec, offsets_s='any', recorded_reading_ranges_s=ranges)
+    return cap
+
+
+def capabilities(ctx):
+    """One advertisement per OFFERED tool, in the order the case lists them."""
+    return [capability(ctx, name) for name in (ctx.case.get('tools_available') or []) if name in REGISTRY]
 
 
 REGISTRY = {'ffprobe': tool_ffprobe, 'decode_sample': tool_decode_sample, 'frame_sample': tool_frame_sample,
@@ -976,7 +1135,7 @@ def call_tool(ctx, name, args):
             pool.shutdown(wait=False)
         if inject and inject.get('tool') == name:
             res = _failure(inject.get('mode', 'error'), name, res)
-    out = res.bounded(ctx.redact, cap=ctx.output_cap)
+    out = res.bounded(ctx.redact, cap=ctx.output_cap, keep_raw=True) if ctx.keep_raw else res.bounded(ctx.redact, cap=ctx.output_cap)
     out['evidence_mode'] = ctx.evidence_mode   # record only; result_message (what the model sees) never carries it
     out['wall_s'] = round(time.monotonic() - started, 3)
     return out

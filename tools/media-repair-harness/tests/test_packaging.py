@@ -189,7 +189,7 @@ class JobBundles(unittest.TestCase):
     def extract(self, bundle):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        tarfile.open(fileobj=io.BytesIO(base64.b64decode(bundle)), mode='r:gz').extractall(tmp.name)
+        tarfile.open(fileobj=io.BytesIO(base64.b64decode(bundle)), mode='r:*').extractall(tmp.name)
         return Path(tmp.name)
 
     def run_py(self, root, code, cwd=None):
@@ -217,7 +217,17 @@ class JobBundles(unittest.TestCase):
         finally:
             sys.path.remove(str(COMPONENT / 'smoke'))
         self.assertEqual(launch_wiring_smoke.MAX_ARG_STRLEN, 131072)   # the real Linux single-string limit
-        self.assertLess(len(data), launch_wiring_smoke.MAX_ARG_STRLEN - 4096)
+        # the package outgrew one environment string when evidence_v2 joined it: the bundle now travels in parts, each under the limit, that join to the whole
+        parts = launch_wiring_smoke.bundle_parts(data)
+        self.assertGreaterEqual(len(parts), 1)
+        self.assertEqual(''.join(parts), data)
+        for part in parts:
+            self.assertLess(len(part), launch_wiring_smoke.MAX_ARG_STRLEN - 4096)
+        self.assertIn('evidence_v2.py', launch_wiring_smoke.FILES)
+        self.assertLessEqual(len(data), launch_wiring_smoke.TOTAL_LIMIT)      # the apply annotation limit is 262144 bytes
+        self.assertLessEqual(launch_wiring_smoke.TOTAL_LIMIT, 240000)
+        import base64 as b64
+        self.assertEqual(b64.b64decode(data)[:2], b'\x1f\x8b')                # gzip: no lzma dependency in the Job image
         self.run_py(root, "import sys; sys.path.insert(0, 'smoke'); import wiring_smoke; assert wiring_smoke.R.main; assert wiring_smoke.LS.evidence")
 
 

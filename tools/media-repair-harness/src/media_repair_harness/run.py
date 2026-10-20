@@ -6,11 +6,13 @@ action-audit line per case and a run manifest.  Tools are read-only; write actio
 recorded as intents and never executed.
 """
 import argparse
+import copy
 import datetime
 import hashlib
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -20,6 +22,7 @@ from pathlib import Path
 from . import adapters as A
 from . import audit as AU
 from . import decision_guard as DG
+from . import evidence_v2 as EV2
 from . import gaps as GP
 from . import guard as G
 from . import leakguard
@@ -114,27 +117,105 @@ def resolve_evidence(case, suite_dir, redactor=None):
     return shown
 
 
+def resolve_evidence_raw(case, suite_dir, redactor=None):
+    """Pre-collected evidence for evidence format v2: the same resolution (refs verified against their sha256, fixture names redacted) WITHOUT the
+    legacy 8 KiB cut, because the typed layer cuts nothing by itself (it paginates).  Output is always text."""
+    shown = []
+    for e in case.get('evidence', []):
+        out = e.get('output')
+        status = e.get('status', 'ok')
+        if isinstance(out, dict) and 'ref' in out:
+            p = Path(out['ref'])
+            p = p if p.is_absolute() else Path(suite_dir) / p
+            try:
+                data = p.read_bytes()
+                if out.get('sha256') and sha256_bytes(data) != out['sha256']:
+                    out, status = 'evidence file failed its integrity check (hash mismatch); its content is not shown', 'unavailable'
+                else:
+                    out = data.decode('utf-8', errors='replace')
+            except OSError:
+                out, status = 'evidence file missing', 'unavailable'
+        elif not isinstance(out, str):
+            out = json.dumps(out, sort_keys=True, ensure_ascii=False)
+        status = status if status in T.STATUSES else 'ok'
+        if redactor:
+            out = redactor(out)
+        shown.append({'id': e['id'], 'tool': e.get('tool'), 'args': e.get('args', {}), 'status': status, 'output': out, 'truncated': False})
+    return shown
+
+
+# Option versions added by W18.  `--evidence-format v2` (typed evidence, tools behaviour v2, audit v2) goes with prompt v4 and a future v5 and with
+# guards off or v3; `--guards v3` goes with any prompt.  Every other combination of a new option is refused up front, never silently reinterpreted.
+EVIDENCE_FORMATS = ('v2',)
+EVIDENCE_V2_PROMPTS = ('v4', 'v5')
+EVIDENCE_V2_GUARDS = (None, 'v3')
+
+
+def check_option_combination(prompt_version, evidence_format=None, guards=None, tool_output_bytes=None):
+    """Raise ValueError (main turns it into a SystemExit) for an unsupported combination of the W18 options."""
+    if evidence_format is not None and evidence_format not in EVIDENCE_FORMATS:
+        raise ValueError('unknown evidence format %r (known: %s; unset keeps the legacy format)' % (evidence_format, ', '.join(EVIDENCE_FORMATS)))
+    if evidence_format == 'v2':
+        if prompt_version not in EVIDENCE_V2_PROMPTS:
+            raise ValueError('--evidence-format v2 is accepted with prompt %s only (got %s): the earlier prompts describe the legacy tool-result shape' % (' or '.join(EVIDENCE_V2_PROMPTS), prompt_version))
+        if guards not in EVIDENCE_V2_GUARDS:
+            raise ValueError('--evidence-format v2 is accepted with guards off or --guards v3 only (got --guards %s)' % guards)
+        if tool_output_bytes is not None and not EV2.MIN_WIRE_BYTES <= tool_output_bytes <= EV2.WIRE_BYTES:
+            raise ValueError('--evidence-format v2 uses --tool-output-bytes as the page budget (a message is paginated to fit it): it must be between %d and %d, got %s' % (EV2.MIN_WIRE_BYTES, EV2.WIRE_BYTES, tool_output_bytes))
+
+
+safe_args = EV2.safe_args
+
+
+def is_cursor_call(args):
+    return isinstance(args, dict) and set(args) == {'cursor'} and isinstance(args['cursor'], str)
+
+
+def make_resolver(case, tool_calls, session):
+    """The runner's use of the one resolver (`evidence_v2.reference_resolver`); the legacy format never rewrites a reference."""
+    if session is None:
+        return lambda refs: list(refs or [])
+    known = {e['id'] for e in case.get('evidence', [])} | {c['id'] for c in tool_calls}
+    return EV2.reference_resolver(known, session.finding_index(), EV2.page_origin_map(tool_calls))
+
+
 def result_message(call_id, tool, res, remaining):
     return json.dumps({'type': 'tool_result', 'id': call_id, 'tool': tool, 'status': res['status'], 'truncated': res['truncated'],
                        'output': res['output'], 'tool_calls_remaining': remaining}, ensure_ascii=False)
 
 
 def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto', run_id='', tool_output_bytes=None,
-             prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None, evidence_bounds=None, guards=None):
+             prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None, evidence_bounds=None, guards=None,
+             evidence_format=None):
     """Run one case through the turn protocol.  Returns the run record (never raises for model/tool trouble)."""
     import shutil
+    check_option_combination(prompt_version, evidence_format, guards, tool_output_bytes)
+    v2fmt = evidence_format == 'v2'
     started_wall = time.monotonic()
     started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     fixture = T.Fixture.from_case(case, suite_dir)
     fixture_info = fixture.verify_local()
     ctx = T.Context(case, fixture, Path(scratch) / case['id'], runner=runner, which=which or shutil.which, ocr_backend=ocr_backend,
                     suite_dir=suite_dir, replay=replay, evidence_mode=evidence_mode, collect=collect, evidence_runner=evidence_runner,
-                    evidence_which=evidence_which, evidence_bounds=evidence_bounds)
+                    evidence_which=evidence_which, evidence_bounds=evidence_bounds, tools_behavior='v2' if v2fmt else 'v1',
+                    keep_raw=v2fmt)
     if tool_output_bytes:
         ctx.output_cap = tool_output_bytes
-    evidence = resolve_evidence(case, suite_dir, ctx.redact)
     model_alias = leakguard.alias(run_id, case['id'])
-    view = P.case_view(case, evidence, case_alias=model_alias)
+    session = None
+    wire_budget = min(EV2.WIRE_BYTES, tool_output_bytes) if tool_output_bytes else EV2.WIRE_BYTES   # --tool-output-bytes is the page budget under format v2
+    if v2fmt:
+        evidence = resolve_evidence_raw(case, suite_dir, ctx.redact)
+        view = P.case_view(case, [], case_alias=model_alias)
+        session = EV2.Session(model_alias, view['context'], view['media_type'], view['tools_available'], budget=wire_budget)
+        caps = T.capabilities(ctx)
+        frame = {'case_id': view['case_id'], 'media_type': view['media_type'], 'context': view['context'], 'tools_available': view['tools_available'],
+                 'tool_call_budget': view['tool_call_budget'], 'capabilities': caps, 'evidence_format': EV2.FORMAT_VERSION}
+        block, _npages = session.initial([EV2.make_observation(e['id'], e['tool'], e['args'], e['status'], e['output'], None, 'case') for e in evidence], frame)
+        view = dict(frame, evidence=block)   # the first message as a whole is what the 8192-byte budget was applied to
+    else:
+        evidence = resolve_evidence(case, suite_dir, ctx.redact)
+        view = P.case_view(case, evidence, case_alias=model_alias)
     prompt = P.get_prompt(prompt_version)
     system = prompt['text']
     # v1 sends the adapter's fixed schema (as in checkpoint 1); v2 builds one per case (tool enum, audit required on writes)
@@ -144,7 +225,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     # schema).  Claude, Codex and scripted adapters send none, so nothing is recorded as sent.
     sent_schema = (schema if schema is not None else getattr(adapter, 'schema', None)) if getattr(adapter, 'name', None) == 'ollama' else None
     sent_schema_sha = sha256_bytes(canonical(sent_schema).encode()) if sent_schema is not None else None
-    messages = [{'role': 'user', 'content': json.dumps(view, ensure_ascii=False, sort_keys=True)}]
+    messages = [{'role': 'user', 'content': (json.dumps(view, ensure_ascii=False, separators=(',', ':')) if v2fmt else json.dumps(view, ensure_ascii=False, sort_keys=True))}]
     ev_ids = {e['id'] for e in evidence}
     turns, tool_calls = [], []
     repairs, forced, forced_reason, error = [], False, None, None
@@ -206,6 +287,20 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                 force('tool budget exhausted (6 calls) and the model asked for another tool call')
                 break
             call_id = 't%d' % (len(tool_calls) + 1)
+            remaining = P.MAX_TOOL_CALLS - len(tool_calls) - 1
+            suffix = '' if remaining else '\n' + P.BUDGET_MESSAGE
+            if v2fmt and is_cursor_call(obj['args']) and obj['tool'] in (case.get('tools_available') or []) and obj['tool'] in P.TOOLS:
+                # a page fetch: not a tool run, but one of the 6 calls (stated in the page object); served from the pages this case's own session holds
+                status, text = session.fetch(obj['args']['cursor'], call_id, obj['tool'], remaining, suffix)
+                origins, origin_status = session.page_origin(obj['args']['cursor'])
+                page_call = {'id': call_id, 'turn': turn['n'], 'tool': 'page', 'args': safe_args(obj['args']), 'why': obj.get('why'), 'status': origin_status if origins else status,
+                             'output': text, 'truncated': False, 'mode': 'pages', 'continuation': True, 'continuation_via': obj['tool'],
+                             'evidence_mode': ctx.evidence_mode, 'wall_s': 0.0}
+                if origins:       # a page is the result it pages: it carries that result's id and status, it is never an ok result of its own
+                    page_call['pages_of'] = origins[0] if len(origins) == 1 else origins
+                tool_calls.append(page_call)
+                messages += [{'role': 'assistant', 'content': comp.text}, {'role': 'user', 'content': text}]
+                continue
             res = T.call_tool(ctx, obj['tool'], obj['args'])
             shown_tool = obj['tool'] if obj['tool'] in P.TOOLS else 'unknown_tool'  # model-chosen text is never echoed back
             tool_calls.append({'id': call_id, 'turn': turn['n'], 'tool': str(obj['tool'])[:64], 'args': obj['args'], 'why': obj.get('why'), **res})
@@ -213,9 +308,15 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                 violations.append({'turn': turn['n'], 'call': call_id, 'kind': res['protocol_violation'], 'tool': str(obj['tool'])[:64],
                                    'answered_with': res['status']})
             remaining = P.MAX_TOOL_CALLS - len(tool_calls)
-            messages += [{'role': 'assistant', 'content': comp.text},
-                         {'role': 'user', 'content': result_message(call_id, shown_tool, res, remaining) +
-                          ('' if remaining else '\n' + P.BUDGET_MESSAGE)}]
+            if v2fmt:
+                o2 = EV2.make_observation(call_id, shown_tool, safe_args(obj['args']), res['status'], res.get('raw_output', res['output']), res.get('mode'), 'tool',
+                                          res.get('collector_truncated'))
+                text, _np = session.result(o2, call_id, remaining, '' if remaining else '\n' + P.BUDGET_MESSAGE)
+                messages += [{'role': 'assistant', 'content': comp.text}, {'role': 'user', 'content': text}]
+            else:
+                messages += [{'role': 'assistant', 'content': comp.text},
+                             {'role': 'user', 'content': result_message(call_id, shown_tool, res, remaining) +
+                              ('' if remaining else '\n' + P.BUDGET_MESSAGE)}]
     except A.AbortRun:
         raise
     except Exception as e:  # noqa: BLE001 - harness fault: keep the run, mark it
@@ -225,8 +326,11 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     # Decision guards (dev-c4, opt-in): deterministic checks on the final decision.  A guard can only turn it into insufficient_evidence / escalate;
     # the model's original decision stays in the record's `guard` field.  Off (the default) this block does nothing and adds no key.
     guard_rec = None
+    resolve = make_resolver(case, tool_calls, session)
     if guards:
-        decision, guard_rec = DG.apply(case, decision, tool_calls, evidence, prompt_version, forced=forced, version=guards)
+        # the guards read references through the same resolver as the record: they see the decision with its references normalised, the record keeps the original
+        final, guard_rec = DG.apply(case, decision, tool_calls, evidence, prompt_version, forced=forced, version=guards, resolve=resolve if v2fmt else None)
+        decision = final
 
     # First-try validity is strict and never repaired after the fact: every model reply up to the first repair prompt must have
     # been schema-valid, no tool call may have left tools_available, and the case must have ended in a real decision.
@@ -237,9 +341,11 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                  'repair_prompts': len(repairs), 'protocol_violations': len(violations),
                  'valid_after_repair': bool(repairs and decision is not None and not forced),
                  'note': 'any repair, forced decision or protocol violation means the first try was not valid; later attempts are recorded separately in turns[].attempt'}
-    bad_refs = sorted(r for r in (decision or {}).get('evidence_refs', []) if r not in ev_ids and r not in {c['id'] for c in tool_calls})
-    failed_refs = sorted(set((decision or {}).get('evidence_refs', [])) & {c['id'] for c in tool_calls if c['status'] in ('error', 'timeout') and c.get('injected')})
-    non_ok_refs = sorted(set((decision or {}).get('evidence_refs', [])) & AU.non_ok_evidence_ids(case, tool_calls))
+    call_ids = {c['id'] for c in tool_calls}
+    refs_checked = resolve((decision or {}).get('evidence_refs', []))
+    bad_refs = sorted(r for r in refs_checked if r not in ev_ids and r not in call_ids)
+    failed_refs = sorted(set(refs_checked) & {c['id'] for c in tool_calls if c['status'] in ('error', 'timeout') and c.get('injected')})
+    non_ok_refs = sorted(set(refs_checked) & AU.non_ok_evidence_ids(case, tool_calls))
     outcome = outcomes.run_outcome_step(case, suite_dir)
     total = time.monotonic() - started_wall
     usage = {'input_tokens': 0, 'output_tokens': 0, 'cost_usd': 0.0, 'cost_reported': False}
@@ -253,7 +359,11 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     if not usage['cost_reported']:
         usage['cost_usd'] = None
     response_models = sorted({str(t.get('response_model')) for t in turns if t.get('response_model')})
-    action_audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version)
+    if v2fmt:
+        audited = dict(decision, evidence_refs=refs_checked)   # a finding id (t2.f1) cites its observation (t2); the decision itself is recorded as the model wrote it
+        action_audit = AU.compute(case, audited, tool_calls, forced=forced, prompt_version=prompt_version, audit_version='v2', shown=evidence)
+    else:
+        action_audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version)
     action_audit['outcome_step'] = outcome
     parts = AU.unverified_parts(case, tool_calls)
     evidence_summary = GP.evidence_summary(case, tool_calls, evidence_mode, decision, live_kinds=T.LIVE_KINDS)
@@ -283,6 +393,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     }
     if guard_rec is not None:
         record['guard'] = guard_rec
+    if v2fmt:
+        record['evidence_format'] = evidence_format_record(session, caps, evidence_format)
     ctxs = [t['meta']['context'] for t in turns if (t.get('meta') or {}).get('context')]
     if ctxs:
         record['context_check'] = {'num_ctx': ctxs[0]['num_ctx'], 'turns_checked': len(ctxs),
@@ -293,6 +405,20 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     if error:
         record['error'] = error
     return record
+
+
+def evidence_format_record(session, caps, version):
+    """Record field of a format-v2 run (absent in a legacy run): the versions, the capability advertisement, the pages and sizes actually sent, and the
+    final coverage matrix and client comparison over everything shown.  The typed objects themselves are in turns[].raw_request (what was sent) and the
+    raw tool text in tool_calls[].raw_output (what was derived from)."""
+    try:
+        an = session.analysis()
+        summary = {'coverage': an['coverage'], 'client_comparison': an['client']}
+    except Exception as e:  # noqa: BLE001 - a summary failure must not lose the run
+        summary = {'error': '%s: %s' % (type(e).__name__, e)}
+    return {'version': version, 'format_contract': EV2.FORMAT_VERSION, 'page_contract': EV2.PAGE_CONTRACT, 'wire_bytes': session.budget, 'tools_behavior': 'v2',
+            'audit_version': 'v2', 'capabilities': caps, 'messages': list(session.log), 'final_summary': summary,
+            'note': 'derived only from the observations shown to the model; no truth, label, provenance or hidden injection field is an input'}
 
 
 FORCED_AFTER_REPAIR = 'invalid output after the one repair prompt'
@@ -439,6 +565,7 @@ def summarize_run(records, manifest):
                      'gaps': sum(len((r.get('evidence') or {}).get('gaps', [])) for r in records),
                      'gaps_by_type': _count(g['type'] for r in records for g in (r.get('evidence') or {}).get('gaps', []))},
         **({'guards': guard_summary(records)} if any('guard' in r for r in records) else {}),
+        **({'evidence_format': manifest['config']['evidence_format']} if manifest['config'].get('evidence_format') else {}),
         'writes_executed': 0,
         'statement': 'Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; '
                      'this harness executed no write and changed no media, *arr, Plex or library state.',
@@ -488,7 +615,8 @@ def main(argv=None):
     ap.add_argument('--tool-output-bytes', type=int, default=P.TOOL_OUTPUT_BYTES, help='cap on one tool result shown to the model (lower it for small local contexts)')
     ap.add_argument('--num-predict', type=int, help='ollama output cap; default 384 for prompt v1, 640 for v2 (a write decision carries an audit object)')
     ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c)')
-    ap.add_argument('--guards', choices=list(DG.GUARD_VERSIONS), default=None, help='opt-in deterministic decision guards (dev-c4); default off; v2 only relaxes two G-write checks (see CONTRACT-v2-proposal section 9). A guard can only turn a decision into insufficient_evidence/escalate and keeps the original in the record field `guard`')
+    ap.add_argument('--guards', choices=list(DG.GUARD_VERSIONS), default=None, help='opt-in deterministic decision guards (dev-c4); default off; v2 only relaxes two G-write checks (see CONTRACT-v2-proposal section 9); v3 (W18) also lets a known integrity defect in the shown evidence contradict a healthy decision (any prompt). A guard can only turn a decision into insufficient_evidence/escalate and keeps the original in the record field `guard`')
+    ap.add_argument('--evidence-format', choices=list(EVIDENCE_FORMATS), default=None, help='W18, opt-in: v2 shows the model typed evidence (execution, findings, scope, unresolved per result, a coverage matrix, a client comparison, tool capabilities, compact paginated structure) derived from the same results; also selects tools behaviour v2 and audit v2. Accepted with --prompt v4 (or a future v5) and --guards off or v3. Unset keeps the legacy format byte for byte')
     ap.add_argument('--keep-alive', default='2m')
     ap.add_argument('--stop', help='comma separated stop tokens (ollama); default per model family')
     ap.add_argument('--ollama-schema', choices=['anyof', 'flat'], default='anyof', help='format schema variant sent to Ollama')
@@ -501,6 +629,10 @@ def main(argv=None):
     ap.add_argument('--script', help='scripted adapter: JSON list of replies')
     args = ap.parse_args(argv)
 
+    try:
+        check_option_combination(args.prompt, args.evidence_format, args.guards, args.tool_output_bytes)
+    except ValueError as e:
+        raise SystemExit(str(e))
     out = Path(args.out)
     if out.exists() and any(out.iterdir()):
         raise SystemExit('refusing to reuse a non-empty run directory (failed runs are kept, never overwritten): %s' % out)
@@ -536,6 +668,8 @@ def main(argv=None):
               'adapter_config': adapter.config()}
     if args.guards:
         config['guards'] = args.guards   # only when on: a run without guards has the same config (and config_hash) shape as before
+    if args.evidence_format:   # likewise only when on; the three versions it selects are recorded so the config hash tells the formats apart
+        config.update(evidence_format=args.evidence_format, tools_behavior='v2', audit_version='v2', page_contract=EV2.PAGE_CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes))
     manifest = {'harness_version': P.HARNESS_VERSION, 'run_id': run_id, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'argv': sys.argv[1:] if argv is None else argv,
                 'harness_git': git_info(), 'config': config, 'config_hash': sha256_bytes(canonical(config).encode()),
                 'python': platform.python_version(), 'suite_dir': str(suite_dir),
@@ -557,7 +691,7 @@ def main(argv=None):
             try:
                 rec = run_case(case, sha, adapter, suite_dir, scratch, ocr_backend=ocr_backend, replay=args.replay, run_id=run_id,
                                tool_output_bytes=args.tool_output_bytes, prompt_version=args.prompt, evidence_mode=args.evidence,
-                               evidence_bounds=evidence_bounds, guards=args.guards)
+                               evidence_bounds=evidence_bounds, guards=args.guards, evidence_format=args.evidence_format)
             except A.AbortRun as e:
                 aborted = str(e)
                 break

@@ -26,16 +26,25 @@ Rules
              shows a defect is not decided here, only that the model cited something that ran.
 
 Both rules are small on purpose.  The `reason` of the final decision names the guard.
+
+Guards v3 (W18, `--guards v3`, any prompt; v1 and v2 are unchanged)
+  G-healthy v3  Examines ALL shown evidence (the case's own and the run's tool results) with the typed layer of `evidence_v2`: a KNOWN integrity defect
+                (decoder errors, damaged container or package, a collector's input failure) contradicts `healthy` / `none` even next to clean results, in any
+                order; an `ok` result that reports a defect is not clean; an unknown field is neither clean nor damaged, and without at least one clean
+                integrity result there is nothing to support healthy.  It never infers whole-file health from a clean sample and it can only abstain.  The reason
+                names the finding kind, its location and the observation id; the model's decision stays in `guard.applied[].original`.
+  G-write v3    Exactly the v2 relaxations.
 """
 import copy
 
 from . import audit as AU
+from . import evidence_v2 as EV2
 from . import gaps as GP
 from . import protocol as P
 from . import tools as T
 
 GUARD_VERSION = 'v1'          # the version a bare `--guards v1` means and the one measured in runs/dev-c4; v1 behaviour never changes
-GUARD_VERSIONS = ('v1', 'v2')
+GUARD_VERSIONS = ('v1', 'v2', 'v3')
 RULE_HEALTHY = 'G-healthy'
 RULE_WRITE = 'G-write'
 # computed audit checks the guard does not act on: `target_in_context` matches the model's free-text target against the case's identifiers and calls a
@@ -76,6 +85,38 @@ def check_healthy(decision, evidence_shown, tool_calls):
         '; integrity results seen: ' + ', '.join(seen) if seen else '; none was offered or run')
 
 
+def shown_observations(evidence_shown, tool_calls):
+    """Observations (evidence_v2 narrow interface) for every result the model could see: case evidence as shown, then the run's tool calls.  Only the
+    status, the text and the actual backend are read (an injected failure comes back as the error, timeout or partial result the model saw)."""
+    obs = [EV2.make_observation(e.get('id'), e.get('tool'), e.get('args'), e.get('status', 'ok'), e.get('output'), None, 'case') for e in evidence_shown or []]
+    for c in tool_calls or []:
+        if c.get('continuation'):    # a page fetch is not an observation
+            continue
+        obs.append(EV2.make_observation(c.get('id'), c.get('tool'), EV2.safe_args(c.get('args')), c.get('status'), c.get('raw_output', c.get('output')), c.get('mode'), 'tool',
+                                        bool(c.get('collector_truncated'))))
+    return obs
+
+
+def check_healthy_v3(decision, evidence_shown, tool_calls):
+    """Guards v3 G-healthy: examines ALL shown initial evidence and tool findings.  A known integrity defect contradicts healthy even next to clean
+    observations (it is not outvoted); an `ok` result that reports a defect does not count as clean; unknown fields are neither clean nor damaged; and
+    without at least one clean integrity result nothing supports healthy.  Whole-file health is never inferred from a clean sample: this guard only
+    abstains.  -> reason string when it fires, else None."""
+    if decision.get('class') != 'healthy' or decision.get('action') != 'none':
+        return None
+    state = EV2.integrity_findings(shown_observations(evidence_shown, tool_calls))
+    if state['damaged']:
+        oid, f = state['damaged'][0]
+        where = f.get('location') or {}
+        loc = ', '.join('%s %s' % (k, v) for k, v in where.items() if v is not None)
+        return 'healthy/none while an integrity result reports a defect (%s in %s%s); a clean observation does not outvote it' % (f['kind'], oid, (' at ' + loc) if loc else '')
+    if state['clean']:
+        return None
+    seen = sorted({'%s:%s' % (s['tool'], s['status']) for s in sources(evidence_shown, tool_calls) if s['tool'] in INTEGRITY_TOOLS})
+    return 'healthy/none with no clean integrity result (probe, decode, package or audiobook check) in the evidence%s' % (
+        '; integrity results seen: ' + ', '.join(seen) if seen else '; none was offered or run')
+
+
 # guards v2 (offline-measured relaxations of G-write; v1 stays exactly as measured):
 #   full_decode_ok     convert works on an isolated copy and the contract does not require a clean full decode, so it is not a reason to overrule;
 #   no_failed_tool_cited  citing a failed tool next to valid support (cited_evidence_supports is met) is not a reason to overrule.
@@ -88,37 +129,55 @@ def check_write(case, decision, tool_calls, prompt_version, forced=False, versio
         return None
     audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version, v4_tables=True)   # the guard reads the dev-c4 tables whatever prompt ran
     unmet = [c['id'] for c in audit['preconditions'] if c.get('basis') == 'computed' and not c.get('met') and c['id'] not in TEXT_MATCH_CHECKS]
-    if version != 'v1':
+    if version != 'v1':   # v3 keeps the v2 G-write relaxations (the contract has no clean-full-decode prerequisite for an isolated copy)
         unmet = [i for i in unmet if i not in V2_IGNORED and not (i == 'no_failed_tool_cited' and 'cited_evidence_supports' not in unmet)]
     if not unmet:
         return None
     return '%s proposed with unmet computed precondition(s): %s' % (decision.get('action'), ', '.join(unmet))
 
 
-def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=False, version=GUARD_VERSION):
-    """-> (final_decision, guard_record).  The input decision is never modified."""
+def record_resolver(record, evidence_shown):
+    """The resolver for a run record: a format-v2 record cites finding ids (`t1.f1`) that this run emitted, recomputed here from the same observations by the same
+    typed layer; any other record resolves nothing (references are never rewritten)."""
+    if not (record or {}).get('evidence_format'):
+        return lambda refs: list(refs or [])
+    obs = shown_observations(evidence_shown, (record or {}).get('tool_calls'))
+    known = [o['id'] for o in obs]
+    return EV2.reference_resolver(known, EV2.emitted_ids(EV2.analyze(obs, {})), EV2.page_origin_map((record or {}).get('tool_calls')))
+
+
+def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=False, version=GUARD_VERSION, resolve=None):
+    """-> (final_decision, guard_record).  The input decision is never modified.  `resolve` (the one reference resolver) normalises the references the checks read;
+    the original decision, with its references as written, is what the record keeps."""
     if version not in GUARD_VERSIONS:
         raise ValueError('unknown guard version %r (known: %s)' % (version, ', '.join(GUARD_VERSIONS)))
+    original = decision
+    if resolve is not None and decision:
+        decision = dict(decision, evidence_refs=resolve(decision.get('evidence_refs')))
     applied = []
-    reason = check_healthy(decision, evidence_shown, tool_calls)
+    reason = check_healthy_v3(decision, evidence_shown, tool_calls) if version == 'v3' else check_healthy(decision, evidence_shown, tool_calls)
     rule = RULE_HEALTHY
     if reason is None:
         reason = check_write(case, decision, tool_calls, prompt_version, forced, version)
         rule = RULE_WRITE
     if reason is not None:
-        applied.append({'rule': rule, 'original': copy.deepcopy(decision), 'reason': reason})
+        applied.append({'rule': rule, 'original': copy.deepcopy(original), 'reason': reason})
         final = guard_escalation(rule, reason)
     else:
-        final = decision
+        final = original
     return final, {'version': version, 'applied': applied, 'final_changed': bool(applied)}
 
 
-def derived_fields(case, decision, tool_calls, evidence_shown, evidence_mode, prompt_version, forced, outcome_step):
-    """Record fields that are computed from the decision (run_case computes the same ones); used when a guard replaced it."""
+def derived_fields(case, decision, tool_calls, evidence_shown, evidence_mode, prompt_version, forced, outcome_step, resolve=None, v2=False):
+    """Record fields that are computed from the decision (run_case computes the same ones); used when a guard replaced it.  For a format-v2 record the references go
+    through the same resolver and the audit is audit v2, as in the run."""
     ev_ids = {e['id'] for e in evidence_shown}
     call_ids = {c['id'] for c in tool_calls}
-    refs = decision.get('evidence_refs', [])
-    action_audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version)
+    refs = resolve(decision.get('evidence_refs', [])) if resolve else decision.get('evidence_refs', [])
+    if v2:
+        action_audit = AU.compute(case, dict(decision, evidence_refs=refs), tool_calls, forced=forced, prompt_version=prompt_version, audit_version='v2', shown=evidence_shown)
+    else:
+        action_audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version)
     action_audit['outcome_step'] = outcome_step
     return {
         'decision_flags': AU.decision_flags(decision, AU.unverified_parts(case, tool_calls)),
@@ -139,13 +198,14 @@ def apply_to_record(record, case, evidence_shown, version=GUARD_VERSION):
         rec = restore_original(rec, case, evidence_shown)
         rec.pop('guard')
     pv = (rec.get('prompt') or {}).get('version') or P.DEFAULT_PROMPT
-    final, guard = apply(case, rec['decision'], rec.get('tool_calls') or [], evidence_shown, pv, bool(rec.get('forced')), version)
+    resolve = record_resolver(rec, evidence_shown)
+    final, guard = apply(case, rec['decision'], rec.get('tool_calls') or [], evidence_shown, pv, bool(rec.get('forced')), version, resolve=resolve)
     rec['guard'] = guard
     if guard['final_changed']:
         rec['decision'] = final
         outcome_step = (rec.get('action_audit') or {}).get('outcome_step')
         rec.update(derived_fields(case, final, rec.get('tool_calls') or [], evidence_shown, rec.get('evidence_mode', 'replay'), pv,
-                                  bool(rec.get('forced')), outcome_step))
+                                  bool(rec.get('forced')), outcome_step, resolve, bool(rec.get('evidence_format'))))
     return rec
 
 
@@ -161,6 +221,6 @@ def restore_original(record, case, evidence_shown):
         pv = (rec.get('prompt') or {}).get('version') or P.DEFAULT_PROMPT
         rec['decision'] = copy.deepcopy(orig)
         rec.update(derived_fields(case, orig, rec.get('tool_calls') or [], evidence_shown, rec.get('evidence_mode', 'replay'), pv,
-                                  bool(rec.get('forced')), (rec.get('action_audit') or {}).get('outcome_step')))
+                                  bool(rec.get('forced')), (rec.get('action_audit') or {}).get('outcome_step'), record_resolver(rec, evidence_shown), bool(rec.get('evidence_format'))))
     rec['guard'] = dict(guard, restored=True)
     return rec

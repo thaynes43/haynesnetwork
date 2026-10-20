@@ -49,7 +49,7 @@ def guard_run(run_dir, suite, out_dir, restore=False, version=DG.GUARD_VERSION):
             # the guards read the case's evidence; a record made against another version of the case would be judged on the wrong data
             raise SystemExit('record %s: case_sha256 %s does not match the case in the suite %s (%s); refusing to guard it' % (
                 rec['case_id'], rec.get('case_sha256'), suite, shas[rec['case_id']]))
-        shown = R.resolve_evidence(case, suite_dir)
+        shown = R.resolve_evidence_raw(case, suite_dir) if rec.get('evidence_format') else R.resolve_evidence(case, suite_dir)
         new = DG.restore_original(rec, case, shown) if restore else DG.apply_to_record(rec, case, shown, version)
         for a in ([] if restore else new['guard']['applied']):
             by_rule[a['rule']] = by_rule.get(a['rule'], 0) + 1
