@@ -103,6 +103,16 @@ class Item2EmptyListValuedNamingFields(unittest.TestCase):
             self.assertEqual(self.naming(book(dict(R3.Blocker3EmptyNamingFields.BASE_TAGS, **{field: None})), 'audiobook')[0], 'unmet', field)
         self.assertEqual(self.naming(book(dict(R3.Blocker3EmptyNamingFields.BASE_TAGS)), 'audiobook')[0], 'unmet')
 
+    def test_populated_part_titles_of_a_multi_part_book_are_not_a_naming_defect(self):
+        # advisory re-review of e4448c07: a part's title tag is a chapter name, not the book title
+        parts = [{'format': 'mp4', 'duration_s': 10.0, 'audio_streams': [{'codec': 'aac'}], 'probe': 'ok', 'tags': {'title': 'Chapter %02d' % i, 'album': 'Alpha Show', 'artist': 'A. Writer'}}
+                 for i in (1, 2, 3)]
+        raw = {'tool': 'audiobook', 'status': 'ok', 'coverage': {'verified': ['probe'], 'not_verified': []}, 'output': {'parts': 3, 'parts_probed': 3, 'files': parts}}
+        o = ob('t1', 'audiobook_inspect', raw, backend='live', source='tool')
+        self.assert_clean(o, 'audiobook', 'chapter-named parts')
+        parts[1]['tags'] = dict(parts[1]['tags'], title='')                 # paired: one part's title explicitly empty
+        self.assertEqual(self.naming(ob('t1', 'audiobook_inspect', raw, backend='live', source='tool'), 'audiobook')[0], 'met')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -386,8 +386,8 @@ def check_named(v, check):
             parts = value if isinstance(value, list) else [value]
             if PR.state_of(value) == PR.EMPTY or any(isinstance(x, str) and PR.state_of(x) == PR.EMPTY for x in parts):
                 refs.append(ref + ':' + field + '_empty')     # an explicitly empty value or list, or an empty element (null and absent yield nothing)
-            elif any(isinstance(x, str) and 'disagree' in v.compare('declaration', field, x).values() for x in parts):
-                refs.append(ref + ':' + field)
+            elif ':files[' not in ref and any(isinstance(x, str) and 'disagree' in v.compare('declaration', field, x).values() for x in parts):
+                refs.append(ref + ':' + field)            # a part's own tags (chapter names) are checked for emptiness only, never compared with the book
         for o in v.of_tool('ffprobe', 'audiobook_inspect', 'epub_inspect'):
             p = v.presence.get(o['id']) or {}
             if 'tag_title' in surface and o['tool'] != 'epub_inspect' and (p.get('format.tags') == PR.EMPTY or p.get('tags') == PR.EMPTY):
