@@ -55,7 +55,7 @@ def _fingerprint(inputs, max_files):
     return {'kind': 'files', 'count': len(prints), 'files': prints, 'partial_fingerprint_only': True}
 
 
-def collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=None, scratch_dir=None, clock=time.monotonic, cancel=None):
+def collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=None, scratch_dir=None, clock=time.monotonic, cancel=None, coverage_union=False):
     """Collect evidence about `path` and return one record per kind (order kept); never raises for a bad input.
 
     path     a file; for 'audiobook' also a folder of parts or a list of part files
@@ -64,6 +64,7 @@ def collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=No
     runner   subprocess runner (tests inject a fake); which = shutil.which replacement
     replay   recorded records (see load_replay): kinds present there are served as mode `replay`, the rest run live
     cancel   a threading.Event; once set no further subprocess is started (the caller's own timeout fired)
+    coverage_union   True (tools behaviour v2): `decoded_s` / `sampled_fraction` of a sampled decode are the union of the windows, so overlapping windows are not counted twice
     """
     kinds = list(kinds) if kinds else list(KINDS)
     for k in kinds:
@@ -75,7 +76,7 @@ def collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=No
     fp = _fingerprint(inputs, int(resolved['max_files']))
     out = []
     with tempfile.TemporaryDirectory(prefix='mrh-evidence-', dir=scratch_dir) as scratch:
-        ctx = Ctx(str(inputs[0]) if len(inputs) == 1 else str(inputs[0].parent), resolved, runner or subprocess_runner, which or shutil.which, scratch, clock, cancel)
+        ctx = Ctx(str(inputs[0]) if len(inputs) == 1 else str(inputs[0].parent), resolved, runner or subprocess_runner, which or shutil.which, scratch, clock, cancel, coverage_union)
         for p_ in inputs:
             ctx.add_name(str(p_))
         for kind in kinds:

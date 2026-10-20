@@ -291,7 +291,7 @@ class GuardWrite(unittest.TestCase):
         case['context']['arr']['app'] = None
         self.assertIn('arr_app_present', DG.check_write(case, self.good(refs=['e1']), [], 'v4', version='v2'))
         with self.assertRaises(ValueError):
-            DG.apply(case, d, [], [], 'v4', version='v3')
+            DG.apply(case, d, [], [], 'v4', version='v9')
 
     def test_non_writes_are_not_touched(self):
         for d in (th.decision('insufficient_evidence', 'escalate'), th.decision('healthy', 'none')):

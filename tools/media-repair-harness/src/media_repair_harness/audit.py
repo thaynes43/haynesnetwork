@@ -21,6 +21,7 @@ model-visible case data only (context, pre-collected evidence, the run's own too
 import json
 import re
 
+from . import evidence_v2 as EV2
 from . import protocol as P
 
 WRITE_ACTIONS = ('blocklist_and_search', 'remap', 'rename', 'convert')
@@ -223,8 +224,23 @@ def _supportive_sources(case, tool_calls):
             if usable_as_support(e.get('status', 'ok'), e.get('output'))]
 
 
-def compute(case, decision, tool_calls, forced=False, prompt_version='v1', v4_tables=False):
-    """-> the `action_audit` dict for one decision.  v4_tables (or prompt_version 'v4'): the dev-c4 class table for remap and the nested client profile."""
+def _shown_observations(case, tool_calls, shown):
+    """Observations (evidence_v2 narrow interface) for every result the model saw: the resolved case evidence, then the run's tool calls."""
+    obs = []
+    for e in (shown if shown is not None else case.get('evidence', [])):
+        obs.append(EV2.make_observation(e.get('id'), e.get('tool'), e.get('args'), e.get('status', 'ok'), e.get('output'), None, 'case'))
+    for c in tool_calls:
+        if c.get('continuation'):
+            continue
+        obs.append(EV2.make_observation(c.get('id'), c.get('tool'), c.get('args'), c.get('status'), c.get('raw_output', c.get('output')), c.get('mode'), 'tool',
+                                        bool(c.get('collector_truncated'))))
+    return obs
+
+
+def compute(case, decision, tool_calls, forced=False, prompt_version='v1', v4_tables=False, audit_version='v1', shown=None):
+    """-> the `action_audit` dict for one decision.  v4_tables (or prompt_version 'v4'): the dev-c4 class table for remap and the nested client profile.
+    audit_version 'v2' (W18, with `--evidence-format v2`): `full_decode_ok` is computed from what the decode actually did (observed completion to the end of
+    the file, a clean result, no unmet request) instead of from the requested arguments; absent proof is not met.  'v1' is every earlier version unchanged."""
     v4_tables = v4_tables or prompt_version == 'v4'
     action = decision.get('action')
     write = action in WRITE_ACTIONS
@@ -237,6 +253,8 @@ def compute(case, decision, tool_calls, forced=False, prompt_version='v1', v4_ta
            'readback_plan': audit.get('readback') if audit else None,
            'verification_plan': audit.get('verify') if audit else None,
            'preconditions': [], 'preconditions_unmet': False, 'unmet': []}
+    if audit_version != 'v1':
+        out['audit_version'] = audit_version
     if not write:
         return out
     ctx = case.get('context') or {}
@@ -276,7 +294,15 @@ def compute(case, decision, tool_calls, forced=False, prompt_version='v1', v4_ta
         profile = ctx.get('client_profile') or ((ctx.get('expected') or {}).get('client_profile') if v4_tables else None)
         checks.append(_check('client_profile_present', bool(profile), 'convert needs the stated client in the context'))
         full = [s for s in ok_src if s[1] == 'decode_sample' and (s[2].get('full') or s[2].get('t') == 'full')]
-        checks.append(_check('full_decode_ok', bool(full), 'an ok full decode_sample result: %s' % [s[0] for s in full]))
+        if audit_version == 'v2':
+            obs_all = _shown_observations(case, tool_calls, shown)
+            proofs = [(o['id'],) + EV2.full_decode_proof(o, obs_all) for o in obs_all if o['tool'] == 'decode_sample' and o['status'] == 'ok'
+                      and (o['args'].get('full') is True or o['args'].get('t') == 'full')]
+            met_ids = [i for i, ok, _ in proofs if ok]
+            checks.append(_check('full_decode_ok', bool(met_ids), 'observed completion to the end of the file, a clean result and no unmet request: %s' % (
+                met_ids if met_ids else ('; '.join('%s: %s' % (i, why) for i, _, why in proofs) or 'no full decode result was shown'))))
+        else:
+            checks.append(_check('full_decode_ok', bool(full), 'an ok full decode_sample result: %s' % [s[0] for s in full]))
         checks.append(_check('copy_stated', bool(COPY_WORDS.search(audit_text)),
                              'the audit states the original stays untouched; nothing in the case can confirm it', basis='claim_text'))
     if P.protocol_of(prompt_version) == 'v2':
@@ -293,6 +319,8 @@ def compute(case, decision, tool_calls, forced=False, prompt_version='v1', v4_ta
         if re.search(r'\b%s\b' % app, claimed) and arr_app != app:
             unmet.append('claim:%s_not_in_context' % app)
     out.update(preconditions=checks, preconditions_unmet=bool(unmet), unmet=unmet)
+    if audit_version != 'v1':
+        out['audit_version'] = audit_version
     if forced:
         out['note'] += '; forced decision'
     return out

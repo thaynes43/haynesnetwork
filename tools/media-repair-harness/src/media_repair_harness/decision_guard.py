@@ -30,12 +30,13 @@ Both rules are small on purpose.  The `reason` of the final decision names the g
 import copy
 
 from . import audit as AU
+from . import evidence_v2 as EV2
 from . import gaps as GP
 from . import protocol as P
 from . import tools as T
 
 GUARD_VERSION = 'v1'          # the version a bare `--guards v1` means and the one measured in runs/dev-c4; v1 behaviour never changes
-GUARD_VERSIONS = ('v1', 'v2')
+GUARD_VERSIONS = ('v1', 'v2', 'v3')
 RULE_HEALTHY = 'G-healthy'
 RULE_WRITE = 'G-write'
 # computed audit checks the guard does not act on: `target_in_context` matches the model's free-text target against the case's identifiers and calls a
@@ -76,6 +77,38 @@ def check_healthy(decision, evidence_shown, tool_calls):
         '; integrity results seen: ' + ', '.join(seen) if seen else '; none was offered or run')
 
 
+def shown_observations(evidence_shown, tool_calls):
+    """Observations (evidence_v2 narrow interface) for every result the model could see: case evidence as shown, then the run's tool calls.  Only the
+    status, the text and the actual backend are read (an injected failure comes back as the error, timeout or partial result the model saw)."""
+    obs = [EV2.make_observation(e.get('id'), e.get('tool'), e.get('args'), e.get('status', 'ok'), e.get('output'), None, 'case') for e in evidence_shown or []]
+    for c in tool_calls or []:
+        if c.get('continuation'):    # a page fetch is not an observation
+            continue
+        obs.append(EV2.make_observation(c.get('id'), c.get('tool'), c.get('args'), c.get('status'), c.get('raw_output', c.get('output')), c.get('mode'), 'tool',
+                                        bool(c.get('collector_truncated'))))
+    return obs
+
+
+def check_healthy_v3(decision, evidence_shown, tool_calls):
+    """Guards v3 G-healthy: examines ALL shown initial evidence and tool findings.  A known integrity defect contradicts healthy even next to clean
+    observations (it is not outvoted); an `ok` result that reports a defect does not count as clean; unknown fields are neither clean nor damaged; and
+    without at least one clean integrity result nothing supports healthy.  Whole-file health is never inferred from a clean sample: this guard only
+    abstains.  -> reason string when it fires, else None."""
+    if decision.get('class') != 'healthy' or decision.get('action') != 'none':
+        return None
+    state = EV2.integrity_findings(shown_observations(evidence_shown, tool_calls))
+    if state['damaged']:
+        oid, f = state['damaged'][0]
+        where = f.get('location') or {}
+        loc = ', '.join('%s %s' % (k, v) for k, v in where.items() if v is not None)
+        return 'healthy/none while an integrity result reports a defect (%s in %s%s); a clean observation does not outvote it' % (f['kind'], oid, (' at ' + loc) if loc else '')
+    if state['clean']:
+        return None
+    seen = sorted({'%s:%s' % (s['tool'], s['status']) for s in sources(evidence_shown, tool_calls) if s['tool'] in INTEGRITY_TOOLS})
+    return 'healthy/none with no clean integrity result (probe, decode, package or audiobook check) in the evidence%s' % (
+        '; integrity results seen: ' + ', '.join(seen) if seen else '; none was offered or run')
+
+
 # guards v2 (offline-measured relaxations of G-write; v1 stays exactly as measured):
 #   full_decode_ok     convert works on an isolated copy and the contract does not require a clean full decode, so it is not a reason to overrule;
 #   no_failed_tool_cited  citing a failed tool next to valid support (cited_evidence_supports is met) is not a reason to overrule.
@@ -88,7 +121,7 @@ def check_write(case, decision, tool_calls, prompt_version, forced=False, versio
         return None
     audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version, v4_tables=True)   # the guard reads the dev-c4 tables whatever prompt ran
     unmet = [c['id'] for c in audit['preconditions'] if c.get('basis') == 'computed' and not c.get('met') and c['id'] not in TEXT_MATCH_CHECKS]
-    if version != 'v1':
+    if version != 'v1':   # v3 keeps the v2 G-write relaxations (the contract has no clean-full-decode prerequisite for an isolated copy)
         unmet = [i for i in unmet if i not in V2_IGNORED and not (i == 'no_failed_tool_cited' and 'cited_evidence_supports' not in unmet)]
     if not unmet:
         return None
@@ -100,7 +133,7 @@ def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=Fal
     if version not in GUARD_VERSIONS:
         raise ValueError('unknown guard version %r (known: %s)' % (version, ', '.join(GUARD_VERSIONS)))
     applied = []
-    reason = check_healthy(decision, evidence_shown, tool_calls)
+    reason = check_healthy_v3(decision, evidence_shown, tool_calls) if version == 'v3' else check_healthy(decision, evidence_shown, tool_calls)
     rule = RULE_HEALTHY
     if reason is None:
         reason = check_write(case, decision, tool_calls, prompt_version, forced, version)

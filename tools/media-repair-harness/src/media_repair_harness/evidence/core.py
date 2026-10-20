@@ -181,8 +181,9 @@ class Deadline:
 class Ctx:
     """Everything a collector needs for one collect() call.  Not shared between calls."""
 
-    def __init__(self, path, bounds, runner, which, scratch, clock=time.monotonic, cancel=None):
+    def __init__(self, path, bounds, runner, which, scratch, clock=time.monotonic, cancel=None, coverage_union=False):
         self.path, self.bounds, self.runner, self.which, self.scratch, self.clock = str(path), bounds, runner, which, Path(scratch), clock
+        self.coverage_union = coverage_union   # W18 (tools behaviour v2): sampled coverage is the union of the windows, not their sum
         self.cancel = cancel   # threading.Event: once set, no further subprocess is started
         self.versions, self.cache = {}, {}
         self.names = {self.path, os.path.basename(self.path)}

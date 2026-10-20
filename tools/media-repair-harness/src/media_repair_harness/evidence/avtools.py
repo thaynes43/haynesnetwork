@@ -231,14 +231,35 @@ def sample_decode(ctx, path, duration, interior, seg_s, max_segments, deadline, 
     return segs, skipped
 
 
-def _decode_summary(segs, skipped, duration):
+def _union_s(segs, duration):
+    """Seconds covered by the union of the decoded windows [at_s, at_s + decoded_s], clipped to the known duration (overlaps counted once)."""
+    spans = sorted((s['at_s'] or 0.0, (s['at_s'] or 0.0) + (s.get('decoded_s') or 0.0)) for s in segs if s.get('at_s') is not None or s.get('decoded_s'))
+    total, end = 0.0, None
+    for a, b in spans:
+        if duration:
+            a, b = min(a, duration), min(b, duration)
+        if b <= a:
+            continue
+        if end is None or a > end:
+            total += b - a
+            end = b
+        elif b > end:
+            total += b - end
+            end = b
+    return total
+
+
+def _decode_summary(segs, skipped, duration, union=False):
     count = lambda st: sum(1 for s in segs if s['state'] == st)
     decoded = sum((s.get('decoded_s') or 0) for s in segs)
+    covered = _union_s(segs, duration) if union else decoded
     out = {'segments_planned': len(segs) + skipped, 'segments_run': len(segs), 'segments_skipped_deadline': skipped,
            'segments_clean': count('clean'), 'segments_with_errors': count('errors'), 'segments_short': count('short'),
            'segments_timeout': count('timeout'), 'segments_spawn_error': count('spawn_error'), 'segments_output_cap': count('output_cap'),
-           'decoder_error_lines': sum(s.get('error_lines', 0) for s in segs), 'decoded_s': _f(decoded),
-           'sampled_fraction': _f(decoded / duration, 3) if duration else None, 'segments': segs}
+           'decoder_error_lines': sum(s.get('error_lines', 0) for s in segs), 'decoded_s': _f(covered),
+           'sampled_fraction': _f(covered / duration, 3) if duration else None, 'segments': segs}
+    if union:
+        out['decoded_s_total_windows'] = _f(decoded)   # the sum of the windows' own decoded time, overlaps included
     out['clean'] = bool(segs) and count('clean') == len(segs)
     return out
 
@@ -253,7 +274,7 @@ def collect_decode(ctx, started):
     duration = _duration(p)
     seg_s = ctx.bounds['segment_s']
     segs, skipped = sample_decode(ctx, ctx.path, duration, ctx.bounds['segments'], seg_s, int(ctx.bounds['max_segments']), deadline)
-    out = _decode_summary(segs, skipped, duration)
+    out = _decode_summary(segs, skipped, duration, ctx.coverage_union)
     out['duration_s'] = duration
     findings, partial_reasons = [], []
     if duration is None:
@@ -696,7 +717,7 @@ def collect_audiobook(ctx, started, inputs):
         if have_ffmpeg and audio:
             segs, skipped = sample_decode(ctx, str(part), dur, ctx.bounds['audiobook_segments'], ctx.bounds['audiobook_segment_s'],
                                           int(ctx.bounds['max_segments']), deadline, audio_only=True)
-            ds = _decode_summary(segs, skipped, dur)
+            ds = _decode_summary(segs, skipped, dur, ctx.coverage_union)
             entry['decode'] = {k: ds[k] for k in ('segments_run', 'segments_clean', 'segments_with_errors', 'segments_short', 'segments_timeout', 'segments_output_cap',
                                                   'decoder_error_lines', 'decoded_s', 'clean')}
             entry['decode']['segments'] = [{k: s.get(k) for k in ('at_s', 'state', 'decoded_s', 'error_lines', 'errors') if s.get(k) is not None} for s in segs]

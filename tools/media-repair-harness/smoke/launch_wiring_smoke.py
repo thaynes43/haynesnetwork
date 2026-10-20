@@ -22,7 +22,7 @@ import launch_smoke as L  # noqa: E402
 BEGIN, END = '===MRH-WIRING-SMOKE-BEGIN===', '===MRH-WIRING-SMOKE-END==='
 PACKAGE = HERE.parent / 'src' / 'media_repair_harness'
 FILES = ['__init__.py', 'adapters.py', 'audit.py', 'decision_guard.py', 'gaps.py', 'guard.py', 'leakguard.py', 'outcomes.py', 'protocol.py', 'remote_sampler.py', 'ollama_transport.py', 'run.py',
-         'tools.py', 'vendored_epub.py', 'prompts/v2.txt', 'evidence/__init__.py', 'evidence/core.py', 'evidence/avtools.py', 'evidence/epubtool.py']
+         'tools.py', 'vendored_epub.py', 'evidence_v2.py', 'prompts/v2.txt', 'evidence/__init__.py', 'evidence/core.py', 'evidence/avtools.py', 'evidence/epubtool.py']
 SMOKE_FILES = ['live_smoke.py', 'wiring_smoke.py']
 
 
@@ -32,20 +32,28 @@ ENV_LIMIT = MAX_ARG_STRLEN - 4096
 
 
 def bundle():
+    """The whole tarball as one base64 string (xz); `bundle_parts` splits it for the Job spec."""
     buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode='w:gz') as t:
+    with tarfile.open(fileobj=buf, mode='w:xz') as t:
         norm = lambda ti: (setattr(ti, 'uid', 0), setattr(ti, 'gid', 0), setattr(ti, 'mtime', 0), ti)[3]
         for name in FILES:
             t.add(PACKAGE / name, arcname='media_repair_harness/' + name, filter=norm)
         for name in SMOKE_FILES:
             t.add(HERE / name, arcname='smoke/' + name, filter=norm)
-    data = base64.b64encode(buf.getvalue()).decode()
-    assert len(data) < ENV_LIMIT, 'bundle too large for one environment string: %d (limit %d)' % (len(data), ENV_LIMIT)
-    return data
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def bundle_parts(data=None):
+    """The bundle as environment strings MRH_BUNDLE0, MRH_BUNDLE1, ... each under the single-string limit (the package outgrew one string with evidence_v2)."""
+    data = bundle() if data is None else data
+    parts = [data[i:i + ENV_LIMIT - 64] for i in range(0, len(data), ENV_LIMIT - 64)]
+    assert len(parts) <= 4, 'bundle needs %d environment strings; trim FILES' % len(parts)
+    return parts
 
 
 BOOT = ("import base64,io,os,tarfile;"
-        "tarfile.open(fileobj=io.BytesIO(base64.b64decode(os.environ['MRH_BUNDLE'])),mode='r:gz').extractall('/work');"
+        "d=''.join(os.environ['MRH_BUNDLE%d'%i] for i in range(4) if 'MRH_BUNDLE%d'%i in os.environ);"
+        "tarfile.open(fileobj=io.BytesIO(base64.b64decode(d)),mode='r:*').extractall('/work');"
         "os.execvp('python3',['python3','/work/smoke/wiring_smoke.py'])")
 
 
@@ -61,7 +69,7 @@ def main():
     m = L.manifest(name, a.image, a.cpu)
     c = m['spec']['template']['spec']['containers'][0]
     c['command'] = ['python3', '-c', BOOT]
-    c['env'] = [{'name': 'MRH_BUNDLE', 'value': bundle()}, {'name': 'TMPDIR', 'value': '/work'}]
+    c['env'] = [{'name': 'MRH_BUNDLE%d' % i, 'value': part} for i, part in enumerate(bundle_parts())] + [{'name': 'TMPDIR', 'value': '/work'}]
     m['metadata']['labels']['app'] = m['spec']['template']['metadata']['labels']['app'] = 'mrh-wiring-smoke'
     L.kubectl('apply', '-f', '-', input=json.dumps(m))
     print('applied', name, file=sys.stderr)
