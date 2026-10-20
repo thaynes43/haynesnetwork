@@ -48,7 +48,9 @@ CPU-limited Job on synthetic fixtures (`testdata/wiring-smoke/wiring-smoke.json`
 
 ### Smoke (validity only, not a benchmark)
 
-`runs/smoke-dev-c2-claude-haiku-5-5-v2/`: see the table in `README.md`.
+`runs/smoke-dev-c2-claude-haiku-5-5-v2/`: `claude-haiku-5-5` through the claude adapter (same flags as the dev-c1 smoke), prompt v2, `--evidence replay`, the same 5 dev cases as
+`smoke-dev-c1-claude-haiku-5-5-v2`, run from the committed tree (git dirty flag false). Result: 5/5 records complete, 0 crashes, 0 forced, 0 repairs, 0 protocol violations, 5/5 first-try
+schema valid, response model id `claude-haiku-5-5`, cost about 0.0051 USD, 3 tool calls all `replay`, 1 recorded gap, no write executed. Pass rates were not computed; five cases say nothing about accuracy.
 
 ### Known limits
 
