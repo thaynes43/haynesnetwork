@@ -30,21 +30,27 @@ def load_run_records(run_dir):
     return recs
 
 
-def guard_run(run_dir, suite, out_dir, restore=False):
+def guard_run(run_dir, suite, out_dir, restore=False, version=DG.GUARD_VERSION):
     """-> {'records': n, 'changed': [{case_id, rule, before, after}], 'by_rule': {...}}"""
     run_dir, out_dir = Path(run_dir), Path(out_dir)
     if out_dir.exists() and any(out_dir.iterdir()):
         raise SystemExit('refusing to reuse a non-empty output directory: %s' % out_dir)
     suite_dir = R.suite_root(suite)
-    cases = {c['id']: c for c, _ in R.load_cases(suite)}
+    loaded = R.load_cases(suite)
+    cases = {c['id']: c for c, _ in loaded}
+    shas = {c['id']: s for c, s in loaded}
     out_dir.mkdir(parents=True, exist_ok=True)
     changed, by_rule, finals = [], {}, []
     for rec in load_run_records(run_dir):
         case = cases.get(rec['case_id'])
         if case is None:
             raise SystemExit('record %s has no case in the suite %s' % (rec['case_id'], suite))
+        if rec.get('case_sha256') != shas[rec['case_id']]:
+            # the guards read the case's evidence; a record made against another version of the case would be judged on the wrong data
+            raise SystemExit('record %s: case_sha256 %s does not match the case in the suite %s (%s); refusing to guard it' % (
+                rec['case_id'], rec.get('case_sha256'), suite, shas[rec['case_id']]))
         shown = R.resolve_evidence(case, suite_dir)
-        new = DG.restore_original(rec, case, shown) if restore else DG.apply_to_record(rec, case, shown)
+        new = DG.restore_original(rec, case, shown) if restore else DG.apply_to_record(rec, case, shown, version)
         for a in ([] if restore else new['guard']['applied']):
             by_rule[a['rule']] = by_rule.get(a['rule'], 0) + 1
             o = a['original']
@@ -53,7 +59,7 @@ def guard_run(run_dir, suite, out_dir, restore=False):
         (out_dir / (rec['case_id'] + '.json')).write_text(json.dumps(new, indent=2, ensure_ascii=False, sort_keys=True) + '\n')
         finals.append(new)
     manifest = json.loads((run_dir / 'manifest.json').read_text()) if (run_dir / 'manifest.json').is_file() else {}
-    manifest['guard_whatif'] = {'guards': DG.GUARD_VERSION, 'source_run': run_dir.name, 'offline': True, 'model_calls': 0, 'restore': bool(restore),
+    manifest['guard_whatif'] = {'guards': version, 'source_run': run_dir.name, 'offline': True, 'model_calls': 0, 'restore': bool(restore),
                                 'note': ('records copied from a guarded run with the model\'s original decisions restored (the run scored as if guards were off)' if restore else
                                          'records copied from the source run with the decision guards applied offline') + '; nothing was re-run'}
     (out_dir / 'manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True, default=str) + '\n')
@@ -73,6 +79,7 @@ def main(argv=None):
     ap.add_argument('run_dir', help='an existing run directory (read only)')
     ap.add_argument('--out', required=True, help='new directory for the guarded copies (must be empty or absent)')
     ap.add_argument('--restore', action='store_true', help='the inverse: the input is a guarded run; write copies with the model\'s original decisions back (scores the run as if guards were off)')
+    ap.add_argument('--guards', choices=list(DG.GUARD_VERSIONS), default=DG.GUARD_VERSION, help='guard version to apply (default v1, the measured one; v2 relaxes two G-write checks)')
     ap.add_argument('--suite', help='suite directory (with cases/); default: the manifest suite_dir when it exists')
     args = ap.parse_args(argv)
     suite = args.suite
@@ -83,10 +90,10 @@ def main(argv=None):
             suite = None
         if not suite or not Path(suite).exists():
             raise SystemExit('--suite is required (the manifest suite_dir %r does not exist here)' % (suite,))
-    res = guard_run(args.run_dir, suite, args.out, restore=args.restore)
+    res = guard_run(args.run_dir, suite, args.out, restore=args.restore, version=args.guards)
     for c in res['changed']:
         print('%s: %s -> %s (%s)' % (c['case_id'], c['before'], c['after'], c['rule']))
-    print('guards %s: %d records, %d changed %s' % (DG.GUARD_VERSION, res['records'], len(res['changed']), json.dumps(res['by_rule'], sort_keys=True)))
+    print('guards %s: %d records, %d changed %s' % (args.guards, res['records'], len(res['changed']), json.dumps(res['by_rule'], sort_keys=True)))
     return 0
 
 

@@ -170,10 +170,10 @@ def turn_schema(prompt_version=DEFAULT_PROMPT, tools=None, flat=False):
     """The `format` schema for grammar-constrained engines.  v1: the module constants, unchanged.  v2 and v3: per-case tool enum and
     an audit that is required exactly when the action is a write; flat=True is the anyOf-free fallback.  For those two an EMPTY
     tools_available falls back to the full tool list (an enum cannot be empty), which let a model call a tool the case does not offer.
-    v4 (STRICT_TOOL_SCHEMA): a case that offers no tool (an empty list, not None) gets no tool-call branch, so only a decision is possible."""
+    v4 (STRICT_TOOL_SCHEMA): a case that offers no tool (an empty list or no `tools_available` key) gets no tool-call branch, so only a decision is possible."""
     if prompt_version == 'v1':
         return FLAT_TURN_SCHEMA if flat else TURN_SCHEMA
-    no_tools = prompt_version in STRICT_TOOL_SCHEMA and tools is not None and len(tools) == 0
+    no_tools = prompt_version in STRICT_TOOL_SCHEMA and not tools   # an empty list or a missing key: no tool is offered
     if no_tools:
         if not flat:
             return {'anyOf': [DECISION_NOWRITE_SCHEMA_V2, DECISION_WRITE_SCHEMA_V2]}

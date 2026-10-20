@@ -34,29 +34,29 @@ from . import gaps as GP
 from . import protocol as P
 from . import tools as T
 
-GUARD_VERSION = 'v1'
-GUARD_VERSIONS = ('v1',)
+GUARD_VERSION = 'v1'          # the version a bare `--guards v1` means and the one measured in runs/dev-c4; v1 behaviour never changes
+GUARD_VERSIONS = ('v1', 'v2')
 RULE_HEALTHY = 'G-healthy'
 RULE_WRITE = 'G-write'
-# evidence types that are integrity checks.  frame_sample (a handle to a recorded frame), ocr (on-screen text), arr_lookup and prior_record
-# (catalog / identity records) are not.
 # computed audit checks the guard does not act on: `target_in_context` matches the model's free-text target against the case's identifiers and calls a
 # target "broad" when it also names a series or an id of a wider scope, so a correct, specific target written in another form fails it (seen in the
 # offline what-if).  It stays in the record's action_audit; it just is not a reason to overrule a decision.
 TEXT_MATCH_CHECKS = ('target_in_context',)
+# evidence types that are integrity checks.  frame_sample (a handle to a recorded frame), ocr (on-screen text), arr_lookup and prior_record
+# (catalog / identity records) are not.
 INTEGRITY_TOOLS = ('ffprobe', 'decode_sample', 'audio_sample', 'epub_inspect', 'audiobook_inspect')
 
 
 def sources(evidence_shown, tool_calls):
-    """[{id, tool, status, injected, source}] for every result the model could see: case-provided evidence as shown, then the run's tool calls."""
-    out = [{'id': e.get('id'), 'tool': e.get('tool'), 'status': e.get('status', 'ok'), 'injected': False, 'source': 'evidence'} for e in evidence_shown or []]
-    out += [{'id': c.get('id'), 'tool': c.get('tool'), 'status': c.get('status'), 'injected': bool(c.get('injected')), 'source': 'tool_call'}
-            for c in tool_calls or []]
+    """[{id, tool, status, source}] for every result the model could see: case-provided evidence as shown, then the run's tool calls.  Only the status the
+    model saw is read (an injected failure comes back as error, timeout or partial, so it never counts as ok); the harness-side `injected` flag is not."""
+    out = [{'id': e.get('id'), 'tool': e.get('tool'), 'status': e.get('status', 'ok'), 'source': 'evidence'} for e in evidence_shown or []]
+    out += [{'id': c.get('id'), 'tool': c.get('tool'), 'status': c.get('status'), 'source': 'tool_call'} for c in tool_calls or []]
     return out
 
 
 def ok_integrity_checks(evidence_shown, tool_calls):
-    return [s for s in sources(evidence_shown, tool_calls) if s['tool'] in INTEGRITY_TOOLS and s['status'] == 'ok' and not s['injected']]
+    return [s for s in sources(evidence_shown, tool_calls) if s['tool'] in INTEGRITY_TOOLS and s['status'] == 'ok']
 
 
 def guard_escalation(rule, detail):
@@ -76,31 +76,41 @@ def check_healthy(decision, evidence_shown, tool_calls):
         '; integrity results seen: ' + ', '.join(seen) if seen else '; none was offered or run')
 
 
-def check_write(case, decision, tool_calls, prompt_version, forced=False):
+# guards v2 (offline-measured relaxations of G-write; v1 stays exactly as measured):
+#   full_decode_ok     convert works on an isolated copy and the contract does not require a clean full decode, so it is not a reason to overrule;
+#   no_failed_tool_cited  citing a failed tool next to valid support (cited_evidence_supports is met) is not a reason to overrule.
+V2_IGNORED = ('full_decode_ok',)
+
+
+def check_write(case, decision, tool_calls, prompt_version, forced=False, version='v1'):
     """-> reason string when G-write fires, else None.  Only checks the audit computes from the case data count (basis `computed`)."""
     if decision.get('action') not in P.WRITE_ACTIONS:
         return None
     audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version, v4_tables=True)   # the guard reads the dev-c4 tables whatever prompt ran
     unmet = [c['id'] for c in audit['preconditions'] if c.get('basis') == 'computed' and not c.get('met') and c['id'] not in TEXT_MATCH_CHECKS]
+    if version != 'v1':
+        unmet = [i for i in unmet if i not in V2_IGNORED and not (i == 'no_failed_tool_cited' and 'cited_evidence_supports' not in unmet)]
     if not unmet:
         return None
     return '%s proposed with unmet computed precondition(s): %s' % (decision.get('action'), ', '.join(unmet))
 
 
-def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=False):
+def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=False, version=GUARD_VERSION):
     """-> (final_decision, guard_record).  The input decision is never modified."""
+    if version not in GUARD_VERSIONS:
+        raise ValueError('unknown guard version %r (known: %s)' % (version, ', '.join(GUARD_VERSIONS)))
     applied = []
     reason = check_healthy(decision, evidence_shown, tool_calls)
     rule = RULE_HEALTHY
     if reason is None:
-        reason = check_write(case, decision, tool_calls, prompt_version, forced)
+        reason = check_write(case, decision, tool_calls, prompt_version, forced, version)
         rule = RULE_WRITE
     if reason is not None:
         applied.append({'rule': rule, 'original': copy.deepcopy(decision), 'reason': reason})
         final = guard_escalation(rule, reason)
     else:
         final = decision
-    return final, {'version': GUARD_VERSION, 'applied': applied, 'final_changed': bool(applied)}
+    return final, {'version': version, 'applied': applied, 'final_changed': bool(applied)}
 
 
 def derived_fields(case, decision, tool_calls, evidence_shown, evidence_mode, prompt_version, forced, outcome_step):
@@ -120,14 +130,16 @@ def derived_fields(case, decision, tool_calls, evidence_shown, evidence_mode, pr
     }
 
 
-def apply_to_record(record, case, evidence_shown):
+def apply_to_record(record, case, evidence_shown, version=GUARD_VERSION):
     """Offline: a COPY of a run record with the guards applied.  Always carries `guard`; when a guard fires, the decision and the fields
-    derived from it are replaced and the model's original stays in `guard.applied[].original`."""
+    derived from it are replaced and the model's original stays in `guard.applied[].original`.  A record that was already guarded is first
+    returned to the model's own decision, so guarding never stacks and another guard version can be applied to a guarded run."""
     rec = copy.deepcopy(record)
     if rec.get('guard'):
-        raise ValueError('record %s already carries a guard field' % rec.get('case_id'))
+        rec = restore_original(rec, case, evidence_shown)
+        rec.pop('guard')
     pv = (rec.get('prompt') or {}).get('version') or P.DEFAULT_PROMPT
-    final, guard = apply(case, rec['decision'], rec.get('tool_calls') or [], evidence_shown, pv, bool(rec.get('forced')))
+    final, guard = apply(case, rec['decision'], rec.get('tool_calls') or [], evidence_shown, pv, bool(rec.get('forced')), version)
     rec['guard'] = guard
     if guard['final_changed']:
         rec['decision'] = final

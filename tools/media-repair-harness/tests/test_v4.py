@@ -133,11 +133,21 @@ class StrictToolSchema(unittest.TestCase):
         for k in ('tool', 'why', 'args'):
             self.assertNotIn(k, f['properties'])
 
-    def test_v4_is_unchanged_when_tools_are_offered_or_unspecified(self):
-        for tools in (['ffprobe', 'arr_lookup'], None):
+    def test_v4_is_unchanged_when_tools_are_offered(self):
+        for tools in (['ffprobe', 'arr_lookup'],):
             self.assertEqual(P.turn_schema('v4', tools), P.turn_schema('v3', tools))
             self.assertEqual(P.turn_schema('v4', tools, flat=True), P.turn_schema('v3', tools, flat=True))
         self.assertEqual(P.turn_schema('v4', ['ffprobe'])['anyOf'][0]['properties']['tool']['enum'], ['ffprobe'])
+
+    def test_v4_treats_a_missing_tools_available_like_an_empty_list_and_v2_v3_do_not(self):
+        self.assertEqual(P.turn_schema('v4', None), P.turn_schema('v4', []))
+        self.assertEqual(P.turn_schema('v4', None, flat=True), P.turn_schema('v4', [], flat=True))
+        for v in ('v2', 'v3'):
+            self.assertEqual(self.branches(P.turn_schema(v, None)), ['tool_call', 'decision', 'decision'], v)    # byte-identical to dev-c3
+            self.assertEqual(P.turn_schema(v, None), P.turn_schema('v2', None))
+        case = case_with([ev('e1', 'arr_lookup')])
+        del case['tools_available']
+        self.assertNotIn('tool_call', json.dumps(P.turn_schema('v4', case.get('tools_available'))))
 
     def test_a_v4_record_hashes_the_exact_schema_and_a_tool_call_is_still_a_recorded_violation(self):
         case = case_with([ev('e1', 'arr_lookup')], tools=[])
@@ -187,7 +197,9 @@ class GuardHealthy(unittest.TestCase):
         for status in ('error', 'timeout', 'partial', 'unavailable'):
             self.assertIsNotNone(self.fires([ev('e1', 'ffprobe', status)]), status)
             self.assertIsNotNone(self.fires([], [call('t1', 'decode_sample', status)]), status)
-        self.assertIsNotNone(self.fires([], [call('t1', 'decode_sample', 'ok', injected=True)]))
+        for status in ('error', 'timeout', 'partial'):      # an injected failure is shown to the model as one of these; the guard reads only that status
+            self.assertIsNotNone(self.fires([], [call('t1', 'decode_sample', status, injected=True)]), status)
+        self.assertTrue(all('injected' not in s for s in DG.sources([], [call('t1', 'ffprobe', 'error', injected=True)])))
         reason = self.fires([ev('e1', 'ffprobe', 'error'), ev('e2', 'epub_inspect', 'timeout')])
         self.assertIn('ffprobe:error', reason)
         self.assertIn('epub_inspect:timeout', reason)
@@ -259,6 +271,27 @@ class GuardWrite(unittest.TestCase):
         self.assertIsNone(self.check(case, d))
         del case['context']['expected']['client_profile']
         self.assertIn('client_profile_present', self.check(case, d))
+
+    def test_v2_ignores_full_decode_for_convert_and_a_failed_citation_next_to_valid_support(self):
+        d = wdecision(cls='decoder_incompatible', action='convert', target='item-file.bin', refs=['e1'],
+                      audit=audit_obj('item-file.bin', pre=('e1 clean decode',), readback='the copy', verify='the original is untouched, a copy was made'))
+        case = case_with([ev('e1', 'decode_sample', output='ok')], app='radarr', truth='decoder_incompatible', supported=('convert',))
+        case['context']['expected'] = {'client_profile': {'video_codec': 'h264'}}
+        self.assertIn('full_decode_ok', DG.check_write(case, d, [], 'v4', version='v1'))
+        self.assertIsNone(DG.check_write(case, d, [], 'v4', version='v2'))
+        # a failed tool cited next to a valid support: v1 fires on no_failed_tool_cited, v2 does not; a failed tool alone still fires under both
+        case = case_with([ev('e1', 'epub_inspect', output='archive damaged'), ev('e2', 'ffprobe', 'timeout')], app='bookshelf', truth='corrupt_file', supported=('blocklist_and_search',))
+        both = self.good(refs=['e1', 'e2'])
+        self.assertIn('no_failed_tool_cited', DG.check_write(case, both, [], 'v4', version='v1'))
+        self.assertIsNone(DG.check_write(case, both, [], 'v4', version='v2'))
+        alone = self.good(refs=['e2'])
+        self.assertIn('cited_evidence_supports', DG.check_write(case, alone, [], 'v4', version='v1'))
+        self.assertIn('cited_evidence_supports', DG.check_write(case, alone, [], 'v4', version='v2'))
+        # v2 keeps every other computed check
+        case['context']['arr']['app'] = None
+        self.assertIn('arr_app_present', DG.check_write(case, self.good(refs=['e1']), [], 'v4', version='v2'))
+        with self.assertRaises(ValueError):
+            DG.apply(case, d, [], [], 'v4', version='v3')
 
     def test_non_writes_are_not_touched(self):
         for d in (th.decision('insufficient_evidence', 'escalate'), th.decision('healthy', 'none')):
@@ -399,8 +432,12 @@ class GuardsOffAndOn(unittest.TestCase):
         offline = DG.apply_to_record(off, case, R.resolve_evidence(case, ts1.root))
         for k in ('guard', 'decision', 'action_audit', 'decision_flags', 'bad_evidence_refs', 'refs_to_failed_tools', 'refs_to_non_ok_tools', 'evidence'):
             self.assertEqual(json.dumps(on[k], sort_keys=True), json.dumps(offline[k], sort_keys=True), k)
-        with self.assertRaises(ValueError):
-            DG.apply_to_record(offline, case, [])      # never guards twice
+        # a guarded record is re-based on the model's own decision: guarding twice equals guarding once, and another version can be applied
+        again = DG.apply_to_record(offline, case, R.resolve_evidence(case, ts1.root))
+        self.assertEqual(json.dumps(again, sort_keys=True), json.dumps(offline, sort_keys=True))
+        v2 = DG.apply_to_record(offline, case, R.resolve_evidence(case, ts1.root), 'v2')
+        self.assertEqual(v2['guard']['version'], 'v2')
+        self.assertEqual(v2['guard']['applied'][0]['original'], off['decision'])
         ts1.cleanup(); ts2.cleanup()
 
 
@@ -434,6 +471,33 @@ class MainAndTool(unittest.TestCase):
         self.assertEqual(s['guards'], {'version': 'v1', 'applied_by_rule': {'G-healthy': 1}, 'decisions_changed': 1})
         self.assertEqual(R.record_missing_fields(json.loads((on / 'g1.json').read_text())), [])
         ts.cleanup(); ts2.cleanup()
+
+    def test_mrh_guard_refuses_a_record_whose_case_hash_differs_from_the_suite_case(self):
+        cases = [case_with([ev('e1', 'prior_record')])]
+        code, run, ts = self.run_main(cases, [th.decision('healthy', 'none', refs=['e1'])])
+        rec = json.loads((run / 'g1.json').read_text())
+        self.assertEqual(rec['case_sha256'], R.sha256_bytes((ts.root / 'cases' / 'g1.json').read_bytes()))   # the real run recorded the suite file's hash
+        guard_cli.guard_run(run, ts.root, Path(tempfile.mkdtemp()) / 'ok')
+        for bad in ('0' * 64, None):
+            tampered = Path(tempfile.mkdtemp()) / 'run'
+            tampered.mkdir()
+            (tampered / 'manifest.json').write_text((run / 'manifest.json').read_text())
+            rec2 = dict(rec, case_sha256=bad)
+            if bad is None:
+                rec2.pop('case_sha256')
+            (tampered / 'g1.json').write_text(json.dumps(rec2))
+            with self.assertRaises(SystemExit) as cm:
+                guard_cli.guard_run(tampered, ts.root, Path(tempfile.mkdtemp()) / 'out')
+            self.assertIn('case_sha256', str(cm.exception))
+        ts.cleanup()
+
+    def test_guards_v2_is_selectable_in_run_and_recorded(self):
+        cases = [case_with([ev('e1', 'prior_record')])]
+        code, on, ts = self.run_main(cases, [th.decision('healthy', 'none', refs=['e1'])], ['--guards', 'v2'])
+        self.assertEqual(json.loads((on / 'manifest.json').read_text())['config']['guards'], 'v2')
+        self.assertEqual(json.loads((on / 'g1.json').read_text())['guard']['version'], 'v2')
+        self.assertEqual(json.loads((on / 'run_summary.json').read_text())['guards']['version'], 'v2')
+        ts.cleanup()
 
     def test_mrh_guard_copies_never_modifies_and_the_copy_scores(self):
         cases = [case_with([ev('e1', 'prior_record')]), dict(case_with([ev('e1', 'ffprobe')]), id='g2')]

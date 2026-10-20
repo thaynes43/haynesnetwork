@@ -26,6 +26,11 @@ FILES = ['__init__.py', 'adapters.py', 'audit.py', 'decision_guard.py', 'gaps.py
 SMOKE_FILES = ['live_smoke.py', 'wiring_smoke.py']
 
 
+# Linux refuses a single environment string above MAX_ARG_STRLEN (131072 bytes); keep a margin for the variable name and the rest of the environment.
+MAX_ARG_STRLEN = 131072
+ENV_LIMIT = MAX_ARG_STRLEN - 4096
+
+
 def bundle():
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode='w:gz') as t:
@@ -35,7 +40,7 @@ def bundle():
         for name in SMOKE_FILES:
             t.add(HERE / name, arcname='smoke/' + name, filter=norm)
     data = base64.b64encode(buf.getvalue()).decode()
-    assert len(data) < 126000, 'bundle too large for one environment string: %d' % len(data)
+    assert len(data) < ENV_LIMIT, 'bundle too large for one environment string: %d (limit %d)' % (len(data), ENV_LIMIT)
     return data
 
 

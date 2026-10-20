@@ -183,7 +183,7 @@ lists any required field that is absent; `evidence_mode` and `evidence` are requ
 
 ## 9. Decision guards (**new in dev-c4**, opt-in)
 
-`--guards v1` (default off) runs two deterministic checks on the model's final decision, after its last turn. They are not model-visible, they use no case id, title or label,
+`--guards v1|v2` (default off; v1 is the version measured in the dev-c4 runs, v2 relaxes two G-write checks, below) runs two deterministic checks on the model's final decision, after its last turn. They are not model-visible, they use no case id, title or label,
 and they can only turn a decision into `insufficient_evidence` / `escalate` (never into a write or a diagnosis). The final decision's `reason` names the guard; the model's own full
 decision is kept in `guard.applied[].original`; `forced` keeps its meaning (the harness forced a decision after a failed repair) and a guard does not set it. `action_audit`,
 `decision_flags`, `bad_evidence_refs`, `refs_to_*` and `evidence.gaps_cited` are recomputed for the final decision. With guards off the record has no `guard` key and equals a dev-c3-shaped record.
@@ -197,5 +197,13 @@ decision is kept in `guard.applied[].original`; `forced` keeps its meaning (the 
   Whether the cited text really shows a defect is not decided here. The text-matching `target_in_context` check stays in `action_audit` but is not a reason to overrule (it misread a correct target in the offline what-if). For the guard,
   `remap` is consistent with `metadata_naming` as well as `identity_mismatch`, and a client profile under `context.expected.client_profile` counts (the dev-v1.1 shape); `action_audit` of v1 to v3 runs keeps its old reading.
 
-`mrh-guard <run dir> --suite <suite> --out <dir>` applies the guards offline to existing records (copies; the input is never modified; no model call) and writes manifest, run summary and audit lines, so the copy scores with the
-unchanged `score.py`. `mrh-guard --restore` is the inverse view of a guarded run (the original decisions back, to score it as if guards were off). `run_summary.json` of a guarded run has `guards{version, applied_by_rule, decisions_changed}`.
+**Guards v2** (measured offline only): G-write ignores the audit's `full_decode_ok` for `convert` (it works on an isolated copy and this contract does not require a clean full decode) and ignores `no_failed_tool_cited` when `cited_evidence_supports` is met. G-healthy is identical. `guard.version` says which one ran.
+
+`mrh-guard <run dir> --suite <suite> --out <dir> [--guards v1|v2]` applies the guards offline to existing records (copies; the input is never modified; no model call) and writes manifest, run summary and audit lines, so the copy scores with the
+unchanged `score.py`. It refuses a record whose `case_sha256` differs from the suite case. `mrh-guard --restore` is the inverse view of a guarded run (the original decisions back, to score it as if guards were off). Guarding an already guarded record starts again from the model's own decision. The guard reads only the status the model saw, not the harness-side `injected` flag. `run_summary.json` of a guarded run has `guards{version, applied_by_rule, decisions_changed}`.
+
+### Open questions and known limits (dev-c4)
+
+* **Q-01 (for the evaluator to rule on).** Prompt v4 does not say how to choose between `identity_mismatch` (blocklist_and_search) and `metadata_naming` (rename, or remap) for a file linked to the wrong episode. Pairing `remap` with `metadata_naming` (the dev-c4 audit table for v4 and the guards accept it) may not match the label convention, where `remap` has so far been paired with `identity_mismatch`. v4 is not changed for this.
+* **v4 wording to fix in a v5:** "probe" counts as integrity evidence while the text also says "metadata alone is not"; "partial" is also a status name; the `insufficient_evidence` definition still says "covered only part"; "injected failures" is not visible to the model; the naming comparison has no threshold, so an alias can read as a defect.
+* **G-healthy is stricter than ruling C2.** It also fires when integrity tools were offered but not called and the case holds no integrity evidence, which could cost G2 where a model skips tools.

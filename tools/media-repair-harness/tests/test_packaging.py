@@ -216,7 +216,8 @@ class JobBundles(unittest.TestCase):
             root = self.extract(data)
         finally:
             sys.path.remove(str(COMPONENT / 'smoke'))
-        self.assertLess(len(data), 126000)
+        self.assertEqual(launch_wiring_smoke.MAX_ARG_STRLEN, 131072)   # the real Linux single-string limit
+        self.assertLess(len(data), launch_wiring_smoke.MAX_ARG_STRLEN - 4096)
         self.run_py(root, "import sys; sys.path.insert(0, 'smoke'); import wiring_smoke; assert wiring_smoke.R.main; assert wiring_smoke.LS.evidence")
 
 

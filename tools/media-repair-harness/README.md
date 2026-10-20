@@ -59,13 +59,13 @@ python3 $C/tests/testdata/make_fixtures.py     # regenerates the three synthetic
 Evidence mode (dev-c2): `--evidence replay|live` (default `replay`: recorded and case-provided evidence exactly as in dev-c1) and, for live only, `--evidence-bounds '{"segments": 2}'`.
 `live` runs the bounded read-only collectors of `evidence/` on the case's own local media file; a case without a local media path that exists gets `unavailable` with the reason. See `CHANGELOG.md` (dev-c2).
 
-Run options: `--prompt v1|v2|v3|v4` (system prompt + turn protocol; default v1; v3 and v4 are dev-c3's and dev-c4's prompt text on the v2 turn protocol; version and sha256 are in every record), `--guards v1` (dev-c4, opt-in, default off: deterministic post-decision guards, see below), `--effort` (claude/codex), `--max-budget-usd` (claude per-call cap, default 2), `--num-ctx 8192 --num-predict 384 --keep-alive 2m --stop`
+Run options: `--prompt v1|v2|v3|v4` (system prompt + turn protocol; default v1; v3 and v4 are dev-c3's and dev-c4's prompt text on the v2 turn protocol; version and sha256 are in every record), `--guards v1|v2` (dev-c4, opt-in, default off: deterministic post-decision guards, see below), `--effort` (claude/codex), `--max-budget-usd` (claude per-call cap, default 2), `--num-ctx 8192 --num-predict 384 --keep-alive 2m --stop`
 (ollama; stop defaults per family: Qwen `<|im_end|>`, Muse `<|eot|>`; a run also writes `run_summary.json`: validity and completeness counts, no scoring), `--ollama-schema anyof|flat`, `--no-warmup`, `--ocr-model <vision tag on Prime>`,
 `--scratch <dir>` (frames and other media-derived artifacts; default `~/.cache/media-repair-harness/<run-id>`, never inside the run dir).
 
 ## Decision guards (dev-c4, opt-in)
 
-`--guards v1` (default off) runs two deterministic checks on the model's final decision, after its last turn: **G-healthy** (a `healthy` / `none` decision when no integrity check ran with status `ok` in the evidence the model could see, the evaluator's ruling C2 as a boundary)
+`--guards v1|v2` (default off; v2 relaxes two G-write checks and has been measured offline only) runs two deterministic checks on the model's final decision, after its last turn: **G-healthy** (a `healthy` / `none` decision when no integrity check ran with status `ok` in the evidence the model could see, the evaluator's ruling C2 as a boundary)
 and **G-write** (a write whose audit computes an unmet precondition, or that cites no usable evidence). A guard can only turn a decision into `insufficient_evidence` / `escalate`; the model's own decision is kept in the record field `guard`. Details: `CONTRACT-v2-proposal.md` section 9.
 
 ```bash

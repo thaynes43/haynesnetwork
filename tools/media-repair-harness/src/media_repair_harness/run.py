@@ -226,7 +226,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     # the model's original decision stays in the record's `guard` field.  Off (the default) this block does nothing and adds no key.
     guard_rec = None
     if guards:
-        decision, guard_rec = DG.apply(case, decision, tool_calls, evidence, prompt_version, forced=forced)
+        decision, guard_rec = DG.apply(case, decision, tool_calls, evidence, prompt_version, forced=forced, version=guards)
 
     # First-try validity is strict and never repaired after the fact: every model reply up to the first repair prompt must have
     # been schema-valid, no tool call may have left tools_available, and the case must have ended in a real decision.
@@ -451,7 +451,8 @@ def guard_summary(records):
     for r in records:
         for a in (r.get('guard') or {}).get('applied', []):
             by_rule[a['rule']] = by_rule.get(a['rule'], 0) + 1
-    return {'version': DG.GUARD_VERSION, 'applied_by_rule': dict(sorted(by_rule.items())),
+    versions = sorted({(r.get('guard') or {}).get('version') for r in records if r.get('guard')})
+    return {'version': versions[0] if len(versions) == 1 else versions, 'applied_by_rule': dict(sorted(by_rule.items())),
             'decisions_changed': sum(1 for r in records if (r.get('guard') or {}).get('final_changed'))}
 
 
@@ -487,7 +488,7 @@ def main(argv=None):
     ap.add_argument('--tool-output-bytes', type=int, default=P.TOOL_OUTPUT_BYTES, help='cap on one tool result shown to the model (lower it for small local contexts)')
     ap.add_argument('--num-predict', type=int, help='ollama output cap; default 384 for prompt v1, 640 for v2 (a write decision carries an audit object)')
     ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c)')
-    ap.add_argument('--guards', choices=list(DG.GUARD_VERSIONS), default=None, help='opt-in deterministic decision guards (dev-c4); default off. A guard can only turn a decision into insufficient_evidence/escalate and keeps the original in the record field `guard`')
+    ap.add_argument('--guards', choices=list(DG.GUARD_VERSIONS), default=None, help='opt-in deterministic decision guards (dev-c4); default off; v2 only relaxes two G-write checks (see CONTRACT-v2-proposal section 9). A guard can only turn a decision into insufficient_evidence/escalate and keeps the original in the record field `guard`')
     ap.add_argument('--keep-alive', default='2m')
     ap.add_argument('--stop', help='comma separated stop tokens (ollama); default per model family')
     ap.add_argument('--ollama-schema', choices=['anyof', 'flat'], default='anyof', help='format schema variant sent to Ollama')
