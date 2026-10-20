@@ -111,7 +111,7 @@ class ExplicitEmptiesComeBack(unittest.TestCase):
         o = ob('e1', 'decode_sample', {'exit_code': 0, 'frames': 0, 'out_time': None, 'stderr': ''}, args={'at': 8})
         v2, v3 = self.v2v3([o], 'tv')
         self.assertIn(('frames', 'zero', '0'), [(f[8], f[9], f[10]) for f in v2])          # v2 already kept the zero
-        self.assertEqual([(f[8], f[9]) for f in self.added(v2, v3)], [('error_lines', 'empty')])
+        self.assertEqual(sorted((f[8], f[9]) for f in self.added(v2, v3)), [('decoded_s', 'null'), ('error_lines', 'empty')])     # a null out_time is kept (third review, P3)
 
 
 class Deduplication(unittest.TestCase):

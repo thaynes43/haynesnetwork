@@ -21,7 +21,7 @@ from . import presence as PR
 from . import rubric as RB
 
 FORMAT_VERSION = 'v3-prototype'
-NESTED_PART_RX = __import__('re').compile(r'^output\.files\.(\d+)\.(tags)$')
+NESTED_PART_RX = __import__('re').compile(r'^output\.files\.(\d+)\.(tags|chapters)$')
 
 _DECL_PATHS = ('tags', 'chapters', 'streams', 'container', 'duration_s', 'title', 'creator', 'language', 'identifier', 'opf', 'audio_streams',
                'chapter_count', 'files', 'stages_passed')
@@ -110,7 +110,7 @@ def item_facts_v3(obs, d):
         out[key] = row['value']
         presence[key] = row['presence']
     nested = []
-    for row in PR.observation_presence(obs):        # live audiobook parts: an explicitly empty or null part tag object is kept in that part's facts
+    for row in PR.observation_presence(obs):        # live audiobook parts: an explicitly empty or null part tag object or chapter list is kept in that part's facts
         m = NESTED_PART_RX.match(row['path'])
         if not m or row['presence'] not in (PR.NULL, PR.EMPTY) or not isinstance(out.get('files'), list):
             continue

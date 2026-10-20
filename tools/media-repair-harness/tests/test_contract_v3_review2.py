@@ -22,7 +22,7 @@ PROBE, DAMAGE, CLEAN = P3.PROBE, P3.DAMAGE, P3.CLEAN
 GOOD_PROBE = dict(PROBE, format=dict(PROBE['format'], tags={'title': 'Lamp'}),
                   streams=[{'index': 0, 'codec_type': 'video', 'codec_name': 'h264', 'pix_fmt': 'yuv420p', 'width': 640, 'height': 360},
                            {'index': 1, 'codec_type': 'audio', 'codec_name': 'aac', 'channels': 2}])
-RUBRIC_V31_SHA256 = '597570b72580dd4542ffe54458a478c33e11fe53740cd60d49563287b968f1e4'      # rubric v3.1 (the amendment), pinned
+RUBRIC_V31_SHA256 = '106c2102ec9377af263d9fcdb25dc2ee982b140149f467455a264edac7e6b352'      # rubric v3.1 (the amendment), pinned
 
 
 def healthy_states(res):

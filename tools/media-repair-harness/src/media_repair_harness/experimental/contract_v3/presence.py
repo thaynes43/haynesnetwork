@@ -150,6 +150,7 @@ _FACT_KEY = {
     ('epub_inspect', 'dc_identifier'): 'identifier', ('epub_inspect', 'spine_items'): 'spine_items', ('epub_inspect', 'spine_heads'): 'spine_heads',
     ('epub_inspect', 'entries'): 'entries',
     ('decode_sample', 'exit_code'): 'exit_code', ('decode_sample', 'frames'): 'frames', ('decode_sample', 'stderr'): 'error_lines',
+    ('decode_sample', 'out_time'): 'decoded_s',          # v2 shows the decoded span parsed from out_time; a null or empty out_time is kept as such
     ('ocr', 'text'): 'text',
     ('audio_sample', 'rms_dbfs'): 'rms_dbfs', ('audio_sample', 'peak_dbfs'): 'peak_dbfs', ('audio_sample', 'silent_fraction'): 'silent_fraction',
 }

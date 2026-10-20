@@ -262,6 +262,14 @@ AMENDMENTS_V31 = (
      'reference must qualify for its role (source.ref and a release target are a record that binds the source; slot_ref and slot_free_ref are destination '
      'records); a rename\'s old_value equals a visible current naming-surface value and its new_value agrees with the catalog on every attribute it speaks to',
      'why': 'the damage observation could serve as the source binding, unseen rename values passed, and a rename stood with its diagnosis unmet'},
+    {'id': 'A31-10', 'changes': 'R-OLD, R-NEW', 'text': 'a rename\'s old_value is the LITERAL current value (no case, punctuation or spacing change); its new_value is an '
+     'evidenced naming operation: a basename only (no path component, no surrounding whitespace), the same file extension, every word token taken from '
+     'visible facts (the catalog, complete catalog records, the current names, the catalog\'s episode markers), and agreement with the catalog',
+     'why': 'a case- or punctuation-altered unseen old name passed, and an invented directory prefix passed every prerequisite (AUDIT-ASTRA-18)'},
+    {'id': 'A31-11', 'changes': 'eligibility of derived comparisons; M5, M8', 'text': 'a derived comparison that supports a prerequisite (the client '
+     'comparison of D-DEC-2 and A-CNV-2) is computed from complete results only; an incomplete result that contradicts (an attribute that disagrees with '
+     'the catalog, an unsupported client field) is material uncertainty (M5, M8): it blocks healthy and supports nothing',
+     'why': 'a partial probe established incompatibility, and a partial OCR naming another episode was discarded so healthy passed (AUDIT-ASTRA-18)'},
 )
 
 NEGATED_METHOD_RX = r'\b(?:no|not|without|unavailable|failed|missing|none|never|cannot|could ?n[o\']?t|unable|skipped)\b'
@@ -280,7 +288,7 @@ ELIGIBILITY_EXCEPTIONS = ('D-COR-1', 'A-BLK-3')
 ROLE_PREREQUISITES = {
     'blocklist_and_search': ({'id': 'R-SRC', 'check': 'source_ref_qualifies'}, {'id': 'R-TGT', 'check': 'release_ref_is_source'}),
     'remap': ({'id': 'R-SRC', 'check': 'source_ref_qualifies'}, {'id': 'R-SLOT', 'check': 'slot_refs_are_destination'}),
-    'rename': ({'id': 'R-SRC', 'check': 'source_ref_qualifies'}, {'id': 'R-OLD', 'check': 'old_value_visible'}, {'id': 'R-NEW', 'check': 'new_value_agrees'}),
+    'rename': ({'id': 'R-SRC', 'check': 'source_ref_qualifies'}, {'id': 'R-OLD', 'check': 'old_value_visible'}, {'id': 'R-NEW', 'check': 'new_value_evidenced'}),
     'convert': ({'id': 'R-SRC', 'check': 'source_ref_qualifies'},),
 }
 UNMANAGED_SOURCE_REF = 'case_item'

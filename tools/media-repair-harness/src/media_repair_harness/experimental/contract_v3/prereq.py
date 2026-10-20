@@ -80,6 +80,11 @@ class View:
         self.media_type = media_type
         self.caps = list(capabilities or [])
         self.an = EV2.analyze(self.obs, self.context, media_type)
+        # derived comparisons that SUPPORT a prerequisite are computed over complete results only (A31-11): a partial probe cannot establish incompatibility
+        done = [o for o in self.obs if self.an['items'][o['id']].execution['state'] == 'ran' and self.an['items'][o['id']].execution['status'] == 'ok']
+        self.an_complete = EV2.analyze(done, self.context, media_type)
+        rest = [o for o in self.obs if o not in done]
+        self.an_incomplete = EV2.analyze(rest, self.context, media_type) if rest else None      # what incomplete results say on their own (may add uncertainty only)
         self.facts = {o['id']: FX.item_facts_v3(o, self.an['items'][o['id']])[0] for o in self.obs}
         self.presence = {o['id']: {r['path']: r['presence'] for r in PR.observation_presence(o)} for o in self.obs}
 
@@ -143,12 +148,14 @@ class View:
                     (fl.get('id') is not None and fl.get('id') in [ids.get(k) for k in ('episodeFileId', 'movieFileId', 'bookId')]))
 
     # ------------------------------------------------------------------ identity-bearing statements of complete results: (ref, kind, field, text)
-    def statements(self):
+    def statements(self, incomplete=False):
+        """Complete results (and the context) by default; `incomplete=True` gives ONLY the statements of results that did not complete (partial, timed out,
+        failed with a readable output): they may add material uncertainty, never support a prerequisite (A31-11)."""
         out = []
-        if isinstance(self.context.get('filename'), str) and self.context['filename']:
+        if not incomplete and isinstance(self.context.get('filename'), str) and self.context['filename']:
             out.append(('context.filename', 'declaration', 'file_name', self.context['filename']))
         for o in self.obs:
-            if not self.complete(o):
+            if self.complete(o) == incomplete:
                 continue
             f = self.facts.get(o['id']) or {}
             if not isinstance(f, dict):
@@ -211,6 +218,10 @@ class View:
             elif field in TYPED_TITLE_FIELDS:
                 out['title'] = 'disagree'          # a typed title field naming no catalog value (section 8); a file name or free text naming none is not comparable
         return out
+
+    def incomplete_contradictions(self):
+        """The refs of incomplete results whose statements disagree with the catalog on any attribute (they block healthy; they support nothing)."""
+        return sorted({ref for ref, kind, field, text in self.statements(incomplete=True) if 'disagree' in self.compare(kind, field, text).values()})
 
     def identity(self):
         """-> (level, rows, per-attribute status).  Content settles only the attributes it speaks to (A31-5)."""
@@ -294,7 +305,7 @@ def check_named(v, check):
     if check == 'stated_client':
         return (MET, ['context.client_profile'], '') if EV2.client_profile(v.context) else (UNMET, [], 'no client is stated')
     if check == 'unsupported_selected_stream':
-        cl = an['client']
+        cl = v.an_complete['client']            # complete results only (A31-11)
         if cl is None:
             return UNMET, [], 'no client comparison (no client stated)'
         sel = cl.get('selection') or {}
@@ -344,8 +355,11 @@ def check_named(v, check):
         surface = RB.NAMING_SURFACE.get(v.media_type, ('file_name',))
         refs = []
         for ref, kind, field, text in v.statements():
-            if field in surface and kind == 'declaration' and 'disagree' in v.compare(kind, field, text).values():
-                refs.append(ref + ':' + field)
+            if field in surface and kind == 'declaration':
+                if PR.state_of(text) == PR.EMPTY:                 # an explicitly empty value of a naming field (null and absent are not statements)
+                    refs.append(ref + ':' + field + '_empty')
+                elif 'disagree' in v.compare(kind, field, text).values():
+                    refs.append(ref + ':' + field)
         for o in v.of_tool('ffprobe', 'audiobook_inspect', 'epub_inspect'):
             p = v.presence.get(o['id']) or {}
             if 'tag_title' in surface and o['tool'] != 'epub_inspect' and (p.get('format.tags') == PR.EMPTY or p.get('tags') == PR.EMPTY):
@@ -461,18 +475,24 @@ def material(v):
         m4.append('coverage.duration_s')
     out.append(_r('M4', 'material', MET if m4 else UNMET, m4))
     level, rows, per = v.identity()
-    out.append(_r('M5', 'material', MET if level in ('contested', 'contradicted_by_content') else UNMET,
-                  [r['ref'] for r in rows if 'disagree' in r['attributes'].values()], ', '.join('%s %s' % (a, s) for a, s in per.items() if s in ('contested', 'contradicted'))))
+    late = v.incomplete_contradictions()          # an incomplete result that disagrees blocks healthy (A31-11); it never settles or supports anything
+    out.append(_r('M5', 'material', MET if (level in ('contested', 'contradicted_by_content') or late) else UNMET,
+                  [r['ref'] for r in rows if 'disagree' in r['attributes'].values()] + late,
+                  ', '.join(['%s %s' % (a, s) for a, s in per.items() if s in ('contested', 'contradicted')] + ['incomplete result disagrees: %s' % r for r in late])))
     st, refs, _ = check_named(v, 'naming_surface_defect')
     out.append(_r('M6', 'material', MET if st == MET else UNMET, refs))
     st1, r1, _ = check_named(v, 'two_candidates')
     st2, r2, _ = check_named(v, 'no_settling_choice')
     out.append(_r('M7', 'material', MET if (st1 == MET and st2 == MET) else UNMET, sorted(set(r1 + r2))))
-    cl = an['client']
+    cl = v.an_complete['client']
     m8 = []
     if cl is not None:
         m8 = ['client_comparison.%s' % r['field'] for r in cl.get('rows') or [] if r.get('verdict') == EV2.UNKNOWN] + (['client_comparison.not_compared'] if cl.get('not_compared') else [])
         m8 += ['client_comparison.selection.%s' % t for t, s in sorted((cl.get('selection') or {}).items()) if isinstance(s, dict) and s.get('how') == 'ambiguous']
+        done = {(r.get('field'), r.get('stream')) for r in cl.get('rows') or [] if r.get('verdict') == 'unsupported'}
+        inc = (v.an_incomplete or {}).get('client') or {}
+        m8 += ['client_comparison.%s (incomplete result)' % r['field'] for r in inc.get('rows') or []
+               if r.get('verdict') == 'unsupported' and (r.get('field'), r.get('stream')) not in done]      # an incomplete probe that contradicts (A31-11)
     out.append(_r('M8', 'material', MET if m8 else UNMET, m8))
     q = v.context.get('question')
     out.append(_r('M9', 'material', UNKNOWN if q else UNMET, ['context.question'] if q else [], 'a complaint is stated; whether a shown observation reaches it is judged, not computed' if q else ''))

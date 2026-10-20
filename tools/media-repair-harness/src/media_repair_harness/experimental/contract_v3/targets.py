@@ -10,6 +10,8 @@ Protocol turn-v3, schema decision-v3, audit v3 and evidence format v3 form ONE c
 that declares contract v3.  No shipped prompt does, so every v3 element is refused with v1 to v5 (in particular v5).  With no v3 element the
 existing rule (`run.check_option_combination`, unchanged) decides.
 """
+import re
+
 from ... import protocol as P
 from ... import run as RUN
 from . import prereq as PQ
@@ -132,13 +134,60 @@ def _role(v, check, decision, res):
             visible.append(('context.filename', fname))
         surface = RB.NAMING_SURFACE.get(v.media_type, ('file_name',))
         visible += [(ref, text) for ref, kind, field, text in v.statements() if kind == 'declaration' and field in surface]
-        hit = [ref for ref, text in visible if PQ.norm(text) == PQ.norm(old)]
-        return (PQ.MET if hit else PQ.UNMET), hit, 'the old value is a visible current naming-surface value' if hit else 'the old value matches no visible current name'
-    if check == 'new_value_agrees':
-        attrs = v.compare('declaration', 'file_name', tgt.get('new_value'))
-        ok = attrs.get('title') == 'agree' and 'disagree' not in attrs.values()
-        return (PQ.MET if ok else PQ.UNMET), ['context.expected'], 'the new value agrees with the catalog on every attribute it names' if ok else 'the new value does not agree with the catalog (%s)' % attrs
+        hit = [ref for ref, text in visible if text == old]        # the LITERAL current value (A31-10): no case, punctuation or spacing change
+        return (PQ.MET if hit else PQ.UNMET), hit, 'the old value is the literal visible current naming-surface value' if hit else 'the old value is not literally a visible current name'
+    if check == 'new_value_evidenced':
+        return _new_value(v, tgt.get('old_value'), tgt.get('new_value'))
     raise KeyError(check)
+
+
+EXT_RX = re.compile(r'\.([A-Za-z0-9]{2,4})$')
+
+
+def visible_tokens(v):
+    """Every word token the model could see in the catalog and the current names: the context (not the complaint text), complete catalog records,
+    complete naming-surface declarations, and the catalog's numbers written as episode markers.  A naming operation may only reuse these."""
+    toks = set()
+
+    def walk(x):
+        if isinstance(x, str):
+            toks.update(PQ.norm(x).split())
+        elif isinstance(x, (int, float)) and not isinstance(x, bool):
+            toks.add(str(int(x)) if float(x).is_integer() else str(x))
+        elif isinstance(x, dict):
+            for k, y in x.items():
+                if k not in ('notes_for_model', 'question', 'note'):
+                    walk(y)
+        elif isinstance(x, list):
+            for y in x:
+                walk(y)
+    walk(v.context)
+    for o in v.of_tool('arr_lookup'):
+        walk(v.facts.get(o['id']))
+    surface = RB.NAMING_SURFACE.get(v.media_type, ('file_name',))
+    for _ref, kind, field, text in v.statements():
+        if kind == 'declaration' and field in surface:
+            walk(text)
+    for s_, e_ in v.catalog()['episodes']:
+        toks.update({'s%02de%02d' % (s_, e_), 's%de%d' % (s_, e_), '%dx%02d' % (s_, e_), '%02d' % e_, '%02d' % s_})
+    return toks
+
+
+def _new_value(v, old, new):
+    """A31-10: the proposed name is an evidenced naming operation: a basename only (no path component), no surrounding whitespace, the same file
+    extension as the current name, every word token from visible facts, and agreement with the catalog on every attribute it speaks to."""
+    if not isinstance(new, str) or '/' in new or '\\' in new or new != new.strip() or new in ('.', '..'):
+        return PQ.UNMET, [], 'the new value is not a bare basename (a path component or surrounding whitespace is added)'
+    eo, en = EXT_RX.search(old or ''), EXT_RX.search(new)
+    if eo and (not en or en.group(1) != eo.group(1)):
+        return PQ.UNMET, [], 'the new value changes the file extension (%s), which no naming operation does' % eo.group(1)
+    extra = sorted(set(PQ.norm(new).split()) - visible_tokens(v))
+    if extra:
+        return PQ.UNMET, [], 'the new value has words no visible fact carries: %s' % ', '.join(extra[:6])
+    attrs = v.compare('declaration', 'file_name', new)
+    if attrs.get('title') != 'agree' or 'disagree' in attrs.values():
+        return PQ.UNMET, ['context.expected'], 'the new value does not agree with the catalog (%s)' % attrs
+    return PQ.MET, ['context.expected'], 'a basename made from visible facts that agrees with the catalog'
 
 
 def audit_v3(decision, observations, context=None, media_type=None, capabilities=None):
