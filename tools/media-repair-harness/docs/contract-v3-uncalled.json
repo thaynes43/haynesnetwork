@@ -1,0 +1,1300 @@
+{
+ "note": "neutral transcript observation: an available, offered, valid, not-yet-made check existed at the decision with budget left; not an error count",
+ "runs": {
+  "claude-haiku-5-5": {
+   "budget_exhausted_escalations": 0,
+   "by_scope": {
+    "decode_interval": 20
+   },
+   "by_tool": {
+    "decode_sample": 20
+   },
+   "decisions": 73,
+   "escalations": 34,
+   "escalations_with_uncalled_available_check": 8,
+   "non_escalations_with_uncalled_available_check": 16,
+   "rows": [
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-09c06012",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-5ccd8745",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-7004a518",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-c3e4b864",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-e0b77561",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-fe073ed6",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-e84d26d4",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-45d5be8c",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-761ae26f",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-838d9d53",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-c4dd2d8d",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-942002ed",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-4f0cd704",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-54ec5482",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-e0570c61",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-8ceb1a03",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-8543eeb5",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-6c81302f",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-70227022",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-a84cc472",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-14603d50",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-553e83c7",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-6d5c5c6e",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-27675eba",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-a37c5d0a",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-3a8c9380",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-66f68ca8",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-ccb1d553",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-b621eb58",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-6d6f4129",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-68e5d181",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-5613e90c",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-25134e47",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-9a3f6e2d",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-cd3691b5",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-5fa4f9f1",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-bdc57abb",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "convert",
+     "alias": "case-45f97e7d",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "convert",
+     "alias": "case-f18fe4e7",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-0d5c3a7b",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-e394d6d5",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-bb2295f1",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "none",
+     "alias": "case-2eaa1673",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "escalate",
+     "alias": "case-b01bec1a",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-a72188a4",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "escalate",
+     "alias": "case-7db3ec79",
+     "calls_made": 2,
+     "remaining": 4,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 2
+    },
+    {
+     "action": "escalate",
+     "alias": "case-e6f8379b",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "escalate",
+     "alias": "case-41a1973f",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 4
+    },
+    {
+     "action": "convert",
+     "alias": "case-804b1b13",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "convert",
+     "alias": "case-0d9f2f7c",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-285bb2c8",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-46685104",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-b2b22c89",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "convert",
+     "alias": "case-13f49e4f",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "escalate",
+     "alias": "case-65f68e4d",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-4e6c41c6",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-d4bc4ed7",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "none",
+     "alias": "case-fa953b4c",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "none",
+     "alias": "case-295ee00c",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "none",
+     "alias": "case-8c689766",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "escalate",
+     "alias": "case-179f2522",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "escalate",
+     "alias": "case-a0684d79",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-2bd1742a",
+     "calls_made": 2,
+     "remaining": 4,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-686d6b79",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "escalate",
+     "alias": "case-73b1b19d",
+     "calls_made": 2,
+     "remaining": 4,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "escalate",
+     "alias": "case-10e567ad",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-5f53664f",
+     "calls_made": 2,
+     "remaining": 4,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "none",
+     "alias": "case-27b5f0c8",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "rename",
+     "alias": "case-287bc868",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "escalate",
+     "alias": "case-9ba665e9",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-9fc7a2dd",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-8972aee0",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-a1cf2e30",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    }
+   ],
+   "run": "devc5-b-haiku-5-5"
+  },
+  "qwen3.8:27b": {
+   "budget_exhausted_escalations": 0,
+   "by_scope": {
+    "decode_interval": 11
+   },
+   "by_tool": {
+    "decode_sample": 11
+   },
+   "decisions": 73,
+   "escalations": 17,
+   "escalations_with_uncalled_available_check": 4,
+   "non_escalations_with_uncalled_available_check": 19,
+   "rows": [
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-c97f3cd8",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-f40deeee",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-30bd3acf",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-b6a4af00",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-42be6d6a",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-67e8d990",
+     "calls_made": 2,
+     "remaining": 4,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-a9024bfe",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-185ed0e3",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-499c80eb",
+     "calls_made": 3,
+     "remaining": 3,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-617f884c",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-99f59263",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-4e04d2c6",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-5df64f44",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-0bb4fec8",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-e47827a7",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-054d8f90",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-c90fe99f",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-156d0f52",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-f77e3e74",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-bd64e0bf",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-97f93661",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-3e356e7f",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-95e0136f",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-f7a9d1f6",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-244e1c63",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-f0822196",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-6d785610",
+     "calls_made": 2,
+     "remaining": 4,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-ee173916",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-856cea08",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-094a573e",
+     "calls_made": 3,
+     "remaining": 3,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-2e606804",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "rename",
+     "alias": "case-ab9b3694",
+     "calls_made": 2,
+     "remaining": 4,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-57fbbf69",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-c2f25324",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-f2f9df24",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-26963fb4",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-83d176cf",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-b10b88b9",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-c3cf467a",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-2040660e",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-a24f4c8d",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-49b229f1",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "none",
+     "alias": "case-377cb346",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-a60b8c94",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-2e9da2c7",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "none",
+     "alias": "case-e104aaf0",
+     "calls_made": 3,
+     "remaining": 3,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "rename",
+     "alias": "case-04153f1e",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "escalate",
+     "alias": "case-8ff2a7bf",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 4
+    },
+    {
+     "action": "escalate",
+     "alias": "case-f3060a7f",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "escalate",
+     "alias": "case-dc585c85",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-5d03c3ff",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-b974836a",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-aa96f21a",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 2
+    },
+    {
+     "action": "escalate",
+     "alias": "case-b24ef2e2",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "none",
+     "alias": "case-e7aae201",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-87e07df6",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-4cc73f23",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "none",
+     "alias": "case-44751e45",
+     "calls_made": 2,
+     "remaining": 4,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "none",
+     "alias": "case-cf9f0676",
+     "calls_made": 3,
+     "remaining": 3,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 2
+    },
+    {
+     "action": "none",
+     "alias": "case-bc2c596b",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "escalate",
+     "alias": "case-28a769a3",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "escalate",
+     "alias": "case-afbce35e",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-fd6df8c5",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-e6186da8",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-28fc34d8",
+     "calls_made": 1,
+     "remaining": 5,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "escalate",
+     "alias": "case-3be1fad1",
+     "calls_made": 3,
+     "remaining": 3,
+     "tools": [],
+     "uncalled_available": 0
+    },
+    {
+     "action": "none",
+     "alias": "case-64343022",
+     "calls_made": 5,
+     "remaining": 1,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "none",
+     "alias": "case-07b1afc1",
+     "calls_made": 5,
+     "remaining": 1,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 1
+    },
+    {
+     "action": "rename",
+     "alias": "case-679e61de",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "escalate",
+     "alias": "case-c2608e82",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-0bebc07a",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-200f277d",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    },
+    {
+     "action": "blocklist_and_search",
+     "alias": "case-367a72d4",
+     "calls_made": 0,
+     "remaining": 6,
+     "tools": [
+      "decode_sample"
+     ],
+     "uncalled_available": 3
+    }
+   ],
+   "run": "devc5-b-qwen3.8-27b"
+  }
+ },
+ "suite": "suite-dev-v1.1"
+}
