@@ -21,7 +21,7 @@ import launch_smoke as L  # noqa: E402
 
 BEGIN, END = '===MRH-WIRING-SMOKE-BEGIN===', '===MRH-WIRING-SMOKE-END==='
 PACKAGE = HERE.parent / 'src' / 'media_repair_harness'
-FILES = ['__init__.py', 'adapters.py', 'audit.py', 'gaps.py', 'guard.py', 'leakguard.py', 'outcomes.py', 'protocol.py', 'remote_sampler.py', 'ollama_transport.py', 'run.py',
+FILES = ['__init__.py', 'adapters.py', 'audit.py', 'decision_guard.py', 'gaps.py', 'guard.py', 'leakguard.py', 'outcomes.py', 'protocol.py', 'remote_sampler.py', 'ollama_transport.py', 'run.py',
          'tools.py', 'vendored_epub.py', 'prompts/v2.txt', 'evidence/__init__.py', 'evidence/core.py', 'evidence/avtools.py', 'evidence/epubtool.py']
 SMOKE_FILES = ['live_smoke.py', 'wiring_smoke.py']
 
@@ -35,7 +35,7 @@ def bundle():
         for name in SMOKE_FILES:
             t.add(HERE / name, arcname='smoke/' + name, filter=norm)
     data = base64.b64encode(buf.getvalue()).decode()
-    assert len(data) < 120000, 'bundle too large for one environment string: %d' % len(data)
+    assert len(data) < 126000, 'bundle too large for one environment string: %d' % len(data)
     return data
 
 

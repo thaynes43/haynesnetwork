@@ -22,13 +22,14 @@ COMPONENT = th.COMPONENT
 
 # Digests of what the model is sent, taken from the frozen dev-c2 candidate (e27f2385) before the move into the package.  The full
 # replay-identity comparison lives in test_wiring.ReplayIdentity; these are the short, explicit pins.
-HARNESS_VERSION = 'dev-c3'
+HARNESS_VERSION = 'dev-c4'
 PROMPT_SHA256 = {'v1': '30749f5dc7065a2ddd70967cd6888e91d237030e1b025bc6dac19ca51fed9ee8',
                  'v2': '351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a'}
 GOLDEN_SHA256 = '8f4f17373e857c90509b4768f426b668b520683c8c353993028f771f8eb2e411'
 PROMPT_FILE_SHA256 = {'v2.txt': 'b63a9e9b5558a1f1fbb94fcdd8624d1c3e46f8990a3af2d2a00c0a480521ec04'}
 # dev-c3 added prompts/v3.txt (new text, same turn protocol as v2).  Pinned so a stray edit shows up; v1 and v2 above stay byte-identical.
 V3_FILE_SHA256 = '6e53ac6e0964e6f427569ab1f4ef6e0b679f6877ec84af8cf7199d5cc4019d1e'
+V4_FILE_SHA256 = '48bad0e41baa113df432545566a34d3bc0d01e2c5bd0f27fe0bcedb923c73a8a'   # dev-c4: prompts/v4.txt, the text measured in runs/dev-c4
 V3_SENT_SHA256 = 'b1fd9e855839'   # prefix of the sha256 the dev-c3 runs record as prompt.sha256 (prompt text sent, one trailing newline removed)
 
 
@@ -43,8 +44,10 @@ class Pinned(unittest.TestCase):
     def test_prompt_resource_files_are_byte_identical_to_dev_c2(self):
         files = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(P.PROMPT_DIR.iterdir()) if p.is_file()}
         v3 = files.pop('v3.txt')
+        v4 = files.pop('v4.txt')
         self.assertEqual(files, PROMPT_FILE_SHA256)   # v2.txt (and v1, which lives in protocol.py) are the dev-c2 bytes
         self.assertEqual(v3, V3_FILE_SHA256)
+        self.assertEqual(v4, V4_FILE_SHA256)   # dev-c4 added v4.txt; v1, v2 and v3 are untouched
         self.assertTrue(P.get_prompt('v3')['sha256'].startswith(V3_SENT_SHA256))
 
 
@@ -213,7 +216,7 @@ class JobBundles(unittest.TestCase):
             root = self.extract(data)
         finally:
             sys.path.remove(str(COMPONENT / 'smoke'))
-        self.assertLess(len(data), 120000)
+        self.assertLess(len(data), 126000)
         self.run_py(root, "import sys; sys.path.insert(0, 'smoke'); import wiring_smoke; assert wiring_smoke.R.main; assert wiring_smoke.LS.evidence")
 
 

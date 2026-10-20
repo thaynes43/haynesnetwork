@@ -71,7 +71,7 @@ class PromptV3(unittest.TestCase):
         self.assertNotEqual(p['sha256'], P.get_prompt('v2')['sha256'])
         self.assertNotEqual(p['sha256'], P.get_prompt('v1')['sha256'])
         with self.assertRaises(ValueError):
-            P.get_prompt('v4')
+            P.get_prompt('v5')
 
     def test_v3_speaks_the_v2_turn_protocol(self):
         self.assertEqual([P.protocol_of(v) for v in ('v1', 'v2', 'v3')], ['v1', 'v2', 'v2'])
@@ -153,7 +153,7 @@ class PromptV3(unittest.TestCase):
         rec, ad = run_v3('rg-v3-ebook-healthy-001', [call('epub_inspect'), th.decision('healthy', 'none', refs=['t1'])])
         self.assertEqual((rec['prompt']['version'], rec['prompt']['protocol']), ('v3', 'turn-v2'))
         self.assertEqual(rec['prompt']['sha256'], P.get_prompt('v3')['sha256'])
-        self.assertEqual(rec['harness_version'], 'dev-c3')
+        self.assertEqual(rec['harness_version'], 'dev-c4')
         self.assertEqual(ad.calls[0][0]['role'], 'user')
         self.assertEqual(R.record_missing_fields(rec), [])
 
