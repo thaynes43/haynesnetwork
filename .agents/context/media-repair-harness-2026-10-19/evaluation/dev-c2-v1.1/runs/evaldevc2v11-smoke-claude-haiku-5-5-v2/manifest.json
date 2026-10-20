@@ -1,0 +1,93 @@
+{
+  "aborted": null,
+  "adapter": "claude",
+  "argv": [
+    "--suite",
+    "/home/dev/work/mrh-eval-devc2-v11-1019/.agents/context/media-repair-harness-2026-10-19/suite-dev-v1.1",
+    "--split",
+    "dev",
+    "--adapter",
+    "claude",
+    "--model",
+    "claude-haiku-5-5",
+    "--prompt",
+    "v2",
+    "--evidence",
+    "replay",
+    "--cases",
+    "epub-healthy-001,tv-identity-001",
+    "--out",
+    "/home/dev/work/mrh-eval-devc2-v11-out/evaldevc2v11-smoke-claude-haiku-5-5-v2"
+  ],
+  "case_ids": [
+    "epub-healthy-001",
+    "tv-identity-001"
+  ],
+  "case_sha256": {
+    "epub-healthy-001": "e16c8c07e70b80a02d8cbd7b0de4ab3bb9a491acf85b1d5d66059d5151c9c72a",
+    "tv-identity-001": "e269f6c6622416415d36862947560119d25c843c8259830c60c3ef26dfefa10f"
+  },
+  "config": {
+    "adapter_config": {
+      "adapter": "claude",
+      "effort": null,
+      "flags": [
+        "--tools",
+        "",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--disable-slash-commands",
+        "--setting-sources",
+        "",
+        "--no-session-persistence"
+      ],
+      "max_budget_usd": 2.0,
+      "model": "claude-haiku-5-5",
+      "output_format": "json"
+    },
+    "evidence_bounds": null,
+    "evidence_bounds_clamped": null,
+    "evidence_mode": "replay",
+    "flat_schema_sha256": "0cc08ff1de36f459c2654838e3dad024986815dd843572340b74a624ffb7d2eb",
+    "harness_version": "dev-c2",
+    "max_tool_calls": 6,
+    "ocr_model": null,
+    "prompt_version": "v2",
+    "protocol": "turn-v2",
+    "replay": "auto",
+    "system_prompt_sha256": "351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a",
+    "tool_output_bytes": 8192,
+    "tool_timeout_s": 60,
+    "turn_schema_sha256": "4d976ba5fc8f82af307a7cfb4f168db248b08ffb5e7bf2a82d11b2b9ce28790b",
+    "turn_schema_v2_sha256": "febb1ea15e399104d90772b01c6e4b51d7eb3dc66f5af951f8ff3e8cd882eb36"
+  },
+  "config_hash": "2c3f488ca7b899d9d54161b7014f7ea32a086227b364341726441c030e35d529",
+  "ended_at": "2026-10-20T02:19:13.444451+00:00",
+  "finish": {},
+  "harness_git": {
+    "branch": "HEAD",
+    "dirty": false,
+    "sha": "e27f23859418d6e2110fc90c8342c5420afc5264"
+  },
+  "harness_version": "dev-c2",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+  "preflight": {
+    "adapter": "claude",
+    "model_digest": null,
+    "model_digest_na_reason": "hosted API model: no weights digest; the response model id is recorded instead",
+    "requested_model": "claude-haiku-5-5",
+    "runtime_version": "2.1.299 (Claude Code)"
+  },
+  "python": "3.11.2",
+  "records_written": [
+    "epub-healthy-001",
+    "tv-identity-001"
+  ],
+  "requested_model": "claude-haiku-5-5",
+  "run_id": "evaldevc2v11-smoke-claude-haiku-5-5-v2",
+  "runtime_version": "2.1.299 (Claude Code)",
+  "started_at": "2026-10-20T02:19:04.146838+00:00",
+  "suite_dir": "/home/dev/work/mrh-eval-devc2-v11-1019/.agents/context/media-repair-harness-2026-10-19/suite-dev-v1.1"
+}
