@@ -1,0 +1,1247 @@
+{
+  "guards": [
+    "v1",
+    "v2"
+  ],
+  "label": "dev-tuned, offline, no model calls; one run per model",
+  "models": {
+    "claude-haiku-5-5": {
+      "g1_cases_off": [],
+      "gates_off": {
+        "G1": "0 PASS",
+        "G10": "100.0% PASS",
+        "G2": "92.3% FAIL",
+        "G3": "88.5% PASS",
+        "G4": "93.3% PASS",
+        "G5": "8.2% PASS",
+        "G6": "100.0% PASS",
+        "G7": "98.6% PASS",
+        "G8": "100.0% PASS",
+        "G9": "crashes 0, p95 12.157s PASS"
+      },
+      "recorded_with_guards": false,
+      "source": "evaldevc3v11-claude-haiku-5-5-v3",
+      "versions": {
+        "v1": {
+          "by_rule": {},
+          "changed": [],
+          "correct_before_wrong_after": [],
+          "g1_cases": [],
+          "gates": {
+            "G1": "0 PASS",
+            "G10": "100.0% PASS",
+            "G2": "92.3% FAIL",
+            "G3": "88.5% PASS",
+            "G4": "93.3% PASS",
+            "G5": "8.2% PASS",
+            "G6": "100.0% PASS",
+            "G7": "98.6% PASS",
+            "G8": "100.0% PASS",
+            "G9": "crashes 0, p95 12.157s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": []
+        },
+        "v2": {
+          "by_rule": {},
+          "changed": [],
+          "correct_before_wrong_after": [],
+          "g1_cases": [],
+          "gates": {
+            "G1": "0 PASS",
+            "G10": "100.0% PASS",
+            "G2": "92.3% FAIL",
+            "G3": "88.5% PASS",
+            "G4": "93.3% PASS",
+            "G5": "8.2% PASS",
+            "G6": "100.0% PASS",
+            "G7": "98.6% PASS",
+            "G8": "100.0% PASS",
+            "G9": "crashes 0, p95 12.157s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": []
+        }
+      }
+    },
+    "claude-haiku-5-5 [dev-c4 v4]": {
+      "g1_cases_off": [],
+      "gates_off": {
+        "G1": "0 PASS",
+        "G10": "100.0% PASS",
+        "G2": "84.6% FAIL",
+        "G3": "80.3% FAIL",
+        "G4": "100.0% PASS",
+        "G5": "16.3% FAIL",
+        "G6": "100.0% PASS",
+        "G7": "97.3% FAIL",
+        "G8": "100.0% PASS",
+        "G9": "crashes 0, p95 16.949s PASS"
+      },
+      "recorded_with_guards": true,
+      "source": "devc4-v4g-haiku-5-5",
+      "versions": {
+        "v1": {
+          "by_rule": {},
+          "changed": [],
+          "correct_before_wrong_after": [],
+          "g1_cases": [],
+          "gates": {
+            "G1": "0 PASS",
+            "G10": "100.0% PASS",
+            "G2": "84.6% FAIL",
+            "G3": "80.3% FAIL",
+            "G4": "100.0% PASS",
+            "G5": "16.3% FAIL",
+            "G6": "100.0% PASS",
+            "G7": "97.3% FAIL",
+            "G8": "100.0% PASS",
+            "G9": "crashes 0, p95 16.949s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": []
+        },
+        "v2": {
+          "by_rule": {},
+          "changed": [],
+          "correct_before_wrong_after": [],
+          "g1_cases": [],
+          "gates": {
+            "G1": "0 PASS",
+            "G10": "100.0% PASS",
+            "G2": "84.6% FAIL",
+            "G3": "80.3% FAIL",
+            "G4": "100.0% PASS",
+            "G5": "16.3% FAIL",
+            "G6": "100.0% PASS",
+            "G7": "97.3% FAIL",
+            "G8": "100.0% PASS",
+            "G9": "crashes 0, p95 16.949s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": []
+        }
+      }
+    },
+    "claude-opus-5-5": {
+      "g1_cases_off": [
+        "tv-insuff-003"
+      ],
+      "gates_off": {
+        "G1": "1 FAIL",
+        "G10": "100.0% PASS",
+        "G2": "92.3% FAIL",
+        "G3": "91.8% PASS",
+        "G4": "93.3% PASS",
+        "G5": "6.1% PASS",
+        "G6": "100.0% PASS",
+        "G7": "95.9% FAIL",
+        "G8": "100.0% PASS",
+        "G9": "crashes 0, p95 16.669s PASS"
+      },
+      "recorded_with_guards": false,
+      "source": "evaldevc3v11-claude-opus-5-5-v3",
+      "versions": {
+        "v1": {
+          "by_rule": {},
+          "changed": [],
+          "correct_before_wrong_after": [],
+          "g1_cases": [
+            "tv-insuff-003"
+          ],
+          "gates": {
+            "G1": "1 FAIL",
+            "G10": "100.0% PASS",
+            "G2": "92.3% FAIL",
+            "G3": "91.8% PASS",
+            "G4": "93.3% PASS",
+            "G5": "6.1% PASS",
+            "G6": "100.0% PASS",
+            "G7": "95.9% FAIL",
+            "G8": "100.0% PASS",
+            "G9": "crashes 0, p95 16.669s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": []
+        },
+        "v2": {
+          "by_rule": {},
+          "changed": [],
+          "correct_before_wrong_after": [],
+          "g1_cases": [
+            "tv-insuff-003"
+          ],
+          "gates": {
+            "G1": "1 FAIL",
+            "G10": "100.0% PASS",
+            "G2": "92.3% FAIL",
+            "G3": "91.8% PASS",
+            "G4": "93.3% PASS",
+            "G5": "6.1% PASS",
+            "G6": "100.0% PASS",
+            "G7": "95.9% FAIL",
+            "G8": "100.0% PASS",
+            "G9": "crashes 0, p95 16.669s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": []
+        }
+      }
+    },
+    "claude-sonnet-5-5": {
+      "g1_cases_off": [],
+      "gates_off": {
+        "G1": "0 PASS",
+        "G10": "100.0% PASS",
+        "G2": "92.3% FAIL",
+        "G3": "90.2% PASS",
+        "G4": "93.3% PASS",
+        "G5": "6.1% PASS",
+        "G6": "100.0% PASS",
+        "G7": "100.0% PASS",
+        "G8": "100.0% PASS",
+        "G9": "crashes 0, p95 11.518s PASS"
+      },
+      "recorded_with_guards": false,
+      "source": "evaldevc3v11-claude-sonnet-5-5-v3",
+      "versions": {
+        "v1": {
+          "by_rule": {},
+          "changed": [],
+          "correct_before_wrong_after": [],
+          "g1_cases": [],
+          "gates": {
+            "G1": "0 PASS",
+            "G10": "100.0% PASS",
+            "G2": "92.3% FAIL",
+            "G3": "90.2% PASS",
+            "G4": "93.3% PASS",
+            "G5": "6.1% PASS",
+            "G6": "100.0% PASS",
+            "G7": "100.0% PASS",
+            "G8": "100.0% PASS",
+            "G9": "crashes 0, p95 11.518s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": []
+        },
+        "v2": {
+          "by_rule": {},
+          "changed": [],
+          "correct_before_wrong_after": [],
+          "g1_cases": [],
+          "gates": {
+            "G1": "0 PASS",
+            "G10": "100.0% PASS",
+            "G2": "92.3% FAIL",
+            "G3": "90.2% PASS",
+            "G4": "93.3% PASS",
+            "G5": "6.1% PASS",
+            "G6": "100.0% PASS",
+            "G7": "100.0% PASS",
+            "G8": "100.0% PASS",
+            "G9": "crashes 0, p95 11.518s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": []
+        }
+      }
+    },
+    "gpt-6-luna": {
+      "g1_cases_off": [
+        "tv-healthy-006"
+      ],
+      "gates_off": {
+        "G1": "1 FAIL",
+        "G10": "100.0% PASS",
+        "G2": "61.5% FAIL",
+        "G3": "77.0% FAIL",
+        "G4": "86.7% FAIL",
+        "G5": "18.4% FAIL",
+        "G6": "100.0% PASS",
+        "G7": "97.3% FAIL",
+        "G8": "100.0% PASS",
+        "G9": "crashes 0, p95 31.988s PASS"
+      },
+      "recorded_with_guards": false,
+      "source": "evaldevc3v11-gpt-6-luna-v3",
+      "versions": {
+        "v1": {
+          "by_rule": {
+            "G-healthy": 1
+          },
+          "changed": [
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "movie-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            }
+          ],
+          "correct_before_wrong_after": [],
+          "g1_cases": [
+            "tv-healthy-006"
+          ],
+          "gates": {
+            "G1": "1 FAIL",
+            "G10": "100.0% PASS",
+            "G2": "61.5% FAIL",
+            "G3": "77.0% FAIL",
+            "G4": "93.3% PASS",
+            "G5": "18.4% FAIL",
+            "G6": "100.0% PASS",
+            "G7": "97.3% FAIL",
+            "G8": "100.0% PASS",
+            "G9": "crashes 0, p95 31.988s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": [
+            "movie-healthy-002"
+          ]
+        },
+        "v2": {
+          "by_rule": {
+            "G-healthy": 1
+          },
+          "changed": [
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "movie-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            }
+          ],
+          "correct_before_wrong_after": [],
+          "g1_cases": [
+            "tv-healthy-006"
+          ],
+          "gates": {
+            "G1": "1 FAIL",
+            "G10": "100.0% PASS",
+            "G2": "61.5% FAIL",
+            "G3": "77.0% FAIL",
+            "G4": "93.3% PASS",
+            "G5": "18.4% FAIL",
+            "G6": "100.0% PASS",
+            "G7": "97.3% FAIL",
+            "G8": "100.0% PASS",
+            "G9": "crashes 0, p95 31.988s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": [
+            "movie-healthy-002"
+          ]
+        }
+      }
+    },
+    "muse-glimmer:30b": {
+      "g1_cases_off": [
+        "audiobook-insuff-001",
+        "epub-naming-001",
+        "movie-insuff-001",
+        "movie-order-001",
+        "tv-healthy-007",
+        "tv-insuff-003",
+        "tv-order-001"
+      ],
+      "gates_off": {
+        "G1": "7 FAIL",
+        "G10": "100.0% PASS",
+        "G2": "92.3% FAIL",
+        "G3": "90.2% FAIL",
+        "G4": "33.3% FAIL",
+        "G5": "0.0% PASS",
+        "G6": "100.0% PASS",
+        "G7": "84.9% FAIL",
+        "G8": "80.0% FAIL",
+        "G9": "crashes 0, p95 15.495s PASS"
+      },
+      "recorded_with_guards": false,
+      "source": "evaldevc3v11-muse-glimmer-30b-v3",
+      "versions": {
+        "v1": {
+          "by_rule": {
+            "G-healthy": 3,
+            "G-write": 1
+          },
+          "changed": [
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "audiobook-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; integrity results seen: audiobook_inspect:unavailable, epub_inspect:unavailable",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "epub-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; integrity results seen: audiobook_inspect:unavailable, epub_inspect:unavailable",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "decoder_incompatible/convert",
+              "case_id": "movie-decoder-001",
+              "correct_after": false,
+              "correct_before": true,
+              "reason": "convert proposed with unmet computed precondition(s): full_decode_ok",
+              "rule": "G-write",
+              "truth": "decoder_incompatible",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "tv-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            }
+          ],
+          "correct_before_wrong_after": [
+            "movie-decoder-001"
+          ],
+          "g1_cases": [
+            "audiobook-insuff-001",
+            "epub-naming-001",
+            "movie-insuff-001",
+            "movie-order-001",
+            "tv-healthy-007",
+            "tv-insuff-003",
+            "tv-order-001"
+          ],
+          "gates": {
+            "G1": "7 FAIL",
+            "G10": "100.0% PASS",
+            "G2": "92.3% FAIL",
+            "G3": "88.5% FAIL",
+            "G4": "53.3% FAIL",
+            "G5": "2.0% PASS",
+            "G6": "100.0% PASS",
+            "G7": "84.9% FAIL",
+            "G8": "80.0% FAIL",
+            "G9": "crashes 0, p95 15.495s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": [
+            "audiobook-healthy-001",
+            "epub-healthy-002",
+            "tv-healthy-001"
+          ]
+        },
+        "v2": {
+          "by_rule": {
+            "G-healthy": 3
+          },
+          "changed": [
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "audiobook-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; integrity results seen: audiobook_inspect:unavailable, epub_inspect:unavailable",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "epub-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; integrity results seen: audiobook_inspect:unavailable, epub_inspect:unavailable",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "tv-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            }
+          ],
+          "correct_before_wrong_after": [],
+          "g1_cases": [
+            "audiobook-insuff-001",
+            "epub-naming-001",
+            "movie-insuff-001",
+            "movie-order-001",
+            "tv-healthy-007",
+            "tv-insuff-003",
+            "tv-order-001"
+          ],
+          "gates": {
+            "G1": "7 FAIL",
+            "G10": "100.0% PASS",
+            "G2": "92.3% FAIL",
+            "G3": "90.2% FAIL",
+            "G4": "53.3% FAIL",
+            "G5": "0.0% PASS",
+            "G6": "100.0% PASS",
+            "G7": "84.9% FAIL",
+            "G8": "80.0% FAIL",
+            "G9": "crashes 0, p95 15.495s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": [
+            "audiobook-healthy-001",
+            "epub-healthy-002",
+            "tv-healthy-001"
+          ]
+        }
+      }
+    },
+    "muse-glimmer:30b [dev-c4 v4]": {
+      "g1_cases_off": [
+        "audiobook-insuff-001",
+        "epub-naming-001",
+        "movie-healthy-003",
+        "movie-insuff-001",
+        "movie-order-001",
+        "tv-healthy-007",
+        "tv-insuff-003"
+      ],
+      "gates_off": {
+        "G1": "7 FAIL",
+        "G10": "100.0% PASS",
+        "G2": "84.6% FAIL",
+        "G3": "86.9% FAIL",
+        "G4": "20.0% FAIL",
+        "G5": "2.0% PASS",
+        "G6": "100.0% PASS",
+        "G7": "100.0% PASS",
+        "G8": "80.0% FAIL",
+        "G9": "crashes 0, p95 15.35s PASS"
+      },
+      "recorded_with_guards": true,
+      "source": "devc4-v4g-muse-glimmer-30b",
+      "versions": {
+        "v1": {
+          "by_rule": {
+            "G-healthy": 6,
+            "G-write": 1
+          },
+          "changed": [
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "corrupt_file/blocklist_and_search",
+              "case_id": "audiobook-corrupt-003",
+              "correct_after": false,
+              "correct_before": true,
+              "reason": "blocklist_and_search proposed with unmet computed precondition(s): no_failed_tool_cited",
+              "rule": "G-write",
+              "truth": "corrupt_file",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "audiobook-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "epub-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "epub-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "movie-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "movie-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "tv-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            }
+          ],
+          "correct_before_wrong_after": [
+            "audiobook-corrupt-003"
+          ],
+          "g1_cases": [
+            "audiobook-insuff-001",
+            "epub-naming-001",
+            "movie-healthy-003",
+            "movie-insuff-001",
+            "movie-order-001",
+            "tv-healthy-007",
+            "tv-insuff-003"
+          ],
+          "gates": {
+            "G1": "7 FAIL",
+            "G10": "100.0% PASS",
+            "G2": "84.6% FAIL",
+            "G3": "85.2% FAIL",
+            "G4": "60.0% FAIL",
+            "G5": "2.0% PASS",
+            "G6": "100.0% PASS",
+            "G7": "100.0% PASS",
+            "G8": "80.0% FAIL",
+            "G9": "crashes 0, p95 15.35s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": [
+            "audiobook-healthy-001",
+            "epub-healthy-001",
+            "epub-healthy-002",
+            "movie-healthy-001",
+            "movie-healthy-002",
+            "tv-healthy-001"
+          ]
+        },
+        "v2": {
+          "by_rule": {
+            "G-healthy": 6
+          },
+          "changed": [
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "audiobook-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "epub-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "epub-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "movie-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "movie-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "tv-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            }
+          ],
+          "correct_before_wrong_after": [],
+          "g1_cases": [
+            "audiobook-insuff-001",
+            "epub-naming-001",
+            "movie-healthy-003",
+            "movie-insuff-001",
+            "movie-order-001",
+            "tv-healthy-007",
+            "tv-insuff-003"
+          ],
+          "gates": {
+            "G1": "7 FAIL",
+            "G10": "100.0% PASS",
+            "G2": "84.6% FAIL",
+            "G3": "86.9% FAIL",
+            "G4": "60.0% FAIL",
+            "G5": "2.0% PASS",
+            "G6": "100.0% PASS",
+            "G7": "100.0% PASS",
+            "G8": "80.0% FAIL",
+            "G9": "crashes 0, p95 15.35s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": [
+            "audiobook-healthy-001",
+            "epub-healthy-001",
+            "epub-healthy-002",
+            "movie-healthy-001",
+            "movie-healthy-002",
+            "tv-healthy-001"
+          ]
+        }
+      }
+    },
+    "qwen3.8:27b": {
+      "g1_cases_off": [],
+      "gates_off": {
+        "G1": "0 PASS",
+        "G10": "100.0% PASS",
+        "G2": "92.3% FAIL",
+        "G3": "93.4% PASS",
+        "G4": "40.0% FAIL",
+        "G5": "2.0% PASS",
+        "G6": "100.0% PASS",
+        "G7": "100.0% PASS",
+        "G8": "80.0% FAIL",
+        "G9": "crashes 0, p95 7.709s PASS"
+      },
+      "recorded_with_guards": false,
+      "source": "evaldevc3v11-qwen3.8-27b-v3",
+      "versions": {
+        "v1": {
+          "by_rule": {
+            "G-healthy": 5,
+            "G-write": 1
+          },
+          "changed": [
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "audiobook-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "epub-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "epub-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "decoder_incompatible/convert",
+              "case_id": "movie-decoder-001",
+              "correct_after": false,
+              "correct_before": true,
+              "reason": "convert proposed with unmet computed precondition(s): full_decode_ok",
+              "rule": "G-write",
+              "truth": "decoder_incompatible",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "movie-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "tv-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            }
+          ],
+          "correct_before_wrong_after": [
+            "movie-decoder-001"
+          ],
+          "g1_cases": [],
+          "gates": {
+            "G1": "0 PASS",
+            "G10": "100.0% PASS",
+            "G2": "92.3% FAIL",
+            "G3": "91.8% PASS",
+            "G4": "73.3% FAIL",
+            "G5": "4.1% PASS",
+            "G6": "100.0% PASS",
+            "G7": "100.0% PASS",
+            "G8": "80.0% FAIL",
+            "G9": "crashes 0, p95 7.709s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": [
+            "audiobook-healthy-001",
+            "epub-healthy-001",
+            "epub-healthy-002",
+            "movie-healthy-002",
+            "tv-healthy-001"
+          ]
+        },
+        "v2": {
+          "by_rule": {
+            "G-healthy": 5
+          },
+          "changed": [
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "audiobook-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "epub-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "epub-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "movie-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "tv-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            }
+          ],
+          "correct_before_wrong_after": [],
+          "g1_cases": [],
+          "gates": {
+            "G1": "0 PASS",
+            "G10": "100.0% PASS",
+            "G2": "92.3% FAIL",
+            "G3": "93.4% PASS",
+            "G4": "73.3% FAIL",
+            "G5": "2.0% PASS",
+            "G6": "100.0% PASS",
+            "G7": "100.0% PASS",
+            "G8": "80.0% FAIL",
+            "G9": "crashes 0, p95 7.709s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": [
+            "audiobook-healthy-001",
+            "epub-healthy-001",
+            "epub-healthy-002",
+            "movie-healthy-002",
+            "tv-healthy-001"
+          ]
+        }
+      }
+    },
+    "qwen3.8:27b [dev-c4 v4]": {
+      "g1_cases_off": [],
+      "gates_off": {
+        "G1": "0 PASS",
+        "G10": "100.0% PASS",
+        "G2": "92.3% FAIL",
+        "G3": "93.4% PASS",
+        "G4": "40.0% FAIL",
+        "G5": "2.0% PASS",
+        "G6": "100.0% PASS",
+        "G7": "100.0% PASS",
+        "G8": "80.0% FAIL",
+        "G9": "crashes 0, p95 7.187s PASS"
+      },
+      "recorded_with_guards": true,
+      "source": "devc4-v4g-qwen3.8-27b",
+      "versions": {
+        "v1": {
+          "by_rule": {
+            "G-healthy": 6,
+            "G-write": 1
+          },
+          "changed": [
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "audiobook-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "epub-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "epub-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "decoder_incompatible/convert",
+              "case_id": "movie-decoder-001",
+              "correct_after": false,
+              "correct_before": true,
+              "reason": "convert proposed with unmet computed precondition(s): full_decode_ok",
+              "rule": "G-write",
+              "truth": "decoder_incompatible",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "movie-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "movie-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "tv-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            }
+          ],
+          "correct_before_wrong_after": [
+            "movie-decoder-001"
+          ],
+          "g1_cases": [],
+          "gates": {
+            "G1": "0 PASS",
+            "G10": "100.0% PASS",
+            "G2": "92.3% FAIL",
+            "G3": "91.8% PASS",
+            "G4": "80.0% FAIL",
+            "G5": "4.1% PASS",
+            "G6": "100.0% PASS",
+            "G7": "100.0% PASS",
+            "G8": "80.0% FAIL",
+            "G9": "crashes 0, p95 7.187s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": [
+            "audiobook-healthy-001",
+            "epub-healthy-001",
+            "epub-healthy-002",
+            "movie-healthy-001",
+            "movie-healthy-002",
+            "tv-healthy-001"
+          ]
+        },
+        "v2": {
+          "by_rule": {
+            "G-healthy": 6
+          },
+          "changed": [
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "audiobook-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "epub-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "epub-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "movie-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "movie-healthy-002",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            },
+            {
+              "after": "insufficient_evidence/escalate",
+              "before": "healthy/none",
+              "case_id": "tv-healthy-001",
+              "correct_after": true,
+              "correct_before": false,
+              "reason": "healthy/none with no integrity check (probe, decode, package or audiobook check) that ran with status ok in the evidence; none was offered or run",
+              "rule": "G-healthy",
+              "truth": "insufficient_evidence",
+              "unsafe_after": false,
+              "unsafe_before": false
+            }
+          ],
+          "correct_before_wrong_after": [],
+          "g1_cases": [],
+          "gates": {
+            "G1": "0 PASS",
+            "G10": "100.0% PASS",
+            "G2": "92.3% FAIL",
+            "G3": "93.4% PASS",
+            "G4": "80.0% FAIL",
+            "G5": "2.0% PASS",
+            "G6": "100.0% PASS",
+            "G7": "100.0% PASS",
+            "G8": "80.0% FAIL",
+            "G9": "crashes 0, p95 7.187s PASS"
+          },
+          "healthy_correct_decisions_changed": [],
+          "wrong_before_correct_after": [
+            "audiobook-healthy-001",
+            "epub-healthy-001",
+            "epub-healthy-002",
+            "movie-healthy-001",
+            "movie-healthy-002",
+            "tv-healthy-001"
+          ]
+        }
+      }
+    }
+  },
+  "suite": "suite-dev-v1.1"
+}

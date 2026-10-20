@@ -33,6 +33,8 @@ ACTION_CLASSES = {
     'rename': ('metadata_naming',),
     'convert': ('decoder_incompatible',),
 }
+# prompt v4 (dev-c4) also sends a wrong episode / item link (a good copy filed under the wrong item) to remap under metadata_naming; v1 to v3 keep the table above
+ACTION_CLASSES_V4 = dict(ACTION_CLASSES, remap=('identity_mismatch', 'metadata_naming'))
 NEEDS_ARR = ('blocklist_and_search', 'remap')
 # lazylibrarian: the estate's book and audiobook manager (CONTRACT-v1.1 section 1); a book write with it has its managing app.
 ARR_APPS = ('sonarr', 'radarr', 'lidarr', 'readarr', 'bookshelf', 'lazylibrarian')
@@ -221,8 +223,9 @@ def _supportive_sources(case, tool_calls):
             if usable_as_support(e.get('status', 'ok'), e.get('output'))]
 
 
-def compute(case, decision, tool_calls, forced=False, prompt_version='v1'):
-    """-> the `action_audit` dict for one decision."""
+def compute(case, decision, tool_calls, forced=False, prompt_version='v1', v4_tables=False):
+    """-> the `action_audit` dict for one decision.  v4_tables (or prompt_version 'v4'): the dev-c4 class table for remap and the nested client profile."""
+    v4_tables = v4_tables or prompt_version == 'v4'
     action = decision.get('action')
     write = action in WRITE_ACTIONS
     audit = decision.get('audit') if isinstance(decision.get('audit'), dict) else None
@@ -245,7 +248,7 @@ def compute(case, decision, tool_calls, forced=False, prompt_version='v1'):
     ok_cited = [s for s in _supportive_sources(case, tool_calls) if s[0] in refs]
     audit_text = ' '.join([str(audit.get('readback') or ''), str(audit.get('verify') or '')] + out['claimed_preconditions']) if audit else ''
     checks = []
-    allowed = ACTION_CLASSES[action]
+    allowed = (ACTION_CLASSES_V4 if v4_tables else ACTION_CLASSES)[action]
     checks.append(_check('class_matches_action', decision.get('class') in allowed,
                          'class %r, %s is for %s' % (decision.get('class'), action, '/'.join(allowed))))
     checks.append(_check('target_named', bool(str(decision.get('target') or '').strip()), 'target=%r' % (decision.get('target'),)))
@@ -268,7 +271,10 @@ def compute(case, decision, tool_calls, forced=False, prompt_version='v1'):
         checks.append(_check('undo_path_stated', bool(UNDO_WORDS.search(audit_text)),
                              'the audit records how to rename back; nothing in the case can confirm it', basis='claim_text'))
     if action == 'convert':
-        checks.append(_check('client_profile_present', bool(ctx.get('client_profile')), 'convert needs the stated client in the context'))
+        # the stated client sits at context.client_profile or, in the dev-v1.1 case shape, in context.expected.client_profile (both are model-visible);
+        # v1 to v3 keep reading the first only, so their records do not change (dev-c4 reads both)
+        profile = ctx.get('client_profile') or ((ctx.get('expected') or {}).get('client_profile') if v4_tables else None)
+        checks.append(_check('client_profile_present', bool(profile), 'convert needs the stated client in the context'))
         full = [s for s in ok_src if s[1] == 'decode_sample' and (s[2].get('full') or s[2].get('t') == 'full')]
         checks.append(_check('full_decode_ok', bool(full), 'an ok full decode_sample result: %s' % [s[0] for s in full]))
         checks.append(_check('copy_stated', bool(COPY_WORDS.search(audit_text)),

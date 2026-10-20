@@ -19,6 +19,7 @@ from pathlib import Path
 
 from . import adapters as A
 from . import audit as AU
+from . import decision_guard as DG
 from . import gaps as GP
 from . import guard as G
 from . import leakguard
@@ -119,7 +120,7 @@ def result_message(call_id, tool, res, remaining):
 
 
 def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto', run_id='', tool_output_bytes=None,
-             prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None, evidence_bounds=None):
+             prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None, evidence_bounds=None, guards=None):
     """Run one case through the turn protocol.  Returns the run record (never raises for model/tool trouble)."""
     import shutil
     started_wall = time.monotonic()
@@ -221,6 +222,12 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
         error = {'kind': 'harness_crash', 'message': '%s: %s' % (type(e).__name__, e), 'leak_guard': isinstance(e, leakguard.LeakError), 'traceback': traceback.format_exc()[-1500:]}
         force('harness error: ' + type(e).__name__)
 
+    # Decision guards (dev-c4, opt-in): deterministic checks on the final decision.  A guard can only turn it into insufficient_evidence / escalate;
+    # the model's original decision stays in the record's `guard` field.  Off (the default) this block does nothing and adds no key.
+    guard_rec = None
+    if guards:
+        decision, guard_rec = DG.apply(case, decision, tool_calls, evidence, prompt_version, forced=forced, version=guards)
+
     # First-try validity is strict and never repaired after the fact: every model reply up to the first repair prompt must have
     # been schema-valid, no tool call may have left tools_available, and the case must have ended in a real decision.
     # A repaired, forced, adapter-failed or violating case is not first-try valid, whatever its final decision looks like.
@@ -274,6 +281,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
         'injected_failure': case.get('inject_tool_failure'),
         'action_audit': action_audit,
     }
+    if guard_rec is not None:
+        record['guard'] = guard_rec
     ctxs = [t['meta']['context'] for t in turns if (t.get('meta') or {}).get('context')]
     if ctxs:
         record['context_check'] = {'num_ctx': ctxs[0]['num_ctx'], 'turns_checked': len(ctxs),
@@ -429,10 +438,22 @@ def summarize_run(records, manifest):
         'evidence': {'tool_calls_by_evidence_mode': _count(c.get('evidence_mode') for r in records for c in r['tool_calls']),
                      'gaps': sum(len((r.get('evidence') or {}).get('gaps', [])) for r in records),
                      'gaps_by_type': _count(g['type'] for r in records for g in (r.get('evidence') or {}).get('gaps', []))},
+        **({'guards': guard_summary(records)} if any('guard' in r for r in records) else {}),
         'writes_executed': 0,
         'statement': 'Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; '
                      'this harness executed no write and changed no media, *arr, Plex or library state.',
     }
+
+
+def guard_summary(records):
+    """Run-summary block for a guarded run: how often each guard fired and how many final decisions it changed (not a score)."""
+    by_rule = {}
+    for r in records:
+        for a in (r.get('guard') or {}).get('applied', []):
+            by_rule[a['rule']] = by_rule.get(a['rule'], 0) + 1
+    versions = sorted({(r.get('guard') or {}).get('version') for r in records if r.get('guard')})
+    return {'version': versions[0] if len(versions) == 1 else versions, 'applied_by_rule': dict(sorted(by_rule.items())),
+            'decisions_changed': sum(1 for r in records if (r.get('guard') or {}).get('final_changed'))}
 
 
 def build_adapter(args):
@@ -467,6 +488,7 @@ def main(argv=None):
     ap.add_argument('--tool-output-bytes', type=int, default=P.TOOL_OUTPUT_BYTES, help='cap on one tool result shown to the model (lower it for small local contexts)')
     ap.add_argument('--num-predict', type=int, help='ollama output cap; default 384 for prompt v1, 640 for v2 (a write decision carries an audit object)')
     ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c)')
+    ap.add_argument('--guards', choices=list(DG.GUARD_VERSIONS), default=None, help='opt-in deterministic decision guards (dev-c4); default off; v2 only relaxes two G-write checks (see CONTRACT-v2-proposal section 9). A guard can only turn a decision into insufficient_evidence/escalate and keeps the original in the record field `guard`')
     ap.add_argument('--keep-alive', default='2m')
     ap.add_argument('--stop', help='comma separated stop tokens (ollama); default per model family')
     ap.add_argument('--ollama-schema', choices=['anyof', 'flat'], default='anyof', help='format schema variant sent to Ollama')
@@ -512,6 +534,8 @@ def main(argv=None):
               'evidence_mode': args.evidence, 'evidence_bounds': evidence_bounds if args.evidence == 'live' else None,
               'evidence_bounds_clamped': evcol_clamped if args.evidence == 'live' else None,
               'adapter_config': adapter.config()}
+    if args.guards:
+        config['guards'] = args.guards   # only when on: a run without guards has the same config (and config_hash) shape as before
     manifest = {'harness_version': P.HARNESS_VERSION, 'run_id': run_id, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'argv': sys.argv[1:] if argv is None else argv,
                 'harness_git': git_info(), 'config': config, 'config_hash': sha256_bytes(canonical(config).encode()),
                 'python': platform.python_version(), 'suite_dir': str(suite_dir),
@@ -533,7 +557,7 @@ def main(argv=None):
             try:
                 rec = run_case(case, sha, adapter, suite_dir, scratch, ocr_backend=ocr_backend, replay=args.replay, run_id=run_id,
                                tool_output_bytes=args.tool_output_bytes, prompt_version=args.prompt, evidence_mode=args.evidence,
-                               evidence_bounds=evidence_bounds)
+                               evidence_bounds=evidence_bounds, guards=args.guards)
             except A.AbortRun as e:
                 aborted = str(e)
                 break

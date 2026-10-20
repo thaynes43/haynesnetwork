@@ -3,12 +3,16 @@ import hashlib
 import json
 from pathlib import Path
 
-HARNESS_VERSION = 'dev-c3'  # recorded in every run record and manifest
+HARNESS_VERSION = 'dev-c4'  # recorded in every run record and manifest
 PROTOCOL_VERSION = 'v1'  # the v1 turn protocol (prompt v1); prompt v2 has its own, see PROMPT_VERSIONS
-PROMPT_VERSIONS = ('v1', 'v2', 'v3')
+PROMPT_VERSIONS = ('v1', 'v2', 'v3', 'v4')
 # Prompt text and turn protocol are versioned apart: v3 (dev-c3) is new prompt text on the unchanged v2 turn protocol (audit object,
 # tool_not_offered violations, per-case schema).  Anything that is about the protocol asks `protocol_of(version)`, not the prompt version.
-PROMPT_PROTOCOL = {'v1': 'v1', 'v2': 'v2', 'v3': 'v2'}
+PROMPT_PROTOCOL = {'v1': 'v1', 'v2': 'v2', 'v3': 'v2', 'v4': 'v2'}
+# Prompt versions whose per-case Ollama `format` schema is exact about the tool enum: a case that offers NO tool gets no tool-call branch at all.
+# v2 and v3 keep the dev-c2/dev-c3 behaviour (an empty tools_available fell back to the full tool list there, which is how muse-glimmer:30b called
+# tools no case offered on 11 dev cases); changing it for them would change what those prompts measure.
+STRICT_TOOL_SCHEMA = ('v4',)
 DEFAULT_PROMPT = 'v1'  # stays v1 until checkpoint 2c
 PROMPT_DIR = Path(__file__).resolve().parent / 'prompts'
 MAX_TOOL_CALLS = 6
@@ -102,10 +106,10 @@ def protocol_of(prompt_version):
 def get_prompt(version=DEFAULT_PROMPT):
     """-> {'version', 'text', 'sha256'}.  v1 is SYSTEM_PROMPT above (unchanged, so its sha matches the checkpoint 1
     records); v2 is prompts/v2.txt and v3 (dev-c3) is prompts/v3.txt, each sent exactly as its file reads (one trailing newline removed).
-    v3 is new text on the v2 turn protocol, see protocol_of."""
+    v3 (dev-c3) and v4 (dev-c4) are new text on the v2 turn protocol, see protocol_of."""
     if version == 'v1':
         text = SYSTEM_PROMPT
-    elif version in ('v2', 'v3'):
+    elif version in ('v2', 'v3', 'v4'):
         text = (PROMPT_DIR / (version + '.txt')).read_text(encoding='utf-8').rstrip('\n')
     else:
         raise ValueError('unknown prompt version %r (known: %s)' % (version, ', '.join(PROMPT_VERSIONS)))
@@ -163,10 +167,19 @@ def tool_call_schema_v2(tools=None):
 
 
 def turn_schema(prompt_version=DEFAULT_PROMPT, tools=None, flat=False):
-    """The `format` schema for grammar-constrained engines.  v1: the module constants, unchanged.  v2: per-case tool enum and
-    an audit that is required exactly when the action is a write; flat=True is the anyOf-free fallback."""
+    """The `format` schema for grammar-constrained engines.  v1: the module constants, unchanged.  v2 and v3: per-case tool enum and
+    an audit that is required exactly when the action is a write; flat=True is the anyOf-free fallback.  For those two an EMPTY
+    tools_available falls back to the full tool list (an enum cannot be empty), which let a model call a tool the case does not offer.
+    v4 (STRICT_TOOL_SCHEMA): a case that offers no tool (an empty list or no `tools_available` key) gets no tool-call branch, so only a decision is possible."""
     if prompt_version == 'v1':
         return FLAT_TURN_SCHEMA if flat else TURN_SCHEMA
+    no_tools = prompt_version in STRICT_TOOL_SCHEMA and not tools   # an empty list or a missing key: no tool is offered
+    if no_tools:
+        if not flat:
+            return {'anyOf': [DECISION_NOWRITE_SCHEMA_V2, DECISION_WRITE_SCHEMA_V2]}
+        props = {'type': {'enum': ['decision']}, 'action': {'enum': list(ACTIONS)}, 'audit': AUDIT_SCHEMA}
+        props.update({k: v for k, v in _DECISION_V2_PROPS.items() if k != 'type'})
+        return {'type': 'object', 'properties': props, 'required': ['type'], 'additionalProperties': False}
     tc = tool_call_schema_v2(tools)
     if not flat:
         return {'anyOf': [tc, DECISION_NOWRITE_SCHEMA_V2, DECISION_WRITE_SCHEMA_V2]}
