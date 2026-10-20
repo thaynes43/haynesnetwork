@@ -1,0 +1,53 @@
+{
+  "aborted": null,
+  "cases_planned": 73,
+  "config_hash": "e43152e64b93b71ede6304094e1110bf1528c4635c75cb0e68f551de81cca8ed",
+  "cost_usd": null,
+  "evidence": {
+    "gaps": 32,
+    "gaps_by_type": {
+      "incomplete": 1,
+      "not_run": 23,
+      "standing": 8
+    },
+    "tool_calls_by_evidence_mode": {
+      "replay": 74
+    }
+  },
+  "evidence_mode": "replay",
+  "harness_git": {
+    "branch": "agent/mrh-eval-devc2-1019",
+    "dirty": false,
+    "sha": "e27f23859418d6e2110fc90c8342c5420afc5264"
+  },
+  "harness_version": "dev-c2",
+  "incomplete_records": {},
+  "latency_s_per_case": {
+    "max": 11.427,
+    "median": 3.879,
+    "min": 2.059
+  },
+  "prompt": {
+    "sha256": "351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a",
+    "version": "v2"
+  },
+  "records_complete": true,
+  "records_written": 73,
+  "requested_model": "qwen3.8:27b",
+  "response_model_ids": [
+    "qwen3.8:27b"
+  ],
+  "run_id": "evaldevc2-qwen3.8-27b-v2",
+  "statement": "Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; this harness executed no write and changed no media, *arr, Plex or library state.",
+  "validity": {
+    "adapter_errors": 0,
+    "crashes": 0,
+    "final_decision_valid": 73,
+    "first_try_failure_modes": {},
+    "first_try_valid": 73,
+    "forced": 0,
+    "protocol_violations": 0,
+    "repaired": 0
+  },
+  "writes_executed": 0
+}

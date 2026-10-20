@@ -1,0 +1,1171 @@
+{
+  "action_audit": {
+    "audit": {
+      "preconditions": [
+        "File content is The Glass Harbor per ffprobe tags e1 and OCR e3",
+        "Arr lookup shows aired episode 4 is Night Ferry and DVD episode 4 is The Glass Harbor e4",
+        "File is currently attached to episode 4 season 1 e4",
+        "Full decode clean t2"
+      ],
+      "readback": "arr_lookup shows file_attached_to episode 4 season 1 with episode title The Glass Harbor",
+      "target": "Harbor Lights - S01E04 - The Glass Harbor.mkv",
+      "verify": "arr_lookup confirms file linked to episode 4 with title The Glass Harbor and library_episode_order set to dvd"
+    },
+    "claimed_preconditions": [
+      "File content is The Glass Harbor per ffprobe tags e1 and OCR e3",
+      "Arr lookup shows aired episode 4 is Night Ferry and DVD episode 4 is The Glass Harbor e4",
+      "File is currently attached to episode 4 season 1 e4",
+      "Full decode clean t2"
+    ],
+    "executed": false,
+    "execution_status": "proposed_not_executed",
+    "intent": {
+      "action": "remap",
+      "class": "identity_mismatch",
+      "target": "Harbor Lights - S01E04 - The Glass Harbor.mkv"
+    },
+    "note": "recorded proposal only; this harness never executes a write, and nothing was changed",
+    "outcome_step": null,
+    "preconditions": [
+      {
+        "basis": "computed",
+        "detail": "class 'identity_mismatch', remap is for identity_mismatch",
+        "id": "class_matches_action",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "target='Harbor Lights - S01E04 - The Glass Harbor.mkv'",
+        "id": "target_named",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "the target contains the case's own filename/title+episode",
+        "id": "target_in_context",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "cites ['e1', 'e3', 'e4', 't1', 't2']; unknown refs []",
+        "id": "positive_evidence_cited",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "cited refs that did not run to completion (failure to run, timeout, partial, unavailable): []",
+        "id": "no_failed_tool_cited",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "cited results usable as support (ok, or damage the tool itself reported): ['t1', 't2', 'e1', 'e3', 'e4']",
+        "id": "cited_evidence_supports",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "context.arr.app='sonarr'",
+        "id": "arr_app_present",
+        "met": true
+      },
+      {
+        "basis": "claim_text",
+        "detail": "the audit states the target slot is free; nothing in the case can confirm it",
+        "id": "target_slot_stated_free",
+        "met": false
+      },
+      {
+        "basis": "computed",
+        "detail": "a v2 write decision must carry the audit object",
+        "id": "audit_object_present",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "audit.target='Harbor Lights - S01E04 - The Glass Harbor.mkv' target='Harbor Lights - S01E04 - The Glass Harbor.mkv'",
+        "id": "audit_target_matches",
+        "met": true
+      },
+      {
+        "basis": "computed",
+        "detail": "the audit names what is read back and how success is checked",
+        "id": "readback_and_verify_stated",
+        "met": true
+      }
+    ],
+    "preconditions_unmet": true,
+    "readback_plan": "arr_lookup shows file_attached_to episode 4 season 1 with episode title The Glass Harbor",
+    "target": "Harbor Lights - S01E04 - The Glass Harbor.mkv",
+    "unmet": [
+      "target_slot_stated_free"
+    ],
+    "verification_plan": "arr_lookup confirms file linked to episode 4 with title The Glass Harbor and library_episode_order set to dvd",
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "tv-order-001",
+  "case_sha256": "b8fd5b5eddf73b34099db98378da09599ab22d0d952069b295ce410b129bc38a",
+  "config_hash": "a2b2d166c4d2a8fd1872ea09a3f02573623f95747dd35241b09e4d83d5acd5ef",
+  "context_check": {
+    "flags": [],
+    "max_prompt_tokens_estimated": 4033,
+    "max_prompt_tokens_reported": 3015,
+    "num_ctx": 8192,
+    "truncated_suspected": false,
+    "turns_checked": 3
+  },
+  "decision": {
+    "action": "remap",
+    "audit": {
+      "preconditions": [
+        "File content is The Glass Harbor per ffprobe tags e1 and OCR e3",
+        "Arr lookup shows aired episode 4 is Night Ferry and DVD episode 4 is The Glass Harbor e4",
+        "File is currently attached to episode 4 season 1 e4",
+        "Full decode clean t2"
+      ],
+      "readback": "arr_lookup shows file_attached_to episode 4 season 1 with episode title The Glass Harbor",
+      "target": "Harbor Lights - S01E04 - The Glass Harbor.mkv",
+      "verify": "arr_lookup confirms file linked to episode 4 with title The Glass Harbor and library_episode_order set to dvd"
+    },
+    "class": "identity_mismatch",
+    "confidence": 0.9,
+    "evidence_refs": [
+      "e1",
+      "e3",
+      "e4",
+      "t1",
+      "t2"
+    ],
+    "reason": "File content shows The Glass Harbor but is linked to episode 4 which is Night Ferry in aired order; DVD order maps episode 4 to The Glass Harbor. Evidence shows identity mismatch.",
+    "target": "Harbor Lights - S01E04 - The Glass Harbor.mkv",
+    "type": "decision"
+  },
+  "decision_flags": [],
+  "evidence": {
+    "capabilities": [
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "ffprobe"
+      },
+      {
+        "calls": 1,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {
+          "ok": 1
+        },
+        "tool": "decode_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "frame_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "audio_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "ocr"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "epub_inspect"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "audiobook_inspect"
+      },
+      {
+        "calls": 1,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {
+          "ok": 1
+        },
+        "tool": "arr_lookup"
+      }
+    ],
+    "gaps": [],
+    "gaps_cited": [],
+    "mode": "replay",
+    "note": "record only: not shown to the model, not scored. A gap is something the run did not verify; a damage finding is evidence, not a gap."
+  },
+  "evidence_mode": "replay",
+  "evidence_shown": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+  ],
+  "final_decision_valid": true,
+  "first_try": {
+    "failure_modes": [],
+    "first_reply_valid": true,
+    "note": "any repair, forced decision or protocol violation means the first try was not valid; later attempts are recorded separately in turns[].attempt",
+    "protocol_violations": 0,
+    "repair_prompts": 0,
+    "valid": true,
+    "valid_after_repair": false
+  },
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "8e692f6644eeeadb49633a0ffc7c91a9d6a39baaf52fecd58560d3432bb7e216",
+    "bytes": 90271,
+    "declared_sha256": "8e692f6644eeeadb49633a0ffc7c91a9d6a39baaf52fecd58560d3432bb7e216",
+    "kind": "local",
+    "verified": true
+  },
+  "fixture_hashes": {
+    "evidence_shown_sha256": {
+      "e1": "a0224a990538933b06f1f78fff13128e6ddd3266bc436b3177561f7ff58ae0f2",
+      "e2": "f1afac9e71dd1c6a14900ae19aef78bae8e9e17646992b51473269ed0097c5fb",
+      "e3": "07be9e61230187c303ed9d53819be94b112e5c705b2aca447ac3de5ceeba476a",
+      "e4": "87fb4fca91f95615e732afab1a9512884e33c7848ea6020f717a41b21f324774"
+    },
+    "fixture": {
+      "actual_sha256": "8e692f6644eeeadb49633a0ffc7c91a9d6a39baaf52fecd58560d3432bb7e216",
+      "declared_sha256": "8e692f6644eeeadb49633a0ffc7c91a9d6a39baaf52fecd58560d3432bb7e216",
+      "kind": "local",
+      "verified": true
+    }
+  },
+  "forced": false,
+  "forced_reason": null,
+  "harness_git_sha": "e27f23859418d6e2110fc90c8342c5420afc5264",
+  "harness_version": "dev-c2",
+  "injected_failure": null,
+  "model_case_alias": "case-ee2e7098",
+  "model_digest": "de878ce33ad81d060001db1469a02eebe4d86f0ad58cfe52dc062fdcbe4464c1",
+  "model_digest_na_reason": null,
+  "outcome": null,
+  "prompt": {
+    "protocol": "turn-v2",
+    "schema_sent": true,
+    "sha256": "351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a",
+    "turn_schema_sha256": "9c58737191eaa3956a0372ed73dd85d15283d1c103f603280c69e405a3b97fe9",
+    "version": "v2"
+  },
+  "protocol_violations": [],
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "refs_to_non_ok_tools": [],
+  "repair_prompts": [],
+  "requested_model": "muse-glimmer:30b",
+  "response_model_ids": [
+    "muse-glimmer:30b"
+  ],
+  "run_id": "evaldevc2-muse-glimmer-30b-v2",
+  "runtime_version": "0.40.6",
+  "split": "dev",
+  "started_at": "2026-10-20T01:45:52.935229+00:00",
+  "suite_version": "dev-v1",
+  "tool_calls": [
+    {
+      "args": {
+        "app": "sonarr",
+        "episode": "S01E04",
+        "series": "Harbor Lights"
+      },
+      "evidence_mode": "replay",
+      "id": "t1",
+      "mode": "stub",
+      "output": "{\"note\": \"case-provided records only; no live arr call was made\", \"records\": [{\"args\": {\"app\": \"sonarr\", \"episode\": \"S01E04\", \"series\": \"Harbor Lights\"}, \"record\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode_orders\\\":{\\\"aired\\\":{\\\"4\\\":\\\"Night Ferry\\\",\\\"5\\\":\\\"The Glass Harbor\\\"},\\\"dvd\\\":{\\\"4\\\":\\\"The Glass Harbor\\\",\\\"5\\\":\\\"Night Ferry\\\"}},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E04 - The Glass Harbor.mkv\\\",\\\"size\\\":90271},\\\"file_attached_to\\\":{\\\"episode\\\":4,\\\"season\\\":1},\\\"library_episode_order\\\":null,\\\"series\\\":\\\"Harbor Lights\\\"}\"}], \"stub\": true}",
+      "status": "ok",
+      "tool": "arr_lookup",
+      "truncated": false,
+      "turn": 1,
+      "wall_s": 0.0,
+      "why": "Verify current episode mapping and order options to confirm identity mismatch between file content and linked episode"
+    },
+    {
+      "args": {
+        "full": true
+      },
+      "evidence_mode": "replay",
+      "id": "t2",
+      "mode": "replay",
+      "output": "{\"at_s\": 0, \"clean\": true, \"exit_code\": 0, \"frames\": 80, \"note\": \"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\", \"out_time\": \"00:00:08.000000\", \"quota_exhausted\": false, \"stderr\": \"\", \"window_s\": \"full\"}",
+      "status": "ok",
+      "tool": "decode_sample",
+      "truncated": false,
+      "turn": 2,
+      "wall_s": 0.001,
+      "why": "Check full decode to confirm file is intact and not corrupt"
+    }
+  ],
+  "tool_modes": [
+    "replay",
+    "stub"
+  ],
+  "turns": [
+    {
+      "attempt": "first",
+      "failure_modes": [],
+      "load_s": 0.002,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 8192,
+          "output_tokens": 52,
+          "prompt_chars": 10515,
+          "prompt_tokens_estimated": 3505,
+          "prompt_tokens_reported": 2543,
+          "truncated_suspected": false
+        }
+      },
+      "n": 1,
+      "native": {
+        "created_at": "2026-10-20T01:45:56.007199992Z",
+        "done_reason": "stop",
+        "eval_count": 52,
+        "eval_duration": 1625622000,
+        "load_duration": 1601098,
+        "prompt_eval_count": 2543,
+        "prompt_eval_duration": 1324747000,
+        "total_duration": 2982062321
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "why",
+                "args"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "reason",
+                "confidence",
+                "evidence_refs"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "audit": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "preconditions": {
+                      "items": {
+                        "maxLength": 160,
+                        "type": "string"
+                      },
+                      "maxItems": 6,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "readback": {
+                      "maxLength": 240,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "target": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "verify": {
+                      "maxLength": 240,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "target",
+                    "preconditions",
+                    "readback",
+                    "verify"
+                  ],
+                  "type": "object"
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "reason",
+                "confidence",
+                "evidence_refs",
+                "audit"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself, and neither does this system: the action you choose is recorded as a proposal for a human-supervised system.\n\nREPLY FORMAT\nEvery reply of yours is exactly ONE JSON object and nothing else: no prose, no markdown fence, nothing after the closing brace. The first key is always \"type\". Use only the keys shown below, in that order. Never copy fields from a tool result (such as status, output or tool_calls_remaining) into your reply. Double-quoted keys and strings, every string closed, no trailing commas.\n\n1. Tool call (at most 6 per case, counting any call that is rejected):\n{\"type\":\"tool_call\",\"tool\":\"<a name from tools_available>\",\"why\":\"<=200 chars\",\"args\":{}}\nThis is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. Call only a tool named in tools_available; a call to any other tool does nothing, uses up one of your 6 calls and is recorded as a protocol violation. Tools act on this case's file only. Arguments: ffprobe {}; decode_sample {\"at\":seconds} or {\"full\":true} (a 4 s window, or the whole file); frame_sample {\"at\":seconds}; audio_sample {\"at\":seconds,\"stream\":0}; ocr {\"frame\":\"<name from frame_sample>\"} or {\"at\":seconds}; epub_inspect {}; audiobook_inspect {}; arr_lookup {}.\nEvery tool result has a status:\n- ok: the tool ran and returned its whole answer.\n- partial: the tool ran but returned a cut or incomplete answer; the missing part is unverified.\n- error: the tool ran and failed, or it ran and reported damage in the file; read the output to tell which (damage comes with the tool's own exit code or stage and message about the file; a plain failure message means it did not run properly).\n- timeout: the tool ran and did not finish; nothing was learned.\n- unavailable: the capability is absent (tool not offered, program or data missing, nothing recorded for this call); nothing ran and nothing was learned.\nResults are bounded to 8 KiB. Do not repeat a call that already came back error, timeout or unavailable.\n\n2. Final decision:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<string or null>\",\"reason\":\"<=400 chars, one or two sentences>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"]}\nclass is exactly one of: identity_mismatch, corrupt_file, decoder_incompatible, metadata_naming, order_edition_ambiguity, insufficient_evidence, healthy.\naction is exactly ONE of: none, escalate, blocklist_and_search, remap, rename, convert. Never combine two (for example \"remap and rename\" is invalid); if two different writes could be right, the action is escalate.\nCite evidence ids: e1.. for evidence in the case, t1.. for your own tool results.\nWhen the action is a write (blocklist_and_search, remap, rename or convert), add a last key \"audit\", and \"target\" must be the same non-null string as audit.target:\n\"audit\":{\"target\":\"<the exact file, release, episode or entry the write applies to>\",\"preconditions\":[\"<a fact that makes this write safe and that you verified, with its evidence id>\"],\"readback\":\"<what will be read back afterwards to confirm the change>\",\"verify\":\"<how success or a need to undo will be recognised>\"}\nDo not add \"audit\" for none or escalate. A precondition you did not verify is not a precondition: leave it out, and if the write then lacks a prerequisite, escalate instead.\n\nCLASSES (what is wrong with the item, decided from evidence)\n- identity_mismatch: the content is a different work, episode, edition or language than the catalog entry expects. Needs content evidence (what the streams, tags, text, on-screen text or duration say it is), never the file name alone.\n- corrupt_file: the file is physically damaged: decode errors, truncation, a missing index, an unreadable archive, package or spine. The content is the expected one, but the bytes are damaged. Needs a tool that ran and reported the damage.\n- decoder_incompatible: the file is intact (it decodes cleanly in full) but uses a codec, profile, pixel format, audio layout or container that the stated client cannot play directly. Needs the stated client in the context and a clean full decode.\n- metadata_naming: the content is the right one and is in the right slot, but a name, tag, title or other metadata text is wrong or missing.\n- order_edition_ambiguity: the content is plausibly correct under more than one legitimate ordering, numbering or edition, and the evidence does not settle which one is wanted.\n- insufficient_evidence: the evidence cannot settle whether there is a defect, because the tools that matter failed, timed out, were unavailable or covered only part of the item, or because no evidence reaches the question.\n- healthy: every check that matters for this item ran, covered the whole item as far as the tools allow, and passed.\n\nACTIONS (the change each one proposes; the prerequisites must hold before you choose it)\n- none: no change. Only for healthy.\n- escalate: no change; hand the item to a human with your reason. Choose it when the evidence is insufficient or ambiguous, when more than one write could be right, when a prerequisite of the write you would otherwise choose is missing, or when part of the item is unverified and the verified part does not settle the question. Say in the reason what was and was not verified.\n- blocklist_and_search: the *arr marks THIS release as bad and searches for a replacement; the current file is later replaced and cannot be recovered. Needs positive content evidence from tools that ran (identity_mismatch or corrupt_file), the item managed by an *arr (context.arr.app names it), and the release or file as target. Recovery: only the blocklist entry can be undone, so partial or failed evidence is never enough. Not for problems caused by the client or by names.\n- remap: the *arr changes which item (episode, movie entry or edition) the existing file is linked to; the file's content and name stay as they are and nothing is downloaded. Needs the managed app, content evidence of what the file really is, evidence of the right target, and a target slot that is free (no other file linked to it); the target is that slot. Read back afterwards: the link shows the new target and the old slot shows what it should.\n- rename: only the file's name, path or tag text changes; the file stays linked to the same item. Needs verified identity (content evidence agrees with the item), the correct name known from the evidence, and a way back: record the current name so it can be renamed back.\n- convert: makes a compatible copy and leaves the original untouched. Needs class decoder_incompatible, a clean full decode of the source and the stated client; the target is the isolated copy.\n\nEVIDENCE RULES\n1. healthy requires every relevant check to have run and passed. Any part of the item that was not verified (a tool that failed, timed out, was unavailable or returned partial output, a segment not sampled, media that could not be reached) is unverified, never healthy.\n2. Decide only what the remaining verified evidence supports. If it supports a diagnosis, you may give it and cite only what was verified; if it does not, choose insufficient_evidence with escalate and name the unverified part in the reason.\n3. A write action needs positive evidence for its class from tools or evidence that ran, the prerequisites of that action above, and a named target.\n4. Never cite a result as support if its tool did not run to completion: a failure to run, a timeout, an unavailable capability or partial output. Damage that a tool which did run reports about the file itself is evidence and may be cited. If a tool failed, say so in the reason.\n5. When the evidence supports two different writes, escalate.\n6. Use tools to check before concluding. Do not conclude healthy from metadata alone when decode or content tools are offered.\n7. A sample is partial: a clean sample does not prove a whole file is healthy, and a file name alone never proves content. A wrong repair is worse than an escalation.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-ee2e7098\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990204, \"episodeId\": 990104, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 4, \"episode_title\": \"(unknown order)\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E04 - The Glass Harbor.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E04\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89754\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90271\\\",\\\"tags\\\":{\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"The Glass Harbor\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 1.0}, \"id\": \"e3\", \"output\": \"HARBOR LIGHTS / THE GLASS HARBOR\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": \"S01E04\", \"series\": \"Harbor Lights\"}, \"id\": \"e4\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode_orders\\\":{\\\"aired\\\":{\\\"4\\\":\\\"Night Ferry\\\",\\\"5\\\":\\\"The Glass Harbor\\\"},\\\"dvd\\\":{\\\"4\\\":\\\"The Glass Harbor\\\",\\\"5\\\":\\\"Night Ferry\\\"}},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E04 - The Glass Harbor.mkv\\\",\\\"size\\\":90271},\\\"file_attached_to\\\":{\\\"episode\\\":4,\\\"season\\\":1},\\\"library_episode_order\\\":null,\\\"series\\\":\\\"Harbor Lights\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": 640,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-20T01:45:56.007199992Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"arr_lookup\\\",\\\"why\\\":\\\"Verify current episode mapping and order options to confirm identity mismatch between file content and linked episode\\\",\\\"args\\\":{\\\"app\\\":\\\"sonarr\\\",\\\"episode\\\":\\\"S01E04\\\",\\\"series\\\":\\\"Harbor Lights\\\"}}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":2982062321,\"load_duration\":1601098,\"prompt_eval_count\":2543,\"prompt_eval_cached_count\":1603,\"prompt_eval_duration\":1324747000,\"eval_count\":52,\"eval_duration\":1625622000}",
+        "stderr": "",
+        "wall_seconds": 3.0793281928636134
+      },
+      "reply_valid": true,
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"why\":\"Verify current episode mapping and order options to confirm identity mismatch between file content and linked episode\",\"args\":{\"app\":\"sonarr\",\"episode\":\"S01E04\",\"series\":\"Harbor Lights\"}}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 2543,
+        "output_tokens": 52
+      },
+      "validation_errors": [],
+      "wall_s": 3.08
+    },
+    {
+      "attempt": "first",
+      "failure_modes": [],
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 8192,
+          "output_tokens": 32,
+          "prompt_chars": 11548,
+          "prompt_tokens_estimated": 3849,
+          "prompt_tokens_reported": 2846,
+          "truncated_suspected": false
+        }
+      },
+      "n": 2,
+      "native": {
+        "created_at": "2026-10-20T01:45:57.781393712Z",
+        "done_reason": "stop",
+        "eval_count": 32,
+        "eval_duration": 1134659000,
+        "load_duration": 849075,
+        "prompt_eval_count": 2846,
+        "prompt_eval_duration": 504297000,
+        "total_duration": 1675733036
+      },
+      "parsed_type": "tool_call",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "why",
+                "args"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "reason",
+                "confidence",
+                "evidence_refs"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "audit": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "preconditions": {
+                      "items": {
+                        "maxLength": 160,
+                        "type": "string"
+                      },
+                      "maxItems": 6,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "readback": {
+                      "maxLength": 240,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "target": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "verify": {
+                      "maxLength": 240,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "target",
+                    "preconditions",
+                    "readback",
+                    "verify"
+                  ],
+                  "type": "object"
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "reason",
+                "confidence",
+                "evidence_refs",
+                "audit"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself, and neither does this system: the action you choose is recorded as a proposal for a human-supervised system.\n\nREPLY FORMAT\nEvery reply of yours is exactly ONE JSON object and nothing else: no prose, no markdown fence, nothing after the closing brace. The first key is always \"type\". Use only the keys shown below, in that order. Never copy fields from a tool result (such as status, output or tool_calls_remaining) into your reply. Double-quoted keys and strings, every string closed, no trailing commas.\n\n1. Tool call (at most 6 per case, counting any call that is rejected):\n{\"type\":\"tool_call\",\"tool\":\"<a name from tools_available>\",\"why\":\"<=200 chars\",\"args\":{}}\nThis is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. Call only a tool named in tools_available; a call to any other tool does nothing, uses up one of your 6 calls and is recorded as a protocol violation. Tools act on this case's file only. Arguments: ffprobe {}; decode_sample {\"at\":seconds} or {\"full\":true} (a 4 s window, or the whole file); frame_sample {\"at\":seconds}; audio_sample {\"at\":seconds,\"stream\":0}; ocr {\"frame\":\"<name from frame_sample>\"} or {\"at\":seconds}; epub_inspect {}; audiobook_inspect {}; arr_lookup {}.\nEvery tool result has a status:\n- ok: the tool ran and returned its whole answer.\n- partial: the tool ran but returned a cut or incomplete answer; the missing part is unverified.\n- error: the tool ran and failed, or it ran and reported damage in the file; read the output to tell which (damage comes with the tool's own exit code or stage and message about the file; a plain failure message means it did not run properly).\n- timeout: the tool ran and did not finish; nothing was learned.\n- unavailable: the capability is absent (tool not offered, program or data missing, nothing recorded for this call); nothing ran and nothing was learned.\nResults are bounded to 8 KiB. Do not repeat a call that already came back error, timeout or unavailable.\n\n2. Final decision:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<string or null>\",\"reason\":\"<=400 chars, one or two sentences>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"]}\nclass is exactly one of: identity_mismatch, corrupt_file, decoder_incompatible, metadata_naming, order_edition_ambiguity, insufficient_evidence, healthy.\naction is exactly ONE of: none, escalate, blocklist_and_search, remap, rename, convert. Never combine two (for example \"remap and rename\" is invalid); if two different writes could be right, the action is escalate.\nCite evidence ids: e1.. for evidence in the case, t1.. for your own tool results.\nWhen the action is a write (blocklist_and_search, remap, rename or convert), add a last key \"audit\", and \"target\" must be the same non-null string as audit.target:\n\"audit\":{\"target\":\"<the exact file, release, episode or entry the write applies to>\",\"preconditions\":[\"<a fact that makes this write safe and that you verified, with its evidence id>\"],\"readback\":\"<what will be read back afterwards to confirm the change>\",\"verify\":\"<how success or a need to undo will be recognised>\"}\nDo not add \"audit\" for none or escalate. A precondition you did not verify is not a precondition: leave it out, and if the write then lacks a prerequisite, escalate instead.\n\nCLASSES (what is wrong with the item, decided from evidence)\n- identity_mismatch: the content is a different work, episode, edition or language than the catalog entry expects. Needs content evidence (what the streams, tags, text, on-screen text or duration say it is), never the file name alone.\n- corrupt_file: the file is physically damaged: decode errors, truncation, a missing index, an unreadable archive, package or spine. The content is the expected one, but the bytes are damaged. Needs a tool that ran and reported the damage.\n- decoder_incompatible: the file is intact (it decodes cleanly in full) but uses a codec, profile, pixel format, audio layout or container that the stated client cannot play directly. Needs the stated client in the context and a clean full decode.\n- metadata_naming: the content is the right one and is in the right slot, but a name, tag, title or other metadata text is wrong or missing.\n- order_edition_ambiguity: the content is plausibly correct under more than one legitimate ordering, numbering or edition, and the evidence does not settle which one is wanted.\n- insufficient_evidence: the evidence cannot settle whether there is a defect, because the tools that matter failed, timed out, were unavailable or covered only part of the item, or because no evidence reaches the question.\n- healthy: every check that matters for this item ran, covered the whole item as far as the tools allow, and passed.\n\nACTIONS (the change each one proposes; the prerequisites must hold before you choose it)\n- none: no change. Only for healthy.\n- escalate: no change; hand the item to a human with your reason. Choose it when the evidence is insufficient or ambiguous, when more than one write could be right, when a prerequisite of the write you would otherwise choose is missing, or when part of the item is unverified and the verified part does not settle the question. Say in the reason what was and was not verified.\n- blocklist_and_search: the *arr marks THIS release as bad and searches for a replacement; the current file is later replaced and cannot be recovered. Needs positive content evidence from tools that ran (identity_mismatch or corrupt_file), the item managed by an *arr (context.arr.app names it), and the release or file as target. Recovery: only the blocklist entry can be undone, so partial or failed evidence is never enough. Not for problems caused by the client or by names.\n- remap: the *arr changes which item (episode, movie entry or edition) the existing file is linked to; the file's content and name stay as they are and nothing is downloaded. Needs the managed app, content evidence of what the file really is, evidence of the right target, and a target slot that is free (no other file linked to it); the target is that slot. Read back afterwards: the link shows the new target and the old slot shows what it should.\n- rename: only the file's name, path or tag text changes; the file stays linked to the same item. Needs verified identity (content evidence agrees with the item), the correct name known from the evidence, and a way back: record the current name so it can be renamed back.\n- convert: makes a compatible copy and leaves the original untouched. Needs class decoder_incompatible, a clean full decode of the source and the stated client; the target is the isolated copy.\n\nEVIDENCE RULES\n1. healthy requires every relevant check to have run and passed. Any part of the item that was not verified (a tool that failed, timed out, was unavailable or returned partial output, a segment not sampled, media that could not be reached) is unverified, never healthy.\n2. Decide only what the remaining verified evidence supports. If it supports a diagnosis, you may give it and cite only what was verified; if it does not, choose insufficient_evidence with escalate and name the unverified part in the reason.\n3. A write action needs positive evidence for its class from tools or evidence that ran, the prerequisites of that action above, and a named target.\n4. Never cite a result as support if its tool did not run to completion: a failure to run, a timeout, an unavailable capability or partial output. Damage that a tool which did run reports about the file itself is evidence and may be cited. If a tool failed, say so in the reason.\n5. When the evidence supports two different writes, escalate.\n6. Use tools to check before concluding. Do not conclude healthy from metadata alone when decode or content tools are offered.\n7. A sample is partial: a clean sample does not prove a whole file is healthy, and a file name alone never proves content. A wrong repair is worse than an escalation.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-ee2e7098\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990204, \"episodeId\": 990104, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 4, \"episode_title\": \"(unknown order)\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E04 - The Glass Harbor.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E04\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89754\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90271\\\",\\\"tags\\\":{\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"The Glass Harbor\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 1.0}, \"id\": \"e3\", \"output\": \"HARBOR LIGHTS / THE GLASS HARBOR\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": \"S01E04\", \"series\": \"Harbor Lights\"}, \"id\": \"e4\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode_orders\\\":{\\\"aired\\\":{\\\"4\\\":\\\"Night Ferry\\\",\\\"5\\\":\\\"The Glass Harbor\\\"},\\\"dvd\\\":{\\\"4\\\":\\\"The Glass Harbor\\\",\\\"5\\\":\\\"Night Ferry\\\"}},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E04 - The Glass Harbor.mkv\\\",\\\"size\\\":90271},\\\"file_attached_to\\\":{\\\"episode\\\":4,\\\"season\\\":1},\\\"library_episode_order\\\":null,\\\"series\\\":\\\"Harbor Lights\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"why\":\"Verify current episode mapping and order options to confirm identity mismatch between file content and linked episode\",\"args\":{\"app\":\"sonarr\",\"episode\":\"S01E04\",\"series\":\"Harbor Lights\"}}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"arr_lookup\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"note\\\": \\\"case-provided records only; no live arr call was made\\\", \\\"records\\\": [{\\\"args\\\": {\\\"app\\\": \\\"sonarr\\\", \\\"episode\\\": \\\"S01E04\\\", \\\"series\\\": \\\"Harbor Lights\\\"}, \\\"record\\\": \\\"{\\\\\\\"app\\\\\\\":\\\\\\\"sonarr\\\\\\\",\\\\\\\"episode_orders\\\\\\\":{\\\\\\\"aired\\\\\\\":{\\\\\\\"4\\\\\\\":\\\\\\\"Night Ferry\\\\\\\",\\\\\\\"5\\\\\\\":\\\\\\\"The Glass Harbor\\\\\\\"},\\\\\\\"dvd\\\\\\\":{\\\\\\\"4\\\\\\\":\\\\\\\"The Glass Harbor\\\\\\\",\\\\\\\"5\\\\\\\":\\\\\\\"Night Ferry\\\\\\\"}},\\\\\\\"file\\\\\\\":{\\\\\\\"relativePath\\\\\\\":\\\\\\\"Harbor Lights - S01E04 - The Glass Harbor.mkv\\\\\\\",\\\\\\\"size\\\\\\\":90271},\\\\\\\"file_attached_to\\\\\\\":{\\\\\\\"episode\\\\\\\":4,\\\\\\\"season\\\\\\\":1},\\\\\\\"library_episode_order\\\\\\\":null,\\\\\\\"series\\\\\\\":\\\\\\\"Harbor Lights\\\\\\\"}\\\"}], \\\"stub\\\": true}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": 640,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-20T01:45:57.781393712Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"tool_call\\\",\\\"tool\\\":\\\"decode_sample\\\",\\\"why\\\":\\\"Check full decode to confirm file is intact and not corrupt\\\",\\\"args\\\":{\\\"full\\\":true}}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":1675733036,\"load_duration\":849075,\"prompt_eval_count\":2846,\"prompt_eval_cached_count\":2543,\"prompt_eval_duration\":504297000,\"eval_count\":32,\"eval_duration\":1134659000}",
+        "stderr": "",
+        "wall_seconds": 1.7727188039571047
+      },
+      "reply_valid": true,
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"why\":\"Check full decode to confirm file is intact and not corrupt\",\"args\":{\"full\":true}}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 2846,
+        "output_tokens": 32
+      },
+      "validation_errors": [],
+      "wall_s": 1.773
+    },
+    {
+      "attempt": "first",
+      "failure_modes": [],
+      "load_s": 0.001,
+      "meta": {
+        "context": {
+          "flags": [],
+          "num_ctx": 8192,
+          "output_tokens": 227,
+          "prompt_chars": 12100,
+          "prompt_tokens_estimated": 4033,
+          "prompt_tokens_reported": 3015,
+          "truncated_suspected": false
+        }
+      },
+      "n": 3,
+      "native": {
+        "created_at": "2026-10-20T01:46:07.862812338Z",
+        "done_reason": "stop",
+        "eval_count": 227,
+        "eval_duration": 9589704000,
+        "load_duration": 764403,
+        "prompt_eval_count": 3015,
+        "prompt_eval_duration": 346251000,
+        "total_duration": 9981878338
+      },
+      "parsed_type": "decision",
+      "raw_request": {
+        "format": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "args": {
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "ffprobe",
+                    "decode_sample",
+                    "frame_sample",
+                    "audio_sample",
+                    "ocr",
+                    "arr_lookup"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "tool_call"
+                  ]
+                },
+                "why": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "tool",
+                "why",
+                "args"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "none",
+                    "escalate"
+                  ]
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "reason",
+                "confidence",
+                "evidence_refs"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "blocklist_and_search",
+                    "remap",
+                    "rename",
+                    "convert"
+                  ]
+                },
+                "audit": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "preconditions": {
+                      "items": {
+                        "maxLength": 160,
+                        "type": "string"
+                      },
+                      "maxItems": 6,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "readback": {
+                      "maxLength": 240,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "target": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "verify": {
+                      "maxLength": 240,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "target",
+                    "preconditions",
+                    "readback",
+                    "verify"
+                  ],
+                  "type": "object"
+                },
+                "class": {
+                  "enum": [
+                    "identity_mismatch",
+                    "corrupt_file",
+                    "decoder_incompatible",
+                    "metadata_naming",
+                    "order_edition_ambiguity",
+                    "insufficient_evidence",
+                    "healthy"
+                  ]
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "evidence_refs": {
+                  "items": {
+                    "maxLength": 16,
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "decision"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "class",
+                "action",
+                "target",
+                "reason",
+                "confidence",
+                "evidence_refs",
+                "audit"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "keep_alive": "2m",
+        "messages": [
+          {
+            "content": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything yourself, and neither does this system: the action you choose is recorded as a proposal for a human-supervised system.\n\nREPLY FORMAT\nEvery reply of yours is exactly ONE JSON object and nothing else: no prose, no markdown fence, nothing after the closing brace. The first key is always \"type\". Use only the keys shown below, in that order. Never copy fields from a tool result (such as status, output or tool_calls_remaining) into your reply. Double-quoted keys and strings, every string closed, no trailing commas.\n\n1. Tool call (at most 6 per case, counting any call that is rejected):\n{\"type\":\"tool_call\",\"tool\":\"<a name from tools_available>\",\"why\":\"<=200 chars\",\"args\":{}}\nThis is not a native function call: your whole reply is that JSON object, the harness runs the tool and sends the result back in its next message. Call only a tool named in tools_available; a call to any other tool does nothing, uses up one of your 6 calls and is recorded as a protocol violation. Tools act on this case's file only. Arguments: ffprobe {}; decode_sample {\"at\":seconds} or {\"full\":true} (a 4 s window, or the whole file); frame_sample {\"at\":seconds}; audio_sample {\"at\":seconds,\"stream\":0}; ocr {\"frame\":\"<name from frame_sample>\"} or {\"at\":seconds}; epub_inspect {}; audiobook_inspect {}; arr_lookup {}.\nEvery tool result has a status:\n- ok: the tool ran and returned its whole answer.\n- partial: the tool ran but returned a cut or incomplete answer; the missing part is unverified.\n- error: the tool ran and failed, or it ran and reported damage in the file; read the output to tell which (damage comes with the tool's own exit code or stage and message about the file; a plain failure message means it did not run properly).\n- timeout: the tool ran and did not finish; nothing was learned.\n- unavailable: the capability is absent (tool not offered, program or data missing, nothing recorded for this call); nothing ran and nothing was learned.\nResults are bounded to 8 KiB. Do not repeat a call that already came back error, timeout or unavailable.\n\n2. Final decision:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<action>\",\"target\":\"<string or null>\",\"reason\":\"<=400 chars, one or two sentences>\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"]}\nclass is exactly one of: identity_mismatch, corrupt_file, decoder_incompatible, metadata_naming, order_edition_ambiguity, insufficient_evidence, healthy.\naction is exactly ONE of: none, escalate, blocklist_and_search, remap, rename, convert. Never combine two (for example \"remap and rename\" is invalid); if two different writes could be right, the action is escalate.\nCite evidence ids: e1.. for evidence in the case, t1.. for your own tool results.\nWhen the action is a write (blocklist_and_search, remap, rename or convert), add a last key \"audit\", and \"target\" must be the same non-null string as audit.target:\n\"audit\":{\"target\":\"<the exact file, release, episode or entry the write applies to>\",\"preconditions\":[\"<a fact that makes this write safe and that you verified, with its evidence id>\"],\"readback\":\"<what will be read back afterwards to confirm the change>\",\"verify\":\"<how success or a need to undo will be recognised>\"}\nDo not add \"audit\" for none or escalate. A precondition you did not verify is not a precondition: leave it out, and if the write then lacks a prerequisite, escalate instead.\n\nCLASSES (what is wrong with the item, decided from evidence)\n- identity_mismatch: the content is a different work, episode, edition or language than the catalog entry expects. Needs content evidence (what the streams, tags, text, on-screen text or duration say it is), never the file name alone.\n- corrupt_file: the file is physically damaged: decode errors, truncation, a missing index, an unreadable archive, package or spine. The content is the expected one, but the bytes are damaged. Needs a tool that ran and reported the damage.\n- decoder_incompatible: the file is intact (it decodes cleanly in full) but uses a codec, profile, pixel format, audio layout or container that the stated client cannot play directly. Needs the stated client in the context and a clean full decode.\n- metadata_naming: the content is the right one and is in the right slot, but a name, tag, title or other metadata text is wrong or missing.\n- order_edition_ambiguity: the content is plausibly correct under more than one legitimate ordering, numbering or edition, and the evidence does not settle which one is wanted.\n- insufficient_evidence: the evidence cannot settle whether there is a defect, because the tools that matter failed, timed out, were unavailable or covered only part of the item, or because no evidence reaches the question.\n- healthy: every check that matters for this item ran, covered the whole item as far as the tools allow, and passed.\n\nACTIONS (the change each one proposes; the prerequisites must hold before you choose it)\n- none: no change. Only for healthy.\n- escalate: no change; hand the item to a human with your reason. Choose it when the evidence is insufficient or ambiguous, when more than one write could be right, when a prerequisite of the write you would otherwise choose is missing, or when part of the item is unverified and the verified part does not settle the question. Say in the reason what was and was not verified.\n- blocklist_and_search: the *arr marks THIS release as bad and searches for a replacement; the current file is later replaced and cannot be recovered. Needs positive content evidence from tools that ran (identity_mismatch or corrupt_file), the item managed by an *arr (context.arr.app names it), and the release or file as target. Recovery: only the blocklist entry can be undone, so partial or failed evidence is never enough. Not for problems caused by the client or by names.\n- remap: the *arr changes which item (episode, movie entry or edition) the existing file is linked to; the file's content and name stay as they are and nothing is downloaded. Needs the managed app, content evidence of what the file really is, evidence of the right target, and a target slot that is free (no other file linked to it); the target is that slot. Read back afterwards: the link shows the new target and the old slot shows what it should.\n- rename: only the file's name, path or tag text changes; the file stays linked to the same item. Needs verified identity (content evidence agrees with the item), the correct name known from the evidence, and a way back: record the current name so it can be renamed back.\n- convert: makes a compatible copy and leaves the original untouched. Needs class decoder_incompatible, a clean full decode of the source and the stated client; the target is the isolated copy.\n\nEVIDENCE RULES\n1. healthy requires every relevant check to have run and passed. Any part of the item that was not verified (a tool that failed, timed out, was unavailable or returned partial output, a segment not sampled, media that could not be reached) is unverified, never healthy.\n2. Decide only what the remaining verified evidence supports. If it supports a diagnosis, you may give it and cite only what was verified; if it does not, choose insufficient_evidence with escalate and name the unverified part in the reason.\n3. A write action needs positive evidence for its class from tools or evidence that ran, the prerequisites of that action above, and a named target.\n4. Never cite a result as support if its tool did not run to completion: a failure to run, a timeout, an unavailable capability or partial output. Damage that a tool which did run reports about the file itself is evidence and may be cited. If a tool failed, say so in the reason.\n5. When the evidence supports two different writes, escalate.\n6. Use tools to check before concluding. Do not conclude healthy from metadata alone when decode or content tools are offered.\n7. A sample is partial: a clean sample does not prove a whole file is healthy, and a file name alone never proves content. A wrong repair is worse than an escalation.",
+            "role": "system"
+          },
+          {
+            "content": "{\"case_id\": \"case-ee2e7098\", \"context\": {\"arr\": {\"app\": \"sonarr\", \"ids\": {\"episodeFileId\": 990204, \"episodeId\": 990104, \"note\": \"fictional ids\", \"seriesId\": 990001}}, \"expected\": {\"episode\": 4, \"episode_title\": \"(unknown order)\", \"language\": \"en\", \"runtime_s\": 8, \"season\": 1, \"series\": \"Harbor Lights\"}, \"filename\": \"Harbor Lights - S01E04 - The Glass Harbor.mkv\", \"notes_for_model\": \"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\", \"title\": \"Harbor Lights S01E04\"}, \"evidence\": [{\"args\": {\"fixture\": \"file\"}, \"id\": \"e1\", \"output\": \"{\\\"chapters\\\":[],\\\"exit_code\\\":0,\\\"format\\\":{\\\"bit_rate\\\":\\\"89754\\\",\\\"duration\\\":\\\"8.046000\\\",\\\"format_name\\\":\\\"matroska,webm\\\",\\\"size\\\":\\\"90271\\\",\\\"tags\\\":{\\\"show\\\":\\\"Harbor Lights\\\",\\\"title\\\":\\\"The Glass Harbor\\\"}},\\\"stderr\\\":\\\"\\\",\\\"streams\\\":[{\\\"codec_name\\\":\\\"h264\\\",\\\"codec_type\\\":\\\"video\\\",\\\"height\\\":192,\\\"index\\\":0,\\\"pix_fmt\\\":\\\"yuv420p\\\",\\\"profile\\\":\\\"High\\\",\\\"tags\\\":{},\\\"width\\\":256},{\\\"channels\\\":1,\\\"codec_name\\\":\\\"aac\\\",\\\"codec_type\\\":\\\"audio\\\",\\\"index\\\":1,\\\"profile\\\":\\\"LC\\\",\\\"sample_rate\\\":\\\"22050\\\",\\\"tags\\\":{}}]}\", \"status\": \"ok\", \"tool\": \"ffprobe\", \"truncated\": false}, {\"args\": {\"ss\": 0, \"t\": 4}, \"id\": \"e2\", \"output\": \"{\\\"exit_code\\\":0,\\\"frames\\\":40,\\\"out_time\\\":\\\"00:00:04.000000\\\",\\\"ss\\\":0,\\\"stderr\\\":\\\"\\\",\\\"t\\\":4}\", \"status\": \"ok\", \"tool\": \"decode_sample\", \"truncated\": false}, {\"args\": {\"t\": 1.0}, \"id\": \"e3\", \"output\": \"HARBOR LIGHTS / THE GLASS HARBOR\", \"status\": \"ok\", \"tool\": \"ocr\", \"truncated\": false}, {\"args\": {\"app\": \"sonarr\", \"episode\": \"S01E04\", \"series\": \"Harbor Lights\"}, \"id\": \"e4\", \"output\": \"{\\\"app\\\":\\\"sonarr\\\",\\\"episode_orders\\\":{\\\"aired\\\":{\\\"4\\\":\\\"Night Ferry\\\",\\\"5\\\":\\\"The Glass Harbor\\\"},\\\"dvd\\\":{\\\"4\\\":\\\"The Glass Harbor\\\",\\\"5\\\":\\\"Night Ferry\\\"}},\\\"file\\\":{\\\"relativePath\\\":\\\"Harbor Lights - S01E04 - The Glass Harbor.mkv\\\",\\\"size\\\":90271},\\\"file_attached_to\\\":{\\\"episode\\\":4,\\\"season\\\":1},\\\"library_episode_order\\\":null,\\\"series\\\":\\\"Harbor Lights\\\"}\", \"status\": \"ok\", \"tool\": \"arr_lookup\", \"truncated\": false}], \"media_type\": \"tv\", \"tool_call_budget\": 6, \"tools_available\": [\"ffprobe\", \"decode_sample\", \"frame_sample\", \"audio_sample\", \"ocr\", \"arr_lookup\"]}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"arr_lookup\",\"why\":\"Verify current episode mapping and order options to confirm identity mismatch between file content and linked episode\",\"args\":{\"app\":\"sonarr\",\"episode\":\"S01E04\",\"series\":\"Harbor Lights\"}}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t1\", \"tool\": \"arr_lookup\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"note\\\": \\\"case-provided records only; no live arr call was made\\\", \\\"records\\\": [{\\\"args\\\": {\\\"app\\\": \\\"sonarr\\\", \\\"episode\\\": \\\"S01E04\\\", \\\"series\\\": \\\"Harbor Lights\\\"}, \\\"record\\\": \\\"{\\\\\\\"app\\\\\\\":\\\\\\\"sonarr\\\\\\\",\\\\\\\"episode_orders\\\\\\\":{\\\\\\\"aired\\\\\\\":{\\\\\\\"4\\\\\\\":\\\\\\\"Night Ferry\\\\\\\",\\\\\\\"5\\\\\\\":\\\\\\\"The Glass Harbor\\\\\\\"},\\\\\\\"dvd\\\\\\\":{\\\\\\\"4\\\\\\\":\\\\\\\"The Glass Harbor\\\\\\\",\\\\\\\"5\\\\\\\":\\\\\\\"Night Ferry\\\\\\\"}},\\\\\\\"file\\\\\\\":{\\\\\\\"relativePath\\\\\\\":\\\\\\\"Harbor Lights - S01E04 - The Glass Harbor.mkv\\\\\\\",\\\\\\\"size\\\\\\\":90271},\\\\\\\"file_attached_to\\\\\\\":{\\\\\\\"episode\\\\\\\":4,\\\\\\\"season\\\\\\\":1},\\\\\\\"library_episode_order\\\\\\\":null,\\\\\\\"series\\\\\\\":\\\\\\\"Harbor Lights\\\\\\\"}\\\"}], \\\"stub\\\": true}\", \"tool_calls_remaining\": 5}",
+            "role": "user"
+          },
+          {
+            "content": "{\"type\":\"tool_call\",\"tool\":\"decode_sample\",\"why\":\"Check full decode to confirm file is intact and not corrupt\",\"args\":{\"full\":true}}",
+            "role": "assistant"
+          },
+          {
+            "content": "{\"type\": \"tool_result\", \"id\": \"t2\", \"tool\": \"decode_sample\", \"status\": \"ok\", \"truncated\": false, \"output\": \"{\\\"at_s\\\": 0, \\\"clean\\\": true, \\\"exit_code\\\": 0, \\\"frames\\\": 80, \\\"note\\\": \\\"A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.\\\", \\\"out_time\\\": \\\"00:00:08.000000\\\", \\\"quota_exhausted\\\": false, \\\"stderr\\\": \\\"\\\", \\\"window_s\\\": \\\"full\\\"}\", \"tool_calls_remaining\": 4}",
+            "role": "user"
+          }
+        ],
+        "model": "muse-glimmer:30b",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": 640,
+          "seed": 42,
+          "stop": [
+            "<|eot|>"
+          ],
+          "temperature": 0,
+          "use_mmap": false
+        },
+        "stream": false,
+        "think": false
+      },
+      "raw_response": {
+        "exit_code": 0,
+        "http_status": 200,
+        "raw_body": "{\"model\":\"muse-glimmer:30b\",\"created_at\":\"2026-10-20T01:46:07.862812338Z\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"identity_mismatch\\\",\\\"target\\\":\\\"Harbor Lights - S01E04 - The Glass Harbor.mkv\\\",\\\"reason\\\":\\\"File content shows The Glass Harbor but is linked to episode 4 which is Night Ferry in aired order; DVD order maps episode 4 to The Glass Harbor. Evidence shows identity mismatch.\\\",\\\"confidence\\\":0.9,\\\"evidence_refs\\\":[\\\"e1\\\",\\\"e3\\\",\\\"e4\\\",\\\"t1\\\",\\\"t2\\\"],\\\"action\\\":\\\"remap\\\",\\\"audit\\\":{\\\"target\\\":\\\"Harbor Lights - S01E04 - The Glass Harbor.mkv\\\",\\\"preconditions\\\":[\\\"File content is The Glass Harbor per ffprobe tags e1 and OCR e3\\\",\\\"Arr lookup shows aired episode 4 is Night Ferry and DVD episode 4 is The Glass Harbor e4\\\",\\\"File is currently attached to episode 4 season 1 e4\\\",\\\"Full decode clean t2\\\"],\\\"readback\\\":\\\"arr_lookup shows file_attached_to episode 4 season 1 with episode title The Glass Harbor\\\",\\\"verify\\\":\\\"arr_lookup confirms file linked to episode 4 with title The Glass Harbor and library_episode_order set to dvd\\\"}}\"},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":9981878338,\"load_duration\":764403,\"prompt_eval_count\":3015,\"prompt_eval_cached_count\":2846,\"prompt_eval_duration\":346251000,\"eval_count\":227,\"eval_duration\":9589704000}",
+        "stderr": "",
+        "wall_seconds": 10.087250618264079
+      },
+      "reply_valid": true,
+      "response_model": "muse-glimmer:30b",
+      "text": "{\"type\":\"decision\",\"class\":\"identity_mismatch\",\"target\":\"Harbor Lights - S01E04 - The Glass Harbor.mkv\",\"reason\":\"File content shows The Glass Harbor but is linked to episode 4 which is Night Ferry in aired order; DVD order maps episode 4 to The Glass Harbor. Evidence shows identity mismatch.\",\"confidence\":0.9,\"evidence_refs\":[\"e1\",\"e3\",\"e4\",\"t1\",\"t2\"],\"action\":\"remap\",\"audit\":{\"target\":\"Harbor Lights - S01E04 - The Glass Harbor.mkv\",\"preconditions\":[\"File content is The Glass Harbor per ffprobe tags e1 and OCR e3\",\"Arr lookup shows aired episode 4 is Night Ferry and DVD episode 4 is The Glass Harbor e4\",\"File is currently attached to episode 4 season 1 e4\",\"Full decode clean t2\"],\"readback\":\"arr_lookup shows file_attached_to episode 4 season 1 with episode title The Glass Harbor\",\"verify\":\"arr_lookup confirms file linked to episode 4 with title The Glass Harbor and library_episode_order set to dvd\"}}",
+      "usage": {
+        "cost_usd": null,
+        "input_tokens": 3015,
+        "output_tokens": 227
+      },
+      "validation_errors": [],
+      "wall_s": 10.087
+    }
+  ],
+  "unverified_parts": [],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 8404,
+    "output_tokens": 311
+  },
+  "wall": {
+    "case_excl_load_s": 14.941,
+    "load_s": 0.003,
+    "tool_s": [
+      0.0,
+      0.001
+    ],
+    "total_s": 14.944,
+    "turn_s": [
+      3.08,
+      1.773,
+      10.087
+    ]
+  }
+}
