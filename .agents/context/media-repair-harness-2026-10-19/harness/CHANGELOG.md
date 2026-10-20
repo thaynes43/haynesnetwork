@@ -40,10 +40,10 @@ tool statuses, capability and gap records, version fields). `CONTRACT.md` is not
 
 ### Tests
 
-`test_wiring.py` (36 tests): replay identity over the dev suite, explicit replay equals default, no mode or gap field reaches the model, live with a fake collector runner and a fake
+`test_wiring.py` (46 tests): replay identity over the dev suite, explicit replay equals default, no mode or gap field reaches the model, live with a fake collector runner and a fake
 `collect` (ok, missing binary, damaged input, timeout, hung collector, partial, missing path, no fixture / pinned / remote, directory, injected failure, bounds mapping, bad arguments, output cap,
 OCR without an engine), a real EPUB through the real collector, leak guard (names redacted; a leaking message still raises), `unavailable` status, gaps, run records through `run_case`
-and `main`. Whole harness: 369 tests (333 before). `wiring_smoke.py` + `launch_wiring_smoke.py` ran `run_case --evidence live` with a scripted adapter and the real ffprobe/ffmpeg in a
+and `main`. Whole harness: 379 tests (333 before). `wiring_smoke.py` + `launch_wiring_smoke.py` ran `run_case --evidence live` with a scripted adapter and the real ffprobe/ffmpeg in a
 CPU-limited Job on synthetic fixtures (`testdata/wiring-smoke/wiring-smoke.json`; Job deleted).
 
 ### Smoke (validity only, not a benchmark)
@@ -62,6 +62,27 @@ schema valid, response model id `claude-haiku-5-5`, cost about 0.0051 USD, 3 too
 * The replay-identity digests cover the fixed argument set in `replay_identity.CALLS` and the case view, with no ffmpeg on PATH; they do not cover a run on a machine that has ffprobe (the local route is unchanged code).
 * Gap `needed_tool` for `standing` gaps is a keyword hint on the collector's wording. `ocr` and `frame_sample` share the frames collector, so one `ocr` call repeats the frame decode.
 * Everything from dev-c1's known limits still applies (`score.py` predates `unavailable`; `claim_text` checks are English keyword matches; per-case structured output for Ollama is untested live).
+
+### Review fixes (independent review of PR #1011)
+
+Replay was verified identical to dev-c1; the findings below were all in live mode, the evidence package or the checks. Version stays `dev-c2`.
+
+1. **EPUB `cause`.** A collector limit (`epub_max_members`, an oversized container.xml / OPF) and any `OSError` (permission, I/O) while opening or reading the archive are now `cause: tool`; only a
+   damaged archive stays `input`. `gaps.is_damage_finding` follows the record's `cause` first, so a `tool` cause is a gap, never a finding; `audit.usable_as_support` already refuses it. Tests: member cap, an
+   unreadable (mode 0) file, an oversized OPF, a genuinely corrupt archive still `input`. Found on the way: `fingerprint` raised on an unreadable file, so `collect()` raised instead of returning an error record; it now returns no fingerprint.
+2. **Part names.** Every file and folder name under a folder item is replaced (`part-NN.ext`, `folder-NN`, also the stems and the JSON-escaped forms) in the redactor that runs when the result is bounded, before the leak guard; a part named
+   after a class or an action neither reaches the model nor raises `LeakError`. Test: names that are class and action words, through `run_case`. Proposal section 3 updated.
+3. **Serial runs.** `--evidence-bounds deadline_s` above `LIVE_DEADLINE_S` (45 s) is cut to it and listed in `bounds_clamped`. When the outer tool timeout fires on a live call, `call_tool` sets a cancel event
+   (`Ctx.run` starts no further subprocess), kills the process group the collector thread is waiting on (`evidence.kill_active`) and waits for the thread, so the next call starts alone. Tests: a cooperative hung collector, and a
+   real shell-script `ffprobe` whose `sleep` child is verified dead after the timeout.
+4. **Unhonored offsets.** In live mode a requested `at` / `ss` / `t` that falls in no sampled window, an audio `stream` other than the first, or a `frame` name now produces a `request_note` in the tool result (generic wording, the
+   windows actually sampled) and `request_unmet` in the call record; `gaps.py` records a `requested_not_honored` gap for it. A requested offset inside a sampled window counts as honored.
+5. **Crash records.** `gaps.evidence_summary` tolerates `tools_available: null`; `crash_record` never raises (a minimal record with every required field, `error.secondary` naming the second failure, is the fallback); `call_tool` tolerates
+   a null tool list. Test: a null-`tools_available` case and a forced `_crash_record` failure, each followed by a case that runs normally in the same batch.
+6. **Replay-identity coverage.** The golden is regenerated from the real dev-c1 tree (`git archive 617e6ad4` into a scratch directory, `replay_identity.py` copied in and run there) and now also digests the v1 and v2 system
+   prompts, the turn schemas, repair prompts and validator errors / failure modes for 11 bad replies, the budget notice, the forced decision, the not-offered message and six bad-argument errors. The README row and the
+   `replay_identity.py` docstring list exactly what is and is not covered (not: a machine with ffprobe/ffmpeg, other arguments, adapters, record fields).
+7. **Docs and folder fingerprints.** `evidence/__init__.py` no longer says "not wired". For a folder item `evidence.input` keeps per-part size and head/tail hashes (no names) in `files[]`; the proposal says so.
 
 ## dev-c1 (candidate, OpenProject #136) 
 

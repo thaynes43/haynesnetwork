@@ -888,7 +888,7 @@ class ReviewRegressionTests(Base):
         make_epub(p, opf=OPF + big)  # 3 MiB of padding deflates to a few KB
         self.assertLess(p.stat().st_size, 100 * 1024)
         rec = evidence.collect(p, ['epub'], {'epub_max_opf_bytes': 1 << 20}, runner=Fake([]), which=which_with())[0]
-        self.assertEqual((rec['status'], rec['cause'], rec['output']['stage']), ('error', 'input', 'opf_parse'))
+        self.assertEqual((rec['status'], rec['cause'], rec['output']['stage']), ('error', 'tool', 'opf_parse'))   # the collector's own size cap, not a finding about the file
         self.assertIn('TooBig', rec['reason'])
         self.assertIn('byte cap', rec['reason'])
         p2 = self.dir / 'bigcontainer.epub'

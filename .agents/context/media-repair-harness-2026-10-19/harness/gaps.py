@@ -15,6 +15,8 @@ gap `type`:
   not_run     the tool did not run or did not finish (unavailable, timeout, an error of the tool itself); everything it covers is unverified
   incomplete  the tool ran and answered only in part (partial); the rest of what it covers is unverified
   standing    the tool ran and answered, and its own record says what it did not cover (a sample is not the whole file)
+  requested_not_honored   live mode only: the call asked for an offset, audio stream or earlier frame the collector did not examine (it
+              chose its own windows); the tool result told the model so, and `area` names what was asked for and what was sampled
 A damage finding (an `error` that is a finding about the file: the tool ran and reported damage) is not a gap; it is evidence.
 """
 import json
@@ -50,8 +52,8 @@ def is_damage_finding(call):
     if call.get('status') != 'error' or call.get('injected'):
         return False
     ev = call.get('evidence') or {}
-    if ev.get('cause') == 'input':
-        return True
+    if ev.get('cause') is not None:     # a live collector record says whether the file or the tool failed; a `tool` cause is never damage
+        return ev['cause'] == 'input'
     try:
         d = json.loads(_text(call))
     except ValueError:
@@ -75,7 +77,19 @@ def _needed(tool, kind, offered):
 
 
 def call_gaps(call, offered=True):
-    """Gaps shown by one tool call (a dict of run.py's tool_calls)."""
+    """Gaps shown by one tool call (a dict of run.py's tool_calls): its status and coverage, and any request the live collector did not honor."""
+    gaps = _status_gaps(call, offered)
+    for u in call.get('request_unmet') or []:
+        what = {'at': 'offset', 'ss': 'offset', 't': 'offset', 'stream': 'audio stream', 'frame': 'frame'}.get(u.get('arg'), 'request')
+        where = (' (sampled instead at %s s)' % ', '.join('%g' % x for x in u['sampled_at_s'])) if u.get('sampled_at_s') else ''
+        gaps.append({'call': call.get('id'), 'tool': call.get('tool'), 'status': call.get('status'), 'evidence_mode': call.get('evidence_mode'),
+                     'type': 'requested_not_honored', 'area': 'the requested %s %s was not examined%s' % (what, u.get('requested'), where),
+                     'reason': 'live collection chooses its own sample windows; the request was validated and ignored', 'needed_tool': None,
+                     'needed_note': 'no live harness tool targets a given offset, stream or earlier frame; replay serves recorded windows'})
+    return gaps
+
+
+def _status_gaps(call, offered=True):
     tool, status = call.get('tool'), call.get('status')
     if tool not in AREA:
         return []
@@ -109,7 +123,7 @@ def _standing_need(item):
 
 
 def evidence_summary(case, tool_calls, evidence_mode, decision=None, live_kinds=None):
-    offered = set(case.get('tools_available', []))
+    offered = set(case.get('tools_available') or [])
     caps = []
     for tool in MEDIA_TOOLS:
         calls = [c for c in tool_calls if c.get('tool') == tool]

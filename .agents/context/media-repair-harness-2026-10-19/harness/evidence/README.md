@@ -14,9 +14,9 @@ records = collect('/path/to/b.epub', ['epub'])
 tool_result = to_tool_result(records[0], cap=8192)       # {status, output (JSON text, bounded), truncated, mode, wall_s, tool}
 ```
 
-`collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=None, scratch_dir=None)` never raises for a bad input or a
+`collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=None, scratch_dir=None, cancel=None)` never raises for a bad input or a
 crashed collector (that becomes an `error` record); it raises `ValueError` only for programmer errors (unknown kind, unknown or ill-typed bound).
-`runner` and `which` are injection points for tests.
+`runner` and `which` are injection points for tests. `cancel` (a `threading.Event`, dev-c2): once set no further subprocess is started, and `kill_active(thread_id)` kills the process group the given thread is waiting on; the harness uses both when its own tool timeout fires, so a live collection never keeps running beside the next call.
 
 ## Kinds
 
@@ -41,7 +41,7 @@ stderr (scrubbed, capped excerpt), elapsed_s, output {structured findings}, reas
   `partial` = some part of the plan did not run or finish (cap, deadline, timeout, missing optional binary, unknown duration, a frame produced with errors, an audiobook part that could not be read), and `coverage.not_verified` and `reason` say which;
   `timeout` = nothing finished inside its timeout; `unavailable` = a required binary is missing (`reason` names it, nothing was run, `coverage.verified` is empty);
   `error` = it could not do its job. `cause` separates **`input`** (the file is damaged or unreadable: ffprobe exits non-zero, not a zip, a CRC failure, the OPF or a manifest member is broken; the suite's recorded
-  stages `zip_open`, `zip_crc`, `opf_parse`, `manifest`) from **`tool`** (a binary could not start, output cap hit, JSON unparsable, collector crashed).
+  stages `zip_open`, `zip_crc`, `opf_parse`, `manifest`) from **`tool`** (a binary could not start, output cap hit, JSON unparsable, collector crashed, **a collector limit** such as `epub_max_members` or an oversized container.xml / OPF, **an environment error** such as a permission or I/O error). Only `input` is a finding about the file; a consumer must never treat `tool` as damage.
 * Nothing is called healthy. A clean sample says so in `not_verified` ("a clean sample does not prove whole-file health"); `ok` on `decode` with `clean: true` means the sampled windows were clean and nothing more.
 * **mode** is `live` for anything run now. `replay` is only produced from a recording passed as `replay=` (records list, `{kind: record}` dict, or a JSON file with `{"records": [...]}`): the recorded record is served with `mode: "replay"`,
   `recorded_from`, and is refused (`unavailable`) when the input's size and head/tail hashes differ from the recording's `input`, **and when the recording has no `input` fingerprint at all** (reason "recording has no input fingerprint"): a stripped or hand-built recording cannot pass as evidence about any file. Kinds absent from the recording run live.

@@ -59,6 +59,7 @@ class ReplayIdentity(unittest.TestCase):
 
     def test_every_dev_suite_case_shows_the_model_what_dev_c1_showed(self):
         golden = json.loads(GOLDEN.read_text())
+        self.assertIn('617e6ad4', golden['reference'])
         now = RI.digest_suite(SUITE)
         self.assertEqual(sorted(now), sorted(golden['cases']), 'the suite changed: the golden must be regenerated from the reference code')
         for key, want in golden['cases'].items():
@@ -66,6 +67,17 @@ class ReplayIdentity(unittest.TestCase):
             self.assertEqual(now[key]['view'], want['view'], 'case view differs: ' + key)
             self.assertEqual(now[key]['calls'], want['calls'], 'tool output differs: ' + key)
         self.assertEqual(len(now), 73)
+
+    def test_the_protocol_text_the_model_is_sent_is_what_dev_c1_sent(self):
+        """System prompts v1 and v2, the turn schemas, repair prompts and validator errors for a fixed list of bad replies, the budget notice,
+        the not-offered message and the bad-argument errors: digests from the dev-c1 code."""
+        golden = json.loads(GOLDEN.read_text())['protocol']
+        now = RI.digest_protocol()
+        self.assertEqual(sorted(now), sorted(golden))
+        for key in golden:
+            self.assertEqual(now[key], golden[key], 'protocol part differs: ' + key)
+        self.assertEqual(len(golden['replies']), len(RI.BAD_REPLIES))
+        self.assertEqual(len(golden['tool_messages']), 3 + len(RI.BAD_ARGS) + 1)
 
     def test_explicit_replay_equals_the_default(self):
         case = th.make_case(fixture={'kind': 'none'})
@@ -223,15 +235,48 @@ class LiveCollection(unittest.TestCase):
         self.assertEqual(res['status'], 'timeout')
         self.assertIn('exceeded', json.loads(res['output'])['reason'])
 
-    def test_a_hung_collector_hits_the_tool_timeout_without_blocking_the_run(self):
-        def hang(*a, **k):
-            time.sleep(1.5)
+    def test_a_hung_collector_hits_the_tool_timeout_and_is_stopped_before_the_call_returns(self):
+        state = {}
+
+        def hang(path, kinds, bounds, cancel=None, **kw):
+            state['cancel'] = cancel
+            while not cancel.is_set():
+                time.sleep(0.01)
+            state['stopped'] = True
             return [_rec('probe', 'ok')]
         with mock.patch.object(T, 'TOOL_TIMEOUT_S', -4.9):   # call_tool waits TOOL_TIMEOUT_S + 5 s, so this makes the wait 0.1 s
-            t0 = time.monotonic()
             res = T.call_tool(ctx_live(self.case, self.ts, collect=hang), 'ffprobe', {})
         self.assertEqual(res['status'], 'timeout')
-        self.assertLess(time.monotonic() - t0, 1.4)
+        self.assertTrue(state['cancel'].is_set())
+        self.assertTrue(state.get('stopped'))    # the collector thread has returned by the time the next call could start
+
+    def test_the_outer_timeout_kills_the_running_child_process(self):
+        import os
+        import stat
+        d = Path(tempfile.mkdtemp())
+        pidfile = d / 'pid'
+        script = d / 'ffprobe'
+        script.write_text('#!/bin/sh\nif [ "$1" = "-version" ]; then echo ffprobe fake; exit 0; fi\necho $$ > %s\nsleep 60\n' % pidfile)
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        real_which = lambda n: str(script) if n == 'ffprobe' else None
+        case = self.case
+        ctx = T.Context(case, T.Fixture.from_case(case, self.ts.root), tempfile.mkdtemp(), suite_dir=self.ts.root, evidence_mode='live', evidence_which=real_which)
+        with mock.patch.object(T, 'TOOL_TIMEOUT_S', -4.0):   # wait 1 s: long enough for the child to start
+            res = T.call_tool(ctx, 'ffprobe', {})
+        self.assertEqual(res['status'], 'timeout')
+        pid = int(pidfile.read_text())
+        time.sleep(0.2)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)                      # the child (and its sleep) is gone: nothing runs next to the next call
+
+    def test_a_deadline_above_the_tool_timeout_is_cut_and_said_so(self):
+        seen = []
+        ctx = ctx_live(self.case, self.ts, bounds={'deadline_s': 600}, collect=lambda path, kinds, bounds, **kw: seen.append(bounds) or [_rec('probe', 'ok')])
+        res = T.call_tool(ctx, 'ffprobe', {})
+        self.assertEqual(seen[0]['deadline_s'], T.LIVE_DEADLINE_S)
+        self.assertEqual(res['evidence']['bounds_clamped'][0]['requested'], 600)
+        self.assertEqual(res['evidence']['bounds_clamped'][0]['used'], T.LIVE_DEADLINE_S)
+        self.assertIn('bounds_clamped', res['output'])
 
     def test_partial_collection_passes_through_with_what_was_not_verified(self):
         rec = _rec('decode', 'partial', reason='segment at 60s hit the deadline',
@@ -309,6 +354,148 @@ class LiveCollection(unittest.TestCase):
         bad = media_case(fixture={'kind': 'local', 'locator': str(FIX / 'td-corrupt.epub')}, media='epub')
         res2 = T.call_tool(T.Context(bad, T.Fixture.from_case(bad, FIX), tempfile.mkdtemp(), evidence_mode='live', which=lambda n: None), 'epub_inspect', {})
         self.assertEqual((res2['status'], res2['evidence']['cause']), ('error', 'input'))
+
+
+class ReviewFixes(unittest.TestCase):
+    """Findings of the independent review of PR #1011."""
+
+    # 1. a collector limit or an environment error is never evidence about the file
+    def test_epub_member_cap_and_unreadable_file_are_tool_causes_and_never_support(self):
+        import os
+        d = Path(tempfile.mkdtemp())
+        epub = d / 'b.epub'
+        epub.write_bytes((FIX / 'td-right.epub').read_bytes())
+        rec = evidence.collect(epub, ['epub'], {'epub_max_members': 1})[0]
+        self.assertEqual((rec['status'], rec['cause'], rec['output']['stage']), ('error', 'tool', 'zip_open'))
+        self.assertIn('collector', rec['reason'])
+        self.assertFalse(AU.usable_as_support('error', json.dumps(rec['output']), False, rec['cause']))
+        call = {'id': 't1', 'tool': 'epub_inspect', 'status': 'error', 'output': json.dumps(rec['output']), 'evidence': {'cause': rec['cause'], 'coverage': rec['coverage']}}
+        self.assertFalse(GP.is_damage_finding(call))
+        self.assertEqual([g['type'] for g in GP.call_gaps(call)][:1], ['not_run'])   # recorded as a gap, not hidden as a finding
+        if os.geteuid() != 0:
+            locked = d / 'locked.epub'
+            locked.write_bytes(epub.read_bytes())
+            locked.chmod(0)
+            rec2 = evidence.collect(locked, ['epub'])[0]
+            self.assertEqual((rec2['status'], rec2['cause']), ('error', 'tool'))      # a permission error says nothing about the archive
+        # a genuinely damaged archive stays a finding
+        bad = d / 'c.epub'
+        bad.write_bytes((FIX / 'td-corrupt.epub').read_bytes())
+        rec3 = evidence.collect(bad, ['epub'])[0]
+        self.assertEqual(rec3['cause'], 'input')
+        self.assertTrue(AU.usable_as_support('error', '{}', False, rec3['cause']))
+
+    # 2. part names never reach the model; a class word in one cannot crash the run
+    def test_audiobook_part_and_folder_names_are_replaced_before_the_model_and_the_guard(self):
+        book = make_suite(media_case(media='audiobook', truth='corrupt_file', fixture={'kind': 'local', 'locator': 'media/book'}, tools_available=['audiobook_inspect']), with_file=False)
+        root = book.root / 'media' / 'book'
+        (root / 'rename-disc').mkdir(parents=True)
+        names = ['corrupt_file-01.m4b', 'blocklist_and_search 02.m4b', 'rename-disc/healthy part 03.m4b']
+        for n in names:
+            (root / n).write_bytes(b'x' * 50)
+        rec = _rec('audiobook', 'ok', output={'files': [{'name': Path(n).name, 'bytes': 50} for n in names], 'parts': 3,
+                                               'findings': ['corrupt_file-01.m4b: ffprobe error', 'rename-disc/healthy part 03.m4b: no audio stream'],
+                                               'tag_consistency': {'inconsistent': {'album': {'A': ['blocklist_and_search 02.m4b'], 'B': ['corrupt_file-01']}}}},
+                   stderr='in corrupt_file-01.m4b')
+        case = media_case(media='audiobook', truth='corrupt_file', fixture={'kind': 'local', 'locator': 'media/book'}, tools_available=['audiobook_inspect'])
+        ad = A.ScriptedAdapter('s', [th.tool_call('audiobook_inspect'), th.decision('insufficient_evidence', 'escalate', refs=['t1'])])
+        out = R.run_case(case, 'sha', ad, book.root, tempfile.mkdtemp(), run_id='r', prompt_version='v2', evidence_mode='live', collect=lambda *a, **k: [rec])
+        self.assertNotIn('error', out)                                    # no LeakError on a part named after a class or action
+        self.assertEqual(out['tool_calls'][0]['status'], 'ok')
+        shown = json.dumps(ad.calls)
+        for word in ('corrupt_file-01', 'blocklist_and_search 02', 'healthy part 03', 'rename-disc', 'blocklist_and_search 02.m4b'):
+            self.assertNotIn(word, shown)
+            self.assertNotIn(word, out['tool_calls'][0]['output'])
+        self.assertIn('part-01', out['tool_calls'][0]['output'])
+        self.assertIn('folder-01', json.dumps(T._live_name_map(root)))
+        book.cleanup()
+
+    # 3 is in LiveCollection (hung collector, child kill, deadline clamp)
+
+    # 4. an offset the live collector did not honor is said so, and recorded as a gap
+    def test_a_requested_offset_that_was_not_sampled_is_told_to_the_model_and_recorded(self):
+        case = media_case()
+        ts = make_suite(case)
+        decode = _rec('decode', 'ok', bounds={'segment_s': 4}, output={'segments': [{'at_s': 0.0}, {'at_s': 3.0}, {'at_s': 8.5}]})
+        ctx = ctx_live(case, ts, collect=lambda *a, **k: [decode])
+        res = T.call_tool(ctx, 'decode_sample', {'at': 60})
+        text = json.loads(res['output'])
+        self.assertIn('60 s was not honored', text['request_note'])
+        self.assertIn('0, 3, 8.5', text['request_note'])                       # which windows were actually sampled
+        self.assertEqual(res['request_unmet'][0]['requested'], 60.0)
+        honored = T.call_tool(ctx, 'decode_sample', {'at': 3.5})                # inside the sampled window at 3 s (4 s wide)
+        self.assertNotIn('request_note', json.loads(honored['output']))
+        self.assertNotIn('request_unmet', honored)
+        ocr = T.call_tool(ctx_live(case, ts, collect=lambda *a, **k: [_rec('frames', 'ok', output={'frames': [{'at_s': 1.0}], 'ocr': 'tesseract'})]), 'ocr', {'frame': 'frame@5'})
+        self.assertIn('frame name was not used', json.loads(ocr['output'])['request_note'])
+        call = dict(res, id='t1', tool='decode_sample')
+        gap = [g for g in GP.call_gaps(call) if g['type'] == 'requested_not_honored']
+        self.assertEqual(len(gap), 1)
+        self.assertIn('60', gap[0]['area'])
+        self.assertIn('0, 3, 8.5', gap[0]['area'])
+        ts.cleanup()
+
+    def test_the_unmet_request_gap_reaches_the_run_record_and_not_the_model(self):
+        case = media_case(tools_available=['decode_sample'])
+        ts = make_suite(case)
+        decode = _rec('decode', 'ok', bounds={'segment_s': 4}, output={'segments': [{'at_s': 0.0}]})
+        ad = A.ScriptedAdapter('s', [th.tool_call('decode_sample', {'at': 90}), th.decision('insufficient_evidence', 'escalate', refs=['t1'])])
+        rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='r', prompt_version='v2', evidence_mode='live', collect=lambda *a, **k: [decode])
+        self.assertIn('requested_not_honored', [g['type'] for g in rec['evidence']['gaps']])
+        self.assertNotIn('gaps', json.dumps(ad.calls))
+        ts.cleanup()
+
+    # 5. a case that cannot even start must not stop the batch
+    def test_null_tools_available_does_not_abort_the_run_and_the_next_case_runs(self):
+        bad = th.make_case(id='aa-bad-001', fixture={'kind': 'none'})
+        bad['tools_available'] = None
+        good = th.make_case(id='bb-good-001', fixture={'kind': 'none'})
+        self.assertEqual(GP.evidence_summary(bad, [], 'replay')['capabilities'][0]['offered'], False)   # defensive on its own
+        for broken_builder in (None, 'minimal'):
+            ts = th.TempSuite([bad, good])
+            out = Path(tempfile.mkdtemp()) / 'run'
+            orig = R.build_adapter
+            R.build_adapter = lambda args: A.ScriptedAdapter('scripted-1', [th.decision('healthy', 'none')] * 4)
+            patch = mock.patch.object(R, '_crash_record', side_effect=RuntimeError('cannot build')) if broken_builder else mock.MagicMock()
+            try:
+                with patch:
+                    code = R.main(['--suite', str(ts.root), '--adapter', 'scripted', '--model', 'scripted-1', '--out', str(out), '--scratch', tempfile.mkdtemp(), '--prompt', 'v2'])
+            finally:
+                R.build_adapter = orig
+            self.assertEqual(code, 0)
+            s = json.loads((out / 'run_summary.json').read_text())
+            self.assertEqual((s['records_written'], s['cases_planned'], s['validity']['crashes']), (2, 2, 1))
+            self.assertTrue(s['records_complete'], s['incomplete_records'])
+            recs = {p.stem: json.loads(p.read_text()) for p in out.glob('*-001.json')}
+            self.assertEqual(recs['aa-bad-001']['error']['kind'], 'harness_crash')
+            self.assertIs(recs['aa-bad-001']['action_audit']['executed'], False)
+            self.assertNotIn('error', recs['bb-good-001'])                    # the next case ran normally
+            if broken_builder:
+                self.assertIn('secondary', recs['aa-bad-001']['error'])
+            ts.cleanup()
+
+    def test_crash_record_never_raises_even_for_a_malformed_case(self):
+        rec = R.crash_record(None, 'sha', A.ScriptedAdapter('s', []), RuntimeError('boom'))
+        self.assertEqual(rec['case_id'], 'None')
+        self.assertTrue(rec['forced'])
+        self.assertEqual(R.record_missing_fields(dict(rec, harness_git_sha='x', config_hash='h', run_id='r')), [])
+
+    # 7. a folder item keeps per-part sizes and hashes, no names
+    def test_folder_item_input_is_fingerprinted_per_part_without_names(self):
+        case = media_case(media='audiobook', fixture={'kind': 'local', 'locator': 'media/book'}, tools_available=['audiobook_inspect'])
+        ts = th.TempSuite([case])
+        root = ts.root / 'media' / 'book'
+        root.mkdir(parents=True)
+        (root / 'a-secret-name.m4b').write_bytes(b'one' * 40)
+        (root / 'b-secret-name.m4b').write_bytes(b'two' * 90)
+        rec = _rec('audiobook', 'ok', input=evidence._fingerprint(evidence._inputs(root), 50))
+        res = T.call_tool(ctx_live(case, ts, collect=lambda *a, **k: [rec]), 'audiobook_inspect', {})
+        fp = res['evidence']['input']
+        self.assertEqual((fp['kind'], fp['count']), ('files', 2))
+        self.assertEqual([f['bytes'] for f in fp['files']], [120, 270])
+        self.assertTrue(all(len(f['head_1m_sha256']) == 64 and 'name' not in f for f in fp['files']))
+        self.assertNotIn('secret-name', json.dumps(res))
+        ts.cleanup()
 
 
 class UnavailableIsFirstClass(unittest.TestCase):

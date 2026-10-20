@@ -49,7 +49,7 @@ Run options: `--prompt v1|v2` (system prompt + turn protocol; default v1; versio
 | `testdata/` | Synthetic cases, deterministic EPUB fixtures, recorded sample outputs of the CLIs (used by the parsing tests) |
 | `leakguard.py` | opaque case alias, fixture-name redaction and the pre-send leak guard |
 | `gaps.py` | dev-c2: capabilities and gaps (what a run could not verify, which call showed it, which harness tool would be needed); record only, never shown to the model |
-| `replay_identity.py`, `testdata/replay-identity-dev-c1.json` | dev-c2: digests of everything the model sees in replay mode for the dev suite, generated from the dev-c1 code; `test_wiring.ReplayIdentity` recomputes and compares |
+| `replay_identity.py`, `testdata/replay-identity-dev-c1.json` | dev-c2: sha256 digests, generated from the real dev-c1 code (`git archive 617e6ad4`), of the model-visible case view and every offered tool's rendered result for all 73 dev cases (fixed arguments, no ffmpeg on PATH), plus the v1/v2 system prompts, turn schemas, repair prompts and validator errors for a fixed list of bad replies, the budget notice, the not-offered message and bad-argument errors. Not covered: a machine that has ffprobe/ffmpeg, other arguments, adapters, record fields. `test_wiring.ReplayIdentity` recomputes and compares; the docstring of `replay_identity.py` is the exact list |
 | `wiring_smoke.py`, `launch_wiring_smoke.py`, `testdata/wiring-smoke/` | dev-c2: `run_case --evidence live` with a scripted adapter and real ffprobe/ffmpeg in a CPU-limited Job on synthetic fixtures (no model); the Job is deleted afterwards |
 | `CONTRACT-v2-proposal.md` | dev-c2: proposal for the next contract (fields dev-c1/dev-c2 emit); for the evaluator to accept or reject, `CONTRACT.md` is untouched |
 | `audit.py`, `prompts/v2.txt` | dev-c1: action audit (proposal, preconditions computed met/unmet, never executed); prompt v2 (`--prompt v2`, default stays v1) |
@@ -135,7 +135,7 @@ Case ids, fixture file names and families encode the answer (`tv-corrupt-003`, `
 
 ## Evidence modes (dev-c2)
 
-* `replay` (default): the tool layer of dev-c1, unchanged; byte-identical model-visible output for the dev suite (see the replay-identity test).
+* `replay` (default): the tool layer of dev-c1, unchanged; the digests listed under `replay_identity.py` (case views, tool results, prompts, schemas, repair and error texts) equal dev-c1's.
 * `live`: ffprobe, decode_sample, frame_sample, audio_sample, ocr, epub_inspect and audiobook_inspect come from `evidence.collect` on the case's local file. Not a local path that exists: `unavailable` with the reason.
   `at`, `stream` and `frame` arguments are validated and ignored (the collectors choose their sample points; `args_ignored` in the record). The record's `evidence` field lists capabilities and gaps.
 * Every tool call and run record carries `evidence_mode`; the model sees neither it nor the gaps.

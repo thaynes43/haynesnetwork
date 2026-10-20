@@ -275,6 +275,44 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
 
 
 def crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay'):
+    """A failed record for a case that could not run.  Never raises: if the full record cannot be built (a malformed case file breaks one of
+    the computed fields), a minimal record with every required field is written instead, so the next case still runs."""
+    try:
+        return _crash_record(case, case_sha, adapter, exc, prompt_version, evidence_mode)
+    except Exception as e2:  # noqa: BLE001 - the last line of defence of the batch loop
+        return _minimal_crash_record(case, case_sha, adapter, exc, prompt_version, evidence_mode, e2)
+
+
+def _minimal_crash_record(case, case_sha, adapter, exc, prompt_version, evidence_mode, e2):
+    def get(obj, name, default=None):
+        try:
+            return getattr(obj, name, default)
+        except Exception:  # noqa: BLE001
+            return default
+    d = P.forced_decision('harness error before the run: ' + type(exc).__name__)
+    cid = case.get('id') if isinstance(case, dict) else None
+    try:
+        psha = P.get_prompt(prompt_version)['sha256']
+    except Exception:  # noqa: BLE001
+        psha = None
+    return {'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': str(cid), 'case_sha256': case_sha, 'evidence_mode': evidence_mode,
+            'evidence': {'mode': evidence_mode, 'capabilities': [], 'gaps': [], 'gaps_cited': [], 'note': 'minimal crash record'},
+            'prompt': {'version': prompt_version, 'sha256': psha, 'protocol': 'turn-' + str(prompt_version), 'turn_schema_sha256': None, 'schema_sent': False},
+            'requested_model': get(adapter, 'requested_model'), 'response_model_ids': [], 'runtime_version': get(adapter, 'runtime_version'),
+            'turns': [], 'tool_calls': [], 'repair_prompts': [], 'decision': d, 'forced': True, 'forced_reason': d['reason'], 'first_try_valid': False,
+            'first_try': {'valid': False, 'first_reply_valid': False, 'failure_modes': ['harness_error_before_run'], 'repair_prompts': 0, 'protocol_violations': 0,
+                          'valid_after_repair': False, 'note': 'the case never reached a model'},
+            'final_decision_valid': False, 'protocol_violations': [], 'unverified_parts': [], 'decision_flags': [], 'fixture_hashes': None,
+            'usage': {'input_tokens': 0, 'output_tokens': 0, 'cost_usd': None, 'cost_reported': False},
+            'wall': {'total_s': 0.0, 'load_s': 0.0, 'case_excl_load_s': 0.0, 'turn_s': [], 'tool_s': []}, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'action_audit': {'execution_status': 'no_write_proposed', 'executed': False, 'write_intent': False,
+                             'intent': {'class': d['class'], 'action': d['action'], 'target': None}, 'target': None, 'outcome_step': None,
+                             'note': 'recorded proposal only; this harness never executes a write, and nothing was changed; minimal crash record'},
+            'error': {'kind': 'harness_crash', 'message': '%s: %s' % (type(exc).__name__, exc), 'secondary': '%s: %s' % (type(e2).__name__, e2),
+                      'traceback': traceback.format_exc()[-1500:]}}
+
+
+def _crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay'):
     d = P.forced_decision('harness error before the run: ' + type(exc).__name__)
     return {'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
             'split': case.get('split'), 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'evidence_mode': evidence_mode,

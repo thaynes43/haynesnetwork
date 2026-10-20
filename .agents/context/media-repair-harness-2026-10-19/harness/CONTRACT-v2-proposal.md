@@ -61,7 +61,7 @@ In dev-c2 `unavailable` is carried as itself everywhere, including the live coll
 ### What the model sees
 
 Only `{type:"tool_result", id, tool, status, truncated, output, tool_calls_remaining}` (plus the budget notice after the 6th). `output` is text, bounded to 8 KiB (`truncated`
-says when it was cut). The case file name and path are redacted from `output`. Nothing below the next heading is sent to a model.
+says when it was cut). The case file name and path are redacted from `output`; for a folder item (an audiobook) every file and folder name under it is replaced by a neutral name (`part-NN.ext`, `folder-NN`) before the text is bounded and before the leak guard looks at it, so a part named after a class or an action cannot reach the model or stop the run. In live mode a request the collector did not honor adds a `request_note` key to the JSON text (what was asked for, that it was not honored, which windows were sampled instead). Nothing below the next heading is sent to a model.
 
 ### What the record keeps per call (`tool_calls[]`)
 
@@ -72,8 +72,9 @@ says when it was cut). The case file name and path are redacted from `output`. N
 | `mode` | how the answer was produced: `live` (collector), `local` / `remote` (dev-c1's direct ffprobe/ffmpeg routes), `replay`, `pinned_replay`, `stub` (arr_lookup), `injected` |
 | `evidence_mode` | the run's selected mode, `replay` or `live` (**new in dev-c2**; the same on every call of a run) |
 | `live_ran` | live mode only: whether a collector actually ran (`false` = refused before running, e.g. no local media path) |
-| `evidence` | live mode, collector ran: `{kind, status, coverage{verified, not_verified}, reason, cause (input|tool), tool_version, bounds, bounds_clamped, input (size + head/tail hashes, no file name), elapsed_s}` |
+| `evidence` | live mode, collector ran: `{kind, status, coverage{verified, not_verified}, reason, cause (input|tool), tool_version, bounds, bounds_clamped, input (size + head/tail hashes, no file name; for a folder item `files[]` with the same per part, in order, and `count`), elapsed_s}`; `cause: input` means the file is damaged or unreadable by the tool, `cause: tool` a collector limit, an environment error or a tool failure, and only `input` is a finding |
 | `args_ignored` | live mode: arguments that were accepted and validated but have no effect (the collectors choose their own sample points) |
+| `request_unmet` | live mode: `[{arg, requested, sampled_at_s?}]` for each requested offset, audio stream or earlier frame the collector did not examine (a requested offset inside a sampled window counts as honored); the same text is in the tool result as `request_note` |
 | `injected` | the result replaced by an injected failure (`inject_tool_failure`) |
 | `protocol_violation` | `tool_not_offered` |
 | `recorded_note` | replay only: the suite author's construction note, never shown to the model |
@@ -83,11 +84,13 @@ says when it was cut). The case file name and path are redacted from `output`. N
 `--evidence replay|live`, default `replay`.
 
 * **replay** is dev-c1's tool layer unchanged. What the model sees for a given case, tool and arguments is byte for byte what dev-c1 showed (`test_wiring.ReplayIdentity`
-  compares hashes of every offered tool's rendered result for all 73 dev cases against digests computed from the dev-c1 code). Sources: recorded probe results for local
+  compares sha256 digests, generated from the real dev-c1 code, of the case view and every offered tool's rendered result for all 73 dev cases with a fixed argument set, and of the v1 and v2 system prompts,
+  the turn schemas, repair prompts and validator errors for a fixed list of bad replies, the budget notice, the not-offered message and bad-argument errors; it does not cover a machine with ffprobe/ffmpeg installed,
+  other arguments, adapters or record fields; `replay_identity.py` lists it exactly). Sources: recorded probe results for local
   fixtures, recorded observations of pinned real media, case-provided *arr records, and the local ffprobe/ffmpeg route when those binaries exist (`--replay auto|off|force`).
   Replay data is recorded data, labelled by `mode`.
 * **live** serves ffprobe, decode_sample, frame_sample, audio_sample, ocr, epub_inspect and audiobook_inspect from the bounded read-only collectors in `evidence/` (stdlib Python, the
-  real binaries, no write, serial, `nice 19`, per-call deadline 45 s inside the 60 s tool timeout), run on the case's own local media file. A case whose fixture is not a local path that
+  real binaries, no write, serial, `nice 19`, per-call deadline 45 s inside the 60 s tool timeout; a larger `deadline_s` is cut to it and listed in `bounds_clamped`; if the tool timeout fires anyway the running child is killed and the collector stopped before the next call, so calls stay serial), run on the case's own local media file. A case whose fixture is not a local path that
   exists (no fixture, pinned real media, remote host, missing file) gets `unavailable` with the reason and nothing is run. `arr_lookup` is not media and behaves as in replay.
   `ocr` needs `tesseract`; without it the record says the text was not read. The model chooses a tool and numeric arguments; the path always comes from the case.
 
@@ -107,7 +110,7 @@ gaps_cited[]:   ids of gaps whose `call` appears in the decision's evidence_refs
 ```
 
 * `type`: `not_run` (unavailable, timeout, or a tool-side error: everything the tool covers is unverified), `incomplete` (partial), `standing` (the tool answered and its own record states what the
-  answer does not cover, e.g. a sample is not the whole file).
+  answer does not cover, e.g. a sample is not the whole file), `requested_not_honored` (live mode: the call asked for an offset, audio stream or earlier frame that was not examined; `area` says what was asked and what was sampled).
 * `call` is a `t<n>` id, citeable in `evidence_refs` like any tool result. `needed_tool` names the harness tool that would be needed to verify the area; `null` when no harness tool can.
   `needed_note` is a short text. The `standing` mapping is a keyword hint on the collector's own wording, not a rule.
 * A damage finding (a working tool reported damage) is evidence, not a gap. A tool that was not offered appears in `capabilities` with `offered: false`; a call to it appears as a `not_run` gap.
