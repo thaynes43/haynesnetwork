@@ -1,0 +1,58 @@
+{
+  "aborted": null,
+  "cases_planned": 2,
+  "config_hash": "76ddf2198a7c7c7d6048762a47e9b5c59bd297297f37747b3b974ff6b6057a01",
+  "cost_usd": null,
+  "evidence": {
+    "gaps": 4,
+    "gaps_by_type": {
+      "not_run": 4
+    },
+    "tool_calls_by_evidence_mode": {
+      "replay": 6
+    }
+  },
+  "evidence_mode": "replay",
+  "guards": {
+    "applied_by_rule": {},
+    "decisions_changed": 0,
+    "version": "v2"
+  },
+  "harness_git": {
+    "branch": "HEAD",
+    "dirty": false,
+    "sha": "f38f605b56083491273e391d345f0a05233a9f4e"
+  },
+  "harness_version": "dev-c4",
+  "incomplete_records": {},
+  "latency_s_per_case": {
+    "max": 7.496,
+    "median": 7.496,
+    "min": 5.34
+  },
+  "prompt": {
+    "sha256": "a2c3036e57d243a1c892b844a37796ec026e4ea449c4737bcbc3efd01591eedd",
+    "version": "v4"
+  },
+  "records_complete": true,
+  "records_written": 2,
+  "requested_model": "qwen3.8:27b",
+  "response_model_ids": [
+    "qwen3.8:27b"
+  ],
+  "run_id": "evaldevc4v11-smoke-qwen3.8-27b-v4g2",
+  "statement": "Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; this harness executed no write and changed no media, *arr, Plex or library state.",
+  "validity": {
+    "adapter_errors": 0,
+    "crashes": 0,
+    "final_decision_valid": 2,
+    "first_try_failure_modes": {},
+    "first_try_valid": 2,
+    "forced": 0,
+    "forced_after_rejected_write": 0,
+    "protocol_violations": 0,
+    "rejected_write_attempts": 0,
+    "repaired": 0
+  },
+  "writes_executed": 0
+}
