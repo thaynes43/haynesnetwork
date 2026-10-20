@@ -35,34 +35,114 @@ from . import protocol as P
 FORMAT_VERSION = 'v2'
 PAGE_CONTRACT = 'pages-v1'
 WIRE_BYTES = 8192
+MIN_WIRE_BYTES = 2560   # the smallest page budget accepted: every case of both public dev suites provably fits its first message and default replies from here up (tests: WireFloor)
 # tools whose result speaks to the file's integrity (the guards' notion, unchanged); the others are identity / catalog / picture records
 INTEGRITY_TOOLS = ('ffprobe', 'decode_sample', 'audio_sample', 'epub_inspect', 'audiobook_inspect')
 # the package stages the EPUB inspector reports, in the order it checks them (a failure at one stage leaves the later ones unchecked)
 EPUB_STAGES = ('zip_open', 'zip_crc', 'opf_parse', 'manifest', 'spine')
-# ffmpeg / libav wording that names damage to a file's structure or data.  General libav vocabulary, not case-specific; anything else stays unclassified.
-DAMAGE_RX = re.compile(r'moov atom not found|invalid data found when processing input|could not find codec parameters|consecutive mpeg audio frames|'
-                       r'partial file|file ended prematurely|ended prematurely|unexpected (?:end of file|eof)|truncated (?:file|archive|central directory|data)|'
-                       r'(?:file|archive|stream|data|input|header) (?:is |are )?(?:corrupt(?:ed)?|damaged)|corrupt(?:ed)? (?:decoded )?(?:packet|frame|data|file|input|header|bitstream)|packet corrupt|'
-                       r'header parsing failed|error reading header|checksum mismatch|crc mismatch|bad crc|not well-formed|bad zip|not a zip file|error while decoding|cabac decode|'
-                       r'concealing|invalid nal|missing picture|reference picture missing|non-existing p[ps]s|error splitting the input into nal|invalid bitstream', re.I)
-# a diagnostic that says the opposite ("no corrupt frames found"), and the file names / paths that may sit inside a diagnostic ("Permission denied: corrupt.mkv")
-NEGATION_RX = re.compile(r"\b(?:no|not|without|never|zero|none|0|didn't|did not|cannot|can't|isn't|is not|free of)\b[^.;\n]{0,24}$", re.I)
-FILENAME_RX = re.compile(r"[^\s/]{0,80}(?:/[^\s/]{0,80})+|\b[\w.-]{1,80}\.(?:mkv|mp4|m4v|m4b|m4a|mp3|flac|ogg|opus|avi|webm|mov|epub|zip|wav|aac|ts)\b", re.I)
-EXECUTION_ERROR_RX = re.compile(r'permission denied|no such file or directory|operation not permitted|input/output error|cannot allocate memory|read-only file system|too many open files|'
-                                r'connection (?:refused|reset)|resource temporarily unavailable', re.I)
+# DAMAGE ALLOW-LIST.  A diagnostic LINE is damage only if, after its `[name @ 0x...]` / `pipe:N:` / `in#N` / path prefix (and an exception-type or ffmpeg wrapper) is
+# stripped, it STARTS with one of these fixed messages.  Each is the text a library actually emits (source given), or text seen in the public dev replay data; there is no
+# negation logic and no bare-word matching: anything else is unclassified.  A line is judged on its own, so one line can never erase another.
+DAMAGE_ALLOW_LIST = (
+    (r'moov atom not found', 'libavformat/mov.c; public dev replay'),
+    (r'Invalid data found when processing input', 'AVERROR_INVALIDDATA (libavutil/error.c); public dev replay'),
+    (r'EBML header parsing failed', 'libavformat/matroskadec.c; public dev replay'),
+    (r'(?:stream \d+, offset 0x[0-9a-fA-F]+: )?partial file', 'libavformat/mov.c'),
+    (r'Element at 0x[0-9a-fA-F]+ ending at 0x[0-9a-fA-F]+ exceeds containing master element ending at 0x[0-9a-fA-F]+', 'libavformat/matroskadec.c; public dev replay'),
+    (r'File ended prematurely(?: at pos\. \d+ \(0x[0-9a-fA-F]+\))?', 'libavformat/matroskadec.c; public dev replay'),
+    (r'Failed to find two consecutive MPEG audio frames', 'libavformat/mp3dec.c; public dev replay'),
+    (r'error reading header', 'libavformat/mov.c'),
+    (r'Could not find codec parameters for stream \d+', 'libavformat/demux.c'),
+    (r'error while decoding MB \d+ \d+, bytestream -?\d+', 'libavcodec/h264_slice.c'),
+    (r'cabac decode of qscale diff failed at \d+ \d+', 'libavcodec/h264_cabac.c; public dev replay'),
+    (r'corrupted macroblock \d+ \d+ \(total_coeff=-?\d+\)', 'libavcodec/h264_cavlc.c'),
+    (r'concealing \d+ DC, \d+ AC, \d+ MV errors in [IPBS] frame', 'libavcodec/error_resilience.c'),
+    (r'ac-tex damaged at \d+ \d+', 'libavcodec/mpeg12dec.c, mpeg4videodec.c'),
+    (r'Invalid NAL unit size \(\d+ > \d+\)', 'libavcodec/h2645_parse.c'),
+    (r'Error splitting the input into NAL units', 'libavcodec/h2645_parse.c'),
+    (r'non-existing PPS \d+ referenced', 'libavcodec/h264_slice.c'),
+    (r'missing picture in access unit with size \d+', 'libavcodec/h264dec.c'),
+    (r'corrupt decoded frame in stream \d+', 'fftools/ffmpeg.c'),
+    (r'corrupt input packet in stream \d+', 'fftools/ffmpeg.c'),
+    (r'Packet corrupt \(stream = \d+, dts = \S+\)', 'libavformat/mpegts.c'),
+    (r'Bad CRC-32 for file .+', 'Python zipfile.BadZipFile'),
+    (r'CRC mismatch in member .+', 'this harness: tools._epub_stage (zipfile.testzip)'),
+    (r'File is not a zip file', 'Python zipfile.BadZipFile'),
+    (r'Truncated (?:central directory|file header)', 'Python zipfile.BadZipFile'),
+    (r'Bad (?:offset for central directory|magic number for (?:central directory|file header))', 'Python zipfile.BadZipFile'),
+    (r'Corrupt (?:zip64 )?extra field.*', 'Python zipfile.BadZipFile'),
+    (r'Corrupt zip64 end of central directory (?:locator|record)', 'Python zipfile.BadZipFile'),
+    (r'Zip64 end of central directory record not found', 'Python zipfile.BadZipFile'),
+    (r'Overlapped entries: .+ \(possible zip bomb\)', 'Python zipfile.BadZipFile'),
+    (r'not well-formed \(invalid token\): line \d+, column \d+', 'expat via xml.etree.ElementTree.ParseError; public dev replay'),
+    (r'no element found: line \d+, column \d+', 'expat via ParseError'),
+    (r'(?:mismatched tag|unclosed token|junk after document element|syntax error|unclosed CDATA section): line \d+, column \d+', 'expat via ParseError'),
+    (r'manifest names \d+ member\(s\) that are not in the archive', 'this harness: evidence/epubtool.py'),
+    (r'container\.xml names .+, which is not in the archive', 'this harness: evidence/epubtool.py'),
+)
+EXECUTION_ALLOW_LIST = (
+    r'Permission denied', r'No such file or directory', r'Operation not permitted', r'Input/output error', r'Cannot allocate memory', r'Read-only file system',
+    r'Too many open files', r'Connection (?:refused|reset by peer)', r'Resource temporarily unavailable', r'Is a directory', r'Not a directory',
+)
+_DAMAGE_RXS = [re.compile(r'(?:%s)' % pat) for pat, _src in DAMAGE_ALLOW_LIST]
+_EXEC_RX = re.compile(r'(?:%s)' % '|'.join(EXECUTION_ALLOW_LIST))
+_BRACKETS_RX = re.compile(r'^(?:\[[^\]\n]*\]\s*)+')
+_PATH_PREFIX_RXS = (re.compile(r'^(?:pipe:\d+|in#\d+\S*|<input>)\s*:\s+'),
+                    re.compile(r'^.{1,200}?\.(?:mkv|mp4|m4v|m4b|m4a|mp3|flac|ogg|opus|avi|webm|mov|epub|zip|wav|aac|ts)\s*:\s+', re.I),
+                    re.compile(r'^[^\s:\[\]]*/[^:\[\]]{0,200}?:\s+'))
+_WRAPPER_RX = re.compile(r'^(?:(?:Error opening input(?: files?)?|Error during demuxing|Decoding error|Error submitting packet to decoder|Error while decoding stream #\d+:\d+|'
+                         r'Error while processing the decoded data for stream #\d+:\d+): |(?:zipfile\.)?BadZipFile: |(?:xml\.etree\.ElementTree\.)?ParseError: |'
+                         r'\w*Error: (?:\[Errno \d+\] )?)')
+
+
+def _candidates(line):
+    """The message of a diagnostic line with its decoration removed, in every reasonable reading: with/without the bracket prefix, a stream / pipe / file-path prefix and an
+    exception-type or ffmpeg wrapper.  Matching is anchored at the start of each candidate."""
+    seen, todo = set(), [line.strip()[:1000]]
+    while todo:
+        cur = todo.pop()
+        if cur in seen or len(seen) > 24:
+            continue
+        seen.add(cur)
+        for rx in (_BRACKETS_RX, _WRAPPER_RX) + _PATH_PREFIX_RXS:
+            m = rx.match(cur)
+            if m and m.end() < len(cur):
+                todo.append(cur[m.end():].strip())
+    return seen
+
+
+def classify_line(line):
+    """'damage' | 'execution' | None for ONE diagnostic line (None: unclassified).  Damage is checked first, per line, so an execution error elsewhere never hides it."""
+    cands = _candidates(line)
+    if any(rx.match(c) for rx in _DAMAGE_RXS for c in cands):
+        return 'damage'
+    if any(_EXEC_RX.match(c) for c in cands):
+        return 'execution'
+    return None
+
+
+def _lines(text):
+    out = []
+    for raw in HARNESS_MARKER_RX.sub(' ', str(text or '')).splitlines()[:400]:
+        if raw.strip():
+            out.append(raw)
+    return out
 
 
 def damage_wording(text):
-    """True when `text` (a DIAGNOSTIC: decoder / probe stderr, an inspector's error message, a collector's error line) affirmatively names damage.  File names and
-    paths inside it are removed first, and a negated mention ("no corrupt frames found") is not damage.  It is never applied to metadata, titles, tags, chapter names
-    or the harness's own notes -- callers pass only diagnostic fields."""
-    for raw in str(text or '').splitlines() or ['']:
-        for i in range(0, max(len(raw), 1), 1800):          # a very long line is read in overlapping windows (the patterns are short)
-            line = FILENAME_RX.sub(' ', HARNESS_MARKER_RX.sub(' ', raw[i:i + 2000]))
-            for m in DAMAGE_RX.finditer(line):
-                if not NEGATION_RX.search(line[:m.start()][-40:]):
-                    return True
-    return False
+    """True when at least one line of the DIAGNOSTIC `text` (decoder / probe stderr, an inspector's error, a collector's error line) is an allow-listed damage message.
+    Never called on metadata, titles, tags, chapter names or the harness's own notes."""
+    return any(classify_line(l) == 'damage' for l in _lines(text))
+
+
+def execution_error(text):
+    """True when the diagnostic text has an execution-error line (permission, missing file, I/O ...) and no damage line."""
+    kinds = [classify_line(l) for l in _lines(text)]
+    return 'execution' in kinds and 'damage' not in kinds
+
+
+def unclassified_lines(text):
+    return [l for l in _lines(text) if classify_line(l) is None]
 
 
 # the harness's own cut markers contain words ("truncated") that are also damage wording; they are not part of what a tool reported
@@ -263,8 +343,8 @@ def execution_of(obs, data):
             reason = data.get('reason')
         elif isinstance(data, dict) and ('stage' in data or 'exit_code' in data):
             blob = ' '.join(str(data.get(k) or '') for k in ('stderr', 'error'))
-            cause = 'input' if (data.get('stage') in EPUB_STAGES or damage_wording(blob)) else ('tool' if EXECUTION_ERROR_RX.search(blob) else UNKNOWN)
-        elif HARNESS_FAILURE_RX.search(text.strip()) or EXECUTION_ERROR_RX.search(text):
+            cause = 'input' if (data.get('stage') in EPUB_STAGES or damage_wording(blob)) else ('tool' if execution_error(blob) else UNKNOWN)
+        elif HARNESS_FAILURE_RX.search(text.strip()) or (execution_error(text) and not damage_wording(text)):
             cause = 'tool'
         else:
             cause = UNKNOWN
@@ -294,6 +374,7 @@ class Derived:
         self.facts = None
         self.collector_coverage = None   # a live collector's own coverage vocabulary (verified / not_verified), shown as facts.coverage
         self.known_duration = None
+        self.live_stderr = ''       # the live collector's own stderr excerpt (probe / audiobook records)
         self.diagnostics = []       # every raw diagnostic text a collector reported, classified or not: [{'where', 'state', 'text'}]
         self.veto = None           # a collector's own negative verdict (EPUB valid:false) that vetoes healthy without being typed as a located defect
         self.parts = []            # audiobook parts: [{'n', 'probe', 'intervals', 'duration_s'}] (decode windows are per part, not on one timeline)
@@ -383,7 +464,7 @@ def diagnostic_fragments(text):
     t = HARNESS_MARKER_RX.sub(' ', text).strip()
     if t[:1] not in ('{', '['):
         return [t]
-    return [m.group(1).replace('\\n', '\n').replace('\\"', '"') for m in DIAG_FIELD_RX.finditer(t)]
+    return [m.group(1).replace('\\n', '\n').replace('\\"', '"').replace('", "', '\n').strip().strip('"').strip('[]').strip().strip('"') for m in DIAG_FIELD_RX.finditer(t)]
 
 
 def _plain_text_fallback(d, data):
@@ -398,7 +479,7 @@ def _plain_text_fallback(d, data):
     if obs['tool'] in INTEGRITY_TOOLS and obs['status'] in ('ok', 'partial', 'error') and not HARNESS_FAILURE_RX.search(text.strip()):
         d.facts = {'raw': text}
         kind, part = _PLAIN_KIND[obs['tool']]
-        frags = [] if EXECUTION_ERROR_RX.search(text) else [f for f in diagnostic_fragments(text) if damage_wording(f)]
+        frags = [f for f in diagnostic_fragments(text) if damage_wording(f)]
         if frags:
             d.finding(kind, frags[0], {'part': part}, True)
             d.integrity = 'damaged'
@@ -427,7 +508,10 @@ def _finish(d, data):
                    [f['id'] for f in d.findings if f['known_defect']])
     if ex['state'] == 'ran' and ex['status'] == 'partial':
         d.unresolved.append('the answer is incomplete (status partial); the missing part is unverified')
-    if ex['state'] in ('timed_out', 'unavailable') or (ex['state'] == 'failed' and not any(f['known_defect'] for f in d.findings)):
+    if ex['state'] == 'timed_out' and d.intervals:
+        shown_iv = ', '.join('%g-%g s (%s)' % (iv['start_s'], iv['end_s'], iv['state']) for iv in d.intervals[:6])
+        d.unresolved.append('the call timed out: the windows it shows (%s) were observed; the rest of what was requested was not completed' % shown_iv)
+    elif ex['state'] in ('timed_out', 'unavailable') or (ex['state'] == 'failed' and not any(f['known_defect'] for f in d.findings)):
         d.unresolved.append('this call settled nothing about %s' % AREA.get(d.obs['tool'], 'its subject'))
     if ex['output_truncated']:
         d.unresolved.append('the tool output was cut before it reached the model; the cut part is unseen')
@@ -780,6 +864,7 @@ def _segment(d, seg, streams, label=None, part=None):
 
 def _derive_live(d, data, known_duration):
     d.known_duration = known_duration
+    d.live_stderr = data.get('stderr') if isinstance(data.get('stderr'), str) else ''
     out = data.get('output') if isinstance(data.get('output'), dict) else {}
     kind = data.get('tool') or d.obs['tool']
     cov = data.get('coverage') or {}
@@ -843,11 +928,33 @@ def _live_decode(d, out):
     d.facts = {k: v for k, v in (('duration_s', dur), ('segments', len(segs)), ('decoded_s', out.get('decoded_s')), ('covered_fraction', out.get('sampled_fraction'))) if v is not None}
 
 
+def _stderr_state(d, text, loc, damage_kind, seen=()):
+    """Classify a collector's stderr text line by line with the allow-list: every line is kept in diagnostics; an allow-listed damage line is a defect (`damaged`), any
+    other non-blank line leaves the check `unclassified` (neither clean nor damaged).  -> 'damaged' | 'unclassified' | None (nothing to say)."""
+    lines = [l for l in _lines(text) if l.strip() not in seen]
+    if not lines:
+        return None
+    for l in lines:
+        d.diagnostics.append(dict({k: v for k, v in loc.items() if k in ('part', 'file')}, text=l, **{'class': classify_line(l) or 'unclassified'}))
+    bad = [l for l in lines if classify_line(l) == 'damage']
+    if bad:
+        d.finding(damage_kind, '\n'.join(bad), loc, True)
+        return 'damaged'
+    d.finding('probe_messages', '\n'.join(lines), loc, False)
+    return 'unclassified'
+
+
 def _live_probe(d, out):
     sl = [_norm_stream(dict(x, codec_type=x.get('type'), codec_name=x.get('codec'))) for x in out.get('streams') or [] if isinstance(x, dict)]
     d.probe = {'container': out.get('format'), 'streams': sl, 'selection': None}
     d.duration_s = fnum(out.get('duration_s'))
-    d.container = 'clean' if d.obs['status'] == 'ok' and out.get('format') and sl else UNKNOWN
+    state = _stderr_state(d, d.live_stderr, {'part': 'container'}, 'container_damage')
+    if state == 'damaged':
+        d.container = 'damaged'
+    elif state == 'unclassified':
+        d.container = UNKNOWN          # the probe printed text this layer does not recognise: not clean, not damaged
+    else:
+        d.container = 'clean' if d.obs['status'] == 'ok' and out.get('format') and sl else UNKNOWN
     d.integrity = d.container
     d.facts = {k: v for k, v in (('container', out.get('format')), ('duration_s', out.get('duration_s')), ('size_bytes', out.get('bytes')), ('tags', out.get('tags') or None),
                                  ('streams', sl or None), ('chapters', out.get('chapters') or None)) if v is not None}
@@ -901,9 +1008,13 @@ def _live_audiobook(d, out):
     for n, f in enumerate(files, 1):
         label = 'part-%d' % n
         row = {'n': n, 'probe': f.get('probe', 'ok' if f.get('format') else UNKNOWN), 'intervals': []}
+        pstate = _stderr_state(d, f.get('probe_stderr'), {'part': 'container', 'file': label}, 'container_damage') if f.get('probe_stderr') else None
+        damaged = damaged or pstate == 'damaged'
+        unclassified = unclassified or pstate == 'unclassified'
         if f.get('probe') not in (None, 'ok'):
             cause = f.get('probe_cause')
             known = cause == 'input'
+            known = known or pstate == 'damaged'
             d.finding('part_unreadable' if known else 'part_probe_failed', '%s: ffprobe %s%s' % (label, f.get('probe'), (' (%s)' % f['probe_reason']) if f.get('probe_reason') else ''),
                       {'part': 'container', 'file': label}, known)
             damaged = damaged or known
@@ -928,6 +1039,10 @@ def _live_audiobook(d, out):
         row['duration_s'] = f.get('duration_s')
         parts.append(row)
     d.parts = parts
+    seen_texts = {x['text'].strip() for x in d.diagnostics}
+    rec_state = _stderr_state(d, d.live_stderr, {'part': 'container'}, 'container_damage', seen=seen_texts) if d.live_stderr else None
+    damaged = damaged or rec_state == 'damaged'
+    unclassified = unclassified or rec_state == 'unclassified'
     tc = out.get('tag_consistency')
     if isinstance(tc, dict):
         if tc.get('consistent') is False:
@@ -1228,7 +1343,7 @@ def _parse_video_prose(text, spec):
         codecs, pix = {}, {}
         for i, (st, e, name) in enumerate(hits):
             nxt = hits[i + 1][0] if i + 1 < len(hits) else len(t)
-            seg = t[e:nxt].split('up to')[0]
+            seg = re.sub(r'up to \d{3,4}p', ' ', t[e:nxt])      # the limit is applied globally; a depth or pixel format AFTER it still belongs to this codec
             depths = {int(x) for x in re.findall(r'(\d+)-bit', seg)}
             if depths:
                 codecs[name] = (codecs.get(name) or set()) | depths
@@ -1562,7 +1677,8 @@ def _pname(path):
 
 def _sname(path):
     """A short, bounded name for a path in the page object's `elsewhere` (its first two keys; list indices left out), so the object stays small however many units there are."""
-    return '.'.join([str(p) for p in path if not isinstance(p, tuple)][:2])
+    keys = [str(p) for p in path if not isinstance(p, tuple)]
+    return keys[0] if keys and keys[0] in ('details', 'alert_ids') else '.'.join(keys[:2])
 
 
 def _descend(body, path):
@@ -1650,52 +1766,123 @@ def _finish_page(header, units, all_units, page_obj, totals):
     return body
 
 
-def paginate(header, units, env_first, env_rest, alias, source, budget=WIRE_BYTES):
+def _alert_tiers(alerts):
+    """The alerts in decreasing size: (0) as they are; (1) one short string each; (2) grouped by type and kind with a count and the first ids, the full id lists moved into
+    retrievable units (`alert_ids`).  -> list of (header alerts, extra units)."""
+    tiers = [(alerts, [])]
+    tiers.append((['%s:%s:%s' % (a.get('type'), a.get('id'), a.get('kind') or a.get('state')) for a in alerts], []))
+    groups = {}
+    for a in alerts:
+        groups.setdefault((a.get('type'), a.get('kind') or a.get('state')), []).append(a.get('id'))
+    head = [{'type': t, 'kind': k, 'count': len(ids), 'first_ids': ids[:3]} for (t, k), ids in groups.items()]
+    extra = [(('alert_ids', '%s:%s' % (t, k)), 'split', i) for (t, k), ids in groups.items() for i in ids[3:]]
+    tiers.append((head, extra))
+    return tiers
+
+
+def _split_further(units, i):
+    """Replace the unit at index `i` by smaller units (half the size), keeping what it belongs to: a `set` value is exploded, a string is chunked, a dict element of a split list
+    is exploded under its own list index.  -> the new unit list, or None when the unit cannot be divided."""
+    path, mode, value = units[i]
+    size = nbytes(value)
+    if size < 80:
+        return None
+    small = Limits()
+    small.unit, small.chunk, small.cap = max(40, size // 2), max(30, size // 3), small.cap
+    if mode in ('split', 'append') and isinstance(value, dict):
+        k = sum(1 for u in units[:i] if u[0] == path and u[1] in ('split', 'append'))
+        new = explode(path + (('#', k),), value, 'set', small)
+    elif mode == 'split' and isinstance(value, str):
+        new = [(path, 'split', c) for c in _chunks(value, small.chunk)]
+    elif mode in ('split', 'append'):
+        return None
+    else:
+        new = explode(path, value, mode, small)
+    if len(new) < 2:
+        return None
+    return units[:i] + new + units[i + 1:]
+
+
+def paginate(header, units, env_first, env_rest, alias, source, budget=WIRE_BYTES, retrieval=None):
     """Split `units` into pages whose full wire text stays within `budget` UTF-8 bytes: the first page against `env_first(body)`, every later page against
     `env_rest(body)` -- the WORST-CASE envelope a fetch can add (longest offered tool name, the sixth call's id, the budget notice).
 
     Contract (pages-v1): a page is `header` (identity, alerts, execution: always repeated) plus whole units in priority order, never a structure cut in the
     middle.  Nothing is dropped: a long string is stored whole as a `details` unit (its inline prefix names it), a large structure is split into smaller units,
     and a split list says `<field>_shown: "n of N"`.  Every page carries `page{contract,source,n,of,next,next_costs_tool_call,elsewhere,alerts_total,conflicts_total}`:
-    `elsewhere` counts what is on other pages; the alerts (conflicts first, with the ids of their details) are repeated on every page.  `next` is an opaque stable
-    cursor; fetching it is one tool call.  A single page carries no `page` object.  A unit (or the header with the context around it) that cannot fit raises
-    PageBudgetError: the message is refused, never sent over the limit.
+    `elsewhere` counts what is on other pages (grouped by section); the alerts (conflicts first, with the ids of their details) are repeated on every page -- when they
+    alone would not fit they are shortened in two steps (one short string each, then grouped by type and kind with the remaining ids in retrievable `alert_ids` units).
+    `next` is an opaque stable cursor; fetching it is one tool call.  A single page carries no `page` object.  A unit that does not fit the space left is divided further;
+    only a unit that cannot be divided, or a header that cannot fit even in its shortest form, raises PageBudgetError: the message is refused, never sent over the limit.
+    `retrieval` (no tool offered, so no page can be fetched): only the first page is returned and it says so, with that text counted in the budget.
     -> list of (body dict, cursor of this page or None)."""
-    totals = _totals(units)
-    if nbytes(env_first(_finish_page(header, [], units, None, totals))) > budget and header.get('alerts'):
-        header = dict(header, alerts=['%s:%s:%s' % (a.get('type'), a.get('id'), a.get('kind') or a.get('state')) for a in header['alerts']])   # shortest form; none is dropped
-    worst = {}
-    for (p, k), n in totals.items():
-        worst[_sname(p)] = worst.get(_sname(p), 0) + n
-    probe = {'contract': PAGE_CONTRACT, 'source': source, 'n': 99, 'of': 99, 'next': 'c' + '0' * 15, 'next_costs_tool_call': True,
-             'elsewhere': worst, 'alerts_total': 99, 'conflicts_total': 99}
-
-    def fits(us, first):
-        body = _finish_page(header, us, units, probe, totals)
-        return nbytes((env_first if first else env_rest)(body)) <= budget
-
-    if not fits([], True):
-        raise PageBudgetError('the message cannot be made to fit %d bytes: its header (identity, alerts, execution) and the context around it are already too large' % budget)
-    groups, cur = [], []
-    for u in units:
-        first = not groups
-        if fits(cur + [u], first):
-            cur = cur + [u]
-            continue
-        if cur:
-            groups.append(cur)
-            cur = [u]
-            if not fits(cur, False):
-                raise PageBudgetError('a unit of %s (%d bytes) does not fit a %d byte page by itself' % (_pname(u[0]), nbytes(u[2]), budget))
+    full_alerts = list(header.get('alerts') or [])
+    alerts_total = len(full_alerts)
+    conflicts_total = sum(1 for a in full_alerts if a.get('type') == 'conflict')
+    units = list(units)
+    extra_units = []
+    hdr = header
+    for tier_alerts, tier_units in _alert_tiers(full_alerts) if full_alerts else [(full_alerts, [])]:
+        hdr = dict(header, alerts=tier_alerts)
+        extra_units = tier_units
+        empty = _finish_page(hdr, [], [], None, {})
+        if max(nbytes(env_first(empty)), nbytes(env_rest(empty))) + 380 <= budget:       # (380: the page object of a multi-page message)
+            break
+    units = units + extra_units
+    for _attempt in range(400):
+        totals = _totals(units)
+        worst = {}
+        for (p, k), n in totals.items():
+            worst[_sname(p)] = worst.get(_sname(p), 0) + n
+        probe = {'contract': PAGE_CONTRACT, 'source': source, 'n': 99, 'of': 99, 'alerts_total': 99, 'conflicts_total': 99, 'elsewhere': worst}
+        if retrieval:
+            probe['retrieval'] = retrieval
         else:
-            raise PageBudgetError('a unit of %s (%d bytes) does not fit the first %d byte page by itself' % (_pname(u[0]), nbytes(u[2]), budget))
+            probe.update(next='c' + '0' * 15, next_costs_tool_call=True)
+
+        def fits(us, first, units=units, totals=totals, probe=probe):
+            return nbytes((env_first if first else env_rest)(_finish_page(hdr, us, units, probe, totals))) <= budget
+
+        if not fits([], True):
+            raise PageBudgetError('the message cannot be made to fit %d bytes: its header (identity, alerts, execution) and the context around it are already too large' % budget)
+        groups, cur, bad = [], [], None
+        for idx, u in enumerate(units):
+            if fits(cur + [u], not groups):
+                cur = cur + [u]
+                continue
+            if cur:
+                groups.append(cur)
+                cur = [u]
+            else:
+                cur = [u]
+            if not fits(cur, not groups):
+                bad = idx
+                break
+        if bad is None:
+            break
+        split = _split_further(units, bad)
+        if split is None:
+            raise PageBudgetError('a unit of %s (%d bytes) cannot be divided further to fit a %d byte page' % (_pname(units[bad][0]), nbytes(units[bad][2]), budget))
+        units = split
+    else:
+        raise PageBudgetError('the units could not be divided to fit %d bytes' % budget)
     if cur or not groups:
         groups.append(cur)
     of = len(groups)
-    if of == 1:
-        return [(_finish_page(header, groups[0], units, None, totals), None)]
-    alerts_total = len(header.get('alerts') or [])
-    conflicts_total = sum(1 for a in (header.get('alerts') or []) if (a.get('type') == 'conflict' if isinstance(a, dict) else str(a).startswith('conflict:')))
+    if of == 1 and not retrieval:
+        return [(_finish_page(hdr, groups[0], units, None, totals), None)]
+    if retrieval:
+        placed_here = _totals(groups[0])
+        elsewhere = {}
+        for (p, k), n in totals.items():
+            rest = n - placed_here.get((p, k), 0)
+            if rest:
+                elsewhere[_sname(p)] = elsewhere.get(_sname(p), 0) + rest
+        pobj = {'contract': PAGE_CONTRACT, 'source': source, 'n': 1, 'of': of}
+        if elsewhere:
+            pobj['elsewhere'] = elsewhere
+        pobj.update(alerts_total=alerts_total, conflicts_total=conflicts_total, retrieval=retrieval)
+        return [(_finish_page(hdr, groups[0], units, pobj, totals), None)]
     pages = []
     next_cursor = None
     for i in range(of - 1, -1, -1):
@@ -1714,7 +1901,7 @@ def paginate(header, units, env_first, env_rest, alias, source, budget=WIRE_BYTE
             pobj['elsewhere'] = elsewhere
         pobj['alerts_total'] = alerts_total
         pobj['conflicts_total'] = conflicts_total
-        body = _finish_page(header, us, units, pobj, totals)
+        body = _finish_page(hdr, us, units, pobj, totals)
         cur_cursor = cursor_for(alias, source, i + 1, hashlib.sha256(canon(body).encode()).hexdigest()[:16]) if i > 0 else None
         pages.append((body, cur_cursor))
         next_cursor = cur_cursor
@@ -1795,14 +1982,9 @@ class Session:
         units += self._summary_units(an, True)
         units += detail_units(details, self.lim)
         frame = frame or {}
-        pages = paginate(header, units, lambda b: canon(dict(frame, evidence=b)), self._worst_fetch_envelope(), self.alias, 'evidence', self.budget)
+        pages = paginate(header, units, lambda b: canon(dict(frame, evidence=b)), self._worst_fetch_envelope(), self.alias, 'evidence', self.budget,
+                         retrieval=None if self.tools else 'unavailable: no tool is offered, so the other pages cannot be fetched')
         first = pages[0][0]
-        if not self.tools and len(pages) > 1:
-            # nothing can be fetched when no tool is offered: say so instead of promising a page, keep the aggregate counts and the alerts
-            first['page'].pop('next', None)
-            first['page'].pop('next_costs_tool_call', None)
-            first['page']['retrieval'] = 'unavailable: no tool is offered, so the other pages cannot be fetched'
-            pages = pages[:1]
         for body, cur in pages[1:]:
             self.pages[cur] = (body, 'evidence')
         self.log.append({'id': 'evidence', 'kind': 'initial', 'pages': len(pages), 'bytes': [nbytes(dict(frame, evidence=b)) for b, _ in pages[:1]] + [nbytes(self._worst_fetch_envelope()(b)) for b, _ in pages[1:]]})

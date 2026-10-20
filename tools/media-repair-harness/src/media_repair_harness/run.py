@@ -160,8 +160,8 @@ def check_option_combination(prompt_version, evidence_format=None, guards=None, 
             raise ValueError('--evidence-format v2 is accepted with prompt %s only (got %s): the earlier prompts describe the legacy tool-result shape' % (' or '.join(EVIDENCE_V2_PROMPTS), prompt_version))
         if guards not in EVIDENCE_V2_GUARDS:
             raise ValueError('--evidence-format v2 is accepted with guards off or --guards v3 only (got --guards %s)' % guards)
-        if tool_output_bytes is not None and not 2048 <= tool_output_bytes <= EV2.WIRE_BYTES:
-            raise ValueError('--evidence-format v2 uses --tool-output-bytes as the page budget (a message is paginated to fit it): it must be between 2048 and %d, got %s' % (EV2.WIRE_BYTES, tool_output_bytes))
+        if tool_output_bytes is not None and not EV2.MIN_WIRE_BYTES <= tool_output_bytes <= EV2.WIRE_BYTES:
+            raise ValueError('--evidence-format v2 uses --tool-output-bytes as the page budget (a message is paginated to fit it): it must be between %d and %d, got %s' % (EV2.MIN_WIRE_BYTES, EV2.WIRE_BYTES, tool_output_bytes))
 
 
 safe_args = EV2.safe_args

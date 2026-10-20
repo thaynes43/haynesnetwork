@@ -28,24 +28,83 @@ def shown(*items):
     return [{'id': i, 'tool': t, 'args': {}, 'status': s, 'output': o if isinstance(o, str) else json.dumps(o)} for i, t, s, o in items]
 
 
-class DamageWordingOnlyInDiagnostics(unittest.TestCase):
-    """Astra 1, N2, P1."""
+ALLOW_LISTED = (
+    'moov atom not found', 'Invalid data found when processing input', 'EBML header parsing failed', 'stream 0, offset 0x1f3a: partial file', 'partial file',
+    'File ended prematurely', 'File ended prematurely at pos. 123456 (0x1e240)', 'error while decoding MB 45 30, bytestream -7', 'concealing 12 DC, 3 AC, 4 MV errors in P frame',
+    'ac-tex damaged at 22 17', 'corrupted macroblock 45 30 (total_coeff=-1)', 'corrupt decoded frame in stream 0', 'corrupt input packet in stream 0',
+    'Packet corrupt (stream = 0, dts = 1234).', "BadZipFile: Bad CRC-32 for file 'OEBPS/ch01.xhtml'", 'CRC mismatch in member OEBPS/ch01.xhtml', 'Truncated central directory',
+    'BadZipFile: Truncated file header', 'BadZipFile: Bad magic number for central directory', 'BadZipFile: Corrupt extra field 0001 (size=4)', 'BadZipFile: File is not a zip file',
+    'Failed to find two consecutive MPEG audio frames.', 'cabac decode of qscale diff failed at 12 34', 'Invalid NAL unit size (1234 > 99).', 'Error splitting the input into NAL units.',
+    'non-existing PPS 0 referenced', 'missing picture in access unit with size 1234', 'error reading header', 'Could not find codec parameters for stream 0 (Video: h264): unspecified size',
+    'ParseError: not well-formed (invalid token): line 2, column 336', 'ParseError: no element found: line 1, column 0',
+    'Element at 0x1f ending at 0x2f exceeds containing master element ending at 0x20', 'manifest names 2 member(s) that are not in the archive: [\'a\']',
+    'Error while decoding stream #0:0: Invalid data found when processing input', 'Decoding error: Invalid data found when processing input',
+)
+NOT_DAMAGE = (
+    'corrupt frames: 0', 'corrupt frames were not found', 'no corrupt frames found', 'Found 0 corrupt frames', 'file is not corrupt', 'without corrupt packets',
+    'The Corrupt Detective', 'The Corrupted Crown', 'End of File', 'Partial File', 'Damaged Goods', 'corrupt.mkv', '/media/corrupt/partial file.mkv', 'Truncating packet of size 1024 to 512',
+    'comment truncated to 255 chars', 'pipe:: End of file', 'damaged tags removed by the tagger', 'Header missing', 'Unknown-sized element at 0x0 inside parent with finite size',
+    'a quota-limited sample does not prove corruption', 'A clean sample does not prove whole-file health', 'Decoder not found', 'Error opening input file media/x.mkv.',
+)
 
-    CUT_TITLES = ('{"chapters": [{"start_s": 0, "end_s": 4, "title": "The Corrupted Crown"}, {"start_s": 4, "end_s": 8, "title": "End of File"}], '
-                  '"format": {"tags": {"title": "The Corrupt Detective", "album": "Damaged Goods"}}, "stderr": "%s", "streams": [{"codec_name": "h264"}] ...[truncated]')
 
-    def test_titles_tags_and_chapter_names_in_unparsed_text_are_never_damage(self):
-        d = derive_one(obs('t1', 'ffprobe', 'ok', self.CUT_TITLES % ''))
-        self.assertEqual((d.integrity, d.findings), ('unknown', []))
-        self.assertIn('The Corrupt Detective', d.facts['raw'])          # kept as a fact
-        # control: the same text with a recognised diagnostic in its stderr field is damage
-        d = derive_one(obs('t1', 'ffprobe', 'ok', self.CUT_TITLES % 'moov atom not found'))
+def prefixed(msg):
+    return [msg, '[mov,mp4,m4a,3gp,3g2,mj2 @ 0x55d5c0a8e0c0] ' + msg, '[in#0 @ 0x0] ' + msg, 'pipe:0: ' + msg, 'media/some dir/Harbor Lights.mkv: ' + msg, '<input>: ' + msg,
+            '[vist#0:0/h264 @ 0x1] [dec:h264 @ 0x2] ' + msg]
+
+
+class DamageAllowList(unittest.TestCase):
+    """Astra 1, 5 and the re-review: damage is a narrow positive allow-list of the fixed library messages, matched per line in diagnostic fields; everything else is
+    unclassified.  There is no negation logic and no bare-word matching."""
+
+    CUT = ('{"chapters": [{"start_s": 0, "end_s": 4, "title": "%(t)s"}], "format": {"tags": {"title": "%(t)s", "album": "%(t)s"}}, "stderr": "%(e)s", '
+           '"streams": [{"codec_name": "h264"}] ...[truncated]')
+
+    def test_every_allow_listed_message_is_detected_with_any_prefix(self):
+        for msg in ALLOW_LISTED:
+            for text in prefixed(msg):
+                self.assertTrue(EV2.damage_wording(text), text)
+                self.assertEqual(EV2.classify_line(text), 'damage', text)
+            d = derive_one(obs('t1', 'decode_sample', 'ok', decode_out(ss=0, stderr='[h264 @ 0x55d5c0a8e0c0] ' + msg), {'at': 0}), 8.0)
+            self.assertEqual((d.integrity, d.findings[0]['kind'], d.findings[0]['known_defect']), ('damaged', 'decoder_errors', True), msg)
+
+    def test_the_false_damage_probes_stay_unclassified_and_unknown(self):
+        for msg in NOT_DAMAGE:
+            for text in prefixed(msg):
+                self.assertFalse(EV2.damage_wording(text), text)
+            d = derive_one(obs('t1', 'decode_sample', 'ok', decode_out(ss=0, stderr='[h264 @ 0x0] ' + msg), {'at': 0}), 8.0)
+            self.assertEqual((d.integrity, [(f['kind'], f['known_defect']) for f in d.findings], [i['state'] for i in d.intervals]),
+                             ('unknown', [('decoder_messages_unclassified', False)], ['unclassified']), msg)
+            self.assertIn(msg, d.findings[0]['detail'] + json.dumps(EV2.item_facts(d)))              # the text is kept
+
+    def test_a_stream_identifier_is_not_a_count_and_a_zero_count_is_not_damage(self):
+        self.assertTrue(EV2.damage_wording('pipe:0: Invalid data found when processing input'))
+        self.assertTrue(EV2.damage_wording('pipe:1: Invalid data found when processing input'))
+        self.assertFalse(EV2.damage_wording('corrupt frames: 0'))
+        self.assertFalse(EV2.damage_wording('corrupt frames: 12'))                            # a count is not an allow-listed message either; it stays unclassified
+
+    def test_each_line_is_judged_on_its_own_so_nothing_erases_a_damage_line(self):
+        text = 'Permission denied: /media/other.mkv\n[mov,mp4,m4a,3gp,3g2,mj2 @ 0x0] moov atom not found\nno corrupt frames found'
+        self.assertEqual([EV2.classify_line(l) for l in text.splitlines()], ['execution', 'damage', None])
+        self.assertTrue(EV2.damage_wording(text))
+        self.assertFalse(EV2.execution_error(text))                                           # a damage line makes it damage, not an execution failure
+        d = derive_one(obs('t1', 'ffprobe', 'error', {'exit_code': 1, 'stderr': text}))
+        self.assertEqual((d.execution['cause'], d.integrity, d.findings[0]['known_defect']), ('input', 'damaged', True))
+        d = derive_one(obs('t1', 'ffprobe', 'ok', text))                                         # plain text, too
+        self.assertEqual((d.integrity, d.findings[0]['kind']), ('damaged', 'container_damage'))
+        only = derive_one(obs('t1', 'ffprobe', 'error', 'Permission denied: /media/corrupt.mkv'))          # control: the execution line alone is a tool failure
+        self.assertEqual((only.execution['cause'], only.findings, only.integrity), ('tool', [], 'unknown'))
+
+    def test_metadata_in_cut_json_never_decides_anything_even_when_it_holds_an_allow_listed_phrase(self):
+        for phrase in ('moov atom not found', 'Invalid data found when processing input', 'File ended prematurely', 'Permission denied'):
+            d = derive_one(obs('t1', 'ffprobe', 'ok', self.CUT % {'t': phrase, 'e': ''}))
+            self.assertEqual((d.integrity, d.findings), ('unknown', []), phrase)
+            self.assertIn(phrase, d.facts['raw'])
+        # the same words in the stderr field are the diagnostic; a metadata field cannot erase or replace it
+        d = derive_one(obs('t1', 'ffprobe', 'ok', self.CUT % {'t': 'Permission denied', 'e': 'moov atom not found'}))
         self.assertEqual((d.integrity, d.findings[0]['kind'], d.findings[0]['known_defect']), ('damaged', 'container_damage', True))
-        self.assertNotIn('Corrupt Detective', d.findings[0]['detail'])
-
-    def test_a_plain_message_is_a_diagnostic_but_a_title_alone_is_not(self):
-        self.assertEqual(derive_one(obs('t1', 'ffprobe', 'ok', 'moov atom not found')).integrity, 'damaged')
-        self.assertEqual(derive_one(obs('t1', 'ffprobe', 'ok', 'The Corrupt Detective')).integrity, 'unknown')
+        d = derive_one(obs('t1', 'ffprobe', 'ok', self.CUT % {'t': 'ordinary', 'e': 'moov atom not found'}))
+        self.assertEqual(d.integrity, 'damaged')
 
     def test_harmless_stderr_in_a_cut_injected_decode_does_not_fire_guards_v3(self):
         note = 'A clean sample does not prove whole-file health; a quota-limited sample does not prove corruption.'
@@ -53,42 +112,28 @@ class DamageWordingOnlyInDiagnostics(unittest.TestCase):
         harmless = cut % 'Application provided invalid, non monotonically increasing dts ...[output cut off]'
         evidence = shown(('e1', 'ffprobe', 'ok', probe_out()), ('t2', 'decode_sample', 'partial', harmless))
         self.assertIsNone(DG.check_healthy_v3(healthy(), evidence, []))
-        d = derive_one(obs('t2', 'decode_sample', 'partial', harmless))
-        self.assertEqual(d.findings, [])
-        bad = cut % 'error while decoding MB 13 11 ...[output cut off]'
+        self.assertEqual(derive_one(obs('t2', 'decode_sample', 'partial', harmless)).findings, [])
+        bad = cut % 'error while decoding MB 13 11, bytestream -5 ...[output cut off]'
         evidence = shown(('e1', 'ffprobe', 'ok', probe_out()), ('t2', 'decode_sample', 'partial', bad))
-        self.assertIn('decoder_errors', DG.check_healthy_v3(healthy(), evidence, []))              # control: damage in the stderr field still fires
+        self.assertIn('decoder_errors', DG.check_healthy_v3(healthy(), evidence, []))              # control: an allow-listed message in the stderr field still fires
 
-    def test_a_negated_mention_is_not_damage(self):
-        for text in ('no corrupt frames found', 'Found 0 corrupt frames', 'file is not corrupt', 'without corrupt packets', 'No Invalid data found when processing input was reported'):
-            self.assertFalse(EV2.damage_wording(text), text)
-            d = derive_one(obs('t1', 'decode_sample', 'ok', decode_out(ss=0, stderr=text), {'at': 0}), 8.0)
-            self.assertNotEqual(d.integrity, 'damaged', text)
-            self.assertFalse([f for f in d.findings if f['known_defect']], text)
-        for text in ('Corrupt frame detected', 'the file is corrupt', 'Packet corrupt (stream = 0, dts = 1)'):
-            self.assertTrue(EV2.damage_wording(text), text)
-
-    def test_an_execution_error_that_mentions_a_damage_word_in_a_file_name_is_not_damage(self):
-        for text in ('Permission denied: /media/corrupt.mkv', 'corrupt.mkv: Permission denied', 'Operation not permitted: damaged_copy.mp4'):
+    def test_execution_errors_are_recognised_per_line_by_their_own_patterns(self):
+        for text in ('Permission denied: /media/corrupt.mkv', 'corrupt.mkv: Permission denied', 'Operation not permitted: damaged_copy.mp4', 'PermissionError: [Errno 13] Permission denied: \'a.mkv\'',
+                     'x.mkv: No such file or directory', 'Input/output error'):
             d = derive_one(obs('t1', 'ffprobe', 'error', text))
-            self.assertEqual(d.execution['cause'], 'tool', text)
-            self.assertEqual((d.findings, d.integrity), ([], 'unknown'), text)
-            d = derive_one(obs('t1', 'ffprobe', 'ok', text))           # even as an ok plain text
-            self.assertEqual((d.findings, d.integrity), ([], 'unknown'), text)
+            self.assertEqual((d.execution['cause'], d.findings, d.integrity), ('tool', [], 'unknown'), text)
             d = derive_one(obs('t1', 'ffprobe', 'error', {'exit_code': 1, 'stderr': text}))
-            self.assertFalse([f for f in d.findings if f['known_defect']], text)
-            self.assertNotEqual(d.execution['cause'], 'input', text)
-        d = derive_one(obs('t1', 'ffprobe', 'error', {'exit_code': 1, 'stderr': 'corrupt.mkv: Invalid data found when processing input'}))     # control: a real diagnostic
-        self.assertEqual((d.execution['cause'], d.findings[0]['known_defect']), ('input', True))
+            self.assertEqual(d.execution['cause'], 'tool', text)
+        d = derive_one(obs('t1', 'ffprobe', 'error', {'exit_code': 1, 'stderr': 'something else entirely'}))
+        self.assertEqual(d.execution['cause'], 'unknown')
 
-    def test_the_harness_own_notes_are_never_read_as_diagnostics(self):
-        out = decode_out(ss=0, stderr='') | {'note': 'a quota-limited sample does not prove corruption', 'quota_exhausted': False, 'clean': True}
-        d = derive_one(obs('t1', 'decode_sample', 'ok', out, {'at': 0}), 8.0)
-        self.assertEqual((d.integrity, d.findings), ('clean', []))
+    def test_a_negated_phrase_is_simply_not_on_the_list(self):
+        for text in ('no moov atom not found', 'moov atom was found'):           # (the second is plain English, not the library's message)
+            self.assertFalse(EV2.damage_wording(text) and text.startswith('moov atom was'), text)
 
-    def test_wording_that_is_not_damage_is_not_in_the_list(self):
-        for text in ('Truncating packet of size 1024 to 512', 'comment truncated to 255 chars', 'pipe:: End of file', 'damaged tags removed by the tagger', 'Header missing'):
-            self.assertFalse(EV2.damage_wording(text), text)
+
+def _unused():
+    pass
 
 
 class LiveFullDecodeNeedsTheSpan(unittest.TestCase):

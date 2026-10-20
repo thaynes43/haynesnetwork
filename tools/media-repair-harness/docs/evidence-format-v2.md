@@ -80,3 +80,65 @@ Expected values are written by hand from synthetic observations; the public-suit
 * **One resolver everywhere**: `evidence_v2.reference_resolver` is used by the runner, `decision_guard.apply` (online and offline), `apply_to_record` and `--restore`; the offline path recomputes the emitted finding ids from the record's own observations, uses audit v2 and raw evidence for v2 records.
 * **Pagination**: list elements keep their index (`_i`) when an element is split; unit, chunk and string limits scale with the page budget (`Limits`); a message that cannot fit (an oversized context, or a unit that cannot fit a page) raises `PageBudgetError`, which the runner records as a harness error, so nothing is ever sent over the limit; the `elsewhere` counts are grouped by section so the page object stays small; under tools v2 the live collector is cut at the raw cap, not at the page budget.
 * **Raw diagnostics** are all kept in `facts.diagnostics` (one entry per collector message, classified or not); a timeout keeps the windows its output shows (it certifies nothing as a whole); an EPUB `valid:false` veto is a `collector_verdict` alert (`known_defect: false`, `vetoes: healthy`), distinct from a `defect`.
+
+## Third fix pass (Astra 5 and the re-review of 4328e342)
+
+* **Damage recognition is a positive allow-list** (`DAMAGE_ALLOW_LIST`), replacing the negation heuristic. A diagnostic LINE (decoder / probe stderr, an inspector's error, a collector's error line; cut JSON contributes only the values of its `stderr` / `error` keys) is damage only if, after its decoration is stripped (`[name @ 0x...]`, `pipe:N:`, `in#N`, `<input>:`, a file path, an exception type, an ffmpeg wrapper such as `Error while decoding stream #0:0:`), it STARTS with one of the fixed messages below. Each line is classified on its own, so a permission line, a title or a note can never erase a damage line elsewhere. Anything unmatched is `unclassified`: kept in `facts.diagnostics`, integrity unknown. There is no negation logic and no bare-word matching ("corrupt frames: 0" and "pipe:0: Invalid data found" both come out right by construction). Sources are the library message texts (and the public dev replay data); no phrasing is invented.
+
+| Pattern (anchored at the start of the message) | Source |
+|---|---|
+| `moov atom not found` | libavformat/mov.c; public dev replay |
+| `Invalid data found when processing input` | AVERROR_INVALIDDATA (libavutil/error.c); public dev replay |
+| `EBML header parsing failed` | libavformat/matroskadec.c; public dev replay |
+| `(?:stream \d+, offset 0x[0-9a-fA-F]+: )?partial file` | libavformat/mov.c |
+| `Element at 0x[0-9a-fA-F]+ ending at 0x[0-9a-fA-F]+ exceeds containing master element ending at 0x[0-9a-fA-F]+` | libavformat/matroskadec.c; public dev replay |
+| `File ended prematurely(?: at pos\. \d+ \(0x[0-9a-fA-F]+\))?` | libavformat/matroskadec.c; public dev replay |
+| `Failed to find two consecutive MPEG audio frames` | libavformat/mp3dec.c; public dev replay |
+| `error reading header` | libavformat/mov.c |
+| `Could not find codec parameters for stream \d+` | libavformat/demux.c |
+| `error while decoding MB \d+ \d+, bytestream -?\d+` | libavcodec/h264_slice.c |
+| `cabac decode of qscale diff failed at \d+ \d+` | libavcodec/h264_cabac.c; public dev replay |
+| `corrupted macroblock \d+ \d+ \(total_coeff=-?\d+\)` | libavcodec/h264_cavlc.c |
+| `concealing \d+ DC, \d+ AC, \d+ MV errors in [IPBS] frame` | libavcodec/error_resilience.c |
+| `ac-tex damaged at \d+ \d+` | libavcodec/mpeg12dec.c, mpeg4videodec.c |
+| `Invalid NAL unit size \(\d+ > \d+\)` | libavcodec/h2645_parse.c |
+| `Error splitting the input into NAL units` | libavcodec/h2645_parse.c |
+| `non-existing PPS \d+ referenced` | libavcodec/h264_slice.c |
+| `missing picture in access unit with size \d+` | libavcodec/h264dec.c |
+| `corrupt decoded frame in stream \d+` | fftools/ffmpeg.c |
+| `corrupt input packet in stream \d+` | fftools/ffmpeg.c |
+| `Packet corrupt \(stream = \d+, dts = \S+\)` | libavformat/mpegts.c |
+| `Bad CRC-32 for file .+` | Python zipfile.BadZipFile |
+| `CRC mismatch in member .+` | this harness: tools._epub_stage (zipfile.testzip) |
+| `File is not a zip file` | Python zipfile.BadZipFile |
+| `Truncated (?:central directory\|file header)` | Python zipfile.BadZipFile |
+| `Bad (?:offset for central directory\|magic number for (?:central directory\|file header))` | Python zipfile.BadZipFile |
+| `Corrupt (?:zip64 )?extra field.*` | Python zipfile.BadZipFile |
+| `Corrupt zip64 end of central directory (?:locator\|record)` | Python zipfile.BadZipFile |
+| `Zip64 end of central directory record not found` | Python zipfile.BadZipFile |
+| `Overlapped entries: .+ \(possible zip bomb\)` | Python zipfile.BadZipFile |
+| `not well-formed \(invalid token\): line \d+, column \d+` | expat via xml.etree.ElementTree.ParseError; public dev replay |
+| `no element found: line \d+, column \d+` | expat via ParseError |
+| `(?:mismatched tag\|unclosed token\|junk after document element\|syntax error\|unclosed CDATA section): line \d+, column \d+` | expat via ParseError |
+| `manifest names \d+ member\(s\) that are not in the archive` | this harness: evidence/epubtool.py |
+| `container\.xml names .+, which is not in the archive` | this harness: evidence/epubtool.py |
+
+Execution errors have their own anchored patterns, also per line (a tool failure, `cause: tool`, never damage):
+
+* `Permission denied`
+* `No such file or directory`
+* `Operation not permitted`
+* `Input/output error`
+* `Cannot allocate memory`
+* `Read-only file system`
+* `Too many open files`
+* `Connection (?:refused|reset by peer)`
+* `Resource temporarily unavailable`
+* `Is a directory`
+* `Not a directory`
+
+* **Live probe stderr** (and each audiobook part's `probe_stderr`, and the record-level excerpt) goes through the same matcher: an `ok` probe with `File ended prematurely` on stderr is damaged, with other text unknown, never clean; every line is kept in `facts.diagnostics` with its class.
+* **Pagination no longer crashes on a splittable unit.** When the alerts alone would not fit they are shortened in two steps (one short string each, then grouped by type and kind with the first ids, the full id lists retrievable as `alert_ids` units); a unit that does not fit the space left is divided further (an element of a list keeps its `_i` index); `elsewhere` is grouped by section (`details`, `alert_ids` are one key each); with no tool offered the `retrieval` sentence is counted in the budget. Only an indivisible unit, or a header that cannot fit in its shortest form, raises `PageBudgetError`.
+* **Accepted minimum budget: `MIN_WIRE_BYTES` = 2560.** Over both public dev suites (first message and default replies of every case) `PageBudgetError` counts are: 2048 bytes: 32 runs (11 + 5 cases); 2304: 6 runs (2 + 1 cases); 2560, 2816, 3072, 4096, 8192: 0. The runner refuses `--tool-output-bytes` below 2560 (and above 8192) under format v2.
+* **Client restrictions after `up to`** are consumed: a depth or pixel format after the limit belongs to the codec before it and is compared ("hevc up to 1080p, 8-bit" against a 10-bit file is unsupported).
+* **Timeout wording** separates the windows the call observed from the unfinished remainder.
