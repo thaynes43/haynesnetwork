@@ -256,6 +256,20 @@ class Derived:
 
 
 def derive(obs, known_duration=None):
+    """The typed fields of one observation.  Total: a result whose shape this layer cannot read yields no typed fact (integrity unknown, the raw text kept in
+    `facts.raw`, a stated unresolved item), never an exception and never a guess."""
+    try:
+        return _derive(obs, known_duration)
+    except Exception as e:  # noqa: BLE001 - malformed recorded data must not stop a run; it is reported, not interpreted
+        d = Derived(obs, execution_of(obs, None))
+        text = obs['output'] if isinstance(obs['output'], str) else canon(obs['output'])
+        d.facts = {'raw': clip(text, 400)}
+        d.unresolved.append('the output has a shape this layer does not read (%s); no typed fact was derived from it' % type(e).__name__)
+        _finish(d, None)
+        return d
+
+
+def _derive(obs, known_duration=None):
     data, notes = unwrap(obs)
     d = Derived(obs, execution_of(obs, data))
     if notes.get('recorded_as'):
@@ -680,8 +694,22 @@ def analyze(observations, context=None, media_type=None):
     for o in observations:
         items[o['id']] = derive(o, dur)
         order.append(o['id'])
-    cov = build_coverage([items[i] for i in order])
-    client = compare_client(context or {}, [items[i] for i in order])
+    first = None
+    for i in order:   # two results that state different container durations contradict each other: said, not averaged
+        dd = items[i]
+        if dd.duration_s and dd.execution['status'] == 'ok':
+            if first is None:
+                first = dd
+            elif abs(dd.duration_s - first.duration_s) > EOF_TOLERANCE_S:
+                dd.conflict('duration_mismatch', 'this result states a duration of %g s; %s states %g s' % (dd.duration_s, first.obs['id'], first.duration_s), [first.obs['id']])
+    try:
+        cov = build_coverage([items[i] for i in order])
+    except Exception as e:  # noqa: BLE001 - reported, never guessed
+        cov = {'error': 'the coverage matrix could not be built (%s)' % type(e).__name__}
+    try:
+        client = compare_client(context or {}, [items[i] for i in order])
+    except Exception as e:  # noqa: BLE001
+        client = {'stated_by_case': True, 'rows': [], 'summary': {'complete': False, 'why': 'the comparison could not be built (%s)' % type(e).__name__}}
     return {'items': items, 'order': order, 'coverage': cov, 'client': client, 'duration_s': dur}
 
 
@@ -1010,7 +1038,10 @@ def full_decode_proof(observation, observations):
         return False, 'the decode was not clean (%s)' % d.integrity
     if any(c['kind'] in ('request_not_honored', 'decoded_span_shorter_than_duration') for c in d.conflicts):
         return False, 'the request was not honored in full'
-    return True, 'observed to end of file, clean; streams: %s' % (d.scope['completed'].get('streams') or UNKNOWN)
+    streams = d.scope['completed'].get('streams')
+    if not isinstance(streams, list) or not streams:
+        return False, 'observed to the end of the file and clean, but which streams were decoded is not recorded, so the scope is not verified'
+    return True, 'observed to the end of the file, clean, streams %s' % ', '.join(streams)
 
 
 # ------------------------------------------------------------------------------------------------------------------ presentation
@@ -1150,14 +1181,14 @@ def paginate(header, units, envelope, alias, source, budget=WIRE_BYTES):
 
     Contract (pages-v1): a page is `header` (identity, alerts, execution: always repeated) plus whole units in priority order; a unit is never cut
     mid-structure; a unit too large to fit even alone is replaced by an explicit marker naming its size (`page.oversize`).  Every page carries
-    `page{contract,n,of,next,next_costs_tool_call,elsewhere,conflicts_total}`: `elsewhere` counts what is on other pages, `conflicts_total` the
+    `page{contract,source,n,of,next,next_costs_tool_call,elsewhere,conflicts_total}`: `elsewhere` counts what is on other pages, `conflicts_total` the
     aggregate conflicts of the whole result (they are also in `alerts`, which every page repeats, with the ids of their details).  `next` is an
     opaque stable cursor; fetching it is one tool call (`args {"cursor": ...}`).  A single page carries no `page` object.
     -> list of (body, cursor_of_this_page or None)."""
     totals = _totals(units)
     if nbytes(envelope(_finish_page(header, [], units, None, totals))) > budget and header.get('alerts'):
         header = dict(header, alerts=['%s:%s:%s' % (a.get('type'), a.get('id'), a.get('kind') or a.get('state')) for a in header['alerts']])   # shortest form; none is dropped
-    probe = {'contract': PAGE_CONTRACT, 'n': 99, 'of': 99, 'next': 'c' + '0' * 15, 'next_costs_tool_call': True,
+    probe = {'contract': PAGE_CONTRACT, 'source': source, 'n': 99, 'of': 99, 'next': 'c' + '0' * 15, 'next_costs_tool_call': True,
              'elsewhere': {'.'.join(p): n for (p, k), n in totals.items()}, 'conflicts_total': 99, 'oversize': [{'section': 'facts.x', 'bytes': 99999}]}
 
     def fits(us):
@@ -1190,7 +1221,7 @@ def paginate(header, units, envelope, alias, source, budget=WIRE_BYTES):
             rest = n - placed_here.get((p, k), 0)
             if rest:
                 elsewhere['.'.join(p)] = rest
-        pobj = {'contract': PAGE_CONTRACT, 'n': i + 1, 'of': of}
+        pobj = {'contract': PAGE_CONTRACT, 'source': source, 'n': i + 1, 'of': of}
         if next_cursor:
             pobj['next'] = next_cursor
             pobj['next_costs_tool_call'] = True

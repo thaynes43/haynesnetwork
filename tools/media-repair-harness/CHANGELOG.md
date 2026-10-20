@@ -1,5 +1,17 @@
 # Harness changelog
 
+## Unreleased (W18, OpenProject #144): evidence format v2, guards v3 and the audit bug fixes
+
+Opt-in; `HARNESS_VERSION` stays `dev-c4` (the candidate bump is the W19 freeze). Not scoring: `score.py`, `CONTRACT.md`, the suites, labels and gates are untouched. With the new options unset every request, run record and scorer-read field is what origin/main 7abf11fb produced
+(`tests/testdata/legacy-e2e-golden.json` over the replay, local, remote, live, pinned, EPUB and guard branches, plus the unchanged replay-identity golden and prompt digests). Full description: `docs/evidence-format-v2.md`.
+
+* **`--evidence-format v2`** (prompt v4 or a future v5; guards off or v3): typed findings per result (execution, findings, scope, unresolved, conflicts), a coverage matrix, a client comparison, a capability advertisement and compact nested presentation in an 8192-byte envelope with `pages-v1` pagination (opaque case-isolated cursors, a page fetch costs one of the 6 calls). It also selects **tools behaviour v2** and **audit v2**. New module `evidence_v2.py`; it never sees the case object.
+* **Tools v2** (bugs a, d, e of the audit): a full decode is a real full decode or says what window ran (`partial` + `request_unmet`); the live collector's truncation flag survives; sampled coverage is the union of the windows. **Audit v2** (bug b): `full_decode_ok` needs observed completion, a clean result and a recorded stream scope.
+* **`--guards v3`** (bug c; any prompt, also with the legacy format): G-healthy examines all shown evidence; a known integrity defect contradicts healthy next to clean results; G-write as in v2. `mrh-guard --guards v3` applies it offline.
+* New record fields only for the new options (`evidence_format`, `action_audit.audit_version`, `tool_calls[].raw_output`, `guard.version v3`); manifest `config` gains the versions only when on, so an unset run keeps its config hash.
+* `smoke/launch_wiring_smoke.py`: the bundle now travels in xz parts (`bundle_parts`) because the package outgrew one 128 KiB environment string.
+* Tests: `test_evidence_v2_core.py`, `test_evidence_v2_run.py`, helpers `ev2h.py`, `legacy_e2e.py`, `make_evidence_v2_golden.py`.
+
 ## dev-c4 (candidate, OpenProject #142)
 
 Opt-in deterministic decision guards, prompt v4, and the fix for a local model calling tools no case offers. Not scoring: `score.py`, `CONTRACT.md`, `CONTRACT-v1.1.md`, the suites, labels and gates are untouched. Defaults are unchanged

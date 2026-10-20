@@ -1070,3 +1070,155 @@ class PublicSuite(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BranchesUnderV2(unittest.TestCase):
+    """The same typed layer over the local-binary, remote and live branches of a full scripted run (mocked end to end)."""
+
+    def test_local_branch_full_decode_reaches_the_end_and_is_called_so(self):
+        case = L.tv_case('br-local-001', evidence=[])
+        ts = L.suite_with(case, probes=False)
+        probe_json = json.dumps({'streams': [{'index': 0, 'codec_type': 'video', 'codec_name': 'h264', 'width': 256, 'height': 192, 'pix_fmt': 'yuv420p'},
+                                             {'index': 1, 'codec_type': 'audio', 'codec_name': 'aac', 'channels': 1}],
+                                 'format': {'format_name': 'matroska,webm', 'duration': '8.046', 'size': '90286', 'bit_rate': '89769'}}).encode()
+        seen = []
+
+        def runner(cmd, capture_output=True, timeout=None):
+            seen.append(cmd)
+            exe = [c for c in cmd if 'ffprobe' in c or 'ffmpeg' in c][0]
+            if 'ffprobe' in exe:
+                return Completed(0, probe_json, b'')
+            if '-progress' in cmd:
+                return Completed(0, b'frame=67\nout_time_us=8000000\nprogress=end\n', b'')
+            return Completed(0, b'', b'')
+        replies = [tc('ffprobe'), tc('decode_sample', {'full': True}), tc('decode_sample', {'at': 4}), dec('insufficient_evidence', 'escalate')]
+        rec, ad = ev2h.scripted_run(case, ts, replies, runner=runner, which=lambda n: '/usr/bin/' + n if n in ('ffmpeg', 'ffprobe') else None, evidence_format='v2')
+        full_reply = json.loads(ad.calls[-1][4]['content'])['output']
+        self.assertEqual(full_reply['scope']['completed']['to_end_of_file'], True)
+        self.assertEqual(full_reply['scope']['completed']['streams'], ['0:v:0', '0:a:0'])
+        self.assertEqual(full_reply['backend'], 'local')
+        self.assertEqual(full_reply['coverage']['time']['0:v:0']['clean'], [[0.0, 8.0]])
+        self.assertEqual(full_reply['coverage']['streams'][0]['decode'], 'checked_in_windows')
+        self.assertTrue(any('-progress' in c for c in seen))
+        window = json.loads(ad.calls[-1][-1]['content'])['output']
+        self.assertEqual(window['scope']['completed']['streams'], ['0:v:0', '0:a:0'])
+        ts.cleanup()
+
+    def test_local_branch_full_decode_that_times_out_is_partial_with_the_actual_window(self):
+        import subprocess
+        case = L.tv_case('br-local-002', evidence=[])
+        ts = L.suite_with(case, probes=False)
+
+        def runner(cmd, capture_output=True, timeout=None):
+            if any('ffprobe' in c for c in cmd):
+                return Completed(0, json.dumps({'streams': [], 'format': {'format_name': 'x', 'duration': '600'}}).encode(), b'')
+            raise subprocess.TimeoutExpired(cmd, timeout, output=b'frame=300\nout_time_us=12000000\n', stderr=b'')
+        rec, ad = ev2h.scripted_run(case, ts, [tc('ffprobe'), tc('decode_sample', {'full': True}), dec()], runner=runner,
+                                    which=lambda n: '/usr/bin/' + n if n in ('ffmpeg', 'ffprobe') else None, evidence_format='v2')
+        reply = json.loads(ad.calls[-1][-1]['content'])
+        out = reply['output']
+        self.assertEqual(reply['status'], 'partial')
+        self.assertEqual(out['execution']['completion'], 'partial')
+        self.assertEqual(out['scope']['completed']['to_end_of_file'], False)
+        self.assertEqual(out['scope']['intervals'][0]['end_s'], 12.0)
+        self.assertIn('request_not_honored', [c['kind'] for c in out['conflicts']])
+        self.assertEqual(out['coverage']['time']['0:v:0']['not_checked'], [[12.0, 600.0]])
+        ts.cleanup()
+
+    def test_remote_branch_full_request_is_a_partial_window_in_the_typed_reply(self):
+        case = L.tv_case('br-remote-001', fixture={'kind': 'remote', 'locator': 'remote:media/bazarr:/tv/x.mkv'}, evidence=[])
+        ts = th.TempSuite([case])
+
+        def runner(cmd, input=None, capture_output=True, timeout=None):
+            mode = cmd[cmd.index('-') + 1]
+            info = {'exit_code': 0, 'stdout_bytes': 0, 'stderr': '', 'bytes_read': 4096, 'quota_exhausted': False}
+            if mode == 'probe':
+                return Completed(0, json.dumps({'streams': [], 'format': {'format_name': 'matroska,webm', 'duration': '60'}}).encode(), json.dumps(info).encode())
+            return Completed(0, b'', json.dumps(info).encode())
+        rec, ad = ev2h.scripted_run(case, ts, [tc('ffprobe'), tc('decode_sample', {'full': True}), dec()], runner=runner, evidence_format='v2')
+        reply = json.loads(ad.calls[-1][-1]['content'])
+        self.assertEqual((reply['status'], reply['output']['backend']), ('partial', 'remote'))
+        self.assertIn('request_not_honored', [c['kind'] for c in reply['output']['conflicts']])
+        self.assertIn('8 MiB', json.dumps(reply['output']))
+        ts.cleanup()
+
+    def test_live_branch_uses_the_collectors_own_coverage_vocabulary_and_the_union(self):
+        case = L.tv_case('br-live-001', evidence=[])
+        ts = L.suite_with(case, probes=False)
+        fake = TE.Fake([(TE.prog('ffprobe', '-show_format'), TE.RunResult(0, TE.probe_json(duration=8.0), b'')), (TE.prog('ffmpeg', '-progress'), TE.clean_decode)] + TE.VERSION)
+        rec, ad = ev2h.scripted_run(case, ts, [tc('ffprobe'), tc('decode_sample'), dec()], evidence_mode='live', evidence_runner=fake,
+                                    evidence_which=TE.which_with('ffmpeg', 'ffprobe'), which=lambda n: None, evidence_format='v2')
+        reply = json.loads(ad.calls[-1][-1]['content'])['output']
+        self.assertEqual(reply['backend'], 'live')
+        self.assertTrue(reply['scope']['completed']['coverage']['not_verified'])
+        self.assertEqual(reply['coverage']['time']['0:v:0']['checked_fraction'], 1.0)          # three overlapping windows, one union
+        self.assertEqual(rec['tool_calls'][1]['mode'], 'live')
+        ts.cleanup()
+
+    def test_a_case_that_offers_no_tool_cannot_page_and_says_so_without_hiding_conflicts(self):
+        many = [EV2.make_observation('e%d' % i, 'ffprobe', {}, 'ok', json.dumps(probe_out(duration='60', chapters=[{'start': str(k), 'end': str(k + 1), 'title': 'c%03d %s' % (k, 'y' * 60)} for k in range(60)])), None, 'case')
+                for i in range(1, 7)]
+        many.append(EV2.make_observation('e9', 'decode_sample', {'ss': 0, 't': 4}, 'ok', json.dumps(decode_out(stderr=DAMAGE)), None, 'case'))
+        ses = EV2.Session('case-00000000', {}, 'tv', [])
+        block, n = ses.initial(many)
+        self.assertEqual(ses.pages, {})
+        self.assertNotIn('next', block['page'])
+        self.assertIn('no tool is offered', block['page']['retrieval'])
+        self.assertTrue(any(a['type'] == 'conflict' for a in block['alerts']))
+        self.assertLessEqual(len(json.dumps(block, ensure_ascii=False, separators=(',', ':')).encode()), EV2.WIRE_BYTES)
+        self.assertTrue(block['page']['elsewhere'])
+
+    def test_guards_v3_offline_apply_to_an_existing_legacy_record_and_keep_the_original(self):
+        from media_repair_harness import decision_guard as DG
+        case = L.tv_case('br-guard-001')
+        ts = L.suite_with(case)
+        rec, ad = L.run(case, ts, [tc('ffprobe'), L.dec('healthy', 'none', ['t1'])], which=th.NO_BINARIES)
+        shown = R.resolve_evidence(case, ts.root)
+        new = DG.apply_to_record(rec, case, shown, 'v3')
+        self.assertEqual(new['guard']['version'], 'v3')
+        self.assertTrue(new['guard']['final_changed'])      # the case's own evidence e2 holds decoder errors; the clean probe does not outvote them
+        self.assertEqual(new['guard']['applied'][0]['original']['class'], 'healthy')
+        back = DG.restore_original(new, case, shown)
+        self.assertEqual(back['decision'], rec['decision'])
+        ts.cleanup()
+
+    def test_mrh_guard_cli_offers_v3(self):
+        from media_repair_harness import guard_cli
+        import io
+        import contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
+            guard_cli.main(['--help'])
+        self.assertIn('v3', buf.getvalue())
+
+
+class RegressionGolden(unittest.TestCase):
+    """Implementation-generated renderings of fixed synthetic observations and of every public dev case, pinned so an unintended change is noticed.
+    This is a regression check only; the semantic expectations are the hand-written ones elsewhere in this file and in test_evidence_v2_core."""
+    GOLDEN = Path(__file__).resolve().parent / 'testdata' / 'evidence-v2-golden.json'
+
+    def test_synthetic_renderings_equal_the_golden(self):
+        import make_evidence_v2_golden as M
+        want = json.loads(self.GOLDEN.read_text())['synthetic']
+        self.assertEqual(M.synthetic(), want)
+
+    @th.needs_suite
+    def test_public_dev_renderings_equal_the_golden(self):
+        import os
+        import make_evidence_v2_golden as M
+        want = json.loads(self.GOLDEN.read_text())['public_dev']
+        now = M.suites(Path(th.SUITE).parent)
+        self.assertEqual(sorted(now), sorted(want))
+        home = set()
+        for suite in ('suite', 'suite-dev-v1.1'):
+            for case, _ in R.load_cases(Path(th.SUITE).parent / suite):
+                loc = (case.get('fixture') or {}).get('locator') or ''
+                if loc.startswith('~') and os.path.exists(os.path.expanduser(loc)):
+                    home.add('%s:%s' % (suite, hashlib.sha256(case['id'].encode()).hexdigest()[:12]))
+        self.assertLessEqual(len(home), 8)
+        for key, row in want.items():
+            self.assertEqual(now[key]['case_sha256'], row['case_sha256'], key)
+            if key in home:
+                continue                                  # the evaluator's home cache holds this file here: tools take another route, as in the replay-identity test
+            self.assertEqual(now[key], row, key)
+        self.assertEqual(len(want), 146)

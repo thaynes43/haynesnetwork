@@ -64,6 +64,13 @@ class TypedFindings(unittest.TestCase):
         self.assertFalse(d.findings[0]['known_defect'])
         self.assertIn('unrecognised complaint 42', d.findings[0]['detail'])   # stays raw
 
+    def test_two_results_that_state_different_durations_contradict_each_other(self):
+        a = analysis([obs('e1', 'ffprobe', 'ok', probe_out(duration='8.0')), obs('t1', 'ffprobe', 'ok', probe_out(duration='9.5'))])
+        self.assertEqual([c['kind'] for c in a['items']['t1'].conflicts], ['duration_mismatch'])
+        self.assertEqual(a['items']['e1'].conflicts, [])
+        a = analysis([obs('e1', 'ffprobe', 'ok', probe_out(duration='8.0')), obs('t1', 'ffprobe', 'ok', probe_out(duration='8.4'))])   # within the rounding allowance
+        self.assertEqual(a['items']['t1'].conflicts, [])
+
     def test_a_probe_that_reports_damage_in_its_own_words_is_a_known_defect(self):
         d = derive_one(obs('e1', 'ffprobe', 'error', {'exit_code': 1, 'stderr': 'moov atom not found\nInvalid data found when processing input'}))
         self.assertEqual([(f['kind'], f['known_defect'], f['location']['part']) for f in d.findings], [('container_damage', True, 'container')])
@@ -527,8 +534,19 @@ class AuditV2(unittest.TestCase):
 
     def test_observed_completion_with_a_clean_result_is_met(self):
         probe = {'id': 'e1', 'tool': 'ffprobe', 'status': 'ok', 'args': {}, 'output': json.dumps(probe_out(duration='8.046'))}
+        full = {'id': 'e2', 'tool': 'decode_sample', 'status': 'ok', 'args': {'full': True},
+                'output': json.dumps({'exit_code': 0, 'frames': 67, 'out_time': '00:00:08.000000', 'stderr': '', 'streams_selected': ['0:v:0', '0:a:0']})}
+        met, a = self.met([probe, full], 'v2')
+        self.assertTrue(met)
+        self.assertTrue([c for c in a['preconditions'] if c['id'] == 'full_decode_ok'][0]['met'])
+
+    def test_completion_and_a_clean_result_without_a_recorded_stream_scope_is_not_met(self):
+        probe = {'id': 'e1', 'tool': 'ffprobe', 'status': 'ok', 'args': {}, 'output': json.dumps(probe_out(duration='8.046'))}
         full = {'id': 'e2', 'tool': 'decode_sample', 'status': 'ok', 'args': {'full': True}, 'output': json.dumps({'exit_code': 0, 'frames': 67, 'out_time': '00:00:08.000000', 'stderr': ''})}
-        self.assertTrue(self.met([probe, full], 'v2')[0])
+        met, a = self.met([probe, full], 'v2')
+        self.assertFalse(met)
+        detail = [c for c in a['preconditions'] if c['id'] == 'full_decode_ok'][0]['detail']
+        self.assertIn('which streams were decoded is not recorded', detail)
 
     def test_a_full_decode_with_errors_or_without_completion_proof_is_not_met(self):
         probe = {'id': 'e1', 'tool': 'ffprobe', 'status': 'ok', 'args': {}, 'output': json.dumps(probe_out(duration='8.046'))}
@@ -546,6 +564,37 @@ class AuditV2(unittest.TestCase):
     def test_version_one_audit_gets_no_new_key(self):
         _, a = self.met([], 'v1')
         self.assertNotIn('audit_version', a)
+
+
+class Robustness(unittest.TestCase):
+    """Malformed recorded or live data yields no typed fact and no exception: the layer never guesses and never stops a run."""
+    OUTS = ['', 'null', '[]', '123', '"str"', '{}', '{"exit_code":"x"}', '{"stderr":123}', '{"stderr":["a"]}', '{"streams":"x"}', '{"streams":[1,2]}', '{"streams":{"video":1}}',
+            '{"format":5}', '{"format":{"duration":"x"}}', '{"chapters":[1,{"start":"a"}]}', '{"frames":"x","out_time":{}}', '{"exit_code":0,"stderr":"","frames":-1,"out_time":"99:99:99"}',
+            '{"status":"error","stage":5}', '{"stage":["a"]}', '{"coverage":{"verified":"x","not_verified":3},"output":{"segments":[1,2,{"at_s":"q"}]},"status":"ok"}',
+            '{"coverage":{"verified":[],"not_verified":[]},"output":5}', '{"observation":5,"recorded_as":"x"}', '{"chapter_count":"x","chapters":5}',
+            '{"exit_code":0,"stderr":"x","ss":"a"}', 'x' * 20000, '{"a":' * 50 + '1' + '}' * 50, '{"window_s":"full","exit_code":0,"stderr":""}']
+
+    def test_no_shape_raises_and_none_is_read_as_clean_or_damaged(self):
+        import itertools
+        tools = ('ffprobe', 'decode_sample', 'frame_sample', 'audio_sample', 'ocr', 'epub_inspect', 'audiobook_inspect', 'arr_lookup', 'prior_record', 'unknown_tool')
+        for tool, status, out, args in itertools.product(tools, ('ok', 'partial', 'error', 'timeout', 'unavailable'), self.OUTS, ({}, {'at': 4}, {'full': True})):
+            o = obs('t1', tool, status, out, args)
+            d = EV2.derive(o)
+            self.assertIsNotNone(d.execution)
+            ses = EV2.Session('case-0', {'client_profile': {'video': 'h264'}}, 'tv', [tool])
+            ses.initial([o])
+            text, n = ses.result(obs('t2', tool, status, out, args), 't2', 3)
+            json.loads(text)
+            if n == 1:
+                self.assertLessEqual(len(text.encode()), EV2.WIRE_BYTES)
+
+    def test_an_unreadable_shape_is_reported_as_such(self):
+        d = EV2.derive(obs('t1', 'decode_sample', 'ok', {'exit_code': 0, 'stderr': '', 'out_time': {'x': 1}}, {'at': 0}))
+        self.assertIn(d.integrity, ('unknown', 'clean'))
+        d = EV2.derive(obs('t1', 'ffprobe', 'ok', '{"coverage":{"verified":"x","not_verified":3},"output":{"segments":[1,2,{"at_s":"q"}]},"status":"ok"}'))
+        self.assertEqual(d.integrity, 'unknown')
+        self.assertTrue(any('shape this layer does not read' in u for u in d.unresolved))
+        self.assertIn('raw', d.facts)
 
 
 if __name__ == '__main__':

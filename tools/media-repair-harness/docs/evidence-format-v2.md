@@ -1,0 +1,62 @@
+# Evidence format v2, guards v3 and the audit bug fixes (W18)
+
+Owner: OpenProject story [#144](https://work.haynesnetwork.com/work_packages/144) (epic #48). Source: the Astra audit of the dev-c4 evidence and instructions (#143, sections 2 and 3, items P0) and
+its review. Everything here is **opt-in**: with the new options unset, every request, run record and scorer-read field is what `origin/main` 7abf11fb produced
+(`tests/testdata/legacy-e2e-golden.json`, the replay-identity golden and the prompt and schema digests). `HARNESS_VERSION` stays `dev-c4`; the candidate version bump belongs to the W19 freeze.
+
+## Options and the versions they select
+
+| Option | Selects | Valid with |
+|---|---|---|
+| `--evidence-format v2` | evidence format v2 (typed layer, capabilities, pagination), **tools behaviour v2** (bugs a, d, e), **audit v2** (bug b) | prompt `v4` (and a future `v5`); guards off or `--guards v3` |
+| `--guards v3` | G-healthy v3 (bug c); G-write as in v2 | any prompt, with or without the format |
+
+Anything else that uses a new option is refused up front with an explicit message (`run.check_option_combination`): `--evidence-format v2` with prompt v1, v2 or v3, and with `--guards v1` or `v2`. Unknown values are refused by the parser.
+The manifest `config` (and so `config_hash`) gains `evidence_format`, `tools_behavior`, `audit_version`, `page_contract` and `wire_bytes` only when the format is on, and `guards: "v3"` when guards v3 is on; an unset run keeps the earlier config shape.
+The run record gains `evidence_format{version, page_contract, wire_bytes, tools_behavior, audit_version, capabilities, messages[], final_summary}` and `action_audit.audit_version` only for a v2 run, and
+`tool_calls[].raw_output` (the uncut redacted text the typed layer was derived from) when the format is v2 or guards are v3. `run_summary.json` gains `evidence_format`.
+
+## The five audit bugs, each fixed under a version (the earlier behaviour stays under the earlier version)
+
+| Bug | Earlier behaviour (kept for v1) | Fixed behaviour |
+|---|---|---|
+| a. `decode_sample(full=true)` | local and remote fallback ran a 4 s window and called it full | **tools v2**: local runs a real full decode of the first video and first audio stream inside the existing 25 s limit (`window_s: "full"`, `completed_to_eof`); at the limit it returns status `partial` with the window that actually ran, `completed_to_eof: false` and `request_unmet`. Remote cannot (8 MiB, 25 s): status `partial`, the 4 s window, `request_unmet`. A replay without a recorded full decode is `unavailable`, not a crash. No limit is raised |
+| b. `audit.compute` `full_decode_ok` | true when a full-argument call returned `ok` | **audit v2**: true only on observed completion to the end of the file (exit 0 without a limit and a decoded span that matches the container duration), a clean result, no unmet request and a **recorded stream scope**; absent proof is not met, with the reason in `detail` |
+| c. G-healthy | presence of any `ok` integrity result | **guards v3**: all shown evidence and tool results are examined; a known integrity defect contradicts healthy even next to clean results (order independent); an `ok` result that reports a defect is not clean; unknown fields are neither clean nor damaged; no clean integrity result still abstains. The reason names the finding, its kind and location and the observation id; the model's decision stays in `guard.applied[].original`. A guard can only turn a decision into `insufficient_evidence` / `escalate` and never infers whole-file health from a clean sample |
+| d. `live_tool` truncation flag | the collector's flag was dropped | **tools v2**: kept (`truncated: true`, `collector_truncated`) |
+| e. sampled coverage | overlapping windows were added up (`sampled_fraction` 1.5 on an 8 s file) | **tools v2**: the union of the windows, clipped to the duration; `decoded_s_total_windows` keeps the sum |
+
+## What the model sees under `--evidence-format v2`
+
+The typed layer (`evidence_v2.py`) is a deterministic function of **model-visible observations only**: an `Observation` is `{id, tool, args, status, output, backend, source, collector_truncated}` and the
+case context the model already sees. The case object is never passed in, so no truth, accepted class, supported action, solvability, family, correction, provenance, outcome step, injection flag or
+fixture path can reach the output; the harness-side `injected` backend marker is mapped to unknown. Args echoed back are limited to known numeric/boolean options and a frame handle (`run.safe_args`).
+
+First message: `case_id, media_type, context, tools_available, tool_call_budget, capabilities, evidence_format, evidence`. `evidence` = `{alerts, [page], items, facts, coverage, client_comparison}`.
+Tool reply: the same envelope keys as before (`type, id, tool, status, truncated, output, tool_calls_remaining`); `output` is a nested object, not JSON in a string.
+
+* **Per result**: `execution` (`state` ran / failed / timed_out / unavailable, the raw `status`, `cause` input / tool / unknown for failures, `completion` complete / partial / none, `output_truncated`, `reason`);
+  `findings` (`kind`, `known_defect`, `location`, raw-excerpt `detail`, `src`); `scope` (requested against completed: window, offsets, `to_end_of_file`, streams, stages, intervals); `unresolved`; `conflicts` (a status `ok` with a defect, exit 0 with decoder errors, a request not honored, a decoded span shorter than the container duration, two different container durations); `facts` (compact parse, units in the key names: `_s`, `_bytes`, `_bps`, `_hz`, `_px`).
+  `ok` never implies a clean file; a collection failure never implies a defect; a non-zero exit alone and any unrecognised error text stay `known_defect: false`. Recognised damage wording is a small general libav / package list (`DAMAGE_RX`), not a case list.
+* **Alerts** come first: conflicts, then known defects, then execution failures, one short entry each naming the id of its detail. They are repeated on every page and never dropped to fit.
+* **Coverage matrix** (`coverage`): container; time intervals per stream (the union of the windows that name the stream, damaged overriding clean in an overlap, clipped to the known duration, `unknown` when the duration or the stream selection is not recorded); the stream list with a decode state; chapters (`clean`, `damaged`, `partly_checked`, `not_checked`); EPUB package stages in the inspector's order. It describes checks performed, never a diagnosis or a "representative enough" verdict. It is recomputed from the observations shown so far and appears in a reply only when it changed.
+* **Client comparison** (`client_comparison`): only when the case **states** a client (`context.client_profile` or `context.expected.client_profile`; a structured profile or the prose forms, e.g. "h264, 8-bit yuv420p, up to 1080p"). Each selected stream field (container, codec, bit depth, pixel format, resolution, audio codec, channels, layout) is `supported` / `unsupported` / `unknown`; the stream selection is stated (`recorded`, `only_stream_of_type`, `ambiguous`; an ambiguous or unrecorded selection cannot support an overall claim); profile fields that are not read are listed. No client is inferred and incompatibility is not damage.
+* **Capabilities** (`capabilities`, per offered tool): backend (`replay`, `pinned_replay`, `local`, `remote`, `live`, `stub`), availability before the call, recorded offsets, window length, and whether a full decode exists (`recorded`, `not_recorded`, `bounded run`, `not_possible`). It reads which offsets exist and never a recorded result.
+* **Pagination (`pages-v1`)**: every message is at most 8192 UTF-8 bytes (the first message's `evidence` block, and each tool reply as a whole, budget notice included). A page is the repeated header (identity, alerts, execution) plus whole units in priority order, never a structure cut in the middle; a split list says `"<field>_shown": "n of N"`; a unit too large for any page is replaced by a marker in `page.oversize`; long strings are cut with `...[+N chars not shown]`. `page` = `{contract, source, n, of, next, next_costs_tool_call, elsewhere, conflicts_total}`. `next` is an opaque stable cursor that embeds the case alias (another case's cursor does not resolve); fetching it is a tool call `{"tool": "<an offered tool>", "args": {"cursor": "..."}}` that **uses one of the 6 calls** (recorded as `tool: "page"`, `continuation: true`, never an observation for the guards). A case that offers no tool cannot page: the first page says so (`page.retrieval`) and keeps the counts and alerts. `truncated` in the envelope means the tool or collector cut its own output; pagination is not truncation.
+* A decision may cite a finding id (`t2.f1`); the record credits its observation (`t2`) and stores the decision as written.
+
+## Limits and deferrals
+
+* Not in W18: the identity comparison table and the ordering / edition table (audit P1), richer content inspection (EPUB body, audiobook speech), prompt v5 (it must define the new fields and pagination and keep the schema contract) and every model run. They belong to W19 / dev-c5.
+* The replay recordings state no stream selection for a decode window, so decode intervals of replay data sit in the `unrecorded` row, per-stream decode states are `unknown`, and `full_decode_ok` (audit v2) is not met for them. Filling that gap needs new recordings.
+* Prose client profiles are read by a fixed grammar (video and audio codec lists, `N-bit`, pixel format, `up to Np`, `up to N channels`); anything it does not read is listed under `not_compared`, not guessed. Profile and HDR fields are not compared.
+* The container duration is taken from the first `ok` probe-type result; the decoded-span check uses a single one-second allowance (`EOF_TOLERANCE_S`) for container rounding and unequal stream lengths.
+* Guards v3 on an old record (`mrh-guard --guards v3`) reads the stored `output`, which the legacy format cut at 8 KiB; a cut that breaks the JSON is `unknown`, never clean or damaged.
+* The coverage and client sections repeat in a reply when they change, which costs context on small local models; the size is bounded by the 8 KiB envelope, and a reply that does not fit pages them.
+* Excluded volatile record fields in the compatibility golden: `started_at`, every `wall` / `wall_s` / `elapsed_s`, `harness_git_sha`; a live collector's clock is fixed in the golden so `elapsed_s` is stable.
+
+## Tests
+
+`tests/test_evidence_v2_core.py` (typed findings, coverage matrix, client comparison, metamorphic pairs, guards v3, audit v2, robustness) and `tests/test_evidence_v2_run.py` (legacy compatibility against the origin/main golden, option
+combinations, the tool bug fixes, capabilities, the runner integration over the replay, local, remote and live branches, rendering, pagination, leakage and looking-ahead sentinels on complete requests, the public dev suites, a regression golden).
+Expected values are written by hand from synthetic observations; the public-suite checks verify traceability to the recorded observations and explicit unknowns; `tests/testdata/evidence-v2-golden.json` pins renderings as a regression check only.

@@ -26,6 +26,14 @@ Rules
              shows a defect is not decided here, only that the model cited something that ran.
 
 Both rules are small on purpose.  The `reason` of the final decision names the guard.
+
+Guards v3 (W18, `--guards v3`, any prompt; v1 and v2 are unchanged)
+  G-healthy v3  Examines ALL shown evidence (the case's own and the run's tool results) with the typed layer of `evidence_v2`: a KNOWN integrity defect
+                (decoder errors, damaged container or package, a collector's input failure) contradicts `healthy` / `none` even next to clean results, in any
+                order; an `ok` result that reports a defect is not clean; an unknown field is neither clean nor damaged, and without at least one clean
+                integrity result there is nothing to support healthy.  It never infers whole-file health from a clean sample and it can only abstain.  The reason
+                names the finding kind, its location and the observation id; the model's decision stays in `guard.applied[].original`.
+  G-write v3    Exactly the v2 relaxations.
 """
 import copy
 
