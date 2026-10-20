@@ -379,3 +379,47 @@ class AlertShareAndHeaderRefusal(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def zlib_exception(data):
+    import zlib
+    try:
+        zlib.decompress(data)
+    except zlib.error as e:
+        return 'zlib.error: %s' % e
+    return None
+
+
+class ZlibOnlyDataErrorsAreDamage(unittest.TestCase):
+    """Astra 7: only zlib data errors (-3) and its truncated-stream text are damage; memory is an execution failure; other codes are unclassified."""
+
+    def test_real_zlib_data_errors_and_truncation_are_damage(self):
+        import zlib
+        good = zlib.compress(b'hello world' * 100)
+        for data in (b'\x78\x9c\xff\xff\xff\xff', b'xxxxxxxx', good[:20]):
+            text = zlib_exception(data)
+            self.assertIsNotNone(text)
+            self.assertEqual(EV2.classify_line(text), 'damage', text)
+        for text in ('Error -3 while decompressing data: invalid distance too far back', 'Error -3 while decompressing data: incorrect header check',
+                     'Error -5 while decompressing data: incomplete or truncated stream'):
+            self.assertEqual(EV2.classify_line(text), 'damage', text)
+
+    def test_memory_is_an_execution_failure_and_other_codes_are_not_damage(self):
+        self.assertEqual(EV2.classify_line('Error -4 while decompressing data: insufficient memory'), 'execution')
+        self.assertEqual(EV2.classify_line('zlib.error: Error -4 while decompressing data: insufficient memory'), 'execution')
+        for text in ('Error -2 while decompressing data: inconsistent stream state', 'Error -5 while decompressing data', 'Error -5 while decompressing data: something else',
+                     'Error -1 while decompressing data: unknown'):
+            self.assertIsNone(EV2.classify_line(text), text)
+        for text, cause, integrity in (('Error -4 while decompressing data: insufficient memory', 'tool', 'unknown'), ('Error -2 while decompressing data: inconsistent stream state', None, 'unknown')):
+            d = derive_one(obs('t1', 'epub_inspect', 'error', {'bytes': 9, 'error': 'zlib.error: ' + text, 'stage': 'zip_read', 'status': 'error'}))
+            self.assertEqual((d.integrity, [f['known_defect'] for f in d.findings]), (integrity, [False]), text)
+            if cause:
+                self.assertEqual(d.execution['cause'], cause, text)
+
+
+class AudioWarningKindMatchesDecode(unittest.TestCase):
+    def test_a_classified_warning_in_audio_is_a_decoder_warning_and_other_text_stays_unclassified(self):
+        w = derive_one(obs('t1', 'audio_sample', 'ok', live_audio(['[h264 @ 0x1] non-existing PPS 0 referenced']), backend='live'))
+        self.assertEqual(([f['kind'] for f in w.findings], w.integrity), (['decoder_warning'], 'unknown'))
+        u = derive_one(obs('t1', 'audio_sample', 'ok', live_audio(['something nobody has classified']), backend='live'))
+        self.assertEqual(([f['kind'] for f in u.findings], u.integrity), (['audio_messages_unclassified'], 'unknown'))

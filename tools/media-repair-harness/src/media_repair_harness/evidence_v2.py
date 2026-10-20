@@ -77,7 +77,8 @@ DAMAGE_ALLOW_LIST = (
     (r'Zip64 end of central directory record not found', 'Python zipfile.BadZipFile', None),
     (r'Overlapped entries: .+ \(possible zip bomb\)', 'Python zipfile.BadZipFile', None),
     (r'File name in directory .+ and header .+ differ', 'Python zipfile.BadZipFile (zipfile.py)', None),
-    (r'Error -\d+ while decompressing data(?:: .+)?', 'Python zlib.error (zlib inflate)', None),
+    (r'Error -3 while decompressing data(?:: .+)?', 'Python zlib.error: Z_DATA_ERROR (invalid block type, invalid distance, incorrect header check ...)', 'only data errors are damage'),
+    (r'Error -5 while decompressing data: incomplete or truncated stream', 'Python zlib.error: Z_BUF_ERROR text from Modules/zlibmodule.c', 'a truncated stream; -5 with any other text is unclassified'),
     (r'not well-formed \(invalid token\): line \d+, column \d+', 'expat via xml.etree.ElementTree.ParseError; public dev replay', None),
     (r'(?:no element found|mismatched tag|unclosed token|junk after document element|syntax error|unclosed CDATA section|duplicate attribute|undefined entity|unbound prefix): line \d+, column \d+',
      'expat error strings (pyexpat.ErrorString) via ParseError', None),
@@ -100,7 +101,7 @@ WARNING_ALLOW_LIST = (
 EXECUTION_ALLOW_LIST = (
     r'Permission denied', r'No such file or directory', r'Operation not permitted', r'Input/output error', r'Cannot allocate memory', r'Read-only file system',
     r'Too many open files', r'Connection (?:refused|reset by peer|timed out)', r'Resource temporarily unavailable', r'Is a directory', r'Not a directory',
-    r'Stale file handle', r'Transport endpoint is not connected',
+    r'Stale file handle', r'Transport endpoint is not connected', r'Error -4 while decompressing data(?:: insufficient memory)?',
 )
 _DECODE_WRAPPER = r'(?:Error while decoding stream #\d+:\d+|Decoding error|Error submitting packet to decoder|Error while processing the decoded data for stream #\d+:\d+)'
 _TAIL = r'\.?\s*$'
@@ -1151,11 +1152,12 @@ def _live_audio(d, out):
                     d.diagnostics.append({'at_s': seg.get('at_s'), 'state': 'errors', 'text': l, 'class': c or 'unclassified'})
                 known = strongest(pairs) == 'damage'
                 text = '\n'.join(l for l, c in pairs if c == 'damage') if known else ('\n'.join(problems) or 'audio decode errors')
-                d.finding('audio_decode_errors' if known else 'audio_messages_unclassified', text, {'part': 'audio', 'start_s': seg.get('at_s')}, known)
+                weak = strongest(pairs) == 'warning'
+                d.finding('audio_decode_errors' if known else ('decoder_warning' if weak else 'audio_messages_unclassified'), text, {'part': 'audio', 'start_s': seg.get('at_s')}, known)
                 bad = bad or known
             elif seg.get('state') in ('ok', 'near_silent'):
                 good = True
-    d.integrity = 'damaged' if bad else ('clean' if good and d.obs['status'] == 'ok' and not any(f['kind'] == 'audio_messages_unclassified' for f in d.findings) else UNKNOWN)
+    d.integrity = 'damaged' if bad else ('clean' if good and d.obs['status'] == 'ok' and not any(f['kind'] in ('audio_messages_unclassified', 'decoder_warning') for f in d.findings) else UNKNOWN)
     d.facts = {'duration_s': out.get('duration_s'), 'streams': len(streams)} if out.get('duration_s') is not None else None
 
 
