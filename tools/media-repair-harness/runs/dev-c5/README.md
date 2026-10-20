@@ -206,6 +206,17 @@ G3 classes below 2/3: B guarded {'decoder_incompatible': 0.0}; B original {'deco
 - "Guards off" means restored original decisions from the same completions (not an independent run).
 - Each gate keeps score.py's own denominator; G7 uses planned cases. Recorded, started-aborted and never-started counts are shown next to every gate.
 
+## Cost-cap enforcement limits
+
+Found without any model call, from `claude --help` and from strings in the installed Claude Code binary (2.1.299), not from experiments:
+
+* `claude --help` describes `--max-budget-usd <amount>` only as "Maximum dollar amount to spend on API calls (only works with --print)". It documents no preventive limit.
+* In the binary, the result subtype `error_max_budget_usd` is produced when the query loop ends with the terminal reason `budget_exhausted`, and the loop sets that reason while it consumes the engine's streamed events (a check after events that carry the running cost), then prints "Error: Exceeded USD budget". The `total_cost_usd` it reports is documented in the same binary as "An estimate, not a billing statement" that counts only spend since the query started.
+* So the budget is **detected after cost has accrued**; nothing found shows a check that refuses an API request before it is sent or bounds one request in advance. A single in-flight call can therefore cost more than the remaining budget.
+
+**Consequence, stated plainly:** the harness cap (`RunLimits` checks the remaining budget before each call and lowers the CLI's per-call `--max-budget-usd` to the remainder) is **not a hard ceiling on a single call**. It limits the number of calls and the forecast, and it flags an overshoot afterwards (`cost_cap_exceeded`, exit 3); it cannot prevent one. In this run the dearest single call cost $0.0018 and the total $0.0973, so the $0.60 cap was never in play and no violation occurred.
+**Any future paid run needs a preventive per-call bound before dispatch**: input tokens (known from the request) and a hard output-token cap, multiplied by the model's pricing, must be checked to fit the remaining budget BEFORE the call is made. The harness does not set an output-token cap on Claude calls today; that is not provided by this PR.
+
 ## Files
 
 `devc5-b-haiku-5-5/`, `devc5-b-qwen3.8-27b/` (records, manifest, audit, summary, `score.json`/`score.md`); `*-restored/` (restored original decisions, scored); `score-*.out` (scorer console output). The scratch directories (frames) are not kept.
