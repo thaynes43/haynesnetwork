@@ -1,24 +1,25 @@
-# Harness contract v2: PROPOSAL (harness `dev-c3`)
+# Harness contract v2: PROPOSAL (harness `dev-c4`)
 
-**Status: proposal.** This file describes what the harness candidates dev-c1, dev-c2 and dev-c3 emit and accept, so that the independent evaluator can
+**Status: proposal.** This file describes what the harness candidates dev-c1, dev-c2, dev-c3 and dev-c4 emit and accept, so that the independent evaluator can
 accept, amend or reject it as the next contract. It is written by the harness side and binds nothing: `CONTRACT.md` (v1), `score.py`, the suite, the labels
 and `GATES.md` are untouched and remain the evaluator's. Nothing here says how any field is, or should be, scored. Where this text and the code disagree, the code
 and its tests (`test_v2.py`, `test_regression.py`, `test_wiring.py`) are the fact and this file is the bug.
 
-What differs from v1 is marked **new in dev-c1**, **new in dev-c2** or **new in dev-c3**; everything unmarked is v1 behaviour kept as it was.
+What differs from v1 is marked **new in dev-c1**, **new in dev-c2**, **new in dev-c3** or **new in dev-c4**; everything unmarked is v1 behaviour kept as it was.
 
 ## 1. Versions
 
 | field | where | value now |
 |---|---|---|
-| `harness_version` | every run record, manifest, `run_summary.json` | `dev-c3` (dev-c2, dev-c1 before; `protocol.HARNESS_VERSION`) |
+| `harness_version` | every run record, manifest, `run_summary.json` | `dev-c4` (dev-c3, dev-c2, dev-c1 before; `protocol.HARNESS_VERSION`) |
 | `record_version` | every run record | `1` (a full record is a superset of v1's, no field removed or renamed; the **minimal crash record** is not, see section 7) |
-| `prompt.version`, `prompt.sha256`, `prompt.protocol` | run record | `v1`, `v2` or `v3` (**v3 new in dev-c3**), sha256 of the exact system text sent, `turn-v1` / `turn-v2` (v3 is new prompt text on the v2 turn protocol, so its `protocol` is `turn-v2`) |
+| `prompt.version`, `prompt.sha256`, `prompt.protocol` | run record | `v1`, `v2`, `v3` (**new in dev-c3**) or `v4` (**new in dev-c4**), sha256 of the exact system text sent, `turn-v1` / `turn-v2` (v3 and v4 are new prompt text on the v2 turn protocol, so their `protocol` is `turn-v2`) |
 | `prompt.turn_schema_sha256`, `prompt.schema_sent` | run record | hash of the schema actually sent, or `null` and `false` (only the Ollama adapter sends one) |
-| `config_hash` | run record, manifest | hash of the run configuration, including `harness_version`, `prompt_version`, `evidence_mode` and `evidence_bounds` |
+| `config_hash` | run record, manifest | hash of the run configuration, including `harness_version`, `prompt_version`, `evidence_mode`, `evidence_bounds` and, only when guards are on, `guards` (**new in dev-c4**) |
+| `guards` | manifest `config` | `v1` only when the run used `--guards v1` (**new in dev-c4**); the key is absent otherwise, so an unguarded run keeps the config shape it had |
 | `evidence_mode` | run record, manifest `config`, `run_summary.json`, every tool call | `replay` or `live` (**new in dev-c2**) |
 
-Prompt v1 and v2 are byte-identical to dev-c2's (pinned by digest in `tests/test_packaging.py`); v3 is a separate file.
+Prompt v1 and v2 are byte-identical to dev-c2's and v3 to dev-c3's (pinned by digest in `tests/test_packaging.py`); v4 is a separate file. `protocol_of('v4') == 'v2'`: the turn protocol and the strict validator are unchanged. For v4 only, the per-case Ollama `format` schema is exact about the tool enum: a case that offers no tool (`tools_available == []`) gets no tool-call branch (v2 and v3 fall back to the full tool list there, which is how a local model called tools no case offered). A hosted model, which gets no schema, can still make such a call; it is still recorded as a `tool_not_offered` protocol violation and answered `unavailable`.
 
 A comparison across versions should compare `harness_version`, `prompt.sha256` and `evidence_mode` first: the same prompt text (v1) behaves differently under
 dev-c1 and dev-c2 only where noted in `CHANGELOG.md`.
@@ -165,6 +166,7 @@ forced `insufficient_evidence` / `escalate` decision and `executed: false`, and 
 | `fixture_hashes{fixture, evidence_shown_sha256}` | dev-c1 | declared and actual fixture sha256, sha256 of every evidence text shown |
 | `evidence_mode`, `evidence{...}` | dev-c2 | sections 4 and 5 |
 | `tool_calls[].evidence_mode / live_ran / evidence / args_ignored` | dev-c2 | section 3 |
+| `guard{version, applied[{rule, original, reason}], final_changed}` | dev-c4 | **only when `--guards v1` is on**; section 9. `decision` and the fields derived from it describe the FINAL decision; the model's own decision is `guard.applied[].original`. |
 | `write_rejection{rejected_write_attempts, attempts[], forced_after_rejected_write, repaired_to_valid_decision, note}` | dev-c3 | **record only, shown next to G1, no gate reads it.** A parseable write decision the strict v2 validator rejected is counted (the same turns as the evaluator's `rejected_write_attempts`). `forced_after_rejected_write: true` marks the case where the one repair prompt then also failed, so the case ended as a forced `insufficient_evidence` / `escalate` that no model chose. `run_summary.validity` counts both |
 
 `run_summary.json` (validity and completeness counts only, no scoring) adds `validity.rejected_write_attempts` and `validity.forced_after_rejected_write` (dev-c3), `evidence_mode` and `evidence{tool_calls_by_evidence_mode, gaps, gaps_by_type}`. `record_missing_fields`
@@ -177,3 +179,23 @@ lists any required field that is absent; `evidence_mode` and `evidence` are requ
 3. `live` is for local media only. Real library media (pinned rows) cannot be live; those cases get `unavailable`.
 4. A live record's `ok` is "the collection plan ran", never "the media is fine"; `coverage.not_verified` always says what was not covered.
 5. Open: whether `evidence.gaps` should be cited by id in a decision (today a decision cites `t<n>` and `gaps_cited` is derived), and whether `needed_tool` belongs in the contract or stays a harness hint.
+6. Guards (dev-c4) change what the scorer reads (`decision`), so a guarded run is scored as a different candidate from the same run unguarded. Both views are reproducible from one guarded run (`guard.applied[].original`, `mrh-guard --restore`). Which view counts for a gate is the evaluator's decision.
+
+## 9. Decision guards (**new in dev-c4**, opt-in)
+
+`--guards v1` (default off) runs two deterministic checks on the model's final decision, after its last turn. They are not model-visible, they use no case id, title or label,
+and they can only turn a decision into `insufficient_evidence` / `escalate` (never into a write or a diagnosis). The final decision's `reason` names the guard; the model's own full
+decision is kept in `guard.applied[].original`; `forced` keeps its meaning (the harness forced a decision after a failed repair) and a guard does not set it. `action_audit`,
+`decision_flags`, `bad_evidence_refs`, `refs_to_*` and `evidence.gaps_cited` are recomputed for the final decision. With guards off the record has no `guard` key and equals a dev-c3-shaped record.
+
+* **G-healthy** (the evaluator's ruling C2 as a mechanical boundary): fires on `healthy` / `none` when the evidence the model could see (case-provided evidence and its own tool results) holds no
+  integrity check that ran with status `ok`. Integrity checks, by evidence type: a probe (`ffprobe`), a decode or sampled decode (`decode_sample`, `audio_sample`), a package or archive check (`epub_inspect`),
+  an audiobook stream check (`audiobook_inspect`). Identity and title records (`arr_lookup`, `ocr`, `prior_record`, a `frame_sample` handle) are not integrity checks. Failed, timed out, partial, unavailable
+  and injected results do not count as ok. It never fires when at least one ok integrity check exists, so a healthy item with partial but representative checks keeps `healthy`.
+* **G-write**: fires on a write action (`blocklist_and_search`, `remap`, `rename`, `convert`) when a precondition the action audit COMPUTES from the case data is unmet (basis `computed`; a precondition that only rests on
+  the model's claim text is never acted on), or when no `evidence_refs` entry points to a result usable as support (an `ok` result of a tool or of case-provided evidence, or damage a tool that ran reported about the file).
+  Whether the cited text really shows a defect is not decided here. The text-matching `target_in_context` check stays in `action_audit` but is not a reason to overrule (it misread a correct target in the offline what-if). For the guard,
+  `remap` is consistent with `metadata_naming` as well as `identity_mismatch`, and a client profile under `context.expected.client_profile` counts (the dev-v1.1 shape); `action_audit` of v1 to v3 runs keeps its old reading.
+
+`mrh-guard <run dir> --suite <suite> --out <dir>` applies the guards offline to existing records (copies; the input is never modified; no model call) and writes manifest, run summary and audit lines, so the copy scores with the
+unchanged `score.py`. `mrh-guard --restore` is the inverse view of a guarded run (the original decisions back, to score it as if guards were off). `run_summary.json` of a guarded run has `guards{version, applied_by_rule, decisions_changed}`.
