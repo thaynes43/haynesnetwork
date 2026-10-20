@@ -59,10 +59,12 @@ Run these before pushing — they mirror the CI checks that gate every PR. Full 
 | Command | CI check |
 |---------|----------|
 | `pnpm lint` + `pnpm lint:css` + `pnpm typecheck` | `lint-and-typecheck` (one job runs all three) |
-| `pnpm test` | `test` (Vitest, embedded Postgres 16) |
+| `pnpm test` | `site-test`, one of the jobs the required `test` context waits for (Vitest, embedded Postgres 16) |
+| `bash tools/media-repair-harness/scripts/ci-test.sh` | `harness-test`, the other (media repair harness, stdlib Python 3.11; only when the harness is selected) |
+| `python3 -m unittest discover -s scripts/tests` | `ci-routing-tests`, the CI routing rules (also waited on by `test`) |
 | `pnpm build` | `build` (`next build`, standalone output) |
 
-`pnpm --filter web e2e` maps to the `e2e-gate` required check for PRs that touch the book pipeline and the release PR (it passes at once for any other PR; the advisory `e2e-advisory` run covers every other code PR, and the `run-e2e` label forces it on a PR with no code; ADR-100, ADR-102, ADR-104). A PR that changes no code (docs, agent notes, Markdown; `scripts/ci-code-paths.sh`) skips the three jobs above, which report as skipped and still satisfy branch protection (ADR-102).
+`pnpm --filter web e2e` maps to the `e2e-gate` required check for PRs that touch the book pipeline and the release PR (it passes at once for any other PR; the advisory `e2e-advisory` run covers every other code PR, and the `run-e2e` label forces it on a PR with no code; ADR-100, ADR-102, ADR-104). A PR that selects no component (docs, agent notes, Markdown; `scripts/ci-components.py`) skips the component jobs above, which report as skipped and still satisfy branch protection (ADR-102). `test` itself always reports: it is the fail-closed finalizer that is green only when every job of every selected component (site, harness) succeeded, and any path the router cannot place selects them all (ADR-116).
 
 ## Contributing — pull-request flow
 

@@ -42,6 +42,12 @@ pnpm build       # pnpm -r build (next build, standalone)      ── CI job: bu
 - `pnpm lint:css` is the hard-rule-2 guard: no raw hex outside
   `packages/ui/src/theme/tokens.css`. Adding a color token means editing BOTH theme blocks
   AND `REQUIRED_TOKENS` in `tokenContract.ts`, or the token-contract test fails.
+- **`test` is a finalizer (ADR-116).** The required `test` context waits for `site-test` (the Vitest job),
+  `harness-test` (the media repair harness, only when `tools/media-repair-harness`, its public suite, the EPUB source
+  or Python packaging files change) and `ci-routing-tests`, and is green only if every selected one succeeded. Run
+  `python3 -m unittest discover -s scripts/tests` after editing `scripts/ci-components.py`, `scripts/ci-code-paths.sh`,
+  `scripts/e2e-gate-paths.sh` or a workflow; `python3 scripts/ci-components.py classify --paths-file <file>` shows
+  what a list of paths would select.
 - **`e2e-gate` mirrors the suite only where it gates** (ADR-100, ADR-102): on a PR that
   touches a pipeline path (`scripts/e2e-gate-paths.sh`) and on the release-please PR, a red
   suite blocks the merge and the release. Any other PR passes it at once; label it `run-e2e`
