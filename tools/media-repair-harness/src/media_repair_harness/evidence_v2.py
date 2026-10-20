@@ -31,6 +31,8 @@ import hashlib
 import json
 import re
 
+from . import protocol as P
+
 FORMAT_VERSION = 'v2'
 PAGE_CONTRACT = 'pages-v1'
 WIRE_BYTES = 8192
@@ -40,8 +42,9 @@ INTEGRITY_TOOLS = ('ffprobe', 'decode_sample', 'audio_sample', 'epub_inspect', '
 EPUB_STAGES = ('zip_open', 'zip_crc', 'opf_parse', 'manifest', 'spine')
 # ffmpeg / libav wording that names damage to a file's structure or data.  General libav vocabulary, not case-specific; anything else stays unclassified.
 DAMAGE_RX = re.compile(r'moov atom not found|invalid data found when processing input|could not find codec parameters|consecutive mpeg audio frames|'
-                       r'truncated|partial file|end of file|corrupt|header parsing failed|error reading header|damaged|checksum mismatch|crc mismatch|'
-                       r'not well-formed|bad zip|not a zip|error while decoding|cabac decode|concealing|invalid nal|missing picture', re.I)
+                       r'truncated|partial file|end of file|ended prematurely|unexpected eof|corrupt|header parsing failed|error reading header|damaged|checksum mismatch|crc mismatch|'
+                       r'not well-formed|bad zip|not a zip|error while decoding|cabac decode|concealing|invalid nal|missing picture|non-existing p[ps]s|'
+                       r'corrupt(ed)? (decoded )?frame|error splitting the input into nal|reference picture missing|invalid bitstream|invalid data found', re.I)
 HARNESS_FAILURE_RX = re.compile(r'^(bad arguments|tool crashed|unknown frame|OCR backend failed|.{0,40} failed: could not run|.{0,40} exceeded the \d+ s tool timeout)', re.I)
 UNKNOWN = 'unknown'
 UNRECORDED = 'unrecorded'   # the stream selection of a decode window that its record does not state
@@ -204,18 +207,18 @@ def execution_of(obs, data):
         else:
             cause = UNKNOWN
         if reason is None and not isinstance(data, (dict, list)):
-            reason = clip(text, 200)
+            reason = text
     elif st in ('timeout', 'unavailable'):
-        reason = (data.get('reason') if is_live_record(data) else None) or (clip(text, 200) if not isinstance(data, (dict, list)) else None)
+        reason = (data.get('reason') if is_live_record(data) else None) or (text if not isinstance(data, (dict, list)) else None)
     if is_live_record(data) and data.get('reason') and reason is None:
-        reason = clip(data['reason'], 200)
+        reason = data['reason']
     out = {'state': state, 'status': st}
     if cause:
         out['cause'] = cause
     out['completion'] = 'complete' if st == 'ok' else ('partial' if st == 'partial' else 'none')
     out['output_truncated'] = bool(obs.get('collector_truncated')) or '...[truncated]' in text[-40:] or '[output truncated]' in text[-60:]
     if reason:
-        out['reason'] = clip(reason, 200)
+        out['reason'] = ' '.join(str(reason).split())
     return out
 
 
@@ -227,6 +230,9 @@ class Derived:
         self.findings, self.conflicts, self.unresolved = [], [], []
         self.scope = {'requested': {}, 'completed': {}}
         self.facts = None
+        self.collector_coverage = None   # a live collector's own coverage vocabulary (verified / not_verified), shown as facts.coverage
+        self.veto = None           # a collector's own negative verdict (EPUB valid:false) that vetoes healthy without being typed as a located defect
+        self.parts = []            # audiobook parts: [{'n', 'probe', 'intervals', 'duration_s'}] (decode windows are per part, not on one timeline)
         self.intervals = []        # [{'streams': [...], 'start_s', 'end_s', 'state', 'basis'}]  (decode-type windows)
         self.integrity = UNKNOWN    # clean | damaged | unknown | not_integrity
         self.container = None       # clean | damaged | unknown (probe-type results)
@@ -242,6 +248,8 @@ class Derived:
         if location:
             f['location'] = location
         f['detail'] = clip(detail)
+        if len(' '.join(str(detail).split())) > 160:
+            f['detail_full'] = 'the whole text is in facts (error_lines, stderr_lines, error or message)'
         f['src'] = self.obs['id']
         self.findings.append(f)
         return f
@@ -263,7 +271,7 @@ def derive(obs, known_duration=None):
     except Exception as e:  # noqa: BLE001 - malformed recorded data must not stop a run; it is reported, not interpreted
         d = Derived(obs, execution_of(obs, None))
         text = obs['output'] if isinstance(obs['output'], str) else canon(obs['output'])
-        d.facts = {'raw': clip(text, 400)}
+        d.facts = {'raw': text}
         d.unresolved.append('the output has a shape this layer does not read (%s); no typed fact was derived from it' % type(e).__name__)
         _finish(d, None)
         return d
@@ -293,12 +301,43 @@ def _derive(obs, known_duration=None):
         _derive_record(d, data)
     else:
         _derive_record(d, data)
+    _plain_text_fallback(d, data)
     _finish(d, data)
     return d
 
 
+_PLAIN_KIND = {'ffprobe': ('container_damage', 'container'), 'audiobook_inspect': ('container_damage', 'container'), 'decode_sample': ('decoder_errors', 'decode'),
+               'audio_sample': ('audio_decode_errors', 'audio'), 'epub_inspect': ('package_damage', 'package')}
+
+
+def _plain_text_fallback(d, data):
+    """An integrity result whose output is not JSON (a plain message, or text cut by an injected failure) keeps its trimmed text as `facts.raw`; only an explicit
+    known damage wording in it is a defect, and anything else stays unclassified and unknown."""
+    obs = d.obs
+    if isinstance(data, (dict, list)) or d.facts is not None:
+        return
+    text = obs['output'] if isinstance(obs['output'], str) else ''
+    if not text.strip():
+        return
+    if obs['tool'] in INTEGRITY_TOOLS and obs['status'] in ('ok', 'partial', 'error') and not HARNESS_FAILURE_RX.search(text.strip()):
+        d.facts = {'raw': text}
+        kind, part = _PLAIN_KIND[obs['tool']]
+        if DAMAGE_RX.search(text):
+            d.finding(kind, text, {'part': part}, True)
+            d.integrity = 'damaged'
+            if part == 'container':
+                d.container = 'damaged'
+        else:
+            d.unresolved.append('the output is plain text this layer does not parse; it is kept as facts.raw and settles nothing')
+    elif obs['status'] in ('ok', 'partial') and d.execution['state'] == 'ran':
+        d.facts = {'raw': text}
+
+
 def _finish(d, data):
     ex = d.execution
+    if len(ex.get('reason') or '') > 200:     # the header stays small; the whole text is a fact
+        d.facts = dict(d.facts if isinstance(d.facts, dict) else {}, message=ex['reason'])
+        ex['reason'] = ex['reason'][:200] + '...[whole text in facts.message]'
     if ex['state'] == 'ran' and ex['status'] == 'ok' and any(f['known_defect'] for f in d.findings):
         d.conflict('status_ok_with_defect', 'the tool reported status ok and also reported a defect: ok means the tool ran, not that the file has no defect',
                    [f['id'] for f in d.findings if f['known_defect']])
@@ -364,6 +403,8 @@ def _derive_probe(d, data):
         stderr = data.get('stderr')
         facts = {'container': container, 'duration_s': dur, 'size_bytes': fint(fmt.get('size')) if fmt else None,
                  'bit_rate_bps': fint(fmt.get('bit_rate')) if fmt else None, 'tags': fmt.get('tags') if fmt else None, 'streams': sl, 'chapters': chapters}
+        if isinstance(stderr, str) and stderr.strip():
+            facts['stderr_lines'] = lines_of(stderr)
         d.facts = {k: v for k, v in facts.items() if v not in (None, [], {})}
         d.duration_s = dur
         d.probe = {'container': container, 'streams': sl, 'selection': selection}
@@ -372,8 +413,10 @@ def _derive_probe(d, data):
             known = bool(DAMAGE_RX.search(stderr))
             d.finding('probe_messages' if not known else 'container_damage', stderr, {'part': 'container'}, known)
             d.container = 'damaged' if known else UNKNOWN
-        elif d.obs['status'] == 'ok':
-            d.container = 'clean'
+        elif d.obs['status'] == 'ok' and container and sl and data.get('exit_code') in (0, None):
+            d.container = 'clean'     # a positive observation: a parsed container and its streams, exit 0 (or no exit code), no messages
+        else:
+            d.container = UNKNOWN     # an empty or partial answer says nothing about the container
         d.integrity = d.container or UNKNOWN
         if not sl:
             d.unresolved.append('the result lists no streams')
@@ -420,36 +463,40 @@ def _derive_decode(d, data, known_duration):
     window_field = data.get('window_s')
     wnum = next((num(data[k]) for k in ('window_s', 't', 'duration_limit_seconds') if num(data.get(k)) is not None), None)
     served = _first_num(data, ('at_s', 'ss'))
-    result_is_full = window_field == 'full' or data.get('t') == 'full' or (full_req and wnum is None and served is None)
+    # a result is a full decode only when it SAYS so (window `full`, or a recorded `t: full`); a request for one, or the absence of a limit, proves nothing
+    result_is_full = window_field == 'full' or data.get('t') == 'full'
+    window_stated = wnum is not None or served is not None
     quota = data.get('quota_exhausted') is True
+    bytes_read = num(data.get('bytes_read'))
     dur = known_duration
     sel = data.get('streams_selected')
     streams = list(sel) if isinstance(sel, list) and sel else [UNRECORDED]
     d.scope['completed']['streams'] = list(sel) if isinstance(sel, list) and sel else UNKNOWN
     # requested versus completed
     if full_req and not result_is_full:
-        d.conflict('request_not_honored', 'a full decode was requested; the result is a %s window starting at %g s, not the whole file' % (
-            ('%g s' % wnum) if wnum is not None else 'bounded', served if served is not None else 0.0))
-        d.unresolved.append('the whole file was not decoded: a full decode was requested and only a window completed')
-    start = 0.0 if result_is_full else (served if served is not None else (req_at if req_at is not None else 0.0))
+        if window_stated:
+            d.conflict('request_not_honored', 'a full decode was requested; the result is a %s window starting at %g s, not the whole file' % (
+                ('%g s' % wnum) if wnum is not None else 'bounded', served if served is not None else 0.0))
+            d.unresolved.append('the whole file was not decoded: a full decode was requested and only a window completed')
+        else:
+            d.unresolved.append('a full decode was requested; the result does not say whether it covers the whole file')
+    start = 0.0 if (result_is_full or (full_req and not window_stated)) else (served if served is not None else (req_at if req_at is not None else 0.0))
     if not full_req and req_at is not None and served is not None:
         reach = wnum if wnum is not None else (decoded or 0.0)
         if not (served <= req_at < served + max(reach, 1e-9)) and not (served == req_at):
             d.conflict('request_not_honored', 'a window at %g s was requested; the result covers the window starting at %g s' % (req_at, served))
     # span
-    if result_is_full:
-        end = decoded
-        basis = 'full_decode'
-    elif decoded is not None and decoded > 0:
-        end, basis = start + decoded, 'observed'
-    elif wnum is not None and frames != 0:
+    if decoded is not None and decoded > 0:
+        end, basis = start + decoded, ('full_decode' if result_is_full else 'observed')
+    elif wnum is not None and not result_is_full and frames != 0 and (frames or bytes_read):
         end, basis = start + wnum, 'requested_window'
     else:
         end, basis = None, 'unknown'
     if end is not None and dur is not None:
         end = min(end, dur)
     nothing = frames == 0 or (dur is not None and start >= dur)
-    # state
+    positive = (num(frames) is not None and frames > 0) or (decoded is not None and decoded > 0) or (bytes_read is not None and bytes_read > 0)
+    # state: only a positive, recognised observation is clean or damaged; anything else stays unknown
     state = None
     if code == 'timeout':
         d.unresolved.append('the decode was stopped at its time limit; only the span it reports was covered')
@@ -460,54 +507,62 @@ def _derive_decode(d, data, known_duration):
         loc = {'part': 'decode', 'start_s': round(start, 3)}
         if end is not None:
             loc['end_s'] = round(end, 3)
-        f = d.finding('decoder_errors', str(stderr), loc, True)
-        state = 'damaged'
-        if code == 0:
-            d.conflict('exit_zero_with_decoder_errors', 'the decoder exited 0 but printed errors: an exit code of zero does not mean the data decoded cleanly', [f['id']])
+        if DAMAGE_RX.search(str(stderr)):
+            f = d.finding('decoder_errors', str(stderr), loc, True)
+            state = 'damaged'
+            if code == 0:
+                d.conflict('exit_zero_with_decoder_errors', 'the decoder exited 0 but printed errors: an exit code of zero does not mean the data decoded cleanly', [f['id']])
+        else:
+            d.finding('decoder_messages_unclassified', str(stderr), loc, False)
+            state = 'unclassified'
+            d.unresolved.append('the decoder printed text this layer does not recognise as damage; it is neither a defect nor a clean result')
     elif num(code) is not None and code != 0:
         d.finding('exit_nonzero_unclassified', 'decoder exit code %s with no message' % code, {'part': 'decode'}, False)
     elif nothing:
         state = 'not_checked'
         d.unresolved.append('the window decoded no frames (it starts at or beyond the end of the media, or the stream is empty)')
-    elif code == 0 and stderr is not None:
+    elif code in (0, 'timeout') and stderr is not None and positive:
         state = 'clean'
-    elif code == 'timeout':
-        state = 'clean' if (decoded is not None and decoded > 0 and stderr is not None) else 'not_checked'   # what ran before the stop, without errors, is a valid observation
+    elif code == 0 and stderr is not None:
+        d.unresolved.append('the result states no frames, decoded span or bytes read: nothing positive shows that data was decoded')
     if state is None and code is None:
         d.unresolved.append('the recorded result states no exit code')
-    if state in ('clean', 'damaged'):
+    if state in ('clean', 'damaged', 'unclassified'):
         if end is None or end <= start:
             d.unresolved.append('the covered span is not recorded (no decoded duration); it is not counted as coverage')
         else:
             d.intervals.append({'streams': streams, 'start_s': round(start, 3), 'end_s': round(end, 3), 'state': state, 'basis': basis})
             d.scope['completed'].update(start_s=round(start, 3), end_s=round(end, 3))
     d.integrity = {'clean': 'clean', 'damaged': 'damaged'}.get(state, UNKNOWN)
-    if full_req and not result_is_full:
+    if full_req and not result_is_full and window_stated:
         d.completed_to_eof = False                    # a window answered a whole-file request: the whole file was not decoded
         d.scope['completed']['to_end_of_file'] = False
     if result_is_full:
-        eof = data.get('completed_to_eof')
-        decoded_full = decoded
-        if eof is None:
-            if code is None:
-                eof = None
-            elif code != 0 or quota:
+        # Completion needs affirmative evidence: an exit-0 decode whose decoded span reaches the KNOWN container duration.  A tool's own `completed_to_eof: true`
+        # is a claim and is checked against the span; an unknown duration or span leaves completion unknown; a stated False (or a failed exit) is kept.
+        claimed = data.get('completed_to_eof') if isinstance(data.get('completed_to_eof'), bool) else None
+        if claimed is False or (code not in (0, None) and code is not None) or quota:
+            eof = False if (claimed is False or code is not None) else None
+        elif code == 0 and decoded is not None and decoded > 0 and dur is not None:
+            if decoded + EOF_TOLERANCE_S < dur:
                 eof = False
-            elif decoded_full is not None and dur is not None and decoded_full + EOF_TOLERANCE_S < dur:
-                eof = False
-                d.conflict('decoded_span_shorter_than_duration', 'the full decode ended at %.3f s but the container states %.3f s' % (decoded_full, dur))
+                d.conflict('decoded_span_shorter_than_duration', 'the full decode ended at %.3f s but the container states %.3f s' % (decoded, dur))
             else:
                 eof = True
+        else:
+            eof = None
+            if claimed is True:
+                d.unresolved.append('the tool says the decode reached the end, but the decoded span or the container duration is not shown to check it')
         d.completed_to_eof = eof
         d.scope['completed']['to_end_of_file'] = eof if eof is not None else UNKNOWN
         if eof is not True:
-            d.unresolved.append('the full decode did not run to the end of the file' if eof is False else 'whether the full decode ran to the end of the file is not recorded')
+            d.unresolved.append('the full decode did not run to the end of the file' if eof is False else 'whether the full decode ran to the end of the file is not shown')
     d.facts = {k: v for k, v in (('exit_code', code), ('frames', frames), ('decoded_s', fnum(decoded) if decoded is not None else None),
-                                 ('error_lines', lines_of(stderr)[:3] or None), ('quota_exhausted', True if quota else None)) if v is not None}
+                                 ('error_lines', lines_of(stderr) or None), ('quota_exhausted', True if quota else None)) if v is not None}
     unmet = data.get('request_unmet')
     if isinstance(unmet, dict):
         d.conflict('request_not_honored', 'requested %s; completed %s (%s)' % (unmet.get('requested'), unmet.get('completed'), unmet.get('reason')))
-        d.unresolved.append('the whole file was not decoded: %s' % clip(unmet.get('reason') or 'the request was not completed', 120))
+        d.unresolved.append('the whole file was not decoded: %s' % (unmet.get('reason') or 'the request was not completed'))
     if d.scope['completed']['streams'] == UNKNOWN:
         d.unresolved.append('which streams were decoded is not recorded')
 
@@ -537,7 +592,7 @@ def _derive_epub(d, data):
             d.package = {s: UNKNOWN for s in EPUB_STAGES}
             d.finding('package_error_unclassified', str(err or data), {'part': 'package'}, False)
         d.scope['completed'].update(entries=data.get('entries'), bytes=data.get('bytes'), failed_stage=stage)
-        d.facts = {k: v for k, v in (('bytes', data.get('bytes')), ('entries', data.get('entries'))) if v is not None}
+        d.facts = {k: v for k, v in (('bytes', data.get('bytes')), ('entries', data.get('entries')), ('error', err)) if v is not None}
         return
     if data.get('status') == 'ok' or 'spine_items' in data:
         d.package = {s: 'clean' for s in EPUB_STAGES}
@@ -558,7 +613,7 @@ def _derive_audiobook(d, data):
     d.scope['requested'] = {'what': 'audiobook parts, chapters and tags'}
     if not isinstance(data, dict):
         return
-    d.integrity = 'clean' if d.obs['status'] == 'ok' and 'chapter_count' in data else UNKNOWN
+    d.integrity = 'clean' if (d.obs['status'] == 'ok' and data.get('format') and isinstance(data.get('audio_streams'), list) and data['audio_streams']) else UNKNOWN
     d.container = d.integrity if d.integrity == 'clean' else None
     chapters = [{'start_s': c.get('start_s'), 'end_s': c.get('end_s'), 'title': c.get('title')} for c in data.get('chapters') or [] if isinstance(c, dict)]
     d.facts = {k: v for k, v in (('container', data.get('format')), ('duration_s', data.get('duration_s')), ('tags', data.get('tags') or None),
@@ -584,7 +639,7 @@ def _derive_audio(d, data):
         d.scope['completed'].update(at_s=served)
         if at is not None and served != at:
             d.conflict('request_not_honored', 'audio at %g s was requested; the recorded window served starts at %g s' % (at, served))
-    d.integrity = 'clean' if d.obs['status'] == 'ok' and 'rms_dbfs' in data else UNKNOWN
+    d.integrity = 'clean' if d.obs['status'] == 'ok' and num(data.get('rms_dbfs')) is not None else UNKNOWN
     d.unresolved.append('signal statistics only; no speech recognition was run')
 
 
@@ -593,7 +648,7 @@ def _derive_record(d, data):
     if data is None:
         text = d.obs['output'] if isinstance(d.obs['output'], str) else None
         if text and d.execution['state'] == 'ran':
-            d.facts = {'text': clip(text, 400)}
+            d.facts = {'text': text}
         return
     d.facts = data if isinstance(data, (dict, list)) else None
     if isinstance(data, dict) and d.obs['tool'] == 'ocr' and 't_s' in data:
@@ -607,75 +662,201 @@ def _derive_record(d, data):
 
 
 # ---- live collector records (shared vocabulary: coverage.verified / not_verified, cause input|tool)
+def _recognised(text):
+    return bool(DAMAGE_RX.search(str(text or '')))
+
+
+def _segment(d, seg, streams, label=None, part=None):
+    """One sampled decode window of a live collector (video decode, or an audiobook part).  Returns the interval it contributes, or None.  Only recognised
+    damage wording makes a window damaged; other collector `errors` stay unclassified (not clean, not damaged); short, timed-out and capped windows cover nothing."""
+    a = fnum(seg.get('at_s')) or 0.0
+    dec = fnum(seg.get('decoded_s'))
+    st = seg.get('state')
+    end = round(a + (dec if dec is not None else (fnum(seg.get('window_s')) or 0.0)), 3)
+    tag = (label + ': ') if label else ''
+    loc = {'part': 'decode', 'start_s': a, 'end_s': end}
+    if label:
+        loc['file'] = label
+    if st == 'clean' and end > a:
+        return {'streams': streams, 'start_s': a, 'end_s': end, 'state': 'clean', 'basis': 'observed'}
+    if st == 'errors':
+        text = '; '.join(str(x) for x in (seg.get('errors') or [])) or ('exit code %s' % seg.get('exit_code') if seg.get('exit_code') not in (None, 0) else 'decoder errors, text not recorded')
+        if _recognised(text):
+            d.finding('decoder_errors', text, loc, True)
+            state = 'damaged'
+        else:
+            d.finding('decoder_messages_unclassified', text, loc, False)
+            state = 'unclassified'
+        return {'streams': streams, 'start_s': a, 'end_s': end, 'state': state, 'basis': 'observed'} if end > a else None
+    d.unresolved.append('%swindow at %g s: %s' % (tag, a, st))
+    return None
+
+
 def _derive_live(d, data, known_duration):
     out = data.get('output') if isinstance(data.get('output'), dict) else {}
     kind = data.get('tool') or d.obs['tool']
     cov = data.get('coverage') or {}
-    d.scope['completed']['coverage'] = {'verified': list(cov.get('verified') or [])[:6], 'not_verified': list(cov.get('not_verified') or [])[:8]}
-    d.unresolved += [clip(x, 200) for x in (cov.get('not_verified') or [])[:8]]
+    d.collector_coverage = {'verified': [str(x) for x in (cov.get('verified') or [])], 'not_verified': [str(x) for x in (cov.get('not_verified') or [])]}
+    d.unresolved += list(d.collector_coverage['not_verified'])
     d.scope['requested'] = {'what': 'live collector %s' % kind}
     for s in out.get('findings') or []:
-        d.finding('collector_finding', s, {'part': kind}, False)
-    ok = d.obs['status'] in ('ok', 'partial')
-    if kind == 'decode':
-        dur = fnum(out.get('duration_s'))
-        d.duration_s = dur
-        segs = out.get('segments') if isinstance(out.get('segments'), list) else []
-        sel = list(COLLECTOR_STREAMS)
-        for s in segs:
-            if not isinstance(s, dict):
-                continue
-            a = fnum(s.get('at_s')) or 0.0
-            dec = fnum(s.get('decoded_s'))
-            st = s.get('state')
-            end = a + (dec if dec is not None else (fnum(s.get('window_s')) or 0.0))
-            if st == 'clean':
-                d.intervals.append({'streams': sel, 'start_s': a, 'end_s': round(end, 3), 'state': 'clean', 'basis': 'observed'})
-            elif st == 'errors':
-                d.intervals.append({'streams': sel, 'start_s': a, 'end_s': round(end, 3), 'state': 'damaged', 'basis': 'observed'})
-                d.finding('decoder_errors', '; '.join(s.get('errors') or []) or 'decoder errors', {'part': 'decode', 'start_s': a, 'end_s': round(end, 3)}, True)
-            else:
-                d.unresolved.append('window at %g s: %s' % (a, st))
-        full = out.get('full')
-        d.scope['completed']['streams'] = sel
-        if isinstance(full, dict) and full.get('performed'):
-            fdec = fnum(full.get('decoded_s'))
-            fst = full.get('state')
-            eof = fst in ('clean', 'errors')
-            d.completed_to_eof = eof
-            d.scope['completed']['to_end_of_file'] = eof
-            if fst in ('clean', 'errors') and fdec:
-                d.intervals.append({'streams': sel, 'start_s': 0.0, 'end_s': fdec, 'state': 'clean' if fst == 'clean' else 'damaged', 'basis': 'full_decode'})
-            if fst == 'errors':
-                d.finding('decoder_errors', '; '.join(full.get('errors') or []) or 'full decode errors', {'part': 'decode', 'start_s': 0.0, 'end_s': fdec}, True)
-        d.integrity = 'damaged' if any(i['state'] == 'damaged' for i in d.intervals) else ('clean' if any(i['state'] == 'clean' for i in d.intervals) else UNKNOWN)
-        d.facts = {k: v for k, v in (('duration_s', dur), ('segments', len(segs)), ('decoded_s', out.get('decoded_s')), ('covered_fraction', out.get('sampled_fraction'))) if v is not None}
-    elif kind == 'probe':
-        sl = [_norm_stream(dict(s, codec_type=s.get('type'), codec_name=s.get('codec'))) for s in out.get('streams') or [] if isinstance(s, dict)]
-        d.probe = {'container': out.get('format'), 'streams': sl, 'selection': None}
-        d.duration_s = fnum(out.get('duration_s'))
-        d.container = 'clean' if d.obs['status'] == 'ok' else None
-        d.integrity = d.container or UNKNOWN
-        d.facts = {k: v for k, v in (('container', out.get('format')), ('duration_s', out.get('duration_s')), ('size_bytes', out.get('bytes')), ('tags', out.get('tags') or None),
-                                     ('streams', sl or None), ('chapters', out.get('chapters') or None)) if v is not None}
-    elif kind == 'epub':
-        passed = out.get('stages_passed') or []
-        valid = out.get('valid')
-        if valid is False or d.execution.get('cause') == 'input':
-            d.integrity = 'damaged'
-        elif d.obs['status'] == 'ok':
-            d.package = {s: 'clean' for s in EPUB_STAGES}
-            d.integrity = 'clean'
-        d.facts = {k: v for k, v in out.items() if k in ('valid', 'stages_passed', 'title', 'spine_items') and v is not None} or None
-    elif kind == 'audiobook':
-        d.integrity = 'clean' if d.obs['status'] == 'ok' else UNKNOWN
-        d.facts = {k: v for k, v in out.items() if k in ('part_count', 'chapter_count', 'duration_s') and v is not None} or None
+        if kind not in ('epub',):    # the EPUB collector's findings are typed below (severity damage / warning)
+            d.finding('collector_finding', s if isinstance(s, str) else canon(s), {'part': kind}, False)
+    handler = {'decode': _live_decode, 'probe': _live_probe, 'epub': _live_epub, 'audiobook': _live_audiobook, 'audio': _live_audio}.get(kind)
+    if handler:
+        handler(d, out)
     else:
-        d.integrity = 'not_integrity' if kind == 'frames' else d.integrity
+        d.integrity = 'not_integrity' if kind == 'frames' else UNKNOWN
         d.facts = {k: v for k, v in out.items() if isinstance(v, (str, int, float, bool)) and v is not None} or None
-    if d.execution.get('cause') == 'input' and d.execution['state'] == 'failed':
+    if d.execution.get('cause') == 'input' and d.execution['state'] == 'failed' and not any(f['known_defect'] for f in d.findings):
         d.finding('input_failure', d.execution.get('reason') or 'the collector reports the input is damaged or unreadable', {'part': kind}, True)
         d.integrity = 'damaged'
+
+
+def _live_decode(d, out):
+    dur = fnum(out.get('duration_s'))
+    d.duration_s = dur
+    segs = out.get('segments') if isinstance(out.get('segments'), list) else []
+    sel = list(COLLECTOR_STREAMS)
+    for seg in segs:
+        if isinstance(seg, dict):
+            iv = _segment(d, seg, sel)
+            if iv:
+                d.intervals.append(iv)
+    full = out.get('full')
+    d.scope['completed']['streams'] = sel
+    if isinstance(full, dict) and full.get('performed'):
+        fdec = fnum(full.get('decoded_s'))
+        fst = full.get('state')
+        eof = True if fst in ('clean', 'errors') else (False if fst in ('timeout', 'spawn_error', 'output_cap') else None)
+        d.completed_to_eof = eof
+        d.scope['completed']['to_end_of_file'] = eof if eof is not None else UNKNOWN
+        if fst in ('clean', 'errors') and fdec:
+            seg = {'at_s': 0.0, 'decoded_s': fdec, 'state': fst, 'errors': full.get('errors') or []}
+            iv = _segment(d, seg, sel)
+            if iv:
+                iv['basis'] = 'full_decode'
+                d.intervals.append(iv)
+    states = {i['state'] for i in d.intervals}
+    d.integrity = 'damaged' if 'damaged' in states else ('clean' if 'clean' in states and 'unclassified' not in states else UNKNOWN)
+    d.facts = {k: v for k, v in (('duration_s', dur), ('segments', len(segs)), ('decoded_s', out.get('decoded_s')), ('covered_fraction', out.get('sampled_fraction'))) if v is not None}
+
+
+def _live_probe(d, out):
+    sl = [_norm_stream(dict(x, codec_type=x.get('type'), codec_name=x.get('codec'))) for x in out.get('streams') or [] if isinstance(x, dict)]
+    d.probe = {'container': out.get('format'), 'streams': sl, 'selection': None}
+    d.duration_s = fnum(out.get('duration_s'))
+    d.container = 'clean' if d.obs['status'] == 'ok' and out.get('format') and sl else UNKNOWN
+    d.integrity = d.container
+    d.facts = {k: v for k, v in (('container', out.get('format')), ('duration_s', out.get('duration_s')), ('size_bytes', out.get('bytes')), ('tags', out.get('tags') or None),
+                                 ('streams', sl or None), ('chapters', out.get('chapters') or None)) if v is not None}
+
+
+def _live_epub(d, out):
+    """The live EPUB collector's own schema: valid, stages_passed, stage / error on a failure, dc_* metadata, findings[{severity, what}]."""
+    passed = [x for x in (out.get('stages_passed') or []) if x in EPUB_STAGES]
+    failed_stage = out.get('stage') if out.get('stage') in EPUB_STAGES else None
+    pk = {}
+    for i, st in enumerate(EPUB_STAGES):
+        if st in passed:
+            pk[st] = 'clean'
+        elif st == failed_stage:
+            pk[st] = 'damaged' if d.execution.get('cause') == 'input' else UNKNOWN
+        else:
+            pk[st] = 'not_checked' if (failed_stage or d.obs['status'] != 'ok') else UNKNOWN
+    d.package = pk
+    damage = False
+    if failed_stage:
+        known = d.execution.get('cause') == 'input'
+        d.finding('package_damage' if known else 'package_error_unclassified', '%s at stage %s' % (out.get('error') or 'the collector reported a failure', failed_stage),
+                  {'part': 'package', 'stage': failed_stage}, known)
+        damage = damage or known
+    for f in out.get('findings') or []:
+        if isinstance(f, dict):
+            sev = f.get('severity')
+            d.finding('package_damage' if sev == 'damage' else 'package_warning', f.get('what') or canon(f), {'part': 'package'}, sev == 'damage')
+            damage = damage or sev == 'damage'
+    if out.get('valid') is False:
+        d.finding('package_invalid', 'the EPUB collector reports valid:false', {'part': 'package'}, False)
+        d.veto = {'kind': 'package_invalid', 'location': {'part': 'package'}, 'detail': 'the EPUB collector reports valid:false', 'known_defect': False}
+        damage = damage or d.execution.get('cause') == 'input' or any(f['known_defect'] for f in d.findings)
+    d.integrity = 'damaged' if damage else ('clean' if out.get('valid') is True and d.obs['status'] == 'ok' and passed else UNKNOWN)
+    d.facts = {k: v for k, v in (
+        ('title', out.get('dc_title')), ('creator', out.get('dc_creator')), ('language', out.get('dc_language')), ('identifier', out.get('dc_identifier')),
+        ('epub_version', out.get('epub_version')), ('entries', out.get('entries')), ('opf', out.get('opf')), ('manifest_items', out.get('manifest_items')),
+        ('spine_items', out.get('spine_items')), ('spine_characters', out.get('spine_characters')), ('stages_passed', passed or None),
+        ('valid', out.get('valid'))) if v not in (None, [], '')}
+    d.scope['completed'].update(entries=out.get('entries'), stages_checked=passed, failed_stage=failed_stage)
+
+
+def _live_audiobook(d, out):
+    """The live audiobook collector's schema: files[{format, duration_s, audio_streams, tags, chapters, chapter_findings, decode{segments}, probe...}],
+    tag_consistency, findings.  Facts and explicit damage are kept per part; decode windows are scoped to their part."""
+    files = [f for f in out.get('files') or [] if isinstance(f, dict)]
+    d.duration_s = None
+    damaged = unclassified = False
+    parts = []
+    facts_files, chapters_all = [], []
+    for n, f in enumerate(files, 1):
+        label = 'part-%d' % n
+        row = {'n': n, 'probe': f.get('probe', 'ok' if f.get('format') else UNKNOWN), 'intervals': []}
+        if f.get('probe') not in (None, 'ok'):
+            cause = f.get('probe_cause')
+            known = cause == 'input'
+            d.finding('part_unreadable' if known else 'part_probe_failed', '%s: ffprobe %s%s' % (label, f.get('probe'), (' (%s)' % f['probe_reason']) if f.get('probe_reason') else ''),
+                      {'part': 'container', 'file': label}, known)
+            damaged = damaged or known
+            parts.append(row)
+            continue
+        facts_files.append({k: v for k, v in (('n', n), ('format', f.get('format')), ('duration_s', f.get('duration_s')), ('bytes', f.get('bytes')),
+                                              ('audio_streams', f.get('audio_streams')), ('tags', f.get('tags') or None), ('chapter_count', f.get('chapter_count'))) if v is not None})
+        for c in f.get('chapters') or []:
+            if isinstance(c, dict):
+                chapters_all.append({'part': n, 'start_s': c.get('start_s'), 'end_s': c.get('end_s'), 'title': c.get('title')})
+        for cf in f.get('chapter_findings') or []:
+            d.finding('chapter_observation', '%s: %s' % (label, cf), {'part': 'chapters', 'file': label}, False)
+        dec = f.get('decode')
+        if isinstance(dec, dict):
+            for seg in dec.get('segments') or []:
+                if isinstance(seg, dict):
+                    iv = _segment(d, seg, ['%s:0:a:0' % label], label)
+                    if iv:
+                        row['intervals'].append(iv)
+                        damaged = damaged or iv['state'] == 'damaged'
+                        unclassified = unclassified or iv['state'] == 'unclassified'
+        row['duration_s'] = f.get('duration_s')
+        parts.append(row)
+    d.parts = parts
+    tc = out.get('tag_consistency')
+    if isinstance(tc, dict):
+        if tc.get('consistent') is False:
+            d.finding('tags_differ_across_parts', canon({k: tc.get(k) for k in ('inconsistent', 'missing_in', 'track_issue') if tc.get(k)}), {'part': 'tags'}, False)
+    all_probed = bool(files) and out.get('parts_probed') == out.get('parts') == len(files)
+    d.integrity = 'damaged' if damaged else ('clean' if (d.obs['status'] == 'ok' and all_probed and not unclassified) else UNKNOWN)
+    d.container = d.integrity if d.integrity in ('clean', 'damaged') else None
+    d.facts = {k: v for k, v in (('parts', out.get('parts')), ('parts_probed', out.get('parts_probed')), ('total_duration_s', out.get('total_duration_s')),
+                                 ('files', facts_files or None), ('chapters', chapters_all or None),
+                                 ('tag_consistent', (tc or {}).get('consistent') if isinstance(tc, dict) else None)) if v is not None}
+    d.scope['completed'].update(parts=out.get('parts'), parts_probed=out.get('parts_probed'))
+
+
+def _live_audio(d, out):
+    streams = [x for x in out.get('streams') or [] if isinstance(x, dict)]
+    bad = False
+    good = False
+    for st in streams:
+        for seg in st.get('segments') or []:
+            if not isinstance(seg, dict):
+                continue
+            if seg.get('state') == 'errors':
+                text = '; '.join(str(x) for x in (seg.get('problems') or [])) or 'audio decode errors'
+                known = _recognised(text)
+                d.finding('audio_decode_errors' if known else 'audio_messages_unclassified', text, {'part': 'audio', 'start_s': seg.get('at_s')}, known)
+                bad = bad or known
+            elif seg.get('state') in ('ok', 'near_silent'):
+                good = True
+    d.integrity = 'damaged' if bad else ('clean' if good and d.obs['status'] == 'ok' and not any(f['kind'] == 'audio_messages_unclassified' for f in d.findings) else UNKNOWN)
+    d.facts = {'duration_s': out.get('duration_s'), 'streams': len(streams)} if out.get('duration_s') is not None else None
 
 
 # ------------------------------------------------------------------------------------------------------------------ analysis (the item)
@@ -734,18 +915,25 @@ def build_coverage(derived):
     for d in derived:
         for iv in d.intervals:
             for key in iv['streams']:
-                slot = per.setdefault(key, {'clean': [], 'damaged': [], 'by': set()})
+                slot = per.setdefault(key, {'clean': [], 'damaged': [], 'unclassified': [], 'by': set()})
                 slot[iv['state']].append((iv['start_s'], iv['end_s']))
                 slot['by'].add(d.obs['id'])
     streams_cov = {}
+    resolved = {}
     for key in sorted(per):
         slot = per[key]
         damaged = clip_to(norm_intervals(slot['damaged']), 0.0, dur)
-        clean = subtract(clip_to(norm_intervals(slot['clean']), 0.0, dur), damaged)
-        row = {'clean': listed(clean), 'damaged': listed(damaged), 'by': sorted(slot['by'])}
+        unclassified = subtract(clip_to(norm_intervals(slot['unclassified']), 0.0, dur), damaged)
+        clean = subtract(subtract(clip_to(norm_intervals(slot['clean']), 0.0, dur), damaged), unclassified)   # damaged and unclassified both override clean
+        resolved[key] = (clean, damaged, unclassified)
+        row = {'clean': listed(clean), 'damaged': listed(damaged)}
+        if unclassified:
+            row['unclassified'] = listed(unclassified)     # a decoder printed text this layer does not recognise: neither clean nor damaged
+        row['by'] = sorted(slot['by'])
+        seen_iv = norm_intervals(clean + damaged + unclassified)
         if dur is not None:
-            row['not_checked'] = listed(subtract([(0.0, dur)], norm_intervals(clean + damaged)))
-            row['checked_fraction'] = round(length(norm_intervals(clean + damaged)) / dur, 3) if dur else UNKNOWN
+            row['not_checked'] = listed(subtract([(0.0, dur)], seen_iv))
+            row['checked_fraction'] = round(length(seen_iv) / dur, 3) if dur else UNKNOWN
         else:
             row['not_checked'] = UNKNOWN
         row['selection'] = 'recorded' if key != UNRECORDED else UNKNOWN
@@ -780,37 +968,60 @@ def build_coverage(derived):
         cov['streams'] = rows[:32]
         if len(rows) > 32:
             cov['streams_omitted'] = len(rows) - 32
-    # chapters
+    # chapters, per stream: a chapter is judged separately for every stream the decode windows or the container name; there is no combined label
     chapters = None
     for d in derived:
         ch = (d.facts or {}).get('chapters') if isinstance(d.facts, dict) else None
-        if isinstance(ch, list) and ch and isinstance(ch[0], dict):
+        if isinstance(ch, list) and ch and isinstance(ch[0], dict) and 'part' not in ch[0]:
             chapters = ch
             break
     if chapters:
+        names = set(per)
+        if sl is not None:
+            seen2 = {}
+            for st in sl:
+                typ = st.get('type')
+                k2 = seen2.get(typ, 0)
+                seen2[typ] = k2 + 1
+                names.add('0:%s:%d' % ({'video': 'v', 'audio': 'a', 'subtitle': 's'}.get(typ, 'x'), k2))
         rows = []
-        merged = {}
-        for key, slot in per.items():
-            merged.setdefault('clean', []).extend(slot['clean'])
-            merged.setdefault('damaged', []).extend(slot['damaged'])
-        dam = norm_intervals(merged.get('damaged', []))
-        cln = subtract(norm_intervals(merged.get('clean', [])), dam)
         for i, c in enumerate(chapters[:60]):
             a, b = c.get('start_s'), c.get('end_s')
             row = {'n': i + 1, 'title': c.get('title'), 'start_s': a, 'end_s': b}
-            if a is None or b is None or b <= a:
-                row['decode'] = UNKNOWN
-            elif not per:
-                row['decode'] = 'not_checked'
-            else:
-                dmg = length(clip_to(dam, a, b))
-                chk = length(clip_to(cln, a, b)) + dmg
-                row['decode'] = 'damaged' if dmg > 0 else ('clean' if chk >= (b - a) - 1e-6 else ('partly_checked' if chk > 0 else 'not_checked'))
-                row['checked_s'] = round(chk, 3)
+            by = {}
+            for name in sorted(names):
+                if a is None or b is None or b <= a:
+                    by[name] = UNKNOWN
+                elif name not in resolved:
+                    by[name] = UNKNOWN if UNRECORDED in per and name != UNRECORDED else 'not_checked'
+                else:
+                    clean, damaged, unclassified = resolved[name]
+                    dmg = length(clip_to(damaged, a, b))
+                    unc = length(clip_to(unclassified, a, b))
+                    chk = length(clip_to(clean, a, b)) + dmg + unc
+                    by[name] = ('damaged' if dmg > 0 else 'unclassified' if unc > 0 else 'clean' if chk >= (b - a) - 1e-6 else 'partly_checked' if chk > 0 else 'not_checked')
+            row['by_stream'] = by
             rows.append({k: v for k, v in row.items() if v is not None})
         cov['chapters'] = rows
         if len(chapters) > 60:
             cov['chapters_omitted'] = len(chapters) - 60
+    # audiobook parts (decode windows are per part)
+    prow = []
+    for d in derived:
+        for p_ in d.parts:
+            ivs = p_['intervals']
+            row = {'src': d.obs['id'], 'n': p_['n'], 'probe': p_['probe']}
+            for st in ('clean', 'damaged', 'unclassified'):
+                got = norm_intervals([(i['start_s'], i['end_s']) for i in ivs if i['state'] == st])
+                if st == 'clean':
+                    got = subtract(got, norm_intervals([(i['start_s'], i['end_s']) for i in ivs if i['state'] in ('damaged', 'unclassified')]))
+                if got or st == 'clean':
+                    row[st] = listed(got)
+            prow.append(row)
+    if prow:
+        cov['parts'] = prow[:60]
+        if len(prow) > 60:
+            cov['parts_omitted'] = len(prow) - 60
     # package
     pk = [d for d in derived if d.package]
     if pk:
@@ -839,7 +1050,7 @@ def parse_client(profile):
     """The stated client as comparable fields.  Structured keys are read directly; the prose forms ("h264, 8-bit yuv420p, up to 1080p",
     "aac, ac3 or eac3, up to 6 channels") are read by a small fixed grammar.  Anything not stated stays absent (never inferred)."""
     spec = {'containers': None, 'video_codecs': None, 'bit_depths': None, 'pix_fmts': None, 'max_width': None, 'max_height': None,
-            'audio_codecs': None, 'max_channels': None, 'layouts': None, 'not_compared': []}
+            'audio_codecs': None, 'max_channels': None, 'layouts': None, 'video_profiles': None, 'audio_profiles': None, 'not_compared': []}
     if not isinstance(profile, dict):
         return spec
     c = profile.get('containers')
@@ -861,6 +1072,10 @@ def parse_client(profile):
         spec['max_channels'] = profile['max_audio_channels']
     if isinstance(profile.get('audio_layouts'), list):
         spec['layouts'] = {str(x).lower() for x in profile['audio_layouts']}
+    if isinstance(profile.get('video_profiles'), list):
+        spec['video_profiles'] = {str(x).lower() for x in profile['video_profiles']}
+    if isinstance(profile.get('audio_profiles'), list):
+        spec['audio_profiles'] = {str(x).lower() for x in profile['audio_profiles']}
     vp = profile.get('video')
     if isinstance(vp, str):
         _parse_video_prose(vp, spec)
@@ -868,25 +1083,44 @@ def parse_client(profile):
     if isinstance(ap, str):
         _parse_audio_prose(ap, spec)
     known = {'definition', 'containers', 'video_codec', 'video_pix_fmt', 'max_width', 'max_height', 'audio_codecs', 'max_audio_channels', 'audio_layouts',
-             'video', 'audio', 'subtitles'}
-    spec['not_compared'] = sorted(k for k in profile if k not in known)
-    if (isinstance(vp, str) and spec['video_codecs'] is None) or (isinstance(ap, str) and spec['audio_codecs'] is None):
+             'video_profiles', 'audio_profiles', 'video', 'audio', 'subtitles'}
+    spec['not_compared'] = sorted(k for k in profile if k not in known) + spec['not_compared']
+    if (isinstance(vp, str) and spec['video_codecs'] is None and not any('video:' in x for x in spec['not_compared'])) or \
+            (isinstance(ap, str) and spec['audio_codecs'] is None and not any('audio:' in x for x in spec['not_compared'])):
         spec['not_compared'].append('prose not fully read')
     return spec
 
 
+def _residual(text, patterns):
+    """Words left after the recognised phrases (and the connectors `or`, `and`, punctuation) are removed.  Anything left is a statement this grammar does
+    not read -- 'only', 'no', 'not', 'except', 'support' -- and makes the whole clause unread: a restriction must never be turned into support."""
+    t = text.lower()
+    for rx in patterns:
+        t = rx.sub(' ', t)
+    t = re.sub(r'[(),;.:]|\bor\b|\band\b', ' ', t)
+    return t.split()
+
+
+_VCODEC = r'\b(?:%s)\b' % '|'.join(list(VIDEO_CODECS) + list(CODEC_ALIAS))
+_ACODEC = r'\b(?:%s)\b' % '|'.join(AUDIO_CODECS)
+_PIX = r'\b(?:yuvj?\d{3}p\d*(?:le|be)?|nv12)\b'
+
+
 def _parse_video_prose(text, spec):
     t = text.lower()
-    hits = [(m.start(), m.end(), _canon_codec(m.group(0))) for m in re.finditer(r'\b(%s)\b' % '|'.join(list(VIDEO_CODECS) + list(CODEC_ALIAS)), t)]
+    left = _residual(t, [re.compile(_VCODEC), re.compile(r'\d+-bit'), re.compile(_PIX), re.compile(r'up to \d{3,4}p')])
+    if left:
+        spec['not_compared'].append('video: statement not read (%s)' % ' '.join(left[:6]))
+        return
+    hits = [(m.start(), m.end(), _canon_codec(m.group(0))) for m in re.finditer(_VCODEC, t)]
     if hits:
         codecs = {}
-        for i, (s, e, name) in enumerate(hits):
+        for i, (st, e, name) in enumerate(hits):
             nxt = hits[i + 1][0] if i + 1 < len(hits) else len(t)
-            seg = t[e:nxt]
-            seg = seg.split('up to')[0]
+            seg = t[e:nxt].split('up to')[0]
             depths = {int(x) for x in re.findall(r'(\d+)-bit', seg)}
             codecs[name] = depths or None
-            spec['pix_fmts'] = (spec['pix_fmts'] or set()) | set(re.findall(r'\b(yuvj?\d{3}p\d*(?:le|be)?|nv12)\b', seg)) or spec['pix_fmts']
+            spec['pix_fmts'] = (spec['pix_fmts'] or set()) | set(re.findall(_PIX, seg)) or spec['pix_fmts']
         spec['video_codecs'] = codecs
     m = re.search(r'up to (\d{3,4})p', t)
     if m:
@@ -895,7 +1129,11 @@ def _parse_video_prose(text, spec):
 
 def _parse_audio_prose(text, spec):
     t = text.lower()
-    found = {_canon_codec(m.group(0)) for m in re.finditer(r'\b(%s)\b' % '|'.join(AUDIO_CODECS), t)}
+    left = _residual(t, [re.compile(_ACODEC), re.compile(r'up to \d+ channels?')])
+    if left:
+        spec['not_compared'].append('audio: statement not read (%s)' % ' '.join(left[:6]))
+        return
+    found = {_canon_codec(m.group(0)) for m in re.finditer(_ACODEC, t)}
     if found:
         spec['audio_codecs'] = found
     m = re.search(r'up to (\d+) channels?', t)
@@ -961,6 +1199,9 @@ def compare_client(context, derived):
                     rows.append(_verdict('video_codec', ref, codec, sorted(spec['video_codecs']), None if codec is None else codec in spec['video_codecs']))
                 else:
                     out['not_stated'].append('video_codec')
+                if spec['video_profiles'] is not None:
+                    pr = s.get('profile')
+                    rows.append(_verdict('video_profile', ref, pr, sorted(spec['video_profiles']), None if pr is None else str(pr).lower() in spec['video_profiles']))
                 depth = s.get('bit_depth')
                 allowed = spec['video_codecs'].get(codec) if (spec['video_codecs'] and codec) else None
                 if allowed:
@@ -978,6 +1219,9 @@ def compare_client(context, derived):
                     rows.append(_verdict('audio_codec', ref, codec, sorted(spec['audio_codecs']), None if codec is None else codec in spec['audio_codecs']))
                 else:
                     out['not_stated'].append('audio_codec')
+                if spec['audio_profiles'] is not None:
+                    pr = s.get('profile')
+                    rows.append(_verdict('audio_profile', ref, pr, sorted(spec['audio_profiles']), None if pr is None else str(pr).lower() in spec['audio_profiles']))
                 if spec['max_channels'] is not None:
                     ch = s.get('channels')
                     rows.append(_verdict('audio_channels', ref, ch, '<=%s' % spec['max_channels'], None if ch is None else ch <= spec['max_channels']))
@@ -988,8 +1232,12 @@ def compare_client(context, derived):
         if how == 'absent':
             rows.append(_verdict('%s_stream' % typ, 'file', None, 'present', None, 'the file lists no %s stream' % typ))
     counts = {v: sum(1 for r in rows if r['verdict'] == v) for v in ('supported', 'unsupported', UNKNOWN)}
-    out['summary'] = dict(counts, selection=sel_state if complete else 'ambiguous', complete=bool(complete and counts[UNKNOWN] == 0),
-                          note='incompatibility with the stated client is not damage; counts are not a diagnosis')
+    # `complete` is narrow: every stated field was compared with a known verdict, the selection is unambiguous, the container was compared, and no profile
+    # statement went unread.  It is NOT a statement that the file plays on the client's device -- the counts are not a diagnosis.
+    compared_container = any(r['field'] == 'container' and r['verdict'] != UNKNOWN for r in rows)
+    out['summary'] = dict(counts, selection=sel_state if complete else 'ambiguous',
+                          complete=bool(complete and rows and counts[UNKNOWN] == 0 and not spec['not_compared'] and compared_container),
+                          note='complete means: every stated, readable field was compared with a known verdict; incompatibility is not damage; counts are not a diagnosis')
     out['not_stated'] = sorted(set(out['not_stated']))
     return out
 
@@ -1010,7 +1258,7 @@ def integrity_findings(observations):
         if o['tool'] not in INTEGRITY_TOOLS:
             continue
         dd = derive(o, dur)
-        defects = [f for f in dd.findings if f['known_defect']]
+        defects = [f for f in dd.findings if f['known_defect']] or ([dd.veto] if dd.veto else [])
         if defects:
             damaged.append((o['id'], defects[0]))
         elif dd.integrity == 'clean' and o['status'] == 'ok':
@@ -1045,20 +1293,59 @@ def full_decode_proof(observation, observations):
 
 
 # ------------------------------------------------------------------------------------------------------------------ presentation
-STRING_CAP = 400
+STRING_CAP = 400        # a string longer than this is shown as its first STRING_CAP characters plus a pointer; the whole string is a retrievable detail
+UNIT_MAX = 2400         # a unit larger than this (UTF-8 bytes) is split into smaller units, so every unit fits a page by itself
+CHUNK_BYTES = 1800      # the size of one chunk of a split string
 
 
-def trim_strings(obj, cap=STRING_CAP):
-    """Long strings are cut with an explicit marker saying how much is missing (never silently)."""
+def externalize(obj, prefix, details):
+    """Long strings keep their first STRING_CAP characters inline plus `...[+N chars: detail <id>]`; the whole string is stored in `details[<id>]` (a retrievable
+    unit of the pages), so nothing is clipped irreversibly."""
     if isinstance(obj, str):
-        if len(obj) <= cap:
+        if len(obj) <= STRING_CAP:
             return obj
-        return obj[:cap] + '...[+%d chars not shown]' % (len(obj) - cap)
+        key = '%s.d%d' % (prefix, len(details) + 1)
+        details[key] = obj
+        return obj[:STRING_CAP] + '...[+%d chars: detail %s]' % (len(obj) - STRING_CAP, key)
     if isinstance(obj, list):
-        return [trim_strings(x, cap) for x in obj]
+        return [externalize(x, prefix, details) for x in obj]
     if isinstance(obj, dict):
-        return {k: trim_strings(v, cap) for k, v in obj.items()}
+        return {k: externalize(v, prefix, details) for k, v in obj.items()}
     return obj
+
+
+def _chunks(text, nbytes_max=CHUNK_BYTES):
+    out, cur, size = [], [], 0
+    for ch in text:
+        b = len(ch.encode('utf-8'))
+        if size + b > nbytes_max and cur:
+            out.append(''.join(cur))
+            cur, size = [], 0
+        cur.append(ch)
+        size += b
+    if cur:
+        out.append(''.join(cur))
+    return out
+
+
+def explode(path, value, mode='set'):
+    """Units for `value` at `path`: one unit when it is small; otherwise a list is split per element, a dict per key and a string into chunks, recursively, so no
+    unit exceeds UNIT_MAX and nothing is dropped."""
+    if nbytes(value) <= UNIT_MAX:
+        return [(path, mode, value)]
+    if isinstance(value, list):
+        out = []
+        for e in value:
+            out += explode(path, e, 'split')
+        return out
+    if isinstance(value, dict):
+        out = []
+        for k, v in value.items():
+            out += explode(path + (k,), v, 'set')
+        return out
+    if isinstance(value, str):
+        return [(path, 'split', c) for c in _chunks(value)]
+    return [(path, mode, value)]
 
 
 def item_core(d):
@@ -1081,15 +1368,18 @@ def item_core(d):
     return item
 
 
-def public_item(d, with_facts=True):
-    item = item_core(d)
-    if with_facts and d.facts:
-        item['facts'] = trim_strings(d.facts)
-    return item
+def item_facts(d):
+    """Facts of an observation, with the audiobook parts' decode windows included (they are per part, not on one timeline)."""
+    facts = dict(d.facts) if isinstance(d.facts, dict) else ({'value': d.facts} if d.facts is not None else {})
+    if d.collector_coverage:
+        facts['coverage'] = d.collector_coverage
+    if d.parts:
+        facts['parts'] = [{k: v for k, v in dict(p, intervals=[{kk: vv for kk, vv in iv.items() if kk != 'streams'} for iv in p['intervals']]).items() if v not in (None, [])} for p in d.parts]
+    return facts
 
 
 def alerts_for(derived):
-    """Conflicts, then known defects, then execution failures, each as one short entry that names the detail (by id).  Never dropped to fit a size."""
+    """Conflicts, then known defects, then execution failures, each as one short entry that names the id of its detail.  Never dropped to fit a size."""
     out = []
     for d in derived:
         for c in d.conflicts:
@@ -1098,6 +1388,8 @@ def alerts_for(derived):
         for f in d.findings:
             if f['known_defect']:
                 out.append({'type': 'defect', 'id': f['id'], 'kind': f['kind'], 'src': d.obs['id']})
+        if d.veto:
+            out.append({'type': 'defect', 'id': d.obs['id'] + '.veto', 'kind': d.veto['kind'], 'src': d.obs['id']})
     for d in derived:
         ex = d.execution
         if ex['state'] in ('failed', 'timed_out', 'unavailable'):
@@ -1128,18 +1420,24 @@ def _put(body, path, mode, value):
         cur[path[-1]] = value
 
 
-def facts_units(path, facts):
-    """Units for a facts value: each top-level field one unit; a long list one unit per element (marked `split`, so the cut shows as `<field>_shown: "n of N"`)."""
+def facts_units(path, facts, details=None, prefix='x'):
+    """Units for a facts value (long strings externalised into `details`, large structures exploded)."""
+    details = {} if details is None else details
+    facts = externalize(facts, prefix, details)
     units = []
     if isinstance(facts, dict):
         for k, v in facts.items():
-            if isinstance(v, list) and len(v) > 6:
-                units += [(path + (k,), 'split', e) for e in v]
-            else:
-                units.append((path + (k,), 'set', v))
+            units += explode(path + (k,), v)
     elif facts is not None:
-        units.append((path, 'set', facts))
+        units += explode(path, facts)
     return units
+
+
+def detail_units(details):
+    out = []
+    for key, text in details.items():
+        out += [(('details', key), 'split', c) for c in _chunks(text)] if nbytes(text) > UNIT_MAX else [(('details', key), 'set', text)]
+    return out
 
 
 def assemble(header, units):
@@ -1176,41 +1474,48 @@ def _finish_page(header, units, all_units, page_obj, totals):
     return body
 
 
-def paginate(header, units, envelope, alias, source, budget=WIRE_BYTES):
-    """Split `units` into pages whose full wire text (`envelope(body)`) stays within `budget` UTF-8 bytes.
+def paginate(header, units, env_first, env_rest, alias, source, budget=WIRE_BYTES):
+    """Split `units` into pages whose full wire text stays within `budget` UTF-8 bytes: the first page against `env_first(body)`, every later page against
+    `env_rest(body)` -- the WORST-CASE envelope a fetch can add (longest offered tool name, the sixth call's id, the budget notice).
 
-    Contract (pages-v1): a page is `header` (identity, alerts, execution: always repeated) plus whole units in priority order; a unit is never cut
-    mid-structure; a unit too large to fit even alone is replaced by an explicit marker naming its size (`page.oversize`).  Every page carries
-    `page{contract,source,n,of,next,next_costs_tool_call,elsewhere,conflicts_total}`: `elsewhere` counts what is on other pages, `conflicts_total` the
-    aggregate conflicts of the whole result (they are also in `alerts`, which every page repeats, with the ids of their details).  `next` is an
-    opaque stable cursor; fetching it is one tool call (`args {"cursor": ...}`).  A single page carries no `page` object.
-    -> list of (body, cursor_of_this_page or None)."""
+    Contract (pages-v1): a page is `header` (identity, alerts, execution: always repeated) plus whole units in priority order, never a structure cut in the
+    middle.  Nothing is dropped: a long string is stored whole as a `details` unit (its inline prefix names it), a large structure is split into smaller units,
+    and a split list says `<field>_shown: "n of N"`.  Every page carries `page{contract,source,n,of,next,next_costs_tool_call,elsewhere,alerts_total,conflicts_total}`:
+    `elsewhere` counts what is on other pages; the alerts (conflicts first, with the ids of their details) are repeated on every page.  `next` is an opaque stable
+    cursor; fetching it is one tool call.  A single page carries no `page` object.  A unit that still cannot fit its page alone is placed alone and the page says
+    `exceeds_envelope` (only when the header or the context around it is itself near the limit).
+    -> list of (body dict, cursor of this page or None)."""
     totals = _totals(units)
-    if nbytes(envelope(_finish_page(header, [], units, None, totals))) > budget and header.get('alerts'):
+    if nbytes(env_first(_finish_page(header, [], units, None, totals))) > budget and header.get('alerts'):
         header = dict(header, alerts=['%s:%s:%s' % (a.get('type'), a.get('id'), a.get('kind') or a.get('state')) for a in header['alerts']])   # shortest form; none is dropped
     probe = {'contract': PAGE_CONTRACT, 'source': source, 'n': 99, 'of': 99, 'next': 'c' + '0' * 15, 'next_costs_tool_call': True,
-             'elsewhere': {'.'.join(p): n for (p, k), n in totals.items()}, 'conflicts_total': 99, 'oversize': [{'section': 'facts.x', 'bytes': 99999}]}
+             'elsewhere': {'.'.join(p): n for (p, k), n in totals.items()}, 'alerts_total': 99, 'conflicts_total': 99}
 
-    def fits(us):
+    def fits(us, first):
         body = _finish_page(header, us, units, probe, totals)
-        return nbytes(envelope(body)) <= budget
+        return nbytes((env_first if first else env_rest)(body)) <= budget
 
     groups, cur, oversize = [], [], []
     for u in units:
-        if fits(cur + [u]):
+        first = not groups
+        if fits(cur + [u], first):
             cur = cur + [u]
             continue
         if cur:
             groups.append(cur)
-        cur = [u] if fits([u]) else []
-        if not cur:
-            oversize.append({'section': '.'.join(u[0]), 'bytes': nbytes(u[2])})
+            cur = [u]
+            if not fits(cur, False):
+                oversize.append(len(groups))
+        else:
+            cur = [u]
+            oversize.append(len(groups))
     if cur or not groups:
         groups.append(cur)
     of = len(groups)
     if of == 1 and not oversize:
         return [(_finish_page(header, groups[0], units, None, totals), None)]
-    conflicts_total = len(header.get('alerts') or [])
+    alerts_total = len(header.get('alerts') or [])
+    conflicts_total = sum(1 for a in (header.get('alerts') or []) if (a.get('type') == 'conflict' if isinstance(a, dict) else str(a).startswith('conflict:')))
     pages = []
     next_cursor = None
     for i in range(of - 1, -1, -1):
@@ -1227,8 +1532,9 @@ def paginate(header, units, envelope, alias, source, budget=WIRE_BYTES):
             pobj['next_costs_tool_call'] = True
         if elsewhere:
             pobj['elsewhere'] = elsewhere
-        if oversize and i == 0:
-            pobj['oversize'] = oversize
+        if i in oversize:
+            pobj['exceeds_envelope'] = True
+        pobj['alerts_total'] = alerts_total
         pobj['conflicts_total'] = conflicts_total
         body = _finish_page(header, us, units, pobj, totals)
         cur_cursor = cursor_for(alias, source, i + 1, hashlib.sha256(canon(body).encode()).hexdigest()[:16]) if i > 0 else None
@@ -1247,55 +1553,77 @@ class Session:
     """Per-case presentation state: the observations actually SHOWN so far, the pages not yet fetched, and what the summaries last showed.
     Summaries (coverage, client comparison) are recomputed from shown observations only, so nothing from an uncalled operation can appear."""
 
-    def __init__(self, alias, context, media_type, tools_offered):
+    def __init__(self, alias, context, media_type, tools_offered, budget=WIRE_BYTES):
         self.alias, self.context, self.media_type, self.tools = alias, context, media_type, list(tools_offered or [])
         self.shown = []
         self.pages = {}            # cursor -> (page body, tool name for the echo)
         self.last_cov = None
         self.last_client = None
         self.log = []              # auditable: [{'id', 'kind', 'pages', 'bytes'}]
+        self.budget = budget
 
-    # ---- shared
+    def finding_index(self):
+        """{finding / conflict id: observation id} for everything actually emitted so far (the only ids a decision may cite besides observation ids)."""
+        an = self.analysis()
+        out = {}
+        for d in an['items'].values():
+            for f in d.findings + d.conflicts:
+                out[f['id']] = d.obs['id']
+            if d.veto:
+                out[d.obs['id'] + '.veto'] = d.obs['id']
+        return out
+
     def analysis(self):
         return analyze(self.shown, self.context, self.media_type)
+
+    def _worst_fetch_envelope(self):
+        """The largest envelope a stored page can be fetched in: the longest offered tool name, the sixth call's id, nothing left of the budget (so the notice is appended)."""
+        tool = max(self.tools or ['x'], key=len)
+        return lambda body: tool_envelope('t6', tool, 'ok', False, body, 0, '\n' + P.BUDGET_MESSAGE)
 
     def _summary_units(self, an, force):
         units = []
         cov_text = canon(an['coverage'])
         if force or cov_text != self.last_cov:
             for k, v in an['coverage'].items():
-                if isinstance(v, list) and len(v) > 6:
-                    units += [(('coverage', k), 'split', e) for e in v]
-                else:
-                    units.append((('coverage', k), 'set', v))
+                units += explode(('coverage', k), v)
             self.last_cov = cov_text
         cl = an['client']
         if cl is not None:
             cl_text = canon(cl)
             if force or cl_text != self.last_client:
                 for k, v in cl.items():
-                    if isinstance(v, list) and len(v) > 6:
-                        units += [(('client_comparison', k), 'split', e) for e in v]
-                    else:
-                        units.append((('client_comparison', k), 'set', v))
+                    units += explode(('client_comparison', k), v)
                 self.last_client = cl_text
         return units
 
-    # ---- the first message's evidence block
-    def initial(self, evidence_obs):
-        """-> (evidence block dict for the first user message, [extra pages stored for cursors]).  The block is within the 8192-byte envelope."""
+    def initial(self, evidence_obs, frame=None):
+        """-> (evidence block dict for the first user message, number of pages).  `frame` is the rest of the first message (context, tools, capabilities...): the
+        first message as a whole -- frame plus this block -- is within the 8192-byte envelope, not just the block."""
         self.shown = list(evidence_obs)
         an = self.analysis()
         derived = [an['items'][i] for i in an['order']]
         header = {'alerts': alerts_for(derived), 'page': None}
-        units = []
+        units, details = [], {}
         for d in derived:
-            units.append((('items',), 'append', item_core(d)))
+            core = item_core(d)
+            if nbytes(core) > UNIT_MAX:   # a large item travels as its identity and execution plus retrievable sections
+                small = {k: core[k] for k in ('id', 'tool', 'args', 'backend', 'execution') if k in core}
+                small['sections'] = 'findings, scope, unresolved and conflicts are in item_sections.' + d.obs['id']
+                units.append((('items',), 'append', small))
+                for sec in ('findings', 'scope', 'unresolved', 'conflicts'):
+                    if core.get(sec):
+                        units += explode(('item_sections', d.obs['id'], sec), core[sec])
+            else:
+                units.append((('items',), 'append', core))
         for d in derived:
-            if d.facts:
-                units += facts_units(('facts', d.obs['id']), trim_strings(d.facts))
+            f = item_facts(d)
+            if f:
+                units += facts_units(('facts', d.obs['id']), f, details, d.obs['id'])
         units += self._summary_units(an, True)
-        pages = paginate(header, units, lambda b: canon(b), self.alias, 'evidence')
+        units += detail_units(details)
+        frame = frame or {}
+        pages = paginate(header, units, lambda b: canon(dict(frame, evidence=b)), self._worst_fetch_envelope(), self.alias, 'evidence', self.budget)
         first = pages[0][0]
         if not self.tools and len(pages) > 1:
             # nothing can be fetched when no tool is offered: say so instead of promising a page, keep the aggregate counts and the alerts
@@ -1305,16 +1633,14 @@ class Session:
             pages = pages[:1]
         for body, cur in pages[1:]:
             self.pages[cur] = (body, 'evidence')
-        self.log.append({'id': 'evidence', 'kind': 'initial', 'pages': len(pages), 'bytes': [nbytes(b) for b, _ in pages]})
+        self.log.append({'id': 'evidence', 'kind': 'initial', 'pages': len(pages), 'bytes': [nbytes(dict(frame, evidence=b)) for b, _ in pages[:1]] + [nbytes(self._worst_fetch_envelope()(b)) for b, _ in pages[1:]]})
         return first, len(pages)
 
-    # ---- a tool result
     def result(self, obs, call_id, remaining, suffix=''):
         """-> (wire text of the first page, number of pages)."""
         self.shown.append(obs)
         an = self.analysis()
         d = an['items'][obs['id']]
-        all_derived = [an['items'][i] for i in an['order']]
         item = item_core(d)
         header = {'id': obs['id'], 'tool': obs['tool']}
         if item.get('args'):
@@ -1324,27 +1650,28 @@ class Session:
         header['alerts'] = alerts_for([d])
         header['page'] = None
         header['execution'] = d.execution
-        units = []
+        units, details = [], {}
         for sec in ('conflicts', 'findings', 'unresolved'):
             for v in item.get(sec) or []:
-                units.append(((sec,), 'append', v))
+                units += explode((sec,), v, 'append')
         for k, v in (item.get('scope') or {}).items():
-            units.append((('scope', k), 'set', v))
-        if d.facts:
-            units += facts_units(('facts',), trim_strings(d.facts))
+            units += explode(('scope', k), v)
+        f = item_facts(d)
+        if f:
+            units += facts_units(('facts',), f, details, obs['id'])
         units += self._summary_units(an, False)
+        units += detail_units(details)
         truncated = d.execution['output_truncated']
         status = obs['status']
 
         def env(body):
             return tool_envelope(call_id, obs['tool'], status, truncated, body, remaining, suffix)
-        pages = paginate(header, units, env, self.alias, call_id)
+        pages = paginate(header, units, env, self._worst_fetch_envelope(), self.alias, call_id, self.budget)
         for body, cur in pages[1:]:
             self.pages[cur] = (body, obs['tool'])
-        self.log.append({'id': call_id, 'kind': 'result', 'pages': len(pages), 'bytes': [nbytes(env(b)) for b, _ in pages]})
+        self.log.append({'id': call_id, 'kind': 'result', 'pages': len(pages), 'bytes': [nbytes(env(pages[0][0]))] + [nbytes(self._worst_fetch_envelope()(b)) for b, _ in pages[1:]]})
         return env(pages[0][0]), len(pages)
 
-    # ---- a continuation
     def fetch(self, cursor, call_id, tool, remaining, suffix=''):
         """-> (status, wire text).  An unknown cursor (other case, other run, mangled) is an error that names no page content."""
         hit = self.pages.get(cursor) if isinstance(cursor, str) and CURSOR_RX.match(cursor) else None

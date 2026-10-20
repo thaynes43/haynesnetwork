@@ -1050,10 +1050,14 @@ def capability(ctx, name):
         cap.update(available=bool(offs), offsets_s=offs)
         if not offs:
             cap['why'] = 'not recorded for this item'
-    elif name in ('frame_sample', 'ocr'):
-        has = 'frame_text' in rec
-        cap.update(available=has if name == 'ocr' else any(x.get('codec_type') == 'video' for x in (rec.get('ffprobe') or {}).get('streams', [])),
-                   offsets_s='any; recorded on-screen text is looked up by time')
+    elif name == 'frame_sample':
+        # independent operation metadata only: the recording exists.  Whether it holds a video stream is a property of an uncalled ffprobe RESULT and is not read here.
+        cap.update(offsets_s='any', note='a frame exists only if the file has a video stream; that is known when the tool is called')
+    elif name == 'ocr':
+        ft = rec.get('frame_text')
+        ranges = [[e.get('t0'), e.get('t1')] for e in ft if isinstance(e, dict)] if isinstance(ft, list) else []
+        # the time ranges that have a recorded reading (metadata of the recording), never the text; an offset outside them returns an empty reading
+        cap.update(available='frame_text' in rec, offsets_s='any', recorded_reading_ranges_s=ranges)
     return cap
 
 

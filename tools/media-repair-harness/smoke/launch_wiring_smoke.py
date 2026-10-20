@@ -29,12 +29,13 @@ SMOKE_FILES = ['live_smoke.py', 'wiring_smoke.py']
 # Linux refuses a single environment string above MAX_ARG_STRLEN (131072 bytes); keep a margin for the variable name and the rest of the environment.
 MAX_ARG_STRLEN = 131072
 ENV_LIMIT = MAX_ARG_STRLEN - 4096
+TOTAL_LIMIT = 240000   # kubectl apply stores the manifest in an annotation (262144 bytes max); the rest of the spec needs a margin
 
 
 def bundle():
-    """The whole tarball as one base64 string (xz); `bundle_parts` splits it for the Job spec."""
+    """The whole tarball as one base64 string (gzip: always present in the Job image, unlike lzma); `bundle_parts` splits it for the Job spec."""
     buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode='w:xz') as t:
+    with tarfile.open(fileobj=buf, mode='w:gz') as t:
         norm = lambda ti: (setattr(ti, 'uid', 0), setattr(ti, 'gid', 0), setattr(ti, 'mtime', 0), ti)[3]
         for name in FILES:
             t.add(PACKAGE / name, arcname='media_repair_harness/' + name, filter=norm)
@@ -44,9 +45,11 @@ def bundle():
 
 
 def bundle_parts(data=None):
-    """The bundle as environment strings MRH_BUNDLE0, MRH_BUNDLE1, ... each under the single-string limit (the package outgrew one string with evidence_v2)."""
+    """The bundle as environment strings MRH_BUNDLE0, MRH_BUNDLE1, ... each under the single-string limit (the package outgrew one string with evidence_v2); the total is capped at TOTAL_LIMIT."""
     data = bundle() if data is None else data
     parts = [data[i:i + ENV_LIMIT - 64] for i in range(0, len(data), ENV_LIMIT - 64)]
+    # client-side `kubectl apply` keeps the whole manifest in one annotation, limited to 262144 bytes: the bundle stays well under that
+    assert len(data) <= TOTAL_LIMIT, 'bundle is %d bytes, over the %d byte ceiling (the apply annotation limit is 262144); trim FILES' % (len(data), TOTAL_LIMIT)
     assert len(parts) <= 4, 'bundle needs %d environment strings; trim FILES' % len(parts)
     return parts
 

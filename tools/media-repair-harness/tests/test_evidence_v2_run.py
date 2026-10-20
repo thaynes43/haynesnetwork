@@ -569,21 +569,37 @@ class Rendering(unittest.TestCase):
                 sizes.append(max(len(p.encode('utf-8')) for p in pages))
             self.assertLessEqual(max(sizes), EV2.WIRE_BYTES)
 
-    def test_long_strings_are_cut_with_an_explicit_marker_never_silently(self):
-        ses, text, n = self.render(obs('t1', 'arr_lookup', 'ok', {'note': 'a' * 1000}))
-        out = json.loads(text)['output']
-        self.assertIn('...[+600 chars not shown]', out['facts']['note'])
-        self.assertEqual(len(out['facts']['note']), 400 + len('...[+600 chars not shown]'))
+    def test_a_long_string_keeps_a_prefix_and_a_pointer_and_the_whole_text_is_retrievable_by_cursor(self):
+        text = ''.join('%04d-' % i for i in range(300))          # 1500 chars, every part distinguishable
+        ses, first, n = self.render(obs('t1', 'arr_lookup', 'ok', {'note': text}))
+        out = json.loads(first)['output']
+        self.assertTrue(out['facts']['note'].startswith(text[:400]))
+        self.assertIn('...[+1100 chars: detail t1.d1]', out['facts']['note'])
+        pages = ev2h.fetch_all(ses, first)
+        chunks = []
+        for t in pages:
+            o = json.loads(t.split('\n')[0])['output']
+            chunks += (o.get('details') or {}).get('t1.d1', []) if isinstance((o.get('details') or {}).get('t1.d1'), list) else ([o['details']['t1.d1']] if 't1.d1' in (o.get('details') or {}) else [])
+        self.assertEqual(''.join(chunks), text)                    # nothing was lost
 
-    def test_a_unit_too_large_for_any_page_is_replaced_by_an_explicit_marker(self):
-        huge = {'a': 'x', 'blob': {'k%d' % i: 'v' * 390 for i in range(40)}}
-        ses, text, n = self.render(obs('t1', 'arr_lookup', 'ok', huge))
-        pages = [json.loads(text)] + [json.loads(ses.fetch(c, 't2', 'ffprobe', 3)[1]) for c in sorted(ses.pages)]
-        marks = [p['output']['page']['oversize'] for p in pages if 'oversize' in p['output'].get('page', {})]
-        self.assertTrue(marks)
-        self.assertEqual(marks[0][0]['section'], 'facts.blob')
-        self.assertGreater(marks[0][0]['bytes'], EV2.WIRE_BYTES - 1500)
-        self.assertTrue(all(len(json.dumps(p).encode()) <= EV2.WIRE_BYTES for p in pages))
+    def test_a_large_structure_is_split_into_units_and_every_leaf_is_on_some_page(self):
+        huge = {'a': 'x', 'blob': {'k%d' % i: 'v%d' % i * 100 for i in range(40)}, 'rows': [{'n': i, 'pad': 'p' * 300} for i in range(60)]}
+        ses, first, n = self.render(obs('t1', 'arr_lookup', 'ok', huge))
+        self.assertGreater(n, 1)
+        pages = ev2h.fetch_all(ses, first)
+        got = {}
+        for t in pages:
+            self.assertLessEqual(len(t.encode('utf-8')), EV2.WIRE_BYTES)        # fetched as the sixth call, notice included
+            o = json.loads(t.split('\n')[0])['output']
+            self.assertNotIn('exceeds_envelope', o.get('page', {}))
+            for path, v in ev2h.walk_leaves(o.get('facts') or {}):
+                got.setdefault(path, []).append(v)
+        self.assertEqual(sorted(k for k in got if k[0] == 'blob'), sorted(('blob', 'k%d' % i) for i in range(40)))
+        for i in range(40):                               # a 300+ character value is whole or has its pointer; none is missing
+            v = got[('blob', 'k%d' % i)]
+            self.assertEqual(len(v), 1)
+            self.assertTrue(v[0] == 'v%d' % i * 100 or v[0].startswith(('v%d' % i * 100)[:400]))
+        self.assertEqual(sorted(got[('rows', 'n')]), list(range(60)))
 
     def test_outer_truncation_flag_and_pagination_are_different_facts(self):
         ses, text, n = self.render(obs('t1', 'ffprobe', 'ok', big_probe(300)))
@@ -613,7 +629,8 @@ class Rendering(unittest.TestCase):
         for pg in allpages:
             self.assertEqual(len([a for a in pg['alerts'] if a['type'] == 'conflict']), 8)    # repeated on every page
             if np > 1:
-                self.assertEqual(pg['page']['conflicts_total'], len(pg['alerts']))
+                self.assertEqual(pg['page']['alerts_total'], len(pg['alerts']))
+                self.assertEqual(pg['page']['conflicts_total'], len([x for x in pg['alerts'] if x['type'] == 'conflict']))
         details = [x['id'] for pg in allpages for it in pg.get('items', []) for x in it.get('conflicts', [])]
         self.assertEqual(sorted(details), sorted(a['id'] for a in block['alerts'] if a['type'] == 'conflict'))   # linked to their details somewhere
 
@@ -642,7 +659,7 @@ class Rendering(unittest.TestCase):
                   obs('t2', 'decode_sample', 'ok', decode_out(ss=0, t=4), {'at': 0}, backend='replay'),
                   obs('t3', 'decode_sample', 'ok', decode_out(ss=4, stderr=DAMAGE, frames=27), {'at': 4}, backend='replay')]
         live_probe = {'status': 'ok', 'tool': 'probe', 'mode': 'live', 'coverage': {'verified': ['container and stream headers parse'], 'not_verified': ['stream contents: nothing was decoded']},
-                      'output': {'format': 'matroska,webm', 'duration_s': 8.0, 'bytes': 1000, 'streams': [], 'chapters': [{'start_s': 0.0, 'end_s': 4.0, 'title': 'A'}], 'findings': []}}
+                      'output': {'format': 'matroska,webm', 'duration_s': 8.0, 'bytes': 1000, 'streams': [{'index': 0, 'type': 'video', 'codec': 'h264'}], 'chapters': [{'start_s': 0.0, 'end_s': 4.0, 'title': 'A'}], 'findings': []}}
         live_decode = {'status': 'ok', 'tool': 'decode', 'mode': 'live', 'coverage': {'verified': ['2 segments'], 'not_verified': ['the rest']},
                        'output': {'duration_s': 8.0, 'segments': [{'at_s': 0.0, 'window_s': 4, 'state': 'clean', 'decoded_s': 4.0, 'error_lines': 0, 'errors': []},
                                                                   {'at_s': 4.0, 'window_s': 4, 'state': 'errors', 'decoded_s': 4.0, 'error_lines': 1, 'errors': [DAMAGE]}],
@@ -653,7 +670,7 @@ class Rendering(unittest.TestCase):
         ia, ib = list(a['time'].values())[0], list(b['time'].values())[0]
         self.assertEqual((ia['clean'], ia['damaged'], ia['not_checked']), (ib['clean'], ib['damaged'], ib['not_checked']))
         self.assertEqual(a['container']['state'], b['container']['state'])
-        self.assertEqual([c['decode'] for c in a['chapters']], [c['decode'] for c in b['chapters']])
+        self.assertEqual([c['by_stream']['unrecorded'] for c in a['chapters']], [c['by_stream']['0:v:0'] for c in b['chapters']])   # same states; the live windows name their streams
         fa = [f for it in EV2.analyze(replay)['items'].values() for f in it.findings]
         fb = [f for it in EV2.analyze(live)['items'].values() for f in it.findings]
         self.assertEqual([(f['kind'], f['location']['start_s'], f['location']['end_s']) for f in fa], [(f['kind'], f['location']['start_s'], f['location']['end_s']) for f in fb])
@@ -663,7 +680,7 @@ class Rendering(unittest.TestCase):
                 'coverage': {'verified': ['v1'], 'not_verified': ['the rest of the file was not decoded', 'subtitles']},
                 'output': {'duration_s': 8.0, 'segments': [], 'full': None, 'findings': ['1 planned segments skipped: collector deadline reached']}}
         d = EV2.derive(obs('t1', 'decode_sample', 'partial', live, backend='live'))
-        self.assertEqual(d.scope['completed']['coverage'], {'verified': ['v1'], 'not_verified': ['the rest of the file was not decoded', 'subtitles']})
+        self.assertEqual(EV2.item_facts(d)['coverage'], {'verified': ['v1'], 'not_verified': ['the rest of the file was not decoded', 'subtitles']})
         self.assertIn('the rest of the file was not decoded', d.unresolved)
         self.assertFalse(any(f['known_defect'] for f in d.findings))      # collector notes are not promoted to defects
 
@@ -804,7 +821,7 @@ class LeakMetadata(unittest.TestCase):
             cursor = json.loads(ad1.calls[-1][-1]['content'])['output']['page']['next']
             rec, ad = ev2h.scripted_run(case, ts, [tc('ffprobe'), tc('ffprobe', {'cursor': cursor}), tc('ffprobe', {'cursor': 'c' + 'f' * 15}), tc('audio_sample'), tc('decode_sample', {'full': True}), dec()],
                                         which=th.NO_BINARIES, evidence_format='v2')
-            blob = json.dumps(ad.calls)
+            blob = ad.sent_text()      # system prompt, schema and every message of every call
             self.assertNotIn(self.CANARY, blob, n)
             for forbidden in ('zxq_truth', 'zxq_action', 'zxq_class', 'zxq_check', 'zxq_split'):
                 self.assertNotIn(forbidden, blob)
@@ -819,7 +836,7 @@ class LeakMetadata(unittest.TestCase):
         rec_file = dict(L.REPLAY_FILE, sha256=hashlib.sha256(b'not really media' * 50).hexdigest())
         ts.add_file('fixtures/probes/flip-answer-name.mkv.json', json.dumps(rec_file).encode())
         rec, ad = ev2h.scripted_run(case, ts, [tc('ffprobe'), tc('decode_sample', {'at': 4}), dec()], which=th.NO_BINARIES, evidence_format='v2')
-        blob = json.dumps(ad.calls)
+        blob = ad.sent_text()
         for token in ('leak-secret-id-777', 'flip-answer-name', 'flip-answer'):
             self.assertNotIn(token, blob)
         ts.cleanup()
@@ -827,7 +844,7 @@ class LeakMetadata(unittest.TestCase):
     def test_the_typed_layer_has_no_access_to_the_case_object(self):
         import inspect
         sig = inspect.signature(EV2.Session.__init__)
-        self.assertEqual(list(sig.parameters), ['self', 'alias', 'context', 'media_type', 'tools_offered'])
+        self.assertEqual(list(sig.parameters), ['self', 'alias', 'context', 'media_type', 'tools_offered', 'budget'])
         src = inspect.getsource(EV2)
         for field in ("'truth'", "'supported_actions'", "'accepted_classes'", "'solvable'", "'family'", "'corrections'", "'provenance'", "'outcome_step'", "'inject_tool_failure'",
                       "'case_id'", "'suite_version'"):
@@ -851,7 +868,7 @@ class LeakLookingAhead(unittest.TestCase):
     def test_sentinels_in_uncalled_replay_results_never_reach_any_request(self):
         case, ts = self.case_and_suite()
         rec, ad = ev2h.scripted_run(case, ts, [tc('ffprobe'), tc('decode_sample', {'at': 0}), dec()], which=th.NO_BINARIES, evidence_format='v2')
-        blob = json.dumps(ad.calls)
+        blob = ad.sent_text()
         for token in (SENTINEL, '99.9876', 'WINDOW4', 'WINDOW8', 'TITLECARD'):
             self.assertNotIn(token, blob)
         self.assertIn('"offsets_s":[0,4,8]', json.dumps(json.loads(ad.calls[0][0]['content'])['capabilities'], separators=(',', ':')))   # offsets, not results
@@ -873,9 +890,9 @@ class LeakLookingAhead(unittest.TestCase):
         ts.cleanup()
         ts = L.suite_with(case, probes=False)
         rec, ad = ev2h.scripted_run(case, ts, [tc('decode_sample', {'at': 0}), dec()], which=th.NO_BINARIES, evidence_format='v2')
-        blob = json.dumps(ad.calls)
+        blob = ad.sent_text()
         self.assertNotIn('INJECT', blob)
-        self.assertNotIn('injected', blob.lower())
+        self.assertNotIn('injected', json.dumps([f['messages'] for f in ad.full]).lower())     # (the static v4 system prompt itself uses the word)
         reply = json.loads(ad.calls[-1][-1]['content'])
         self.assertEqual((reply['status'], reply['output']['execution']['state']), ('error', 'failed'))
         self.assertNotIn('backend', reply['output'])                       # the harness-side 'injected' backend marker became unknown
@@ -1150,7 +1167,7 @@ class BranchesUnderV2(unittest.TestCase):
                                     evidence_which=TE.which_with('ffmpeg', 'ffprobe'), which=lambda n: None, evidence_format='v2')
         reply = json.loads(ad.calls[-1][-1]['content'])['output']
         self.assertEqual(reply['backend'], 'live')
-        self.assertTrue(reply['scope']['completed']['coverage']['not_verified'])
+        self.assertTrue(reply['facts']['coverage']['not_verified'])
         self.assertEqual(reply['coverage']['time']['0:v:0']['checked_fraction'], 1.0)          # three overlapping windows, one union
         self.assertEqual(rec['tool_calls'][1]['mode'], 'live')
         ts.cleanup()

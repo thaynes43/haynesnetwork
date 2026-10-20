@@ -48,8 +48,24 @@ def view_of(case_like, evidence_obs, alias='case-00000000'):
     return ses, block, n
 
 
+class SpyAdapter(A.ScriptedAdapter):
+    """A scripted model that also keeps everything it was SENT: the system prompt, the messages and the schema (`full`), not just the messages."""
+
+    def __init__(self, model, replies):
+        super().__init__(model, replies)
+        self.full = []
+
+    def complete(self, system, messages, schema=None):
+        self.full.append({'system': system, 'messages': json.loads(json.dumps(messages)), 'schema': json.loads(json.dumps(schema)) if schema is not None else None})
+        return super().complete(system, messages, schema)
+
+    def sent_text(self):
+        """Everything sent to the model in every call, as one string."""
+        return json.dumps(self.full, ensure_ascii=False)
+
+
 def scripted_run(case, suite, replies, prompt='v4', **kw):
-    ad = A.ScriptedAdapter('scripted-model', replies)
+    ad = SpyAdapter('scripted-model', replies)
     rec = R.run_case(case, 'sha-' + case['id'], ad, suite.root, tempfile.mkdtemp(), run_id='ev2', prompt_version=prompt, **kw)
     return rec, ad
 
@@ -79,3 +95,32 @@ def ev(i, tool, status='ok', output=None, args=None):
 
 def wire(messages):
     return '\n'.join(m['content'] for m in messages if m['role'] == 'user')
+
+
+def fetch_all(ses, first_text, tool=None, call_id='t6', remaining=0, notice=True):
+    """Fetch every page of a reply by following its cursors, the way a model would: as the SIXTH call, with the budget notice appended (the worst case for the
+    8192-byte limit).  -> list of wire texts, the first one included."""
+    tool = tool or max(ses.tools or ['ffprobe'], key=len)
+    suffix = ('\n' + P.BUDGET_MESSAGE) if notice else ''
+    texts = [first_text]
+    body = json.loads(first_text.split('\n')[0])
+    out = body['output'] if 'output' in body else body['evidence']
+    cur = (out.get('page') or {}).get('next')
+    while cur:
+        status, t = ses.fetch(cur, call_id, tool, remaining, suffix)
+        assert status == 'ok', t[:200]
+        texts.append(t)
+        cur = (json.loads(t.split('\n')[0])['output'].get('page') or {}).get('next')
+    return texts
+
+
+def walk_leaves(obj, path=()):
+    """Every (path, scalar) of a nested structure; a list index is not part of the path (so a split list reads as one path)."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield from walk_leaves(v, path + (k,))
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from walk_leaves(v, path)
+    else:
+        yield path, obj

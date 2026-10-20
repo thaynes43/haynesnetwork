@@ -110,8 +110,8 @@ class TypedFindings(unittest.TestCase):
         self.assertEqual(d.intervals[0]['end_s'], 4.0)
         self.assertTrue(any('whole file was not decoded' in u for u in d.unresolved))
 
-    def test_a_recorded_full_decode_completes_only_when_exit_zero_and_the_span_matches_the_duration(self):
-        full = {'exit_code': 0, 'frames': 67, 'out_time': '00:00:08.000000', 'stderr': ''}
+    def test_a_recorded_full_decode_completes_only_on_a_decoded_span_that_reaches_the_known_duration(self):
+        full = {'window_s': 'full', 'exit_code': 0, 'frames': 67, 'out_time': '00:00:08.000000', 'stderr': ''}
         d = derive_one(obs('e1', 'decode_sample', 'ok', full, {'full': True}, source='case'), 8.046)
         self.assertIs(d.completed_to_eof, True)
         self.assertEqual(d.intervals[0]['basis'], 'full_decode')
@@ -120,10 +120,29 @@ class TypedFindings(unittest.TestCase):
         self.assertIn('decoded_span_shorter_than_duration', [c['kind'] for c in d.conflicts])
         d = derive_one(obs('e1', 'decode_sample', 'ok', dict(full, exit_code=1), {'full': True}, source='case'), 8.046)
         self.assertIs(d.completed_to_eof, False)
-        d = derive_one(obs('e1', 'decode_sample', 'ok', full, {'full': True}, source='case'), None)   # unknown duration: exit 0 without a limit is the proof
-        self.assertIs(d.completed_to_eof, True)
-        d = derive_one(obs('e1', 'decode_sample', 'ok', {'frames': 5, 'stderr': ''}, {'full': True}, source='case'), 8.0)   # no exit code recorded
+        # unknown duration: completion is unknown, never assumed (Astra 3, Opus 3)
+        d = derive_one(obs('e1', 'decode_sample', 'ok', full, {'full': True}, source='case'), None)
         self.assertIsNone(d.completed_to_eof)
+        # no decoded span: unknown
+        d = derive_one(obs('e1', 'decode_sample', 'ok', {'window_s': 'full', 'exit_code': 0, 'stderr': '', 'frames': 5}, {'full': True}, source='case'), 8.0)
+        self.assertIsNone(d.completed_to_eof)
+        d = derive_one(obs('e1', 'decode_sample', 'ok', {'window_s': 'full', 'frames': 5, 'stderr': ''}, {'full': True}, source='case'), 8.0)   # no exit code recorded
+        self.assertIsNone(d.completed_to_eof)
+
+    def test_a_full_request_with_a_result_that_does_not_say_it_is_full_proves_nothing(self):
+        """Astra 3 counterexample: full:true plus exit 0, empty stderr and selected streams, with no decoded span or EOF observation."""
+        out = {'exit_code': 0, 'stderr': '', 'streams_selected': ['0:v:0', '0:a:0']}
+        d = derive_one(obs('t1', 'decode_sample', 'ok', out, {'full': True}), 8.0)
+        self.assertIsNone(d.completed_to_eof)
+        self.assertEqual(d.intervals, [])
+        self.assertEqual(d.integrity, 'unknown')
+        # the same, as a tool's own `completed_to_eof: true` claim over a 10 s span of a 100 s file (Opus 3): the claim is checked and refused
+        claim = {'window_s': 'full', 'exit_code': 0, 'frames': 250, 'out_time': '00:00:10.000000', 'stderr': '', 'completed_to_eof': True, 'streams_selected': ['0:v:0', '0:a:0']}
+        d = derive_one(obs('t1', 'decode_sample', 'ok', claim, {'full': True}), 100.0)
+        self.assertIs(d.completed_to_eof, False)
+        d = derive_one(obs('t1', 'decode_sample', 'ok', claim, {'full': True}), None)
+        self.assertIsNone(d.completed_to_eof)
+        self.assertTrue(any('not shown to check it' in u for u in d.unresolved))
 
     def test_replay_serving_a_different_window_is_a_stated_conflict(self):
         out = decode_out(ss=4, frames=27, requested_at_s=6.0, note_window='replay serves the recorded window at ss=4 (recorded: [0, 4, 8])')
@@ -255,8 +274,23 @@ class CoverageMatrix(unittest.TestCase):
         ch = [{'start': '0', 'end': '4', 'title': 'A'}, {'start': '4', 'end': '8', 'title': 'B'}, {'start': '8', 'end': '12', 'title': 'C'}, {'start': '12', 'end': '16', 'title': 'D'}]
         p = obs('e1', 'ffprobe', 'ok', probe_out(duration='16', chapters=ch))
         c = self.cov(p, self.win('t1', 0, 4), self.win('t2', 4, 6), self.win('t3', 9, 10, 'damaged'))
-        states = {r['title']: r['decode'] for r in c['chapters']}
-        self.assertEqual(states, {'A': 'clean', 'B': 'partly_checked', 'C': 'damaged', 'D': 'not_checked'})
+        states = {r['title']: r['by_stream'] for r in c['chapters']}
+        self.assertEqual({t: v['unrecorded'] for t, v in states.items()}, {'A': 'clean', 'B': 'partly_checked', 'C': 'damaged', 'D': 'not_checked'})
+        self.assertEqual({v['0:v:0'] for v in states.values()}, {'unknown'})     # the container's streams: which of them the unnamed windows covered is not recorded
+        self.assertTrue(all('decode' not in r for r in c['chapters']))    # no combined label without a scope
+
+    def test_chapter_coverage_is_per_stream_a_video_only_decode_leaves_the_audio_unchecked(self):
+        """Astra 8 counterexample."""
+        ch = [{'start': '0', 'end': '4', 'title': 'A'}, {'start': '4', 'end': '8', 'title': 'B'}]
+        p = obs('e1', 'ffprobe', 'ok', probe_out(duration='8', chapters=ch))
+        c = self.cov(p, self.win('t1', 0, 4, stream_sel=['0:v:0']))
+        rows = {r['title']: r['by_stream'] for r in c['chapters']}
+        self.assertEqual(rows['A'], {'0:a:0': 'not_checked', '0:v:0': 'clean'})
+        self.assertEqual(rows['B'], {'0:a:0': 'not_checked', '0:v:0': 'not_checked'})
+        c = self.cov(p, self.win('t1', 0, 4, stream_sel=['0:v:0']), self.win('t2', 4, 8))        # an unrecorded window: the other stream is unknown, not unchecked
+        self.assertEqual({r['title']: r['by_stream']['0:a:0'] for r in c['chapters']}, {'A': 'unknown', 'B': 'unknown'})
+        c = self.cov(p, self.win('t1', 0, 4, stream_sel=['0:v:0']), self.win('t2', 0, 4, 'damaged', stream_sel=['0:a:0']))
+        self.assertEqual({r['title']: r['by_stream'] for r in c['chapters']}['A'], {'0:a:0': 'damaged', '0:v:0': 'clean'})
 
     def test_streams_list_says_unknown_when_the_selection_is_not_recorded(self):
         p = obs('e1', 'ffprobe', 'ok', probe_out(duration='8'))
@@ -363,7 +397,9 @@ class ClientComparison(unittest.TestCase):
         c = self.compare(dict(PROFILE, hdr='hdr10 only'))
         self.assertEqual(c['not_compared'], ['hdr'])
         c = self.compare({'containers': ['mp4'], 'video': 'something unusual', 'audio': 'whatever'})
-        self.assertIn('prose not fully read', c['not_compared'])
+        self.assertTrue(any(x.startswith('video: statement not read') for x in c['not_compared']))
+        self.assertTrue(any(x.startswith('audio: statement not read') for x in c['not_compared']))
+        self.assertFalse(c['summary']['complete'])
 
     def test_comparison_needs_stream_facts_first(self):
         a = analysis([obs('e1', 'arr_lookup', 'ok', {'a': 1})], {'client_profile': PROFILE})
@@ -535,14 +571,14 @@ class AuditV2(unittest.TestCase):
     def test_observed_completion_with_a_clean_result_is_met(self):
         probe = {'id': 'e1', 'tool': 'ffprobe', 'status': 'ok', 'args': {}, 'output': json.dumps(probe_out(duration='8.046'))}
         full = {'id': 'e2', 'tool': 'decode_sample', 'status': 'ok', 'args': {'full': True},
-                'output': json.dumps({'exit_code': 0, 'frames': 67, 'out_time': '00:00:08.000000', 'stderr': '', 'streams_selected': ['0:v:0', '0:a:0']})}
+                'output': json.dumps({'window_s': 'full', 'exit_code': 0, 'frames': 67, 'out_time': '00:00:08.000000', 'stderr': '', 'streams_selected': ['0:v:0', '0:a:0']})}
         met, a = self.met([probe, full], 'v2')
         self.assertTrue(met)
         self.assertTrue([c for c in a['preconditions'] if c['id'] == 'full_decode_ok'][0]['met'])
 
     def test_completion_and_a_clean_result_without_a_recorded_stream_scope_is_not_met(self):
         probe = {'id': 'e1', 'tool': 'ffprobe', 'status': 'ok', 'args': {}, 'output': json.dumps(probe_out(duration='8.046'))}
-        full = {'id': 'e2', 'tool': 'decode_sample', 'status': 'ok', 'args': {'full': True}, 'output': json.dumps({'exit_code': 0, 'frames': 67, 'out_time': '00:00:08.000000', 'stderr': ''})}
+        full = {'id': 'e2', 'tool': 'decode_sample', 'status': 'ok', 'args': {'full': True}, 'output': json.dumps({'window_s': 'full', 'exit_code': 0, 'frames': 67, 'out_time': '00:00:08.000000', 'stderr': ''})}
         met, a = self.met([probe, full], 'v2')
         self.assertFalse(met)
         detail = [c for c in a['preconditions'] if c['id'] == 'full_decode_ok'][0]['detail']
@@ -564,6 +600,205 @@ class AuditV2(unittest.TestCase):
     def test_version_one_audit_gets_no_new_key(self):
         _, a = self.met([], 'v1')
         self.assertNotIn('audit_version', a)
+
+
+class UnknownStaysUnknown(unittest.TestCase):
+    """Astra 1 and Opus 2, as synthetic pairs: each counterexample next to its control."""
+
+    def test_unrecognised_decoder_text_is_not_a_defect_and_not_clean(self):
+        for text in ('Decoder not found', '[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size', 'something nobody has seen'):
+            d = derive_one(obs('t1', 'decode_sample', 'ok', decode_out(ss=4, stderr=text), {'at': 4}), 8.0)
+            self.assertEqual([(f['kind'], f['known_defect']) for f in d.findings], [('decoder_messages_unclassified', False)], text)
+            self.assertEqual(d.conflicts, [], text)
+            self.assertEqual(d.integrity, 'unknown', text)
+            self.assertEqual([i['state'] for i in d.intervals], ['unclassified'], text)
+        control = derive_one(obs('t1', 'decode_sample', 'ok', decode_out(ss=4, stderr=DAMAGE), {'at': 4}), 8.0)
+        self.assertEqual((control.integrity, control.findings[0]['known_defect']), ('damaged', True))
+        clean = derive_one(obs('t1', 'decode_sample', 'ok', decode_out(ss=4), {'at': 4}), 8.0)
+        self.assertEqual(clean.integrity, 'clean')
+
+    def test_an_unclassified_window_is_neither_clean_nor_damaged_in_the_matrix_and_never_erases_damage(self):
+        p = obs('e1', 'ffprobe', 'ok', probe_out(duration='8'))
+        clean = obs('t1', 'decode_sample', 'ok', decode_out(ss=0, t=8, out_time='00:00:08.000000'), {'at': 0})
+        odd = obs('t2', 'decode_sample', 'ok', decode_out(ss=2, t=4, stderr='Decoder not found'), {'at': 2})
+        bad = obs('t3', 'decode_sample', 'ok', decode_out(ss=3, t=2, stderr=DAMAGE, out_time='00:00:02.000000'), {'at': 3})
+        row = analysis([p, clean, odd, bad])['coverage']['time']['unrecorded']
+        self.assertEqual(row['damaged'], [[3.0, 5.0]])
+        self.assertEqual(row['unclassified'], [[2.0, 3.0], [5.0, 6.0]])
+        self.assertEqual(row['clean'], [[0.0, 2.0], [6.0, 8.0]])
+        self.assertEqual(analysis([p, bad, odd, clean])['coverage']['time']['unrecorded'], row)           # order independent
+
+    def test_an_empty_ok_probe_is_not_clean_and_does_not_support_healthy(self):
+        for empty in ({}, {'format': {}}, {'streams': []}, {'exit_code': 0, 'stderr': '', 'streams': []}, ''):
+            d = derive_one(obs('e1', 'ffprobe', 'ok', empty, source='case'))
+            self.assertNotEqual(d.container, 'clean', empty)
+            self.assertEqual(d.integrity, 'unknown', empty)
+        healthy = {'type': 'decision', 'class': 'healthy', 'action': 'none', 'target': None, 'confidence': 0.9, 'evidence_refs': ['e1'], 'reason': 'r'}
+        shown = [{'id': 'e1', 'tool': 'ffprobe', 'args': {}, 'status': 'ok', 'output': '{}'}]
+        self.assertIn('no clean integrity result', DG.check_healthy_v3(healthy, shown, []))
+        shown = [{'id': 'e1', 'tool': 'ffprobe', 'args': {}, 'status': 'ok', 'output': json.dumps(probe_out())}]
+        self.assertIsNone(DG.check_healthy_v3(healthy, shown, []))      # control: a populated probe is a positive clean observation
+        d = derive_one(obs('e1', 'ffprobe', 'ok', probe_out(streams=[])))
+        self.assertEqual(d.integrity, 'unknown')                         # a container with no streams listed is not a positive observation either
+
+    def test_a_decode_that_states_no_data_is_not_clean(self):
+        for out in ({'exit_code': 0, 'stderr': ''}, {'exit_code': 0, 'stderr': '', 'frames': 0}):
+            d = derive_one(obs('e1', 'decode_sample', 'ok', out, {'ss': 0, 't': 4}, source='case'), 8.0)
+            self.assertNotEqual(d.integrity, 'clean', out)
+        d = derive_one(obs('e1', 'decode_sample', 'ok', {'bytes_read': 4096, 'duration_limit_seconds': 4, 'exit_code': 0, 'quota_exhausted': False, 'stderr': ''}, {'ss': 0, 't': 4}, source='case'))
+        self.assertEqual(d.integrity, 'clean')                           # control: bytes read are a positive observation
+
+    def test_plain_text_integrity_output_keeps_its_text_and_only_explicit_damage_wording_is_a_defect(self):
+        d = derive_one(obs('t1', 'ffprobe', 'ok', 'moov atom not found'))
+        self.assertEqual((d.integrity, d.findings[0]['kind'], d.findings[0]['known_defect']), ('damaged', 'container_damage', True))
+        self.assertEqual(d.facts, {'raw': 'moov atom not found'})
+        d = derive_one(obs('t1', 'ffprobe', 'ok', 'a message nobody has classified'))
+        self.assertEqual((d.integrity, d.findings, d.facts), ('unknown', [], {'raw': 'a message nobody has classified'}))
+        cut = '{"exit_code": 0, "stderr": "[mov,mp4 @ 0x0] moov atom not fo ...[output cut off]'     # an injected partial: the text is shown, the structure is not
+        d = derive_one(obs('t1', 'audiobook_inspect', 'partial', cut))
+        self.assertEqual((d.integrity, d.facts), ('unknown', {'raw': cut}))
+        self.assertTrue(any('plain text' in u for u in d.unresolved))
+        d = derive_one(obs('t1', 'decode_sample', 'ok', 'Error while decoding stream #0:0: Invalid data found when processing input', {'at': 0}))
+        self.assertEqual((d.integrity, d.findings[0]['kind']), ('damaged', 'decoder_errors'))
+
+
+def live_audiobook(files, status='ok', parts=None, tags=None):
+    out = {'parts': len(files), 'parts_probed': sum(1 for f in files if f.get('probe') in (None, 'ok')), 'ignored_non_audio_files': 0, 'total_duration_s': 20.0, 'files': files, 'findings': []}
+    if tags is not None:
+        out['tag_consistency'] = tags
+    return {'status': status, 'tool': 'audiobook', 'mode': 'live', 'coverage': {'verified': ['chapters, durations and tags read from %d of %d part(s) via ffprobe' % (out['parts_probed'], out['parts'])],
+                                                                                'not_verified': ['audio outside the sampled segments']}, 'output': out}
+
+
+def book_file(errors=None, state='clean', tags=None, probe=None, **extra):
+    seg = {'at_s': 0.0, 'state': state, 'decoded_s': 3.0, 'error_lines': len(errors or [])}
+    if errors:
+        seg['errors'] = errors
+    f = {'name': 'part-01.m4b', 'bytes': 1000, 'format': 'mov,mp4,m4a,3gp,3g2,mj2', 'duration_s': 20.0, 'audio_streams': [{'index': 0, 'codec': 'aac', 'channels': 1}],
+         'tags': tags or {'album': 'The Lantern Road', 'artist': 'Mira Tolland'}, 'chapter_count': 2,
+         'chapters': [{'start_s': 0.0, 'end_s': 10.0, 'title': 'One'}, {'start_s': 10.0, 'end_s': 20.0, 'title': 'Two'}],
+         'decode': {'segments_run': 1, 'segments': [seg]}}
+    f.update(extra)
+    if probe:
+        f = {'name': 'part-01.m4b', 'bytes': 1000, 'probe': probe, 'probe_cause': 'input', 'probe_reason': 'ffprobe exited 1: the container could not be read'}
+    return f
+
+
+def live_epub(valid=True, findings=(), stage=None, error=None, status='ok', cause=None, passed=('zip_open', 'zip_crc', 'opf_parse', 'manifest', 'spine')):
+    out = {'valid': valid, 'stages_passed': list(passed), 'findings': list(findings), 'entries': 7, 'opf': 'OEBPS/content.opf', 'dc_title': ['The Lantern Road'],
+           'dc_creator': ['Mira Tolland'], 'dc_language': ['en'], 'dc_identifier': ['urn:x'], 'epub_version': '3.0', 'spine_items': 3, 'spine_characters': 900}
+    if stage:
+        out.update(stage=stage, error=error)
+    rec = {'status': status, 'tool': 'epub', 'mode': 'live', 'coverage': {'verified': ['container.xml parses'], 'not_verified': ['reading quality']}, 'output': out}
+    if cause:
+        rec['cause'] = cause
+    return rec
+
+
+class LiveBookSchemas(unittest.TestCase):
+    """Astra 2: the actual live book collector schemas keep their facts and their explicit damage."""
+
+    def test_audiobook_with_recognised_decoder_errors_is_damaged_not_clean(self):
+        rec = live_audiobook([book_file(errors=[DAMAGE], state='errors')])
+        d = derive_one(obs('t1', 'audiobook_inspect', 'ok', rec, backend='live'))
+        self.assertEqual(d.integrity, 'damaged')
+        self.assertEqual([(f['kind'], f['known_defect'], f['location']['file']) for f in d.findings], [('decoder_errors', True, 'part-1')])
+        clean = derive_one(obs('t1', 'audiobook_inspect', 'ok', live_audiobook([book_file()]), backend='live'))
+        self.assertEqual((clean.integrity, clean.findings), ('clean', []))             # control
+        odd = derive_one(obs('t1', 'audiobook_inspect', 'ok', live_audiobook([book_file(errors=['Decoder not found'], state='errors')]), backend='live'))
+        self.assertEqual((odd.integrity, [f['known_defect'] for f in odd.findings]), ('unknown', [False]))
+        healthy = {'type': 'decision', 'class': 'healthy', 'action': 'none', 'target': None, 'confidence': 0.9, 'evidence_refs': ['t1'], 'reason': 'r'}
+        shown = lambda rec_: [{'id': 'e1', 'tool': 'ffprobe', 'args': {}, 'status': 'ok', 'output': json.dumps(probe_out())},
+                              {'id': 't9', 'tool': 'audiobook_inspect', 'args': {}, 'status': 'ok', 'output': json.dumps(rec_)}]
+        self.assertIn('decoder_errors', DG.check_healthy_v3(healthy, shown(rec), []))
+        self.assertIsNone(DG.check_healthy_v3(healthy, shown(live_audiobook([book_file()])), []))
+
+    def test_audiobook_facts_survive_and_decode_windows_are_per_part(self):
+        rec = live_audiobook([book_file(), book_file(errors=[DAMAGE], state='errors')], tags={'consistent': False, 'inconsistent': {'album': {'A': ['part-01.m4b']}}})
+        d = derive_one(obs('t1', 'audiobook_inspect', 'ok', rec, backend='live'))
+        self.assertEqual(d.facts['parts'], 2)
+        self.assertEqual(d.facts['files'][0]['tags'], {'album': 'The Lantern Road', 'artist': 'Mira Tolland'})
+        self.assertEqual(d.facts['files'][0]['audio_streams'], [{'index': 0, 'codec': 'aac', 'channels': 1}])
+        self.assertEqual([c['title'] for c in d.facts['chapters'] if c['part'] == 1], ['One', 'Two'])
+        self.assertEqual(d.facts['tag_consistent'], False)
+        self.assertIn('tags_differ_across_parts', [f['kind'] for f in d.findings])
+        cov = analysis([obs('t1', 'audiobook_inspect', 'ok', rec, backend='live')])['coverage']
+        self.assertEqual([(r['n'], r['clean'], r.get('damaged')) for r in cov['parts']], [(1, [[0.0, 3.0]], None), (2, [], [[0.0, 3.0]])])
+        self.assertEqual(cov['time'], {'state': 'not_checked'})             # part windows are not put on one timeline
+
+    def test_an_unreadable_part_is_a_defect_only_when_the_collector_says_the_input_is_at_fault(self):
+        rec = live_audiobook([book_file(), book_file(probe='error')])
+        d = derive_one(obs('t1', 'audiobook_inspect', 'partial', rec, backend='live'))
+        self.assertEqual((d.integrity, d.findings[0]['kind'], d.findings[0]['known_defect']), ('damaged', 'part_unreadable', True))
+        rec['output']['files'][1]['probe_cause'] = 'tool'
+        d = derive_one(obs('t1', 'audiobook_inspect', 'partial', rec, backend='live'))
+        self.assertEqual((d.integrity, d.findings[0]['kind'], d.findings[0]['known_defect']), ('unknown', 'part_probe_failed', False))
+
+    def test_epub_valid_false_vetoes_healthy_alongside_a_clean_probe(self):
+        rec = live_epub(valid=False, findings=[{'severity': 'warning', 'what': 'mimetype is not the first archive member'}])
+        d = derive_one(obs('t1', 'epub_inspect', 'ok', rec, backend='live'))
+        self.assertIsNotNone(d.veto)
+        self.assertNotEqual(d.integrity, 'clean')
+        healthy = {'type': 'decision', 'class': 'healthy', 'action': 'none', 'target': None, 'confidence': 0.9, 'evidence_refs': ['e1'], 'reason': 'r'}
+        shown = [{'id': 'e1', 'tool': 'ffprobe', 'args': {}, 'status': 'ok', 'output': json.dumps(probe_out())},
+                 {'id': 't1', 'tool': 'epub_inspect', 'args': {}, 'status': 'ok', 'output': json.dumps(rec)}]
+        self.assertIn('package_invalid', DG.check_healthy_v3(healthy, shown, []))
+        shown[1]['output'] = json.dumps(live_epub())                    # control: valid
+        self.assertIsNone(DG.check_healthy_v3(healthy, shown, []))
+
+    def test_epub_dc_metadata_and_explicit_damage_are_preserved(self):
+        d = derive_one(obs('t1', 'epub_inspect', 'ok', live_epub(), backend='live'))
+        self.assertEqual((d.facts['title'], d.facts['creator'], d.facts['language'], d.facts['identifier']), (['The Lantern Road'], ['Mira Tolland'], ['en'], ['urn:x']))
+        self.assertEqual((d.integrity, set(d.package.values())), ('clean', {'clean'}))
+        rec = live_epub(valid=False, findings=[{'severity': 'damage', 'what': 'the spine lists no items'}, {'severity': 'warning', 'what': 'no dc:identifier'}])
+        d = derive_one(obs('t1', 'epub_inspect', 'ok', rec, backend='live'))
+        self.assertEqual([(f['kind'], f['known_defect']) for f in d.findings if f['kind'] != 'package_invalid'], [('package_damage', True), ('package_warning', False)])
+        self.assertEqual(d.integrity, 'damaged')
+        rec = live_epub(valid=False, status='error', cause='input', stage='opf_parse', error='ParseError: x', passed=('zip_open', 'zip_crc'))
+        d = derive_one(obs('t1', 'epub_inspect', 'error', rec, backend='live'))
+        self.assertEqual(d.package, {'zip_open': 'clean', 'zip_crc': 'clean', 'opf_parse': 'damaged', 'manifest': 'not_checked', 'spine': 'not_checked'})
+        self.assertEqual(d.integrity, 'damaged')
+        rec = live_epub(valid=False, status='error', cause='tool', stage='zip_open', error='archive has 9000 members', passed=())
+        d = derive_one(obs('t1', 'epub_inspect', 'error', rec, backend='live'))
+        self.assertEqual((d.integrity, d.findings[0]['known_defect']), ('unknown', False))   # the collector's own cap is not damage ...
+        self.assertIsNotNone(d.veto)                                                            # ... but valid:false still stops a healthy decision
+
+    def test_replay_and_live_equivalence_for_the_actual_book_schemas(self):
+        replay_epub = {'status': 'ok', 'bytes': 3301, 'sha256': 'x', 'opf': 'OEBPS/content.opf', 'dc_title': ['The Lantern Road'], 'dc_creator': ['Mira Tolland'], 'dc_language': ['en'],
+                       'dc_identifier': ['urn:x'], 'entries': 7, 'spine_items': 3, 'spine_characters': 900, 'spine_heads': ['a b c']}
+        a = derive_one(obs('t1', 'epub_inspect', 'ok', replay_epub, backend='local'))
+        b = derive_one(obs('t1', 'epub_inspect', 'ok', live_epub(), backend='live'))
+        for k in ('title', 'creator', 'language', 'identifier', 'entries', 'opf', 'spine_items', 'spine_characters'):
+            self.assertEqual(a.facts[k], b.facts[k], k)
+        self.assertEqual((a.integrity, a.package), (b.integrity, b.package))
+        rd = {'status': 'error', 'bytes': 9, 'entries': 7, 'error': 'ParseError: x', 'stage': 'opf_parse'}
+        a = derive_one(obs('t1', 'epub_inspect', 'error', rd, backend='local'))
+        b = derive_one(obs('t1', 'epub_inspect', 'error', live_epub(valid=False, status='error', cause='input', stage='opf_parse', error='ParseError: x', passed=('zip_open', 'zip_crc')), backend='live'))
+        self.assertEqual((a.integrity, a.package, [(f['kind'], f['known_defect'], f['location']['stage']) for f in a.findings]),
+                         (b.integrity, b.package, [(f['kind'], f['known_defect'], f['location']['stage']) for f in b.findings if f['kind'] == 'package_damage']))
+        replay_book = {'format': 'mov,mp4,m4a,3gp,3g2,mj2', 'duration_s': 20.0, 'bit_rate': '1', 'tags': {'album': 'The Lantern Road'}, 'audio_streams': [{'index': 0, 'codec_name': 'aac', 'channels': 1}],
+                       'chapter_count': 2, 'chapters': [{'start_s': 0.0, 'end_s': 10.0, 'title': 'One'}, {'start_s': 10.0, 'end_s': 20.0, 'title': 'Two'}]}
+        a = derive_one(obs('t1', 'audiobook_inspect', 'ok', replay_book, backend='replay'))
+        b = derive_one(obs('t1', 'audiobook_inspect', 'ok', live_audiobook([book_file(tags={'album': 'The Lantern Road'})]), backend='live'))
+        self.assertEqual(a.facts['chapter_count'] if 'chapter_count' in a.facts else None, 2)
+        self.assertEqual([(c['title'], c['start_s'], c['end_s']) for c in a.facts['chapters']], [(c['title'], c['start_s'], c['end_s']) for c in b.facts['chapters']])
+        self.assertEqual(a.facts['tags'], b.facts['files'][0]['tags'])
+        self.assertEqual((a.integrity, a.container), (b.integrity, b.container))
+
+
+class RequestedFullNotProof(unittest.TestCase):
+    """Astra 3 as an audit pair."""
+
+    def met(self, output, duration='8.046'):
+        probe = {'id': 'e1', 'tool': 'ffprobe', 'status': 'ok', 'args': {}, 'output': json.dumps(probe_out(duration=duration))}
+        full = {'id': 'e2', 'tool': 'decode_sample', 'status': 'ok', 'args': {'full': True}, 'output': json.dumps(output)}
+        return AuditV2().met([probe, full], 'v2')[0]
+
+    def test_exit_zero_empty_stderr_and_selected_streams_without_a_span_is_not_proof(self):
+        self.assertFalse(self.met({'exit_code': 0, 'stderr': '', 'streams_selected': ['0:v:0', '0:a:0']}))
+        self.assertFalse(self.met({'window_s': 'full', 'exit_code': 0, 'stderr': '', 'completed_to_eof': True, 'streams_selected': ['0:v:0', '0:a:0']}))      # a bare claim
+        self.assertTrue(self.met({'window_s': 'full', 'exit_code': 0, 'stderr': '', 'frames': 67, 'out_time': '00:00:08.000000', 'streams_selected': ['0:v:0', '0:a:0']}))   # control
+        self.assertFalse(self.met({'window_s': 'full', 'exit_code': 0, 'stderr': '', 'frames': 67, 'out_time': '00:00:08.000000', 'streams_selected': ['0:v:0', '0:a:0']}, duration='100'))
 
 
 class Robustness(unittest.TestCase):

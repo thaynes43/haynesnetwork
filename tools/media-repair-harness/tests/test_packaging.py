@@ -224,6 +224,10 @@ class JobBundles(unittest.TestCase):
         for part in parts:
             self.assertLess(len(part), launch_wiring_smoke.MAX_ARG_STRLEN - 4096)
         self.assertIn('evidence_v2.py', launch_wiring_smoke.FILES)
+        self.assertLessEqual(len(data), launch_wiring_smoke.TOTAL_LIMIT)      # the apply annotation limit is 262144 bytes
+        self.assertLessEqual(launch_wiring_smoke.TOTAL_LIMIT, 240000)
+        import base64 as b64
+        self.assertEqual(b64.b64decode(data)[:2], b'\x1f\x8b')                # gzip: no lzma dependency in the Job image
         self.run_py(root, "import sys; sys.path.insert(0, 'smoke'); import wiring_smoke; assert wiring_smoke.R.main; assert wiring_smoke.LS.evidence")
 
 
