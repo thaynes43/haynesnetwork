@@ -29,3 +29,7 @@ identity-screenshots/
 
 # embedded postgres data dirs (tests)
 .pg-embedded/
+
+# Python bytecode (scripts/tests, the media repair harness)
+__pycache__/
+*.pyc
