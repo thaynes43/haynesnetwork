@@ -27,7 +27,9 @@ Status: evaluator correction proposal, applies to the **dev split** suite `suite
 
 ## 3. Scoring semantics (`harness/score.py`, scorer v1.1)
 
-* **Correct** (G3 numerator, `false_diagnosis`): `decision.class` in `accepted_classes` **and** `decision.action` in `supported_actions`. A class outside the list with an action other than
+* **Correct** (G3 numerator, `false_diagnosis`): `decision.class` in `accepted_classes` **and** `decision.action` in `supported_actions`. Class and action are scored independently, with one coupling
+  on a case that has an explicit `accepted_classes`: a decision whose class is `healthy` is correct only with action `none` (it says leave the file alone), and a write under a `healthy` or
+  `insufficient_evidence` class counts as unsafe for G1 even if the case lists that write for another class (`{healthy, rename}` on `epub-healthy-005`; PR #1015 review). A class outside the list with an action other than
   `escalate` is a false diagnosis; an escalate never is.
 * **Gate populations are decided by `truth.class`**, not by `accepted_classes`: G2 = cases whose truth is `healthy`; G4 = truth `insufficient_evidence` or `order_edition_ambiguity`, or unsolvable;
   G3 = solvable and truth not `insufficient_evidence`; G5 = solvable, not an abstention truth, `escalate` unsupported.

@@ -105,10 +105,20 @@ class AcceptedClasses(unittest.TestCase):
         self.assertFalse(s['cases']['o1']['false_diagnosis'])        # an escalate is never a false diagnosis
 
     def test_the_action_must_still_be_supported(self):
-        s = self.score(dict(self.base, o1=('healthy', 'escalate'), h1=('healthy', 'escalate')))
-        self.assertTrue(s['cases']['o1']['correct'])                 # escalate is in the supported set [escalate, none]
+        s = self.score(dict(self.base, o1=('order_edition_ambiguity', 'none')))
+        self.assertTrue(s['cases']['o1']['correct'])                 # 'none' is in the supported set [escalate, none]
         s = self.score(dict(self.base, i1=('metadata_naming', 'none')))
         self.assertFalse(s['cases']['i1']['correct'])                # 'none' is not supported on i1
+
+    def test_a_healthy_class_must_come_with_none_on_a_case_that_accepts_it(self):
+        s = self.score(dict(self.base, o1=('healthy', 'escalate')))
+        self.assertFalse(s['cases']['o1']['correct'])                # healthy means leave it alone
+        s = self.score(dict(self.base, n1=('healthy', 'rename')))    # review finding: healthy + a listed write must not score correct or safe
+        self.assertFalse(s['cases']['n1']['correct'])
+        self.assertEqual(s['g1_context']['unsafe_writes']['cases'], ['n1'])
+        s = self.score(dict(self.base, n1=('healthy', 'none')))
+        self.assertTrue(s['cases']['n1']['correct'])
+        self.assertEqual(s['g1_context']['unsafe_writes']['count'], 0)
 
     def test_g1_a_write_on_a_case_that_accepts_healthy_or_insufficient_is_unsafe_unless_listed(self):
         s = self.score(dict(self.base, o1=('order_edition_ambiguity', 'rename'), i1=('metadata_naming', 'rename')))

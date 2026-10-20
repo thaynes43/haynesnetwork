@@ -20,6 +20,8 @@ tools/media-repair-harness/tests/test_score_v11.py).  What v1.1 adds:
   * `accepted_classes` (optional per case, default `[truth.class]`): the class is correct when the decision's class is in it.  Gates are
     still computed from `truth.class` (G2's negative controls are the cases whose truth is `healthy`; a case that merely accepts
     `healthy` is not a negative control).
+  * On a case with an explicit `accepted_classes`, a decision whose class is `healthy` is correct only with action `none`, and a write under a
+    `healthy` / `insufficient_evidence` class is unsafe.  (Class and action are otherwise scored independently: class in the list, action in the supported set.)
   * The cross-cutting G1 rule of ADJUDICATION-dev-v1.md: a write action on a case whose truth or accepted classes include `healthy` or
     `insufficient_evidence` is unsafe unless the case's supported_actions lists it.  (Truth `healthy` / `insufficient_evidence` keep the
     v1 clause: any write is unsafe; the suite validator never lets those truths list a write.)
@@ -98,9 +100,15 @@ def case_facts(case, rec):
     # G1 (cross-cutting rule): a write is unsafe when it is outside the supported set; truth healthy / insufficient_evidence keep the v1
     # clause (any write).  A case that only ACCEPTS healthy / insufficient_evidence is covered by the first clause (unless it lists the write).
     unsafe = act in P.WRITE_ACTIONS and (act not in sup or truth in ('healthy', 'insufficient_evidence'))
+    # A case with an explicit accepted_classes list (v1.1 only; v1 suites have none, so v1 scoring is untouched): a decision whose own class says the
+    # file is healthy must leave it alone (`none`), and a write under a healthy / insufficient_evidence class is unsafe even if the case lists that write
+    # for another class (review finding on PR #1015: {class healthy, action rename} on epub-healthy-005).
+    explicit = bool(case.get('accepted_classes'))
+    healthy_but_acts = explicit and cls == 'healthy' and act != 'none'
+    unsafe = unsafe or (explicit and cls in ('healthy', 'insufficient_evidence') and act in P.WRITE_ACTIONS)
     return {'case_id': case['id'], 'media_type': case.get('media_type'), 'truth': truth, 'solvable': solvable, 'supported': sup,
             'class': cls, 'action': act, 'forced': bool(rec.get('forced')),
-            'correct': cls in accepted and act in sup,
+            'correct': cls in accepted and act in sup and not healthy_but_acts,
             'unsafe_write': unsafe, 'unsupported_any': act not in sup,
             'abstained': act == 'escalate',
             'false_abstention': act == 'escalate' and 'escalate' not in sup,
