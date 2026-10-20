@@ -22,6 +22,8 @@ blob-report
 .claude
 .agents
 docs
+# The media repair harness is its own component (ADR-116): never part of the site image.
+tools/media-repair-harness
 .env
 .env.*
 *.log

@@ -220,9 +220,18 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
   suite for one that does (`packages/{domain,sync,arr,lazylibrarian,goodreads,books,kapowarr,downloads,libretto,db,test-utils}`,
   the integrations/books/book-fix tRPC routers, `apps/web/e2e`, the integrations UI; the list is `scripts/e2e-gate-paths.sh`) and for the release-please PR,
   so a red e2e stops a pipeline change and the release (ADR-100, #742). **CI spends runner time only where a change
-  can break something (ADR-102; public-repo Actions minutes are not billed, so ADR-104 undid its coverage cut):** a PR that changes no code path (`scripts/ci-code-paths.sh`: Markdown anywhere,
-  `docs/**`, `.agents/**` except its `*.yaml`/`*.json` data files) skips lint, typecheck, tests, build and the image
-  build; those required checks report as skipped, which satisfies branch protection. The advisory suite
+  can break something (ADR-102; public-repo Actions minutes are not billed, so ADR-104 undid its coverage cut):** a PR that selects no component (`scripts/ci-components.py`; ADR-116: Markdown anywhere,
+  `docs/**`, `.agents/**` except its `*.yaml`/`*.json` data files and the harness paths below) skips lint, typecheck,
+  site tests, build, harness tests and the image build; `lint-and-typecheck` and `build` then report as skipped,
+  which satisfies branch protection, while `test` (the finalizer below) still runs and reports success. **CI routes by component
+  (ADR-116):** `site` (`apps/`, `packages/`, root Node manifests and lockfile, Dockerfile) and `harness` (the media
+  repair harness in `tools/media-repair-harness/`; under `.agents/context/`, the harness's `harness/` and `suite/`
+  folders, its `GATES.md` and its non-Markdown files, and the whole `media-repair-actual-epub-2026-10-18/` EPUB
+  source it imports; root Python packaging files). Shared CI files (`.github/**`, `scripts/ci-*`, `scripts/tests/**`) and any path no rule names
+  select every component; a diff that cannot be listed from git selects them too (fail closed). The required
+  `test` context is the always-reporting finalizer over `site-test`, `harness-test` and `ci-routing-tests`: green
+  only when every selected job succeeded, so the harness is gated without a settings change. Keep `ci-routing-tests`
+  green: `python3 -m unittest discover -s scripts/tests`. The advisory suite
   (`e2e-advisory`, never required) runs on every other PR that changes a code path (ADR-104); label a PR `run-e2e`
   to force it on one with no code path. Nothing runs on a push to main
   (protection is strict, so main's tree is the tree the PR tested). To run the suite on main's code, label a
@@ -294,6 +303,9 @@ stage (a missing line fails only the release image build, which is not a require
 - `pnpm test` — Vitest across packages (`@hnet/domain` has the first real test; others
   run `vitest run --passWithNoTests`).
 - `pnpm format` — Prettier write across the repo.
+- `tools/media-repair-harness/scripts/ci-test.sh` — the media repair harness's deterministic Python tests (stdlib
+  `unittest`, serial, `nice -n 19`; no model, GPU, ffmpeg or network; not part of `pnpm test`). Component README:
+  `tools/media-repair-harness/README.md`.
 
 Arriving with later tasks: `pnpm --filter web e2e` (Playwright),
 `pnpm --filter @hnet/db generate|migrate` (Drizzle).

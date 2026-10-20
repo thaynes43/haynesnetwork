@@ -19,12 +19,21 @@
 #     and `.dockerignore` keeps `docs` out of the image);
 #   - anything under `.agents/` EXCEPT data files (`*.yaml`, `*.yml`, `*.json`): the unit tests parse
 #     `.agents/owed-checks.yaml` and `.agents/books-census-holds.yaml`, so those are code;
-#   - `LICENSE`, the VS Code workspace file and `.gitkeep` placeholders.
+#   - `LICENSE`, the VS Code workspace file and `.gitkeep` placeholders;
+#   - the media repair harness (ADR-116): `tools/media-repair-harness/`, its public suite and the EPUB source it
+#     imports under `.agents/context/`, and root Python packaging files. Nothing in the site's lint, tests, build or
+#     image reads them (`.dockerignore` keeps them out), so they are not SITE code. They have their own CI job;
+#     scripts/ci-components.py decides which components run and is the authority for ci.yml. This script keeps
+#     the answer right for the other users of the site rule (e2e-advisory.yml).
 set -euo pipefail
 
 is_docs_only() {
   local path=$1
   case $path in
+    tools/media-repair-harness/*) return 0 ;;
+    .agents/context/media-repair-harness-2026-10-19/* | .agents/context/media-repair-actual-epub-2026-10-18/*) return 0 ;;
+    pyproject.toml | setup.py | setup.cfg | tox.ini | MANIFEST.in | .python-version | uv.lock | poetry.lock) return 0 ;;
+    Pipfile | Pipfile.lock | requirements*.txt | constraints*.txt) return 0 ;;
     .agents/*.yaml | .agents/*.yml | .agents/*.json) return 1 ;;
     *.md) return 0 ;;
     docs/*) return 0 ;;
@@ -66,6 +75,13 @@ if [[ ${1:-} == --self-test ]]; then
   expect docs 'LICENSE'
   expect docs 'packages/domain/README.md'
   expect docs 'apps/web/README.md'
+  expect docs 'tools/media-repair-harness/src/tools.py'
+  expect docs 'tools/media-repair-harness/pyproject.toml'
+  expect docs '.agents/context/media-repair-harness-2026-10-19/suite/dev/case.json'
+  expect docs '.agents/context/media-repair-actual-epub-2026-10-18/freeze.json'
+  expect docs 'pyproject.toml'
+  expect docs 'requirements-dev.txt'
+  expect code 'apps/web/requirements.txt' # a root-only rule: a nested file is not harness packaging
   expect code '.agents/owed-checks.yaml'
   expect code '.agents/books-census-holds.yaml'
   expect code 'packages/domain/src/books/push.ts'
