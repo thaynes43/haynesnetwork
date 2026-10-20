@@ -1,0 +1,53 @@
+{
+  "aborted": null,
+  "cases_planned": 2,
+  "config_hash": "a2b2d166c4d2a8fd1872ea09a3f02573623f95747dd35241b09e4d83d5acd5ef",
+  "cost_usd": null,
+  "evidence": {
+    "gaps": 4,
+    "gaps_by_type": {
+      "not_run": 4
+    },
+    "tool_calls_by_evidence_mode": {
+      "replay": 4
+    }
+  },
+  "evidence_mode": "replay",
+  "harness_git": {
+    "branch": "HEAD",
+    "dirty": false,
+    "sha": "e27f23859418d6e2110fc90c8342c5420afc5264"
+  },
+  "harness_version": "dev-c2",
+  "incomplete_records": {},
+  "latency_s_per_case": {
+    "max": 7.118,
+    "median": 7.118,
+    "min": 6.241
+  },
+  "prompt": {
+    "sha256": "351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a",
+    "version": "v2"
+  },
+  "records_complete": true,
+  "records_written": 2,
+  "requested_model": "muse-glimmer:30b",
+  "response_model_ids": [
+    "muse-glimmer:30b"
+  ],
+  "run_id": "evaldevc2v11-smoke-muse-glimmer-30b-v2",
+  "statement": "Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; this harness executed no write and changed no media, *arr, Plex or library state.",
+  "validity": {
+    "adapter_errors": 0,
+    "crashes": 0,
+    "final_decision_valid": 2,
+    "first_try_failure_modes": {
+      "tool_not_offered": 2
+    },
+    "first_try_valid": 0,
+    "forced": 0,
+    "protocol_violations": 4,
+    "repaired": 0
+  },
+  "writes_executed": 0
+}
