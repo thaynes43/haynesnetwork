@@ -30,7 +30,7 @@ PROMPT_FILE_SHA256 = {'v2.txt': 'b63a9e9b5558a1f1fbb94fcdd8624d1c3e46f8990a3af2d
 # dev-c3 added prompts/v3.txt (new text, same turn protocol as v2).  Pinned so a stray edit shows up; v1 and v2 above stay byte-identical.
 V3_FILE_SHA256 = '6e53ac6e0964e6f427569ab1f4ef6e0b679f6877ec84af8cf7199d5cc4019d1e'
 V4_FILE_SHA256 = '48bad0e41baa113df432545566a34d3bc0d01e2c5bd0f27fe0bcedb923c73a8a'   # dev-c4: prompts/v4.txt, the text measured in runs/dev-c4
-V5_FILE_SHA256 = '3ea39017906d30ff72cfe579857c194517263d53cf5f13592309fa593572b71e'   # dev-c5: prompts/v5.txt, the text measured in runs/dev-c5 (frozen by its PREREGISTRATION.md)
+V5_FILE_SHA256 = '4db2a64ccba83d2ae2fe3d6da9843369d49676019e39519a50464c8ad128e863'   # dev-c5: prompts/v5.txt, the text measured in runs/dev-c5 (frozen by its PREREGISTRATION.md)
 V3_SENT_SHA256 = 'b1fd9e855839'   # prefix of the sha256 the dev-c3 runs record as prompt.sha256 (prompt text sent, one trailing newline removed)
 
 

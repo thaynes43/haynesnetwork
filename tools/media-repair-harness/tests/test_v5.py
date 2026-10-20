@@ -88,9 +88,27 @@ class PromptV5(unittest.TestCase):
                      'do not fetch every page', 'neither clean nor damaged', 'not_stated and not_compared fields were not compared'):
             self.assertIn(text, self.v5, text)
         # execution against integrity, partial against presentation truncation, requested against completed scope, provenance, capabilities
-        for text in ('is separate from integrity', 'ok means the tool ran, never that the file is clean', 'A sampled window is not a partial result',
+        for text in ('is separate from integrity', 'ok means the tool ran, never that the file is clean', 'A completed sample may have status ok, but its coverage stays bounded',
                      'is presentation, not truncation', 'Work from the completed scope', 'the catalog', 'declarations', 'content (what was observed',
                      'capabilities say, per offered tool'):
+            self.assertIn(text, self.v5, text)
+
+    def test_astra_12_items_1_to_3(self):
+        # 1. a cause is a claim, damage is a known_defect finding; an error result supports a write only with a known_defect finding and a cause other than tool
+        for text in ('A cause is the collector\'s claim about why it failed, not proof of damage', 'damage is a known_defect finding, never a cause alone',
+                     'an execution cause alone is not damage', 'an error result that carries a known_defect finding and whose cause is other than tool', 'Action prerequisites still apply'):
+            self.assertIn(text, self.v5, text)
+        self.assertNotIn('a failure caused by the input', self.v5)
+        self.assertNotIn('whose cause is input', self.v5)
+        # 2. partial and timed-out results keep positive observations; unfinished checks stay unresolved; they cannot alone support a write; the contradicting sentences are gone
+        for text in ('A partial or timed-out result can keep positive observations that bear on the diagnosis', 'what it did not finish stays unresolved',
+                     'cannot support a write on its own'):
+            self.assertIn(text, self.v5, text)
+        self.assertNotIn('timeout or unavailable result taught nothing', self.v5)
+        self.assertNotIn('A sample is partial', self.v5)
+        # 3. page-origin semantics
+        for text in ('A page fetch retrieves evidence that already exists; it does not rerun a check', 'The outer status ok of a page reply means only that the retrieval worked',
+                     "read the origin's own execution inside it and cite the evidence ids", 'never upgrades their support'):
             self.assertIn(text, self.v5, text)
 
     def test_class_and_action_boundaries(self):
@@ -143,7 +161,7 @@ class PromptV5(unittest.TestCase):
     def test_it_is_longer_than_v4_but_inside_what_an_8192_token_local_context_can_hold(self):
         # a local model sees system + conversation in num_ctx 8192 tokens; the pessimistic estimate the adapter flags with is 3 characters per token
         self.assertGreater(len(self.v5), len(P.get_prompt('v4')['text']))
-        self.assertLess(len(self.v5) / 3.0, 5400)
+        self.assertLess(len(self.v5) / 3.0, 5700)
 
     def test_every_dev_case_first_message_plus_the_prompt_fits_the_context_estimate(self):
         """The pre-registered context handling relies on this being rare: no first message of either public dev suite, with the v5 system prompt, reaches the 3-chars-per-token estimate of 8192."""
@@ -219,7 +237,8 @@ class RefusedWithTheLegacyFormat(unittest.TestCase):
 
 
 class RunCaps(unittest.TestCase):
-    """`--max-total-cost-usd` and `--max-wall-s`: opt-in, enforceable, clean stop, nothing silently dropped."""
+    """`--max-total-cost-usd` and `--max-wall-s`: opt-in and ENFORCED (remaining budget before each call, one absolute deadline), a started case is never lost,
+    nothing silently becomes "not run".  Fake clocks and scripted costs only."""
 
     class Clock:
         def __init__(self):
@@ -229,83 +248,169 @@ class RunCaps(unittest.TestCase):
             return self.t
 
     class Costed(A.ScriptedAdapter):
-        def __init__(self, replies, cost, clock=None, step=0.0):
+        """A scripted model whose every call reports `cost` dollars, takes `step` fake seconds and has a call timeout of `timeout` (as a real adapter has)."""
+
+        def __init__(self, replies, cost, clock=None, step=0.0, timeout=120, preflight_s=0.0, budget=None):
             super().__init__('m', replies)
-            self.cost, self.clock, self.step = cost, clock, step
+            self.cost, self.clock, self.step, self.call_timeout, self.preflight_s = cost, clock, step, timeout, preflight_s
+            self.budgets = []
+            if budget is not None:
+                self.max_budget_usd = budget
+
+        def preflight(self):
+            if self.clock:
+                self.clock.t += self.preflight_s
+            return {}
 
         def complete(self, system, messages, schema=None):
+            self.budgets.append(getattr(self, 'max_budget_usd', None))
             c = super().complete(system, messages, schema)
             c.usage = dict(c.usage, cost_usd=self.cost)
             if self.clock:
                 self.clock.t += self.step
             return c
 
-    def run_main(self, cases, adapter, extra=()):
+    def run_main(self, cases, adapter, extra=(), clock=None):
         ts = th.TempSuite(cases)
         out = Path(tempfile.mkdtemp()) / 'runs' / 'r1'
-        orig = R.build_adapter
+        orig, orig_limits = R.build_adapter, R.RunLimits
         R.build_adapter = lambda args: adapter
+        if clock is not None:
+            class Limits(orig_limits):
+                def __init__(self, *a, **kw):
+                    super().__init__(*a, clock=clock, **kw)
+            R.RunLimits = Limits
         try:
             code = R.main(['--suite', str(ts.root), '--adapter', 'scripted', '--model', 'm', '--out', str(out), '--scratch', tempfile.mkdtemp(), '--prompt', 'v4'] + list(extra))
         finally:
-            R.build_adapter = orig
+            R.build_adapter, R.RunLimits = orig, orig_limits
         ts.cleanup()
         return code, out
 
     def cases(self, n):
         return [case_with([ev('e1', 'arr_lookup', output='x')], cid='cap-%03d' % i) for i in range(1, n + 1)]
 
+    def manifest(self, out):
+        return json.loads((out / 'manifest.json').read_text())
+
     def test_no_caps_no_new_key_no_behaviour_change(self):
         code, out = self.run_main(self.cases(3), self.Costed([dec()] * 3, 0.01))
-        man = json.loads((out / 'manifest.json').read_text())
+        man = self.manifest(out)
         self.assertEqual(code, 0)
         self.assertNotIn('limits', man['config'])
         self.assertNotIn('limits_state', man)
-        self.assertEqual(len(man['records_written']), 3)
+        self.assertEqual((len(man['records_written']), man['started_aborted'], man['never_started']), (3, [], []))
+        self.assertFalse((out / 'started-aborted').exists())
 
-    def test_the_cost_cap_stops_before_it_would_be_reached_and_lists_the_cases_not_run(self):
-        code, out = self.run_main(self.cases(6), self.Costed([dec()] * 6, 0.25), ['--max-total-cost-usd', '0.60'])
-        man = json.loads((out / 'manifest.json').read_text())
+    def test_cost_probe_two_calls_of_35_cents_under_a_60_cent_cap_never_reaches_70_cents(self):
+        code, out = self.run_main(self.cases(4), self.Costed([dec()] * 4, 0.35), ['--max-total-cost-usd', '0.60'])
+        man = self.manifest(out)
         self.assertEqual(code, 3)
         self.assertEqual(man['config']['limits'], {'max_total_cost_usd': 0.6, 'max_wall_s': None})
+        self.assertEqual(man['records_written'], ['cap-001'])
+        self.assertEqual((man['started_aborted'], man['never_started']), ([], ['cap-002', 'cap-003', 'cap-004']))     # nothing silently dropped: every case is in exactly one list
+        self.assertLessEqual(man['limits_state']['cost_usd'], 0.60)
         self.assertIn('cost cap reached', man['aborted'])
-        self.assertEqual(man['records_written'], ['cap-001', 'cap-002'])          # a third case would have taken the total to 0.75
-        self.assertEqual([c for c in man['case_ids'] if c not in man['records_written']], ['cap-003', 'cap-004', 'cap-005', 'cap-006'])
-        self.assertLess(man['limits_state']['cost_usd'], 0.60)
         self.assertEqual(man['limits_state']['stopped'], man['aborted'])
-        self.assertEqual(json.loads((out / 'run_summary.json').read_text())['aborted'], man['aborted'])
 
-    def test_the_wall_cap_counts_from_before_the_preflight_and_stops_cleanly(self):
+    def test_a_case_stopped_in_the_middle_is_persisted_with_its_turns_usage_and_reason(self):
+        ad = self.Costed([tc('arr_lookup'), tc('arr_lookup'), tc('arr_lookup'), dec()], 0.20)
+        code, out = self.run_main(self.cases(2), ad, ['--max-total-cost-usd', '0.50'])
+        man = self.manifest(out)
+        self.assertEqual(code, 3)
+        self.assertEqual((man['records_written'], man['started_aborted'], man['never_started']), ([], ['cap-001'], ['cap-002']))
+        part = json.loads((out / 'started-aborted' / 'cap-001.json').read_text())
+        self.assertEqual((part['status'], part['scored']), ('started_aborted', False))
+        self.assertIn('cost cap reached before a model call', part['abort_reason'])
+        self.assertEqual(len(part['turns']), 2)
+        self.assertEqual(len(part['tool_calls']), 2)
+        self.assertAlmostEqual(part['usage']['cost_usd'], 0.40)
+        self.assertEqual(part['usage']['model_calls'], 2)
+        summary = json.loads((out / 'run_summary.json').read_text())
+        self.assertAlmostEqual(summary['cost_usd'], 0.40)                                           # the partial's spend is in the summary
+        self.assertEqual((summary['started_aborted'], summary['never_started'], summary['records_written']), (['cap-001'], ['cap-002'], 0))
+        self.assertFalse((out / 'cap-001.json').exists())                                           # not a scored record: the scorer reads only <case>.json in the run directory
+
+    def test_the_cost_of_a_failed_call_counts_and_a_missing_cost_stops_the_run(self):
+        class Failing(self.Costed):
+            def complete(self, system, messages, schema=None):
+                self.calls.append(messages)
+                raise A.AdapterError('claude CLI error: {}', cost_usd=self.cost)
+        code, out = self.run_main(self.cases(3), Failing([], 0.40), ['--max-total-cost-usd', '0.60'])
+        man = self.manifest(out)
+        self.assertEqual(man['records_written'], ['cap-001'])            # the failed call was recorded as a forced escalate; its $0.40 left 0.20 < 0.40
+        self.assertAlmostEqual(man['limits_state']['cost_usd'], 0.40)
+        self.assertEqual(code, 3)
+        code, out = self.run_main(self.cases(3), self.Costed([dec()] * 3, None), ['--max-total-cost-usd', '0.60'])
+        man = self.manifest(out)
+        self.assertEqual(code, 3)
+        self.assertIn('the spend cannot be metered', man['aborted'])
+        self.assertEqual((man['records_written'], man['never_started']), (['cap-001'], ['cap-002', 'cap-003']))   # the call that reported no cost is kept; the run stops after it
+        self.assertEqual(man['limits_state']['cost_unreported'], 'a call reported no cost')
+
+    def test_a_claude_call_gets_the_remaining_budget_as_its_own_cli_budget(self):
+        ad = self.Costed([tc('arr_lookup'), dec()], 0.10, budget=2.0)
+        code, out = self.run_main(self.cases(1), ad, ['--max-total-cost-usd', '0.60'])
+        self.assertEqual(code, 0)
+        self.assertEqual([round(b, 2) for b in ad.budgets], [0.60, 0.50])
+        self.assertEqual(ad.max_budget_usd, 0.50)       # lowered per call; the configured 2.0 stays in the recorded adapter config only
+
+    def test_wall_probe_the_deadline_covers_preflight_and_no_call_runs_past_it(self):
         clock = self.Clock()
-        orig = R.time.monotonic
-        # the limits object reads its own clock; patch the constructor default through the module
-        class Limits(R.RunLimits):
-            def __init__(self, *a, **kw):
-                super().__init__(*a, clock=clock, **kw)
-        R.RunLimits = Limits
-        try:
-            code, out = self.run_main(self.cases(6), self.Costed([dec()] * 6, 0.0, clock, 400.0), ['--max-wall-s', '1800'])
-        finally:
-            R.RunLimits = Limits.__mro__[1]
-        man = json.loads((out / 'manifest.json').read_text())
+        ad = self.Costed([dec()] * 40, 0.0, clock, step=120.0, timeout=120, preflight_s=900.0)
+        code, out = self.run_main(self.cases(30), ad, ['--max-wall-s', '1800'], clock)
+        man = self.manifest(out)
+        st = man['limits_state']
         self.assertEqual(code, 3)
         self.assertIn('wall-time cap reached', man['aborted'])
-        self.assertEqual(man['records_written'], ['cap-001', 'cap-002', 'cap-003', 'cap-004'])    # 4 x 400 s = 1600 s; a 5th (1600 + the slowest case, 400 s) would pass 1800 s
-        self.assertLess(man['limits_state']['elapsed_s'], 1800)
-        self.assertEqual(len(man['case_ids']) - len(man['records_written']), 2)
+        self.assertLessEqual(st['elapsed_s'], 1800.0)                    # the 900 s preflight is inside the deadline; the last call that was started could still finish in time
+        self.assertLessEqual(st['elapsed_after_cleanup_s'], 1800.0)
+        self.assertEqual(len(man['records_written']), 7)                 # 900 + 7 x 120 = 1740; another call would end at 1860
+        self.assertEqual(len(man['records_written']) + len(man['started_aborted']) + len(man['never_started']), 30)
 
-    def test_a_cap_in_the_middle_of_a_case_leaves_that_case_without_a_record_and_listed_as_not_run(self):
-        code, out = self.run_main(self.cases(2), self.Costed([tc('arr_lookup'), tc('arr_lookup'), dec(), dec()], 0.30), ['--max-total-cost-usd', '0.50'])
-        man = json.loads((out / 'manifest.json').read_text())
-        self.assertEqual(code, 3)
-        self.assertEqual(man['records_written'], [])
-        self.assertEqual(man['case_ids'], ['cap-001', 'cap-002'])
-        self.assertIn('before a model call', man['aborted'])
+    def test_wall_probe_a_slow_preflight_alone_can_use_the_whole_budget(self):
+        clock = self.Clock()
+        ad = self.Costed([dec()] * 3, 0.0, clock, step=1.0, timeout=120, preflight_s=1790.0)
+        code, out = self.run_main(self.cases(3), ad, ['--max-wall-s', '1800'], clock)
+        man = self.manifest(out)
+        self.assertEqual((code, man['records_written'], len(man['never_started'])), (3, [], 3))
 
     def test_the_caps_are_part_of_the_config_hash(self):
         _, a = self.run_main(self.cases(1), self.Costed([dec()], 0.0))
         _, b = self.run_main(self.cases(1), self.Costed([dec()], 0.0), ['--max-total-cost-usd', '0.60', '--max-wall-s', '1800'])
-        self.assertNotEqual(json.loads((a / 'manifest.json').read_text())['config_hash'], json.loads((b / 'manifest.json').read_text())['config_hash'])
+        self.assertNotEqual(self.manifest(a)['config_hash'], self.manifest(b)['config_hash'])
+
+    def test_the_claude_timeout_is_in_the_adapter_config_and_the_hash(self):
+        a, b = A.ClaudeAdapter('claude-haiku-5-5', timeout=240), A.ClaudeAdapter('claude-haiku-5-5', timeout=60)
+        self.assertEqual(a.config()['timeout_s'], 240)
+        self.assertNotEqual(R.canonical(a.config()), R.canonical(b.config()))
+        a.finish(), b.finish()
+        err = None
+        try:
+            A.parse_claude(json.dumps({'is_error': True, 'subtype': 'error_max_budget_usd', 'total_cost_usd': 0.05}), '', 1, {}, 0.1)
+        except A.AdapterError as e:
+            err = e
+        self.assertEqual(err.cost_usd, 0.05)
+
+
+class DigestEnforcement(unittest.TestCase):
+    def test_a_different_digest_aborts_before_anything_is_loaded(self):
+        import test_adapters as TA
+        fake = TA.FakeOllama()
+        ad = A.OllamaAdapter('qwen3.8:27b', api=fake, snapshot=TA.snapshot(), required_digest='f' * 64)
+        with self.assertRaises(A.AbortRun) as cm:
+            ad.preflight()
+        self.assertIn('digest differs', str(cm.exception))
+        self.assertNotIn('/api/generate', [c[0] for c in fake.calls])
+        self.assertFalse(ad.loaded_by_us)
+
+    def test_the_frozen_digest_passes_with_or_without_the_sha256_prefix_and_is_in_the_config(self):
+        import test_adapters as TA
+        for want in ('abc', 'sha256:abc'):
+            ad = A.OllamaAdapter('qwen3.8:27b', api=TA.FakeOllama(), snapshot=TA.snapshot(), required_digest=want)
+            self.assertEqual(ad.preflight()['loaded_by_us'], True)
+            self.assertEqual(ad.config()['required_digest'], want)
+        self.assertNotIn('required_digest', A.OllamaAdapter('qwen3.8:27b', api=TA.FakeOllama(), snapshot=TA.snapshot()).config())
 
 
 class PairedRegressions(unittest.TestCase):

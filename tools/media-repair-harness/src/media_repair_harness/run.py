@@ -256,7 +256,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
             except A.AdapterError as e:
                 error = {'kind': 'adapter_error', 'message': str(e)[:500]}
                 turns.append({'n': len(turns) + 1, 'error': str(e)[:500], 'attempt': 'repair' if repairs else 'first', 'reply_valid': False,
-                              'failure_modes': ['adapter_error']})
+                              'failure_modes': ['adapter_error'], **({'cost_usd': e.cost_usd} if getattr(e, 'cost_usd', None) is not None else {})})
                 force('model call failed: ' + str(e)[:200])
                 break
             load_s += comp.load_s
@@ -320,7 +320,10 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                 messages += [{'role': 'assistant', 'content': comp.text},
                              {'role': 'user', 'content': result_message(call_id, shown_tool, res, remaining) +
                               ('' if remaining else '\n' + P.BUDGET_MESSAGE)}]
-    except A.AbortRun:
+    except A.AbortRun as e:
+        # a STARTED case that the run's abort cut short is never lost: turns, tool calls, usage and the reason travel with the exception (main writes them to started-aborted/)
+        e.partial = started_aborted_record(case, case_sha, adapter, prompt, run_id, started_at, time.monotonic() - started_wall, turns, tool_calls, repairs, str(e),
+                                           evidence_mode, evidence_format)
         raise
     except Exception as e:  # noqa: BLE001 - harness fault: keep the run, mark it
         error = {'kind': 'harness_crash', 'message': '%s: %s' % (type(e).__name__, e), 'leak_guard': isinstance(e, leakguard.LeakError), 'traceback': traceback.format_exc()[-1500:]}
@@ -446,6 +449,27 @@ def write_rejection_info(rejected, decision, forced, forced_reason):
             'note': 'record only: a rejected write decision never became the decision; forced_after_rejected_write means the repair also failed and the harness forced insufficient_evidence/escalate'}
 
 
+def started_aborted_record(case, case_sha, adapter, prompt, run_id, started_at, wall_s, turns, tool_calls, repairs, reason, evidence_mode, evidence_format):
+    """What a case that STARTED (the model was shown it, at least one call may have been made) leaves behind when the run is aborted under it: everything observed so far.
+    It has no decision and is not a run record: it is written under `started-aborted/` where the scorer does not read it, so the case is listed as unscored (see PREREGISTRATION)."""
+    usage = {'model_calls': sum(1 for t in turns if 'usage' in t or 'error' in t), 'input_tokens': 0, 'output_tokens': 0, 'cost_usd': 0.0, 'cost_reported_calls': 0}
+    for t in turns:
+        u = t.get('usage') or {}
+        usage['input_tokens'] += u.get('input_tokens') or 0
+        usage['output_tokens'] += u.get('output_tokens') or 0
+        c = u.get('cost_usd') if u.get('cost_usd') is not None else t.get('cost_usd')
+        if c is not None:
+            usage['cost_usd'] += c
+            usage['cost_reported_calls'] += 1
+    usage['cost_usd'] = round(usage['cost_usd'], 6)
+    return {'record_version': 1, 'status': 'started_aborted', 'scored': False, 'abort_reason': reason, 'case_id': case['id'], 'case_sha256': case_sha,
+            'harness_version': P.HARNESS_VERSION, 'run_id': run_id, 'started_at': started_at, 'wall_s': round(wall_s, 3), 'evidence_mode': evidence_mode,
+            'evidence_format': evidence_format, 'prompt': {'version': prompt['version'], 'sha256': prompt['sha256']},
+            'requested_model': getattr(adapter, 'requested_model', None),
+            'response_model_ids': sorted({t.get('response_model') for t in turns if t.get('response_model')}),
+            'usage': usage, 'turns': turns, 'tool_calls': tool_calls, 'repair_prompts': repairs}
+
+
 def crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay'):
     """A failed record for a case that could not run.  Never raises: if the full record cannot be built (a malformed case file breaks one of
     the computed fields), a minimal record with every required field is written instead, so the next case still runs."""
@@ -537,7 +561,7 @@ def _count(items):
     return dict(sorted(out.items(), key=lambda kv: str(kv[0])))
 
 
-def summarize_run(records, manifest):
+def summarize_run(records, manifest, partials=()):
     """Validity and completeness counts for a run.  No scoring: no pass rate, no gate, no label is read."""
     n = len(records)
     modes = {}
@@ -552,6 +576,7 @@ def summarize_run(records, manifest):
         'config_hash': manifest.get('config_hash'), 'requested_model': manifest.get('requested_model'),
         'response_model_ids': sorted({m for r in records for m in r.get('response_model_ids', [])}),
         'cases_planned': len(manifest.get('case_ids', [])), 'records_written': n, 'aborted': manifest.get('aborted'),
+        'started_aborted': [p['case_id'] for p in partials], 'never_started': manifest.get('never_started', []),
         'validity': {'first_try_valid': sum(1 for r in records if r['first_try_valid']), 'final_decision_valid': sum(1 for r in records if r.get('final_decision_valid')),
                      'repaired': sum(1 for r in records if r['repair_prompts']), 'forced': sum(1 for r in records if r['forced']),
                      'rejected_write_attempts': sum((r.get('write_rejection') or {}).get('rejected_write_attempts', 0) for r in records),
@@ -561,7 +586,8 @@ def summarize_run(records, manifest):
                      'adapter_errors': sum(1 for r in records if (r.get('error') or {}).get('kind') == 'adapter_error'),
                      'first_try_failure_modes': modes},
         'records_complete': not incomplete, 'incomplete_records': incomplete,
-        'cost_usd': round(sum((r['usage'].get('cost_usd') or 0.0) for r in records), 6) if any(r['usage'].get('cost_reported') for r in records) else None,
+        'cost_usd': (round(sum((r['usage'].get('cost_usd') or 0.0) for r in records) + sum(p['usage']['cost_usd'] for p in partials), 6)
+                     if any(r['usage'].get('cost_reported') for r in records) or any(p['usage']['cost_reported_calls'] for p in partials) else None),
         'latency_s_per_case': {'min': walls[0] if walls else None, 'median': walls[len(walls) // 2] if walls else None, 'max': walls[-1] if walls else None},
         'evidence_mode': manifest['config'].get('evidence_mode'),
         'evidence': {'tool_calls_by_evidence_mode': _count(c.get('evidence_mode') for r in records for c in r['tool_calls']),
@@ -587,24 +613,25 @@ def guard_summary(records):
 
 
 class RunLimits:
-    """Opt-in hard caps on a whole run (dev-c5, W19), for the frozen measurement: `--max-total-cost-usd` (the cumulative cost the adapter reports) and
-    `--max-wall-s` (wall time from just before the adapter's preflight, a model load included).  Both stop the run CLEANLY with an AbortRun: the cases not run
-    stay listed in the manifest (`case_ids` minus `records_written`), nothing is rerun, and the adapter's `finish()` still unloads what it loaded.
+    """Opt-in ENFORCED caps on a whole run (dev-c5, W19): `--max-total-cost-usd` and `--max-wall-s`.  Both stop the run cleanly with an AbortRun (exit 3, `aborted` in the
+    manifest); a case that was started is kept as a started-aborted record, a case that was not is listed as never started; the adapter's `finish()` still runs.
 
-    Checked before each case against the dearest case (cost) and the slowest case (wall) seen so far, so the cap is not exceeded by a case that behaves like an earlier
-    one; and again before each model call (a hard stop, at most one call's cost or the 120 s Ollama call timeout past the cap, which a case slower than any earlier one can
-    reach).  A call that is cut by the second check leaves its case without a record, listed as not run.  With neither cap set the runner is unchanged."""
+    COST.  Enforced against the REMAINING budget before every model call: the call is not made when nothing remains or when the dearest call so far would not fit, and a
+    Claude call's own `--max-budget-usd` is lowered to the remainder.  The cost of a failed call counts when its payload reports one.  When a cap is set and a call reports NO
+    cost (a timeout, a non-JSON failure, a missing field) the run stops at the next check and says so: an unmetered spend cannot be kept under a cap.  A single call can still
+    overshoot the cap by what that one call costs (bounded by its clamped CLI budget); that is the registered worst case.
+    WALL.  One absolute deadline, counted from just before the adapter's preflight (the model load and warm-up are inside it).  A model call is not started unless its whole
+    timeout (the adapter's `call_timeout` / `timeout`) fits before the deadline, so no call runs past it; the only work after the deadline is the cleanup (`finish()`, an unload
+    request of at most 60 s) and replayed tool work, which is milliseconds.  `limits_state.elapsed_after_cleanup_s` records the true end.
+    With neither cap set the runner is unchanged."""
 
     def __init__(self, max_cost_usd=None, max_wall_s=None, clock=time.monotonic):
         self.max_cost_usd, self.max_wall_s, self.clock = max_cost_usd, max_wall_s, clock
         self.started = None
         self.cost = 0.0
-        self.case_cost = 0.0
-        self.max_case_cost = 0.0
         self.max_call_cost = 0.0
-        self.case_started = None
-        self.max_case_wall = 0.0
         self.calls = 0
+        self.unreported = None
         self.stopped = None
 
     @property
@@ -624,49 +651,62 @@ class RunLimits:
         self.stopped = why
         raise A.AbortRun(why)
 
-    def _check(self, cost_margin, wall_margin, where):
-        if self.max_cost_usd is not None and self.cost + cost_margin >= self.max_cost_usd:
-            self._stop('cost cap reached %s: cumulative reported cost $%.4f, cap $%.2f' % (where, self.cost, self.max_cost_usd))
-        if self.max_wall_s is not None and self.elapsed() + wall_margin >= self.max_wall_s:
-            self._stop('wall-time cap reached %s: %.0f s elapsed, cap %.0f s' % (where, self.elapsed(), self.max_wall_s))
+    def check(self, where, call_timeout=0.0):
+        if self.unreported:
+            self._stop('cost cap set and %s: the spend cannot be metered, stopping %s' % (self.unreported, where))
+        if self.max_cost_usd is not None:
+            remaining = self.max_cost_usd - self.cost
+            if remaining <= 0 or self.max_call_cost > remaining:
+                self._stop('cost cap reached %s: cumulative reported cost $%.4f of $%.2f (the dearest call so far $%.4f)' % (where, self.cost, self.max_cost_usd, self.max_call_cost))
+        if self.max_wall_s is not None and self.elapsed() + call_timeout >= self.max_wall_s:
+            self._stop('wall-time cap reached %s: %.0f s elapsed of %.0f s%s' % (where, self.elapsed(), self.max_wall_s,
+                                                                                   ' (the call timeout of %.0f s no longer fits)' % call_timeout if call_timeout else ''))
 
-    def before_case(self):
-        now = self.clock()
-        if self.case_started is not None:
-            self.max_case_wall = max(self.max_case_wall, now - self.case_started)
-            self.max_case_cost = max(self.max_case_cost, self.case_cost)
-        self.case_started, self.case_cost = now, 0.0
-        self._check(self.max_case_cost, self.max_case_wall, 'before a case')
+    @staticmethod
+    def call_bound(adapter):
+        return getattr(adapter, 'call_timeout', None) or getattr(adapter, 'timeout', None) or 0.0
 
-    def before_call(self):
-        self._check(self.max_call_cost, 0.0, 'before a model call')
+    def before_case(self, adapter=None):
+        self.check('before a case', self.call_bound(adapter) if adapter is not None else 0.0)   # a case whose first call could not finish in time is never started
 
-    def after_call(self, completion):
-        c = ((getattr(completion, 'usage', None) or {}).get('cost_usd')) or 0.0
-        self.cost += c
-        self.case_cost += c
-        self.max_call_cost = max(self.max_call_cost, c)
+    def before_call(self, adapter):
+        self.check('before a model call', self.call_bound(adapter))
+        if self.max_cost_usd is not None and hasattr(adapter, 'max_budget_usd'):
+            adapter.max_budget_usd = min(self._base_budget, self.max_cost_usd - self.cost)
+
+    def account(self, cost):
         self.calls += 1
+        if cost is None:
+            if self.max_cost_usd is not None:
+                self.unreported = 'a call reported no cost'
+            return
+        self.cost += cost
+        self.max_call_cost = max(self.max_call_cost, cost)
 
     def wrap(self, adapter):
         """Hook the caps into the adapter instance (its class is untouched)."""
         orig_before, orig_complete = adapter.before_case, adapter.complete
+        self._base_budget = getattr(adapter, 'max_budget_usd', None)
 
         def before_case():
-            self.before_case()
+            self.before_case(adapter)
             return orig_before()
 
         def complete(system, messages, schema=None):
-            self.before_call()
-            comp = orig_complete(system, messages, schema=schema) if schema is not None else orig_complete(system, messages)
-            self.after_call(comp)
+            self.before_call(adapter)
+            try:
+                comp = orig_complete(system, messages, schema=schema) if schema is not None else orig_complete(system, messages)
+            except A.AdapterError as e:
+                self.account(getattr(e, 'cost_usd', None))
+                raise
+            self.account((getattr(comp, 'usage', None) or {}).get('cost_usd'))
             return comp
         adapter.before_case, adapter.complete = before_case, complete
         return adapter
 
     def state(self):
-        return {'cost_usd': round(self.cost, 6), 'elapsed_s': round(self.elapsed(), 1), 'model_calls': self.calls, 'max_case_cost_usd': round(self.max_case_cost, 6),
-                'max_case_wall_s': round(self.max_case_wall, 1), 'stopped': self.stopped, **self.config()}
+        return {'cost_usd': round(self.cost, 6), 'elapsed_s': round(self.elapsed(), 1), 'model_calls': self.calls, 'max_call_cost_usd': round(self.max_call_cost, 6),
+                'cost_unreported': self.unreported, 'stopped': self.stopped, **self.config()}
 
 
 def build_adapter(args):
@@ -674,7 +714,7 @@ def build_adapter(args):
     if args.adapter == 'ollama':
         num_predict = args.num_predict or (640 if P.protocol_of(args.prompt) == 'v2' else 384)
         return A.OllamaAdapter(model, options={'num_ctx': args.num_ctx, 'num_predict': num_predict}, keep_alive=args.keep_alive,
-                               guard=G.PsiGuard(),
+                               guard=G.PsiGuard(), required_digest=getattr(args, 'require_digest', None),
                                stop=(args.stop.split(',') if args.stop is not None else None), do_warmup=not args.no_warmup,
                                schema=(P.FLAT_TURN_SCHEMA if args.ollama_schema == 'flat' else P.TURN_SCHEMA), schema_name=args.ollama_schema)
     if args.adapter == 'claude':
@@ -705,6 +745,7 @@ def main(argv=None):
     ap.add_argument('--evidence-format', choices=list(EVIDENCE_FORMATS), default=None, help='W18, opt-in: v2 shows the model typed evidence (execution, findings, scope, unresolved per result, a coverage matrix, a client comparison, tool capabilities, compact paginated structure) derived from the same results; also selects tools behaviour v2 and audit v2. Accepted with --prompt v4 or v5 (v5 requires it) and --guards off or v3. Unset keeps the legacy format byte for byte')
     ap.add_argument('--max-total-cost-usd', type=float, default=None, help='dev-c5: stop the run cleanly before the cumulative REPORTED cost would reach this cap (cases not run stay listed in the manifest); unset = no cap')
     ap.add_argument('--max-wall-s', type=float, default=None, help='dev-c5: stop the run cleanly before this many wall-clock seconds (counted from just before the adapter preflight, a model load included) are used; unset = no cap')
+    ap.add_argument('--require-digest', help='dev-c5, ollama: abort before anything is loaded unless the installed model digest equals this value (recorded in the adapter config and so in the config hash)')
     ap.add_argument('--keep-alive', default='2m')
     ap.add_argument('--stop', help='comma separated stop tokens (ollama); default per model family')
     ap.add_argument('--ollama-schema', choices=['anyof', 'flat'], default='anyof', help='format schema variant sent to Ollama')
@@ -767,6 +808,7 @@ def main(argv=None):
                 'case_ids': [c['id'] for c, _ in cases], 'case_sha256': {c['id']: s for c, s in cases}}
     aborted = None
     records = []
+    partials = []   # started-aborted cases (kept under started-aborted/, never scored); never-started = planned minus records minus these
     audit = None
     if limits.enabled:
         limits.wrap(adapter)
@@ -788,6 +830,11 @@ def main(argv=None):
                                evidence_bounds=evidence_bounds, guards=args.guards, evidence_format=args.evidence_format)
             except A.AbortRun as e:
                 aborted = str(e)
+                partial = getattr(e, 'partial', None)
+                if partial:
+                    (out / 'started-aborted').mkdir(exist_ok=True)
+                    (out / 'started-aborted' / (case['id'] + '.json')).write_text(json.dumps(partial, indent=2, ensure_ascii=False, sort_keys=True, default=str) + '\n')
+                    partials.append(partial)
                 break
             except Exception as e:  # noqa: BLE001 - e.g. a malformed case file: keep a failed record, go on
                 rec = crash_record(case, sha, adapter, e, args.prompt, args.evidence)
@@ -810,10 +857,14 @@ def main(argv=None):
         if limits.enabled:
             manifest['limits_state'] = limits.state()
         manifest['finish'] = adapter.finish()
+        if limits.enabled:
+            manifest['limits_state']['elapsed_after_cleanup_s'] = round(limits.elapsed(), 1)
         manifest['ended_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         manifest['records_written'] = [r['case_id'] for r in records]
+        manifest['started_aborted'] = [p['case_id'] for p in partials]
+        manifest['never_started'] = [i for i in manifest['case_ids'] if i not in manifest['records_written'] and i not in manifest['started_aborted']]
         (out / 'manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True, default=str) + '\n')
-        (out / 'run_summary.json').write_text(json.dumps(summarize_run(records, manifest), indent=2, sort_keys=True, default=str) + '\n')
+        (out / 'run_summary.json').write_text(json.dumps(summarize_run(records, manifest, partials), indent=2, sort_keys=True, default=str) + '\n')
     if aborted:
         print('ABORTED: ' + aborted, file=sys.stderr)
         return 3
