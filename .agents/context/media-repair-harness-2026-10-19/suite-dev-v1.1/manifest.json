@@ -3,7 +3,7 @@
  "derived_from": "dev-v1",
  "contract": "CONTRACT.md v1 + harness/CONTRACT-v1.1.md",
  "gates": ".agents/context/media-repair-harness-2026-10-19/GATES.md",
- "rulings": "orders/media-repair-harness-1019/RULINGS-v1.1.md (2026-10-20)",
+ "rulings": ".agents/context/media-repair-harness-2026-10-19/RULINGS-v1.1.md (2026-10-20)",
  "base_commit": "9285641a",
  "built_by": "build_v11.py (deterministic derivation from ../suite/cases)",
  "corrections_by_rule": {

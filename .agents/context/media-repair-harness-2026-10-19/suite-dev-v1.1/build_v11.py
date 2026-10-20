@@ -4,7 +4,7 @@
   build_v11.py            write cases/*.json here from ../suite/cases/*.json
   build_v11.py --check    rebuild in memory and fail if cases/ differs (used by the tests)
 
-Source of the rules: orders/media-repair-harness-1019/RULINGS-v1.1.md (C1, C2, C3, C5, C6; dev split only) and
+Source of the rules: ../RULINGS-v1.1.md (C1, C2, C3, C5, C6; dev split only) and
 ../ADJUDICATION-dev-v1.md (rulings 2 to 13 and the cross-cutting rulings).  Only case JSON changes: labels, supported
 sets, context, tools_available and the evidence that a ruling adds.  Fixture bytes, fixture objects, ids, families and
 provenance are never touched (the tests compare them with dev-v1).  Every changed case carries a `corrections` list

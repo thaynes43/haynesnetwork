@@ -391,7 +391,7 @@ def cmd_manifest(sd):
             external[fx["locator"]] = {"locator": fx["locator"], "kind": fx["kind"], "sha256": fx["sha256"], "bytes": fx["bytes"]}
     rules = Counter(x.split(":")[0].split(" ")[0] for _, c in cases for x in c.get("corrections", []))
     m = {"suite_version": VERSION, "derived_from": "dev-v1", "contract": "CONTRACT.md v1 + harness/CONTRACT-v1.1.md",
-         "gates": ".agents/context/media-repair-harness-2026-10-19/GATES.md", "rulings": "orders/media-repair-harness-1019/RULINGS-v1.1.md (2026-10-20)",
+         "gates": ".agents/context/media-repair-harness-2026-10-19/GATES.md", "rulings": ".agents/context/media-repair-harness-2026-10-19/RULINGS-v1.1.md (2026-10-20)",
          "base_commit": "9285641a", "built_by": "build_v11.py (deterministic derivation from ../suite/cases)",
          "corrections_by_rule": dict(sorted(rules.items())), "cases_changed": sum(1 for _, c in cases if c.get("corrections")),
          "cases": [{"id": c["id"], "file": f"cases/{p.name}", "sha256": sha256_file(p), "split": c["split"], "media_type": c["media_type"],

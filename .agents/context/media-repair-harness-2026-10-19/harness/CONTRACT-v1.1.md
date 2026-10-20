@@ -1,6 +1,6 @@
 # Harness contract v1.1 (delta to CONTRACT.md v1)
 
-Status: evaluator correction proposal, applies to the **dev split** suite `suite-dev-v1.1/` (2026-10-20, rulings in OpenProject #137). `CONTRACT.md` (v1), `GATES.md`,
+Status: evaluator correction proposal, applies to the **dev split** suite `suite-dev-v1.1/` (2026-10-20, rulings in OpenProject #137, recorded in `RULINGS-v1.1.md` next to `GATES.md`). `CONTRACT.md` (v1), `GATES.md`,
 `suite/` (dev-v1), and every run and score under `baseline/` and `evaluation/dev-c2/` are unchanged. Anything not named here is v1.
 
 ## 1. `context.arr.app`: `sonarr | radarr | lazylibrarian | null`

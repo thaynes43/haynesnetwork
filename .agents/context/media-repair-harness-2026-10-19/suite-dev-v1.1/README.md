@@ -1,7 +1,7 @@
 # Media repair harness: dev suite `dev-v1.1` (evaluator correction proposal)
 
 A corrected copy of the **dev** suite. dev-v1 (`../suite/`) is frozen: its cases, manifest, runs and scores are untouched, and so are the fixture bytes. Held-out data is not here.
-Rulings: OpenProject #137, `RULINGS-v1.1.md` (2026-10-20): C1 (managing app), C2 (healthy controls with no integrity evidence), C3 (`epub-healthy-005`), C5 (tools with no recorded data),
+Rulings: OpenProject #137, [`../RULINGS-v1.1.md`](../RULINGS-v1.1.md) (2026-10-20): C1 (managing app), C2 (healthy controls with no integrity evidence), C3 (`epub-healthy-005`), C5 (tools with no recorded data),
 C6 (dev-v1 adjudication rulings 2 to 13 and the cross-cutting rulings in `../ADJUDICATION-dev-v1.md`). Contract delta: `../harness/CONTRACT-v1.1.md`. Scorer: `../harness/score.py` (v1.1).
 
 ```
