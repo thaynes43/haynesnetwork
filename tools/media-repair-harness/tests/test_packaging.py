@@ -28,7 +28,8 @@ PROMPT_SHA256 = {'v1': '30749f5dc7065a2ddd70967cd6888e91d237030e1b025bc6dac19ca5
 GOLDEN_SHA256 = '8f4f17373e857c90509b4768f426b668b520683c8c353993028f771f8eb2e411'
 PROMPT_FILE_SHA256 = {'v2.txt': 'b63a9e9b5558a1f1fbb94fcdd8624d1c3e46f8990a3af2d2a00c0a480521ec04'}
 # dev-c3 added prompts/v3.txt (new text, same turn protocol as v2).  Pinned so a stray edit shows up; v1 and v2 above stay byte-identical.
-V3_FILE_SHA256 = 'V3PLACEHOLDER'
+V3_FILE_SHA256 = 'a3d477db28f7eb4fb17a56df5e99dbc79afb474e24eb5acc7e1ec360fe153ccb'
+V3_SENT_SHA256 = '91e7da3ced5b'   # prefix of the sha256 the dev-c3 runs record as prompt.sha256 (prompt text sent, one trailing newline removed)
 
 
 class Pinned(unittest.TestCase):
@@ -44,6 +45,7 @@ class Pinned(unittest.TestCase):
         v3 = files.pop('v3.txt')
         self.assertEqual(files, PROMPT_FILE_SHA256)   # v2.txt (and v1, which lives in protocol.py) are the dev-c2 bytes
         self.assertEqual(v3, V3_FILE_SHA256)
+        self.assertTrue(P.get_prompt('v3')['sha256'].startswith(V3_SENT_SHA256))
 
 
 class GoldenUnchanged(unittest.TestCase):

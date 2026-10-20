@@ -22,7 +22,7 @@ import launch_smoke as L  # noqa: E402
 BEGIN, END = '===MRH-WIRING-SMOKE-BEGIN===', '===MRH-WIRING-SMOKE-END==='
 PACKAGE = HERE.parent / 'src' / 'media_repair_harness'
 FILES = ['__init__.py', 'adapters.py', 'audit.py', 'gaps.py', 'guard.py', 'leakguard.py', 'outcomes.py', 'protocol.py', 'remote_sampler.py', 'ollama_transport.py', 'run.py',
-         'tools.py', 'vendored_epub.py', 'prompts/v2.txt', 'prompts/v3.txt', 'evidence/__init__.py', 'evidence/core.py', 'evidence/avtools.py', 'evidence/epubtool.py']
+         'tools.py', 'vendored_epub.py', 'prompts/v2.txt', 'evidence/__init__.py', 'evidence/core.py', 'evidence/avtools.py', 'evidence/epubtool.py']
 SMOKE_FILES = ['live_smoke.py', 'wiring_smoke.py']
 
 

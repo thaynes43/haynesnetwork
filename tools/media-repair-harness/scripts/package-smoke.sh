@@ -51,6 +51,7 @@ assert P.HARNESS_VERSION == 'dev-c3'
 assert P.get_prompt('v2')['sha256'] == '351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a'
 assert P.get_prompt('v1')['sha256'] == '30749f5dc7065a2ddd70967cd6888e91d237030e1b025bc6dac19ca51fed9ee8'
 assert hashlib.sha256(res.files('media_repair_harness').joinpath('prompts/v2.txt').read_bytes()).hexdigest() == 'b63a9e9b5558a1f1fbb94fcdd8624d1c3e46f8990a3af2d2a00c0a480521ec04'
+assert hashlib.sha256(res.files('media_repair_harness').joinpath('prompts/v3.txt').read_bytes()).hexdigest() == 'a3d477db28f7eb4fb17a56df5e99dbc79afb474e24eb5acc7e1ec360fe153ccb'
 assert tools.REMOTE_SAMPLER.is_file() and tools._epub_module() is vendored_epub
 print('resources ok:', where.parent)
 PY

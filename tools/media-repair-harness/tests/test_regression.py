@@ -12,6 +12,7 @@ from media_repair_harness import run as R
 import th
 
 SUITE = Path(__file__).resolve().parent / 'testdata' / 'regression'
+N_CASES = len(list((SUITE / 'cases').glob('*.json')))   # 12 original cases (dev-c1/c2) + 6 rg-v3-* fixtures (dev-c3)
 
 
 def load(cid):
@@ -217,7 +218,7 @@ class EverySyntheticCase(unittest.TestCase):
     def test_run_through_main_leaves_a_complete_run_directory(self):
         out = Path(tempfile.mkdtemp()) / 'r'
         orig = R.build_adapter
-        R.build_adapter = lambda args: A.ScriptedAdapter('scripted-1', [ESC] * 12)
+        R.build_adapter = lambda args: A.ScriptedAdapter('scripted-1', [ESC] * N_CASES)
         try:
             code = R.main(['--suite', str(SUITE), '--adapter', 'scripted', '--model', 'scripted-1', '--out', str(out), '--scratch', tempfile.mkdtemp(),
                            '--prompt', 'v2', '--replay', 'auto'])
@@ -225,11 +226,11 @@ class EverySyntheticCase(unittest.TestCase):
             R.build_adapter = orig
         self.assertEqual(code, 0)
         s = json.loads((out / 'run_summary.json').read_text())
-        self.assertEqual((s['records_written'], s['cases_planned']), (12, 12))
+        self.assertEqual((s['records_written'], s['cases_planned']), (N_CASES, N_CASES))
         self.assertTrue(s['records_complete'], s['incomplete_records'])
         self.assertEqual(s['validity']['crashes'], 0)
-        self.assertEqual(s['validity']['first_try_valid'], 12)
-        self.assertEqual(len((out / 'audit.jsonl').read_text().splitlines()), 12)
+        self.assertEqual(s['validity']['first_try_valid'], N_CASES)
+        self.assertEqual(len((out / 'audit.jsonl').read_text().splitlines()), N_CASES)
 
 
 if __name__ == '__main__':
