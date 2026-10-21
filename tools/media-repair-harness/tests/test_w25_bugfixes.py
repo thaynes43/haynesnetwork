@@ -810,5 +810,63 @@ class AuditV33Nit(unittest.TestCase):
         self.assertEqual(PQ33.audit(plain, obs, D.CAT, 'epub')['execution_status'], 'no_write_proposed')
 
 
+# ------------------------------------------------------------------------------------------------------------- W25b round 2 (AUDIT-ASTRA-40, the Opus review of 8ca60f94)
+class ManifestPrecedenceA40(unittest.TestCase):
+    """AUDIT-ASTRA-40 item 1: under diag-2 the execution suffix of the COMPLETE diagnostic is recognised before it is clipped to 1,000 characters or split
+    into lines, so neither can turn an open-tail manifest message that ends in an execution error into write-supporting damage."""
+    LONG = 'manifest references missing member(s): ' + 'a' * 1020 + ': PermissionError: [Errno 13] Permission denied'
+    SPLIT = 'manifest references missing member(s): a\nb.epub: Permission denied'
+
+    def typed(self, error, stage='manifest'):
+        o = EV2.make_observation('t1', 'epub_inspect', {}, 'error', json.dumps({'status': 'error', 'stage': stage, 'error': error}), 'local', 'tool')
+        d = EV2.derive(o)
+        return (d.execution.get('cause'), [f['kind'] for f in d.findings if f['known_defect']], PQ33.check_named(PQ33.View([o], {}, 'epub'), 'support_grade_defect')[0])
+
+    def test_clipped_or_split_manifest_errors_keep_execution_precedence_diag2(self):
+        with EV2.diagnostic_rules('diag-2'):
+            for error in (self.LONG, self.SPLIT, 'manifest names 2 member(s) that are not in the archive: ' + 'b' * 1200 + ': Permission denied',
+                          "CRC mismatch in member " + 'c' * 1100 + ": [Errno 5] Input/output error"):
+                self.assertEqual(self.typed(error, 'zip_crc' if error.startswith('CRC') else 'manifest'), ('tool', [], 'unmet'), error[:60])
+            self.assertEqual(EV2.classify_line(self.LONG), 'execution')
+            live = {'source': 'live', 'kind': 'epub', 'status': 'error', 'cause': 'input', 'reason': 'manifest: x', 'output': {'valid': False, 'stage': 'manifest',
+                    'error': self.SPLIT}, 'coverage': {'verified': [], 'not_verified': []}}
+            d = EV2.derive(EV2.make_observation('t1', 'epub_inspect', {}, 'error', json.dumps(live), 'live', 'tool'))
+            self.assertEqual((d.execution.get('cause'), [f['kind'] for f in d.findings if f['known_defect']]), ('tool', []))
+
+    def test_control_long_manifest_damage_without_an_execution_tail_and_diag1(self):
+        with EV2.diagnostic_rules('diag-2'):
+            self.assertEqual(self.typed('manifest references missing member(s): ' + 'a' * 1020)[1], ['package_damage'])
+            self.assertEqual(self.typed("manifest names 1 member(s) that are not in the archive: ['OEBPS/a.xhtml']")[1], ['package_damage'])
+        self.assertEqual(self.typed(self.SPLIT)[1], ['package_damage'])          # diag-1 as recorded
+
+
+class LinearTailCheckOpusR2(unittest.TestCase):
+    """The Opus review of 8ca60f94: the diag-2 end-anchored execution check and the zip_crc readings stay linear and small on adversarial member names
+    (one call per input, no loops over large inputs)."""
+
+    def test_adversarial_names_classify_fast_and_small_diag2(self):
+        import time
+        with EV2.diagnostic_rules('diag-2'):
+            for text in ('CRC mismatch in member a' + '\n' * 20000 + 'x', 'CRC mismatch in member a' + '\n' * 65000 + 'x',
+                         'CRC mismatch in member ' + ' in member ' * 5900 + 'x', 'CRC mismatch in member a:' + ' ' * 65000 + 'x',
+                         'manifest references missing member(s): ' + 'a\n' * 32000 + 'b.epub: Permission denied'):
+                t0 = time.perf_counter()
+                EV2.epub_failure('manifest' if text.startswith('manifest') else 'zip_crc', text)
+                self.assertLess(time.perf_counter() - t0, 1.0, repr(text[:30]))
+        readings = EV2._zip_crc_readings('CRC mismatch in member ' + ' in member ' * 200 + 'x')       # bounded: messages only, the name is an index
+        self.assertLessEqual(len(readings), EV2._READINGS_MAX)
+        self.assertTrue(all(isinstance(r[1], int) and len(r[0]) <= EV2._READING_HEAD_MAX for r in readings))
+
+    def test_the_linear_check_is_the_regex_answer(self):
+        import re
+        rx = re.compile(EV2._ENDS_IN_EXEC)
+        for text in ('a: Permission denied', 'a:Permission denied', 'a\nPermission denied', 'a: [Errno 13] Permission denied', 'a: PermissionError: [Errno 13] Permission denied: x',
+                     'a: MemoryError: x', 'a: MemoryError:', 'a: Permission denied:', 'a: Permission denied: x\ny', 'a: Permission denied:\nx', 'a: Permission denied.  \n',
+                     'a: Error -4 while decompressing data: insufficient memory', 'a \x1c Is a directory, b', 'a: [Errno x] Permission denied', 'Permission denied',
+                     ': : : x', 'a:' + ' ' * 50 + 'Permission denied', 'a: Bad file descriptor', 'a]: [Errno 7] Connection refused; c'):
+            for lo in (0, 1, 3):
+                self.assertEqual(EV2._ends_in_exec(text, lo), rx.search(text[lo:]) is not None, (text, lo))
+
+
 if __name__ == '__main__':
     unittest.main()
