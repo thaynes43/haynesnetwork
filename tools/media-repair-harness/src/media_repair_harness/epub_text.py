@@ -218,7 +218,7 @@ def declared_toc(path, opf):
     out = []
     for label, member, frag in entries[:TOC_ENTRIES]:
         text, cut = _clip(label, TOC_LABEL_CHARS)
-        e = {'label': text, 'member': member}
+        e = {'text': text, 'member': member}       # (never `label`: a forbidden output field of the rubric)
         if frag:
             e['fragment'] = frag
         if cut:

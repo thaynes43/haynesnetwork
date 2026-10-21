@@ -64,7 +64,7 @@ def managed_case(cid='w21-001', filename='Show - S01E02 - Lamp.mkv', linked=None
 class OneVersionedConfiguration(unittest.TestCase):
     def test_a_v6_run_records_contract_v3_and_sends_v6_with_the_v3_presentation(self):
         rec, ad = v6_run(managed_case(), [d3()])
-        self.assertEqual((rec['harness_version'], rec['prompt']['version'], rec['prompt']['protocol']), ('dev-c6', 'v6', 'turn-v3'))
+        self.assertEqual((rec['harness_version'], rec['prompt']['version'], rec['prompt']['protocol']), ('dev-c7', 'v6', 'turn-v3'))     # dev-c7 moved the harness version; v6 and format v3 are unchanged
         self.assertEqual(ad.full[0]['system'], P.get_prompt('v6')['text'])
         ef = rec['evidence_format']
         self.assertEqual({k: ef[k] for k in EV3.CONTRACT}, EV3.CONTRACT)
@@ -343,7 +343,7 @@ class OfflineRestoreAndMain(unittest.TestCase):
         man = json.loads((out / 'manifest.json').read_text())
         cfg = man['config']
         self.assertEqual({k: cfg[k] for k in EV3.CONTRACT}, EV3.CONTRACT)
-        self.assertEqual((cfg['prompt_version'], cfg['protocol'], cfg['guards'], cfg['harness_version']), ('v6', 'turn-v3', 'v3', 'dev-c6'))
+        self.assertEqual((cfg['prompt_version'], cfg['protocol'], cfg['guards'], cfg['harness_version']), ('v6', 'turn-v3', 'v3', 'dev-c7'))
         rec = json.loads((out / 'w21-m1.json').read_text())
         self.assertEqual((rec['decision']['action'], rec['guard']['final_changed']), ('escalate', True))
         restored = Path(tempfile.mkdtemp()) / 'r-v3-restored'

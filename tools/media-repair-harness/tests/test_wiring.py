@@ -624,11 +624,11 @@ class RunRecords(unittest.TestCase):
         man = json.loads((out / 'manifest.json').read_text())
         self.assertEqual((man['config']['evidence_mode'], man['config']['evidence_bounds']), ('live', {'segments': 2}))
         s = json.loads((out / 'run_summary.json').read_text())
-        self.assertEqual((s['harness_version'], s['evidence_mode']), ('dev-c6', 'live'))
+        self.assertEqual((s['harness_version'], s['evidence_mode']), ('dev-c7', 'live'))
         self.assertEqual(s['evidence']['tool_calls_by_evidence_mode'], {'live': 1})
         self.assertTrue(s['records_complete'], s['incomplete_records'])
         rec = json.loads((out / (case['id'] + '.json')).read_text())
-        self.assertEqual((rec['evidence_mode'], rec['harness_version']), ('live', 'dev-c6'))
+        self.assertEqual((rec['evidence_mode'], rec['harness_version']), ('live', 'dev-c7'))
         ts.cleanup()
 
     def test_default_main_run_is_replay_and_refuses_bounds_without_live(self):

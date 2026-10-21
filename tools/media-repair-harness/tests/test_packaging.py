@@ -22,7 +22,7 @@ COMPONENT = th.COMPONENT
 
 # Digests of what the model is sent, taken from the frozen dev-c2 candidate (e27f2385) before the move into the package.  The full
 # replay-identity comparison lives in test_wiring.ReplayIdentity; these are the short, explicit pins.
-HARNESS_VERSION = 'dev-c6'
+HARNESS_VERSION = 'dev-c7'   # dev-c7 (WO-W22): prompt v7 / format v3.1-format added; every earlier prompt and format unchanged
 PROMPT_SHA256 = {'v1': '30749f5dc7065a2ddd70967cd6888e91d237030e1b025bc6dac19ca51fed9ee8',
                  'v2': '351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a'}
 GOLDEN_SHA256 = '8f4f17373e857c90509b4768f426b668b520683c8c353993028f771f8eb2e411'
@@ -49,6 +49,7 @@ class Pinned(unittest.TestCase):
         v4 = files.pop('v4.txt')
         v5 = files.pop('v5.txt')
         files.pop('v6.txt')     # dev-c6 (pinned in test_v6.py)
+        files.pop('v7.txt')     # dev-c7 (pinned in test_devc7.py)
         self.assertEqual(files, PROMPT_FILE_SHA256)   # v2.txt (and v1, which lives in protocol.py) are the dev-c2 bytes
         self.assertEqual(v3, V3_FILE_SHA256)
         self.assertEqual(v4, V4_FILE_SHA256)   # dev-c4 added v4.txt; v1, v2 and v3 are untouched

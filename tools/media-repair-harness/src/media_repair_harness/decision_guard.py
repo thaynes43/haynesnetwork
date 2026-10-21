@@ -185,14 +185,18 @@ def _protocol(prompt_version):
         return None
 
 
-def derived_fields(case, decision, tool_calls, evidence_shown, evidence_mode, prompt_version, forced, outcome_step, resolve=None, v2=False, v3=None):
+def derived_fields(case, decision, tool_calls, evidence_shown, evidence_mode, prompt_version, forced, outcome_step, resolve=None, v2=False, v3=None, v3fmt='v3'):
     """Record fields that are computed from the decision (run_case computes the same ones); used when a guard replaced it.  For a format-v2 record the references go
     through the same resolver and the audit is audit v2, as in the run; for a format-v3 record (`v3` = its recorded capabilities) the audit is audit v3."""
     ev_ids = {e['id'] for e in evidence_shown}
     call_ids = {c['id'] for c in tool_calls}
     refs = resolve(decision.get('evidence_refs', [])) if resolve else decision.get('evidence_refs', [])
     if v3 is not None:
-        from . import evidence_v3 as EV3
+        # format v3 (dev-c6) and v3.1-format (dev-c7) share audit v3; v3.1 types an explicit EPUB excerpt as a reading, exactly as its run did
+        if v3fmt == 'v3.1-format':
+            from . import evidence_v31 as EV3
+        else:
+            from . import evidence_v3 as EV3
         view = P.case_view(case, [])
         action_audit = EV3.action_audit(dict(decision, evidence_refs=refs), evidence_shown, tool_calls, view['context'], view['media_type'], v3, forced=forced)
     elif v2:
@@ -213,7 +217,14 @@ def derived_fields(case, decision, tool_calls, evidence_shown, evidence_mode, pr
 def _v3_caps(record):
     """The recorded capability advertisement of a format-v3 record (what its audit v3 reads), else None."""
     ef = (record or {}).get('evidence_format')
-    return list(ef.get('capabilities') or []) if isinstance(ef, dict) and ef.get('version') == 'v3' else None
+    return list(ef.get('capabilities') or []) if isinstance(ef, dict) and ef.get('version') in V3_FORMATS else None
+
+
+V3_FORMATS = ('v3', 'v3.1-format')     # the evidence formats whose records carry audit v3
+
+
+def _v3_format(record):
+    return ((record or {}).get('evidence_format') or {}).get('version') if isinstance((record or {}).get('evidence_format'), dict) else None
 
 
 def apply_to_record(record, case, evidence_shown, version=GUARD_VERSION):
@@ -232,7 +243,7 @@ def apply_to_record(record, case, evidence_shown, version=GUARD_VERSION):
         rec['decision'] = final
         outcome_step = (rec.get('action_audit') or {}).get('outcome_step')
         rec.update(derived_fields(case, final, rec.get('tool_calls') or [], evidence_shown, rec.get('evidence_mode', 'replay'), pv,
-                                  bool(rec.get('forced')), outcome_step, resolve, bool(rec.get('evidence_format')), _v3_caps(rec)))
+                                  bool(rec.get('forced')), outcome_step, resolve, bool(rec.get('evidence_format')), _v3_caps(rec), _v3_format(rec)))
     return rec
 
 
@@ -249,6 +260,6 @@ def restore_original(record, case, evidence_shown):
         rec['decision'] = copy.deepcopy(orig)
         rec.update(derived_fields(case, orig, rec.get('tool_calls') or [], evidence_shown, rec.get('evidence_mode', 'replay'), pv,
                                   bool(rec.get('forced')), (rec.get('action_audit') or {}).get('outcome_step'), record_resolver(rec, evidence_shown), bool(rec.get('evidence_format')),
-                                  _v3_caps(rec)))
+                                  _v3_caps(rec), _v3_format(rec)))
     rec['guard'] = dict(guard, restored=True)
     return rec

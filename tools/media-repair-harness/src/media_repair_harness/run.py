@@ -146,7 +146,7 @@ def resolve_evidence_raw(case, suite_dir, redactor=None):
 
 # Option versions added by W18.  `--evidence-format v2` (typed evidence, tools behaviour v2, audit v2) goes with prompt v4 and v5 (v5 requires it) and with
 # guards off or v3; `--guards v3` goes with any prompt.  Every other combination of a new option is refused up front, never silently reinterpreted.
-EVIDENCE_FORMATS = ('v2', 'v3')
+EVIDENCE_FORMATS = ('v2', 'v3', 'v3.1-format')
 EVIDENCE_V2_PROMPTS = ('v4', 'v5')
 EVIDENCE_V2_ONLY_PROMPTS = ('v5',)   # dev-c5: v5 explains the format v2 fields, so it is refused with the legacy format (v1 to v4 are unchanged)
 EVIDENCE_V2_GUARDS = (None, 'v3')
@@ -155,6 +155,10 @@ EVIDENCE_V2_GUARDS = (None, 'v3')
 # the shown observations, G-write the class, the action, evidence_refs and the context; neither reads the target, so contract v3 needs no new guard version.
 CONTRACT_V3_PROMPTS = ('v6',)
 CONTRACT_V3_GUARDS = (None, 'v3')
+# dev-c7: evidence format v3.1-format (named so it cannot be confused with rubric v3.1) is contract v3 with tools behaviour v3 (EPUB body excerpts), the v3.1
+# presentation (statement kinds, prior-record typing) and the rubric v3.2 clarification, selected together and valid only with prompt v7 (and guards off or v3).
+CONTRACT_V31_FORMAT = 'v3.1-format'
+CONTRACT_V31_PROMPTS = ('v7',)
 
 
 def _ev3():
@@ -163,10 +167,29 @@ def _ev3():
     return evidence_v3
 
 
+def _ev31():
+    """evidence_v31 (format v3.1-format), imported only by a run that selects it."""
+    from . import evidence_v31
+    return evidence_v31
+
+
 def check_option_combination(prompt_version, evidence_format=None, guards=None, tool_output_bytes=None):
     """Raise ValueError (main turns it into a SystemExit) for an unsupported combination of the W18 options."""
     if evidence_format is not None and evidence_format not in EVIDENCE_FORMATS:
         raise ValueError('unknown evidence format %r (known: %s; unset keeps the legacy format)' % (evidence_format, ', '.join(EVIDENCE_FORMATS)))
+    if prompt_version in CONTRACT_V31_PROMPTS and evidence_format != CONTRACT_V31_FORMAT:
+        raise ValueError('--prompt %s states the v3.1-format presentation (EPUB body excerpts, statement kinds, rubric v3.2) and is valid only with --evidence-format %s (got %s)' % (
+            prompt_version, CONTRACT_V31_FORMAT, evidence_format or 'the legacy format'))
+    if evidence_format == CONTRACT_V31_FORMAT:
+        if prompt_version not in CONTRACT_V31_PROMPTS:
+            raise ValueError('--evidence-format %s (tools behaviour v3, the v3.1 presentation, turn-v3, decision-v3 and audit v3 are one version) is accepted with prompt %s only (got %s)' % (
+                CONTRACT_V31_FORMAT, ' or '.join(CONTRACT_V31_PROMPTS), prompt_version))
+        if guards not in CONTRACT_V3_GUARDS:
+            raise ValueError('--evidence-format %s is accepted with guards off or --guards v3 only (got --guards %s)' % (CONTRACT_V31_FORMAT, guards))
+        if tool_output_bytes is not None and not EV2.MIN_WIRE_BYTES <= tool_output_bytes <= EV2.WIRE_BYTES:     # the same page contract (pages-v1)
+            raise ValueError('--evidence-format %s uses --tool-output-bytes as the page budget (a message is paginated to fit it): it must be between %d and %d, got %s' % (
+                CONTRACT_V31_FORMAT, EV2.MIN_WIRE_BYTES, EV2.WIRE_BYTES, tool_output_bytes))
+        return
     if prompt_version in CONTRACT_V3_PROMPTS and evidence_format != 'v3':
         raise ValueError('--prompt %s declares contract v3 (decision-v3 targets, the v3 presentation) and is valid only with --evidence-format v3 (got %s)' % (
             prompt_version, evidence_format or 'the legacy format'))
@@ -218,16 +241,17 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     """Run one case through the turn protocol.  Returns the run record (never raises for model/tool trouble)."""
     import shutil
     check_option_combination(prompt_version, evidence_format, guards, tool_output_bytes)
-    v3fmt = evidence_format == 'v3'
+    v31fmt = evidence_format == CONTRACT_V31_FORMAT
+    v3fmt = evidence_format == 'v3' or v31fmt     # contract v3: turn-v3, decision-v3, audit v3 (format v3 or v3.1-format)
     v2fmt = evidence_format == 'v2' or v3fmt   # the typed formats share tools behaviour v2, raw outputs, pagination and the reference resolver
-    EV3 = _ev3() if v3fmt else None
+    EV3 = (_ev31() if v31fmt else _ev3()) if v3fmt else None
     started_wall = time.monotonic()
     started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     fixture = T.Fixture.from_case(case, suite_dir)
     fixture_info = fixture.verify_local()
     ctx = T.Context(case, fixture, Path(scratch) / case['id'], runner=runner, which=which or shutil.which, ocr_backend=ocr_backend,
                     suite_dir=suite_dir, replay=replay, evidence_mode=evidence_mode, collect=collect, evidence_runner=evidence_runner,
-                    evidence_which=evidence_which, evidence_bounds=evidence_bounds, tools_behavior='v2' if v2fmt else 'v1',
+                    evidence_which=evidence_which, evidence_bounds=evidence_bounds, tools_behavior=('v3' if v31fmt else 'v2') if v2fmt else 'v1',
                     keep_raw=v2fmt)
     if tool_output_bytes:
         ctx.output_cap = tool_output_bytes
@@ -806,9 +830,9 @@ def main(argv=None):
     ap.add_argument('--num-ctx', type=int, default=A.DEFAULT_NUM_CTX, choices=list(A.ALLOWED_NUM_CTX), help='ollama context window; 4096 is the proven-safe value, 8192 the only other one allowed')
     ap.add_argument('--tool-output-bytes', type=int, default=P.TOOL_OUTPUT_BYTES, help='cap on one tool result shown to the model (lower it for small local contexts)')
     ap.add_argument('--num-predict', type=int, help='ollama output cap; default 384 for prompt v1, 640 for v2 (a write decision carries an audit object)')
-    ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c); v5 (dev-c5) is valid only with --evidence-format v2; v6 (dev-c6, contract v3) only with --evidence-format v3')
+    ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c); v5 (dev-c5) is valid only with --evidence-format v2; v6 (dev-c6, contract v3) only with --evidence-format v3; v7 (dev-c7) only with --evidence-format v3.1-format')
     ap.add_argument('--guards', choices=list(DG.GUARD_VERSIONS), default=None, help='opt-in deterministic decision guards (dev-c4); default off; v2 only relaxes two G-write checks (see CONTRACT-v2-proposal section 9); v3 (W18) also lets a known integrity defect in the shown evidence contradict a healthy decision (any prompt). A guard can only turn a decision into insufficient_evidence/escalate and keeps the original in the record field `guard`')
-    ap.add_argument('--evidence-format', choices=list(EVIDENCE_FORMATS), default=None, help='W18, opt-in: v2 shows the model typed evidence (execution, findings, scope, unresolved per result, a coverage matrix, a client comparison, tool capabilities, compact paginated structure) derived from the same results; also selects tools behaviour v2 and audit v2. Accepted with --prompt v4 or v5 (v5 requires it) and --guards off or v3. v3 (dev-c6) is contract v3 as one version: the v3 presentation (explicit empty values with a presence map, one deduplicated open list with available_check links), turn protocol turn-v3, decision schema decision-v3 and audit v3; only with --prompt v6 and --guards off or v3. Unset keeps the legacy format byte for byte')
+    ap.add_argument('--evidence-format', choices=list(EVIDENCE_FORMATS), default=None, help='W18, opt-in: v2 shows the model typed evidence (execution, findings, scope, unresolved per result, a coverage matrix, a client comparison, tool capabilities, compact paginated structure) derived from the same results; also selects tools behaviour v2 and audit v2. Accepted with --prompt v4 or v5 (v5 requires it) and --guards off or v3. v3 (dev-c6) is contract v3 as one version: the v3 presentation (explicit empty values with a presence map, one deduplicated open list with available_check links), turn protocol turn-v3, decision schema decision-v3 and audit v3; only with --prompt v6 and --guards off or v3. v3.1-format (dev-c7) is contract v3 with tools behaviour v3 (bounded, offset-addressed EPUB body excerpts), statement kinds and prior-record typing, and the rubric v3.2 clarification; only with --prompt v7 and --guards off or v3. Unset keeps the legacy format byte for byte')
     ap.add_argument('--max-total-cost-usd', type=float, default=None, help='dev-c5: stop the run cleanly before the cumulative REPORTED cost would reach this cap (cases not run stay listed in the manifest); unset = no cap')
     ap.add_argument('--max-wall-s', type=float, default=None, help='dev-c5: stop the run cleanly before this many wall-clock seconds (counted from just before the adapter preflight, a model load included) are used; unset = no cap')
     ap.add_argument('--require-digest', help='dev-c5, ollama: abort before anything is loaded unless the installed model digest equals this value (recorded in the adapter config and so in the config hash)')
@@ -870,7 +894,10 @@ def main(argv=None):
     limits = RunLimits(args.max_total_cost_usd, args.max_wall_s)
     if limits.enabled:   # likewise only when set: a run without caps keeps its earlier config shape
         config['limits'] = limits.config()
-    if args.evidence_format == 'v3':   # contract v3: every version it selects is recorded, so the config hash tells it apart from format v2
+    if args.evidence_format == CONTRACT_V31_FORMAT:   # dev-c7: every version it selects is recorded (tools v3, rubric v3.2, the excerpt rule), so the config hash tells it apart
+        config.update(_ev31().CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes), decision_schema_sha256=sha256_bytes(canonical(P.turn_schema_v3(['ffprobe'])).encode()),
+                      excerpt_rules_sha256=_ev31().ET.rules_digest())
+    elif args.evidence_format == 'v3':   # contract v3: every version it selects is recorded, so the config hash tells it apart from format v2
         config.update(_ev3().CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes), decision_schema_sha256=sha256_bytes(canonical(P.turn_schema_v3(['ffprobe'])).encode()))
     elif args.evidence_format:   # likewise only when on; the three versions it selects are recorded so the config hash tells the formats apart
         config.update(evidence_format=args.evidence_format, tools_behavior='v2', audit_version='v2', page_contract=EV2.PAGE_CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes))

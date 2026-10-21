@@ -57,7 +57,7 @@ class PromptV2(unittest.TestCase):
         self.assertEqual(P.get_prompt('v2')['sha256'], p['sha256'])   # stable
         rec, _, ts = run_v2(th.make_case(), [th.decision()])
         self.assertEqual((rec['prompt']['version'], rec['prompt']['sha256']), ('v2', p['sha256']))
-        self.assertEqual(rec['harness_version'], 'dev-c6')
+        self.assertEqual(rec['harness_version'], 'dev-c7')
         ts.cleanup()
 
     def test_every_class_and_action_is_defined_by_its_change_and_prerequisites(self):
@@ -458,9 +458,9 @@ class RecordsAndSummary(unittest.TestCase):
         rec = json.loads((out / 'a.json').read_text())
         self.assertEqual(R.record_missing_fields(rec), [])
         manifest = json.loads((out / 'manifest.json').read_text())
-        self.assertEqual(rec['harness_version'], 'dev-c6')
-        self.assertEqual(manifest['harness_version'], 'dev-c6')
-        self.assertEqual(manifest['config']['harness_version'], 'dev-c6')
+        self.assertEqual(rec['harness_version'], 'dev-c7')
+        self.assertEqual(manifest['harness_version'], 'dev-c7')
+        self.assertEqual(manifest['config']['harness_version'], 'dev-c7')
         self.assertEqual(rec['config_hash'], manifest['config_hash'])
         self.assertEqual(rec['harness_git_sha'], manifest['harness_git']['sha'])
         self.assertEqual(manifest['config']['system_prompt_sha256'], rec['prompt']['sha256'])
@@ -486,7 +486,7 @@ class RecordsAndSummary(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual({p.name for p in out.glob('*.json')} - {'manifest.json', 'run_summary.json'}, {'adapter-fail.json', 'bad.json', 'good.json'})
         s = json.loads((out / 'run_summary.json').read_text())
-        self.assertEqual(s['harness_version'], 'dev-c6')
+        self.assertEqual(s['harness_version'], 'dev-c7')
         self.assertEqual(s['records_written'], 3)
         self.assertEqual(s['validity']['adapter_errors'], 1)
         self.assertEqual(s['validity']['crashes'], 1)
