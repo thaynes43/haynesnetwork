@@ -660,7 +660,7 @@ def remote_record(ctx, binding, stop_on_receipt_failure, sent_messages=(), tool_
         if intent is None:
             continue
         item = {'turn': t.get('n'), 'action': intent['action'], 'actions': intent['actions'], 'parse': intent['parse'], 'rule': intent['rule'],
-                'reply_valid': bool(t.get('reply_valid'))}
+                'evidence': intent.get('evidence') or [], 'reply_valid': bool(t.get('reply_valid'))}
         try:
             item['audit'] = auditor(t.get('n'), intent) if auditor else {'state': 'not_audited'}
         except Exception as e:  # noqa: BLE001 - an audit failure is recorded, never a crash and never null

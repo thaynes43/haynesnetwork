@@ -412,7 +412,8 @@ class Round1Runner(unittest.TestCase):
         bad = json.dumps({'type': 'decision', 'class': 'identity_mismatch', 'action': 'blocklist_and_search', 'reason': 'r', 'confidence': 0.9, 'evidence_refs': ['e1']})
         rec, _ad = run(H.remote_case(), [bad, '```json\n' + bad + '\n```'], H.FakeSampler())
         atts = rec['remote_evidence']['write_attempts']
-        self.assertEqual([(a['turn'], a['parse'], a['audit']['state']) for a in atts], [(1, 'strict', 'schema_failure'), (2, 'lenient', 'schema_failure')])
+        # (write-intent-5: neither reply is a schema-valid decision, so both are read through their JSON span with rule A and scanned with rule B)
+        self.assertEqual([(a['turn'], a['parse'], a['audit']['state']) for a in atts], [(1, 'structure', 'schema_failure'), (2, 'structure', 'schema_failure')])
         self.assertTrue(all(a['audit']['errors'] for a in atts))
         good = json.dumps({'type': 'decision', 'class': 'identity_mismatch', 'action': 'blocklist_and_search', 'reason': 'r', 'confidence': 0.9,
                            'evidence_refs': ['t1.f1'], 'source': {'ref': 'case_item'}, 'target': {'kind': 'release_of_source', 'source_ref': 't1'}})
@@ -475,9 +476,9 @@ class Round2(unittest.TestCase):
         for name, text in found.items():
             intent = RE.raw_write_intent(text)
             self.assertIsNotNone(intent, name)
-            self.assertEqual(intent['rule'], 'write-intent-4')
+            self.assertEqual(intent['rule'], 'write-intent-5')
         self.assertEqual(RE.raw_write_intent(found['multi-word spaced'])['action'], 'blocklist_and_search')
-        for text in ('I would not rename this file.', 'action: none', json.dumps(hdec), json.dumps(tool), 'rename it? no.', '', None):
+        for text in ('action: none', json.dumps(hdec), json.dumps(tool), '', None):      # (round 5: a prose mention of a stem counts under rule B)
             self.assertIsNone(RE.raw_write_intent(text), text)
 
     def test_unparseable_writes_reach_write_control_end_to_end(self):
@@ -589,10 +590,10 @@ class Round3(unittest.TestCase):
         for name, text in positives.items():
             intent = RE.raw_write_intent(text)
             self.assertIsNotNone(intent, name)
-            self.assertEqual(intent['rule'], 'write-intent-4', name)  # the matrix still holds under rule 4
+            self.assertEqual(intent['rule'], 'write-intent-5', name)  # the matrix still holds under rule 4
         self.assertEqual(RE.raw_write_intent(positives['camel case value'])['action'], 'blocklist_and_search')
         negatives = {
-            'prose': 'I would not rename this file.', 'transaction key': 'transaction: convert',
+            'no stem': 'I would not change this file.',
             'reason: considered action': self.dec('Considered action: rename, but the evidence does not support it.'),
             'reason: no action=': self.dec('No action=remap is warranted.'),
             'reason quoting json': self.dec('A {"action": "rename"} would be premature.', 'escalate', 'identity_mismatch'),
@@ -655,9 +656,18 @@ class Round4(unittest.TestCase):
         'json object name': ('{"%(k)s": {"name": "%(v)s"}}', True), 'python literal': ("{'%(k)s': '%(v)s'}", False), 'yaml': ('%(k)s: %(v)s', False),
         'yaml sequence': ('%(k)s:\n  - none\n  - %(v)s', False), 'yaml block map': ('%(k)s:\n  name: %(v)s', False), 'yaml flow map': ('%(k)s: {name: %(v)s}', False),
         'yaml multi-line list': ('%(k)s: [none,\n  %(v)s]', False), 'markdown bold': ('**%(k)s:** %(v)s', False), 'markdown bold 2': ('**%(k)s**: %(v)s', False),
-        'markdown table': ('| %(k)s | %(v)s |', False), 'arrow': ('%(k)s -> %(v)s', False), 'equals': ('%(k)s=%(v)s', False)}
+        'markdown table': ('| %(k)s | %(v)s |', False), 'arrow': ('%(k)s -> %(v)s', False), 'equals': ('%(k)s=%(v)s', False),
+        # round 5: the write far from (or without) its key, where a key-and-window rule cannot reach
+        'heading gap': ('## %(k)s\n\n%(v)s the file to match the catalog.', False), 'numbered after key': ('%(k)s:\n1. %(v)s the file', False),
+        'long key gap': ('%(k)s for the current file after verifying the source identity and the destination slot: %(v)s', False)}
     WRAPPERS = {'none': lambda t: t, 'fence': lambda t: '```\n%s\n```' % t, 'prose before': lambda t: 'Here is my answer.\n' + t,
-                'prose after': lambda t: t + '\nThat is all.', 'both': lambda t: 'My reply follows.\n```json\n%s\n```\nDone.' % t}
+                'prose after': lambda t: t + '\nThat is all.', 'both': lambda t: 'My reply follows.\n```json\n%s\n```\nDone.' % t,
+                # round 5 (AUDIT-ASTRA-68): ordinary formatting around the write
+                'numbered list': lambda t: 'Actions:\n1. ' + t, 'heading': lambda t: '## Recommended action\n\n' + t,
+                'table': lambda t: '| Field | Value |\n|---|---|\n| %s |' % t, 'nested bullets': lambda t: '- item:\n  - detail:\n    - ' + t,
+                'long prefix': lambda t: 'After reviewing every piece of evidence for the registered slot and the identity of the current file, the proposal is: ' + t,
+                'crlf': lambda t: ('Answer:\n' + t + '\nEnd.').replace('\n', '\r\n'), 'spaced fence': lambda t: '``` json\n%s\n```' % t,
+                'tilde fence': lambda t: '~~~\n%s\n~~~' % t, 'four backticks': lambda t: '````\n%s\n````' % t}
 
     def test_property_every_generated_write_is_counted(self):
         """A seeded, bounded property: every generated write (key syntaxes x write actions in every casing and separator x wrappers) is counted."""
@@ -677,7 +687,7 @@ class Round4(unittest.TestCase):
             self.assertIsNotNone(intent, (syn, wrap, text))
             self.assertIn(action, intent['actions'], text)
             n += 1
-        self.assertEqual(n, len(self.SYNTAXES) * len(self.WRAPPERS) + 6000)     # 6080 generated writes
+        self.assertEqual(n, len(self.SYNTAXES) * len(self.WRAPPERS) + 6000)     # 6266 generated writes (19 syntaxes x 14 wrappers, plus 6000 seeded)
         self.assertLess(time.monotonic() - t0, 30)
 
     def test_property_parsed_non_write_replies_are_never_counted(self):
@@ -695,37 +705,65 @@ class Round4(unittest.TestCase):
             else:
                 reply = json.dumps({'type': 'tool_call', 'tool': 'subtitle_sample', 'args': {'at': 30}, 'why': text})
             self.assertIsNone(RE.raw_write_intent(reply), reply)
-        self.assertIsNone(RE.raw_write_intent(json.dumps('No action: rename is warranted.')))          # a parsed scalar is no attempt (A67-4)
+        self.assertIsNotNone(RE.raw_write_intent(json.dumps('No action: rename is warranted.')))       # round 5: not a schema-valid reply, so rule B counts it
 
-    def test_rule_a_reads_parsed_replies_structurally(self):
+    def test_rule_a_reads_schema_valid_replies_structurally(self):
+        """Rule A: a schema-valid decision or tool call is read structurally only.  A reply that is NOT schema-valid (duplicate keys, a free-text action, a
+        bare object) is read by rule B as well, so every such write is counted, with the structural reading recorded as evidence."""
+        valid_write = json.dumps({'type': 'decision', 'class': 'metadata_naming', 'action': 'rename', 'reason': 'r', 'confidence': 0.9, 'evidence_refs': [],
+                                  'source': {'ref': 'case_item'}, 'target': {'kind': 'rename_of_source', 'old_value': 'a', 'new_value': 'b'}})
+        intent = RE.raw_write_intent(valid_write)
+        self.assertEqual((intent['action'], intent['parse'], intent['evidence']), ('rename', 'strict', [{'by': 'structure', 'action': 'rename'}]))
         for text, want in (('{"type":"decision","action":"rename","action":"none"}', 'rename'), ('{"type":"decision","alt":{"action":"remap","action":"none"}}', 'remap'),
                            ('{"action":"rename file"}', 'rename'), ('{"action":"Rename the file to x.mkv"}', 'rename'), ('{"action":"rename/remap"}', 'rename'),
-                           ('{"action":"blocklist-and-search now"}', 'blocklist_and_search'), ('[{"x": 1}, {"operation": {"type": "convert"}}]', 'convert')):
+                           ('[{"x": 1}, {"operation": {"type": "convert"}}]', 'convert')):
             intent = RE.raw_write_intent(text)
-            self.assertEqual((intent['action'], intent['parse']), (want, 'strict'), text)
-        for text in ('{"action":"none","note":"rename later"}', '{"action":"do not rename"}', '"rename"', '17', 'null', '{"fix":"rename"}', '{"decision":"remap"}'):
-            self.assertIsNone(RE.raw_write_intent(text), text)
+            self.assertIn(want, intent['actions'], text)
+            self.assertTrue(any(e['by'] == 'structure' for e in intent['evidence']) or text.startswith('['), text)
         self.assertIsNone(RE.raw_write_intent('{"type":"decision","action":"rename","action":"none"}')['proposal'])     # duplicate keys: no single proposal
-
-    def test_rule_b_proximity(self):
-        for text in ('Action -> rename', '| Action | rename |', '| Recommended action | blocklist and search |', 'Decision: remap', 'My recommendation is to convert it',
-                     'Proposed fix: rename', '**Fix**: remap', 'action: {name: rename}', 'action:\n  name: rename', 'actions: [none,\n  rename]',
-                     'the action is rename'):
-            self.assertIsNotNone(RE.raw_write_intent(text), text)
-        far = 'action: ' + 'x' * (RE.PROXIMITY_WINDOW + 5) + ' rename'
-        for text in ('I would not rename this file.', 'transaction: convert', far, 'Action: none. I may rename it later', 'Action: none\n\nrename it later',
-                     'renamed action'):
+        for text in ('17', 'null', '{"action": "none"}', '[]'):
             self.assertIsNone(RE.raw_write_intent(text), text)
 
-    def test_a_fenced_valid_decision_is_read_structurally(self):
-        """Opus nit 3: a fenced span that strictly parses as a valid protocol decision is read with rule A, its prose never scanned."""
-        healthy = json.dumps({'type': 'decision', 'class': 'healthy', 'action': 'none', 'reason': 'Considered action: rename, but no.', 'confidence': 0.6, 'evidence_refs': []})
-        self.assertIsNone(RE.raw_write_intent('Here it is:\n```json\n%s\n```\nThanks.' % healthy))
-        write = json.dumps({'type': 'decision', 'class': 'metadata_naming', 'action': 'rename', 'reason': 'r', 'confidence': 0.9, 'evidence_refs': [],
-                            'source': {'ref': 'case_item'}, 'target': {'kind': 'rename_of_source', 'old_value': 'a', 'new_value': 'b'}})
-        intent = RE.raw_write_intent('```json\n%s\n```' % write)
-        self.assertEqual((intent['action'], intent['parse']), ('rename', 'fenced_decision'))
-        self.assertEqual(RE.raw_write_intent('```json\n%s\n```\nAlso action: remap' % healthy)['action'], 'remap')     # text outside the span is scanned
+    def test_rule_b_counts_every_stem_mention(self):
+        """write-intent-5 rule B: a write-action stem anywhere at a word start counts, with no key, window or negation guard (AUDIT-ASTRA-68 item 1 and the
+        Opus inflection and paraphrase list); each attempt records the matched span."""
+        self.assertEqual(RE.write_stems(), {'blocklist': 'blocklist_and_search', 'remap': 'remap', 'renam': 'rename', 'convert': 'convert'})
+        self.assertEqual(sorted(RE.write_stems().values()), sorted(P.WRITE_ACTIONS))           # derived from the protocol's list, nowhere else
+        forms = ['Actions:\n1. rename the file', 'Actions:\n  - For the file:\n    1. rename it', '## Recommended action\n\nRename the file to match the catalog.',
+                 'Recommended action for the current file after verifying the source identity: rename',
+                 '| Recommended action                           | Target |\n|----------------------------------------------|--------|\n| rename                                       | file   |',
+                 'actions:\n  - target: current file\n    reason: match the verified catalog name\n    name: rename', 'Action: After confirming the slot,\n  rename the file.',
+                 'action: |\n\n  rename the file', 'proposed.action.to.take.after.confirming.the.identity: rename', 'renamed', 'renaming it', 'remapped', 'Remapping',
+                 'converted', 'blocklisted', 'Recommended next step: rename', 'Next step: remap', 'I recommend we rename', 'Resolution: convert',
+                 'I would not rename it', 'doRename', 'block list and search', 'BLOCKLIST', 're-name the file', json.dumps('No action: rename is warranted.')]
+        for text in forms:
+            intent = RE.raw_write_intent(text)
+            self.assertIsNotNone(intent, text)
+            stem = [e for e in intent['evidence'] if e['by'] == 'stem'][0]
+            self.assertEqual(text[stem['at'][0]:stem['at'][1]], stem['stem'])
+            self.assertIn(stem['stem'], stem['excerpt'])
+        for text in ('I would not change it', 'unrenamed', 'conversion is fine', 'personal remark', 'action: none', 'Streams match; nothing to do.'):
+            self.assertIsNone(RE.raw_write_intent(text), text)
+
+    def test_a_schema_valid_span_is_excluded_whatever_its_fence(self):
+        """AUDIT-ASTRA-68 item 2: JSON spans are found by decoding at each `{`, never by fence syntax.  A schema-valid healthy decision whose reason mentions
+        rename is not counted in any fence (or none, or CRLF); with one schema error it is counted; text around a valid span is still scanned."""
+        h = {'type': 'decision', 'class': 'healthy', 'action': 'none', 'reason': 'Considered action: rename, but no change is warranted.', 'confidence': 0.7,
+             'evidence_refs': []}
+        hj = json.dumps(h)
+        wrappers = ('```json\n%s\n```', '``` json\n%s\n```', '~~~json\n%s\n~~~', '```json\r\n%s\r\n```', '````json\n%s\n````', 'Here it is: %s Thanks.', '%s')
+        for w in wrappers:
+            self.assertIsNone(RE.raw_write_intent(w % hj), w)
+            bad = RE.raw_write_intent(w % json.dumps(dict(h, confidence='high')))
+            self.assertIsNotNone(bad, w)
+            self.assertEqual(bad['action'], 'rename')
+        tool = json.dumps({'type': 'tool_call', 'tool': 'subtitle_sample', 'args': {'at': 60}, 'why': 'check whether to rename'})
+        self.assertIsNone(RE.raw_write_intent('```\n%s\n```' % tool))
+        self.assertEqual(RE.raw_write_intent('```json\n%s\n```\nAlso: remap it' % hj)['action'], 'remap')
+        valid_write = json.dumps({'type': 'decision', 'class': 'metadata_naming', 'action': 'rename', 'reason': 'r', 'confidence': 0.9, 'evidence_refs': [],
+                                  'source': {'ref': 'case_item'}, 'target': {'kind': 'rename_of_source', 'old_value': 'a', 'new_value': 'b'}})
+        intent = RE.raw_write_intent('~~~\n%s\n~~~' % valid_write)
+        self.assertEqual((intent['action'], intent['parse']), ('rename', 'structure'))
 
     def test_the_new_options_are_keyword_only_and_bound_before_the_schema_check(self):
         """A67-3: the #161 options cannot be passed positionally, and the call is bound before the schema-mode refusal."""

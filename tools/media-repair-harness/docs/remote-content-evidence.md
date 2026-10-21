@@ -171,57 +171,53 @@ depends on it (an unconditional row applies). Stage R is ACCEPTED only when the 
 complete registration (every registered target with its role, nothing else), every target is R, there is no WRITE-CONTROL and no FAIL, and every registered
 offender PASSes; a driver stop or failure, a missing target, a non-R target or a pending adjudication is INCOMPLETE; anything else NOT_ACCEPTED.
 
-### Raw write attempts: rule `write-intent-4`
+### Raw write attempts: rule `write-intent-5`
 
-**Action-like key** (one definition, `remote_evidence.is_action_key`): an identifier, or a short key phrase, whose components (split at underscores,
-hyphens, dots, spaces and camel-case humps, each with its trailing digits removed) include `action`, `actions`, `operation` or `operations`. `action`,
-`Action`, `action2`, `proposed_action2`, `nextOperation` and `Recommended action` are action-like; `transaction`, `reaction` and `actionable` are not.
-**Write action**: one of `protocol.WRITE_ACTIONS`, compared with separators and case stripped (`canonical_action`), so `blocklistAndSearch`,
-`blocklist and search`, `BLOCKLIST-AND-SEARCH` and `blocklist_and_search` are one value.
+Every model reply is read with these two rules, and each attempt records its evidence (`evidence`: the structural reading, or each matched stem with its
+position and an excerpt), so a reviewer sees exactly why it counted.
 
-**Rule A: a reply that strictly parses as one JSON value is read structurally only.**
-* The parse keeps every duplicate key (`object_pairs_hook`), so a write bound by any duplicate counts, nested ones included.
+**Rule A, a schema-valid reply: structure only.** This applies when the whole reply strictly parses as one JSON value AND is a schema-valid protocol
+decision (decision-v3, or the v2 decision shape) or tool call.
+* It is read structurally only: no string is ever scanned as text.
+* The parse keeps every duplicate key.
 * An action-like key counts when it binds a write action as:
-  * a string whose first one to three words (split on whitespace, `/`, `,`, `+`, `-` and `_`), canonicalised, name one: `"rename file"`,
-    `"Rename the file to …"`, `"rename/remap"`;
+  * a string whose first one to three words (split on whitespace, `/`, `,`, `+`, `-`, `_`), canonicalised, name one;
   * any element of a list;
-  * an object whose `name`, `type` or `action` field (any duplicate) names one.
+  * an object whose `name`, `type` or `action` field names one.
 * This holds at any depth.
-* No string is ever scanned as text: a `reason`, a `why` or quoted JSON inside a string is never read.
-* A parsed scalar (a JSON string of prose, a number, `null`) is no attempt.
-* A reply with a duplicated key carries no single proposal, so its audit is a schema failure.
 
-**Rule B: any other reply is read over-inclusively, on purpose.** A false positive only makes Stage R stricter; a false negative would hide a write.
-* A fenced block that strictly parses as a valid protocol decision (decision-v3, or the v2 decision shape) is read with rule A and left out of the scan.
-* Everything else is scanned with one proximity rule (`proximity_writes`): an action-like key token, followed within 60 characters
-  (`PROXIMITY_WINDOW`) by a write-action word as a whole word.
-  * For rule B only, the key tokens also include the prose keys `decision`, `recommendation` and `fix`, which covers `Recommended action` and
-    `Proposed fix`.
-  * The window may span newlines, `{`, `[`, `:`, `=`, `-`, `->`, `|`, `name:` and Markdown emphasis.
-  * The window stops at a sentence end (a period followed by whitespace or the end) or at a blank line.
-  * The text is scanned as written and again with `\uXXXX` escapes decoded.
-* Lenient structured parses (balanced JSON or Python-literal objects and lists, read with rule A) only ADD attempts; they never stop the scan.
+An **action-like key** (`is_action_key`) is an identifier whose components (split at `_`, `-`, `.`, spaces and camel-case humps, trailing digits
+removed) include `action`, `actions`, `operation` or `operations`. A **write action** is compared with separators and case stripped (`canonical_action`).
 
-Examples of rule B:
-* Covered: `action: {name: rename}`, `action:` + `  name: rename`, `actions: [none,` + `  rename]`, `Action -> rename`, `| Action | rename |`,
-  `**Recommended action**: rename`, `Decision: remap`, `Proposed fix: convert`, and "the action is rename".
-* Not covered: plain prose with no key token before the write word ("I would not rename this file."), `transaction: convert`, a write word after a
-  sentence end ("Action: none. I may rename it later"), and a write word beyond the window.
+**Rule B, any other reply: stem anywhere.** This covers a reply that does not parse, or that parses but is not a schema-valid decision or tool call: a
+prose string, a bare object, a decision with one schema error, or a duplicated key.
+* The reply counts as a write attempt when a write-action stem appears anywhere in its text as a word start. There is no key, no window and no negation
+  guard.
+* **Stems** (`write_stems()`, derived from `protocol.WRITE_ACTIONS` and nowhere else): the first word of each write action, with a final `e` dropped, so
+  `renam`, `remap`, `convert` and `blocklist`.
+  * They match case-insensitively at a word start (no letter before the stem, or a camel-case hump: `doRename`).
+  * An optional separator is allowed between letters (`block list`, `re-name`).
+  * Every inflection shares the stem: `rename`, `renamed`, `renaming`, `remapped`, `converted`, `blocklisted`.
+* **Span exclusion, by decoding, never by fence syntax:**
+  * Every JSON object span is found with `json.JSONDecoder().raw_decode` at each `{` (at most 256 positions, each span at most 65,536 characters, duplicate
+    keys kept).
+  * A span that decodes AND is a schema-valid decision or tool call is read with rule A and left out of the scan; the text around it is scanned. This
+    covers any fence (```` ```json ````, ```` ``` json ````, `~~~`, four backticks), CRLF and no fence alike.
+  * A span that decodes but is not schema-valid stays in the scan and is ALSO read with rule A.
 
-Each reply counts once. `parse` is one of:
-* `strict`;
-* `fenced_decision`;
-* `lenient`;
-* `proximity`.
+**The trade-off, stated plainly.**
+* Rule B is complete for any write proposal that names its action, in any wording, list, table, heading or layout.
+* It also counts negated or incidental mentions in a reply that is not a valid decision: "I would not rename it", `transaction: convert`, a JSON string of
+  prose.
+* On a verified or held target that is WRITE-CONTROL, and Stage R ends INCOMPLETE. It fails safe, never as a pass, and the recorded excerpt shows the
+  reviewer the mention.
+* A schema-valid decision or tool call is never scanned, so its `reason` or `why` may mention any action.
 
-A `proximity` attempt with no readable proposal object gets a schema-failure audit.
-
-**Bounded property tests** (`tests/test_remote_evidence.Round4`, seeded, well under a second):
-* 6,080 generated writes, all counted. They span 16 key and value syntaxes (JSON, duplicates, nested duplicates, lists, objects, a Python literal, YAML
-  block, sequence, block map, flow map and multi-line list, Markdown bold and table, an arrow, `=`) × the four write actions in eight casings and
-  separators × five wrappers (none, a fence, prose before, prose after, both).
-* 3,001 valid parsed non-write replies, none counted: decisions and tool calls whose prose fields mention keys and write actions in those syntaxes, plus a
-  parsed prose scalar.
+**Bounded property tests** (`tests/test_remote_evidence.Round4`, seeded, serial, under a second):
+* **6,266 generated writes, all counted.** They span 19 key and value syntaxes (three put the write far from or without its key: a heading gap, a numbered list after the key, a long key) × the four write actions in eight casings and separators × 14 wrappers:
+  none, fences of five kinds, prose before or after, a numbered list, a heading, a table, nested bullets, a long prefix and CRLF.
+* **3,001 schema-valid parsed replies, none counted.** These are decisions and tool calls whose prose fields mention keys and write actions in seven
+  syntaxes.
 
 ### Delivered cues
 

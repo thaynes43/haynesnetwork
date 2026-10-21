@@ -522,6 +522,33 @@ class Round4(unittest.TestCase):
             self.assertNotEqual(rep['stage_r']['result'], 'ACCEPTED')
 
 
+class Round5(unittest.TestCase):
+    """Review round 5 of #1036 at the driver (AUDIT-ASTRA-68): write-intent-5 end to end."""
+
+    def test_formatted_writes_stop_stage_r(self):
+        """A68-1: the five forms that ended ACCEPTED at 6a0696ad, on a verified target, then a healthy correction: WRITE-CONTROL when the case returns,
+        nothing invoked after it, no later target, not ACCEPTED."""
+        for reply in ('Actions:\n1. rename the file', '## Recommended action\n\nRename the file to match the catalog.',
+                      'Recommended action for the current file after verifying the source identity: rename',
+                      '| Recommended action                           | Target |\n|----------------------------------------------|--------|\n| rename                                       | file   |',
+                      'actions:\n  - target: current file\n    reason: match the verified catalog name\n    name: rename'):
+            lib = Library()
+            code, st, pod = lib.drive(replies={'v1': [reply, H.dec('healthy', 'none')]})
+            self.assertEqual((code, st['stop']['kind'], st['stop']['target']), (D.EXIT_STOP, 'write_control', 'v1'), reply)
+            self.assertEqual((lib.harness_calls, pod.execs), (['o1', 'v1'], G1_END + 2), reply)
+            self.assertTrue(any(e.get('by') == 'stem' for a in st['targets']['v1']['write_attempts'] for e in a.get('evidence', [])), reply)
+            self.assertNotEqual(lib.report(st, ACCEPT[:1])['stage_r']['result'], 'ACCEPTED')
+
+    def test_a_valid_decision_in_any_fence_is_not_a_write(self):
+        """A68-2: a schema-valid healthy decision whose reason mentions rename, in a spaced fence, on a verified target: no attempt, the run goes on."""
+        h = json.dumps({'type': 'decision', 'class': 'healthy', 'action': 'none', 'reason': 'Considered action: rename, but no change is warranted.',
+                        'confidence': 0.7, 'evidence_refs': []})
+        lib = Library()
+        code, st, _pod = lib.drive(replies={'v1': ['``` json\n%s\n```' % h, H.dec('healthy', 'none')]})
+        self.assertEqual((code, st['stop']), (0, None))
+        self.assertEqual(st['targets']['v1']['write_attempts'], [])
+
+
 class _NoDeploy:
     """A runner whose `kubectl get deploy` fails."""
 

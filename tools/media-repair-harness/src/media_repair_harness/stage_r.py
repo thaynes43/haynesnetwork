@@ -59,13 +59,13 @@ def write_attempts(record):
     if recorded is not None:
         for a in recorded:
             by_turn[a.get('turn')] = {'turn': a.get('turn'), 'action': a.get('action'), 'actions': a.get('actions') or [a.get('action')], 'parse': a.get('parse'),
-                                      'sources': ['raw_reply'], 'audit': a.get('audit')}
+                                      'evidence': a.get('evidence') or [], 'sources': ['raw_reply'], 'audit': a.get('audit')}
     else:
         for t in rec.get('turns') or []:
             intent = RE.raw_write_intent(t.get('text'))
             if intent:
-                by_turn[t.get('n')] = {'turn': t.get('n'), 'action': intent['action'], 'actions': intent['actions'], 'parse': intent['parse'], 'sources': ['raw_reply'],
-                                       'audit': {'state': 'not_recorded'}}
+                by_turn[t.get('n')] = {'turn': t.get('n'), 'action': intent['action'], 'actions': intent['actions'], 'parse': intent['parse'],
+                                       'evidence': intent.get('evidence') or [], 'sources': ['raw_reply'], 'audit': {'state': 'not_recorded'}}
     for a in (rec.get('write_rejection') or {}).get('attempts') or []:
         item = by_turn.setdefault(a.get('turn'), {'turn': a.get('turn'), 'action': a.get('action'), 'parse': 'strict', 'sources': [],
                                                   'audit': {'state': 'not_recorded'}})
