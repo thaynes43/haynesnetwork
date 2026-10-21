@@ -1,0 +1,63 @@
+{
+  "aborted": null,
+  "cases_planned": 73,
+  "config_hash": "236730a25043e8210c84ef9f76dc0f50523375596bbf5cb9f912baa13fb947bf",
+  "cost_usd": 0.135019,
+  "evidence": {
+    "gaps": 4,
+    "gaps_by_type": {
+      "incomplete": 1,
+      "not_run": 1,
+      "standing": 2
+    },
+    "tool_calls_by_evidence_mode": {
+      "replay": 23
+    }
+  },
+  "evidence_format": "v3",
+  "evidence_mode": "replay",
+  "guards": {
+    "applied_by_rule": {},
+    "decisions_changed": 0,
+    "version": "v3"
+  },
+  "harness_git": {
+    "branch": "agent/mrh-devc6-1020",
+    "dirty": false,
+    "sha": "110cca8377b03b85887ada54ce24070dc85ead23"
+  },
+  "harness_version": "dev-c6",
+  "incomplete_records": {},
+  "latency_s_per_case": {
+    "max": 26.752,
+    "median": 10.444,
+    "min": 3.4
+  },
+  "never_started": [],
+  "prompt": {
+    "sha256": "f828f9ac0df6a92e03bd6b0368f1675193be0f295abdcd3d5c3415677ba0a126",
+    "version": "v6"
+  },
+  "records_complete": true,
+  "records_written": 73,
+  "requested_model": "claude-haiku-5-5",
+  "response_model_ids": [
+    "claude-haiku-5-5"
+  ],
+  "run_id": "devc6-haiku-5-5",
+  "started_aborted": [],
+  "statement": "Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; this harness executed no write and changed no media, *arr, Plex or library state.",
+  "validity": {
+    "adapter_errors": 0,
+    "crashes": 0,
+    "final_decision_valid": 72,
+    "first_try_failure_modes": {},
+    "first_try_valid": 35,
+    "forced": 1,
+    "forced_after_rejected_write": 0,
+    "protocol_violations": 0,
+    "rejected_write_attempts": 2,
+    "repaired": 38
+  },
+  "writes_executed": 0
+}
