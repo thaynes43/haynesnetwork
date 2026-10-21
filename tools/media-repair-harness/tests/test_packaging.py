@@ -238,6 +238,71 @@ class JobBundles(unittest.TestCase):
         self.run_py(root, "import sys; sys.path.insert(0, 'smoke'); import wiring_smoke; assert wiring_smoke.R.main; assert wiring_smoke.LS.evidence")
 
 
+class WiringBundleComments(unittest.TestCase):
+    def test_stripping_comments_keeps_every_program_and_line(self):
+        """#161: the wiring bundle drops `#` comments to stay under the annotation ceiling; every bundled module parses to the same AST, keeps its line count, and
+        a string holding a `#` is untouched."""
+        import ast
+        sys.path.insert(0, str(COMPONENT / 'smoke'))
+        try:
+            import launch_wiring_smoke as L
+        finally:
+            sys.path.remove(str(COMPONENT / 'smoke'))
+        for name in L.FILES:
+            if not name.endswith('.py'):
+                continue
+            src = (L.PACKAGE / name).read_text(encoding='utf-8')
+            out = L.strip_comments(src)
+            self.assertEqual(ast.dump(ast.parse(src)), ast.dump(ast.parse(out)), name)
+            self.assertEqual(src.count('\n'), out.count('\n'), name)
+            rest = [ln for i, ln in enumerate(io.StringIO(out).readlines(), 1) if ln.lstrip().startswith('#') and not L._is_cookie_or_shebang(i, ln)]
+            self.assertEqual(rest, [], name)              # only a shebang or an encoding cookie keeps its comment
+        self.assertEqual(L.strip_comments("x = '# not a comment'  # a comment\n"), "x = '# not a comment'\n")
+
+    def wiring(self):
+        sys.path.insert(0, str(COMPONENT / 'smoke'))
+        try:
+            import launch_wiring_smoke as L
+        finally:
+            sys.path.remove(str(COMPONENT / 'smoke'))
+        return L
+
+    def test_line_separators_inside_strings_keep_the_lines_right(self):
+        """AUDIT-ASTRA-67 item 5: U+2028 inside a multi-line string is not a line end for the tokenizer; the strip uses the tokenizer's own lines."""
+        L = self.wiring()
+        src = "s = '''one\u2028two\u2028three\nabcdefghi\nend'''\nx = 1  # comment\n"
+        out = L.strip_comments(src)
+        a, b = {}, {}
+        exec(compile(src, '<src>', 'exec'), a)
+        exec(compile(out, '<out>', 'exec'), b)
+        self.assertEqual((a['s'], b['s']), ('one\u2028two\u2028three\nabcdefghi\nend',) * 2)
+        self.assertNotIn('comment', out)
+        L.check_stripped('sep', src, out)
+
+    def test_an_encoding_cookie_and_a_shebang_are_kept(self):
+        L = self.wiring()
+        src = "#!/usr/bin/env python3\n# -*- coding: latin-1 -*-\ns = 'x'  # gone\n"
+        out = L.strip_comments(src)
+        self.assertEqual(out, "#!/usr/bin/env python3\n# -*- coding: latin-1 -*-\ns = 'x'\n")
+        src2 = "# coding: latin-1\ns='\u00e9'\n"
+        a, b = {}, {}
+        exec(compile(src2.encode('utf-8'), '<a>', 'exec'), a)
+        exec(compile(L.strip_comments(src2).encode('utf-8'), '<b>', 'exec'), b)
+        self.assertEqual(a['s'], b['s'])
+
+    def test_the_bundler_aborts_on_any_difference(self):
+        L = self.wiring()
+        orig = L.strip_comments
+        L.strip_comments = lambda src: src.replace("'", '"', 1) if "'" in src else src + '\nx = 1\n'
+        try:
+            with self.assertRaises(RuntimeError):
+                L.bundle()
+        finally:
+            L.strip_comments = orig
+        with self.assertRaises(RuntimeError):
+            L.check_stripped('m', "a = 'x'\n", "a = 'y'\n")
+
+
 class OutOfTreeImport(unittest.TestCase):
     def test_importing_from_a_directory_outside_the_checkout_with_only_pythonpath_set(self):
         with tempfile.TemporaryDirectory() as cwd:

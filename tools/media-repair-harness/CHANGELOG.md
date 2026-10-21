@@ -1,5 +1,142 @@
 # Harness changelog
 
+## W28 (OpenProject #161): remote content evidence, fail-closed receipts and the Stage R driver, offline
+
+`HARNESS_VERSION` stays `dev-c8`. **No model call, no cluster access**: every behaviour change is a new opt-in version (`docs/remote-content-evidence.md`);
+`remote_sampler.py` (mrh-sampler-1), `protocol.TOOLS`, `tools.REGISTRY`, every prompt and schema, and the config, records and replay identity of every
+earlier option set are unchanged.
+
+* **Tools behaviour `v3-remote-1`** (`remote_evidence.py`; runner `--tools-behavior v3-remote-1`, only with `--evidence-format v3.1-format` and `--evidence
+  replay`): tools behaviour v3 plus `subtitle_sample {"at": s}` (pilot plan section 3 item 1): the first text subtitle stream (subrip, ass, ssa, mov_text)
+  of the case's first ok probe result, chosen without a sampler call; offsets chosen by the model only; an 8 s window through mrh-sampler-2 or local ffmpeg;
+  each cue a `subtitle_cue` finding (citable id, stream, window) with `kinds` provenance `observed`, field `cues: content`; no stream, an empty window,
+  malformed SRT or a failed run gives `unavailable` or an execution failure, never content; cue text is media text under leakguard-media-2 (sources and a
+  blanked shadow). The capability advertisement states the argument form and the stream.
+* **Sampler `mrh-sampler-2`** (`remote_sampler_v2.py`, item 3): a terminal receipt on every invocation (hostname, exit, `source_unchanged`, `bytes_read`,
+  quota, wall, timeout, identity at start and end); `stat` under the 25 s limit; `list <dir> [--prefix p]` (whole-directory scan, the 500 cap counts only
+  matching entries, `complete`, no media bytes); `--expect-size` / `--expect-mtime-ns` (a start mismatch reads nothing); subtitle `--window` 1 to 10 s.
+* **Fail-closed receipts and identity binding** (item 2, item 4): every remote operation of v3-remote-1 (ffprobe, decode, frame, audio, audiobook, subtitle)
+  carries the expected identity and is validated; a missing or malformed receipt, a mismatch, `source_unchanged: false`, a changed host, a 60 s outer
+  timeout or a failed exec is fatal (an execution failure, cause tool, its output unused; every later operation refused without an invocation).
+  `quota_exhausted` and a sampler-internal timeout with a valid receipt are scope limits. Receipts are record-only (`tool_calls[].receipts`,
+  `remote_evidence`).
+* **`--stop-on-receipt-failure`** (item 2): the first fatal operation stops the run (`RemoteStop`, exit 3): the case is written to `started-aborted/`
+  with every receipt and its rejected write attempts; no further invocation; later cases never start. `run.main(runner=)` is the driver's test seam.
+* **Stage R driver** (`scripts/stage_r_driver.py`, item 5): G0b discovery (one mount, complete listings, unique locators, the manifest written and
+  optionally committed before any media read, the leak guard on the filled cases), G1 identity (`stat` must match the bytes and listed mtime_ns, else
+  dropped; `probe` bound), the registered early stop, G2 (the G1 probe injected as case evidence, the leak guard again, one harness run per target under the
+  stop option, the 600 s and remaining-$ caps), WRITE-CONTROL, the final bound `stat` (INVALID on any difference) and optional pod-health reads; any fatal
+  path starts no further operation or target. No target, title or id is in the script; the registration (`stage-r-1`) holds them.
+* **Stage R report** (`scripts/stage_r_report.py`, `stage_r.py`, section 4.3): execution, proposal safety over every raw write attempt, CUE / ERR / NOCUE,
+  the diagnosis rows with role defaults from the restored decision, the adjudication input, and ACCEPTED / NOT_ACCEPTED / INCOMPLETE.
+* Tests: `tests/test_remote_evidence.py` (the scripted model-free end-to-end run, absent / empty / malformed subtitles, quota and internal timeout, every
+  fatal receipt path, the stop option through `main`, raw write attempts, legacy identity), `tests/test_remote_sampler_v2.py` (the real sampler run
+  locally), `tests/test_stage_r_driver.py` (driver end to end and each fatal path: outer timeout, missing and malformed receipt, host change, identity change
+  in G2, final mismatch, incomplete listing, mount selection, early stop, WRITE-CONTROL, pod restart, G1 drift), `tests/test_stage_r_report.py` (every row
+  and default).
+* **Review round of `f4902cf3`** (the Claude advisory review on #1036, three mediums): (1) `mrh-sampler-2`'s 25 s limit applied per step (start stat,
+  operation, end stat: up to about 75 s, past the 60 s outer deadline, so a slow mount turned a non-fatal internal timeout into a fatal outer timeout): it is
+  now one budget for the whole invocation, the operation stopping 2 s early for the end identity check; (2) the driver put the G1 probe last, so a template
+  with a recorded probe could choose the G2 subtitle stream: the G1 probe now comes first, and a filled case that would select another stream than the G1
+  probe names stops Stage R; (3) an argparse prefix of an owned flag (`--spl`) passed the `harness_args` guard: any `--` item that is a prefix of an owned flag
+  is refused. Tests for each.
+* **Review round 1 of `f21f8f83`** (the coordinator's Opus review: one major, five minors, nits; AUDIT-ASTRA-59: 3 blockers, 13 majors, 2 minors; every
+  fix in the opt-in paths, the legacy configurations byte-identical): **receipts** a non-zero exec exit is fatal even with a receipt; every field is
+  required on every exit kind, typed (real booleans, integer identities, finite bounded wall time and byte counts) and consistent (`source_unchanged` with the
+  identities and `same_file`, the `*_ok` verdicts, the quota flag); an operation that read something without a verified end is fatal; **identity** binds
+  the bytes read: the sampler opens the source once (`O_NOFOLLOW`, confined under `--root`, symlink-free, `/proc/self/fd` checked), serves every read and
+  the fingerprint from that descriptor, and the identity is size, mtime_ns, device and inode; bad arguments end with a receipt; `-protocol_whitelist
+  http,tcp`; an injected `partial` never hides a fatal; an operation starts only if its 60 s fits the target deadline (`target_deadline`); SRT timing
+  components and order validated, a cut final cue marked `truncated`; **legacy gating** the typed reading of a `subtitle_sample` observation (and its media
+  treatment by the leak guard) happens only inside a v3-remote-1 run (`remote_evidence.enabled()`), so a legacy case with subtitle evidence is guarded as on
+  the base, and under the option initial subtitle evidence is a media source; **delivery** the record lists the cue ids that reached the model in a sent
+  message (`delivered_cue_ids`), and only those count; **write attempts** every raw reply expressing a write (strict, fenced or prose JSON, or an action
+  pair), once per reply, each with its own audit against the evidence before its turn (schema failures stated); **driver** every unexpected error is a
+  recorded stop with a terminal state; the registration is validated (safe keys and case ids, `early_stop_roles` required, finite limits within the ceilings,
+  no injection in templates, compiling rules); the G0b commit is mandatory and verified; the pod baseline is validated at once and bound to the hostname,
+  with checks around every G1 and G2 target; listings are cross-checked (directory, prefix, counts, entry schema, safe names); season and mount rules fully
+  match; the G1 stat's start identity is checked against the listing and its fingerprint shape validated, as the final one is; a record holding a fatal
+  operation stops; artifact paths stay under `--out`; a stop raised against a recorded target marks it STOP; **report** acceptance requires exit 0, no stop,
+  nothing skipped and the complete registration (passed with `--registration`, sha-checked), and adjudication only where a row needs it. Fixtures use
+  synthetic seasons and markers unrelated to any pilot target.
+* **Review round 2 of `c9500910`** (the Opus re-review, clear-with-nits; the interim notes of AUDIT-ASTRA-62, killed mid-review; every candidate reproduced
+  first): **write intents** rule `write-intent-2` scans every reply for a write action bound to an action-like key in any common syntax (over-inclusive by
+  design; prose without a key binding is not an attempt); **delivery** read from the structure of the harness's own messages (finding objects), never by
+  searching text, and only from calls that completed; the report gives the cue text as the model saw it, marked when clipped; **receipts** any exception
+  while reading or validating a receipt is fatal, every number bounded as an integer before any float conversion, and a completed operation with an error,
+  a stat over 2 MiB, ffmpeg bytes without a request or a wall beyond the sampler's budget are malformed; **confinement** a listing is descriptor-bound
+  (`O_DIRECTORY | O_NOFOLLOW`, listed from the descriptor), the descriptor check is mandatory and fails closed without `/proc`, `confined` is set only after
+  it; **driver** case template files are hashed into the state and checked by the report, templates stay under the registration directory, and the G0a
+  `--guards v3` and tool list are enforced. Tests for each (including the A-B-A swap, the swap between the confinement check and the open, and no `/proc`);
+  every fix was also reverted or mutated in a scratch copy to confirm its test fails.
+* **Review round 3 of `cdc17f22`** (the Opus re-review, clear-with-nits; AUDIT-ASTRA-65: three majors, one minor), after the rebase onto dev-c8
+  (`713b433a`): **write intents** rule `write-intent-3`: one definition of an action-like key (components `action`, `actions`, `operation`, digits stripped),
+  write actions canonicalised (separators and case), a binding as a scalar, any list element or an object's name/type/action; a strictly parsed reply is
+  read structurally only (no prose value is scanned), an unparseable one over-inclusively (fenced JSON, balanced JSON or Python literals, a YAML-like reading,
+  then a tolerant text scan with word-bounded keys and Markdown); **roster** registration `stage-r-1` needs exactly 2 offenders, 3 verified and 1 held
+  target (pilot plan sections 4.1, 4.3), refused by the driver and the report; **WRITE-CONTROL** raised when the case returns, before its final stat (no
+  invocation after it; the target is STOP); **legacy wording** the subtitle wording of "this call settled nothing about ..." is gated on v3-remote-1, and
+  the legacy model-visible messages equal the base's byte for byte; the A3 swap-after-open and the receipt-validation catch-all get tests; the
+  stream-mismatch driver test dropped in round 1 is restored. Rebase: `--tools-behavior` is refused with dev-c8's experimental `--claude-schema`, and the
+  wiring smoke bundle drops `#` comments to stay under its 240000-byte ceiling (identical ASTs, every line kept).
+* **Review round 4 of `0ba3c67a`** (the Opus re-review, clear-with-nits; AUDIT-ASTRA-67: three majors, two minors): **write intents converge by design**,
+  rule `write-intent-4`: (A) a reply that strictly parses as one JSON value is read structurally only, with every duplicate key kept, a string's first
+  one to three words, any list element or an object's name/type/action field, at any depth, and a parsed scalar is no attempt; (B) any other reply is read
+  over-inclusively by one proximity rule (an action-like or prose key token followed within 60 characters by a write-action word, stopping at a sentence
+  end or a blank line), a fenced valid protocol decision being read with rule A, lenient parses only adding attempts; a seeded property test (6,080
+  generated writes counted, 3,001 parsed non-writes not) and end-to-end driver runs for the YAML object, block map, multi-line list and duplicate-key forms;
+  **positional bypass** the #161 options of `run_case` are keyword-only and every call is bound before the schema-mode refusal; **comment stripping**
+  works on the tokenizer's own physical lines, keeps encoding cookies and shebangs, and the bundler aborts on any AST, string-token, encoding or line-count
+  difference.
+* **Review round 5 of `6a0696ad`** (the Opus re-review, clear-with-nits; AUDIT-ASTRA-68: one major, one minor): **write intents** rule `write-intent-5`
+  replaces the key-and-window rule B, which could not converge. Rule A is unchanged for a reply that strictly parses as a schema-valid decision or tool
+  call. Any other reply counts as a write attempt when a write-action stem (`renam`, `remap`, `convert`, `blocklist`: derived from
+  `protocol.WRITE_ACTIONS`) appears anywhere at a word start: no key, no window, no negation guard, over-inclusive on purpose (it fails safe). JSON spans
+  are found by decoding at each `{`, never by fence syntax; a schema-valid decision or tool call span is read with rule A and left out of the scan. Every
+  attempt records its evidence (matched spans with excerpts). The proximity and prose-key machinery is removed. The property test gains nine formatting
+  wrappers and three far-from-key syntaxes (6,266 writes counted; 3,000 schema-valid parsed replies not, plus 1 positive prose-scalar check), and driver runs show WRITE-CONTROL for the five formatted forms and no attempt
+  for a valid decision in a spaced fence. A parsed prose scalar now counts when it names a stem (rule B), reversing round 4's A67-4 handling by design.
+* **Review round 6 of `2c94c450`** (the Opus re-review, clear-with-nits; AUDIT-ASTRA-69: three majors, two minors, one nit): **write intents** rule
+  `write-intent-6` has THREE outcomes: no attempt, attempts, or **unresolved**. Any analysis it cannot complete (an exception anywhere in the wrapped
+  detector, an exhausted budget, unreadable input) is unresolved, never "no attempt", and keeps partial evidence (the reply excerpt and length, the
+  exception type). The budgets are checked before any processing: the reply length (262,144 characters), the bracket depth (100, counted over the raw
+  text before any parse; the structural walks are iterative), the 256 span candidates and the 65,536-character span limit (the decoder is never given
+  more); exhausting one is unresolved, never a write attributed to a valid span. Rule B scans the raw text AND a bounded normalised view (HTML references
+  and Python/JSON escapes decoded, NFKC, combining marks and format characters dropped, dashes and spaces unified, a fixed Cyrillic/Greek look-alike
+  table), with every match
+  mapped back to its ORIGINAL span and the normalisations that produced it (the `\x6e` regression and the decoded-offset bug are fixed). A duplicate key
+  at any depth denies the schema-valid exemption. Rule A reads a tool call's `tool` name with the stem rule (`rename_file`, `blocklist_release`). The
+  runner records unresolved replies in `remote_evidence.write_analysis` (with the rule and budgets in the run config); the driver stops Stage R before
+  the final stat on a harness crash record, a record without `remote_evidence`, or any unresolved analysis; the report counts such a target STOP.
+  Tests: every Astra reproduction end to end (zero-width, entity, `\x6e`, nested duplicate, a write tool name: WRITE-CONTROL; 600-deep nesting, the
+  257th span, the long span: unresolved), position mapping, budget controls, exceptions, and two seeded properties (3,342 normalised writes counted and
+  mapped across 18 normalisations; 500 valid replies with hidden prose not counted).
+* **Review round 7 of `3a9e0889`** (the Opus re-review, clear-with-nits; AUDIT-ASTRA-70: two majors, one minor): **write intents** rule
+  `write-intent-7`. A schema-valid reply-level decision or tool call is exempt from the stem scan ONLY in its own designated free-text explanation field,
+  taken from the protocol's one table of them (`protocol.LENGTH_FIELDS`, read by `remote_evidence.prose_fields()`: the decision's `reason`, the tool
+  call's `why`). Every other key and string value is scanned with the full normalised matcher at any depth: tool `args` (an `action` value in any
+  wording, a command payload), targets, references, a nested object's `why`. The structural reading (action-like keys, the first 1-3 words, tool names)
+  is unchanged. The normalised view decodes JSON's single-character escapes (\n, \t, \r, \b, \f, \/, \", \\) and JSON surrogate pairs,
+  drops control characters other than whitespace, and runs a bounded second pass when the first left something to decode (an escape escaped once
+  more), with positions mapped through both passes. Tool names with a write stem are DECLARED over-inclusive (`get_rename_preview` counts; no read-only
+  exception), and a test asserts that no tool the harness offers under `v3-remote-1` has one. The bracket-depth pre-check skips JSON strings, so a valid
+  decision whose `reason` holds 101 brackets is not unresolved, while 101-deep nesting still is. Tests: every Astra reproduction end to end (args
+  action gerund, imperative and spaced block list, a shell command, an escaped newline before `rename` and before `list`, an escaped tab, a read-only
+  sounding tool name: WRITE-CONTROL before the final stat, no later target, not ACCEPTED), a valid tool call whose `why` mentions renaming (no attempt,
+  the run completes), and two seeded properties (2,114 writes in non-prose fields of valid tool calls counted and mapped; 600 valid replies with the
+  mention only in `reason` or `why` not counted).
+  The advisory review of `7aef8ca8` found that the second pass could destroy a stem only the first pass revealed (`\x5cremap` gives `\remap`,
+  whose `\r` the second pass decodes): the stem scan now reads the raw text and every pass's view (`normalised_views`), with a regression test.
+* **Review round 8 of `01b55281`** (the Opus re-review, clear; AUDIT-ASTRA-71: one major, one minor): the normalised view collapses every run of
+  whitespace (a decoded newline and its indentation, tabs, carriage returns, Unicode spaces) and separators to one separator, keeping the position
+  mapping, so a line wrapped inside a stem (`block\n    list`, `re-\n  name`, `re\n\tmap`, `con\r\n      vert`) is counted in prose, in a valid
+  tool call's args and in raw text; and the view is held to the 262,144-character bound while it is built, so an expanding character (14,564 copies of
+  U+FDFA in a valid tool argument) is unresolved and stops Stage R. Tests: detector and driver regressions for every stem (WRITE-CONTROL before the
+  final stat; the over-budget view a `write_analysis_unresolved` stop), a just-under-bound control, and three wrapped-line forms added to the
+  normalisation property tests (3,399 and 2,132 writes, all counted and mapped).
+* **Review round 9 of `0c009595`** (the Opus re-review, clear; AUDIT-ASTRA-72: one minor): the input budgets are checked before the blank-reply early
+  return, so 262,145 spaces, newlines or U+3000 characters are unresolved (a stop before the final stat) instead of "no attempt"; a short blank reply
+  is still no attempt. Detector and driver regressions.
 ## dev-c8 (WO-W26, OpenProject #158): prompt v8, turn-v3.1, claude-schema-1, guards v4; offline, not measured
 
 `HARNESS_VERSION` is `dev-c8`. Every earlier prompt, format, guard version and adapter is unchanged; the recorded dev-c4 to dev-c7 runs, the dev-c6 replay

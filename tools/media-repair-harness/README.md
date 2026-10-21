@@ -106,6 +106,10 @@ is no pre-registration. Details: `docs/dev-c8.md`, `CHANGELOG.md`.
 
 WO-W27 (OpenProject #145 remainder and the PR #1031 nits) adds diagnostic rules `diag-3` (the cross-line `error reading header` rule reads every decorated form, an OSError at `zip_open` is an execution failure, the `zip_crc` execution check starts at the first separator anywhere) and live collector behaviour `live-2` (damage lines classified whole and shown within the bytes live-1's lines take; the live EPUB resolver agrees with tools behaviour v4, including `data:`, `urn:` and `mailto:` hrefs as local member names, damage when absent), and fixes a pagination crash on lists that mix strings and dicts without changing any page that was produced before. Tools behaviour v4 pairs with `diag-2` or `diag-3`. No public result changes. Offline: `scripts/w27_deltas.py` (`docs/w27-deltas.json`). Details: `CHANGELOG.md`, `docs/evidence-format-v2.md` (last section).
 
+## #161: remote content evidence, fail-closed receipts and the Stage R driver (opt-in, offline)
+
+`--tools-behavior v3-remote-1` (with `--evidence-format v3.1-format` and `--evidence replay` only) is tools behaviour v3 plus `subtitle_sample {"at": s}` (an 8 s window of the first text subtitle stream the case's probe result lists; each cue is a citable `subtitle_cue` finding with content provenance; nothing usable gives `unavailable` or an execution failure, never content; the leak guard checks cue text) and the `mrh-sampler-2` receipts (`remote_sampler_v2.py`) with expected-identity binding (`fixture.expected_identity`, `fixture.expected_hostname`) on every remote operation. A missing or malformed receipt, an identity mismatch, `source_unchanged: false`, a changed hostname or an outer timeout fails closed (cause tool). `--stop-on-receipt-failure` stops the run on the first one (started_aborted with every receipt; later cases never start). `scripts/stage_r_driver.py` runs G0b, G1, G2 and the final check of the pilot plan serially and owns every stop; `scripts/stage_r_report.py` evaluates the records (pilot plan section 4.3). `remote_sampler.py` and every earlier configuration are byte-identical. Details: `docs/remote-content-evidence.md`, `CHANGELOG.md`.
+
 ## Layout
 
 | File (under `src/media_repair_harness/` unless noted) | Role |
@@ -117,6 +121,7 @@ WO-W27 (OpenProject #145 remainder and the PR #1031 nits) adds diagnostic rules 
 | `outcomes.py` | Outcome-step checks (`epub_valid`, `epub_title_is`, `sha256_equals/differs`, `json_field_equals`) |
 | `score_compat.py` (scorer: `.agents/context/media-repair-harness-2026-10-19/harness/score.py`, evaluator-owned, not moved) | loads score.py by explicit path and maps its flat `protocol` / `run` imports to this package; G1-G10, per-class accuracy, false diagnoses, false repairs, abstention, schema validity, tool failures, latency, cost; `score.json` + `score.md` |
 | `ollama_transport.py`, `remote_sampler.py` | Vendored transports (provenance below) |
+| `remote_evidence.py`, `remote_sampler_v2.py`, `stage_r.py`, `scripts/stage_r_driver.py`, `scripts/stage_r_report.py` | #161: tools behaviour v3-remote-1 (subtitle_sample, receipts, identity binding), sampler `mrh-sampler-2`, the Stage R driver and report (`docs/remote-content-evidence.md`) |
 | `testdata/` | Synthetic cases, deterministic EPUB fixtures, recorded sample outputs of the CLIs (used by the parsing tests) |
 | `leakguard.py` | opaque case alias, fixture-name redaction and the pre-send leak guard |
 | `gaps.py` | dev-c2: capabilities and gaps (what a run could not verify, which call showed it, which harness tool would be needed); record only, never shown to the model |

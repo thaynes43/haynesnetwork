@@ -45,6 +45,7 @@ CHECKER_RUBRIC = RB.RUBRIC_V31_VERSION                # what the unchanged check
 CONTRACT = dict(EV3.CONTRACT, evidence_format=FORMAT_VERSION, tools_behavior=TOOLS_BEHAVIOR, rubric=RUBRIC_VERSION, checker_rubric=CHECKER_RUBRIC,
                 excerpt_rule=ET.RULE_ID)
 EXCERPT_TOOL = 'epub_text'        # the typed layer's name for an explicit excerpt result (a reading); never shown to the model
+SUBTITLE_TOOL = 'subtitle_sample'  # tools behaviour v3-remote-1 (#161) only: its cue text is media text (shadowed and checked like EPUB text)
 BODY_UNREAD = 'body text outside the shown excerpts was not read by this result'
 _V2_BODY_RX = (re.compile(r'^no body text beyond the shown spine heads was read$'), re.compile(r'^only the first \d+ of \d+ spine items are shown as text'))
 # `spine_heads` are the vendored inspector's first six words of ALL character data of a spine document (its head title, styles and navigation together with
@@ -71,6 +72,10 @@ def internal(obs):
 def blank_media(obs):
     """The harness-only shadow of an epub_inspect observation: every literal media string blanked at its known field (tools.epub_v3_blank); others as is."""
     from . import tools as T
+    if obs.get('tool') == SUBTITLE_TOOL and _subtitle_media():
+        from . import remote_evidence as RE
+        blanked = RE.blank(obs.get('output'))
+        return obs if blanked is obs.get('output') else dict(obs, output=json.dumps(blanked, ensure_ascii=False))
     if obs.get('tool') not in ('epub_inspect', EXCERPT_TOOL):
         return obs
     out = obs.get('output')
@@ -83,8 +88,14 @@ def blank_media(obs):
     return dict(obs, output=json.dumps(T.epub_v3_blank(data), ensure_ascii=False))
 
 
+def _subtitle_media():
+    """Subtitle cue text is media text only inside a tools-behaviour-v3-remote-1 run; elsewhere it is read as before (no shadow, the legacy check)."""
+    from . import remote_evidence as RE
+    return RE.active()
+
+
 def carries_media(observations):
-    return any(o.get('tool') in ('epub_inspect', EXCERPT_TOOL) for o in observations)
+    return any(o.get('tool') in ('epub_inspect', EXCERPT_TOOL) or (o.get('tool') == SUBTITLE_TOOL and _subtitle_media()) for o in observations)
 
 
 def display_tool(obs):
@@ -138,6 +149,8 @@ def kinds_of(obs, facts):
         fields = {k: EPUB_KINDS[k] for k in facts if k in EPUB_KINDS}
     elif tool == EXCERPT_TOOL:
         fields = {'excerpt': 'content'} if 'excerpt' in facts else {}
+    elif tool == SUBTITLE_TOOL and _subtitle_media():
+        fields = {'cues': 'content'} if 'cues' in facts else {}       # tools behaviour v3-remote-1: subtitle cues are content read by this run
     elif tool == 'prior_record':
         kind = FX.report_kind((_data(obs) or {}).get('evidence_method'))
         fields = {k: kind for k in facts if k == 'observed'}

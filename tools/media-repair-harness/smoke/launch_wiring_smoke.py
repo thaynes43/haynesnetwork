@@ -32,12 +32,75 @@ ENV_LIMIT = MAX_ARG_STRLEN - 4096
 TOTAL_LIMIT = 240000   # kubectl apply stores the manifest in an annotation (262144 bytes max); the rest of the spec needs a margin
 
 
+_COOKIE_RX = None
+
+
+def _is_cookie_or_shebang(row, line):
+    """A PEP 263 encoding cookie (a comment on line 1 or 2 naming a coding) or a line-1 shebang: comments with meaning, always kept."""
+    import re
+    global _COOKIE_RX
+    _COOKIE_RX = _COOKIE_RX or re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*[-\w.]+')
+    return (row == 1 and line.startswith('#!')) or (row <= 2 and bool(_COOKIE_RX.match(line)))
+
+
+def strip_comments(source):
+    """The source with every `#` comment removed except an encoding cookie or a shebang.  The physical lines are the tokenizer's own
+    (io.StringIO(...).readlines(), never str.splitlines(), which also splits at U+2028 and other separators the tokenizer does not), so a token's row always
+    addresses the line it is on; strings, docstrings and code are untouched and every line is kept (line numbers in a traceback stay right).  #161: the
+    package outgrew the 240000-byte ceiling of the apply annotation once dev-c8 and the remote evidence code joined it."""
+    import tokenize
+    lines = io.StringIO(source).readlines()
+    for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+        if tok.type != tokenize.COMMENT:
+            continue
+        row, col = tok.start
+        line = lines[row - 1]
+        if _is_cookie_or_shebang(row, line):
+            continue
+        body = line.rstrip('\r\n')
+        lines[row - 1] = line[:col].rstrip() + line[len(body):]
+    return ''.join(lines)
+
+
+def _strings(source):
+    import tokenize
+    return [t.string for t in tokenize.generate_tokens(io.StringIO(source).readline) if t.type == tokenize.STRING]
+
+
+def check_stripped(name, source, stripped):
+    """The bundler's self-check: the stripped module parses to the identical AST, has the identical string tokens and the same encoding declaration and line
+    count.  Any difference aborts the bundle build (RuntimeError) instead of shipping changed code."""
+    import ast
+    import tokenize
+    problems = []
+    if ast.dump(ast.parse(source)) != ast.dump(ast.parse(stripped)):
+        problems.append('the AST differs')
+    if _strings(source) != _strings(stripped):
+        problems.append('a string token differs')
+    if tokenize.detect_encoding(io.BytesIO(source.encode('utf-8')).readline)[0] != tokenize.detect_encoding(io.BytesIO(stripped.encode('utf-8')).readline)[0]:
+        problems.append('the encoding declaration differs')
+    if len(io.StringIO(source).readlines()) != len(io.StringIO(stripped).readlines()):
+        problems.append('the line count differs')
+    if problems:
+        raise RuntimeError('comment stripping changed %s (%s): the bundle is not built' % (name, '; '.join(problems)))
+
+
 def bundle():
-    """The whole tarball as one base64 string (gzip: always present in the Job image, unlike lzma); `bundle_parts` splits it for the Job spec."""
+    """The whole tarball as one base64 string (gzip: always present in the Job image, unlike lzma); `bundle_parts` splits it for the Job spec.  Python files
+    travel without their comments (strip_comments)."""
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode='w:gz') as t:
         norm = lambda ti: (setattr(ti, 'uid', 0), setattr(ti, 'gid', 0), setattr(ti, 'mtime', 0), ti)[3]
         for name in FILES:
+            if name.endswith('.py'):
+                source = (PACKAGE / name).read_text(encoding='utf-8')
+                stripped = strip_comments(source)
+                check_stripped(name, source, stripped)
+                data = stripped.encode('utf-8')
+                ti = norm(tarfile.TarInfo('media_repair_harness/' + name))
+                ti.size, ti.mode = len(data), 0o644
+                t.addfile(ti, io.BytesIO(data))
+                continue
             t.add(PACKAGE / name, arcname='media_repair_harness/' + name, filter=norm)
         for name in SMOKE_FILES:
             t.add(HERE / name, arcname='smoke/' + name, filter=norm)

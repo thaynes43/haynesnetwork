@@ -826,6 +826,11 @@ def _derive(obs, known_duration=None):
         _derive_audiobook(d, data)
     elif tool == 'audio_sample':
         _derive_audio(d, data)
+    elif tool == 'subtitle_sample' and _remote_evidence_active():
+        # tools behaviour v3-remote-1 only (#161), inside such a run (remote_evidence.enabled); everywhere else a subtitle_sample observation (case evidence
+        # named so) is read exactly as before, by the record branch below
+        from . import remote_evidence
+        remote_evidence.derive_subtitle(d, data)
     elif tool in ('ocr', 'frame_sample', 'arr_lookup', 'prior_record'):
         _derive_record(d, data)
     else:
@@ -834,6 +839,11 @@ def _derive(obs, known_duration=None):
     _plain_text_fallback(d, data)
     _finish(d, data)
     return d
+
+
+def _remote_evidence_active():
+    from . import remote_evidence
+    return remote_evidence.active()
 
 
 _PLAIN_KIND = {'ffprobe': ('container_damage', 'container'), 'audiobook_inspect': ('container_damage', 'container'), 'decode_sample': ('decoder_errors', 'decode'),
@@ -923,7 +933,7 @@ def _finish(d, data):
         shown_iv = ', '.join('%g-%g s (%s)' % (iv['start_s'], iv['end_s'], iv['state']) for iv in d.intervals[:6])
         d.unresolved.append('the call timed out: the windows it shows (%s) were observed; the rest of what was requested was not completed' % shown_iv)
     elif ex['state'] in ('timed_out', 'unavailable') or (ex['state'] == 'failed' and not any(f['known_defect'] for f in d.findings)):
-        d.unresolved.append('this call settled nothing about %s' % AREA.get(d.obs['tool'], 'its subject'))
+        d.unresolved.append('this call settled nothing about %s' % _area(d.obs['tool']))
     if ex['output_truncated']:
         d.unresolved.append('the tool output was cut before it reached the model; the cut part is unseen')
     if d.integrity == UNKNOWN and d.obs['tool'] in INTEGRITY_TOOLS and ex['state'] == 'ran' and not any(f['known_defect'] for f in d.findings):
@@ -933,6 +943,14 @@ def _finish(d, data):
 AREA = {'ffprobe': 'the container, stream and chapter metadata', 'decode_sample': 'decodability of the requested window', 'frame_sample': 'the picture at the requested offset',
         'audio_sample': 'audio levels in the requested window', 'ocr': 'on-screen text at the requested offset', 'epub_inspect': 'the EPUB archive and package',
         'audiobook_inspect': 'audiobook parts, chapters and tags', 'arr_lookup': 'the *arr record', 'prior_record': 'the prior record'}
+
+
+def _area(tool):
+    """The subject a call that settled nothing names.  The subtitle wording exists only inside a tools-behaviour-v3-remote-1 run (remote_evidence.enabled);
+    everywhere else an unknown tool keeps the base wording, so legacy model-visible text is unchanged."""
+    if tool == 'subtitle_sample' and _remote_evidence_active():
+        return 'subtitle text in the requested window'
+    return AREA.get(tool, 'its subject')
 
 
 # ---- ffprobe
