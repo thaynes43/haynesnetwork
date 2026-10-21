@@ -1,0 +1,543 @@
+{
+ "arbiter": "Astra (gpt-6-astra, max effort, codex exec in the V2 pod, read-only): AUDIT-ASTRA-45",
+ "arbiter_report_sha256": "8f03039f7f0d69ad6a148038a89ebe2b4e84e8eb5077e14183f07e581cbd3361",
+ "cases": {
+  "audiobook-corrupt-001": {
+   "T": true,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Located missing-moov damage; no linked file supports a block."
+  },
+  "audiobook-corrupt-002": {
+   "T": true,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Located MPEG-frame damage; source remains unbound."
+  },
+  "audiobook-corrupt-003": {
+   "T": true,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Corruption established; unbound-source escalation is scorer-accepted."
+  },
+  "audiobook-healthy-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Prior tag report supplies no integrity check."
+  },
+  "audiobook-healthy-002": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Clean container and matching declarations support scoped healthy."
+  },
+  "audiobook-healthy-003": {
+   "T": true,
+   "agree": false,
+   "final": "D",
+   "proposed": "B5",
+   "reason": "Prediction error: healthy reference overlooks the filename naming surface."
+  },
+  "audiobook-identity-001": {
+   "T": false,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Tag-based report contests identity without establishing a content mismatch."
+  },
+  "audiobook-identity-002": {
+   "T": true,
+   "agree": false,
+   "final": "B2",
+   "proposed": "A1",
+   "reason": "Reason falsely claims matching tags despite the artist/author disagreement."
+  },
+  "audiobook-insuff-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Empty tag map on a clean container supports naming/escalate."
+  },
+  "audiobook-naming-001": {
+   "T": false,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Naming defect established; content verification and binding for rename are absent."
+  },
+  "audiobook-order-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Two fitting editions remain without a supplied choice."
+  },
+  "audiobook-outcome-001": {
+   "T": true,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Container damage established; no file binding permits a block."
+  },
+  "audiobook-outcome-002": {
+   "T": true,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Missing-moov finding supports corruption but not an unbound write."
+  },
+  "epub-corrupt-001": {
+   "T": true,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "BadZipFile at zip_open; no linked-file catalog record."
+  },
+  "epub-corrupt-002": {
+   "T": true,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Located archive damage; source binding remains absent."
+  },
+  "epub-corrupt-003": {
+   "T": true,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Located OPF parse failure; block prerequisite lacks binding."
+  },
+  "epub-corrupt-004": {
+   "T": true,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Named-member CRC damage; no bound source."
+  },
+  "epub-corrupt-005": {
+   "T": true,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Manifest references a missing member; source remains unbound."
+  },
+  "epub-healthy-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Prior EXTH report supplies no package-integrity evidence."
+  },
+  "epub-healthy-002": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Matching OPF report cannot establish package health."
+  },
+  "epub-healthy-003": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Clean package and matching declarations support scoped healthy."
+  },
+  "epub-healthy-004": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Clean package; no material identity or naming disagreement."
+  },
+  "epub-healthy-005": {
+   "T": true,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Naming differences remain; excerpts do not enable a bound rename."
+  },
+  "epub-healthy-006": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Clean package and matching declarations; content identity is not required for healthy."
+  },
+  "epub-identity-001": {
+   "T": false,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "OPF report alone cannot establish content identity."
+  },
+  "epub-identity-002": {
+   "T": false,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "OPF/hash report is not a content observation."
+  },
+  "epub-identity-003": {
+   "T": true,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Delivered Windy Poplars body supports mismatch; block lacks binding."
+  },
+  "epub-identity-004": {
+   "T": true,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Delivered body admits the identity alternative and defeats initial healthy."
+  },
+  "epub-identity-005": {
+   "T": true,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Delivered conflicting headings support unresolved identity."
+  },
+  "epub-insuff-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Warranted package check attempted and failed; escalation correctly preserves uncertainty."
+  },
+  "epub-insuff-002": {
+   "T": true,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Delivered French body conflicts with required English; no bound source."
+  },
+  "epub-naming-001": {
+   "T": true,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Title-page content confirms identity; rename still lacks binding."
+  },
+  "epub-outcome-001": {
+   "T": true,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Located archive damage; unbound source requires escalation."
+  },
+  "epub-outcome-002": {
+   "T": true,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "BadZipFile establishes corruption; block binding is absent."
+  },
+  "movie-corrupt-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Input-caused container damage and matching linked file support block."
+  },
+  "movie-corrupt-002": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "EBML header damage and bound Radarr record support block."
+  },
+  "movie-corrupt-003": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Located input damage supports the bound block without another decode."
+  },
+  "movie-decoder-001": {
+   "T": false,
+   "agree": true,
+   "final": "D",
+   "proposed": "D",
+   "reason": "Echoed context ID leaves catalog source binding unresolved."
+  },
+  "movie-decoder-002": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Unsupported selected codecs and bound source support conversion."
+  },
+  "movie-healthy-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Prior release report supplies no integrity evidence."
+  },
+  "movie-healthy-002": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Alias is allowed, but integrity remains unchecked."
+  },
+  "movie-healthy-003": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Clean scoped checks, matching OCR and permitted alias support healthy."
+  },
+  "movie-healthy-004": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Content and runtime fit the explicitly selected Extended Cut."
+  },
+  "movie-identity-001": {
+   "T": false,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Reported release title cannot establish a content mismatch."
+  },
+  "movie-identity-002": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "PAPER KINGDOM hand judgment confirmed; Radarr binds the source."
+  },
+  "movie-insuff-001": {
+   "T": true,
+   "agree": false,
+   "final": "D",
+   "proposed": "B5",
+   "reason": "Prediction-set error after completed full decode; unchecked-tail wording also overstates coverage."
+  },
+  "movie-naming-001": {
+   "T": false,
+   "agree": true,
+   "final": "B4",
+   "proposed": "B4",
+   "reason": "Rename proceeds with unresolved year identity and unmet prerequisites."
+  },
+  "movie-order-001": {
+   "T": true,
+   "agree": false,
+   "final": "D",
+   "proposed": "B5",
+   "reason": "Prediction-set error: full decode and listed Extended Cut support an omitted reading."
+  },
+  "movie-outcome-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Unsupported HEVC/AC3 streams and bound source support conversion."
+  },
+  "movie-outcome-002": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Stated client incompatibility and linked file support conversion."
+  },
+  "tv-corrupt-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Premature-end defect survives exit 0; Sonarr binds the file."
+  },
+  "tv-corrupt-002": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Located decoder damage survives clean probe and exit 0."
+  },
+  "tv-corrupt-003": {
+   "T": false,
+   "agree": true,
+   "final": "A2",
+   "proposed": "A2",
+   "reason": "Literal stopping rule supports scoped healthy before optional remainder exploration."
+  },
+  "tv-decoder-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Selected 10-bit video exceeds the stated client profile; source is bound."
+  },
+  "tv-healthy-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Matching reported content lacks a container-integrity check."
+  },
+  "tv-healthy-002": {
+   "T": true,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Clean scoped checks and expected OCR support healthy."
+  },
+  "tv-healthy-003": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Clean checks and matching episode content support scoped healthy."
+  },
+  "tv-healthy-004": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Matching declarations and clean scoped checks leave no material uncertainty."
+  },
+  "tv-healthy-005": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Extra streams establish no defect; scoped checks and identity agree."
+  },
+  "tv-healthy-006": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Stated client supports the streams; decode completion is within tolerance."
+  },
+  "tv-healthy-007": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Explicit DVD ordering resolves the apparent episode-order issue."
+  },
+  "tv-identity-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Content-method report establishes mismatch; absence of binding requires escalation."
+  },
+  "tv-identity-002": {
+   "T": false,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Admissible cautious OCR reading; attempted lookup supplies no binding."
+  },
+  "tv-identity-003": {
+   "T": false,
+   "agree": true,
+   "final": "P!",
+   "proposed": "P!",
+   "reason": "Repaired final proposal is supported, but first write failed the frozen rejection condition."
+  },
+  "tv-identity-004": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Warranted OCR delivers E03 against the bound E04 slot."
+  },
+  "tv-insuff-001": {
+   "T": false,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Literal scoped-healthy prerequisites hold despite the insufficient-evidence label."
+  },
+  "tv-insuff-002": {
+   "T": false,
+   "agree": true,
+   "final": "A1",
+   "proposed": "A1",
+   "reason": "Clean initial scope permits healthy; ordinary remainder alone is not material."
+  },
+  "tv-insuff-003": {
+   "T": true,
+   "agree": false,
+   "final": "D",
+   "proposed": "B5",
+   "reason": "Prediction-set error: completed full decode changes the literal M4 reading."
+  },
+  "tv-naming-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "OCR resolves the wrong episode marker; bound rename uses supported values."
+  },
+  "tv-order-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Aired/DVD alternatives remain without a chosen ordering."
+  },
+  "tv-outcome-001": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Located decoder damage and linked source support block."
+  },
+  "tv-outcome-002": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Completed decode reports positive damage despite exit 0."
+  },
+  "tv-outcome-003": {
+   "T": false,
+   "agree": true,
+   "final": "P",
+   "proposed": "P",
+   "reason": "Located macroblock damage supports the bound block proposal."
+  }
+ },
+ "counts": {
+  "A1": 22,
+  "A2": 1,
+  "B2": 1,
+  "B4": 1,
+  "D": 5,
+  "P": 42,
+  "P!": 1
+ },
+ "prediction_errors": [
+  "audiobook-healthy-003",
+  "movie-insuff-001",
+  "movie-order-001",
+  "tv-insuff-003"
+ ],
+ "procedure": "PREREGISTRATION.md section 13 as amended by section 14 (row 4: a warranted check never attempted -> D)",
+ "reaches_reference": {
+  "all": 65,
+  "without_A3": 65,
+  "without_T": 46,
+  "without_T_and_A3": 46
+ },
+ "unresolved_source_shape": [
+  "movie-decoder-001"
+ ],
+ "views_identical": true
+}

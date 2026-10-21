@@ -122,12 +122,33 @@ class Fixture:
 # media, case-provided records, and the local ffprobe/ffmpeg route when those binaries exist.  `live` runs the bounded read-only collectors
 # of `evidence/` on the case's own local media file; a case without a local media path that exists gets `unavailable` with the reason.
 EVIDENCE_MODES = ('replay', 'live')
-TOOLS_BEHAVIORS = ('v1', 'v2', 'v3')
+TOOLS_BEHAVIORS = ('v1', 'v2', 'v3', 'v4')
 
 
 def _v2plus(ctx):
-    """Tools behaviour v2 or v3: v3 (dev-c7, evidence format v3.1-format) is v2 plus the EPUB body excerpts (epub_text.py), every v2 rule unchanged."""
-    return ctx.tools_behavior in ('v2', 'v3')
+    """Tools behaviour v2, v3 or v4: v3 (dev-c7, evidence format v3.1-format) is v2 plus the EPUB body excerpts (epub_text.py), every v2 rule unchanged;
+    v4 (W25) is v3 plus three EPUB package-check corrections (_epub_stage remote_ok, _inspect_v4, SIZE_CAP_V4)."""
+    return ctx.tools_behavior in ('v2', 'v3', 'v4')
+
+
+def _v3plus(ctx):
+    """Tools behaviour v3 or v4: the EPUB body excerpts and the literal media text (v4 changes only the package check, see tool_epub_inspect)."""
+    return ctx.tools_behavior in ('v3', 'v4')
+
+
+# Tools behaviour v4 words two EPUB results that only diagnostic rules diag-2 recognise (`the spine documents contain no text` is damage there; under diag-1
+# it would be unclassified, and an all-empty book would read as an unclassified failure).  So the pairing is fixed at configuration time: a v4 Context is
+# refused unless it is built inside `evidence_v2.diagnostic_rules('diag-2')`, and the typed layer that reads its results runs under diag-2 as well.  diag-1
+# stays byte-identical (no v4 wording is added to it).
+TOOLS_V4_DIAGNOSTIC_RULES = 'diag-2'
+
+
+def _check_v4_pairing():
+    from . import evidence_v2 as EV2
+    active = EV2.active_diagnostic_rules()
+    if active != TOOLS_V4_DIAGNOSTIC_RULES:
+        raise ValueError('tools behaviour v4 pairs with diagnostic rules %s only (active: %s); build the Context inside evidence_v2.diagnostic_rules(%r)'
+                         % (TOOLS_V4_DIAGNOSTIC_RULES, active, TOOLS_V4_DIAGNOSTIC_RULES))
 # harness tool -> collector kind of `evidence/` (frame_sample and ocr share the `frames` collector; the model never sees a picture either way)
 LIVE_KINDS = {'ffprobe': 'probe', 'decode_sample': 'decode', 'frame_sample': 'frames', 'ocr': 'frames', 'audio_sample': 'audio',
               'epub_inspect': 'epub', 'audiobook_inspect': 'audiobook'}
@@ -142,6 +163,8 @@ class Context:
         assert replay in ('auto', 'off', 'force')
         assert evidence_mode in EVIDENCE_MODES, evidence_mode
         assert tools_behavior in TOOLS_BEHAVIORS, tools_behavior
+        if tools_behavior == 'v4':
+            _check_v4_pairing()
         self.evidence_mode = evidence_mode
         # tools behaviour (W18): v1 is every earlier harness version byte for byte; v2 (selected by `--evidence-format v2`) fixes the audit's tool bugs:
         # a full decode is a real full decode or says what window it actually ran (never a 4 s window reported as full), the collector's truncation
@@ -711,9 +734,34 @@ def _epub_module():
     return _epub
 
 
-def _epub_stage(path):
+REMOTE_SCHEMES_V4 = ('http', 'https')
+
+
+def remote_href_v4(href):
+    """Tools behaviour v4: True when a manifest href names a REMOTE resource: an `http` or `https` URL, or any reference with a network location
+    (`scheme://host/...`, `//host/...`).  EPUB remote resources are web resources, and a reference with an authority names a host, never an archive path.
+    Any other colon (`Part1:Intro.xhtml`, which urlsplit reads as the scheme `part1`) is part of a LOCAL member name."""
+    from urllib.parse import urlsplit
+    u = urlsplit(href)
+    return bool(u.netloc) or u.scheme.lower() in REMOTE_SCHEMES_V4
+
+
+def local_href_v4(opf, href):
+    """Tools behaviour v4: the archive member a LOCAL manifest href names (relative to the OPF; query and fragment dropped, percent-escapes decoded).  A
+    colon-named href is read as a relative path (`./` in front, so its first segment is not a scheme); every other href resolves as tools v1 to v3 resolve it."""
+    import posixpath
+    from urllib.parse import unquote, urlsplit
+    u = urlsplit(href)
+    path = urlsplit('./' + href).path if u.scheme else u.path
+    return posixpath.normpath(posixpath.join(posixpath.dirname(opf), unquote(path)))
+
+
+def _epub_stage(path, remote_ok=False):
     """Where does this EPUB break?  -> (stage, message) or None.  Stages follow the suite's recorded evidence:
-    zip_open, zip_crc, opf_parse, manifest."""
+    zip_open, zip_crc, opf_parse, manifest.  `remote_ok` (tools behaviour v4): a manifest item whose href names a remote resource (remote_href_v4: an
+    `http(s)` URL or a network location) is not an archive member, so it is never reported missing (the live collector, evidence/epubtool._resolve, skips
+    it too), and a colon-named href is a local member (local_href_v4).  Tools behaviour v1 to v3 keep the earlier check, which resolved the URL's path
+    inside the archive and reported it missing."""
     import posixpath
     import xml.etree.ElementTree as E
     import zipfile
@@ -739,7 +787,12 @@ def _epub_stage(path):
         missing = []
         for x in package.iter():
             if x.tag.endswith('}item') and 'href' in x.attrib:
-                p = posixpath.normpath(posixpath.join(posixpath.dirname(opf), unquote(urlsplit(x.attrib['href']).path)))
+                if remote_ok:
+                    if remote_href_v4(x.attrib['href']):
+                        continue        # a remote resource, not an archive member
+                    p = local_href_v4(opf, x.attrib['href'])
+                else:
+                    p = posixpath.normpath(posixpath.join(posixpath.dirname(opf), unquote(urlsplit(x.attrib['href']).path)))
                 if p not in names:
                     missing.append(p)
         if missing:
@@ -747,14 +800,25 @@ def _epub_stage(path):
     return None
 
 
-def _epub_assertion_wording(e):
+SIZE_CAP_V2 = 'harness size cap exceeded (the inspector reads at most 8 MiB, 2000 members and 32 MiB uncompressed)'
+# tools behaviour v4 (W25): the wording states the inspector's own comparisons: `len(raw) <= 8 MiB` is "at most", `len(infos) < 2000` and the uncompressed total
+# `< 32 MiB` are strict, so they are "fewer than" and "less than".  The v2 / v3 wording above is kept for those behaviours.
+SIZE_CAP_V4 = 'harness size cap exceeded (the inspector reads at most 8 MiB, fewer than 2000 members and less than 32 MiB uncompressed)'
+NO_TEXT_V4 = 'the spine documents contain no text'      # tools behaviour v4: every spine document is empty (the live collector's finding); one empty document is not damage
+# tools behaviour v4: the spine lists items and every one is a remote resource.  Not a failure (the live collector reports such a package valid: it parses no
+# spine document and finds nothing wrong), and not "the spine is empty" (it is not).  The ok result says so in `spine_note`, with `remote_spine_items`.
+ALL_REMOTE_V4 = 'every spine item is a remote resource: no spine document is in the archive, so no spine text was read'
+
+
+def _epub_assertion_wording(e, behavior='v2'):
     """Tools behaviour v2: the vendored inspector's bare `assert`s say nothing, and one of them is the harness's own size cap (a healthy 9 MiB EPUB trips it), so the wording
-    names which check failed, read from the source line of the failing assert.  -> a fixed phrase; an unrecognised assert is `an unrecognised check`."""
+    names which check failed, read from the source line of the failing assert.  -> a fixed phrase; an unrecognised assert is `an unrecognised check`.
+    `behavior` 'v4' words the size cap as SIZE_CAP_V4; every other phrase is the same."""
     import traceback
     frames = [f for f in traceback.extract_tb(e.__traceback__) if str(f.filename).endswith('vendored_epub.py')]
     src = (frames[-1].line or '') if frames else ''
     if '8*1024*1024' in src or 'file_size for x in infos' in src:
-        return 'harness size cap exceeded (the inspector reads at most 8 MiB, 2000 members and 32 MiB uncompressed)'
+        return SIZE_CAP_V4 if behavior == 'v4' else SIZE_CAP_V2
     if "z.read('mimetype')" in src:
         return 'the mimetype entry is not application/epub+zip'
     if 'len(set(' in src:
@@ -766,10 +830,99 @@ def _epub_assertion_wording(e):
     return 'an unrecognised check of the inspector failed'
 
 
+class EpubCheckFailed(AssertionError):
+    """A failed check of the tools-v4 inspector, carrying its fixed wording (the same phrases tools behaviour v2 gives the vendored asserts)."""
+
+    def __init__(self, wording):
+        super().__init__(wording)
+        self.wording = wording
+
+
+def _vendored_assert_relaxed_by_v4(e):
+    """True when the vendored inspector stopped at one of the two asserts tools behaviour v4 corrects: a spine document with no text (an image-only cover
+    page is an ordinary healthy document), or a manifest href naming a remote resource (not an archive member)."""
+    import traceback
+    frames = [f for f in traceback.extract_tb(e.__traceback__) if str(f.filename).endswith('vendored_epub.py')]
+    src = (frames[-1].line or '') if frames else ''
+    return 'assert text' in src or 'assert not u.scheme' in src
+
+
+def _inspect_v4(path):
+    """Tools behaviour v4: the vendored inspector's checks, in its order and with its result shape, with two corrections that make the replay path agree
+    with the live collector (evidence/epubtool.py):
+
+    * a spine document without text (an image-only cover page) is recorded with 0 characters and an empty text; only when EVERY spine document is empty
+      is the package damaged (NO_TEXT_V4, the live collector's `the parsed spine documents contain no text`);
+    * a manifest href that names a remote resource (remote_href_v4: `http(s)` or a network location) is counted as a manifest item and never resolved
+      inside the archive; a spine item that is remote is not read, as the live collector skips it, and is counted in `remote_spine_items`.  A colon-named
+      href is a local member (local_href_v4).  A spine whose items are ALL remote is no failure: the result is ok with `spine_note` ALL_REMOTE_V4 (the live
+      collector reports such a package valid); a spine that lists nothing is `the spine is empty`.
+
+    It runs only after the vendored inspector stopped at one of those two asserts (_vendored_assert_relaxed_by_v4), so every EPUB the vendored inspector
+    accepts gets the vendored result unchanged.  A failed check raises EpubCheckFailed with the tools-v2 phrase; every other exception is what the
+    same stdlib call raises in the vendored code."""
+    import xml.etree.ElementTree as E
+    import zipfile
+    V = _epub_module()
+    raw = Path(path).read_bytes()
+    if not len(raw) <= 8 * 1024 * 1024:
+        raise EpubCheckFailed(SIZE_CAP_V4)
+    with zipfile.ZipFile(path) as z:
+        infos = z.infolist()
+        if not (len(infos) < 2000 and sum(x.file_size for x in infos) < 32 * 1024 * 1024):
+            raise EpubCheckFailed(SIZE_CAP_V4)
+        if not (len(z.namelist()) == len(set(z.namelist())) and z.testzip() is None):
+            raise EpubCheckFailed('duplicate member names in the archive')
+        if not z.read('mimetype') == b'application/epub+zip':
+            raise EpubCheckFailed('the mimetype entry is not application/epub+zip')
+        root = E.fromstring(z.read('META-INF/container.xml'))
+        opf = next(x.attrib['full-path'] for x in root.iter() if x.tag.endswith('rootfile'))
+        package = E.fromstring(z.read(opf))
+        manifest, missing = {}, []
+        for x in package.iter():
+            if x.tag.endswith('}item'):
+                if remote_href_v4(x.attrib['href']):
+                    manifest[x.attrib['id']] = (None, x.attrib.get('media-type'))       # remote: not an archive member
+                    continue
+                p = local_href_v4(opf, x.attrib['href'])
+                if p.startswith('../'):
+                    raise EpubCheckFailed('an unrecognised check of the inspector failed')
+                manifest[x.attrib['id']] = (p, x.attrib.get('media-type'))
+                if p not in z.namelist():
+                    missing.append(p)
+        if missing:
+            raise EpubCheckFailed('an unrecognised check of the inspector failed')
+        spine, remote = [], 0
+        for x in package.iter():
+            if x.tag.endswith('}itemref'):
+                p, m = manifest[x.attrib['idref']]
+                if p is None:
+                    remote += 1
+                    continue        # a remote spine item is not read
+                if m != 'application/xhtml+xml':
+                    raise EpubCheckFailed('an unrecognised check of the inspector failed')
+                E.fromstring(z.read(p))
+                h = V.Text()
+                h.feed(z.read(p).decode('utf-8-sig'))
+                text = ' '.join(' '.join(h.parts).split())
+                spine.append({'entry': p, 'characters': len(text), 'text': text})
+        if not spine and not remote:
+            raise EpubCheckFailed('the spine is empty')
+        if spine and not any(s['characters'] for s in spine):
+            raise EpubCheckFailed(NO_TEXT_V4)
+        out = {'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw), 'zip_crc_ok': True, 'manifest_items': len(manifest), 'spine_items': len(spine),
+               'opf': opf, 'titles': [x.text for x in package.iter() if x.tag.endswith('}title')], 'spine': spine}
+        if remote:
+            out['remote_spine_items'] = remote
+        if not spine:
+            out['spine_note'] = ALL_REMOTE_V4
+        return out
+
+
 def tool_epub_inspect(args, ctx):
     # tools behaviour v3 (dev-c7): {} is the package check plus the fixed default body view; {"spine", "offset", "length"} is one explicit excerpt (epub_text.py).
     # The arguments are checked before anything runs; every v1 / v2 call ignores its arguments exactly as before.
-    v3 = ctx.tools_behavior == 'v3'
+    v3 = _v3plus(ctx)
     req = _epub_text().check_excerpt_args(args) if (v3 and args) else None
     mode = {'mode': 'local'} if v3 else {}       # v3 reads the case's local EPUB now: its results are observations of this run
     if ctx.fixture.kind != 'local':
@@ -779,7 +932,8 @@ def tool_epub_inspect(args, ctx):
         return ToolResult('unavailable', 'fixture file missing; the tool cannot run')
     raw = Path(path).read_bytes()
     base = {'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
-    staged = _epub_stage(path)
+    v4 = ctx.tools_behavior == 'v4'
+    staged = _epub_stage(path, remote_ok=v4)
     d = None
     if staged is None:
         try:
@@ -787,7 +941,15 @@ def tool_epub_inspect(args, ctx):
         except Exception as e:  # noqa: BLE001 - epub.py asserts on structural problems it checks itself
             staged = ('spine', '%s: %s' % (type(e).__name__, str(e)[:200]))
             if _v2plus(ctx) and isinstance(e, AssertionError):
-                staged = ('spine', 'AssertionError: ' + _epub_assertion_wording(e))
+                staged = ('spine', 'AssertionError: ' + _epub_assertion_wording(e, ctx.tools_behavior))
+            if v4 and isinstance(e, AssertionError) and _vendored_assert_relaxed_by_v4(e):
+                # tools behaviour v4: an image-only spine document or a remote manifest href is no package failure; the corrected inspector decides
+                try:
+                    d, staged = _inspect_v4(path), None
+                except EpubCheckFailed as e4:
+                    staged = ('spine', 'AssertionError: ' + e4.wording)
+                except Exception as e4:  # noqa: BLE001 - the same stdlib failures the vendored inspector raises
+                    staged = ('spine', '%s: %s' % (type(e4).__name__, str(e4)[:200]))
     if staged:
         # damage is a finding about the file, in the suite's recorded shape (status error); an excerpt request on a damaged package fails the same way
         return ToolResult('error', dict(base, status='error', stage=staged[0], error=staged[1]), **mode)
@@ -800,6 +962,8 @@ def tool_epub_inspect(args, ctx):
                dc_language=fields.get('languages', []), dc_identifier=fields.get('identifiers', []),
                entries=_entry_count(path), spine_items=d['spine_items'], spine_characters=sum(s['characters'] for s in d['spine']),
                spine_heads=heads)
+    if v4:
+        out.update({k: d[k] for k in ('remote_spine_items', 'spine_note') if k in d})      # (only _inspect_v4 sets them: remote spine items, an all-remote spine)
     if v3:
         body, toc = None, None
         try:
@@ -1122,7 +1286,7 @@ def capability(ctx, name):
             cap['offsets_s'] = 'chosen by the collector; a requested offset is checked and not used'
         if name == 'decode_sample':
             cap['full_decode'] = 'on request, capped by size and time'
-        if name == 'epub_inspect' and ctx.tools_behavior == 'v3':
+        if name == 'epub_inspect' and _v3plus(ctx):
             cap['excerpts'] = 'not_available (live collection does not serve excerpts)'
         return cap
     if ctx.fixture.kind == 'pinned':
@@ -1141,7 +1305,7 @@ def capability(ctx, name):
                 cap['full_decode'] = 'recorded' if any(_is_full(e.get('args') or {}) for _, e in recs) else 'not_recorded'
         else:
             cap['available'] = bool(recs)
-        if name == 'epub_inspect' and ctx.tools_behavior == 'v3':
+        if name == 'epub_inspect' and _v3plus(ctx):
             cap['excerpts'] = 'not_available (only a recorded observation of this item exists)'
         return cap
     bad = _need_media(ctx)
@@ -1150,7 +1314,7 @@ def capability(ctx, name):
         return cap
     if name == 'epub_inspect':
         cap.update(backend='local', available=ctx.fixture.kind == 'local')
-        if ctx.tools_behavior == 'v3' and ctx.fixture.kind == 'local':
+        if _v3plus(ctx) and ctx.fixture.kind == 'local':
             cap['excerpts'] = EXCERPT_CAPABILITY
         return cap
     binary = 'ffprobe' if name in ('ffprobe', 'audiobook_inspect') else 'ffmpeg'
@@ -1249,7 +1413,7 @@ def call_tool(ctx, name, args):
         res = _failure(inject['mode'], name, None)  # nothing is run: the failure is the whole result
     else:
         def work():
-            if ctx.tools_behavior == 'v3' and name == 'epub_inspect' and args:
+            if _v3plus(ctx) and name == 'epub_inspect' and args:
                 _epub_text().check_excerpt_args(args)       # a bad request is a bad-arguments error wherever the item lives
                 if ctx.evidence_mode == 'live' or ctx.fixture.kind == 'pinned':
                     # an excerpt is read from the case's local EPUB in replay mode only; nothing recorded or collected stands in for its text
@@ -1280,7 +1444,7 @@ def call_tool(ctx, name, args):
         if inject and inject.get('tool') == name:
             res = _failure(inject.get('mode', 'error'), name, res)
     redactor = ctx.redact
-    if ctx.tools_behavior == 'v3' and name == 'epub_inspect' and isinstance(res.output, dict):
+    if _v3plus(ctx) and name == 'epub_inspect' and isinstance(res.output, dict):
         res = ToolResult(res.status, epub_v3_redact(res.output, ctx.redact), **res.extra)      # locators aliased, media text kept as read
         redactor = None
     out = res.bounded(redactor, cap=ctx.output_cap, keep_raw=True) if ctx.keep_raw else res.bounded(redactor, cap=ctx.output_cap)

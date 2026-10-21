@@ -1,0 +1,34 @@
+{
+ "rubric": "contract-v3-rubric-3.3",
+ "suite": "suite-dev-v1.1",
+ "cases": 73,
+ "listed": [
+  {
+   "id": "audiobook-identity-001",
+   "reason": "label class identity_mismatch: D-ID-1 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it | supported blocklist_and_search only: A-BLK-2 (source_bound): needs catalog evidence; none is in the case and no offered tool yields it; A-BLK-4 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it"
+  },
+  {
+   "id": "audiobook-identity-002",
+   "reason": "label class identity_mismatch: D-ID-1 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it | supported blocklist_and_search only: A-BLK-4 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it"
+  },
+  {
+   "id": "audiobook-naming-001",
+   "reason": "supported rename only: A-REN-1 (identity_level): needs content or report_content evidence; none is in the case and no offered tool yields it"
+  },
+  {
+   "id": "epub-identity-001",
+   "reason": "label class identity_mismatch: D-ID-1 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it"
+  },
+  {
+   "id": "epub-identity-002",
+   "reason": "label class identity_mismatch: D-ID-1 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it | supported blocklist_and_search only: A-BLK-2 (source_bound): needs catalog evidence; none is in the case and no offered tool yields it; A-BLK-4 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it"
+  },
+  {
+   "id": "movie-identity-001",
+   "reason": "label class identity_mismatch: D-ID-1 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it"
+  }
+ ],
+ "checker": "prereq-v3.3",
+ "diagnostic_rules": "diag-2",
+ "note": "checker prereq-v3.3 applies rubric contract-v3-rubric-3.3 (an amendment written AFTER the labels had been read, docs/contract-v3.md section 17); diagnostic rules diag-2 (with the W25 corrections, docs/evidence-format-v2.md, last section)"
+}
