@@ -327,5 +327,18 @@ class OfflineEvidence(unittest.TestCase):
         self.assertTrue(fit['estimate']['assumed_layout']['fits'])
         self.assertEqual(fit['num_ctx'], 16384)
 
+
+class RegisteredCommands(unittest.TestCase):
+    """The three registered dev-c7 commands (runs/dev-c7/manifest-template.json) rebuild their pre-registered config_hash offline: a change to anything the
+    config records (code, prompt, flags) fails here and needs a numbered amendment."""
+
+    def test_expected_config_hashes(self):
+        tpl = json.loads((RUNS / 'dev-c7' / 'manifest-template.json').read_text())
+        for name, run in tpl['runs'].items():
+            args = R.build_parser().parse_args(run['argv'])
+            cfg = R.run_config(args, R.build_adapter(args), {}, None)
+            self.assertEqual(R.sha256_bytes(R.canonical(cfg).encode()), run['expected_config_hash'], name)
+        self.assertEqual(tpl['order'], ['qwen', 'haiku', 'astra'])
+
 if __name__ == '__main__':
     unittest.main()
