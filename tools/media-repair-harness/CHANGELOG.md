@@ -59,6 +59,16 @@ earlier option set are unchanged.
   operation stops; artifact paths stay under `--out`; a stop raised against a recorded target marks it STOP; **report** acceptance requires exit 0, no stop,
   nothing skipped and the complete registration (passed with `--registration`, sha-checked), and adjudication only where a row needs it. Fixtures use
   synthetic seasons and markers unrelated to any pilot target.
+* **Review round 2 of `c9500910`** (the Opus re-review, clear-with-nits; the interim notes of AUDIT-ASTRA-62, killed mid-review; every candidate reproduced
+  first): **write intents** rule `write-intent-2` scans every reply for a write action bound to an action-like key in any common syntax (over-inclusive by
+  design; prose without a key binding is not an attempt); **delivery** read from the structure of the harness's own messages (finding objects), never by
+  searching text, and only from calls that completed; the report gives the cue text as the model saw it, marked when clipped; **receipts** any exception
+  while reading or validating a receipt is fatal, every number bounded as an integer before any float conversion, and a completed operation with an error,
+  a stat over 2 MiB, ffmpeg bytes without a request or a wall beyond the sampler's budget are malformed; **confinement** a listing is descriptor-bound
+  (`O_DIRECTORY | O_NOFOLLOW`, listed from the descriptor), the descriptor check is mandatory and fails closed without `/proc`, `confined` is set only after
+  it; **driver** case template files are hashed into the state and checked by the report, templates stay under the registration directory, and the G0a
+  `--guards v3` and tool list are enforced. Tests for each (including the A-B-A swap, the swap between the confinement check and the open, and no `/proc`);
+  every fix was also reverted or mutated in a scratch copy to confirm its test fails.
 ## dev-c8 (WO-W26, OpenProject #158): prompt v8, turn-v3.1, claude-schema-1, guards v4; offline, not measured
 
 `HARNESS_VERSION` is `dev-c8`. Every earlier prompt, format, guard version and adapter is unchanged; the recorded dev-c4 to dev-c7 runs, the dev-c6 replay

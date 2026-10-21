@@ -101,13 +101,16 @@ print(json.dumps(hdr['probe']))
 '''
 FAKE_FFMPEG = '''#!%s
 import json, sys, urllib.request
+import os, time
 a = sys.argv
 url, fmt = a[a.index('-i') + 1], a[a.index('-f') + 1]
+time.sleep(float(os.environ.get('FAKE_FFMPEG_PRE_SLEEP') or 0))       # lets a test change the path BEFORE any byte is read
 data = urllib.request.urlopen(urllib.request.Request(url, headers={'Range': 'bytes=0-8191'}), timeout=5).read()
 hdr = json.loads(data.split(b'\\n', 1)[0])
 if hdr.get('sleep'):
     import time
     time.sleep(hdr['sleep'])
+time.sleep(float(os.environ.get('FAKE_FFMPEG_POST_SLEEP') or 0))      # ... and change it back before the sampler's end check
 if fmt == 'srt':
     sys.stdout.write(hdr.get('srt', ''))
 '''
@@ -137,8 +140,9 @@ class LocalPod:
     ffprobe / ffmpeg first on PATH; `kubectl get deploy|pods` answer from `deploy` / `pods`.  `before(argv, n)` may change files or raise; `after(argv, n,
     completed)` may replace the result (a tampered receipt).  `n` counts exec calls from 1."""
 
-    def __init__(self, deploy=None, pods=None, before=None, after=None):
+    def __init__(self, deploy=None, pods=None, before=None, after=None, prelude='', env=None):
         self.bin, self.deploy, self.pods, self.before, self.after = fake_bin(), deploy, pods, before, after
+        self.prelude, self.env = prelude, dict(env or {})      # code run before the sampler (to stage a race), extra environment
         self.calls, self.execs = [], 0
 
     def __call__(self, argv, input=None, capture_output=True, timeout=None, **kw):
@@ -153,7 +157,9 @@ class LocalPod:
             r = self.before(argv, n)
             if isinstance(r, BaseException):
                 raise r
-        env = dict(os.environ, PATH=str(self.bin) + os.pathsep + os.environ.get('PATH', ''))
+        env = dict(os.environ, PATH=str(self.bin) + os.pathsep + os.environ.get('PATH', ''), **self.env)
+        if self.prelude:
+            input = self.prelude.encode() + input
         i = argv.index('-')
         import subprocess as sp
         done = sp.run([sys.executable, '-'] + argv[i + 1:], input=input, capture_output=True, timeout=timeout, env=env)

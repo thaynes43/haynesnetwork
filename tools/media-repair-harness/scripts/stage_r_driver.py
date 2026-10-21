@@ -69,6 +69,9 @@ ENTRY_KEYS = {'name', 'type', 'size', 'mtime_ns', 'dev', 'ino'}
 ENTRY_TYPES = ('dir', 'file', 'symlink', 'other')
 FP_KEYS = {'size', 'mtime_ns', 'head_1m_sha256', 'tail_1m_sha256', 'partial_fingerprint_only'}
 HEX64 = re.compile(r'^[0-9a-f]{64}$')
+# pilot plan section 4.2 (G0a): the triage runs with guards v3, as C7, and offers exactly these tools (no frame, OCR or audio tool)
+STAGE_R_GUARDS = 'v3'
+STAGE_R_TOOLS = ('ffprobe', 'decode_sample', 'subtitle_sample', 'arr_lookup')
 
 
 class Stop(Exception):
@@ -94,6 +97,21 @@ def safe_name(n):
 
 def canonical_sha256(registration):
     return hashlib.sha256(json.dumps(registration, sort_keys=True).encode()).hexdigest()
+
+
+def template_digests(reg, template_dir=None):
+    """{target key: sha256 of its case_template file bytes, or 'inline' (the case is inside the registration, covered by registration_sha256)}."""
+    out = {}
+    for t in reg.get('targets') or []:
+        if isinstance(t, dict) and isinstance(t.get('case_template'), str):
+            p = (Path(template_dir) if template_dir else Path('.')) / t['case_template']
+            try:
+                out[t.get('key')] = hashlib.sha256(p.read_bytes()).hexdigest()
+            except OSError:
+                out[t.get('key')] = None
+        elif isinstance(t, dict):
+            out[t.get('key')] = 'inline'
+    return out
 
 
 def validate_registration(reg, template_dir=None):
@@ -163,8 +181,8 @@ def validate_registration(reg, template_dir=None):
         if isinstance(t.get('case_template'), str):
             rel = Path(t['case_template'])
             base = Path(template_dir) if template_dir else Path('.')
-            if rel.is_absolute() or '..' in rel.parts:
-                errs.append('target %r: case_template must be a relative path under the registration' % (key,))
+            if rel.is_absolute() or '..' in rel.parts or not (base / rel).resolve().is_relative_to(base.resolve()):
+                errs.append('target %r: case_template must be a relative path that stays under the registration (no symlink out)' % (key,))
             else:
                 try:
                     case = json.loads((base / rel).read_text())
@@ -181,6 +199,9 @@ def validate_registration(reg, template_dir=None):
             case_ids.add(cid)
             if 'inject_tool_failure' in case:
                 errs.append('target %r: a Stage R case may not inject a tool failure' % (key,))
+            tools = case.get('tools_available')
+            if not (isinstance(tools, list) and len(tools) == len(set(tools)) and set(tools) == set(STAGE_R_TOOLS)):
+                errs.append('target %r: tools_available must be exactly %s (pilot plan section 4.2, G0a: no frame or OCR tool)' % (key, list(STAGE_R_TOOLS)))
             templates[key] = case
         elif case is not None:
             errs.append('target %r: the case is not an object' % (key,))
@@ -192,6 +213,14 @@ def validate_registration(reg, template_dir=None):
     owned = [a for a in hargs if a.startswith('--') and any(f.startswith(a.split('=')[0]) for f in OWNED_FLAGS)]
     if owned:
         errs.append('harness_args may not set what the driver owns: %s' % owned)
+    # guards v3, as C7 (pilot plan section 4.2): exactly one guards option (any accepted prefix of it), set to v3
+    guards = []
+    for i, a in enumerate(hargs):
+        name = a.split('=')[0]
+        if a.startswith('--g') and '--guards'.startswith(name):
+            guards.append(a.split('=', 1)[1] if '=' in a else (hargs[i + 1] if i + 1 < len(hargs) else None))
+    if guards != [STAGE_R_GUARDS]:
+        errs.append('harness_args must select --guards %s exactly once (pilot plan section 4.2: guards v3, as C7); found %s' % (STAGE_R_GUARDS, guards))
     return errs, templates
 
 
@@ -237,7 +266,8 @@ class Driver:
         self.started = None
         self.cost = 0.0
         self.phase, self.current = 'init', None
-        self.state = {'driver': 'stage-r-driver-2', 'registration_sha256': canonical_sha256(registration), 'started_at': None, 'phases': [], 'operations': [],
+        self.state = {'driver': 'stage-r-driver-2', 'registration_sha256': canonical_sha256(registration),
+                      'case_templates_sha256': template_digests(registration, template_dir), 'started_at': None, 'phases': [], 'operations': [],
                       'targets': {}, 'stop': None, 'early_stop': None, 'pod': None, 'cost_usd': 0.0, 'remote_evidence': RE.config(),
                       'limits': {'target_wall_s': self.target_wall, 'stage_wall_s': self.stage_wall, 'total_cost_usd': self.total_cost, 'g2_operations': self.g2_ops},
                       'skipped': [] if pod_health else ['pod_health (pilot plan section 4.4)']}

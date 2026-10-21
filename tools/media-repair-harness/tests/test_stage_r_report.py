@@ -33,7 +33,7 @@ def record(cls='identity_mismatch', action='escalate', refs=(), calls=(), forced
         delivered = [cid for c in calls if c['status'] in ('ok', 'partial', 'timeout') and not c.get('remote_fatal') for cid in RE.cue_ids(c['id'], c['output'], c['status'])]
     rec = {'case_id': 'c', 'decision': d, 'forced': forced, 'tool_calls': list(calls), 'turns': list(turns),
            'write_rejection': {'attempts': [{'turn': n, 'action': a} for n, a in rejected]}, 'action_audit': {'prerequisites': [{'id': 'p1', 'state': 'unmet'}], 'unmet': ['p1']},
-           'remote_evidence': {'delivered_cue_ids': delivered}}
+           'remote_evidence': {'delivered_cue_ids': delivered, 'delivered_cues': [{'id': c, 'text_seen': 'seen ' + c, 'clipped': False} for c in delivered]}}
     if error:
         rec['error'] = {'kind': error}
     if guard_original:
@@ -187,7 +187,9 @@ class Acceptance(unittest.TestCase):
         return {'registration': 'stage-r-1', 'targets': [{'key': k, 'role': r} for k, r, _o, _rec in specs]}
 
     def state(self, tmp, specs, registration=None, **over):
-        st = dict({'targets': {}, 'stop': None, 'exit_code': 0, 'registration_sha256': REP.registration_sha256(registration or self.registration(specs))}, **over)
+        reg = registration or self.registration(specs)
+        st = dict({'targets': {}, 'stop': None, 'exit_code': 0, 'registration_sha256': REP.registration_sha256(reg),
+                   'case_templates_sha256': {t['key']: 'inline' for t in reg['targets']}}, **over)
         for key, role, outcome, rec in specs:
             entry = {'role': role, 'driver_outcome': outcome}
             if rec is not None:

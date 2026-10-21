@@ -67,10 +67,17 @@ such a record's subtitle observations with the legacy reading: call it inside `r
 | `argv` | the ffmpeg/ffprobe argv (`-protocol_whitelist http,tcp`: the loopback range server only) |
 | `listing` | `list` only: `directory`, `prefix`, `complete`, `matching`, `scanned`, `cap` |
 
-The source is opened ONCE (`O_NOFOLLOW`; with `--root`, `/proc/self/fd` must name the confined path) and every byte, the fingerprint and every range read,
-comes from that descriptor; the path is never reopened. Every receipt field is required on every exit kind, typed (booleans are booleans; identities and
-counts are integers; wall time finite and at most 60 s) and consistent with itself (`source_unchanged` exactly when start equals end and `same_file`; the
-`start_ok` / `end_ok` verdicts agree with the identities; the quota flag only with the quota read) and with what was received (`stdout_bytes`).
+The source is opened ONCE (`O_NOFOLLOW`; a listing's directory with `O_DIRECTORY | O_NOFOLLOW` and listed from that descriptor) and every byte, the
+fingerprint and every range read, comes from that descriptor; the path is never reopened. Confinement has two halves: the pre-check before the open (the
+path absolute, normalised, symlink-free and under the real root) and the descriptor check after it (the kernel's name of the OPENED object,
+`/proc/self/fd/N`, must be exactly the requested path). A swap between the two (a component replaced by a symlink) makes the names differ. When that name
+cannot be read (no `/proc`), confinement cannot be verified and the operation is refused (`confined: false`, nothing read): it is never skipped.
+`confined` is true only after the descriptor check. Every receipt field is required on every exit kind, typed (booleans are booleans; identities and
+counts are integers compared as integers, so a huge JSON integer is out of range and never converted to a float; wall time finite and at most the
+sampler's 25 s plus 5) and consistent with itself (a completed operation carries no error; a stat reads at most 2 MiB and a listing none; bytes read
+by ffmpeg need a range request) (`source_unchanged` exactly when start equals end and `same_file`; the
+`start_ok` / `end_ok` verdicts agree with the identities; the quota flag only with the quota read) and with what was received (`stdout_bytes`). Any exception while reading or validating a receipt is a fatal `malformed_receipt` (or
+`missing_receipt`), never an ordinary tool error.
 
 **One 25 s budget per invocation:** the start identity stat, the operation and the end identity stat share one deadline, and the operation stops 2 s
 early so the end check still fits; a sampler-internal timeout therefore always ends with its receipt well inside the 60 s outer deadline (`mrh-sampler-1`
@@ -98,7 +105,10 @@ every receipt and its rejected write attempts, the model is not called again, an
 `scripts/stage_r_driver.py --registration G0A.json --out DIR --commit-repo DIR`. One process, serial, owning every stop; an unexpected error is a recorded
 `driver_error` stop, and the terminal state (`exit_code`) is always written. The registration (`stage-r-1`) holds every case-specific value; the script
 holds none. It is validated before anything starts: safe target keys and case ids (one path component), `early_stop_roles` required (section 4.2.4), limits
-finite, positive and at most the registered ceilings, rules that compile, templates without `inject_tool_failure`:
+finite, positive and at most the registered ceilings, rules that compile, templates without `inject_tool_failure`, case templates that stay under the
+registration's directory (no symlink out), and the G0a configuration of section 4.2: `--guards v3` exactly once in `harness_args` (as C7) and every case's
+`tools_available` exactly ffprobe, decode_sample, subtitle_sample and arr_lookup (no frame or OCR tool). The state records `registration_sha256` and the
+sha256 of every case template file (`case_templates_sha256`); the report checks both:
 
 ```json
 {"registration": "stage-r-1",
@@ -147,12 +157,30 @@ must be the one the driver ran (its canonical sha256), and a state without a ter
 the execution (R, F, H, STOP, INVALID, DROPPED; a target never started after a stop is STOP), proposal safety over every raw write attempt, ONCE per model
 reply, whatever its validity (strict, fenced or prose JSON, or an `"action": "<write>"` pair; the validator's rejections and the restored and final decisions
 mark the same reply), each with its own audit (that proposal against the evidence shown before its turn, or its schema failure), WRITE-CONTROL on any
-non-offender; collection (CUE, ERR, NOCUE) over the cues that actually reached the model (`delivered_cue_ids`: ids in a SENT message, after the leak guard;
-a cue on an unfetched page is not one); and for R the diagnosis from the restored (pre-guard) decision by the first matching row (`stage_r.diagnose`), else
+non-offender; collection (CUE, ERR, NOCUE) over the cues that actually reached the model (`delivered_cues`, defined below); and for R the diagnosis from the restored (pre-guard) decision by the first matching row (`stage_r.diagnose`), else
 the role's default. Only delivered cue ids count as citing a cue. A cited cue without a verdict leaves the diagnosis pending only where the matching row
 depends on it (an unconditional row applies). Stage R is ACCEPTED only when the driver ended with exit 0, no stop and nothing skipped, the results match the
 complete registration (every registered target with its role, nothing else), every target is R, there is no WRITE-CONTROL and no FAIL, and every registered
 offender PASSes; a driver stop or failure, a missing target, a non-R target or a pending adjudication is INCOMPLETE; anything else NOT_ACCEPTED.
+
+### Raw write attempts: rule `write-intent-2`
+
+EVERY model reply is scanned, whether it parsed as a decision, a tool call or nothing, in its text and in a copy with `\uXXXX` escapes and escaped
+quotes decoded. A reply is a raw write attempt when it binds one of the protocol's write actions (`protocol.WRITE_ACTIONS`: blocklist_and_search, remap,
+rename, convert; any case; the words of a multi-word action joined by `_`, `-` or spaces) to an action-like key (any identifier containing `action`: quoted
+with `"` or `'`, escaped, or bare) with `:` or `=` (optionally opening a list), nested anywhere: JSON, a Python literal, YAML-like `action: rename`,
+`action=rename`, inside a string value. The rule is over-inclusive by design: a false positive makes Stage R stricter, a false negative would hide a
+write. **Boundary:** prose that never binds a write action to such a key ("I would not rename it", "the action is rename") is not an attempt. Each reply
+counts once; `parse` says whether the protocol parser (`strict`), a JSON object in fences or prose (`lenient`) or only the key binding (`pattern`) reads it,
+and a `pattern` attempt's audit is a schema failure.
+
+### Delivered cues
+
+A cue is delivered when a finding object of kind `subtitle_cue` carrying its id was inside a user message the model was sent in a call that COMPLETED
+(the adapter returned a reply; a failed call delivers nothing), after the leak guard passed it. Delivery is read from the structure of the harness's own
+messages (each parsed as the JSON envelope it is: the first page, a tool result or a fetched page), never by searching their text: media text is always a
+string value and cannot form such an object, so cue text that looks like an id is never delivery. The record keeps, per delivered cue, `text_seen` (exactly
+the finding text the model saw, clipped where the typed layer clipped it) and `clipped`; the report gives the adjudicator that text, never more.
 
 ## 6. Known limits
 
@@ -160,7 +188,7 @@ offender PASSes; a driver stop or failure, a missing target, a non-R target or a
   a cue (`t3.f2`); the report does not count that as citing a cue.
 - `mrh-sampler-2` has run only locally in tests, with fake ffprobe and ffmpeg; its ffmpeg argv equals `mrh-sampler-1`'s except the subtitle `-t` and
   `-protocol_whitelist http,tcp`, which is unverified against a real ffmpeg. It has not run in a pod or on real media. The `/proc/self/fd` confinement
-  check is Linux-only (elsewhere the realpath check and `O_NOFOLLOW` remain).
+  check needs Linux `/proc`; without it every operation is refused (fail closed).
 - A fault in the middle of an operation is detected at that operation's end (plan section 4.4). The driver's pod-health check is a read-only `kubectl get
   pods` by deployment selector, and it requires the pod name to equal the sampler's hostname.
 - The G1 probe is case evidence (provenance `recorded` in the typed view), although Stage R observed it.

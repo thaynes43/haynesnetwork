@@ -378,7 +378,7 @@ def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, run
             guard_alt[0] = session.last_shadow
     ev_ids = {e['id'] for e in evidence}
     known_tools = P.TOOLS + tuple(T.extra_tools(ctx))      # P.TOOLS for every configuration but tools behaviour v3-remote-1
-    sent_upto = [0]       # v3-remote-1: how many messages a model call has been sent (after the leak guard passed them): the delivered cue record
+    sent_upto = [0]       # v3-remote-1: how many messages the last COMPLETED model call was sent (after the leak guard passed them): the delivered cue record
     turns, tool_calls = [], []
     repairs, forced, forced_reason, error = [], False, None, None
     violations = []   # protocol violations (a tool call outside tools_available): answered with a tool result, never repaired
@@ -405,9 +405,10 @@ def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, run
             else:
                 leakguard.check_messages(case, messages, ctx.forbidden_extra)  # raises LeakError: harness error, the model is not called
             try:
-                if remote_v1:
-                    sent_upto[0] = len(messages)
+                pending_upto = len(messages)
                 comp = adapter.complete(system, messages, schema=schema) if schema is not None else adapter.complete(system, messages)
+                if remote_v1:
+                    sent_upto[0] = pending_upto        # delivered: the call that carried these messages completed (a failed call delivers nothing)
             except A.AdapterError as e:
                 error = {'kind': 'adapter_error', 'message': str(e)[:500]}
                 turns.append({'n': len(turns) + 1, 'error': str(e)[:500], 'attempt': 'repair' if repairs else 'first', 'reply_valid': False,
@@ -645,14 +646,16 @@ def remote_record(ctx, binding, stop_on_receipt_failure, sent_messages=(), tool_
         intent = RE.raw_write_intent(t.get('text'))
         if intent is None:
             continue
-        item = {'turn': t.get('n'), 'action': intent['action'], 'parse': intent['parse'], 'reply_valid': bool(t.get('reply_valid'))}
+        item = {'turn': t.get('n'), 'action': intent['action'], 'actions': intent['actions'], 'parse': intent['parse'], 'rule': intent['rule'],
+                'reply_valid': bool(t.get('reply_valid'))}
         try:
             item['audit'] = auditor(t.get('n'), intent) if auditor else {'state': 'not_audited'}
         except Exception as e:  # noqa: BLE001 - an audit failure is recorded, never a crash and never null
             item['audit'] = {'state': 'audit_error', 'error': '%s: %s' % (type(e).__name__, str(e)[:200])}
         attempts.append(item)
+    cues = RE.delivered_cues(list(sent_messages), subs)
     return dict(rec, subtitle_stream=ctx.subtitle_stream, stop_on_receipt_failure=bool(stop_on_receipt_failure),
-                delivered_cue_ids=RE.delivered_cue_ids(list(sent_messages), subs), write_attempts=attempts)
+                delivered_cue_ids=[c['id'] for c in cues], delivered_cues=cues, write_attempts=attempts)
 
 
 def _attempt_auditor(case, evidence, tool_calls, session, view, caps, v3fmt, EV3, prompt_version):

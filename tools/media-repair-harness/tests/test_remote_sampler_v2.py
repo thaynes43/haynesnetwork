@@ -179,6 +179,70 @@ class RealSampler(unittest.TestCase):
             op(pod, 'stat', self.file, RE.Binding(host=RE.HostState(), root=str(self.root)), bind=False)
         self.assertEqual(cm.exception.kind, 'not_confined')
 
+    def test_a_b_a_swap_serves_the_opened_file(self):
+        """Round 2 (Opus minor 2, Astra blocker 3): the path names B while ffmpeg reads, then A again by the end check.  The sampler serves A's bytes
+        (from the descriptor it opened), never B's."""
+        import threading
+        a_path = H.media_file(self.root / 'aba.mkv', srt='1\n00:00:01,000 --> 00:00:02,000\nAAAA\n\n')
+        b_path = H.media_file(self.root / 'other.mkv', srt='1\n00:00:01,000 --> 00:00:02,000\nBBBB\n\n')
+        keep = self.root / 'keep-a.mkv'
+        os.link(a_path, keep)
+        st = os.stat(a_path)
+        os.utime(b_path, ns=(st.st_atime_ns, st.st_mtime_ns))
+        b = RE.Binding(identity=ident(a_path), host=RE.HostState(), root=str(self.root))
+        pod = H.LocalPod(env={'FAKE_FFMPEG_PRE_SLEEP': '1.2', 'FAKE_FFMPEG_POST_SLEEP': '1.5'})
+        t1 = threading.Timer(0.5, lambda: os.replace(b_path, a_path))      # B at the path while ffmpeg reads
+        t2 = threading.Timer(2.0, lambda: os.replace(keep, a_path))        # A's inode back before the end check
+        t1.start()
+        t2.start()
+        try:
+            receipt, out = op(pod, 'subtitle', a_path, b, ['--at', 1, '--stream', 3])
+        finally:
+            t1.join()
+            t2.join()
+        self.assertIn(b'AAAA', out)
+        self.assertNotIn(b'BBBB', out)
+        self.assertEqual((receipt['identity']['same_file'], receipt['source_unchanged']), (True, True))
+
+    def swap_prelude(self, victim, real_dir, outside, call='open'):
+        """Code run inside the sampler: just before it opens `victim`, the directory holding it is replaced by a symlink to `outside`."""
+        hook = {'open': ('os', 'open'), 'scandir': ('os', 'scandir')}[call]
+        return ('import os\n_orig = os.%s\ndef _swapped(path, *a, **k):\n'
+                '    if os.fspath(path) == %r and not os.path.islink(%r):\n        os.rename(%r, %r)\n        os.symlink(%r, %r)\n'
+                '    return _orig(path, *a, **k)\nos.%s = _swapped\n') % (hook[1], str(victim), str(real_dir), str(real_dir), str(real_dir) + '-kept',
+                                                                      str(outside), str(real_dir), hook[1])
+
+    def test_a_swap_between_the_check_and_the_open_fails_closed(self):
+        """Round 2 (Opus minor 2, Astra A3): an intermediate directory swapped for a symlink to an outside tree after the realpath pre-check and just before
+        the open: the descriptor check refuses the opened object, for a file and for a listing.  This fails if the /proc/self/fd check is removed."""
+        for mode in ('stat', 'list'):
+            grp = self.root / ('grp-' + mode)
+            inner = H.media_file(grp / 'show' / 'item.mkv').parent
+            outside = Path(tempfile.mkdtemp()).resolve()
+            H.media_file(outside / 'show' / 'item.mkv', size=22000)
+            (outside / 'show' / 'outside-only.txt').write_text('y')
+            victim = inner / 'item.mkv' if mode == 'stat' else inner
+            pod = H.LocalPod(prelude=self.swap_prelude(victim, grp, outside))
+            b = RE.Binding(host=RE.HostState(), root=str(self.root))
+            with self.assertRaises(RE.FatalOperation, msg=mode) as cm:
+                op(pod, mode, victim, b, bind=False)
+            r = cm.exception.receipt
+            self.assertTrue(grp.is_symlink(), mode)                     # the swap really happened between the check and the open
+            self.assertEqual((cm.exception.kind, r['confined'], r['bytes_read']), ('not_confined', False, 0), mode)
+            self.assertIn('not the confined path', r['error'])
+
+    def test_confinement_fails_closed_without_proc(self):
+        """Round 2 (Astra A5): when the kernel's name of the opened object cannot be read, the operation is refused, never unchecked."""
+        prelude = ('import os\n_rl = os.readlink\n'
+                   'def _no_proc(p, *a, **k):\n    if str(p).startswith("/proc/self/fd"):\n        raise FileNotFoundError(p)\n    return _rl(p, *a, **k)\n'
+                   'os.readlink = _no_proc\n')
+        for mode, path in (('stat', self.file), ('list', self.file.parent)):
+            b = RE.Binding(host=RE.HostState(), root=str(self.root))
+            with self.assertRaises(RE.FatalOperation) as cm:
+                op(H.LocalPod(prelude=prelude), mode, path, b, bind=False)
+            self.assertEqual((cm.exception.kind, cm.exception.receipt['confined']), ('not_confined', False), mode)
+            self.assertIn('cannot be verified', cm.exception.receipt['error'])
+
     def test_bad_arguments_still_end_with_a_receipt(self):
         b = RE.Binding(host=RE.HostState(), root=str(self.root))
         receipt, out = op(self.pod, 'subtitle', self.file, b, ['--window', 50], bind=False)

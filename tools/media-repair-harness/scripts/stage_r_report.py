@@ -64,18 +64,31 @@ def load_verdicts(adjudication):
     return out
 
 
+def template_digests(registration, registration_dir):
+    """The driver's own digest of every case_template file (`case_templates_sha256`), so the report checks the templates too."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('stage_r_driver', HERE / 'stage_r_driver.py')
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.template_digests(registration, registration_dir)
+
+
 def registration_sha256(registration):
     """The canonical digest the driver records (`stage-r-state.json` registration_sha256)."""
     return hashlib.sha256(json.dumps(registration, sort_keys=True).encode()).hexdigest()
 
 
-def evaluate(state, adjudication, registration):
+def evaluate(state, adjudication, registration, registration_dir=None):
     if not isinstance(state, dict) or not isinstance(state.get('targets'), dict):
         raise ValueError('the state has no targets')
     if 'exit_code' not in state or not isinstance(state['exit_code'], int) or isinstance(state['exit_code'], bool):
         raise ValueError('the state has no terminal exit code: the driver did not finish recording it (a crash or a run still in progress)')
     if not isinstance(registration, dict) or registration_sha256(registration) != state.get('registration_sha256'):
         raise ValueError('the registration given is not the one the driver ran (registration_sha256 differs)')
+    if registration_dir is not None:
+        got = template_digests(registration, registration_dir)
+        if got != state.get('case_templates_sha256'):
+            raise ValueError('the case template files are not the ones the driver ran (case_templates_sha256 differs)')
     verdicts = load_verdicts(adjudication)
     targets = []
     for key, st in state['targets'].items():
@@ -124,7 +137,7 @@ def main(argv=None):
         print('cannot read the state, the registration or the adjudication', file=sys.stderr)
         return 2
     try:
-        rep = evaluate(state, adjudication, registration)
+        rep = evaluate(state, adjudication, registration, Path(args.registration).resolve().parent)
     except ValueError as e:
         print('bad input: %s' % e, file=sys.stderr)
         return 2

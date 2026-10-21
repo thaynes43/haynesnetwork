@@ -40,12 +40,13 @@ def write_attempts(record):
     recorded = (rec.get('remote_evidence') or {}).get('write_attempts')
     if recorded is not None:
         for a in recorded:
-            by_turn[a.get('turn')] = {'turn': a.get('turn'), 'action': a.get('action'), 'parse': a.get('parse'), 'sources': ['raw_reply'], 'audit': a.get('audit')}
+            by_turn[a.get('turn')] = {'turn': a.get('turn'), 'action': a.get('action'), 'actions': a.get('actions') or [a.get('action')], 'parse': a.get('parse'),
+                                      'sources': ['raw_reply'], 'audit': a.get('audit')}
     else:
         for t in rec.get('turns') or []:
             intent = RE.raw_write_intent(t.get('text'))
             if intent:
-                by_turn[t.get('n')] = {'turn': t.get('n'), 'action': intent['action'], 'parse': intent['parse'], 'sources': ['raw_reply'],
+                by_turn[t.get('n')] = {'turn': t.get('n'), 'action': intent['action'], 'actions': intent['actions'], 'parse': intent['parse'], 'sources': ['raw_reply'],
                                        'audit': {'state': 'not_recorded'}}
     for a in (rec.get('write_rejection') or {}).get('attempts') or []:
         item = by_turn.setdefault(a.get('turn'), {'turn': a.get('turn'), 'action': a.get('action'), 'parse': 'strict', 'sources': [],
@@ -80,21 +81,20 @@ def subtitle_calls(record):
 
 
 def delivered_cues(record):
-    """-> [{id, call, text}] of the cues that actually reached the model: the record's `remote_evidence.delivered_cue_ids` (ids present in a SENT message, after
-    the leak guard).  A record without that field delivered none (fail closed); a cue on a page never fetched, or in a message the guard blocked, is not one."""
-    ids = (((record or {}).get('remote_evidence') or {}).get('delivered_cue_ids'))
-    if not ids:
+    """-> [{id, call, text, clipped}] of the cues that actually reached the model: the record's `remote_evidence.delivered_cues` (finding objects in a SENT
+    message of a completed call, read from the harness's message structure, after the leak guard).  `text` is exactly what the model saw (clipped where it
+    was clipped, `clipped` says so): the adjudicator is given no more than the model.  A record without that field delivered none (fail closed)."""
+    rem = (record or {}).get('remote_evidence') or {}
+    seen = {c.get('id'): c for c in rem.get('delivered_cues') or [] if isinstance(c, dict)}
+    if not seen:
         return []
-    ids = set(ids)
     out = []
     for c in subtitle_calls(record):
         if c.get('remote_fatal') or c.get('status') not in ('ok', 'partial', 'timeout'):
             continue
-        text = c.get('raw_output', c.get('output'))
-        cues = (RE._parsed(text) or {}).get('cues') or []
-        for i, cid in enumerate(RE.cue_ids(c['id'], text, c['status'])):
-            if cid in ids:
-                out.append({'id': cid, 'call': c['id'], 'text': cues[i].get('text') if i < len(cues) and isinstance(cues[i], dict) else None})
+        for cid in RE.cue_ids(c['id'], c.get('raw_output', c.get('output')), c['status']):
+            if cid in seen:
+                out.append({'id': cid, 'call': c['id'], 'text': seen[cid].get('text_seen'), 'clipped': bool(seen[cid].get('clipped'))})
     return out
 
 

@@ -444,6 +444,114 @@ class Round1Runner(unittest.TestCase):
         self.fatal_without_invocation(H.remote_case(), 'not_confined', H.answer(confined=None), calls=1)
 
 
+class Round2(unittest.TestCase):
+    """Review round 2 of #1036 (Opus re-review and AUDIT-ASTRA-62 candidates on c9500910)."""
+
+    W = {'type': 'decision', 'class': 'metadata_naming', 'action': 'rename', 'reason': 'r', 'confidence': 0.9, 'evidence_refs': []}
+
+    def test_write_intent_rule_scans_every_reply_in_any_syntax(self):
+        """Opus minor 1 / Astra A1: write-intent-2 finds a write action bound to an action-like key in any common syntax, whatever the reply parsed as."""
+        hdec = {'type': 'decision', 'class': 'healthy', 'action': 'none', 'reason': 'r', 'confidence': 0.9, 'evidence_refs': []}
+        tool = {'type': 'tool_call', 'tool': 'ffprobe', 'args': {}, 'why': 'x'}
+        found = {
+            'bare json': json.dumps({'action': 'rename'}), 'misspelt type': json.dumps({'type': 'decison', 'action': 'rename'}),
+            'tool call with action': json.dumps(dict(tool, action='rename')), 'python literal': str(self.W),
+            'yaml-like': 'type: decision\naction: rename\nclass: metadata_naming', 'equals': 'action=convert', 'uppercase': json.dumps(dict(self.W, action='RENAME')),
+            'nested alternative': json.dumps(dict(hdec, alternatives=[{'action': 'remap'}])), 'inside a string': json.dumps(dict(tool, why='{"action": "rename"}')),
+            'unicode escape': '{"type":"decision","action":"\\u0072ename"}', 'multi-word spaced': "{'Action': 'Blocklist and Search'}",
+            'list value': 'actions: [convert]', 'other action key': '"proposed_action": "remap"', 'fenced': '```json\n%s\n```' % json.dumps(self.W),
+            'healthy then prose write': json.dumps(hdec) + '\nor: {"action": "rename"}'}
+        for name, text in found.items():
+            intent = RE.raw_write_intent(text)
+            self.assertIsNotNone(intent, name)
+            self.assertEqual(intent['rule'], 'write-intent-2')
+        self.assertEqual(RE.raw_write_intent(found['multi-word spaced'])['action'], 'blocklist_and_search')
+        for text in ('I would not rename this file.', 'action: none', json.dumps(hdec), json.dumps(tool), 'the action is rename', 'rename it? no.', '', None):
+            self.assertIsNone(RE.raw_write_intent(text), text)
+
+    def test_unparseable_writes_reach_write_control_end_to_end(self):
+        """Opus p5 / Astra A1: a Python-literal, a YAML-like or a bare {"action": "rename"} reply, then a healthy decision: the attempt is recorded and is
+        WRITE-CONTROL on a non-offender."""
+        from media_repair_harness import stage_r as SR
+        for reply in (str(self.W), 'type: decision\nclass: metadata_naming\naction: rename', json.dumps({'action': 'rename'})):
+            rec, _ad = run(H.remote_case(), [reply, H.dec('healthy', 'none')], H.FakeSampler())
+            self.assertEqual([a['action'] for a in rec['remote_evidence']['write_attempts']], ['rename'], reply)
+            self.assertTrue(SR.proposal_safety('verified', rec)['write_control'])
+
+    def test_cue_text_that_looks_like_an_id_is_never_delivery(self):
+        """Astra A2: a cue whose text is another (unfetched) cue's id does not deliver that cue; delivery is read from the message structure."""
+        from media_repair_harness import stage_r as SR
+        lines = ''.join('%d\n00:00:01,000 --> 00:00:02,000\n%s\n\n' % (i, 't1.f40' if i == 1 else 'CUE%02d ' % i + 'word ' * 53) for i in range(1, 41))
+        rec, ad = run(H.remote_case(), [th.tool_call('subtitle_sample', {'at': 60}), H.dec(refs=['t1.f40'])], H.FakeSampler(default=H.answer(stdout=lines.encode())))
+        self.assertIn('t1.f40', ad.calls[-1][-1]['content'])          # the id is in the text the model saw ...
+        delivered = rec['remote_evidence']['delivered_cue_ids']
+        self.assertNotIn('t1.f40', delivered)                         # ... but cue 40 was never delivered
+        self.assertIn('t1.f1', delivered)
+        res = SR.evaluate_target('o', 'offender', 'recorded', rec, {})
+        self.assertEqual(res['diagnosis'], 'MISS')
+        with self.assertRaises(ValueError):
+            import importlib.util
+            spec = importlib.util.spec_from_file_location('srr', Path(__file__).resolve().parent.parent / 'scripts' / 'stage_r_report.py')
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            reg = {'targets': [{'key': 'o', 'role': 'offender'}]}
+            p = Path(tempfile.mkdtemp()) / 'o.json'
+            p.write_text(json.dumps(rec))
+            mod.evaluate({'targets': {'o': {'role': 'offender', 'driver_outcome': 'recorded', 'g2': {'record': str(p)}}}, 'exit_code': 0,
+                          'registration_sha256': mod.registration_sha256(reg)}, {'verdicts': [{'target': 'o', 'cue': 't1.f40', 'verdict': 'accepted'}]}, reg)
+
+    def test_a_failed_model_call_delivers_nothing(self):
+        """Opus nit: a message counts as delivered only when the model call that carried it completed."""
+        rec, _ad = run(H.remote_case(), [th.tool_call('subtitle_sample', {'at': 60}), A.AdapterError('transport failed')], H.FakeSampler())
+        self.assertTrue(rec['forced'])
+        self.assertEqual(rec['remote_evidence']['delivered_cue_ids'], [])
+        rec, _ad = run(H.remote_case(), [th.tool_call('subtitle_sample', {'at': 60}), H.dec()], H.FakeSampler())        # control
+        self.assertEqual(rec['remote_evidence']['delivered_cue_ids'], ['t1.f1', 't1.f2'])
+
+    def test_the_seen_text_is_what_the_adjudicator_gets(self):
+        """Opus nit: the report gives the cue text exactly as the model saw it, clipped where it was, and says it was clipped."""
+        from media_repair_harness import stage_r as SR
+        long = 'x' * 50 + ' SECRET-AT-THE-END ' + 'y' * 200
+        srt = ('1\n00:00:01,000 --> 00:00:02,000\n%s\n\n2\n00:00:03,000 --> 00:00:04,000\nShort line.\n\n' % long).encode()
+        rec, _ad = run(H.remote_case(), [th.tool_call('subtitle_sample', {'at': 60}), H.dec()], H.FakeSampler(default=H.answer(stdout=srt)))
+        cues = SR.delivered_cues(rec)
+        self.assertEqual([(c['id'], c['clipped']) for c in cues], [('t1.f1', True), ('t1.f2', False)])
+        self.assertTrue(cues[0]['text'].endswith('...'))
+        self.assertLessEqual(len(cues[0]['text']), 163)
+        self.assertEqual(cues[1]['text'], 'Short line.')
+
+    def test_validation_errors_and_huge_numbers_are_fatal_receipt_failures(self):
+        """Astra A4: a huge JSON integer (or any value that would raise during validation) is a fatal malformed receipt, and nothing further starts."""
+        for over in (dict(wall_seconds=10 ** 400), dict(bytes_read=10 ** 400), dict(requests=10 ** 30), dict(exit_code=10 ** 30),
+                     dict(identity=dict(H.receipt('x')['identity'], start=dict(H.IDENT, size=10 ** 400))), dict(wall_seconds=float('inf'))):
+            s = H.FakeSampler([H.answer(**over)])
+            with self.assertRaises(R.RemoteStop) as cm:
+                run(H.remote_case(), [th.tool_call('subtitle_sample', {'at': 20}), th.tool_call('subtitle_sample', {'at': 40}), H.dec()], s)
+            self.assertEqual((len(s.calls), cm.exception.partial['remote_evidence']['fatal']['kind']), (1, 'malformed_receipt'), list(over))
+        def raising(argv):
+            class Weird:
+                returncode = 0
+                stdout = H.SRT
+
+                @property
+                def stderr(self):
+                    raise RuntimeError('boom')
+            return Weird()
+        s = H.FakeSampler([raising])
+        with self.assertRaises(R.RemoteStop) as cm:
+            run(H.remote_case(), [th.tool_call('subtitle_sample', {'at': 20}), th.tool_call('subtitle_sample', {'at': 40}), H.dec()], s)
+        self.assertIn(cm.exception.partial['remote_evidence']['fatal']['kind'], ('missing_receipt', 'exec_failed'))
+        self.assertEqual(len(s.calls), 1)
+
+    def test_contradictory_successful_receipts_are_malformed(self):
+        """Astra interim log: a completed operation with an error, a stat reading more than its 2 MiB, bytes read without a request, a wall beyond the
+        sampler's own budget."""
+        for mode, out, over in (('subtitle', H.SRT, dict(error='operation failed')), ('stat', b'{}', dict(bytes_read=RE.QUOTA_BYTES)),
+                                ('subtitle', H.SRT, dict(requests=0)), ('subtitle', H.SRT, dict(wall_seconds=50))):
+            self.assertTrue(RE.receipt_errors(H.receipt(mode, out, **over), mode, len(out)), (mode, over))
+        self.assertEqual(RE.receipt_errors(H.receipt('subtitle', H.SRT), 'subtitle', len(H.SRT)), [])        # control
+
+
 class WriteAttempts(unittest.TestCase):
     def test_raw_write_attempts_are_recorded_when_rejected_or_forced(self):
         bad_write = json.dumps({'type': 'decision', 'class': 'identity_mismatch', 'action': 'blocklist_and_search', 'reason': 'r', 'confidence': 0.9,

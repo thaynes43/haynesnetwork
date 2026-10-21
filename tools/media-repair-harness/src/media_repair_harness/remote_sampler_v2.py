@@ -54,9 +54,34 @@ def ident(st):
     return {'size': st.st_size, 'mtime_ns': st.st_mtime_ns, 'dev': st.st_dev, 'ino': st.st_ino}
 
 
+class NotConfined(OSError):
+    pass
+
+
+def fd_names(fd, path):
+    """The descriptor-bound half of the confinement check: the kernel's name for the OPENED object (/proc/self/fd) must be exactly the requested path,
+    which the pre-check proved absolute, normalised, symlink-free and under the root.  A swap between the pre-check and the open (a symlinked component, a
+    replaced directory) makes the names differ.  When the name cannot be read (no /proc), confinement cannot be verified: it fails closed."""
+    try:
+        name = os.readlink('/proc/self/fd/%d' % fd)
+    except OSError as e:
+        raise NotConfined('confinement cannot be verified (%s); nothing was read' % type(e).__name__)
+    if name != path:
+        raise NotConfined('the opened object is not the confined path; nothing was read')
+
+
+def refused(e):
+    """A bounded step failed: a confinement failure says so in the receipt (confined false), anything else is an error.  Ends the invocation."""
+    receipt['error'] = str(e)
+    if str(e).startswith('NotConfined'):
+        receipt['confined'] = False
+    finish()
+
+
 def confine(path, is_dir=False):
-    """With --root: the path must be absolute, normalised, free of symlinks in every component and strictly under the real root (a listing may name the
-    root itself).  Sets receipt['confined']; a path that is not confined ends the invocation with nothing read."""
+    """With --root, the pre-check (before anything is opened): the path must be absolute, normalised, free of symlinks in every component and strictly
+    under the real root (a listing may name the root itself).  A failure ends the invocation with nothing read (confined false).  `confined` becomes true
+    only after the descriptor-bound check (fd_names) on the object actually opened."""
     if a.root is None:
         return
     try:
@@ -70,8 +95,8 @@ def confine(path, is_dir=False):
     root, real = value
     ok = (os.path.isabs(path) and os.path.normpath(path) == path and real == path and '\n' not in path and '\0' not in path
           and (real.startswith(root.rstrip('/') + '/') or (is_dir and real == root)))
-    receipt['confined'] = ok
     if not ok:
+        receipt['confined'] = False
         receipt['error'] = 'path not confined under the allowed root (symlink, traversal or outside it); nothing was read'
         finish()
 
@@ -133,9 +158,25 @@ if a.mode == 'list':
     receipt['listing'] = {'complete': False, 'matching': 0, 'scanned': 0, 'cap': LIST_CAP, 'prefix': a.prefix, 'directory': a.path}
     confine(a.path, is_dir=True)
 
+    def opened_dir():
+        """Open the directory ONCE (O_DIRECTORY | O_NOFOLLOW) and list it from that descriptor; with --root, the descriptor must name the confined path."""
+        dfd = os.open(a.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        if a.root is not None:
+            fd_names(dfd, a.path)
+        return dfd
+    try:
+        dfd, late = bounded(opened_dir)
+    except RuntimeError as e:
+        refused(e)
+    if late:
+        receipt.update(exit_code='timeout', timed_out=True)
+        finish()
+    if a.root is not None:
+        receipt['confined'] = True
+
     def scan():
         entries, scanned, matching = [], 0, 0
-        with os.scandir(a.path) as it:
+        with os.scandir(dfd) as it:
             for e in it:
                 scanned += 1
                 if not e.name.startswith(a.prefix):
@@ -173,23 +214,24 @@ confine(a.path)
 def opened():
     """Open ONCE, never following a final symlink; with --root, the opened descriptor must still name the confined path."""
     fd = os.open(a.path, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, 'O_NOCTTY', 0))
+    if a.root is not None:
+        fd_names(fd, a.path)            # mandatory with --root; never skipped
     st = os.fstat(fd)
     if not statmod.S_ISREG(st.st_mode):
         raise OSError('not a regular file')
-    if a.root is not None and os.path.isdir('/proc/self/fd') and os.readlink('/proc/self/fd/%d' % fd) != a.path:
-        raise OSError('the opened descriptor does not name the confined path')
     return fd, st
 
 
 try:
     value, timed_out = bounded(opened)
 except RuntimeError as e:
-    receipt['error'] = str(e)
-    finish()
+    refused(e)
 if timed_out:
     receipt.update(exit_code='timeout', timed_out=True)
     finish()
 fd, st0 = value
+if a.root is not None:
+    receipt['confined'] = True
 receipt['identity']['start'] = ident(st0)
 if expected is not None:
     receipt['identity']['start_ok'] = ident(st0) == expected

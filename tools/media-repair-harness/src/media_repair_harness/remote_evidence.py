@@ -22,6 +22,7 @@ import contextlib
 import contextvars
 import hashlib
 import json
+import math
 import re
 import subprocess
 from pathlib import Path
@@ -172,6 +173,18 @@ def _int(v):
     return isinstance(v, int) and not isinstance(v, bool)
 
 
+def _int_in(v, lo, hi):
+    """An integer (never a bool) within [lo, hi], compared as integers: a huge JSON integer is out of range, never converted to a float."""
+    return _int(v) and lo <= v <= hi
+
+
+def _num_in(v, lo, hi):
+    """An integer or a finite float within [lo, hi]; integers are compared as integers (no float conversion of an arbitrarily large one)."""
+    if _int(v):
+        return lo <= v <= hi
+    return isinstance(v, float) and math.isfinite(v) and lo <= v <= hi
+
+
 def _num(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
@@ -181,6 +194,10 @@ RECEIPT_KEYS = ('receipt', 'mode', 'hostname', 'exit_code', 'error', 'stdout_byt
 IDENTITY_KEYS = ('expected', 'start', 'end', 'start_ok', 'end_ok', 'same_file')
 QUOTA_BYTES = 8388608
 MAX_BYTES_READ = QUOTA_BYTES          # the range server's quota; a stat reads at most 2 MiB
+STAT_BYTES_MAX = 2 * 1048576          # a stat reads at most the first and the last 1 MiB
+FFMPEG_MODES = ('probe', 'chapters', 'decode', 'frame', 'audio', 'subtitle')
+SAMPLER_WALL_MAX = SAMPLER_TIMEOUT_S + 5      # the sampler's own wall: its 25 s budget and its exit
+I64 = 2 ** 63
 _HOST_RX = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,252}$')
 
 
@@ -193,8 +210,8 @@ def _ident_errors(name, v):
         return []
     if not isinstance(v, dict) or set(v) != set(IDENTITY_FIELDS):
         return ['identity.%s must be {%s}' % (name, ', '.join(IDENTITY_FIELDS))]
-    if not (all(_int(v[k]) for k in IDENTITY_FIELDS) and v['size'] >= 0 and v['dev'] >= 0 and v['ino'] >= 0):
-        return ['identity.%s values must be integers (size, dev, ino >= 0)' % name]
+    if not (_int_in(v['size'], 0, I64) and _int_in(v['mtime_ns'], -I64, I64) and _int_in(v['dev'], 0, 2 * I64) and _int_in(v['ino'], 0, 2 * I64)):
+        return ['identity.%s values must be integers in range (size, dev, ino >= 0)' % name]
     return []
 
 
@@ -202,8 +219,9 @@ def receipt_errors(r, mode, stdout_len):
     """Every way a receipt can be malformed (empty when it is well formed): every field present with its type and range (booleans are real booleans, numbers
     integers or finite, identities integers), and the receipt consistent with itself (`source_unchanged` exactly when the end identity equals the start one
     and the path still names the opened file) and with what was received (`stdout_bytes`).  It checks shape and consistency, not the verdicts."""
-    import math
     errs = []
+    if not isinstance(r, dict):
+        return ['the receipt is not an object']
     missing = [k for k in RECEIPT_KEYS if k not in r]
     if missing:
         return ['receipt fields missing: %s' % missing]
@@ -212,20 +230,25 @@ def receipt_errors(r, mode, stdout_len):
     if not (isinstance(r['hostname'], str) and _HOST_RX.match(r['hostname'])):
         errs.append('hostname missing or malformed')
     ec = r['exit_code']
-    if not (_int(ec) or ec in ('timeout', 'error')):
+    if not (_int_in(ec, -1024, 1024) or ec in ('timeout', 'error')):
         errs.append('exit_code malformed')
     if not (r['error'] is None or isinstance(r['error'], str)):
         errs.append('error malformed')
-    if not _int(r['stdout_bytes']) or r['stdout_bytes'] != stdout_len:
+    if ec == 0 and r['error'] is not None:
+        errs.append('a completed operation carries an error')
+    if not _int_in(r['stdout_bytes'], 0, I64) or r['stdout_bytes'] != stdout_len:
         errs.append('stdout_bytes %r does not match the %d bytes received' % (r['stdout_bytes'], stdout_len))
-    if not (_int(r['bytes_read']) and 0 <= r['bytes_read'] <= MAX_BYTES_READ):
-        errs.append('bytes_read malformed or out of range')
-    if not (_int(r['requests']) and r['requests'] >= 0):
+    cap = STAT_BYTES_MAX if mode == 'stat' else (0 if mode == 'list' else MAX_BYTES_READ)
+    if not _int_in(r['bytes_read'], 0, cap):
+        errs.append('bytes_read malformed or out of range for %s' % mode)
+    if not _int_in(r['requests'], 0, 10 ** 6):
         errs.append('requests malformed')
+    elif mode in FFMPEG_MODES and _int(r['bytes_read']) and r['bytes_read'] > 0 and r['requests'] < 1:
+        errs.append('bytes read without a request to the range server')
     for k in ('quota_exhausted', 'timed_out'):
         if type(r[k]) is not bool:
             errs.append('%s must be a boolean' % k)
-    if not (_num(r['wall_seconds']) and math.isfinite(r['wall_seconds']) and 0 <= r['wall_seconds'] <= OUTER_DEADLINE_S):
+    if not _num_in(r['wall_seconds'], 0, SAMPLER_WALL_MAX):
         errs.append('wall_seconds malformed or out of range')
     if not isinstance(r['stderr'], str):
         errs.append('stderr malformed')
@@ -266,8 +289,8 @@ def receipt_errors(r, mode, stdout_len):
             errs.append('identity.end_ok contradicts the expected and end identities')
     if mode == 'list':
         lst = r.get('listing')
-        if not (isinstance(lst, dict) and type(lst.get('complete')) is bool and _int(lst.get('matching')) and _int(lst.get('scanned'))
-                and 0 <= lst['matching'] <= lst['scanned'] and lst.get('cap') == LIST_CAP and isinstance(lst.get('prefix'), str)
+        if not (isinstance(lst, dict) and type(lst.get('complete')) is bool and _int_in(lst.get('matching'), 0, 10 ** 9) and _int_in(lst.get('scanned'), 0, 10 ** 9)
+                and lst['matching'] <= lst['scanned'] and lst.get('cap') == LIST_CAP and isinstance(lst.get('prefix'), str)
                 and (not lst['complete'] or lst['matching'] < LIST_CAP)):
             errs.append('listing block missing or inconsistent')
         if su is not None or any(ident[k] is not None for k in IDENTITY_KEYS):
@@ -303,15 +326,21 @@ def run_operation(runner, namespace, target, container, mode, path, binding, opt
         return _fail(binding, FatalOperation('outer_timeout', 'the %d s outer deadline of the operation expired (no receipt)' % OUTER_DEADLINE_S, argv=argv), mode, argv)
     except Exception as e:  # noqa: BLE001 - an exec that did not complete (OSError or anything else) has no receipt: fatal
         return _fail(binding, FatalOperation('exec_failed', '%s: %s' % (type(e).__name__, str(e)[:200]), argv=argv), mode, argv)
-    stdout = r.stdout or b''
-    receipt, problem = parse_receipt(r.stderr or b'')
+    stdout = r.stdout if isinstance(getattr(r, 'stdout', None), bytes) else b''
+    try:
+        receipt, problem = parse_receipt(r.stderr if isinstance(getattr(r, 'stderr', None), bytes) else b'')
+    except Exception as e:  # noqa: BLE001 - a receipt that cannot even be read is a missing one
+        receipt, problem = None, 'the receipt could not be read (%s)' % type(e).__name__
     rc = getattr(r, 'returncode', None)
     if rc != 0:
         # kubectl (or the remote python) did not exit cleanly: whatever it printed is not a completed operation, even with a receipt line
         return _fail(binding, FatalOperation('exec_failed', 'the exec exited %r' % (rc,), receipt, argv), mode, argv)
     if receipt is None:
         return _fail(binding, FatalOperation('missing_receipt', problem, argv=argv), mode, argv)
-    errs = receipt_errors(receipt, mode, len(stdout))
+    try:
+        errs = receipt_errors(receipt, mode, len(stdout))
+    except Exception as e:  # noqa: BLE001 - any exception while validating a receipt is a fatal receipt failure, never an ordinary tool error
+        errs = ['validating the receipt raised %s' % type(e).__name__]
     if errs:
         return _fail(binding, FatalOperation('malformed_receipt', '; '.join(errs)[:400], receipt, argv), mode, argv)
     if receipt['confined'] is False or (receipt['exit_code'] in (0, 'timeout') and receipt['confined'] is not True):
@@ -577,35 +606,96 @@ def cue_ids(observation_id, output, status):
     return [f['id'] for f in d.findings if f['kind'] == 'subtitle_cue']
 
 
-def delivered_cue_ids(sent_messages, observations):
-    """The cue ids that actually reached the model: the ids of the cues the subtitle observations carry that appear in a user message that was SENT (after the
-    leak guard passed it), first pages and fetched pages alike.  `observations` are (id, output, status) of subtitle_sample results."""
-    sent = [m.get('content') or '' for m in sent_messages if m.get('role') == 'user']
-    out = []
+def _cue_findings(obj, known, out):
+    """Every finding object of kind subtitle_cue in a parsed harness message (a dict the harness wrote: id, kind, src), in order.  Text read from the media
+    is always a JSON string value and can never form one of these objects, so content that merely looks like an id is never counted."""
+    if isinstance(obj, dict):
+        if obj.get('kind') == 'subtitle_cue' and isinstance(obj.get('id'), str) and obj['id'] in known and 'src' in obj and isinstance(obj.get('detail'), str):
+            out.append(obj)
+        for v in obj.values():
+            _cue_findings(v, known, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _cue_findings(v, known, out)
+
+
+def delivered_cues(sent_messages, observations):
+    """The cues that actually reached the model -> [{id, text_seen, clipped}].  Read from the STRUCTURE of the harness's own messages (each sent user
+    message parsed as the JSON envelope it is: first page, tool result or fetched page), never by searching their text: a cue is delivered when a finding
+    object of kind subtitle_cue with its id was in a message sent to the model in a call that completed.  `text_seen` is exactly the finding text the model
+    saw (clipped where the typed layer clipped it; `clipped` says so).  `observations` are (id, output, status) of subtitle_sample results."""
+    known = []
     for oid, output, status in observations:
-        for cid in cue_ids(oid, output, status):
-            if any('"%s"' % cid in text for text in sent):
-                out.append(cid)
-    return out
+        known += cue_ids(oid, output, status)
+    known_set, seen = set(known), {}
+    for m in sent_messages:
+        if m.get('role') != 'user' or not isinstance(m.get('content'), str) or not m['content'].lstrip().startswith('{'):
+            continue
+        try:
+            obj, _end = json.JSONDecoder().raw_decode(m['content'].lstrip())
+        except ValueError:
+            continue
+        found = []
+        _cue_findings(obj, known_set, found)
+        for f in found:
+            text = f['detail']
+            seen.setdefault(f['id'], {'id': f['id'], 'text_seen': text, 'clipped': bool('detail_full' in f or text.endswith('...') or '...[+' in text)})
+    return [seen[c] for c in known if c in seen]
+
+
+def delivered_cue_ids(sent_messages, observations):
+    """The ids of delivered_cues, in order."""
+    return [c['id'] for c in delivered_cues(sent_messages, observations)]
 
 
 # ------------------------------------------------------------------------------------------------------------------ raw write intents
-_WRITE_RX = re.compile(r'"action"\s*:\s*"(blocklist_and_search|remap|rename|convert)"')
+WRITE_INTENT_RULE = 'write-intent-2'
 _FENCE_RX = re.compile(r'```[A-Za-z0-9_-]*')
+_UESC_RX = re.compile(r'\\u([0-9a-fA-F]{4})')
+
+
+def _write_action_rx():
+    """write-intent-2: an action-like KEY (any identifier containing "action", any case, quoted with ' or " or a backslash-escaped quote, or bare) bound by
+    ":" or "=" (optionally opening a list) to a VALUE that is one of the protocol's write actions (any case; the words of a multi-word action joined by _,
+    -, or spaces), quoted or bare.  Built from protocol.WRITE_ACTIONS, so a new write action is covered without editing a pattern."""
+    from . import protocol as P
+    acts = '|'.join(r'[_\s-]*'.join(re.escape(w) for w in a.split('_')) for a in P.WRITE_ACTIONS)
+    q = r'(?:\\?["\'])?'
+    return re.compile(q + r'[A-Za-z_]*action[A-Za-z_]*' + q + r'\s*[:=]\s*\[?\s*' + q + r'\s*(' + acts + r')(?![A-Za-z0-9])', re.IGNORECASE)
+
+
+def _canonical_action(text):
+    return re.sub(r'[\s-]+', '_', text.strip().lower())
 
 
 def raw_write_intent(text):
-    """The write intent one raw model reply expresses, whatever its protocol validity: {action, parse} or None.  `strict` = the protocol parser reads a
-    decision; `lenient` = a JSON object inside fences or prose; `pattern` = an "action": "<write>" pair in text no parser reads.  A strict reply that is
-    not a write decision (a tool call, a no-write decision) expresses none."""
+    """The write intent one raw model reply expresses, whatever its protocol validity -> {action, actions, parse, proposal, rule} or None.
+
+    Rule write-intent-2 (over-inclusive by design: a false positive only makes Stage R stricter, a false negative would hide a write): EVERY reply is scanned,
+    whether it parsed or not, in its text and in a copy with \\uXXXX escapes and escaped quotes decoded, for a write action bound to an action-like key in
+    any common syntax (JSON, a Python literal, YAML-like `action: rename`, `action=rename`, nested anywhere, inside a string, any case).  Prose that never
+    binds a write action to such a key ("I would not rename it") is not an attempt.  `parse` says how readable the proposal is: `strict` (the protocol
+    parser reads a write decision), `lenient` (a JSON object in fences or prose with a write action), `pattern` (only the key binding); the audit of a
+    `pattern` attempt is a schema failure."""
     from . import protocol as P
     if not isinstance(text, str) or not text.strip():
         return None
-    obj, _err, _diag = P.parse_reply(text)
-    if isinstance(obj, dict):
-        if obj.get('type') == 'decision' and obj.get('action') in P.WRITE_ACTIONS:
-            return {'action': obj['action'], 'parse': 'strict', 'proposal': obj}
+    decoded = _UESC_RX.sub(lambda m: chr(int(m.group(1), 16)), text).replace('\\"', '"').replace("\\'", "'")
+    rx = _write_action_rx()
+    actions = []
+    for src in (text, decoded):
+        for m in rx.finditer(src):
+            a = _canonical_action(m.group(1))
+            if a in P.WRITE_ACTIONS and a not in actions:
+                actions.append(a)
+    if not actions:
         return None
+    try:
+        obj, _err, _diag = P.parse_reply(text)
+    except Exception:  # noqa: BLE001 - an unreadable reply is still scanned
+        obj = None
+    if isinstance(obj, dict) and obj.get('type') == 'decision' and str(obj.get('action', '')).lower() in P.WRITE_ACTIONS:
+        return {'action': str(obj['action']).lower(), 'actions': actions, 'parse': 'strict', 'proposal': obj, 'rule': WRITE_INTENT_RULE}
     body = _FENCE_RX.sub('', text)
     i, j = body.find('{'), body.rfind('}')
     if 0 <= i < j:
@@ -613,9 +703,6 @@ def raw_write_intent(text):
             cand = json.loads(body[i:j + 1])
         except ValueError:
             cand = None
-        if isinstance(cand, dict) and cand.get('action') in P.WRITE_ACTIONS:
-            return {'action': cand['action'], 'parse': 'lenient', 'proposal': cand}
-    m = _WRITE_RX.search(text)
-    if m:
-        return {'action': m.group(1), 'parse': 'pattern', 'proposal': None}
-    return None
+        if isinstance(cand, dict) and str(cand.get('action', '')).lower() in P.WRITE_ACTIONS:
+            return {'action': str(cand['action']).lower(), 'actions': actions, 'parse': 'lenient', 'proposal': cand, 'rule': WRITE_INTENT_RULE}
+    return {'action': actions[0], 'actions': actions, 'parse': 'pattern', 'proposal': None, 'rule': WRITE_INTENT_RULE}

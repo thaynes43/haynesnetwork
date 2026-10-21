@@ -502,5 +502,71 @@ class Registration(unittest.TestCase):
         D.load_registration(p)                              # lower limits and the harness's own flags are accepted
 
 
+class Round2(unittest.TestCase):
+    """Review round 2 of #1036 at the driver: unparseable writes, frozen templates, the G0a tool list and guards."""
+
+    def test_a_bare_or_unparseable_write_stops_after_that_case(self):
+        """Astra A1 / Opus minor 1: a {"action": "rename"} (or YAML-like) reply on a non-offender, then a healthy decision: WRITE-CONTROL."""
+        for reply in (json.dumps({'action': 'rename'}), 'type: decision\naction: rename\nclass: metadata_naming'):
+            lib = Library()
+            code, st, pod = lib.drive(reg=lib.registration(keys=('o1', 'v1', 'h1')), replies={'v1': [reply, H.dec('healthy', 'none')]})
+            self.assertEqual((code, st['stop']['kind'], lib.harness_calls), (D.EXIT_STOP, 'write_control', ['o1', 'v1']), reply)
+            self.assertEqual(st['targets']['h1']['driver_outcome'], 'not_started')
+
+    def file_registration(self, lib, keys=('o1',)):
+        reg = lib.registration(keys=keys)
+        (lib.tmp / 'cases').mkdir(exist_ok=True)
+        for t in reg['targets']:
+            (lib.tmp / 'cases' / (t['key'] + '.json')).write_text(json.dumps(t.pop('case')))
+            t['case_template'] = 'cases/%s.json' % t['key']
+        (lib.tmp / 'g0a.json').write_text(json.dumps(reg))
+        return reg
+
+    def test_case_template_files_are_frozen_with_the_registration(self):
+        """Opus nit: registration_sha256 covered no case_template file; the state now records their digests and the report checks them."""
+        lib = Library()
+        reg = self.file_registration(lib)
+        code, st, _pod = lib.drive(reg=reg, template_dir=lib.tmp)
+        self.assertEqual(code, 0, st.get('stop'))
+        self.assertEqual(st['case_templates_sha256'], {'o1': hashlib.sha256((lib.tmp / 'cases' / 'o1.json').read_bytes()).hexdigest()})
+        REP.evaluate(st, {'verdicts': ACCEPT}, reg, lib.tmp)                       # the same files: accepted as input
+        case = json.loads((lib.tmp / 'cases' / 'o1.json').read_text())
+        case['context']['notes_for_model'] = 'changed after the run'
+        (lib.tmp / 'cases' / 'o1.json').write_text(json.dumps(case))
+        with self.assertRaises(ValueError):
+            REP.evaluate(st, {'verdicts': ACCEPT}, reg, lib.tmp)
+
+    def test_a_template_reached_through_a_symlink_is_refused(self):
+        """Astra interim log: a case_template under a symlinked directory that leads outside the registration is refused."""
+        lib = Library()
+        reg = self.file_registration(lib)
+        outside = Path(tempfile.mkdtemp()).resolve()
+        (outside / 'o1.json').write_text((lib.tmp / 'cases' / 'o1.json').read_text())
+        (lib.tmp / 'linked').symlink_to(outside, target_is_directory=True)
+        reg['targets'][0]['case_template'] = 'linked/o1.json'
+        errs, _templates = D.validate_registration(reg, lib.tmp)
+        self.assertTrue(any('stays under the registration' in e for e in errs), errs)
+
+    def test_g0a_guards_and_tool_list_are_enforced(self):
+        """Opus nit: pilot plan section 4.2 (G0a): guards v3, as C7, and exactly ffprobe, decode_sample, subtitle_sample, arr_lookup (no frame or OCR)."""
+        lib = Library()
+        bad_args = [[a for a in HARNESS if a not in ('--guards', 'v3')], [a if a != 'v3' else 'v2' for a in HARNESS], HARNESS + ['--guards', 'v3'],
+                    [a if a != '--guards' else '--gu' for a in HARNESS][:-1] + ['v2']]
+        for args in bad_args:
+            reg = lib.registration()
+            reg['harness_args'] = args
+            errs, _t = D.validate_registration(reg)
+            self.assertTrue(any('guards' in e for e in errs), args)
+        for tools in (['ffprobe', 'decode_sample', 'subtitle_sample', 'arr_lookup', 'frame_sample'], ['ffprobe', 'decode_sample', 'subtitle_sample', 'arr_lookup', 'ocr'],
+                      ['ffprobe', 'subtitle_sample'], ['ffprobe', 'decode_sample', 'subtitle_sample', 'arr_lookup', 'arr_lookup']):
+            reg = lib.registration()
+            reg['targets'][0]['case']['tools_available'] = tools
+            errs, _t = D.validate_registration(reg)
+            self.assertTrue(any('tools_available' in e for e in errs), tools)
+        reg = lib.registration()
+        reg['harness_args'] = [a if a != '--guards' else '--guards=v3' for a in HARNESS if a != 'v3']
+        self.assertEqual(D.validate_registration(reg)[0], [])          # control: the = form
+
+
 if __name__ == '__main__':
     unittest.main()
