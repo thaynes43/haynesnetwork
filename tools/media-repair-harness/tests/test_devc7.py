@@ -28,7 +28,7 @@ from media_repair_harness.experimental.contract_v3 import rubric_v32 as RB32
 # pins: prompts/v7.txt (file bytes and the assembled text the model is sent), the rubric v3.2 object and the frozen excerpt rules
 V7_FILE_SHA256 = '0875cc586b18debb241cfb569b5387a4b5da71064726fc3610bed8776fdfe8f9'
 V7_ASSEMBLED_SHA256 = '79a7fc73b855ccee6964c4752249477b070b79acebc3daf5c9c17a8a6b3eafb5'
-RUBRIC_V32_SHA = '6b4e5991b7d5a192b83ec4237ff29ddca9d8e9ef3302387836de82a6ecc7b085'
+RUBRIC_V32_SHA = '2af0b36e48c59233a4c5743f9a866958c56f7ce53e39aaa9f26eff7cc629a4c7'
 EXCERPT_RULES_SHA = '42bd495a35615ac031e050aea30d2cc7e7aaf586ab28759b6148aac66d197a52'   # xhtml-body-text-1, frozen (no longer selected)
 
 CONTAINER = ('<?xml version="1.0"?><container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0"><rootfiles>'
@@ -157,7 +157,7 @@ class Versions(unittest.TestCase):
         ef = rec['evidence_format']
         self.assertEqual((rec['harness_version'], rec['prompt']['version'], rec['prompt']['protocol']), ('dev-c7', 'v7', 'turn-v3'))
         self.assertEqual((ef['version'], ef['tools_behavior'], ef['rubric'], ef['checker_rubric'], ef['excerpt_rule'], ef['protocol'], ef['decision_schema'], ef['audit_version']),
-                         ('v3.1-format', 'v3', 'contract-v3-rubric-3.2', 'contract-v3-rubric-3.1', 'xhtml-body-text-2', 'turn-v3', 'decision-v3', 'v3'))
+                         ('v3.1-format', 'v3', 'contract-v3-rubric-3.2', 'contract-v3-rubric-3.1', 'xhtml-body-text-3', 'turn-v3', 'decision-v3', 'v3'))
         self.assertEqual(ef['excerpt_rules_sha256'], EV31.ET.rules_digest())
         self.assertEqual(rec['action_audit']['checker_rubric'], 'contract-v3-rubric-3.1')
 
@@ -327,7 +327,7 @@ class Excerpts(Tmp):
         p = self.epub(items, nav=[('Declared One', 'c0.xhtml'), ('Declared Two', 'c1.xhtml#s')])
         _r, o = self.call(p)
         b = o['body']
-        self.assertEqual((b['extraction'], b['items_total'], len(b['index']), len(b['excerpts'])), ('xhtml-body-text-2', 5, 5, 3))
+        self.assertEqual((b['extraction'], b['items_total'], len(b['index']), len(b['excerpts'])), ('xhtml-body-text-3', 5, 5, 3))
         self.assertEqual([e['spine'] for e in b['excerpts']], [0, 1, 2])
         self.assertEqual(b['excerpts'][1]['end'], ET.DEFAULT_EXCERPT_CHARS)
         self.assertEqual(b['excerpts'][1]['next_offset'], ET.DEFAULT_EXCERPT_CHARS)

@@ -163,6 +163,7 @@ def check_messages(case, messages, extra_paths=()):
 
 
 # ---- leakguard-media-1 (dev-c7, format v3.1-format only; the legacy check above is unchanged and still applies everywhere else) --------------------------
+# SUPERSEDED by leakguard-media-2 below (second review round) and no longer selected by any run; kept as written so its first-round tests stay meaningful.
 # Text READ FROM THE MEDIA (tools-v3 EPUB excerpts, headings, declared TOC text, the legacy heads, OPF values) is the item's own content.  Checking it with the
 # legacy tokens refuses ordinary words: a family word that is already the visible title, a truth-class word ("healthy") in a novel's prose, a short
 # provenance value ("new") inside "knew".  In media text only TRUE IDENTIFIERS are refused: the case id, the fixture file names and stems, and provenance PATH
@@ -241,3 +242,120 @@ def check_messages_media(case, messages, media_texts, visible='', extra_paths=()
         mhits = sorted({kind for kind, rx in mtoks for t in found if rx.search(t)})
         if mhits:
             raise LeakError('forbidden identifier(s) %s in text read from the media, model-bound message %d (%s)' % (mhits, i + 1, MEDIA_RULE))
+
+
+# ---- leakguard-media-2 (dev-c7 second review round, AUDIT-ASTRA-28 item 3 and the Opus review; format v3.1-format only) ---------------------------------
+# media-1 had bypasses: it skipped case-id stems and identifiers shorter than 6 characters, let truth-class and action words with an underscore through,
+# checked each excerpt alone (an id split across two adjacent excerpts passed), and inferred media provenance from matching text (harness-written text that
+# also occurs in the media escaped the legacy check).  media-2 fixes all four, generally:
+#   * WHAT IS MEDIA TEXT is never inferred from its value.  The caller passes the legacy check a harness-only SHADOW of every message (each literal media
+#     string blanked at its known field), and passes the media strings themselves as SOURCES with their field paths and, for excerpts, their ranges.
+#   * IN MEDIA TEXT, anything that cannot be ordinary prose is refused: the case id (any length), the fixture file names, and every other hidden value that is
+#     not plain words (letters, with single spaces or apostrophes between them): a case-id stem, family, truth class, write action, provenance or provenance
+#     path piece containing `-`, `_`, a digit, `/`, `.` or another non-letter.  The truth reference is refused when it is not a short plain word (a sentence
+#     is refused whole).  A fixture stem is refused when it is not prose or is at least SYSTEM_MIN_LEN characters long.  Plain words (a family word such as
+#     a title word, `healthy`, `new`) are not refused in media text, and a plain word already visible in the case context is never refused there.
+#   * RECONSTRUCTION is checked: adjoining elements of one list field are checked joined, and every delivered excerpt range of one spine item is reassembled
+#     (overlapping or touching ranges join) so an identifier split across excerpts, or across the default view and an excerpt, is found.
+# A refusal is a LeakError, recorded as a harness error and kept in every denominator; the legacy check (check_messages) is unchanged.
+MEDIA_RULE_2 = 'leakguard-media-2'
+_PROSE_RX = re.compile(r"^[^\W\d_]+(?:[ '’][^\W\d_]+)*$")
+
+
+def is_prose(value):
+    return bool(_PROSE_RX.match(' '.join(str(value or '').split())))
+
+
+def _phrase(text):
+    """A case-insensitive matcher for a multi-word value, whitespace-normalised, bounded at word characters at its ends."""
+    words = [re.escape(w) for w in str(text).split()]
+    return re.compile(r'(?<![A-Za-z0-9])' + r'\s+'.join(words) + r'(?![A-Za-z0-9])', re.IGNORECASE)
+
+
+def media_tokens_2(case, extra_paths=()):
+    """-> [(kind, compiled regex, prose)] refused in media text under MEDIA_RULE_2."""
+    cands = []
+    cid = str(case.get('id') or '')
+    if cid:
+        cands.append(('case_id', cid, True))
+        stem = re.sub(r'-\d+$', '', cid)
+        if stem != cid:
+            cands.append(('case_id_stem', stem, not is_prose(stem)))
+    fam = case.get('family')
+    if fam:
+        cands.append(('family', str(fam), not is_prose(fam)))
+    truth = case.get('truth') or {}
+    if truth.get('class'):
+        cands.append(('truth_class', str(truth['class']), not is_prose(truth['class'])))
+    ref = truth.get('ref')
+    if ref:
+        cands.append(('truth_ref', str(ref), not (is_prose(ref) and len(str(ref)) < SYSTEM_MIN_LEN and ' ' not in str(ref).strip())))
+    for act in case.get('supported_actions') or []:
+        if act in WRITE_ACTIONS:
+            cands.append(('supported_action', act, not is_prose(act)))
+    prov = str(case.get('provenance') or '').strip()
+    if prov:
+        cands.append(('provenance', prov, not is_prose(prov)))
+        for piece in re.split(r'\s+', prov):
+            piece = piece.strip('(),;')
+            if piece and not is_prose(piece) and (len(piece) >= 8 or '/' in piece or '@' in piece):
+                cands.append(('provenance_piece', piece, True))
+    for b in fixture_basenames(case, extra_paths):
+        cands.append(('fixture_name', b, True))
+        st = Path(b).stem
+        if st:
+            cands.append(('fixture_stem', st, not is_prose(st) or len(st) >= SYSTEM_MIN_LEN))
+    out, seen = [], set()
+    for kind, value, refuse in cands:
+        if refuse and (kind, value) not in seen:
+            seen.add((kind, value))
+            out.append((kind, _phrase(value) if ' ' in value.strip() else _ci(value), is_prose(value)))
+    return out
+
+
+def reassembled(sources):
+    """The texts to check: every source, adjoining elements of one list joined, and each spine item's delivered excerpt ranges reassembled."""
+    texts = [s['text'] for s in sources]
+    groups = {}
+    for s in sources:
+        groups.setdefault((s['source'], s['group']), []).append(s)
+    for members in groups.values():
+        for a, b in zip(members, members[1:]):
+            texts.append(a['text'] + b['text'])
+            texts.append(a['text'] + ' ' + b['text'])
+    spans = {}
+    for s in sources:
+        r = s.get('range')
+        if r and r['end'] - r['offset'] == len(s['text']):
+            spans.setdefault((r.get('spine'), r.get('member')), []).append((r['offset'], r['end'], s['text']))
+    for parts in spans.values():
+        parts.sort()
+        run_start, run = None, ''
+        for off, end, text in parts:
+            if run_start is not None and off <= run_start + len(run):
+                keep = run_start + len(run) - off
+                run += text[keep:] if keep < len(text) else ''
+            else:
+                if run:
+                    texts.append(run)
+                run_start, run = off, text
+        if run:
+            texts.append(run)
+    return texts
+
+
+def check_messages_media2(case, guard_messages, sources, visible='', extra_paths=()):
+    """Guard for a format v3.1-format request under MEDIA_RULE_2.  `guard_messages` are the model-bound messages with each message that carries media text
+    replaced by its harness-only shadow (legacy check, unchanged tokens and rules); `sources` are the media strings delivered so far (media check)."""
+    toks = forbidden_tokens(case, extra_paths)
+    for i, m in enumerate(guard_messages):
+        if m.get('role') != 'user':
+            continue
+        hits = _legacy_hits(m.get('content', ''), toks)
+        if hits:
+            raise LeakError('forbidden token(s) %s in model-bound message %d' % (hits, i + 1))
+    mtoks = [(k, rx) for k, rx, prose in media_tokens_2(case, extra_paths) if not (prose and rx.search(visible or ''))]
+    texts = reassembled(list(sources))
+    hits = sorted({k for k, rx in mtoks for t in texts if rx.search(t)})
+    if hits:
+        raise LeakError('forbidden value(s) %s in text read from the media (%s)' % (hits, MEDIA_RULE_2))

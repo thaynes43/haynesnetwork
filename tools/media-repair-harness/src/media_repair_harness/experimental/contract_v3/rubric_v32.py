@@ -41,7 +41,7 @@ CLARIFICATIONS_V32 = (
              'stated. A tag reading or a hash stays a declaration or a report; a report, whatever its kind, is never an observation of this run.',
      'source': 'facts.report_kind and rubric.REPORT_METHOD_VOCABULARY / NEGATED_METHOD_RX (unchanged)'},
     {'id': 'C32-4', 'clarifies': 'statement kinds of EPUB body text (tools behaviour v3)',
-     'text': 'EPUB body excerpts and observed body headings read by tools behaviour v3 (rule xhtml-body-text-2) are content with the provenance of the '
+     'text': 'EPUB body excerpts and observed body headings read by tools behaviour v3 (rule xhtml-body-text-3) are content with the provenance of the '
              'read; OPF metadata, the declared table of contents and every navigation region inside a spine document are declarations, never body text or '
              'observed headings. An observed heading is an observation, never by itself a verdict on identity. The legacy spine heads (the first six words of '
              'all character data of a spine document, head title, styles and navigation included) are labelled legacy_mixed and establish no content '

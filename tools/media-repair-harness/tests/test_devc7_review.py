@@ -105,7 +105,7 @@ class R2MediaLeakRule(unittest.TestCase):
                 case['provenance'] = 'reused from media/lib/book@host.example'
             rec, _ad = v7_run(case, [tc('epub_inspect'), d3()])
             self.assertIsNotNone(rec.get('error'), kind)
-            self.assertIn(kind, rec['error']['message'], kind)
+            self.assertIn(kind.split('_')[0], rec['error']['message'], kind)       # media-2 names the provenance kind provenance_piece
 
     def test_short_tokens_are_word_bounded_and_skipped_like_check_system(self):
         case = self.guarded_case('x')
@@ -210,7 +210,7 @@ class R6DigestCoversTheCode(unittest.TestCase):
         self.assertEqual(E2.rules_digest(), RULE2_SHA)
         self.assertEqual((E1.RULE_ID, E1.rules_digest()), ('xhtml-body-text-1', D.EXCERPT_RULES_SHA))
         self.assertEqual(E2.RULE_ID, 'xhtml-body-text-2')
-        self.assertEqual(EV31.ET.RULE_ID, 'xhtml-body-text-2')
+        self.assertEqual(EV31.ET.RULE_ID, 'xhtml-body-text-3')        # the second review round selected -3; -2 stays frozen (pin above)
         for k in ('limits', 'block_tags', 'skip_tags', 'heading_tags'):
             self.assertEqual(E2.RULES[k], E1.RULES[k], k)                                            # the other rules are unchanged
 

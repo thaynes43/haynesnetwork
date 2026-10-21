@@ -411,7 +411,7 @@
       "clarifies": "statement kinds of EPUB body text (tools behaviour v3)",
       "id": "C32-4",
       "source": "epub_text.py, evidence_v31.py; prereq.py unchanged",
-      "text": "EPUB body excerpts and observed body headings read by tools behaviour v3 (rule xhtml-body-text-2) are content with the provenance of the read; OPF metadata, the declared table of contents and every navigation region inside a spine document are declarations, never body text or observed headings. An observed heading is an observation, never by itself a verdict on identity. The legacy spine heads (the first six words of all character data of a spine document, head title, styles and navigation included) are labelled legacy_mixed and establish no content identity under format v3.1-format: its audit withholds them from the checker. The v3.1 checker does not read excerpts or headings (free-text identity is judged, section 13)."
+      "text": "EPUB body excerpts and observed body headings read by tools behaviour v3 (rule xhtml-body-text-3) are content with the provenance of the read; OPF metadata, the declared table of contents and every navigation region inside a spine document are declarations, never body text or observed headings. An observed heading is an observation, never by itself a verdict on identity. The legacy spine heads (the first six words of all character data of a spine document, head title, styles and navigation included) are labelled legacy_mixed and establish no content identity under format v3.1-format: its audit withholds them from the checker. The v3.1 checker does not read excerpts or headings (free-text identity is judged, section 13)."
     }
   ],
   "compared_attributes": [

@@ -1,7 +1,11 @@
 {
+  "context_floor": {
+    "note": "v7's system prompt and the output reserve alone are about 7140 estimated tokens of an 8192-token context, before any case evidence; no --tool-output-bytes budget can bring a conversation with a tool result under 8192, so a local 8192-context measurement of v7 is not feasible as built (estimates, not demonstrated truncation)",
+    "v7_system_prompt_plus_output_reserve_tokens_estimate": 7140
+  },
   "context_policy_candidate": "NOT FROZEN (a documented measurement prerequisite): run every case with a uniform --tool-output-bytes 4096; the primary context flag is the model runtime's REPORTED prompt-token count (prompt_at_context_limit, context_full_after_generation), the 3-characters-per-token estimate is a secondary flag; a run whose reported tokens reach the context is kept and reported, never dropped from a denominator",
-  "excerpt_rule": "xhtml-body-text-2",
-  "excerpt_rules_sha256": "f27790846fe9615dcf163fef04a645ae0c73dcba678bc49fbcebba9396fc22c8",
+  "excerpt_rule": "xhtml-body-text-3",
+  "excerpt_rules_sha256": "f7bc75e2330ab888b9d3e48fd37860bd410e41b218ef345547da3d0f64b7b7d1",
   "note": "aggregates only; offline; no model call; format v3.1-format / tools v3 against format v3 / tools v2 on the same cases",
   "prompt": {
     "context_note": "the 8192-token local context of the qwen runs is the binding budget: the system prompt and every message share it",
@@ -23,6 +27,27 @@
         },
         "forbidden_cache_skipped": 0,
         "full_conversation": {
+          "2560": {
+            "default_sequence": {
+              "at_or_over_8192": 9,
+              "max": 8879,
+              "median": 8784,
+              "n": 9
+            },
+            "maximal_sequence": {
+              "at_or_over_8192": 9,
+              "max": 12547,
+              "median": 10445,
+              "n": 9
+            },
+            "page_fetch_sequence": {
+              "at_or_over_8192": 9,
+              "max": 12908,
+              "median": 11279,
+              "n": 9
+            },
+            "requests_max": 7
+          },
           "4096": {
             "default_sequence": {
               "at_or_over_8192": 9,
@@ -34,6 +59,12 @@
               "at_or_over_8192": 9,
               "max": 13361,
               "median": 11213,
+              "n": 9
+            },
+            "page_fetch_sequence": {
+              "at_or_over_8192": 9,
+              "max": 13219,
+              "median": 10702,
               "n": 9
             },
             "requests_max": 7
@@ -51,10 +82,16 @@
               "median": 11025,
               "n": 9
             },
+            "page_fetch_sequence": {
+              "at_or_over_8192": 9,
+              "max": 12315,
+              "median": 10053,
+              "n": 9
+            },
             "requests_max": 7
           }
         },
-        "full_conversation_note": "max over the requests of one conversation of (system prompt + every accumulated message) / 3 characters per token, plus the 640-token output reserve; replies are maximal (200-character why, 400-character reason); default = epub_inspect {} then a decision; maximal = {} then five 1200-code-point excerpts through the spine, then a decision",
+        "full_conversation_note": "max over the requests of one conversation of (system prompt + every accumulated message) / 3 characters per token, plus the 640-token output reserve; replies are maximal (200-character why, 400-character reason); default = epub_inspect {} then a decision; maximal = {} then five 1200-code-point excerpts through the spine, then a decision; page_fetch = {}, every page of it fetched by cursor, one maximal excerpt and every page of it, then a decision (at most 7 requests)",
         "measured": 9,
         "not_ok_default_call": {
           "error": 8
@@ -289,6 +326,27 @@
         },
         "forbidden_cache_skipped": 0,
         "full_conversation": {
+          "2560": {
+            "default_sequence": {
+              "at_or_over_8192": 9,
+              "max": 8877,
+              "median": 8784,
+              "n": 9
+            },
+            "maximal_sequence": {
+              "at_or_over_8192": 9,
+              "max": 12562,
+              "median": 10410,
+              "n": 9
+            },
+            "page_fetch_sequence": {
+              "at_or_over_8192": 9,
+              "max": 12935,
+              "median": 11297,
+              "n": 9
+            },
+            "requests_max": 7
+          },
           "4096": {
             "default_sequence": {
               "at_or_over_8192": 9,
@@ -300,6 +358,12 @@
               "at_or_over_8192": 9,
               "max": 13385,
               "median": 11237,
+              "n": 9
+            },
+            "page_fetch_sequence": {
+              "at_or_over_8192": 9,
+              "max": 13243,
+              "median": 10727,
               "n": 9
             },
             "requests_max": 7
@@ -317,10 +381,16 @@
               "median": 11049,
               "n": 9
             },
+            "page_fetch_sequence": {
+              "at_or_over_8192": 9,
+              "max": 12339,
+              "median": 10077,
+              "n": 9
+            },
             "requests_max": 7
           }
         },
-        "full_conversation_note": "max over the requests of one conversation of (system prompt + every accumulated message) / 3 characters per token, plus the 640-token output reserve; replies are maximal (200-character why, 400-character reason); default = epub_inspect {} then a decision; maximal = {} then five 1200-code-point excerpts through the spine, then a decision",
+        "full_conversation_note": "max over the requests of one conversation of (system prompt + every accumulated message) / 3 characters per token, plus the 640-token output reserve; replies are maximal (200-character why, 400-character reason); default = epub_inspect {} then a decision; maximal = {} then five 1200-code-point excerpts through the spine, then a decision; page_fetch = {}, every page of it fetched by cursor, one maximal excerpt and every page of it, then a decision (at most 7 requests)",
         "measured": 9,
         "not_ok_default_call": {
           "error": 8

@@ -21,7 +21,7 @@ REPO = COMPONENT.parents[1]
 sys.path.insert(0, str(COMPONENT / 'src'))
 
 from media_repair_harness import adapters as A           # noqa: E402
-from media_repair_harness import epub_text_v2 as ET       # noqa: E402  (tools behaviour v3 reads with xhtml-body-text-2)
+from media_repair_harness import epub_text_v3 as ET       # noqa: E402  (tools behaviour v3 reads with xhtml-body-text-3)
 from media_repair_harness import evidence_v2 as EV2       # noqa: E402
 from media_repair_harness import evidence_v3 as EV3       # noqa: E402
 from media_repair_harness import evidence_v31 as EV31     # noqa: E402
@@ -80,6 +80,21 @@ class Capture(A.ScriptedAdapter):
         return super().complete(system, messages, schema)
 
 
+class FetchAllPages(Capture):
+    """A scripted model that fetches every page of every paginated result (copying page.next) before its next planned reply: a page-fetch trajectory."""
+
+    def complete(self, system, messages, schema=None):
+        last = messages[-1]['content'].split('\n')[0] if messages else ''
+        try:
+            body = json.loads(last)
+        except ValueError:
+            body = {}
+        page = ((body.get('output') or body.get('evidence') or {}) if isinstance(body, dict) else {}).get('page') or {}
+        if isinstance(page, dict) and page.get('next') and len(self.sent) < 7:
+            self.replies.insert(0, json.dumps({'type': 'tool_call', 'tool': 'epub_inspect', 'why': MAX_WHY, 'args': {'cursor': page['next']}}))
+        return super().complete(system, messages, schema)
+
+
 def excerpt_sequence(path, d, calls):
     """The maximal excerpt sequence a model could request after the default call: 1200 code points at a time through the spine, `calls` calls."""
     out = []
@@ -93,12 +108,12 @@ def excerpt_sequence(path, d, calls):
     return out
 
 
-def conversation(case, sdir, budget, args_seq):
+def conversation(case, sdir, budget, args_seq, adapter=None):
     """Run the real runner with scripted maximal replies (no model): -> (max over requests of the 3-characters-per-token estimate of the WHOLE request,
     system prompt and every accumulated message, plus the output reserve; the number of requests; the leak-guard error or None)."""
     replies = [json.dumps({'type': 'tool_call', 'tool': 'epub_inspect', 'why': MAX_WHY, 'args': a}) for a in args_seq]
     replies.append(json.dumps({'type': 'decision', 'class': 'insufficient_evidence', 'action': 'escalate', 'reason': MAX_REASON, 'confidence': 0.5, 'evidence_refs': ['e1']}))
-    ad = Capture('size-model', replies)
+    ad = (adapter or Capture)('size-model', replies)
     rec = R.run_case(case, 'sha', ad, sdir, tempfile.mkdtemp(prefix='mrh-w22-size-'), run_id='size', prompt_version='v7', evidence_format='v3.1-format',
                      guards='v3', replay='auto', which=lambda _n: None, tool_output_bytes=budget)
     err = (rec.get('error') or {}).get('message')
@@ -118,7 +133,10 @@ def refusal_scan(case, sdir):
     texts += [t for _m, t, _h, _n in ET.read_items(fixture.path, d)]
     visible = json.dumps(P.case_view(case, [])['context'], ensure_ascii=False)
     legacy = sorted({k for t in texts for k in leakguard.find_leaks(case, t, ctx.forbidden_extra)})
-    media = sorted({k for k, rx in leakguard.media_tokens(case, ctx.forbidden_extra) if not rx.search(visible) for t in texts if rx.search(t)})
+    sources = T.epub_v3_sources(json.loads(res['raw_output']), 'scan') + [{'source': 'scan', 'field': 'item', 'group': 'item[%d]' % i, 'text': t}
+                                                                           for i, (_m, t, _h, _n) in enumerate(ET.read_items(fixture.path, d)) if t]
+    toks = [(k, rx) for k, rx, prose in leakguard.media_tokens_2(case, ctx.forbidden_extra) if not (prose and rx.search(visible))]
+    media = sorted({k for k, rx in toks for t in leakguard.reassembled(sources) if rx.search(t)})
     return legacy, media
 
 
@@ -188,7 +206,7 @@ def main(argv=None):
                 _r4, w4, p4, _l4 = call(ctx3, s3, {'spine': 0, 'offset': 0, 'length': ET.MAX_EXCERPT_CHARS}, 't2')
                 sizes[b]['v3_max_excerpt_wire_bytes'].append(w4)
                 sizes[b]['v3_max_excerpt_pages'].append(p4)
-        conv = {str(b): {'default': [], 'maximal': [], 'requests_max': 0} for b in (8192, 4096)}
+        conv = {str(b): {'default': [], 'maximal': [], 'pages': [], 'requests_max': 0} for b in (8192, 4096, 2560)}
         refusals = {'scanned': 0, 'legacy_rule_cases': 0, 'media_rule_cases': 0, 'legacy_kinds': {}, 'media_kinds': {}, 'run_refusals': 0}
         for c in epub_cases:
             if FORBIDDEN_CACHE in str((c.get('fixture') or {}).get('locator') or ''):
@@ -203,19 +221,21 @@ def main(argv=None):
                     refusals[key + '_kinds'][k] = refusals[key + '_kinds'].get(k, 0) + 1
             fixture = T.Fixture.from_case(c, sdir)
             seq = excerpt_sequence(fixture.path, T._epub_module().inspect(fixture.path), 5)
-            for b in (8192, 4096):
-                for seq_name, args_seq in (('default', [{}]), ('maximal', [{}] + seq)):
-                    est, n, err = conversation(c, sdir, b, args_seq)
+            for b in (8192, 4096, 2560):
+                for seq_name, args_seq, adapter in (('default', [{}], None), ('maximal', [{}] + seq, None), ('pages', [{}, seq[0]] if seq else [{}], FetchAllPages)):
+                    est, n, err = conversation(c, sdir, b, args_seq, adapter)
                     refusals['run_refusals'] += bool(err)
                     if est is not None:
                         conv[str(b)][seq_name].append(est)
                     conv[str(b)]['requests_max'] = max(conv[str(b)]['requests_max'], n)
         ep['full_conversation'] = {b: {'default_sequence': dict(stats(v['default']), at_or_over_8192=sum(1 for x in v['default'] if x >= 8192)),
                                        'maximal_sequence': dict(stats(v['maximal']), at_or_over_8192=sum(1 for x in v['maximal'] if x >= 8192)),
+                                       'page_fetch_sequence': dict(stats(v['pages']), at_or_over_8192=sum(1 for x in v['pages'] if x >= 8192)),
                                        'requests_max': v['requests_max']} for b, v in conv.items()}
         ep['full_conversation_note'] = ('max over the requests of one conversation of (system prompt + every accumulated message) / 3 characters per token, plus the '
                                         '%d-token output reserve; replies are maximal (200-character why, 400-character reason); default = epub_inspect {} then '
-                                        'a decision; maximal = {} then five 1200-code-point excerpts through the spine, then a decision' % OUTPUT_RESERVE_TOKENS)
+                                        'a decision; maximal = {} then five 1200-code-point excerpts through the spine, then a decision; page_fetch = {}, every page of it fetched by cursor, '
+                                        'one maximal excerpt and every page of it, then a decision (at most 7 requests)' % OUTPUT_RESERVE_TOKENS)
         ep['refusals'] = refusals
         ep['measured'] = len(raw_v3)
         ep['raw_tool_output_bytes'] = {'tools_v2': stats(raw_v2), 'tools_v3': stats(raw_v3)}
@@ -227,6 +247,11 @@ def main(argv=None):
         out['epub'] = ep
         report['suites'][name] = out
     v6, v7 = P.get_prompt('v6')['text'], P.get_prompt('v7')['text']
+    floor = len(P.get_prompt('v7')['text']) // 3 + OUTPUT_RESERVE_TOKENS
+    report['context_floor'] = {'v7_system_prompt_plus_output_reserve_tokens_estimate': floor,
+                               'note': ('v7\'s system prompt and the output reserve alone are about %d estimated tokens of an 8192-token context, before any case '
+                                        'evidence; no --tool-output-bytes budget can bring a conversation with a tool result under 8192, so a local 8192-context '
+                                        'measurement of v7 is not feasible as built (estimates, not demonstrated truncation)' % floor)}
     report['context_policy_candidate'] = ('NOT FROZEN (a documented measurement prerequisite): run every case with a uniform --tool-output-bytes 4096; the '
                                           'primary context flag is the model runtime\'s REPORTED prompt-token count (prompt_at_context_limit, '
                                           'context_full_after_generation), the 3-characters-per-token estimate is a secondary flag; a run whose reported '

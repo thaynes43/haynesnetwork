@@ -27,7 +27,7 @@ import copy
 import json
 import re
 
-from . import epub_text_v2 as ET        # extraction rule xhtml-body-text-2 (xhtml-body-text-1 stays frozen in epub_text.py)
+from . import epub_text_v3 as ET        # extraction rule xhtml-body-text-3 (-1 and -2 stay frozen in epub_text.py / epub_text_v2.py)
 from . import evidence_v2 as EV2
 from . import evidence_v3 as EV3
 from . import protocol as P
@@ -66,6 +66,25 @@ def is_excerpt(obs):
 def internal(obs):
     """The observation the typed layer reads: an explicit excerpt becomes a reading (`epub_text`), everything else is unchanged."""
     return dict(obs, tool=EXCERPT_TOOL) if is_excerpt(obs) else obs
+
+
+def blank_media(obs):
+    """The harness-only shadow of an epub_inspect observation: every literal media string blanked at its known field (tools.epub_v3_blank); others as is."""
+    from . import tools as T
+    if obs.get('tool') not in ('epub_inspect', EXCERPT_TOOL):
+        return obs
+    out = obs.get('output')
+    try:
+        data = json.loads(out) if isinstance(out, str) else out
+    except ValueError:
+        return obs
+    if not isinstance(data, dict):
+        return obs
+    return dict(obs, output=json.dumps(T.epub_v3_blank(data), ensure_ascii=False))
+
+
+def carries_media(observations):
+    return any(o.get('tool') in ('epub_inspect', EXCERPT_TOOL) for o in observations)
 
 
 def display_tool(obs):
@@ -142,7 +161,7 @@ def item_facts_v31(obs, d):
 
 
 # ---------------------------------------------------------------------------------------------------------------- the first message
-def render(observations, context=None, media_type=None, tools_offered=(), capabilities=(), alias='case-00000000', budget=EV2.WIRE_BYTES, frame=None):
+def render(observations, context=None, media_type=None, tools_offered=(), capabilities=(), alias='case-00000000', budget=EV2.WIRE_BYTES, frame=None, shadow=True):
     """`facts.render` (format v3) with the v3.1 facts, `kinds` and `report`; same units, same pagination, same open items and links."""
     lim = EV2.Limits(budget)
     inner = [internal(o) for o in observations]
@@ -198,12 +217,25 @@ def render(observations, context=None, media_type=None, tools_offered=(), capabi
                          retrieval=None if tools_offered else 'unavailable: no tool is offered, so the other pages cannot be fetched')
     reference, _placed = EV2.assemble(dict(header, page=None), units)
     reference.pop('page', None)
-    return {'pages': [b for b, _c in pages], 'cursors': [c for _b, c in pages], 'reference': reference, 'open': items,
-            'first_bytes': EV2.nbytes(env_first(pages[0][0])), 'page_bytes': [EV2.nbytes(env_first(pages[0][0]))] + [EV2.nbytes(env_rest(b)) for b, _c in pages[1:]]}
+    out = {'pages': [b for b, _c in pages], 'cursors': [c for _b, c in pages], 'reference': reference, 'open': items,
+           'first_bytes': EV2.nbytes(env_first(pages[0][0])), 'page_bytes': [EV2.nbytes(env_first(pages[0][0]))] + [EV2.nbytes(env_rest(b)) for b, _c in pages[1:]]}
+    if shadow:
+        # leakguard-media-2: the whole first message (every page, one body) rendered from the blanked observations: all harness-written text, no media text
+        if carries_media(observations):
+            blank = render([blank_media(o) for o in observations], context, media_type, tools_offered, capabilities, alias, budget, frame, shadow=False)['reference']
+            out['shadow'] = env_first(blank)
+        else:
+            out['shadow'] = None        # no media text: the legacy check reads the delivered message itself, as in every other format
+    return out
 
 
 class Session(EV3.Session):
     """Per-case state for format v3.1-format.  Everything the dev-c6 session does, with the v3.1 analysis and facts."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.page_shadow = {}     # cursor -> the harness-only shadow of the result that page belongs to
+        self.last_shadow = None
 
     def analysis(self):
         return analyze(self.shown, self.context, self.media_type)
@@ -227,6 +259,10 @@ class Session(EV3.Session):
         self.shown = list(evidence_obs)
         frame = frame or {}
         r = render(self.shown, self.context, self.media_type, self.tools, self.capabilities, alias=self.alias, budget=self.budget, frame=frame)
+        self.shadows = {'evidence': r['shadow']}     # harness-only text of each delivered result, for the leak guard (leakguard-media-2)
+        self.last_shadow = r['shadow']
+        for cur in r['cursors'][1:]:
+            self.page_shadow[cur] = r['shadow']
         for it in r['open']:
             self.open_ids.setdefault(self._key(it), it['id'])
         self.shown_open = {it['id']: EV2.canon(it) for it in r['open']}
@@ -238,6 +274,36 @@ class Session(EV3.Session):
             self.page_ids[cur] = [o['id'] for o in evidence_obs]
         self.log.append({'id': 'evidence', 'kind': 'initial', 'pages': len(r['pages']), 'bytes': list(r['page_bytes']), 'open_total': len(r['open'])})
         return r['pages'][0], len(r['pages'])
+
+    def _shadow(self, obs, header, env):
+        """The harness-only shadow of one EPUB result (leakguard-media-2): the same header and sections, its facts from the blanked observation, every open
+        item over the blanked observations, and the summaries, in ONE body (all pages).  It reads no state it changes."""
+        blank = [blank_media(o) for o in self.shown]
+        an = analyze(blank, self.context, self.media_type)
+        d = an['items'][obs['id']]
+        items = LK.attach_links(LK.open_items(an, self.media_type), self.capabilities, [internal(o) for o in blank], self.tools, self.media_type)
+        core = EV2.item_core(d)
+        units, details = [], {}
+        for sec in ('conflicts', 'findings'):
+            for v in core.get(sec) or []:
+                units += EV2.explode((sec,), v, 'append', self.lim)
+        for k, v in (core.get('scope') or {}).items():
+            units += EV2.explode(('scope', k), v, 'set', self.lim)
+        facts, presence, kinds, report = item_facts_v31(internal(blank[-1]), d)
+        if facts:
+            units += EV2.facts_units(('facts',), facts, details, obs['id'], self.lim)
+        for key, val in (('presence', presence), ('kinds', kinds), ('report', report)):
+            if val:
+                units.append(((key,), 'set', val))
+        for it in items:
+            units.append((('open',), 'append', EV2.externalize(copy.deepcopy(it), 'open', details, self.lim)))
+        for k, v in an['coverage'].items():
+            units += EV2.explode(('coverage', k), v, 'set', self.lim)
+        if an['client'] is not None:
+            for k, v in an['client'].items():
+                units += EV2.explode(('client_comparison', k), v, 'set', self.lim)
+        units += EV2.detail_units(details, self.lim)
+        return env(EV2.assemble(dict(header, alerts=EV2.alerts_for([d])), units)[0])
 
     def result(self, obs, call_id, remaining, suffix=''):
         """-> (wire text of the first page, number of pages).  Format v3's tool result with the v3.1 facts, `kinds` and `report`."""
@@ -292,9 +358,11 @@ class Session(EV3.Session):
         def env(body):
             return EV2.tool_envelope(call_id, shown_tool, status, truncated, body, remaining, suffix)
         pages = EV2.paginate(header, units, env, self._worst_fetch_envelope(), self.alias, call_id, self.budget)
+        self.last_shadow = self._shadow(obs, header, env) if carries_media([obs]) else None      # None: the delivered text is what the legacy check reads
         for body, cur in pages[1:]:
             self.pages[cur] = (body, shown_tool)
             self.page_ids[cur] = [obs['id']]
+            self.page_shadow[cur] = self.last_shadow
         self.log.append({'id': call_id, 'kind': 'result', 'pages': len(pages), 'bytes': [EV2.nbytes(env(pages[0][0]))] + [EV2.nbytes(self._worst_fetch_envelope()(b)) for b, _ in pages[1:]],
                          'open_total': len(items)})
         return env(pages[0][0]), len(pages)

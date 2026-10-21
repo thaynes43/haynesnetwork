@@ -811,9 +811,10 @@ def tool_epub_inspect(args, ctx):
 
 
 def _epub_text():
-    """Tools behaviour v3's extraction rule: `xhtml-body-text-2` (epub_text_v2.py).  `xhtml-body-text-1` (epub_text.py) stays frozen and is not selected."""
-    from . import epub_text_v2
-    return epub_text_v2
+    """Tools behaviour v3's extraction rule: `xhtml-body-text-3` (epub_text_v3.py).  `xhtml-body-text-1` (epub_text.py) and `-2` (epub_text_v2.py) stay frozen
+    and pinned and are not selected."""
+    from . import epub_text_v3
+    return epub_text_v3
 
 
 # Tools behaviour v3: text READ FROM THE MEDIA is never rewritten (AUDIT-ASTRA-27 item 1).  The legacy redaction runs over the whole serialised result and can
@@ -848,6 +849,48 @@ def epub_v3_literals(output):
     found = []
     _epub_v3_walk(output, lambda v, lit: found.append(v) if lit and v else None)
     return found
+
+
+def _unwrap_recorded(output):
+    """(the epub result inside a recorded wrapper {observation, recorded_as}, a function that puts a replacement back) for a recorded or live output."""
+    if isinstance(output, dict) and isinstance(output.get('observation'), dict) and 'recorded_as' in output:
+        return output['observation'], (lambda inner: dict(output, observation=inner))
+    return output, (lambda inner: inner)
+
+
+def epub_v3_blank(output):
+    """The same output with every literal media string replaced by '' (the harness-only shadow the legacy leak check reads)."""
+    inner, put = _unwrap_recorded(output)
+    return put(_epub_v3_walk(inner, lambda v, lit: '' if lit else v)) if isinstance(inner, dict) else output
+
+
+def epub_v3_sources(output, source_id):
+    """leakguard-media-2 sources: every literal media string of an epub_inspect output with where it came from: [{source, field, text, group, range?}].
+    `field` is its path; `group` is the path without the last list index (adjoining elements of one list); an excerpt carries `range` (spine, member, offset,
+    end) so delivered excerpts can be reassembled into the item text they came from."""
+    inner, _put = _unwrap_recorded(output)
+    out = []
+
+    def walk(v, path, literal=False, section=None, top=True, parent=None):
+        if isinstance(v, str):
+            if literal and v:
+                rec = {'source': source_id, 'field': path, 'text': v, 'group': path.rsplit('[', 1)[0] if path.endswith(']') else path}
+                if isinstance(parent, dict) and path.endswith('.text') and isinstance(parent.get('offset'), int) and isinstance(parent.get('end'), int):
+                    rec['range'] = {'spine': parent.get('spine'), 'member': parent.get('member'), 'offset': parent['offset'], 'end': parent['end']}
+                out.append(rec)
+            return
+        if isinstance(v, list):
+            for i, x in enumerate(v):
+                walk(x, '%s[%d]' % (path, i), literal, section, False, v)
+            return
+        if isinstance(v, dict):
+            for k, x in v.items():
+                sec = k if (top and k in EPUB_LITERAL_SECTIONS) else section
+                lit = literal or (top and k in EPUB_LITERAL_TOP) or (sec is not None and k == 'text')
+                walk(x, (path + '.' if path else '') + k, lit, sec, False, v)
+    if isinstance(inner, dict):
+        walk(inner, '')
+    return out
 
 
 def _entry_count(path):

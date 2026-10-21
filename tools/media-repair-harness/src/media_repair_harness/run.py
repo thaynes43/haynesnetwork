@@ -117,7 +117,7 @@ def resolve_evidence(case, suite_dir, redactor=None):
     return shown
 
 
-def resolve_evidence_raw(case, suite_dir, redactor=None):
+def resolve_evidence_raw(case, suite_dir, redactor=None, literal_epub=False):
     """Pre-collected evidence for evidence format v2: the same resolution (refs verified against their sha256, fixture names redacted) WITHOUT the
     legacy 8 KiB cut, because the typed layer cuts nothing by itself (it paginates).  Output is always text."""
     shown = []
@@ -138,7 +138,18 @@ def resolve_evidence_raw(case, suite_dir, redactor=None):
         elif not isinstance(out, str):
             out = json.dumps(out, sort_keys=True, ensure_ascii=False)
         status = status if status in T.STATUSES else 'ok'
-        if redactor:
+        parsed = None
+        if literal_epub and e.get('tool') == 'epub_inspect':
+            try:
+                parsed = json.loads(out)
+            except ValueError:
+                parsed = None
+        if redactor and isinstance(parsed, dict):
+            # format v3.1-format (AUDIT-ASTRA-28 item 1): recorded EPUB evidence gets the tools-v3 handling: locators aliased, text read from the media kept as
+            # recorded (never rewritten into the display name); the leak guard (leakguard-media-2) decides whether it may be sent.  Provenance stays recorded.
+            inner, put = T._unwrap_recorded(parsed)
+            out = json.dumps(put(T.epub_v3_redact(inner, redactor)), sort_keys=True, ensure_ascii=False)
+        elif redactor:
             out = redactor(out)
         shown.append({'id': e['id'], 'tool': e.get('tool'), 'args': e.get('args', {}), 'status': status, 'output': out, 'truncated': False})
     return shown
@@ -259,7 +270,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     session = None
     wire_budget = min(EV2.WIRE_BYTES, tool_output_bytes) if tool_output_bytes else EV2.WIRE_BYTES   # --tool-output-bytes is the page budget under format v2
     if v2fmt:
-        evidence = resolve_evidence_raw(case, suite_dir, ctx.redact)
+        evidence = resolve_evidence_raw(case, suite_dir, ctx.redact, literal_epub=v31fmt)
         view = P.case_view(case, [], case_alias=model_alias)
         caps = T.capabilities(ctx)
         if v3fmt:
@@ -283,8 +294,18 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     sent_schema = (schema if schema is not None else getattr(adapter, 'schema', None)) if getattr(adapter, 'name', None) == 'ollama' else None
     sent_schema_sha = sha256_bytes(canonical(sent_schema).encode()) if sent_schema is not None else None
     messages = [{'role': 'user', 'content': (json.dumps(view, ensure_ascii=False, separators=(',', ':')) if v2fmt else json.dumps(view, ensure_ascii=False, sort_keys=True))}]
-    # format v3.1-format: the leak guard checks text read from the media with its own rule (leakguard.MEDIA_RULE); every other configuration keeps the legacy check
-    media_texts, visible_context = [], json.dumps(view.get('context') or {}, ensure_ascii=False)
+    # format v3.1-format: the leak guard is leakguard-media-2: the legacy check on each message's harness-only shadow, the media check on the media strings delivered
+    # so far (with their fields and ranges); every other configuration keeps the legacy check on the delivered messages
+    media_sources, guard_alt, visible_context = [], {}, json.dumps(view.get('context') or {}, ensure_ascii=False)
+    if v31fmt:
+        for e in evidence:
+            if e.get('tool') == 'epub_inspect':
+                try:
+                    media_sources += T.epub_v3_sources(json.loads(e['output']), e['id'])
+                except ValueError:
+                    pass
+        if session.last_shadow is not None:
+            guard_alt[0] = session.last_shadow
     ev_ids = {e['id'] for e in evidence}
     turns, tool_calls = [], []
     repairs, forced, forced_reason, error = [], False, None, None
@@ -307,7 +328,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                 break
             n_calls += 1
             if v31fmt:
-                leakguard.check_messages_media(case, messages, media_texts, visible_context, ctx.forbidden_extra)   # raises LeakError, as below
+                guarded = [dict(m, content=guard_alt[i]) if i in guard_alt else m for i, m in enumerate(messages)]
+                leakguard.check_messages_media2(case, guarded, media_sources, visible_context, ctx.forbidden_extra)   # raises LeakError, as below
             else:
                 leakguard.check_messages(case, messages, ctx.forbidden_extra)  # raises LeakError: harness error, the model is not called
             try:
@@ -363,6 +385,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                     page_call['pages_of'] = origins
                 tool_calls.append(page_call)
                 messages += [{'role': 'assistant', 'content': comp.text}, {'role': 'user', 'content': text}]
+                if v31fmt and session.page_shadow.get(obj['args']['cursor']) is not None:
+                    guard_alt[len(messages) - 1] = session.page_shadow[obj['args']['cursor']]     # a page of a media result: its harness-only shadow
                 continue
             res = T.call_tool(ctx, obj['tool'], obj['args'])
             if v31fmt and obj['tool'] == 'epub_inspect':
@@ -371,7 +395,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                 except ValueError:
                     parsed = None
                 if isinstance(parsed, dict):
-                    media_texts.extend(T.epub_v3_literals(parsed))
+                    media_sources += T.epub_v3_sources(parsed, call_id)
             shown_tool = obj['tool'] if obj['tool'] in P.TOOLS else 'unknown_tool'  # model-chosen text is never echoed back
             tool_calls.append({'id': call_id, 'turn': turn['n'], 'tool': str(obj['tool'])[:64], 'args': obj['args'], 'why': obj.get('why'), **res})
             if res.get('protocol_violation'):
@@ -383,6 +407,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                                           res.get('collector_truncated'))
                 text, _np = session.result(o2, call_id, remaining, '' if remaining else '\n' + P.BUDGET_MESSAGE)
                 messages += [{'role': 'assistant', 'content': comp.text}, {'role': 'user', 'content': text}]
+                if v31fmt and session.last_shadow is not None:
+                    guard_alt[len(messages) - 1] = session.last_shadow
             else:
                 messages += [{'role': 'assistant', 'content': comp.text},
                              {'role': 'user', 'content': result_message(call_id, shown_tool, res, remaining) +
