@@ -25,7 +25,6 @@ from . import rubric_v33 as RB33
 MET, UNMET, UNKNOWN = PQ.MET, PQ.UNMET, PQ.UNKNOWN
 CHECKER_VERSION = 'prereq-v3.3'
 RUBRIC_VERSION = RB33.RUBRIC_V33_VERSION
-REPORT_CLASSES = tuple(k for k, _rx in RB.REPORT_METHOD_VOCABULARY)
 
 
 def report_typing(method):
