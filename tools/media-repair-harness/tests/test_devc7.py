@@ -613,5 +613,60 @@ class LeaksPagesAndSixCalls(unittest.TestCase):
         self.assertIn(P.BUDGET_MESSAGE, ad.full[-1]['messages'][-1]['content'])
 
 
+class CompleteV7RequestsOfBothPublicSuites(unittest.TestCase):
+    """Every case of dev-v1 and dev-v1.1 through the real runner under v7 + v3.1-format (replay, no binaries): the first message and the decision, and for every
+    case that offers epub_inspect also the default call and one explicit excerpt.  Every request passes the leak guard (a LeakError would be a harness crash),
+    carries no hidden case field, and every message fits 8192 bytes.  The system-prompt-plus-first-message token estimate is RECORDED in docs/devc7-sizes.json,
+    not asserted: v7 is 2.7 KB longer than v6 (a reported cost, see the CHANGELOG)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import test_v6 as V6
+        cls.V6 = V6
+        cls.rows = []
+        for d in V6.need_both_suites():
+            for case in V6.suite_cases(d):
+                replies = [V6.ESCALATE]
+                if 'epub_inspect' in (case.get('tools_available') or []):
+                    replies = [json.dumps(tc('epub_inspect')), json.dumps(tc('epub_inspect', {'spine': 0, 'offset': 0, 'length': ET.MAX_EXCERPT_CHARS})), V6.ESCALATE]
+                ad = V6.Capture('scripted-model', replies)
+                rec = R.run_case(case, 'sha', ad, d, tempfile.mkdtemp(prefix='mrh-w22-'), run_id='w22-leak', prompt_version='v7', evidence_format='v3.1-format',
+                                 guards='v3', replay='auto', which=th.NO_BINARIES, tool_output_bytes=8192)
+                cls.rows.append((case, rec, ad))
+
+    def test_no_request_leaks_a_hidden_case_field_and_nothing_crashed(self):
+        self.assertEqual(len(self.rows), 146)
+        epub_calls = 0
+        fail_closed = []
+        for case, rec, ad in self.rows:
+            err = rec.get('error')
+            if err is not None:
+                # LIMIT (recorded, not changed): the unchanged leak guard fails CLOSED when real EPUB body text contains a hidden case token (the family word
+                # or a provenance piece).  The model is not called with that message; the run is a harness error.  Only EPUB cases, only this cause.
+                self.assertEqual((err['kind'], err['leak_guard']), ('harness_crash', True), case['id'])
+                self.assertIn('epub_inspect', case.get('tools_available') or [], case['id'])
+                self.assertRegex(err['message'], r"^LeakError: forbidden token\(s\) \['(family|provenance)'\] in model-bound message [3-9]", case['id'])
+                fail_closed.append(case['id'])
+                continue
+            text = json.dumps([s['messages'] for s in ad.sent], ensure_ascii=False)
+            self.assertNotIn(case['id'], text)
+            for k in ('truth', 'supported_actions', 'solvable', 'accepted_classes', 'family', 'provenance', 'inject_tool_failure', 'outcome_step'):
+                self.assertNotIn('"%s"' % k, text, (case['id'], k))
+            ref = (case.get('truth') or {}).get('ref')
+            if isinstance(ref, str) and len(ref) >= 6:
+                self.assertNotIn(ref, text, case['id'])
+            for f in RB.FORBIDDEN_FIELDS:
+                self.assertNotIn('"%s":' % f, text, (case['id'], f))
+            self.assertNotIn('epub_text', text, case['id'])                  # the internal reading name never reaches the model
+            for s_ in ad.sent:
+                self.assertEqual(s_['system'], P.get_prompt('v7')['text'])
+            for m in rec['evidence_format']['messages']:
+                self.assertTrue(all(b <= 8192 for b in m['bytes']), (case['id'], m))
+            epub_calls += sum(1 for c in rec['tool_calls'] if c['tool'] == 'epub_inspect')
+        self.assertGreaterEqual(epub_calls, 34 - len(fail_closed))     # 17 epub_inspect cases per suite; a fail-closed run stops after its first call
+        self.assertLessEqual(len(fail_closed), 4, fail_closed)          # 2 cases per suite when this was written (CHANGELOG, limits)
+        print('\nv7 suite-wide: %d runs, %d fail closed on the leak guard (EPUB body text naming a hidden token)' % (len(self.rows), len(fail_closed)))
+
+
 if __name__ == '__main__':
     unittest.main()

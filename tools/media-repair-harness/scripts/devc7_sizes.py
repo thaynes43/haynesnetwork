@@ -77,7 +77,8 @@ def main(argv=None):
         for budget in BUDGETS:
             row = {}
             for fmt in ('v3', 'v3.1-format'):
-                firsts, pages, errors = [], [], 0
+                firsts, pages, errors, ests = [], [], 0, []
+                system = P.get_prompt('v7' if fmt == 'v3.1-format' else 'v6')['text']
                 for c in cases:
                     if FORBIDDEN_CACHE in str((c.get('fixture') or {}).get('locator') or ''):
                         continue
@@ -88,8 +89,9 @@ def main(argv=None):
                         continue
                     firsts.append(first)
                     pages.append(npages)
+                    ests.append(int((len(system) + first) / 3.0))      # the Ollama adapter's pessimistic estimate (3 characters per token; bytes as an upper bound)
                 row[fmt] = {'first_page_bytes': stats(firsts), 'multi_page_first_messages': sum(1 for p in pages if p > 1), 'max_pages': max(pages) if pages else None,
-                            'page_budget_errors': errors}
+                            'page_budget_errors': errors, 'system_plus_first_tokens_estimate': stats(ests), 'estimate_at_or_over_8192_tokens': sum(1 for e in ests if e >= 8192)}
             out['first_message'][str(budget)] = row
         epub_cases = [c for c in cases if 'epub_inspect' in (c.get('tools_available') or [])]
         ep = {'offering_epub_inspect': len(epub_cases), 'unavailable_here': 0, 'forbidden_cache_skipped': 0}
