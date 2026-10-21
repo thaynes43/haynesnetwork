@@ -28,9 +28,11 @@ def records(run_dir):
 class FakeOllama:
     """Fake of ollama_transport.api with a configurable /api/ps after the load."""
 
-    def __init__(self, ps_after=None, ps_unreadable=False, installed=('qwen3.8:27b',)):
+    def __init__(self, ps_after=None, ps_unreadable=False, installed=('qwen3.8:27b',), chat_loads=None, ps_after_reload=None):
         self.calls, self.resident, self.installed = [], [], installed
         self.ps_after, self.ps_unreadable = ps_after, ps_unreadable
+        self.chat_loads = list(chat_loads or [])      # load_duration (ns) reported by each /api/chat in turn; 'omit' leaves it out; default 2 ms
+        self.ps_after_reload, self.reloaded = ps_after_reload, False
 
     def __call__(self, path, payload=None, timeout=60, **_kw):
         self.calls.append((path, payload))
@@ -43,6 +45,8 @@ class FakeOllama:
                 return {'models': []}, {'exit_code': 0}
             if self.ps_unreadable:
                 return None, {'exit_code': 'local_timeout'}
+            if self.reloaded and self.ps_after_reload is not None:
+                return {'models': self.ps_after_reload}, {'exit_code': 0}
             return {'models': self.ps_after if self.ps_after is not None else [{'name': m, 'size': SIZE, 'size_vram': SIZE} for m in self.resident]}, {'exit_code': 0}
         if path == '/api/generate':
             if payload.get('keep_alive') == 0:
@@ -52,8 +56,13 @@ class FakeOllama:
             return {'done': True, 'load_duration': 5_000_000_000}, {'exit_code': 0}
         if path == '/api/chat':
             n = len(json.dumps(payload['messages']))
-            return {'model': payload['model'], 'message': {'content': json.dumps(ESCALATE)}, 'prompt_eval_count': n // 4, 'eval_count': 30,
-                    'done_reason': 'stop'}, {'exit_code': 0}
+            load = self.chat_loads.pop(0) if self.chat_loads else 2_000_000
+            if load != 'omit' and load > 1e9:
+                self.reloaded = True
+            resp = {'model': payload['model'], 'message': {'content': json.dumps(ESCALATE)}, 'prompt_eval_count': n // 4, 'eval_count': 30, 'done_reason': 'stop'}
+            if load != 'omit':
+                resp['load_duration'] = load
+            return resp, {'exit_code': 0}
         raise AssertionError(path)
 
 
@@ -199,6 +208,18 @@ class ContextPolicy(unittest.TestCase):
         self.assertEqual(ad.config()['options']['num_ctx'], 16384)
 
 
+    def test_a_repair_turn_is_caught_by_the_reported_count_flags(self):
+        """Amendment 1, Opus P3 (text only; a supporting test, not a regression): the sizing has no repair turn.  A repair adds the invalid reply (up to
+        640 tokens) and a repair message; if that pushes a prompt over the input budget the turn flag fires, and a repair turn is never a false
+        did-not-grow."""
+        o = self.opts()
+        t1 = A.context_check(o, {'prompt_eval_count': 15200, 'eval_count': 640, 'done_reason': 'length'}, 40000, 'ctx16k-v1')
+        t2 = A.context_check(o, {'prompt_eval_count': 15900, 'eval_count': 80, 'done_reason': 'stop'}, 42000, 'ctx16k-v1')
+        self.assertEqual(t2['flags'], ['prompt_reaches_input_budget'])
+        summ = A.context_summary([t1, t2])
+        self.assertEqual(summ['prompt_did_not_grow_turns'], [])
+        self.assertIn('prompt_reaches_input_budget', summ['flags'])
+
 class GpuFitCheck(unittest.TestCase):
 
     def make(self, fake, **kw):
@@ -242,7 +263,7 @@ class GpuFitCheck(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.make(FakeOllama(), do_warmup=False)
         with self.assertRaises(ValueError):
-            adapter(FakeOllama(), options={'num_ctx': 8192}, gpu_fit_check='full-gpu-v2')
+            adapter(FakeOllama(), options={'num_ctx': 8192}, gpu_fit_check='full-gpu-v9')
 
     def test_main_records_the_skip_and_runs_no_case(self):
         case = th.make_case(id='w23-g1')
@@ -267,6 +288,88 @@ class GpuFitCheck(unittest.TestCase):
         self.assertEqual(man['config']['adapter_config']['context_policy'], 'ctx16k-v1')
         ts.cleanup()
 
+
+
+class GpuFitReloads(unittest.TestCase):
+    """Amendment 1, Opus P2: full-gpu-v2 re-reads /api/ps whenever a case call reports a reload (load_duration above 1 s, or none); each test fails at 5f71b6d3,
+    where full-gpu-v2 does not exist and the check ran only once."""
+
+    def make(self, fake, check='full-gpu-v2'):
+        return adapter(fake, options={'num_ctx': 16384, 'num_predict': 640}, context_policy='ctx16k-v1', gpu_fit_check=check)
+
+    def chat(self, ad):
+        return ad.complete('s', [{'role': 'user', 'content': 'x'}])
+
+    def test_a_reload_partly_on_the_cpu_aborts_and_unloads(self):
+        fake = FakeOllama(ps_after=ps_row(), chat_loads=[2_000_000, 7_000_000_000], ps_after_reload=ps_row(size_vram=SIZE - 4096))
+        ad = self.make(fake)
+        ad.preflight()
+        first = self.chat(ad)
+        self.assertNotIn('gpu_refit', first.meta)                         # 2 ms: no reload, no extra read
+        self.assertEqual(sum(1 for c in fake.calls if c[0] == '/api/ps'), 2)
+        with self.assertRaises(A.AbortRun) as cm:
+            self.chat(ad)
+        self.assertIn('gpu_fit_abort (full-gpu-v2)', str(cm.exception))
+        fc = cm.exception.failed_call
+        self.assertEqual((fc['failure_modes'], fc['gpu_refit']['load_duration_ns'], fc['gpu_refit']['gpu_fit']['full_gpu']), (['gpu_reload_not_full_gpu'], 7_000_000_000, False))
+        self.assertTrue(ad.finish()['unloaded'])
+        self.assertEqual(fake.resident, [])
+        self.assertEqual(len(ad.gpu_refits), 1)
+
+    def test_a_reload_fully_on_the_gpu_continues_and_is_recorded(self):
+        fake = FakeOllama(ps_after=ps_row(), chat_loads=[3_000_000_000], ps_after_reload=ps_row())
+        ad = self.make(fake)
+        ad.preflight()
+        comp = self.chat(ad)
+        self.assertTrue(comp.meta['gpu_refit']['gpu_fit']['full_gpu'])
+        self.assertEqual(ad.finish()['gpu_refits'][0]['load_duration_ns'], 3_000_000_000)
+
+    def test_a_call_that_reports_no_load_duration_is_checked(self):
+        fake = FakeOllama(ps_after=ps_row(), chat_loads=['omit'], ps_after_reload=ps_row(size_vram=0))
+        ad = self.make(fake)
+        ad.preflight()
+        fake.reloaded = True
+        with self.assertRaises(A.AbortRun):
+            self.chat(ad)
+
+    def test_the_boundary_is_one_second_and_v1_never_rereads(self):
+        fake = FakeOllama(ps_after=ps_row(), chat_loads=[1_000_000_000], ps_after_reload=ps_row(size_vram=0))
+        ad = self.make(fake)
+        ad.preflight()
+        self.assertNotIn('gpu_refit', self.chat(ad).meta)                 # exactly 1 s is not above 1 s
+        fake = FakeOllama(ps_after=ps_row(), chat_loads=[9_000_000_000], ps_after_reload=ps_row(size_vram=0))
+        ad = self.make(fake, 'full-gpu-v1')                               # v1 unchanged: one reading after the warm-up, none at a call
+        ad.preflight()
+        comp = self.chat(ad)
+        self.assertNotIn('gpu_refit', comp.meta)
+        self.assertEqual(sum(1 for c in fake.calls if c[0] == '/api/ps'), 2)
+        self.assertNotIn('gpu_refits', ad.finish())
+
+    def test_main_keeps_the_case_started_aborted_and_exits_3(self):
+        cases = [th.make_case(id='w23-r1'), th.make_case(id='w23-r2')]
+        ts = th.TempSuite(cases)
+        fake = FakeOllama(ps_after=ps_row(), chat_loads=[2_000_000, 8_000_000_000], ps_after_reload=ps_row(size_vram=SIZE // 3))
+        orig = R.build_adapter
+        R.build_adapter = lambda args: adapter(fake, options={'num_ctx': args.num_ctx, 'num_predict': 640}, context_policy=args.context_policy,
+                                               gpu_fit_check=args.gpu_fit_check)
+        try:
+            out = Path(tempfile.mkdtemp()) / 'r-r1'
+            code = R.main(['--suite', str(ts.root), '--adapter', 'ollama', '--model', 'qwen3.8:27b', '--out', str(out), '--scratch', tempfile.mkdtemp(),
+                           '--prompt', 'v7', '--evidence-format', 'v3.1-format', '--guards', 'v3', '--num-ctx', '16384', '--context-policy', 'ctx16k-v1',
+                           '--gpu-fit-check', 'full-gpu-v2', '--max-wall-s', '2700', '--no-spend-limit'])
+        finally:
+            R.build_adapter = orig
+            ts.cleanup()
+        man = json.loads((out / 'manifest.json').read_text())
+        self.assertEqual(code, 3)
+        self.assertIn('gpu_fit_abort', man['aborted'])
+        self.assertEqual((man['records_written'], man['started_aborted'], man['never_started']), (['w23-r1'], ['w23-r2'], []))
+        part = json.loads((out / 'started-aborted' / 'w23-r2.json').read_text())
+        self.assertEqual(part['turns'][-1]['failure_modes'], ['gpu_reload_not_full_gpu'])
+        self.assertFalse(part['turns'][-1]['gpu_refit']['gpu_fit']['full_gpu'])
+        self.assertTrue(man['finish']['unloaded'])
+        self.assertEqual(len(man['finish']['gpu_refits']), 1)
+        self.assertEqual(man['config']['adapter_config']['gpu_fit_check'], 'full-gpu-v2')
 
 class CommandLine(unittest.TestCase):
 

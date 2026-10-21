@@ -115,7 +115,12 @@ CONTEXT_POLICIES = {
 }
 # dev-c7 measurement (WO-W23, GPU safety): versioned, opt-in (`--gpu-fit-check`).  After the warm-up, /api/ps must show the model this run loaded
 # entirely in VRAM (size_vram == size); anything else unloads it and skips the run.  Without it the preflight makes exactly the calls it made before.
-GPU_FIT_CHECKS = ('full-gpu-v1',)
+# full-gpu-v2 (dev-c7 Amendment 1, Opus P2): full-gpu-v1, and Prime is shared, so the model can be evicted between calls and reloaded partly onto the CPU.
+# Every case call whose reported load_duration exceeds RELOAD_LOAD_S (or does not report one) counts as a reload and repeats the same /api/ps reading; a reload
+# that is not 100% GPU aborts the run (the case is started-aborted, unscored), unloads what this run loaded and exits 3.  The largest per-call load_duration
+# recorded by the dev-c6 and dev-c5 qwen runs is 3.3 ms.  full-gpu-v1 is unchanged (one reading after the warm-up).
+GPU_FIT_CHECKS = ('full-gpu-v1', 'full-gpu-v2')
+RELOAD_LOAD_S = 1.0
 
 
 def ollama_options(overrides=None, context_policy=None):
@@ -203,6 +208,7 @@ class OllamaAdapter(Adapter):
         if gpu_fit_check is not None and not do_warmup:
             raise ValueError('the GPU fit check reads /api/ps after the warm-up load; it cannot run without the warm-up')
         self.context_policy, self.gpu_fit_check = context_policy, gpu_fit_check    # dev-c7, both opt-in (None: everything as before)
+        self.gpu_refits = []     # full-gpu-v2: every reload detected at a case call, with its /api/ps reading
         self.api, self.snapshot = api, snapshot
         self.options = ollama_options(options, context_policy)
         self.keep_alive, self.stop = keep_alive, default_stop(model) if stop is None else stop
@@ -328,6 +334,7 @@ class OllamaAdapter(Adapter):
         started = time.monotonic()
         resp, receipt = self._call('/api/chat', body, timeout=self.call_timeout)
         wall = time.monotonic() - started
+        refit = None
         if self._guard_trip():
             # recorded as a failed case (forced escalate); the next before_case() aborts the batch
             raise AdapterError('request cancelled, PSI/restart guard tripped: %s' % self._guard_trip())
@@ -339,9 +346,26 @@ class OllamaAdapter(Adapter):
                                            'eval_count', 'eval_duration', 'done_reason', 'created_at')}
         usage = {'input_tokens': resp.get('prompt_eval_count'), 'output_tokens': resp.get('eval_count'), 'cost_usd': None}
         chars = len(system) + sum(len(m['content']) for m in messages)
+        if self.gpu_fit_check == 'full-gpu-v2':
+            refit = self._reload_check(native)
+            if refit is not None and not refit['gpu_fit']['full_gpu']:
+                ab = AbortRun('gpu_fit_abort (full-gpu-v2): the model was reloaded at a case call (load_duration %s ns) and is not 100%% GPU: %s; '
+                              'unloading, not running further cases' % (native.get('load_duration'), refit['gpu_fit']['reason']))
+                ab.failed_call = {'error': 'reloaded partly onto the CPU: %s' % refit['gpu_fit']['reason'], 'usage': usage, 'native': native, 'gpu_refit': refit,
+                                  'failure_modes': ['gpu_reload_not_full_gpu']}
+                raise ab
         return Completion((resp.get('message') or {}).get('content', ''), body, receipt, response_model=resp.get('model'),
                           usage=usage, wall_s=wall, load_s=(resp.get('load_duration') or 0) / 1e9, native=native,
-                          meta={'context': context_check(self.options, native, chars, self.context_policy)})
+                          meta=dict({'context': context_check(self.options, native, chars, self.context_policy)}, **({'gpu_refit': refit} if refit else {})))
+
+    def _reload_check(self, native):
+        """full-gpu-v2: a case call with load_duration above RELOAD_LOAD_S, or none reported, is a reload: read /api/ps again (the full-gpu-v1 rule)."""
+        ld = native.get('load_duration')
+        if isinstance(ld, (int, float)) and ld <= RELOAD_LOAD_S * 1e9:
+            return None
+        refit = {'load_duration_ns': ld, 'gpu_fit': self._gpu_fit()}
+        self.gpu_refits.append(refit)
+        return refit
 
     def finish(self):
         report = {'unloaded': False}
@@ -351,6 +375,8 @@ class OllamaAdapter(Adapter):
             if self.loaded_by_us:
                 resp, rc = self.api('/api/generate', {'model': self.requested_model, 'keep_alive': 0, 'stream': False}, timeout=60)
                 report.update(unloaded=resp is not None and not resp.get('error'), unload_response=resp)
+            if self.gpu_fit_check == 'full-gpu-v2':
+                report['gpu_refits'] = list(self.gpu_refits)
             ps, _ = self.api('/api/ps')
             report['residents_after'] = None if ps is None else [m.get('name') for m in ps.get('models', [])]
             report['resources_after'] = self.snapshot()

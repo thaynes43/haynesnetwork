@@ -160,7 +160,9 @@ A cancelled in-flight case is kept as a failed record. The model is unloaded at 
 adds the per-turn flag `prompt_reaches_input_budget` (reported `prompt_eval_count >= num_ctx - num_predict`) and the per-case flag `reported_prompt_did_not_grow` (a later turn whose reported prompt is not above
 the previous turn's prompt plus its output: Ollama drops whole old messages when a chat prompt exceeds `num_ctx`, which can leave the count below the limit). `--gpu-fit-check full-gpu-v1` reads `/api/ps`
 once after the warm-up: unless the model this run loaded is the only resident and `size_vram == size` (and a reported context length is not below the requested one), the run unloads it and stops before any
-case (exit 3, `aborted: gpu_fit_skip ...`, the reading in `manifest.preflight.gpu_fit`). It needs the warm-up.
+case (exit 3, `aborted: gpu_fit_skip ...`, the reading in `manifest.preflight.gpu_fit`). It needs the warm-up. `--gpu-fit-check full-gpu-v2` (dev-c7 Amendment 1) does the same and, because
+Prime is shared, repeats the reading after every case call that reports a reload (`load_duration` above 1 s, or none reported); a reload that is not 100% GPU aborts the run (exit 3,
+`aborted: gpu_fit_abort ...`, the case kept under `started-aborted/`), and the readings are listed in `manifest.finish.gpu_refits`.
 
 ### GPU etiquette (Ollama Prime)
 

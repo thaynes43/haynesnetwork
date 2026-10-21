@@ -417,7 +417,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
         fc = getattr(e, 'failed_call', None)    # the call that triggered the abort (a CLI stopped at its lowered budget) keeps its receipt
         if fc:
             turns.append({'n': len(turns) + 1, 'error': fc['error'], 'attempt': 'repair' if repairs else 'first', 'reply_valid': False,
-                          'failure_modes': ['adapter_error', 'cost_cap_budget_exceeded'], **({'usage': fc['usage']} if fc.get('usage') else {})})
+                          'failure_modes': fc.get('failure_modes', ['adapter_error', 'cost_cap_budget_exceeded']), **({'usage': fc['usage']} if fc.get('usage') else {}),
+                          **{k: fc[k] for k in ('native', 'gpu_refit') if fc.get(k)}})     # (dev-c7 full-gpu-v2 only: the reload's receipt and /api/ps reading)
         # a STARTED case that the run's abort cut short is never lost: turns, tool calls, usage and the reason travel with the exception (main writes them to started-aborted/)
         e.partial = started_aborted_record(case, case_sha, adapter, prompt, run_id, started_at, time.monotonic() - started_wall, turns, tool_calls, repairs, str(e),
                                            evidence_mode, evidence_format)
@@ -898,7 +899,9 @@ def build_parser():
                          '(prompt_eval_count >= num_ctx - num_predict) and reported_prompt_did_not_grow; recorded in the adapter config; unset = exactly as before')
     ap.add_argument('--gpu-fit-check', choices=list(A.GPU_FIT_CHECKS), default=None,
                     help='dev-c7 measurement, ollama only, opt-in: full-gpu-v1 reads /api/ps after the warm-up and, unless the model this run loaded is entirely in '
-                         'VRAM, unloads it and stops before any case (exit 3, reason gpu_fit_skip); recorded in the adapter config; unset = exactly as before')
+                         'VRAM, unloads it and stops before any case (exit 3, reason gpu_fit_skip); full-gpu-v2 also treats a case call with load_duration '
+                         'above 1 s as a reload, reads /api/ps again and, unless it is 100%% GPU, aborts (exit 3, gpu_fit_abort) and unloads; recorded in the '
+                         'adapter config; unset = exactly as before')
     ap.add_argument('--tool-output-bytes', type=int, default=P.TOOL_OUTPUT_BYTES, help='cap on one tool result shown to the model (lower it for small local contexts)')
     ap.add_argument('--num-predict', type=int, help='ollama output cap; default 384 for prompt v1, 640 for v2 (a write decision carries an audit object)')
     ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c); v5 (dev-c5) is valid only with --evidence-format v2; v6 (dev-c6, contract v3) only with --evidence-format v3; v7 (dev-c7) only with --evidence-format v3.1-format')
