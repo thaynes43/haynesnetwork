@@ -170,7 +170,7 @@ CONTRACT_V3_GUARDS = (None, 'v3')
 # presentation (statement kinds, prior-record typing) and the rubric v3.2 clarification, selected together and valid only with prompt v7 (and guards off or v3).
 CONTRACT_V31_FORMAT = 'v3.1-format'
 CONTRACT_V31_PROMPTS = ('v7', 'v8')    # dev-c8: prompt v8 (turn-v3.1: turn-v3 plus the length-specific repair hint) on the same format
-# dev-c8: guards v4 (v3 plus the role checks on contract-v3 writes, decision_guard.check_role_v4) is accepted with format v3.1-format only; format v3 and every
+# dev-c8: guards v4 (v3 plus the role checks on contract-v3 writes, guard_v4.check_role_v4) is accepted with format v3.1-format only; format v3 and every
 # earlier format keep their guard sets.
 CONTRACT_V31_GUARDS = (None, 'v3', 'v4')
 # dev-c8: Claude reply-schema delivery (adapter version claude-schema-1, opt-in).  Unset = the legacy Claude adapter, byte for byte.

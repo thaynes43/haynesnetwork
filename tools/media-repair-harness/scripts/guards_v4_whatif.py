@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """dev-c8 guards v4 what-if (WO-W26 item 4 with the AUDIT-ASTRA-36 item 2 accounting): apply guards v3 and v4 OFFLINE to recorded contract-v3 runs and write
-one SHADOW record per case.  Nothing is rescored, overwritten or re-run; no model is called.  The v4 specification (decision_guard.V4_SPEC) was frozen and
+one SHADOW record per case.  Nothing is rescored, overwritten or re-run; no model is called.  The v4 specification (guard_v4.V4_SPEC; it lived in decision_guard.py until review round 3) was frozen and
 committed before this script first ran.
 
 For every named input run (the online-guarded run directory; its `-restored` sibling holds the archived score of the model's ORIGINAL decisions):

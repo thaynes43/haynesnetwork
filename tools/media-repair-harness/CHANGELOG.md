@@ -19,7 +19,7 @@ other config field is compared equal). No model was called. Details: `docs/dev-c
   this adapter version reads `stream-json`, takes the model's first StructuredOutput attempt as the reply (CLI-internal retries recorded, never used) and
   records `schema_sent` from the CLI's own init event. Offline fixtures only; not exercised live.
 * **Guards v4** (`--guards v4`, format v3.1-format only): v3 unchanged, then G-role on decision-v3 writes (A-REN-1, the source-bound and managing-app
-  prerequisites, R-SRC) with a frozen specification (`decision_guard.V4_SPEC`): only an audit `unmet` fires, `unknown` never does, and content the
+  prerequisites, R-SRC) with a frozen specification (`V4_SPEC`, in `guard_v4.py` since review round 3): only an audit `unmet` fires, `unknown` never does, and content the
   comparator cannot recognise or results not fully delivered are not enforced. `mrh-guard` (a pinned registration input) is unchanged and refuses v4.
 * **What-if** (`scripts/guards_v4_whatif.py`, `runs/dev-c8-guards-v4-whatif/`): shadow records for the four dev-c7 runs. v4 catches the one unsafe
   proposal v3 leaves (qwen-r2) and would turn 19 score-correct writes into escalations (Haiku 12, qwen-r2 7); 14 of those cite a `context.arr.ids` value
