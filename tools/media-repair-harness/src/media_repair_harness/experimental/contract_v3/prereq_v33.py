@@ -7,8 +7,10 @@ changes exactly the three rules rubric v3.3 amends (rubric_v33.AMENDMENTS_V33, w
 * A33-1 (D32-1): a complete live audiobook part whose whole tag map is explicitly `{}` (or `[]`) is an explicitly empty naming surface
   (`<id>:files[<i>]:tags_empty`), as a container-level map already is; no child field is synthesized.
 * A33-2 (D32-2): a prior record's kind is report_unknown when its method is negated, missing, names no vocabulary word, or names content words beside
-  declaration or hash words (ambiguous about whether content was observed); otherwise the frozen order applies.  The output lists every prior record's
-  typing with every class its method matched (`reports`).
+  declaration or hash words (ambiguous about whether content was observed); otherwise the frozen order applies.  An AMBIGUOUS report establishes no
+  content, but its statements are still compared at declaration strength (statement kind `report_ambiguous`, one of DECLARED_KINDS here): a disagreement
+  contests identity and sets M5 exactly as the same report does under v3.1 (where it is report_declaration or report_hash), and it can never verify or
+  contradict identity.  The output lists every prior record's typing with every class its method matched (`reports`).
 * A33-3 (D32-3): the legacy spine heads (`spine_heads`, kind legacy_mixed) are not read as content, so they establish no identity attribute.
 
 The output keeps the v3.1 shape (prerequisite states and the references that decided them, never a verdict, a truth or a label), adds `reports`, and
@@ -25,12 +27,16 @@ from . import rubric_v33 as RB33
 MET, UNMET, UNKNOWN = PQ.MET, PQ.UNMET, PQ.UNKNOWN
 CHECKER_VERSION = 'prereq-v3.3'
 RUBRIC_VERSION = RB33.RUBRIC_V33_VERSION
+AMBIGUOUS_KIND = 'report_ambiguous'      # A33-2: the statements of an ambiguous report, compared at declaration strength
+DECLARED_KINDS = PQ.DECLARED_KINDS + (AMBIGUOUS_KIND,)
 
 
 def report_typing(method):
-    """A33-2: -> {'kind', 'matched', 'negated', 'ambiguous'} for a stated evidence_method (None when absent).  Every matched vocabulary class is listed.
-    Ambiguous = content words beside declaration or hash words (the method does not say whether content was observed): report_unknown.  Otherwise the
-    frozen order of facts.report_kind applies (hash, then declaration, then content; negated or no match: report_unknown)."""
+    """A33-2: -> {'kind', 'matched', 'negated', 'ambiguous', 'statement_kind'} for a stated evidence_method (None when absent).  Every matched vocabulary
+    class is listed.  Ambiguous = content words beside declaration or hash words, hash-plus-content included (the method does not say whether content was
+    observed): kind report_unknown, so it establishes no content, and statement_kind report_ambiguous (compared at declaration strength).  Otherwise the
+    frozen order of facts.report_kind applies (hash, then declaration, then content; negated or no match: report_unknown, statement_kind None).  The frozen
+    vocabulary counts the bare word "read" as a content word, so "OPF metadata read" is ambiguous."""
     text = str(method or '')
     negated = bool(re.search(RB.NEGATED_METHOD_RX, text, re.I))
     matched = [k for k, rx in RB.REPORT_METHOD_VOCABULARY if re.search(rx, text, re.I)]
@@ -39,7 +45,8 @@ def report_typing(method):
         kind = 'report_unknown'
     else:
         kind = next(k for k in ('report_hash', 'report_declaration', 'report_content') if k in matched)
-    return {'kind': kind, 'matched': matched, 'negated': negated, 'ambiguous': ambiguous}
+    statement = AMBIGUOUS_KIND if (ambiguous and not negated) else (kind if kind != 'report_unknown' else None)
+    return {'kind': kind, 'matched': matched, 'negated': negated, 'ambiguous': ambiguous, 'statement_kind': statement}
 
 
 def report_kind(method):
@@ -57,11 +64,32 @@ class View(PQ.View):
             if tool == 'epub_inspect' and kind == 'content':
                 continue            # A33-3: an epub_inspect content statement is a spine head (legacy_mixed); every EPUB declaration is kept
             if tool == 'prior_record':
-                kind = report_kind((self.facts.get(ref) or {}).get('evidence_method'))
-                if kind not in PQ.CONTENT_KINDS + PQ.DECLARED_KINDS:
-                    continue        # A33-2: an ambiguous or unknown method reports nothing the checker can compare
+                kind = report_typing((self.facts.get(ref) or {}).get('evidence_method'))['statement_kind']
+                if kind is None:
+                    continue        # a negated or unknown method reports nothing the checker can compare (as under v3.1)
             out.append((ref, kind, field, text))
         return out
+
+    def identity(self):
+        """PQ.View.identity with DECLARED_KINDS of v3.3: an ambiguous report (A33-2) contests like a declaration, never verifies or contradicts."""
+        rows = []
+        for ref, kind, field, text in self.statements():
+            rows.append({'ref': ref, 'kind': kind, 'field': field, 'attributes': self.compare(kind, field, text)})
+        per = {}
+        for a in RB.COMPARED_ATTRIBUTES:
+            cs = {r['attributes'][a] for r in rows if r['kind'] in PQ.CONTENT_KINDS and a in r['attributes']}
+            ds = {r['attributes'][a] for r in rows if r['kind'] in DECLARED_KINDS and a in r['attributes']}
+            per[a] = ('contradicted' if 'disagree' in cs else 'verified' if 'agree' in cs else 'contested' if 'disagree' in ds else
+                      'declared_agree' if 'agree' in ds else 'none')
+        if any(s == 'contradicted' for s in per.values()):
+            level = 'contradicted_by_content'
+        elif any(s == 'contested' for s in per.values()):
+            level = 'contested'
+        elif any(per[a] == 'verified' for a in PQ.IDENTITY_ATTRS):
+            level = 'content_verified'
+        else:
+            level = 'uncontradicted'
+        return level, rows, per
 
     def reports(self):
         """A33-2: every prior record's typing (complete or not), with the method as stated and every vocabulary class it matched."""

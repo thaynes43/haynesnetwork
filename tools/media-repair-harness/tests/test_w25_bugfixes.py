@@ -13,6 +13,11 @@ exist there, or exists with the defect), and its paired control pins that the ea
   8  rubric v3.3 A33-3 (D32-3): the legacy spine heads establish no content identity in the checker
   9  counter uncalled-2: v3.1-format records, with the EPUB excerpt capability and unfetched pages; uncalled-1 unchanged
 
+W25b (review fixes, the same versions): A37-1 a line break in a zip_crc member name keeps execution precedence; A37-2 / A37-3 uncalled-2 reads
+explicit-excerpt lengths beyond the index and counts distinct served pages; Opus 1 an ambiguous prior record contests identity at declaration strength;
+Opus 2 decorated execution errors and the manifest open-tail patterns; Opus 3 the v4 remote rule (http(s), network locations), colon-named members and an
+all-remote spine; Opus 4 tools v4 refused outside diag-2; the nits (real CRC lines, honest tension versions, the v3.3 Markdown, prereq_v33.audit).
+
 Synthetic, generic fixtures only (no dev-suite case content); the suite-backed classes read only the public dev suite and the committed runs.  No model call."""
 import contextlib
 import io
@@ -42,7 +47,7 @@ try:        # the W25 versions; absent at 6ca16ae0, where the module still loads
 except ImportError:
     PQ33 = RB33 = UC2 = None
 
-RUBRIC_V33_SHA = '7d72b8c206adf5c9c2ce60843aadb7c98da9fee7b8719b99cb07e97e9ab3373f'
+RUBRIC_V33_SHA = '621c72f41135b6e15f0a1b8fe28ebd0383dae9ef46d62098a2301f70441ba540'      # W25b: A33-2 states the declaration-strength comparison
 DOCS = th.COMPONENT / 'docs'
 COVER = D.xhtml('<img src="cover.png" alt=""/>', head='')        # an image-only cover page: no character data at all
 CHAPTER = D.xhtml('<h1>One</h1><p>The first chapter has ordinary words in it.</p>')
@@ -88,7 +93,8 @@ class EpubCase(unittest.TestCase):
 
     def inspect(self, path, behavior):
         case = {'id': 'case-x', 'tools_available': ['epub_inspect'], 'media_type': 'epub'}
-        ctx = T.Context(case, T.Fixture('local', path), self.dir, tools_behavior=behavior)
+        with EV2.diagnostic_rules('diag-2' if behavior == 'v4' else 'diag-1'):        # tools behaviour v4 is built under diag-2 only (W25b)
+            ctx = T.Context(case, T.Fixture('local', path), self.dir, tools_behavior=behavior)
         return T.tool_epub_inspect({}, ctx)
 
     def typed(self, res, rules):
@@ -290,12 +296,13 @@ class AmbiguousMethodD322(unittest.TestCase):
     def test_content_words_beside_declaration_or_hash_words_are_unknown_v33(self):
         for method in ('OPF metadata read', 'tags and the opening title cards', 'MD5 of the audio'):
             t = PQ33.report_typing(method)
-            self.assertEqual((t['kind'], t['ambiguous']), ('report_unknown', True), method)
+            self.assertEqual((t['kind'], t['ambiguous'], t.get('statement_kind')), ('report_unknown', True, 'report_ambiguous'), method)
             self.assertIn('report_content', t['matched'])
-            self.assertEqual(PQ33.View([D.prior(method)], D.CAT, 'epub').identity()[0], 'uncontradicted', method)
+            # W25b (Opus 1): the ambiguous report establishes no content, but its disagreement still contests identity, as under v3.1
+            self.assertEqual(PQ33.View([D.prior(method)], D.CAT, 'epub').identity()[0], 'contested', method)
         rows = PQ33.check([D.prior('OPF metadata read')], D.CAT, 'epub')['reports']
-        self.assertEqual([(r['ref'], r['kind'], r['matched'], r['v31_kind']) for r in rows],
-                         [('e1', 'report_unknown', ['report_declaration', 'report_content'], 'report_declaration')])
+        self.assertEqual([(r['ref'], r['kind'], r['matched'], r['v31_kind'], r['statement_kind']) for r in rows],
+                         [('e1', 'report_unknown', ['report_declaration', 'report_content'], 'report_declaration', 'report_ambiguous')])
 
     def test_controls_single_class_and_hash_with_declaration_keep_the_frozen_order(self):
         for method, kind in (('OPF metadata', 'report_declaration'), ('OCR of the title cards', 'report_content'), ('md5 checksum', 'report_hash'),
@@ -425,6 +432,7 @@ class EarlierVersionsUnchanged(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             mod.main(['--checker', 'v3.3', '--diagnostic-rules', 'diag-2', '--json', str(tmp / 't3.json'), '--md', str(tmp / 't3.md')])
         self.assertEqual((tmp / 't3.json').read_bytes(), (DOCS / 'contract-v3-label-tension-v3.3.json').read_bytes())
+        self.assertEqual((tmp / 't3.md').read_bytes(), (DOCS / 'contract-v3-label-tension-v3.3.md').read_bytes())       # W25b nit: the Markdown too
         self.assertEqual([r['id'] for r in json.loads((tmp / 't3.json').read_text())['listed']],
                          [r['id'] for r in json.loads((tmp / 't.json').read_text())['listed']])
 
@@ -539,6 +547,267 @@ class PassabilityReproduces(unittest.TestCase):
             self.skipTest('a pod-local EPUB fixture is not in this checkout: the exploration result legitimately differs here')
         self.assertEqual(self.run_script('passability.py', 'dev-c6', 'devc6-gpt-6-astra'), (B.RUNS / 'dev-c6' / 'passability.json').read_bytes())
         self.assertEqual(self.run_script('passability_v3.py', 'dev-c7', 'devc7-gpt-6-astra'), (B.RUNS / 'dev-c7' / 'passability.json').read_bytes())
+
+
+# ------------------------------------------------------------------------------------------------------------- W25b: review fixes (AUDIT-ASTRA-37, the Opus review)
+class NewlineInMemberNameA37(unittest.TestCase):
+    """A37-1: the zip_crc member suffix is recognised on the whole text before it is split into lines, so a line break in the name cannot hide a trailing
+    execution error (which diag-1, kept, reads as damage)."""
+    TEXTS = ('CRC mismatch in member a\nb.epub: Permission denied', "BadZipFile: Bad CRC-32 for file 'a\\nb.epub: Permission denied' in member a\nb.epub: Permission denied",
+             'CRC mismatch in member a\r\nb.xhtml: [Errno 5] Input/output error', 'CRC mismatch in member a\nPermission denied')
+
+    def test_a_newline_in_the_name_keeps_execution_precedence_diag2(self):
+        with EV2.diagnostic_rules('diag-2'):
+            for text in self.TEXTS:
+                self.assertEqual(EV2.epub_failure('zip_crc', text), 'execution', repr(text))
+            o = EV2.make_observation('t1', 'epub_inspect', {}, 'error', json.dumps({'status': 'error', 'stage': 'zip_crc', 'error': self.TEXTS[0]}), 'local', 'tool')
+            d = EV2.derive(o)
+            self.assertEqual((d.execution.get('cause'), [f['kind'] for f in d.findings if f['known_defect']]), ('tool', []))
+            self.assertEqual(PQ33.check_named(PQ33.View([o], {}, 'epub'), 'support_grade_defect')[0], 'unmet')
+            live = {'source': 'live', 'kind': 'epub', 'status': 'error', 'cause': 'input', 'reason': 'zip_crc: x', 'output': {'valid': False, 'stage': 'zip_crc',
+                    'error': self.TEXTS[1]}, 'coverage': {'verified': [], 'not_verified': []}}
+            d = EV2.derive(EV2.make_observation('t1', 'epub_inspect', {}, 'error', json.dumps(live), 'live', 'tool'))
+            self.assertEqual((d.execution.get('cause'), [f['kind'] for f in d.findings if f['known_defect']]), ('tool', []))
+
+    def test_control_a_newline_name_without_an_execution_tail_is_damage_and_diag1_is_unchanged(self):
+        with EV2.diagnostic_rules('diag-2'):
+            self.assertEqual(EV2.epub_failure('zip_crc', 'CRC mismatch in member a\nb.xhtml'), 'damage')
+        self.assertEqual(EV2.epub_failure('zip_crc', self.TEXTS[0]), 'damage')          # diag-1 as recorded
+
+
+class RealCrcLinesDiag2(unittest.TestCase):
+    """W25b nit: the real CRC lines of both collectors classify under diag-2 whatever the member name holds (a colon, ' in member ', a leading space, a
+    line break, a name whose quoted form the live collector cut at 200 characters)."""
+    NAMES = ('OEBPS/a.xhtml', 'OEBPS/a:b.xhtml', 'OEBPS/a in member b.xhtml', ' a.xhtml', 'OEBPS/a\nb.xhtml', 'OEBPS/' + 'x' * 190 + '.xhtml', "OEBPS/it's.xhtml")
+
+    @staticmethod
+    def live(name):        # evidence/epubtool.py: '%s in member %s' % (_err(e), i.filename), _err = type name + str(e)[:200]
+        return 'BadZipFile: %s in member %s' % (('Bad CRC-32 for file %r' % name)[:200], name)
+
+    def test_both_collectors_crc_lines_are_damage_diag2(self):
+        with EV2.diagnostic_rules('diag-2'):
+            for name in self.NAMES:
+                self.assertEqual(EV2.epub_failure('zip_crc', 'CRC mismatch in member %s' % name), 'damage', repr(name))     # tools._epub_stage
+                self.assertEqual(EV2.epub_failure('zip_crc', self.live(name)), 'damage', repr(name))
+                self.assertEqual(EV2.epub_failure('zip_crc', self.live(name) + ': Permission denied'), 'execution', repr(name))
+
+    def test_control_execution_messages_with_a_suffix_stay_execution_diag2(self):
+        with EV2.diagnostic_rules('diag-2'):
+            for text in ("PermissionError: [Errno 13] Permission denied: 'a.xhtml' in member a.xhtml", 'OSError: [Errno 5] Input/output error in member a in member b.xhtml'):
+                self.assertEqual(EV2.epub_failure('zip_crc', text), 'execution', text)
+
+
+class DecoratedExecutionErrorsOpus2(unittest.TestCase):
+    """Opus 2: the classifier's own decoration (`<Name>Error: `, `[Errno N] `) in front of an execution message after an open-tail message, and the three
+    open-tail manifest patterns, under diag-2."""
+    TAILS = (": PermissionError: [Errno 13] Permission denied: 'a.xhtml'", ': [Errno 13] Permission denied', ': MemoryError: Invalid data found when processing input',
+             ': OSError: [Errno 5] Input/output error')
+    MANIFEST = ("manifest names 1 member(s) that are not in the archive: ['OEBPS/a.xhtml']", "manifest names members that are not in the archive: ['OEBPS/a.xhtml']",
+                'manifest references missing member(s): OEBPS/a.xhtml')
+
+    def test_decorated_execution_errors_are_execution_diag2(self):
+        with EV2.diagnostic_rules('diag-2'):
+            for msg in OPEN_TAIL + self.MANIFEST:
+                for tail in self.TAILS + (': Permission denied',):
+                    self.assertEqual(EV2.classify_line(msg + tail), 'execution', msg + tail)
+                self.assertEqual(EV2.classify_line(msg), 'damage', msg)
+            self.assertEqual(EV2.classify_line('Bad CRC-32 for file: MemoryError: Invalid data found when processing input'), 'execution')
+            self.assertEqual(EV2.epub_failure('zip_crc', 'CRC mismatch in member a.xhtml' + self.TAILS[0]), 'execution')
+            self.assertEqual(EV2.epub_failure('manifest', self.MANIFEST[0] + ': Permission denied'), 'execution')
+
+    def test_control_diag1_still_reads_them_as_damage(self):
+        for msg in self.MANIFEST:
+            self.assertEqual(EV2.classify_line(msg + ': Permission denied'), 'damage')
+        self.assertEqual(EV2.classify_line('CRC mismatch in member a.xhtml' + self.TAILS[1]), 'damage')
+
+
+class RemoteAndColonHrefsOpus3(EpubCase):
+    """Opus 3: under tools v4 only http(s) URLs and network locations are remote; a colon-named member is local; an all-remote spine is not "the spine
+    is empty" (the live collector reports it valid), so replay and live agree."""
+
+    def typed_live(self, path):
+        rec = EVC.collect(path, ['epub'])[0]
+        with EV2.diagnostic_rules('diag-2'):
+            return EV2.derive(EV2.make_observation('t1', 'epub_inspect', {}, rec['status'], json.dumps(rec), 'live', 'tool')).integrity
+
+    def test_the_remote_rule_v4(self):
+        for href, remote in (('https://example.org/a.xhtml', True), ('HTTP://example.org/a', True), ('//cdn.example.org/f.woff2', True), ('ftp://host/x', True),
+                             ('Part1:Intro.xhtml', False), ('urn:x', False), ('a.xhtml#frag', False), ('../x.xhtml', False)):
+            self.assertEqual(T.remote_href_v4(href), remote, href)
+        self.assertEqual(T.local_href_v4('OEBPS/c.opf', 'Part1:Intro.xhtml'), 'OEBPS/Part1:Intro.xhtml')
+        self.assertEqual(T.local_href_v4('OEBPS/c.opf', 'Text/a%20b.xhtml#x'), 'OEBPS/Text/a b.xhtml')
+
+    def test_a_colon_named_spine_document_is_local_v4(self):
+        path = self.write(epub_bytes([('Part1:Intro.xhtml', CHAPTER)]))
+        self.assertIsNone(T._epub_stage(path, remote_ok=True))
+        res = self.inspect(path, 'v4')
+        self.assertEqual(res.status, 'ok', res.output)
+        self.assertEqual(res.output['spine_items'], 1)
+        self.assertGreater(res.output['spine_characters'], 0)
+        self.assertEqual(self.typed(res, 'diag-2').integrity, 'clean')
+        self.assertEqual(self.typed_live(path), 'clean')
+
+    def test_an_all_remote_spine_has_its_own_wording_v4(self):
+        remote = '<item id="r" href="https://example.org/ch.xhtml" media-type="application/xhtml+xml"/>'
+        path = self.write(epub_bytes([('ch1.xhtml', CHAPTER)], extra_manifest=remote, spine=['r']))
+        res = self.inspect(path, 'v4')
+        self.assertEqual(res.status, 'ok', res.output)
+        self.assertEqual((res.output['spine_items'], res.output.get('remote_spine_items'), res.output.get('spine_note')), (0, 1, getattr(T, 'ALL_REMOTE_V4', 'x')))
+        self.assertNotIn('the spine is empty', json.dumps(res.output))
+        self.assertEqual(self.typed(res, 'diag-2').integrity, 'clean')
+        status, out = self.live(path)
+        self.assertEqual((status, out['valid']), ('ok', True))
+        self.assertEqual(self.typed_live(path), 'clean')                     # replay and live agree
+        mixed = self.write(epub_bytes([('ch1.xhtml', CHAPTER)], extra_manifest=remote, spine=['i0', 'r']), 'q9z')
+        got = self.inspect(mixed, 'v4').output
+        self.assertEqual((got['spine_items'], got['remote_spine_items'], 'spine_note' in got), (1, 1, False))
+
+    def test_control_v3_keeps_the_earlier_reading(self):
+        path = self.write(epub_bytes([('Part1:Intro.xhtml', CHAPTER)]))
+        self.assertEqual(T._epub_stage(path), ('manifest', "manifest names members that are not in the archive: ['OEBPS/Intro.xhtml']"))
+        self.assertEqual(self.inspect(path, 'v3').output['stage'], 'manifest')
+
+
+class V4PairingOpus4(unittest.TestCase):
+    """Opus 4: tools behaviour v4 is refused at configuration time unless the diagnostic rules are diag-2 (diag-1 stays byte-identical and does not know
+    the v4 wording, so an all-empty book would be unclassified there)."""
+
+    def ctx(self, behavior):
+        return T.Context({'id': 'case-x', 'tools_available': ['epub_inspect'], 'media_type': 'epub'}, T.Fixture('none', None), tempfile.mkdtemp(prefix='mrh-w25-'),
+                         tools_behavior=behavior)
+
+    def test_v4_is_refused_outside_diag2_v4(self):
+        with self.assertRaises(ValueError):
+            self.ctx('v4')
+        with EV2.diagnostic_rules('diag-1'):
+            with self.assertRaises(ValueError):
+                self.ctx('v4')
+        with EV2.diagnostic_rules('diag-2'):
+            self.assertEqual(self.ctx('v4').tools_behavior, 'v4')
+        self.assertEqual(T.TOOLS_V4_DIAGNOSTIC_RULES, 'diag-2')
+
+    def test_control_earlier_behaviours_build_under_either_rules(self):
+        for rules in EV2.DIAGNOSTIC_RULES:
+            with EV2.diagnostic_rules(rules):
+                for b in ('v1', 'v2', 'v3'):
+                    self.assertEqual(self.ctx(b).tools_behavior, b)
+
+
+class AmbiguousReportContestsOpus1(unittest.TestCase):
+    """Opus 1: an ambiguous prior record (content words beside declaration or hash words) establishes no content under v3.3, but a disagreement still
+    contests identity and makes M5 present, as the same report does under v3.1 (report_declaration / report_hash)."""
+    EPUB = {'status': 'ok', 'opf': 'OEBPS/c.opf', 'dc_title': ['Alpha Book'], 'dc_creator': ['A. Writer'], 'spine_items': 3, 'spine_characters': 900, 'entries': 6}
+
+    def states(self, mod, method, titles=('Completely Different Novel',)):
+        obs = [D.ob('e2', 'epub_inspect', self.EPUB, source='case'), D.prior(method, titles, oid='e1')]
+        r = mod.check(obs, D.CAT, 'epub')
+        return (r['identity']['level'], next(m['state'] for m in r['material'] if m['id'] == 'M5'),
+                {x['id']: x['state'] for x in r['diagnosis']['healthy']}, {x['id']: x['state'] for x in r['diagnosis']['metadata_naming']})
+
+    def test_an_ambiguous_report_still_contests_identity_v33(self):
+        for method in ('OPF metadata read', 'MD5 of the audio', 'tags and the opening title cards'):
+            new, old = self.states(PQ33, method), self.states(PQ, method)
+            self.assertEqual(new[:2], ('contested', 'met'), method)
+            self.assertEqual(new, old, method)                                  # the v3.1 effect of a declaration-strength report, exactly
+            self.assertEqual((new[2]['D-OK-H3'], new[2]['D-OK-H4']), ('unmet', 'unmet'), method)
+
+    def test_control_an_ambiguous_report_establishes_no_content(self):
+        self.assertEqual(self.states(PQ33, 'OPF metadata read', ('Alpha Book',))[0], 'uncontradicted')            # agreement is declared_agree only
+        self.assertEqual(self.states(PQ33, 'OCR of the title cards', ('Alpha Book',))[0], 'content_verified')     # a content report does verify
+        self.assertEqual(self.states(PQ33, 'no OCR performed', ('Completely Different Novel',))[0], 'uncontradicted')      # negated: reports nothing
+
+
+class PageAndExcerptCoverageA37(unittest.TestCase):
+    """A37-2 and A37-3: uncalled-2 reads explicit-excerpt lengths beyond the index (partial, complete and failed reads told apart) and counts the
+    distinct pages actually served."""
+
+    def caps(self):
+        return v31_record()['evidence_format']['capabilities']
+
+    def unindexed(self):
+        o = body_obs('t1', [{'spine': i, 'member': 'm%d' % i, 'characters': 0, 'headings': []} for i in range(24)], [])
+        d = json.loads(o['output'])
+        d['body']['items_total'] = 25
+        return dict(o, output=json.dumps(d))
+
+    def excerpt(self, oid, offset, end, n=1800, **kw):
+        ex = dict({'spine': 24, 'member': 'm24', 'offset': offset, 'end': end, 'item_characters': n, 'text': 'a' * (end - offset),
+                   'next_offset': end if end < n else None}, **kw)
+        return EV31.internal(D.ob(oid, 'epub_inspect', {'extraction': 'xhtml-body-text-3', 'excerpt': ex}))
+
+    def test_a_partial_read_beyond_the_index_leaves_a_candidate_uncalled2(self):
+        got = UC2.excerpt_candidates([self.unindexed(), self.excerpt('t2', 0, 600)], self.caps(), ['epub_inspect'])
+        self.assertEqual([(c['args'], c['read']) for c in got], [({'spine': 24, 'offset': 600}, 'partial')])
+        done = UC2.excerpt_candidates([self.unindexed(), self.excerpt('t2', 0, 600), self.excerpt('t3', 600, 1800)], self.caps(), ['epub_inspect'])
+        self.assertEqual(done, [])                                                             # complete: [0, 1800) covered
+        failed = D.ob('t3', 'epub_inspect', {'status': 'error'}, status='error')
+        self.assertEqual(UC2.excerpt_candidates([self.unindexed(), self.excerpt('t2', 0, 600), failed], self.caps(), ['epub_inspect'],
+                                                {'t3': {'spine': 24, 'offset': 600}}), [])      # the failed request is not repeated
+        unstated = self.excerpt('t2', 0, 600)
+        unstated = dict(unstated, output=json.dumps({'extraction': 'xhtml-body-text-3', 'excerpt': {'spine': 24, 'offset': 0, 'end': 600, 'text': 'a'}}))
+        self.assertEqual([c['args'] for c in UC2.excerpt_candidates([self.unindexed(), unstated], self.caps(), ['epub_inspect'])], [{'spine': 24, 'offset': 600}])
+
+    def test_a_page_fetched_twice_counts_once_uncalled2(self):
+        def fetch(oid, n, out=None, of=('t1',)):
+            page = EV2.tool_envelope(oid, 'epub_inspect', 'ok', False, {'page': {'contract': 'pages-v1', 'source': 't1', 'n': n, 'of': 5}}, 3)
+            return {'id': oid, 'tool': 'page', 'continuation': True, 'pages_of': list(of), 'args': {'cursor': 'c%s' % oid}, 'status': 'ok',
+                    'output': page if out is None else out}
+        msgs = [{'id': 'evidence', 'kind': 'initial', 'pages': 1}, {'id': 't1', 'kind': 'result', 'pages': 5}]
+        rec = v31_record(calls=[{'id': 't1', 'tool': 'epub_inspect', 'args': {}}, fetch('t2', 2), fetch('t3', 2)], messages=msgs)
+        self.assertEqual([c['args']['page'] for c in UC2.page_candidates(rec)], [3, 4, 5])
+        rec['tool_calls'].append(fetch('t4', None, out='(not a page object)'))           # a valid cursor whose page is not readable: the next unserved page
+        self.assertEqual([c['args']['page'] for c in UC2.page_candidates(rec)], [4, 5])
+        bad = {'id': 't5', 'tool': 'page', 'continuation': True, 'args': {'cursor': 'zz'}, 'status': 'error', 'output': '{"type":"tool_result"}'}
+        rec['tool_calls'].append(bad)                                                      # an unknown cursor served nothing
+        self.assertEqual([c['args']['page'] for c in UC2.page_candidates(rec)], [4, 5])
+
+
+class TensionVersionsStatedNit(unittest.TestCase):
+    """W25b nit: a non-default tension run names its checker, the rubric that checker applies and its diagnostic rules (contract_v3_tension.py)."""
+
+    def test_a_non_default_run_states_its_versions(self):
+        B.need_v11()
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('tension_script_b', th.COMPONENT / 'scripts' / 'contract_v3_tension.py')
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        tmp = Path(tempfile.mkdtemp(prefix='mrh-w25-'))
+        with contextlib.redirect_stdout(io.StringIO()):
+            mod.main(['--diagnostic-rules', 'diag-2', '--json', str(tmp / 't.json'), '--md', str(tmp / 't.md')])
+        doc = json.loads((tmp / 't.json').read_text())
+        self.assertEqual((doc['rubric'], doc['checker'], doc['diagnostic_rules']), (RB.RUBRIC_V31_VERSION, 'prereq-v3.1', 'diag-2'))
+        self.assertNotIn('v3.3', doc['note'])
+        md = (tmp / 't.md').read_text()
+        self.assertNotIn('frozen before any label was read', md)
+        self.assertIn('`diag-2`', md)
+        self.assertIn('`prereq-v3.1`', md)
+
+
+class AuditV33Nit(unittest.TestCase):
+    """W25b nit: prereq_v33.audit is targets.audit_v3 with the v3.3 checker (schema first; a non-write proposes nothing; a write lists the diagnosis,
+    action and role prerequisites)."""
+    HEADS = {'status': 'ok', 'opf': 'OEBPS/c.opf', 'dc_title': ['Alpha Book'], 'dc_creator': ['A. Writer'], 'spine_items': 2, 'spine_characters': 900,
+             'spine_heads': ['Some unrelated words only', 'and more']}
+
+    def decision(self, **kw):
+        d = {'type': 'decision', 'class': 'identity_mismatch', 'action': 'blocklist_and_search', 'reason': 'r', 'confidence': 0.7, 'evidence_refs': ['e1'],
+             'source': {'ref': 'e1'}, 'target': {'kind': 'release_of_source', 'source_ref': 'e1'}}
+        d.update(kw)
+        return d
+
+    def test_audit_with_the_v33_checker(self):
+        from media_repair_harness.experimental.contract_v3 import targets as TG
+        obs = [D.ob('e1', 'epub_inspect', self.HEADS, source='case')]
+        new, old = PQ33.audit(self.decision(), obs, D.CAT, 'epub'), TG.audit_v3(self.decision(), obs, D.CAT, 'epub')
+        self.assertEqual((new['checker'], new['rubric'], new['executed'], new['execution_status']), ('prereq-v3.3', RB33.RUBRIC_V33_VERSION, False, 'proposed_not_executed'))
+        st = lambda a: {p['id']: p['state'] for p in a['prerequisites']}
+        self.assertEqual({k for k in st(new)}, {k for k in st(old)})
+        self.assertEqual((st(old)['D-ID-1'], st(new)['D-ID-1']), ('unknown', 'unmet'))            # A33-3: the legacy heads are not content
+        self.assertEqual({k: v for k, v in st(new).items() if k not in ('D-ID-1', 'A-BLK-4')}, {k: v for k, v in st(old).items() if k not in ('D-ID-1', 'A-BLK-4')})
+        self.assertEqual(new['references'], old['references'])
+        self.assertEqual(PQ33.audit(self.decision(action='escalate', source=None), obs, D.CAT, 'epub')['execution_status'], 'refused_invalid_decision')
+        plain = {k: v for k, v in self.decision(action='escalate', **{'class': 'insufficient_evidence'}).items() if k not in ('source', 'target')}
+        self.assertEqual(PQ33.audit(plain, obs, D.CAT, 'epub')['execution_status'], 'no_write_proposed')
 
 
 if __name__ == '__main__':

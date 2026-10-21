@@ -23,11 +23,15 @@ AMENDMENTS_V33 = (
             'inside a part map but not a part map that is itself {}, unlike a container-level {} (D32-1).'},
     {'id': 'A33-2', 'resolves': 'D32-2', 'changes': 'statement kind of a prior record (v3.0 section 1, A31-3; supersedes C32-3 for the v3.3 checker)',
      'text': 'A prior record\'s kind derives only from its stated evidence_method. A negated, failed or missing method, and one that matches no '
-             'vocabulary class, is report_unknown (A31-3, C32-3). A method that names content words together with declaration or hash words (for '
-             'example "metadata read", "MD5 of the audio") is ambiguous about whether content was observed and is report_unknown. Every other method keeps '
-             'the frozen order: hash words give report_hash (also beside declaration words), declaration words report_declaration, content words alone '
-             'report_content. The checker shows, for every prior record, the method as stated, every vocabulary class it matched, whether it is negated, '
-             'whether it is ambiguous and the kind derived.',
+             'vocabulary class, is report_unknown (A31-3, C32-3) and reports nothing the checker compares. A method that names content words together '
+             'with declaration or hash words (for example "metadata read", "MD5 of the audio"; hash plus content falls under the same rule as declaration '
+             'plus content) is ambiguous about whether content was observed and is report_unknown: it establishes no content. Its reported values are '
+             'still compared at declaration strength (statement kind report_ambiguous): a disagreement contests identity and makes M5 present, and an '
+             'agreement is declared_agree, exactly as the same report does under v3.1 (where it is report_declaration or report_hash); it never verifies '
+             'or contradicts identity. Every other method keeps the frozen order: hash words give report_hash (also beside declaration words), declaration '
+             'words report_declaration, content words alone report_content. The frozen vocabulary is unchanged and counts the bare word "read" as a '
+             'content word. The checker shows, for every prior record, the method as stated, every vocabulary class it matched, whether it is negated, '
+             'whether it is ambiguous, the kind derived and the statement kind compared.',
      'why': 'AUDIT-ASTRA-26 item 4 says negated, missing or ambiguous methods remain unknown; the frozen v3.0 rule typed a declaration-plus-content method '
             'as report_declaration (D32-2).'},
     {'id': 'A33-3', 'resolves': 'D32-3', 'changes': 'identity statements (section 8; C32-4)',
@@ -38,7 +42,8 @@ AMENDMENTS_V33 = (
             'names another work; only format v3.1-format\'s audit withheld them (D32-3).'},
 )
 
-SUPERSEDED_V33 = {'C32-3': 'A33-2 (a method naming content words beside declaration or hash words is report_unknown; v3.2 kept report_declaration or report_hash)'}
+SUPERSEDED_V33 = {'C32-3': 'A33-2 (a method naming content words beside declaration or hash words is report_unknown, compared at declaration strength; '
+                            'v3.2 kept report_declaration or report_hash)'}
 
 RUBRIC_V33 = dict(RB32.RUBRIC_V32, version=RUBRIC_V33_VERSION, amends=RB32.RUBRIC_V32_VERSION,
                   kind='amendment (made after labels had been read): A33-1 to A33-3 resolve D32-1 to D32-3',

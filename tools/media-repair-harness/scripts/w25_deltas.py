@@ -72,8 +72,11 @@ def main(argv=None):
             counts['cases'] += 1
             view = P.case_view(case, [], case_alias='case-%08d' % n)
             fixture = T.Fixture.from_case(case, sdir)
-            ctxs = {tb: T.Context(case, fixture, tempfile.mkdtemp(prefix='mrh-w25-'), suite_dir=sdir, which=lambda _n: None, tools_behavior=tb, keep_raw=True)
-                    for tb in ('v3', 'v4')}
+            ctxs = {}
+            for ver in (OLD, NEW):
+                with EV2.diagnostic_rules(ver['diagnostic_rules']):         # tools behaviour v4 is built under diag-2 only (tools.TOOLS_V4_DIAGNOSTIC_RULES)
+                    ctxs[ver['tools_behavior']] = T.Context(case, fixture, tempfile.mkdtemp(prefix='mrh-w25-'), suite_dir=sdir, which=lambda _n: None,
+                                                            tools_behavior=ver['tools_behavior'], keep_raw=True)
             evidence = RUN.resolve_evidence_raw(case, sdir, ctxs['v3'].redact, literal_epub=True)
             obs = [EV2.make_observation(e['id'], e['tool'], e['args'], e['status'], e['output'], None, 'case') for e in evidence]
             counts['evidence_observations'] += len(obs)

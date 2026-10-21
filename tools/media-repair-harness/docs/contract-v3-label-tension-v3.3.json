@@ -30,5 +30,5 @@
  ],
  "checker": "prereq-v3.3",
  "diagnostic_rules": "diag-2",
- "note": "rubric v3.3 is an amendment written after the labels had been read (docs/contract-v3.md section 17)"
+ "note": "checker prereq-v3.3 applies rubric contract-v3-rubric-3.3 (an amendment written AFTER the labels had been read, docs/contract-v3.md section 17); diagnostic rules diag-2 (with the W25 corrections, docs/evidence-format-v2.md, last section)"
 }

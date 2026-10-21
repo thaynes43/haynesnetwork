@@ -11,15 +11,21 @@ showed it:
   internal observations and the capabilities the record says were advertised);
 * LINK candidates count as in uncalled-1 (available, offered, one per distinct call);
 * EXCERPT candidates (the EPUB body capability, which has no link in the presentation): when epub_inspect is offered and advertised as available with
-  `excerpts` described, a shown body index gives one candidate per indexed spine item whose body text is not covered by the shown default and explicit
-  excerpts (`{"spine": i, "offset": <the first unread code point>}`), and one per spine position beyond the index (`offset` 0); with no body view
-  shown, the default call `{}` is the candidate unless a `{}` call was already made (one that failed, timed out or was unavailable is not repeated);
-  an explicit excerpt request that failed is not repeated;
-* PAGE candidates: every page of a shown message (the first message or a tool result) that was not fetched before the decision; a fetch is a tool call.
+  `excerpts` described, a shown body index gives one candidate per spine position (indexed, or beyond the index up to `items_total`) whose body text is
+  not covered by the shown default and explicit excerpts, at the first unread code point (`{"spine": i, "offset": n}`).  Each position's read is told
+  apart (_read_state): `complete` (the merged excerpts cover [0, length)), `partial` (they stop before it: the candidate is the first unread code point)
+  or `unread`.  The length is the index's `characters`; beyond the index it is what an excerpt of that item states (`item_characters`, or `next_offset`
+  null at its end); an item whose length is stated nowhere is never complete.  A FAILED explicit
+  request (`error`, `timeout`, `unavailable`) is not repeated at its own offset.  With no body view shown, the default call `{}` is the candidate unless a
+  `{}` call was already made (one that failed, timed out or was unavailable is not repeated);
+* PAGE candidates: every page of a shown message (the first message or a tool result) that was not served before the decision.  A served page is
+  identified by the page object its fetch returned (`page.source`, `page.n`), so a page fetched twice counts once; a fetch whose output carries no
+  readable page object but whose cursor was valid (`pages_of`) counts once per distinct cursor, as the next unserved page.  A fetch is a tool call.
 
 A candidate counts only while the remaining budget at the decision is at least one.  The count is a neutral transcript observation, never an error, and
 never a claim that calling the check would have changed the decision.  No case id is a key of the summary; rows carry the record's own case alias.
 """
+import json
 import tempfile
 
 from ... import evidence_v2 as EV2
@@ -64,6 +70,29 @@ def _covered(spans):
     return out
 
 
+def _int(v):
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def _read_state(excerpts, length=None):
+    """-> (state, first unread code point) of one spine item from the excerpts shown for it (dicts with int `offset` and `end`).  `length` is the item's
+    length when the index states it; otherwise an excerpt's `item_characters`, or the `end` of an excerpt whose `next_offset` is null, states it.  States:
+    `complete` (the merged excerpts cover [0, length)), `partial` (they cover [0, n) for some n short of the length, or of an unstated length), `unread`
+    (nothing covers offset 0).  An item whose length is stated nowhere is never complete: its end was not seen."""
+    pos = 0
+    for a, b in _covered([(ex['offset'], ex['end']) for ex in excerpts]):
+        if a > pos:
+            break
+        pos = max(pos, b)
+    if length is None:
+        stated = [ex['item_characters'] for ex in excerpts if _int(ex.get('item_characters'))]
+        stated += [ex['end'] for ex in excerpts if 'next_offset' in ex and ex['next_offset'] is None]
+        length = max(stated) if stated else None
+    if length is not None and pos >= length:
+        return 'complete', pos
+    return ('partial' if pos > 0 else 'unread'), pos
+
+
 def excerpt_candidates(inner, caps, offered, args_of=None):
     """-> candidates for the EPUB body capability (no result is an input: only which views and ranges were shown).  `args_of` maps a call id to the
     arguments the record states (the observations carry the safe arguments only, which drop the excerpt arguments)."""
@@ -80,52 +109,70 @@ def excerpt_candidates(inner, caps, offered, args_of=None):
         return [{'tool': 'epub_inspect', 'args': {}, 'scope': 'epub_body_index', 'availability': 'available'}]
     _o, body = bodies[-1]
     read = {}
+
+    def shown(ex):
+        if isinstance(ex, dict) and _int(ex.get('spine')) and _int(ex.get('offset')) and _int(ex.get('end')):
+            read.setdefault(ex['spine'], []).append(ex)
     for ex in body.get('excerpts') or []:
-        if isinstance(ex, dict) and isinstance(ex.get('spine'), int) and isinstance(ex.get('offset'), int) and isinstance(ex.get('end'), int):
-            read.setdefault(ex['spine'], []).append((ex['offset'], ex['end']))
+        shown(ex)
     failed = set()
     for o in inner:
         d = _data(o)
         if o['tool'] == EV31.EXCERPT_TOOL and isinstance((d or {}).get('excerpt'), dict):
-            ex = d['excerpt']
-            if isinstance(ex.get('spine'), int) and isinstance(ex.get('offset'), int) and isinstance(ex.get('end'), int):
-                read.setdefault(ex['spine'], []).append((ex['offset'], ex['end']))
+            shown(d['excerpt'])
         elif o['tool'] == 'epub_inspect' and o.get('source') == 'tool' and o['status'] in ('error', 'timeout', 'unavailable') and args_of.get(o['id']):
             failed.add((args_of[o['id']].get('spine'), args_of[o['id']].get('offset', 0)))
     out = []
-    index = [it for it in body['index'] if isinstance(it, dict) and isinstance(it.get('spine'), int)]
-    for it in index:
-        n = it.get('characters') if isinstance(it.get('characters'), int) else 0
-        pos = 0
-        for a, b in _covered(read.get(it['spine'], [])):
-            if a > pos:
-                break
-            pos = max(pos, b)
-        if pos < n and (it['spine'], pos) not in failed:
-            out.append({'tool': 'epub_inspect', 'args': {'spine': it['spine'], 'offset': pos}, 'scope': 'epub_body', 'availability': 'available'})
-    total = body.get('items_total') if isinstance(body.get('items_total'), int) else len(index)
-    for i in range(len(index), total):
-        if i not in read and (i, 0) not in failed:
-            out.append({'tool': 'epub_inspect', 'args': {'spine': i, 'offset': 0}, 'scope': 'epub_body_unindexed', 'availability': 'available'})
+    index = [it for it in body['index'] if isinstance(it, dict) and _int(it.get('spine'))]
+    total = body.get('items_total') if _int(body.get('items_total')) else len(index)
+    positions = [(it['spine'], it.get('characters') if _int(it.get('characters')) else 0, 'epub_body') for it in index]
+    positions += [(i, None, 'epub_body_unindexed') for i in range(len(index), total)]
+    for spine, length, scope in positions:
+        state, pos = _read_state(read.get(spine, []), length)
+        if state != 'complete' and (spine, pos) not in failed:
+            out.append({'tool': 'epub_inspect', 'args': {'spine': spine, 'offset': pos}, 'scope': scope, 'availability': 'available', 'read': state})
     return out
 
 
+def _served_page(call):
+    """-> (message id, page number) of the page a page fetch served, from the page object of its output (`page.source`, `page.n`); else None."""
+    out = call.get('raw_output', call.get('output'))
+    data = None
+    if isinstance(out, str):
+        try:
+            data, _end = json.JSONDecoder().raw_decode(out.lstrip())
+        except ValueError:
+            data = None
+    elif isinstance(out, dict):
+        data = out
+    page = ((data or {}).get('output') or {}).get('page') if isinstance(data, dict) and isinstance(data.get('output'), dict) else None
+    if isinstance(page, dict) and isinstance(page.get('source'), str) and _int(page.get('n')):
+        return page['source'], page['n']
+    return None
+
+
 def page_candidates(record):
-    """-> one candidate per page of a shown message that was not fetched (the first page of every message is delivered with it)."""
+    """-> one candidate per page of a shown message that was not served (the first page of every message is delivered with it)."""
     calls = record.get('tool_calls') or []
     case_ids = sorted(str(e.get('id') if isinstance(e, dict) else e) for e in record.get('evidence_shown') or [])
-    fetched = {}
+    served, cursors = {}, {}
     for c in calls:
         if c.get('continuation') or c.get('tool') == 'page':
+            got = _served_page(c)
+            if got is not None:
+                served.setdefault(got[0], set()).add(got[1])
+                continue
             of = c.get('pages_of') or []
             key = 'evidence' if (sorted(of) == case_ids and of) else (of[0] if len(of) == 1 else None)
-            if key is not None:
-                fetched[key] = fetched.get(key, 0) + 1
+            cur = (c.get('args') or {}).get('cursor')
+            if key is not None and of:          # a valid cursor (it has an origin) whose page object is not readable here
+                cursors.setdefault(key, set()).add(cur if isinstance(cur, str) else c.get('id'))
     out = []
     for m in (record.get('evidence_format') or {}).get('messages') or []:
-        pages = m.get('pages') if isinstance(m.get('pages'), int) else 1
-        rest = pages - 1 - fetched.get(m.get('id'), 0)
-        for n in range(pages - rest + 1, pages + 1):
+        pages = m.get('pages') if _int(m.get('pages')) else 1
+        rest = [n for n in range(2, pages + 1) if n not in served.get(m.get('id'), set())]
+        rest = rest[len(cursors.get(m.get('id'), ())):]      # unnumbered fetches: the next unserved pages, in order
+        for n in rest:
             out.append({'tool': 'page', 'args': {'of': m.get('id'), 'page': n}, 'scope': 'page', 'availability': 'available'})
     return out
 

@@ -126,12 +126,16 @@ _OTHER_WRAPPER_RX = re.compile(r'^(?:(?:Error opening input(?: files?)?|Error du
 # ------------------------------------------------------------------------------------------------------------------ diagnostic rules versions (W25)
 # `diag-1` is every allow-list and EPUB stage rule above, byte for byte: every earlier configuration and record reads it.  `diag-2` (opt-in) corrects four
 # defects; nothing else changes:
-#   * the open-tail zip patterns (`CRC mismatch in member .+`, `Bad CRC-32 for file .+`, `Corrupt (?:zip64 )?extra field.*`) accepted a file-name-spelled line
-#     followed by an execution error (`...: Permission denied`) as damage.  diag-2 anchors them: Python's `%r`-quoted name for Bad CRC-32, the documented
-#     `%04x (size=%d)` and zip64 forms for the extra field, and a member name that does not END in an execution error for the harness's own CRC message; a
-#     trailing execution error after any of the three is read as that execution error (OPEN_TAIL_EXEC_RX);
-#   * the zip_crc ` in member <name>` suffix may hold colons (`a:b.xhtml`, `Part 1: Intro.xhtml`); a name that ends in an execution error makes the line an
-#     execution failure (execution precedence is kept);
+#   * the open-tail patterns (`CRC mismatch in member .+`, `Bad CRC-32 for file .+`, `Corrupt (?:zip64 )?extra field.*` and the three manifest messages
+#     `manifest names \d+ member\(s\) that are not in the archive.*`, `manifest names members that are not in the archive: .+`, `manifest references
+#     missing member\(s\): .+`) accepted a file-name-spelled line followed by an execution error (`...: Permission denied`) as damage.  diag-2 anchors them:
+#     Python's `%r`-quoted name for Bad CRC-32, the documented `%04x (size=%d)` and zip64 forms for the extra field, and, for the harness's own CRC message and
+#     the manifest messages, a tail that does not END in an execution error (_ENDS_IN_EXEC: `: ` and the classifier's own decoration `\w*Error: `,
+#     `[Errno N] ` in front of an execution-allow-listed message).  A line that starts with one of these messages and ends in an execution error is that
+#     execution error, before any damage reading (OPEN_TAIL_EXEC_RX, execution precedence);
+#   * the zip_crc ` in member <name>` suffix is recognised on the WHOLE error text before it is split into lines (_zip_crc_readings): the name may hold
+#     colons (`a:b.xhtml`, `Part 1: Intro.xhtml`), line breaks, a leading space or ` in member ` itself; a text whose name ends in an execution error (after
+#     `: ` or on a line of its own) is an execution failure (execution precedence is kept);
 #   * `AssertionError: a spine document has no text` (tools behaviour v2 / v3: ONE spine document without text, which an image-only cover page also is) is no
 #     longer damage: it is unclassified (the text does not say whether every document was empty).  Tools behaviour v4's `the spine documents contain no
 #     text` (every spine document empty, the live collector's finding) is damage.
@@ -159,33 +163,48 @@ def active_diagnostic_rules():
 
 
 _EXEC_ALT = '|'.join(EXECUTION_ALLOW_LIST)
-_ENDS_IN_EXEC = r':\s+(?:%s)(?:[:,;]\s.*)?%s' % (_EXEC_ALT, _TAIL)        # ": <an execution-error message>" running to the end of the line
+# the characters str.splitlines() breaks a line at (what `_lines` splits a diagnostic on)
+_LINE_BREAKS = '\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'
+_LINE_BREAK_RX = re.compile('[%s]' % _LINE_BREAKS)
+# diag-2: the classifier's own exception decoration (_OTHER_WRAPPER_RX: `\w*Error: ` and `[Errno N] `) may stand in front of the execution message
+_EXEC_DECOR = r'(?:\w*Error: )?(?:\[Errno \d+\] )?'
+# ": <an execution-error message>" (or one on a line of its own) running to the end of the text, the decoration allowed in front of the message
+_ENDS_IN_EXEC = r'(?::\s+|[%s]\s*)%s(?:%s)(?:[:,;]\s.*)?%s' % (_LINE_BREAKS, _EXEC_DECOR, _EXEC_ALT, _TAIL)
+_NOT_EXEC_TAIL = r'(?!.*' + _ENDS_IN_EXEC + r')'
 _DIAG2_REPLACED = {
     r'Bad CRC-32 for file .+': (r'''Bad CRC-32 for file (?:'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*")''', 'Python zipfile.BadZipFile ("Bad CRC-32 for file %r")',
                                 'diag-2: the %r-quoted name only'),
-    r'CRC mismatch in member .+': (r'CRC mismatch in member (?!.*' + _ENDS_IN_EXEC + r')\S.*', 'this harness: tools._epub_stage (zipfile.testzip)',
-                                   'diag-2: a member name that ends in an execution error is that execution error'),
+    r'CRC mismatch in member .+': (r'CRC mismatch in member ' + _NOT_EXEC_TAIL + r'\s*\S.*', 'this harness: tools._epub_stage (zipfile.testzip)',
+                                   'diag-2: a member name (a leading space allowed) that does not end in an execution error'),
     r'Corrupt (?:zip64 )?extra field.*': (r'Corrupt extra field [0-9a-fA-F]{4} \(size=\d+\)|Corrupt zip64 extra field\. (?:File size|Compress size|Header offset) not found\.',
                                           'Python zipfile.BadZipFile ("Corrupt extra field %04x (size=%d)", "Corrupt zip64 extra field. {field} not found.")',
                                           'diag-2: the documented forms only'),
+    r'manifest names \d+ member\(s\) that are not in the archive.*': (r'manifest names \d+ member\(s\) that are not in the archive' + _NOT_EXEC_TAIL + r'.*',
+                                                                     'this harness: evidence/epubtool.py', 'diag-2: a tail that does not end in an execution error'),
+    r'manifest names members that are not in the archive: .+': (r'manifest names members that are not in the archive' + _NOT_EXEC_TAIL + r': .+',
+                                                                'public dev replay (the recorded EPUB inspector)', 'diag-2: a tail that does not end in an execution error'),
+    r'manifest references missing member\(s\): .+': (r'manifest references missing member\(s\)' + _NOT_EXEC_TAIL + r': .+',
+                                                    'public dev replay (the recorded EPUB inspector)', 'diag-2: a tail that does not end in an execution error'),
 }
+assert set(_DIAG2_REPLACED) <= {pat for pat, _s, _n in DAMAGE_ALLOW_LIST}
 DAMAGE_ALLOW_LIST_DIAG2 = tuple(_DIAG2_REPLACED.get(pat, (pat, src, note)) for pat, src, note in DAMAGE_ALLOW_LIST)
 _DAMAGE_RXS_DIAG2 = [re.compile(r'(?:%s)%s' % (pat, _TAIL)) for pat, _src, _note in DAMAGE_ALLOW_LIST_DIAG2 if not pat.startswith('Invalid data found')]
-# diag-2: an open-tail zip message followed by ": <execution error>" -- the candidate after it is the execution error (and nothing else is produced)
-OPEN_TAIL_EXEC_RX = re.compile(r'^(?:CRC mismatch in member|Bad CRC-32 for file|Corrupt (?:zip64 )?extra field)\b.*?:\s+(?=(?:%s)(?:[:,;]\s.*)?%s)' % (_EXEC_ALT, _TAIL))
+# diag-2: a line that starts with an open-tail message and ends in an execution error is that execution error (checked before any damage reading)
+OPEN_TAIL_PREFIXES = (r'CRC mismatch in member', r'Bad CRC-32 for file', r'Corrupt (?:zip64 )?extra field', r'manifest names \d+ member\(s\) that are not in the archive',
+                      r'manifest names members that are not in the archive', r'manifest references missing member\(s\)')
+OPEN_TAIL_EXEC_RX = re.compile(r'^(?:%s).*?%s' % ('|'.join(OPEN_TAIL_PREFIXES), _ENDS_IN_EXEC))
 
 
 def _candidates(line):
     """The message of a diagnostic line with its decoration removed, in every reasonable reading: -> {(candidate, under_decode_wrapper)}.  Matching is anchored at BOTH ends of
     each candidate (see the patterns), so a recognised message followed by anything else ("moov atom not found.mkv: Permission denied") matches nothing."""
     seen, todo = set(), [(line.strip()[:1000], False)]
-    strips = (_BRACKETS_RX, _OTHER_WRAPPER_RX) + _PATH_PREFIX_RXS + ((OPEN_TAIL_EXEC_RX,) if _ACTIVE_RULES.get() == 'diag-2' else ())
     while todo:
         cur, dec = todo.pop()
         if (cur, dec) in seen or len(seen) > 40:
             continue
         seen.add((cur, dec))
-        for rx in strips:
+        for rx in (_BRACKETS_RX, _OTHER_WRAPPER_RX) + _PATH_PREFIX_RXS:
             m = rx.match(cur)
             if m and m.end() < len(cur):
                 todo.append((cur[m.end():].strip(), dec))
@@ -198,7 +217,10 @@ def _candidates(line):
 def classify_line(line):
     """'damage' | 'warning' | 'execution' | None for ONE diagnostic line (None: unclassified).  A line is judged on its own, so nothing elsewhere can change it."""
     cands = _candidates(line)
-    damage_rxs = _DAMAGE_RXS_DIAG2 if _ACTIVE_RULES.get() == 'diag-2' else _DAMAGE_RXS
+    diag2 = _ACTIVE_RULES.get() == 'diag-2'
+    if diag2 and any(OPEN_TAIL_EXEC_RX.match(c) for c, _d in cands):
+        return 'execution'          # diag-2: an open-tail message that ends in an execution error is that error (execution precedence)
+    damage_rxs = _DAMAGE_RXS_DIAG2 if diag2 else _DAMAGE_RXS
     if any(rx.match(c) for rx in damage_rxs for c, _d in cands):
         return 'damage'
     if any(_INVALID_DATA.match(c) and not dec for c, dec in cands):
@@ -283,9 +305,31 @@ _EPUB_STAGE_SHAPES = {
 }
 
 
-# diag-2: the zip_crc member name may hold colons; one that ends in an execution error makes the whole line that execution failure (execution precedence)
-_MEMBER_SUFFIX_RX_DIAG2 = re.compile(r'^(.*?\S) in member (\S.*)$')
+# diag-2: the collectors write ONE message followed by ' in member <name>' at stage zip_crc (evidence/epubtool.py: `'%s in member %s' % (_err(e), name)`;
+# tools._epub_stage: `'CRC mismatch in member %s' % name`).  The suffix is recognised on the whole text, before it is split into lines, so a line break in
+# the name is part of the name.  The name may hold colons, line breaks, a leading space and ' in member ' itself, so every occurrence of the separator is
+# a reading.  A name that ends in an execution error (after ': ' or on a line of its own) makes the text that execution failure (execution precedence).
+_MEMBER_SEP = ' in member '
 _ENDS_IN_EXEC_RX = re.compile(_ENDS_IN_EXEC)
+
+
+def _zip_crc_readings(text):
+    """diag-2: -> [(message, name)] for every occurrence of ' in member ' in `text` with a non-blank message before it and a non-blank name after it,
+    the first occurrence (the longest name) first."""
+    out, i = [], text.find(_MEMBER_SEP)
+    while i >= 0:
+        head, name = text[:i], text[i + len(_MEMBER_SEP):]
+        if head.strip() and name.strip():
+            out.append((head, name))
+        i = text.find(_MEMBER_SEP, i + 1)
+    return out
+
+
+def _live_bad_crc(head, name):
+    """diag-2: True when `head` is exactly the live collector's message for zipfile's CRC failure of member `name` (`BadZipFile: ` + str(e)[:200],
+    evidence/epubtool._err; zipfile raises `Bad CRC-32 for file %r` with the member's own name), so a name whose quoted form was cut at 200 characters
+    is still recognised."""
+    return head == 'BadZipFile: ' + ('Bad CRC-32 for file %r' % name)[:200]
 _EPUB_STAGE_SHAPES_DIAG2 = dict(_EPUB_STAGE_SHAPES, spine=(
     ('damage', re.compile(r"KeyError: '[^']*'")),
     ('damage', re.compile(r'KeyError: "There is no item named \'mimetype\' in the archive"')),
@@ -295,17 +339,25 @@ _EPUB_STAGE_SHAPES_DIAG2 = dict(_EPUB_STAGE_SHAPES, spine=(
 
 def epub_failure(stage, error):
     """-> 'damage' | 'execution' | None for the error text of a failed EPUB stage, from the allow-lists and the stage-scoped shapes ONLY (never from the collector's own `cause`).
-    The same function reads the recorded (replay) and the live collector's text, so both paths agree.  Under diag-2 the zip_crc member suffix may hold colons
-    (a name ending in an execution error is an execution failure) and the spine shapes are _EPUB_STAGE_SHAPES_DIAG2."""
+    The same function reads the recorded (replay) and the live collector's text, so both paths agree.  Under diag-2 the zip_crc member suffix is read on
+    the whole text (_zip_crc_readings: colons, line breaks, a leading space or ' in member ' in the name; a name ending in an execution error is an execution
+    failure) and the spine shapes are _EPUB_STAGE_SHAPES_DIAG2."""
     text = (str(error or '') if not isinstance(error, (list, tuple)) else '\n'.join(str(x) for x in error)).strip()
     if not text:
         return None
     diag2 = _ACTIVE_RULES.get() == 'diag-2'
     texts = [text]
-    if stage == 'zip_crc':
-        m = (_MEMBER_SUFFIX_RX_DIAG2 if diag2 else _MEMBER_SUFFIX_RX).match(text)
-        if m and diag2 and _ENDS_IN_EXEC_RX.search(m.group(2)):
-            return 'execution'
+    if stage == 'zip_crc' and diag2:
+        readings = _zip_crc_readings(text)
+        if readings:
+            if _ENDS_IN_EXEC_RX.search(readings[0][1]):
+                return 'execution'          # the name ends in an execution error: execution precedence
+            # ONE message: a line break inside it belongs to the member name, so the text and each message are read as one line each
+            texts = [_LINE_BREAK_RX.sub(' ', t) for t in [text] + [h for h, _n in readings]]
+            if not any(execution_error(t) for t in texts) and any(_live_bad_crc(h, n) for h, n in readings):
+                return 'damage'
+    elif stage == 'zip_crc':
+        m = _MEMBER_SUFFIX_RX.match(text)
         if m:
             texts.append(m.group(1))       # (the text as written is tried too: 'CRC mismatch in member X' is itself an allow-listed message)
     if any(execution_error(t) for t in texts):
