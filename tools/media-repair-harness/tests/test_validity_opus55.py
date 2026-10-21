@@ -99,11 +99,33 @@ class FrozenCeiling(unittest.TestCase):
         never = want['never_correct_under_contract']
         self.assertEqual((len(never), sum(want['per_case'][c]['truth'] != 'insufficient_evidence' for c in never)), (26, 24))
         self.assertEqual(json.loads((VAL / 'predictions-a2.json').read_text())['cases']['tv-identity-004']['alt'], [])
+        self.assertEqual(hashlib.sha256((VAL / 'predictions-a2.json').read_bytes()).hexdigest(),
+                         'dce1bfd962cde8622722dd35b2d30450b86271f87bc5748b0da9f67e53b967d5')
+
+    def test_amendment3_predictions(self):
+        suite = th.require_suite().parent / 'suite-dev-v1.1'
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('validity_ceiling', SCRIPTS / 'validity_ceiling.py')
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / 'ceiling-a3.json'
+            mod.main(['--suite', str(suite), '--predictions', str(VAL / 'predictions-a3.json'), '--out-json', str(out)])
+            got = json.loads(out.read_text())
+        want = json.loads((VAL / 'ceiling-a3.json').read_text())
+        got.pop('score_py'), want.pop('score_py')
+        self.assertEqual(got, want)
+        c = json.loads((VAL / 'predictions-a3.json').read_text())['cases']
+        self.assertEqual((c['epub-identity-003']['alt'], c['epub-naming-001']['alt']), ([], []))
+        for cid, p in c.items():
+            self.assertEqual(len(p['alt_kind']), len(p['alt']), cid)
+            self.assertTrue(set(p['alt_kind']) <= {'i', 'ii'}, cid)
+        self.assertEqual(sorted(k for k, p in c.items() if p['hand_judgement']), ['movie-identity-002'])
 
     def test_predictions_cover_every_case_once(self):
         suite = th.require_suite().parent / 'suite-dev-v1.1'
         ids = sorted(c['id'] for c, _ in R.load_cases(str(suite)))
-        for name in ('predictions.json', 'predictions-a1.json', 'predictions-a2.json'):
+        for name in ('predictions.json', 'predictions-a1.json', 'predictions-a2.json', 'predictions-a3.json'):
             pred = json.loads((VAL / name).read_text())['cases']
             self.assertEqual(sorted(pred), ids, name)
             for cid, p in pred.items():
@@ -160,7 +182,7 @@ class RenderEquivalence(unittest.TestCase):
 
 class CallJournalShim(unittest.TestCase):
     """Amendment 1: the pass-through claude shim leaves stdin bytes, stdout, stderr and the exit status unchanged and journals start/end."""
-    SHA = '8b54299d0005b981ce4cf4578f22511712b6af3f7ed392cdcfde856f3c414b59'   # Amendment 2: exec, so a timeout kill reaches the CLI
+    SHA = '7665358141a634e7cb15432b944336ac922e06afacdf763fdc3521399ee4ce7b'   # Amendment 3: refuses on an unwritable journal; exec since Amendment 2
 
     def test_pinned_and_transparent(self):
         import os
@@ -181,9 +203,31 @@ class CallJournalShim(unittest.TestCase):
                     break
                 time.sleep(0.05)
             self.assertEqual([x.split()[1] for x in log], ['start', 'stdout-closed'])
+            self.assertIn('kind=call', log[0])
             outs = list((Path(d) / 'j').glob('out-*.json'))
             self.assertEqual(len(outs), 1)
             self.assertEqual(outs[0].read_bytes(), b'a\x00b\nc')
+
+    def test_refuses_when_the_journal_cannot_be_written(self):
+        import os
+        import subprocess
+        shim = SCRIPTS / 'claude_call_journal.sh'
+        with tempfile.TemporaryDirectory() as d:
+            ran = Path(d) / 'ran'
+            fake = Path(d) / 'fake'
+            fake.write_text('#!/bin/bash\ntouch %s\n' % ran)
+            fake.chmod(0o755)
+            j = Path(d) / 'j'
+            j.mkdir()
+            (j / 'calls.log').write_text('')
+            (j / 'calls.log').chmod(0o444)
+            env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'MRH_CLAUDE_REAL': str(fake), 'MRH_CALL_JOURNAL': str(j)}
+            r = subprocess.run(['bash', str(shim), '-p'], input=b'', capture_output=True, env=env)
+            (j / 'calls.log').chmod(0o644)
+            if os.geteuid() == 0:
+                self.skipTest('root ignores file modes')
+            self.assertEqual(r.returncode, 97)
+            self.assertFalse(ran.exists())
 
     def test_timeout_kill_reaches_the_cli(self):
         """The runner kills the process it started on timeout; with exec that process IS the CLI, so no orphaned call keeps running."""

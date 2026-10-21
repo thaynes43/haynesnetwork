@@ -400,3 +400,92 @@ with the characters sent (system prompt plus message):
 **Summary of the final category set.** The precedence is **H > F > G** (guarded view only), then the evaluated
 categories **P, P!, A1, A2, A3, B (B1, B2, B4, B5) and D**. The registered reference set is `predictions-a2.json` with
 `ceiling-a2.json`.
+
+## 12. Amendment 3 (committed before any model call; earlier text stays as committed, and its history is the git log)
+
+**Why.** These reviews cover Amendments 1 and 2 together:
+- **Astra** `AUDIT-ASTRA-39` (attempt 2) at `08161978`: no-go.
+  - Blocker 1: credit for stopping before a material read; references not tested against later counterevidence.
+  - Major 2: the consistency rules rejected valid reference writes.
+  - Major 3: journal gaps, and records on node-local `/tmp`.
+  - Minors 4 and 5.
+- **Opus:** go on Amendment 2.
+
+Astra reproduced the arithmetic, the robust bound, the hashes and 73/73 render equivalence. **Still no model call has
+been made.**
+
+| # | Finding | Change |
+|---|---|---|
+| 1 | Astra 1: alternatives that stop before a material read | **`predictions-a3.json`** (sha256 `0d01d7efd1771dc293728521cf6c650f04667519330a426b41f19b1a3259a09a`) removes the U/escalate alternatives of epub-identity-003 and epub-naming-001. Each alternative now carries `alt_kind`: **i** is another reading of a contract clause, and **ii** is the decision after a call on a *non-material* item. An **ii** is a sensitivity view: its trajectory deviates from literal Deciding 3. The new `defeated_by` field names the delivered evidence that makes an initially admissible reference inadmissible. `ceiling-a3.json` is byte-identical to `ceiling-a2.json` (sha256 `b7c4057c…`; reference G3 35/61, G4 13/15, G5 20/49; 26 unreachable). The files a2, a1 and the original stay unchanged |
+| 2 | Astra 1 and 2: attribution | The **attribution procedure** below **supersedes** the consistency conditions and the category list of §10 and §11. The categories H, F and G keep their precedence |
+| 3 | Astra 2: references to non-ok results; checker-unknown judgements | A reference to a non-ok result is allowed when it is an error result carrying a located `known_defect` whose cause is not `tool` (prompt v7 Deciding 5, A-BLK-3). An `unknown` audit prerequisite is credited **only** when the case's frozen `hand_judgement` names it and the independent results reviewer confirms that judgement on the actual transcript. **This applies to movie-identity-002 only:** D-ID-1 and A-BLK-4, the title card PAPER KINGDOM. Otherwise the case is D |
+| 4 | Astra 3: journal | The shim (sha256 `7665358141a634e7cb15432b944336ac922e06afacdf763fdc3521399ee4ce7b`) **refuses to start the CLI (exit 97)** when the journal directory, the start record or the reply copy cannot be written. It tags the preflight `--version` call `kind=version`. Every run record now goes to the **persistent volume**: `--out /home/dev/work/mrh-val-runs/devval-opus-5-5`. `--out` is not part of the config, so the config hash is unchanged. The interruption categories are widened below |
+| 5 | Astra 4: trajectory and decision | Walkthrough §5 and this procedure treat rule-(ii) paths as sensitivity views that deviate from literal Deciding 3, never as plain compliance. Comparisons with the archived Astra run are decision-pair disagreements, not instruction audits |
+| 6 | Astra 5: precision | epub-identity-003's witness is now `epub_inspect {}` → `epub_inspect {"spine":5,"offset":0,"length":1200}`. Walkthrough §1 now lists O 2/3 as meeting the threshold |
+
+### Attribution procedure (authoritative; applied to each case, in both the restored and the guarded view)
+**Step 0 (precedence).** Assign the first category that applies:
+- **H:** an adapter error, crash, leak-guard refusal, or a started-but-unrecorded case;
+- **F:** the record is `forced` and the case is not H;
+- **G:** a decision that a guard changed (guarded view only).
+
+None of these is credited.
+
+**Step 1 (prefix).** The *prefix* is everything delivered before the final decision: the first message, every tool
+result and every fetched page.
+
+**Step 2 (admissible options).** A listed option (`cf` or `alt`) is admissible at the prefix when **both** hold:
+1. the content its `requires` names was delivered in the prefix, by any call;
+2. no delivered evidence matches one of its `defeated_by` entries.
+
+These defeaters are mechanical, and always apply to `healthy` and `none`:
+- a delivered `known_defect` finding;
+- a delivered collector veto.
+
+A content defeater is judged by the results reviewer. A disputed content defeater makes the case D.
+
+**Step 3 (match).** Compare the decision with the admissible options.
+- **(a) It matches an admissible option.** The decision is *consistent* when all of these hold:
+  - no `bad_evidence_refs`, `protocol_violations` or `write_rejection`;
+  - references to non-ok results only under the A-BLK-3 exception (item 3 above);
+  - for a write:
+    - audit v3 shows no `unmet` prerequisite;
+    - every `unknown` prerequisite is covered by a confirmed `hand_judgement`;
+    - the source and target agree with the bound record;
+  - the reasoning asserts nothing that was not delivered (checked by the reviewer).
+
+  Then classify:
+  - **P:** consistent, and `score.py` accepts it. It is flagged **T** when the matched option is a rule-(ii)
+    alternative (a trajectory deviation).
+  - **A1:** consistent, rejected, and the case is unreachable (`never_correct_under_contract`).
+  - **A2:** consistent, rejected, the matched option is the reference, and a listed option passes only through a
+    rule-(ii) call.
+  - **A3:** consistent, rejected, a rule-(i) alternative, and the reference passes.
+  - **P!:** not consistent, but `score.py` accepts it (table 6).
+  - **B4:** not consistent, and it is a write with an unmet prerequisite.
+  - **B2:** not consistent in any other way.
+- **(b) It matches no admissible option.**
+  - **B4:** a write whose audit shows an unmet prerequisite.
+  - **B5:** escalate or none, where the reference decision was admissible at this prefix and is a write or another
+    class.
+  - **D:** anything else. That includes stopping before a material read: the results reviewer records B1, B2 or a
+    prediction error, with a contract citation. D is **never credited**.
+
+**Reported claims (restored view):**
+- **"Reaches the reference":** the count of P, A1, A2 and A3. It is reported twice, with and without P/T.
+- **Separately reported:** the counts of H, F, P!, B and D.
+- **The guarded view** is reported alongside, with G.
+
+### Interruption categories (replacing those of §10)
+- **recorded:** the case has a record in the persistent `--out`.
+- **started-unrecorded:** `kind=call` journal entries follow the previous case's completion line in `run.log`.
+- **never-started:** every case after a started-unrecorded case, when `run.log` and the journal both end there
+  without a gap.
+- **start-unknown:** the state of a case cannot be told apart. That includes a missing or partial `run.log`, a shim
+  refusal (exit 97), and a journal start with no matching `stdout-closed` while later activity exists.
+
+A started-unrecorded case's transcript may be incomplete. Its durable reply copies are reported as they are, never as a
+record.
+
+**Registered command (updated).** Only `--out` changes:
+`--out /home/dev/work/mrh-val-runs/devval-opus-5-5`. Everything else is as in §3 and §10.

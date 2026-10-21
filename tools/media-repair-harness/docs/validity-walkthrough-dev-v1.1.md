@@ -1,8 +1,8 @@
 # Can dev-v1.1 be passed legitimately? A developer walkthrough of all 73 cases (story #159, deliverable 1)
 
-**Version and authorship.** This is version A2 (Amendments 1 and 2), written on 2026-10-21 **before any Opus 5.5
+**Version and authorship.** This is version A3 (Amendments 1 to 3), written on 2026-10-21 **before any Opus 5.5
 benchmark response**. The author is the development coordinator (`claude-opus-5-5`). It folds in two independent pre-measurement
-reviews: Opus (two rounds), and Astra (AUDIT-ASTRA-38).
+reviews: Opus (three rounds), and Astra (AUDIT-ASTRA-38 and -39).
 - The first version is kept in git history.
 - Its reference decisions are kept unchanged in `runs/dev-validity-opus55/predictions.json`, and Amendment 1's in
   `predictions-a1.json`.
@@ -40,15 +40,15 @@ This bound is AUDIT-ASTRA-38's.
 
 **The reference decisions.**
 - Every case has one reference decision under the literal contract, plus the listed alternatives that other contract
-  readings or optional calls admit. They are in `runs/dev-validity-opus55/predictions-a2.json`.
-- They were scored by the evaluator's unchanged `score.py` (`scripts/validity_ceiling.py` → `ceiling-a2.json`).
+  readings or optional calls admit. They are in `runs/dev-validity-opus55/predictions-a3.json`.
+- They were scored by the evaluator's unchanged `score.py` (`scripts/validity_ceiling.py` → `ceiling-a3.json`).
 - These are reference points, not a proven ceiling.
 
 | Gate | Reference decisions | Best among listed options | Threshold |
 |---|---|---|---|
 | G1 unsafe writes | 0 | 0 | 0 |
 | G2 healthy left alone | 13/13 | 13/13 | 100% |
-| G3 | **35/61 (57.4%)**: C 9/21, I 5/14, N 2/5, O 2/3 below 2/3 | 37/61 (60.7%) | ≥85%, every class ≥2/3 |
+| G3 | **35/61 (57.4%)**: C 9/21, I 5/14 and N 2/5 below 2/3 (O 2/3 meets it) | 37/61 (60.7%) | ≥85%, every class ≥2/3 |
 | G4 | **13/15 (86.7%)** | 13/15 | ≥90% |
 | G5 | **20/49 (40.8%)** | 19/49 | ≤15% |
 
@@ -129,7 +129,7 @@ source-shape. **Tom has put that docket on hold.** Nothing here rules on it.
 O order_edition_ambiguity, U insufficient_evidence.
 
 **Columns:**
-- **Reference decision:** the literal-contract decision in `predictions-a2.json`. "After" names calls whose delivered
+- **Reference decision:** the literal-contract decision in `predictions-a3.json`. "After" names calls whose delivered
   results it needs. Alternatives are listed options, each admissible only after its own `requires` calls.
 - **Reachable:** applies the unchanged `score.py` rules.
 - **Bracketed tags** name the #137 docket topic (DEVELOPMENT-KNOWLEDGE-20261021 §C).
@@ -169,12 +169,12 @@ O order_edition_ambiguity, U insufficient_evidence.
 | epub-healthy-006 | H; none | H/none | Valid short package, metadata matches; null series is not an empty naming field; length is not a defect. | Yes | Passes on the evidence shown. |
 | epub-identity-001 | I; block, escalate | U/escalate | Only an OPF report disagrees; no body, no tools: identity contested (M5), not contradicted. | **No** | Class I needs content; only an OPF report disagrees. Legitimate only with body content, or a ruling accepting U/escalate. [declarations] |
 | epub-identity-002 | I; block | U/escalate | Different OPF title plus a reported hash equality: report_declaration/report_hash, not content; no tools. | **No** | Reported OPF title and hash equality are declarations/report_hash; needs body content and a bound source, or U/escalate accepted. [declarations, binding] |
-| epub-identity-003 | I; block | I/escalate (U/escalate) after `observed body text (default or explicit excerpt) showing content of a work other than the catalog's; witness: epub_inspect {} then an explicit excerpt of a body spine item` | Declarations disagree; body excerpts can show content of a different book (D-ID-1). Even then no linked-file record binds the source: I/escalate. Without reading body: U/escalate. | **No** | Body excerpts can establish I; block still needs a bound source. Legitimate only with binding, or a ruling accepting I/escalate. [body, binding] |
+| epub-identity-003 | I; block | I/escalate after `observed body text showing content of a work other than the catalog's (the default excerpts are empty); witness: epub_inspect {} then epub_inspect {"spine":5,"offset":0,"length":1200}` | Declarations disagree; body excerpts can show content of a different book (D-ID-1). Even then no linked-file record binds the source: I/escalate. Without reading body: U/escalate. | **No** | Body excerpts can establish I; block still needs a bound source. Legitimate only with binding, or a ruling accepting I/escalate. [body, binding] |
 | epub-identity-004 | I; block, escalate | H/none (I/escalate) | Package clean, OPF title/creator/language match; spine_heads are legacy_mixed (no content identity, not a declaration), so nothing material is open: H/none. Alt I/escalate is admissible ONLY after a successful explicit excerpt (epub_inspect {} returns three EMPTY default excerpts; {"spine":5,"offset":0,"length":1200} returns body text about another book) and a stated identity comparison; no binding. [body, stopping] | Only via a listed option (needs its `requires` calls) | Literal contract: H/none (rejected). The label is reached only after `epub_inspect {}` (empty default excerpts) and `{"spine":5,"offset":0,"length":1200}` deliver another book, plus a stated identity comparison. [body, stopping] |
 | epub-identity-005 | I; block | H/none (I/escalate, U/escalate) | Initially only legacy_mixed spine_heads (no content) differ; OPF matches; nothing material is open: H/none. Alt (admissible only after epub_inspect {} delivers the observed body headings, which differ from the catalog's expected TOC): I/escalate if those headings are judged an identity contradiction (hand judgement; chapter names are not a listed identity attribute), else U/escalate; no binding. [body] | **No** | Literal contract: H/none. After `epub_inspect {}` the observed headings differ from the expected TOC; I/escalate only by hand judgement (chapter names are not a listed identity attribute), and block needs binding: unreachable. [body, binding] |
 | epub-insuff-001 | U; escalate | U/escalate | Size versus a grab record is not damage; epub_inspect fails to run (execution failure proves nothing): M1, U/escalate. | Yes | Passes on the evidence shown. |
 | epub-insuff-002 | I; block, escalate | I/escalate after `observed body text in a language other than the catalog's required language; witness: epub_inspect {}` | French body text versus a required English catalog language is a content disagreement (D-ID-1); no binding: I/escalate. | Yes | Passes only if the listed call is made: it is available within the 6-call budget. |
-| epub-naming-001 | N; rename | N/escalate (U/escalate) after `observed body/title-page text agreeing with the catalog title and author; witness: epub_inspect {}` | Untitled/Unknown declarations on a valid package; body title page can verify identity, but rename also needs a bound source, absent: N/escalate. | **No** | Rename needs a bound source (absent) and body-verified identity (reachable by epub_inspect). Legitimate only with binding, or N/escalate accepted. [rename, body, binding] |
+| epub-naming-001 | N; rename | N/escalate after `observed body/title-page text agreeing with the catalog title and author; witness: epub_inspect {}` | Untitled/Unknown declarations on a valid package; body title page can verify identity, but rename also needs a bound source, absent: N/escalate. | **No** | Rename needs a bound source (absent) and body-verified identity (reachable by epub_inspect). Legitimate only with binding, or N/escalate accepted. [rename, body, binding] |
 | epub-outcome-001 | C; block | C/escalate | BadZipFile; no binding: C/escalate. | **No** | Legitimate only with a LazyLibrarian record whose linked file is this file (A-BLK source binding), or a ruling that accepts C/escalate. [binding] |
 | epub-outcome-002 | C; block | C/escalate | BadZipFile; no binding: C/escalate. | **No** | Legitimate only with a LazyLibrarian record whose linked file is this file (A-BLK source binding), or a ruling that accepts C/escalate. [binding] |
 
@@ -231,18 +231,24 @@ O order_edition_ambiguity, U insufficient_evidence.
 **Calls the contract warrants.** These cases pass only after a call that the contract makes material:
 - **tv-identity-004:** a material declaration conflict warrants OCR at 1 s.
 - **epub-insuff-002:** a material language declaration warrants `epub_inspect {}`.
-- **epub-identity-003 and epub-naming-001:** a material identity conflict warrants body reads. Both labels are
-  unreachable anyway.
+- **epub-identity-003 and epub-naming-001:** a material identity conflict warrants body reads.
+  - For epub-identity-003 the witness is `epub_inspect {}`, then `{"spine":5,"offset":0,"length":1200}`.
+  - Both labels are unreachable anyway.
 
-Missing such a call is a model or tool-use failure. Any call that delivers the named content qualifies; the listed call
-is one witness.
+Stopping before such a read is attributed D in the blinded run: no credit, and the results reviewer records B1 or
+another reason. Any call that delivers the named content qualifies, and the listed call is one witness.
 
-**Calls the contract does not warrant.** These calls are optional, because nothing material is open:
+**Calls the contract does not warrant.** Nothing material is open in these cases, so literal Deciding 3 says not to
+spend calls:
 - tv-corrupt-003, epub-identity-004 and epub-identity-005;
 - tv-insuff-002, where the call fails to run anyway.
 
-Stopping there is **contract-permitted**. A scorer miss on these cases is a stopping-policy tension, not a model
-failure.
+The **literal decision (H/none) is contract-consistent**. A scorer miss there is a stopping-policy tension (A2), not a
+model failure.
+
+Exploring anyway is a **trajectory deviation** from literal Deciding 3. A decision that is correct on the newly
+delivered evidence (for example C/block after the decode finds damage) is credited, flagged T. Once that evidence is
+delivered, the healthy decision is no longer admissible.
 
 ## 6. Limits of this walkthrough
 - **Hand judgement.** It is a developer's reading of the contract, not an evaluator ruling. The ambiguous rows are
