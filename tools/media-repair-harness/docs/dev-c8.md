@@ -80,8 +80,9 @@ envelope shows only the final, CLI-repaired object. Help and docs do not establi
 `--experimental-claude-schema` is also given (before any run directory, case or call); a run that passes the gate records
 `claude_schema_experimental: true` in its manifest. It must not be used in a registered or pre-registered measurement until OpenProject #164 clears.
 The default (schema mode off) and every legacy path, record byte and registered-configuration hash are unchanged by the gate.
-**Review round 8 (AUDIT-ASTRA-63): the gate holds at every boundary, not only in `main()`.** Each of these raises a `ValueError` naming #164 before
-any allocation, file write or call:
+**Review round 8 (AUDIT-ASTRA-63): the gate holds at every boundary, not only in `main()`.** Each of these refuses before any allocation, file write or
+call, with a message naming #164. `main()` exits with `SystemExit`; every other boundary raises `ValueError`. Since round 9 only a real `True` opts in
+(a string such as `"false"` does not), and `run_case`'s internal argument cannot bypass the gate or the record marker:
 1. `main()`, without `--experimental-claude-schema`, before the run directory, any case or any call;
 2. the `ClaudeAdapter` constructor, with `schema_mode` set and no `experimental=True`, before its work directory exists;
 3. `build_adapter`, with the schema arguments and no opt-in (it passes the opt-in to the constructor);

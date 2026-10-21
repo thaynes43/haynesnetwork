@@ -262,7 +262,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     sm_case = getattr(adapter, 'schema_mode', None) is not None      # dev-c8 claude-schema-1: the run-level guard of schema_run.py (round 6)
     if sm_case:
         from . import schema_run as SR
-    if sm_case and not _inner:
+        SR.require_opt_in(adapter)            # round 9: before either branch, so nothing is allocated without the opt-in
+    if sm_case and _inner is not SR.INNER:   # only schema_run's own sentinel reaches the body; any other caller goes through the guard (stamped)
         return SR.guarded_run_case(sys.modules[__name__], dict(
             case=case, case_sha=case_sha, adapter=adapter, suite_dir=suite_dir, scratch=scratch, ocr_backend=ocr_backend, runner=runner, which=which, replay=replay,
             run_id=run_id, tool_output_bytes=tool_output_bytes, prompt_version=prompt_version, evidence_mode=evidence_mode, collect=collect,
@@ -1052,7 +1053,7 @@ def main(argv=None):
         raise SystemExit('--num-ctx %d needs a context policy (--context-policy); without one the allowed values are %s' % (args.num_ctx, list(A.ALLOWED_NUM_CTX)))
     if args.context_policy is not None and args.num_ctx != A.CONTEXT_POLICIES[args.context_policy]['num_ctx']:
         raise SystemExit('--context-policy %s requires --num-ctx %d' % (args.context_policy, A.CONTEXT_POLICIES[args.context_policy]['num_ctx']))
-    if getattr(args, 'claude_schema', None) and not getattr(args, 'experimental_claude_schema', False):
+    if getattr(args, 'claude_schema', None) and getattr(args, 'experimental_claude_schema', False) is not True:
         raise SystemExit('--claude-schema is experimental (OpenProject #164: the schema-mode fail-closed invariant is not established) and is refused unless '
                          '--experimental-claude-schema is also given; it must not be used in a registered or pre-registered measurement')
     if getattr(args, 'claude_schema', None) and (args.adapter != 'claude' or args.prompt == 'v1'):

@@ -2020,3 +2020,64 @@ class ReviewR8Boundaries(unittest.TestCase):
         ad = A.ClaudeAdapter('m', runner=FakeRunner([]))
         self.assertNotIn('claude_schema_experimental', ad.config())
         self.assertFalse(ad.schema_experimental)
+
+
+# ------------------------------------------------------------------------------------------------------------------------------ review round 9
+# AUDIT-ASTRA-64: only a real True opts in, at every boundary; run_case's internal argument cannot bypass the gate or the record marker.
+class ReviewR9OptIn(unittest.TestCase):
+    def test_a_non_bool_opt_in_is_refused_at_every_boundary(self):
+        import os
+        from media_repair_harness import schema_run as SR
+        for value in ('false', 'true', 1, [True], None):
+            before = set(os.listdir(tempfile.gettempdir()))
+            with self.assertRaises(ValueError, msg=repr(value)):                                     # the constructor, before its workdir
+                A.ClaudeAdapter('m', runner=FakeRunner([]), schema_mode='json-schema-1', experimental=value)
+            args = R.build_parser().parse_args(['--suite', 's', '--adapter', 'claude', '--model', 'm', '--out', 'o', '--prompt', 'v8', '--evidence-format',
+                                                'v3.1-format', '--claude-schema', 'json-schema-1'])
+            args.experimental_claude_schema = value
+            with self.assertRaises(ValueError, msg=repr(value)):                                     # build_adapter
+                R.build_adapter(args)
+            self.assertEqual({d for d in set(os.listdir(tempfile.gettempdir())) - before if d.startswith('mrh-claude-')}, set(), repr(value))
+            ad = A.ClaudeAdapter('m', runner=FakeRunner([]), schema_mode='json-schema-1', experimental=True)
+            ad.schema_experimental = value
+            with self.assertRaises(ValueError, msg=repr(value)):                                     # the call gate
+                ad.complete('S', [], schema=ClaudeSchema.SCHEMA)
+            with self.assertRaises(ValueError, msg=repr(value)):                                     # schema_run
+                SR.require_opt_in(ad)
+
+    def test_main_needs_a_real_true(self):
+        from unittest.mock import patch
+        parser = R.build_parser()
+        real = parser.parse_args
+
+        def parse(argv):
+            a = real(argv)
+            a.experimental_claude_schema = 'false'
+            return a
+        out = Path(tempfile.mkdtemp(prefix='mrh-w26r9-')) / 'run'
+        ts = th.TempSuite([arr_case('w26r9')])
+        self.addCleanup(ts.cleanup)
+        with patch.object(parser, 'parse_args', parse), patch.object(R, 'build_parser', return_value=parser), self.assertRaises(SystemExit) as cm:
+            R.main(['--suite', str(ts.root), '--out', str(out), '--adapter', 'claude', '--model', 'm', '--prompt', 'v8', '--evidence-format', 'v3.1-format',
+                    '--claude-schema', 'json-schema-1', '--experimental-claude-schema'])
+        self.assertIn('#164', str(cm.exception.code))
+        self.assertFalse(out.exists())
+
+    def test_the_inner_argument_cannot_bypass_the_gate_or_the_marker(self):
+        good = dec3('short')
+        case = arr_case('w26r9-inner')
+        ts = th.TempSuite([case])
+        self.addCleanup(ts.cleanup)
+        ad = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, attempt(1, good), checked(1, False), result(structured=good, cost=0.02))]),
+                             schema_mode='json-schema-1', experimental=True)
+        ad.runtime_version = 'fixture'
+        scratch = Path(tempfile.mkdtemp(prefix='mrh-w26r9-'))
+        rec = R.run_case(case, 'sha', ad, ts.root, scratch, run_id='w26r9', prompt_version='v8', evidence_format='v3.1-format', which=th.NO_BINARIES,
+                         _inner=True)
+        self.assertEqual((rec['claude_schema_experimental'], rec['adapter_config']['claude_schema_experimental']), (True, True))       # stamped
+        ad.schema_experimental = False
+        empty = Path(tempfile.mkdtemp(prefix='mrh-w26r9-'))
+        with self.assertRaises(ValueError):
+            R.run_case(case, 'sha', ad, ts.root, empty, run_id='w26r9', prompt_version='v8', evidence_format='v3.1-format', which=th.NO_BINARIES,
+                       _inner=True)
+        self.assertEqual(list(empty.iterdir()), [])                                                  # refused before any scratch allocation

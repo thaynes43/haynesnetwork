@@ -99,6 +99,9 @@ def stop(adapter, reason, partial=None, secondary=None):
 
 
 # ---------------------------------------------------------------------------------------------------------------------------- the experimental gate (round 8)
+INNER = object()          # round 9: the only value of run_case's `_inner` that reaches its body; held by this module alone
+
+
 def require_opt_in(adapter):
     """Every schema_run entry point refuses an adapter that was not explicitly opted in, before any allocation, file write or call."""
     if getattr(adapter, 'schema_experimental', False) is not True:
@@ -134,7 +137,7 @@ def _guarded_run_case(R, kw):
     if getattr(adapter, 'schema_stop', None):
         raise stop(adapter, None, minimal_aborted_record(case, sha, run_id, adapter.schema_stop, [], None, adapter))
     try:
-        rec = R.run_case(**kw, _inner=True)
+        rec = R.run_case(**kw, _inner=INNER)
     except A.AbortRun as e:
         reason = safe_str(e, 2000)
         if getattr(adapter, 'schema_stop', None) is None:

@@ -413,7 +413,7 @@ class ClaudeAdapter(Adapter):
 
     def __init__(self, model, effort=None, max_budget_usd=2.0, timeout=240, runner=subprocess.run, schema_mode=None, experimental=False):
         super().__init__(model)
-        if schema_mode is not None and not experimental:     # dev-c8 round 8: refused before any allocation
+        if schema_mode is not None and experimental is not True:     # dev-c8 rounds 8, 9: only a real True, before any allocation
             raise ValueError(SCHEMA_GATE)
         if schema_mode is not None and schema_mode != 'json-schema-1':
             raise ValueError('unknown claude schema mode %r (known: json-schema-1)' % (schema_mode,))

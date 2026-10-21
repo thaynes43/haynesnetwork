@@ -81,6 +81,9 @@ other config field is compared equal). No model was called. Details: `docs/dev-c
   Each refuses before any allocation, file write or call, naming #164. Every schema-mode record and started-aborted record carries
   `claude_schema_experimental: true` and its adapter config (which carries it too). The budget-stop sentence of `docs/dev-c8.md` no longer contradicts
   the round-6 rule.
+* **Review round 9 (AUDIT-ASTRA-64, Opus nit):** only a real `True` opts in (the constructor, `main()`, the call gate, `schema_run`); `run_case`
+  checks the opt-in before either branch and its internal argument reaches the body only with `schema_run`'s private sentinel, so every schema-mode record
+  is stamped; `docs/dev-c8.md` says `main()` exits with `SystemExit` and the other boundaries raise `ValueError`.
 
 ## W27 (OpenProject #145 remainder, the PR #1031 nits): evidence follow-ups, offline
 
