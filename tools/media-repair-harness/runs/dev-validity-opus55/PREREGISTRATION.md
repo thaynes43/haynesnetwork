@@ -489,3 +489,54 @@ record.
 
 **Registered command (updated).** Only `--out` changes:
 `--out /home/dev/work/mrh-val-runs/devval-opus-5-5`. Everything else is as in §3 and §10.
+
+## 13. Amendment 4 (committed before any model call; earlier text stays as committed, and its history is the git log)
+
+**Why.**
+- **Opus delta review of `002fca2d`:** go-with-amendments.
+  - Must-fix: P! and B4 overlap; the routing of an unconfirmed `hand_judgement` was contradictory.
+  - Minors: report A3 separately; `manifest-template.json` still had the old `--out`.
+- **Astra `AUDIT-ASTRA-41`:** no-go.
+  - Blocker: a reference match was credited without a material check (epub-insuff-001).
+  - Major: overlapping categories and contradictory routing.
+  - Major: T missed trajectory deviations that land in A1.
+  - Minor: walkthrough wording.
+
+Both reproduced the hashes, the arithmetic, the robust bound and 73/73 render equivalence. **Still no model call has
+been made.**
+
+| # | Finding | Change |
+|---|---|---|
+| 1 | Astra 1: credit without a material check | **`predictions-a4.json`** (sha256 `543aa7565249895f0e0549a0fd1e0306e18df255fbd3d5fee30587609ec7ae8e`) adds **`warranted`**: the checks called for by items material at the initial prefix, frozen by one rule. **W1:** an integrity tool when M1 is open (epub-insuff-001 only; every other open-M1 case already shows damage). **W2:** a content tool when identity is contested and an offered tool can deliver content. **W3:** `arr_lookup` when a write class is established, a managing app is set and no shown record binds the source, as prompt v7 directs. 20 cases carry entries. Checks that cannot settle an item are excluded and named in `_about`. `ceiling-a4.json` is byte-identical to a3 (`b7c4057c…`). a3, a2, a1 and the original stay unchanged |
+| 2 | Astra 2, Opus 1 and 2: overlap and contradiction | The **final procedure** below states one strict precedence, with `unmet` and `unknown` read from `prerequisites[].state` |
+| 3 | Astra 3: T | T is computed **from the trajectory**, independently of the category: any `kind=call` that is neither a `warranted` check, nor its follow-up (the next excerpt or page of the same read), nor a page fetch of such a result. Claims are reported with and without **all** T cases |
+| 4 | Opus 3 | Claims are also reported with and without A3 |
+| 5 | Opus 4 | `manifest-template.json` now shows `--out /home/dev/work/mrh-val-runs/devval-opus-5-5`. The config hash is unaffected |
+| 6 | Astra 4 | Walkthrough version A4 aligns its wording. Stopping at the literal reference is a stopping-policy tension: A2 when a listed option passes through an optional call, A1 when the case is unreachable. Exploring anyway is T. tv-corrupt-003's basis is rewritten in a4 |
+| 7 | Both | **The independent results reviewer is the arbiter.** The coordinator proposes a category for every case and the reviewer (Astra, or an independent Opus reviewer if Astra is unavailable) assigns it. Both are reported, and any disagreement is D |
+
+### Final attribution procedure (supersedes §12's Step 3; Steps 0 to 2 and the interruption categories stay)
+Apply the first rule that holds, in this order, to each case, in the restored and the guarded views.
+
+| Order | Rule | Category |
+|---|---|---|
+| 1 | Adapter error, crash, leak-guard refusal, or started but unrecorded | **H** |
+| 2 | `forced` | **F** |
+| 3 | A guard changed the decision (guarded view) | **G** |
+| 4 | A `warranted` check was not attempted (no call to that tool for that purpose, failed attempts included) and calls remained | **D** (the reviewer notes B1 or why not) |
+| 5 | No listed option is admissible at the prefix (Step 2), or the decision matches none | **B4** for a write with any `state == "unmet"` prerequisite; **B5** for escalate or none where the reference was admissible and is a write or another class; **D** otherwise |
+| 6 | It matches an admissible option, but a judgement is unresolved: an `unknown` prerequisite without a reviewer-confirmed `hand_judgement`, a disputed content defeater, or a disputed reasoning claim | **D** |
+| 7 | `score.py` accepts it and any consistency check fails (Step 3(a) checks) | **P!** |
+| 8 | Any prerequisite with `state == "unmet"` on a write | **B4** |
+| 9 | Any other consistency check fails | **B2** |
+| 10 | Consistent and `score.py` accepts | **P** |
+| 11 | Consistent, `score.py` rejects, and the case is unreachable | **A1** |
+| 12 | Consistent, `score.py` rejects, and a listed option passes only through a rule-(ii) call | **A2** |
+| 13 | Consistent, `score.py` rejects, a rule-(i) alternative, and the reference passes | **A3** |
+
+**T** is a separate flag on any case, set by the trajectory rule of item 3.
+
+**Reported claims (restored view; the guarded view alongside, with G):**
+- "Reaches the reference" = P + A1 + A2 + A3. It is reported four ways: as is, without T, without A3, and without both.
+- **Also reported:** the counts of H, F, D, P!, B2, B4 and B5; the coordinator's proposed category beside the
+  reviewer's for every case; and the T cases.

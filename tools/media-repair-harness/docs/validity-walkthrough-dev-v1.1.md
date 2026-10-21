@@ -1,8 +1,8 @@
 # Can dev-v1.1 be passed legitimately? A developer walkthrough of all 73 cases (story #159, deliverable 1)
 
-**Version and authorship.** This is version A3 (Amendments 1 to 3), written on 2026-10-21 **before any Opus 5.5
+**Version and authorship.** This is version A4 (Amendments 1 to 4), written on 2026-10-21 **before any Opus 5.5
 benchmark response**. The author is the development coordinator (`claude-opus-5-5`). It folds in two independent pre-measurement
-reviews: Opus (three rounds), and Astra (AUDIT-ASTRA-38 and -39).
+reviews: Opus (four rounds), and Astra (AUDIT-ASTRA-38, -39 and -41).
 - The first version is kept in git history.
 - Its reference decisions are kept unchanged in `runs/dev-validity-opus55/predictions.json`, and Amendment 1's in
   `predictions-a1.json`.
@@ -40,8 +40,8 @@ This bound is AUDIT-ASTRA-38's.
 
 **The reference decisions.**
 - Every case has one reference decision under the literal contract, plus the listed alternatives that other contract
-  readings or optional calls admit. They are in `runs/dev-validity-opus55/predictions-a3.json`.
-- They were scored by the evaluator's unchanged `score.py` (`scripts/validity_ceiling.py` → `ceiling-a3.json`).
+  readings or optional calls admit. They are in `runs/dev-validity-opus55/predictions-a4.json`.
+- They were scored by the evaluator's unchanged `score.py` (`scripts/validity_ceiling.py` → `ceiling-a4.json`).
 - These are reference points, not a proven ceiling.
 
 | Gate | Reference decisions | Best among listed options | Threshold |
@@ -56,8 +56,8 @@ This bound is AUDIT-ASTRA-38's.
   tv-insuff-001 and tv-insuff-002 in G4.
 - The archived frontier control `gpt-6-astra` scored G3 36/61 and G5 21/49 on dev-c7, which is about this reference
   point.
-- Its stops at a clean prefix (tv-corrupt-003, epub-identity-004) are **permitted by the literal contract**, not
-  contract errors.
+- Its stops at a clean prefix (tv-corrupt-003, epub-identity-004) **match the literal reference decisions**. They are stopping-policy
+  tensions, not contract errors.
 - Under these reference decisions it has two contract errors:
   - movie-insuff-001: H/none despite the M4 runtime conflict;
   - movie-order-001: O/escalate, where only one edition fits.
@@ -129,7 +129,7 @@ source-shape. **Tom has put that docket on hold.** Nothing here rules on it.
 O order_edition_ambiguity, U insufficient_evidence.
 
 **Columns:**
-- **Reference decision:** the literal-contract decision in `predictions-a3.json`. "After" names calls whose delivered
+- **Reference decision:** the literal-contract decision in `predictions-a4.json`. "After" names calls whose delivered
   results it needs. Alternatives are listed options, each admissible only after its own `requires` calls.
 - **Reachable:** applies the unchanged `score.py` rules.
 - **Bracketed tags** name the #137 docket topic (DEVELOPMENT-KNOWLEDGE-20261021 §C).
@@ -205,7 +205,7 @@ O order_edition_ambiguity, U insufficient_evidence.
 |---|---|---|---|---|---|
 | tv-corrupt-001 | C; block | C/block | Decode stderr 'File ended prematurely' despite exit 0 is located damage; Sonarr record binds the file: C/block. | Yes | Passes on the evidence shown. |
 | tv-corrupt-002 | C; block | C/block | H264 decode errors despite exit 0; bound Sonarr record: C/block. | Yes | Passes on the evidence shown. |
-| tv-corrupt-003 | C; block | H/none (C/block) | Literal v7: clean container plus clean 0-4 s window gives H1-H5; the unchecked remainder alone is not material (M4), and Deciding 3 says not to spend calls on non-material items: H/none is contract-permitted. Alt C/block is admissible only after decode_sample {"at":4} (available) delivers the positive damage finding; the Sonarr record binds the file. Neither is a contract violation. [stopping] | Only via a listed option (needs its `requires` calls) | The literal contract permits stopping at the clean prefix (H/none, rejected). The label is reached only by the optional `decode_sample {"at":4}`, which finds the damage. A policy question, not a model error. [stopping] |
+| tv-corrupt-003 | C; block | H/none (C/block) | Literal v7: clean container plus clean 0-4 s window gives H1-H5; the unchecked remainder alone is not material (M4), and Deciding 3 says not to spend calls on non-material items: H/none. Alt C/block (rule ii) is admissible only after decode_sample {"at":4} delivers the positive damage finding (the Sonarr record binds the file); that exploration is a trajectory deviation (T) from literal Deciding 3, while the decision is correct on the delivered evidence, and H/none is no longer admissible once the damage is delivered. [stopping] | Only via a listed option (needs its `requires` calls) | The literal contract permits stopping at the clean prefix (H/none, rejected). The label is reached only by the optional `decode_sample {"at":4}`, which finds the damage. A policy question, not a model error. [stopping] |
 | tv-decoder-001 | D; convert | D/convert | H264 High10 versus an explicit 8-bit-only client; bound Sonarr record: D/convert. | Yes | Passes on the evidence shown. |
 | tv-healthy-001 | U; escalate | U/escalate | Reported subtitle cards only; no integrity result, no tools (M1). | Yes | Passes on the evidence shown. |
 | tv-healthy-002 | H; none | H/none | Pinned probe parses, bounded window clean, OCR names the requested story; scoped healthy. | Yes | Passes on the evidence shown. |
@@ -235,16 +235,19 @@ O order_edition_ambiguity, U insufficient_evidence.
   - For epub-identity-003 the witness is `epub_inspect {}`, then `{"spine":5,"offset":0,"length":1200}`.
   - Both labels are unreachable anyway.
 
-Stopping before such a read is attributed D in the blinded run: no credit, and the results reviewer records B1 or
-another reason. Any call that delivers the named content qualifies, and the listed call is one witness.
+These are the frozen `warranted` checks of `predictions-a4.json`. Not attempting one (with calls left) is attributed D in
+the blinded run: no credit, and the results reviewer records B1 or another reason. The `warranted` checks also include
+`arr_lookup` wherever a write class is established but no shown record binds the source, as prompt v7 directs. Any call that delivers the named content qualifies, and the listed call is one witness.
 
 **Calls the contract does not warrant.** Nothing material is open in these cases, so literal Deciding 3 says not to
 spend calls:
 - tv-corrupt-003, epub-identity-004 and epub-identity-005;
 - tv-insuff-002, where the call fails to run anyway.
 
-The **literal decision (H/none) is contract-consistent**. A scorer miss there is a stopping-policy tension (A2), not a
-model failure.
+The **literal decision (H/none) is contract-consistent**. A scorer miss there is a stopping-policy tension, not a model
+failure:
+- **A2** when a listed option passes through the optional call (tv-corrupt-003, epub-identity-004);
+- **A1** when the case is unreachable (epub-identity-005, tv-insuff-002).
 
 Exploring anyway is a **trajectory deviation** from literal Deciding 3. A decision that is correct on the newly
 delivered evidence (for example C/block after the decode finds damage) is credited, flagged T. Once that evidence is

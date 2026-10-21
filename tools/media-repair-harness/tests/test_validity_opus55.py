@@ -121,11 +121,22 @@ class FrozenCeiling(unittest.TestCase):
             self.assertEqual(len(p['alt_kind']), len(p['alt']), cid)
             self.assertTrue(set(p['alt_kind']) <= {'i', 'ii'}, cid)
         self.assertEqual(sorted(k for k, p in c.items() if p['hand_judgement']), ['movie-identity-002'])
+        self.assertEqual(hashlib.sha256((VAL / 'predictions-a3.json').read_bytes()).hexdigest(),
+                         '0d01d7efd1771dc293728521cf6c650f04667519330a426b41f19b1a3259a09a')
+
+    def test_amendment4_warranted(self):
+        a4 = json.loads((VAL / 'predictions-a4.json').read_text())['cases']
+        a3 = json.loads((VAL / 'predictions-a3.json').read_text())['cases']
+        self.assertEqual(sum(1 for p in a4.values() if p['warranted']), 20)
+        for cid in a4:   # Amendment 4 adds 'warranted' and rewrites one basis; decisions, alternatives and requires are unchanged
+            for k in ('cf', 'alt', 'alt_kind', 'requires', 'hand_judgement', 'defeated_by', 'status'):
+                self.assertEqual(a4[cid][k], a3[cid][k], (cid, k))
+        self.assertEqual(json.loads((VAL / 'ceiling-a4.json').read_text())['views'], json.loads((VAL / 'ceiling-a3.json').read_text())['views'])
 
     def test_predictions_cover_every_case_once(self):
         suite = th.require_suite().parent / 'suite-dev-v1.1'
         ids = sorted(c['id'] for c, _ in R.load_cases(str(suite)))
-        for name in ('predictions.json', 'predictions-a1.json', 'predictions-a2.json', 'predictions-a3.json'):
+        for name in ('predictions.json', 'predictions-a1.json', 'predictions-a2.json', 'predictions-a3.json', 'predictions-a4.json'):
             pred = json.loads((VAL / name).read_text())['cases']
             self.assertEqual(sorted(pred), ids, name)
             for cid, p in pred.items():
