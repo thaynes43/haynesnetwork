@@ -1,0 +1,647 @@
+{
+ "budget_exhausted_escalations": 0,
+ "by_scope": {
+  "decode_interval": 3
+ },
+ "by_tool": {
+  "decode_sample": 3
+ },
+ "counter": "uncalled-1 (experimental/contract_v3/uncalled.py, unchanged; reads observations as format v3 typed them: the dev-c6 instrument)",
+ "decisions": 73,
+ "escalations": 37,
+ "escalations_with_uncalled_available_check": 1,
+ "non_escalations_with_uncalled_available_check": 22,
+ "rows": [
+  {
+   "action": "escalate",
+   "alias": "case-e1de4320",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-0cc66729",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-e0621f77",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-f6daecb2",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "none",
+   "alias": "case-44f56433",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-0dd31620",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-7babfc8c",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-25d26833",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-379f58bf",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-c4bae4e8",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-451f7deb",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-30b55958",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-fa047649",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-6c70fe85",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-894bbef6",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-e27b7366",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-19246c93",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-6ca6293c",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-2ee00468",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-7e6172d6",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "none",
+   "alias": "case-e66e3e24",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "none",
+   "alias": "case-93706e92",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-915a9ca5",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "none",
+   "alias": "case-6995f1ec",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-cef543d5",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-708ab3f7",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-33451adc",
+   "calls_made": 3,
+   "remaining": 3,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-e61f608d",
+   "calls_made": 3,
+   "remaining": 3,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-929998b9",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-0dfd48a2",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-1b8d443e",
+   "calls_made": 2,
+   "remaining": 4,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-e8a2d378",
+   "calls_made": 2,
+   "remaining": 4,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-84a4dacc",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-c2113ef3",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "blocklist_and_search",
+   "alias": "case-73eda2f0",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "blocklist_and_search",
+   "alias": "case-29896c82",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "blocklist_and_search",
+   "alias": "case-a3fa74f1",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "convert",
+   "alias": "case-022317af",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "convert",
+   "alias": "case-dc069fde",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-6d2ad8f6",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-6aa8d8f2",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "none",
+   "alias": "case-9e638fe5",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "none",
+   "alias": "case-8ac871c9",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 4
+  },
+  {
+   "action": "escalate",
+   "alias": "case-6f71eae7",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "blocklist_and_search",
+   "alias": "case-83a539bb",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "none",
+   "alias": "case-54f54050",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "rename",
+   "alias": "case-4ab7a1a2",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "none",
+   "alias": "case-de1cffe4",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 1
+  },
+  {
+   "action": "convert",
+   "alias": "case-dea5cf5b",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "convert",
+   "alias": "case-0e1baa1f",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "blocklist_and_search",
+   "alias": "case-fcd32820",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "blocklist_and_search",
+   "alias": "case-34145850",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "none",
+   "alias": "case-ca8c187b",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "convert",
+   "alias": "case-5dca6bc3",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 1
+  },
+  {
+   "action": "escalate",
+   "alias": "case-26675cd9",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "none",
+   "alias": "case-df388076",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "none",
+   "alias": "case-2cef3c8b",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "none",
+   "alias": "case-bb93e474",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "none",
+   "alias": "case-5af24b09",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "none",
+   "alias": "case-ae3bfa57",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 1
+  },
+  {
+   "action": "none",
+   "alias": "case-1820dc6c",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "escalate",
+   "alias": "case-ffc740f3",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "escalate",
+   "alias": "case-978e42c8",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "blocklist_and_search",
+   "alias": "case-5d90d97c",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "blocklist_and_search",
+   "alias": "case-dc0f0b79",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "none",
+   "alias": "case-c6d717c8",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [],
+   "uncalled_available": 0
+  },
+  {
+   "action": "none",
+   "alias": "case-faa560c0",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "none",
+   "alias": "case-1822c516",
+   "calls_made": 1,
+   "remaining": 5,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 1
+  },
+  {
+   "action": "rename",
+   "alias": "case-636ec8b6",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "escalate",
+   "alias": "case-eb60d1f2",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "blocklist_and_search",
+   "alias": "case-3316361c",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "blocklist_and_search",
+   "alias": "case-6b351503",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  },
+  {
+   "action": "blocklist_and_search",
+   "alias": "case-bd179c06",
+   "calls_made": 0,
+   "remaining": 6,
+   "tools": [
+    "decode_sample"
+   ],
+   "uncalled_available": 3
+  }
+ ],
+ "run": "devval-opus-5-5"
+}
