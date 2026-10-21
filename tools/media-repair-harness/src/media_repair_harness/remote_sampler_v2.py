@@ -17,8 +17,12 @@ Modes:
            exactly mrh-sampler-1's ffmpeg/ffprobe argv over the same loopback range server (8 MiB input quota, 25 s)
   subtitle --stream n --window w: the stream as SRT, `-t w` with 1 <= w <= 10 (mrh-sampler-1 fixed 4 s)
 
-Identity (every file mode): with --expect-size and --expect-mtime-ns the file's size and mtime_ns are compared with them before anything is read (start) and
-after the operation (end).  A start mismatch reads nothing.  `source_unchanged` compares the end with the start, as mrh-sampler-1 did.
+Identity (every file mode): the file is opened ONCE and every byte (the fingerprint, the range server) is read from that descriptor, so a path that is
+renamed or replaced during the operation cannot switch the bytes served.  With --expect-size and --expect-mtime-ns the opened file's size and mtime_ns are
+compared with them before anything is read (start) and after the operation (end).  A start mismatch reads nothing.  `identity.same_file` says the path still
+names the opened file (device and inode) at the end; `source_unchanged` is true only when the opened file's end identity equals its start identity AND the
+path still names it.  Bad arguments (argparse included) also end with a receipt (exit_code `error`, `error` "bad arguments: ...").  ffmpeg and ffprobe read
+the loopback range server only (`-protocol_whitelist http,tcp`).
 """
 import argparse, hashlib, http.server, json, os, re, socket, stat as statmod, subprocess, sys, threading, time
 
@@ -32,7 +36,7 @@ started = time.monotonic()
 deadline = started + LIMIT_S
 receipt = {'receipt': RECEIPT, 'mode': None, 'hostname': socket.gethostname(), 'exit_code': 'error', 'error': None, 'stdout_bytes': 0, 'stderr': '',
            'bytes_read': 0, 'quota_exhausted': False, 'requests': 0, 'wall_seconds': 0.0, 'timed_out': False, 'source_unchanged': None,
-           'identity': {'expected': None, 'start': None, 'end': None, 'start_ok': None, 'end_ok': None}, 'argv': None}
+           'identity': {'expected': None, 'start': None, 'end': None, 'start_ok': None, 'end_ok': None, 'same_file': None}, 'argv': None, 'confined': None}
 out = sys.stdout.buffer
 
 
@@ -47,7 +51,22 @@ def finish(payload=b''):
 
 
 def ident(st):
-    return {'size': st.st_size, 'mtime_ns': st.st_mtime_ns}
+    return {'size': st.st_size, 'mtime_ns': st.st_mtime_ns, 'dev': st.st_dev, 'ino': st.st_ino}
+
+
+def confine(path, is_dir=False):
+    """With --root: the path must be absolute, normalised, free of symlinks in every component and strictly under the real root (a listing may name the
+    root itself).  Sets receipt['confined']; a path that is not confined ends the invocation with nothing read."""
+    if a.root is None:
+        return
+    root = os.path.realpath(a.root)
+    real = os.path.realpath(path)
+    ok = (os.path.isabs(path) and os.path.normpath(path) == path and real == path and '\n' not in path and '\0' not in path
+          and (real.startswith(root.rstrip('/') + '/') or (is_dir and real == root)))
+    receipt['confined'] = ok
+    if not ok:
+        receipt['error'] = 'path not confined under the allowed root (symlink, traversal or outside it); nothing was read'
+        finish()
 
 
 def left(reserve=0.0):
@@ -74,7 +93,15 @@ def bounded(work, reserve=0.0):
     return box.get('value'), False
 
 
-p = argparse.ArgumentParser()
+class Parser(argparse.ArgumentParser):
+    """Bad arguments end with a receipt too (never a bare usage message)."""
+
+    def error(self, message):
+        receipt['error'] = 'bad arguments: %s' % str(message)[:200]
+        finish()
+
+
+p = Parser()
 p.add_argument('mode', choices=['stat', 'list', 'probe', 'chapters', 'decode', 'frame', 'audio', 'subtitle'])
 p.add_argument('path')
 p.add_argument('--at', type=float, default=0)
@@ -83,14 +110,21 @@ p.add_argument('--window', type=float, default=4)
 p.add_argument('--prefix', default='')
 p.add_argument('--expect-size', type=int)
 p.add_argument('--expect-mtime-ns', type=int)
+p.add_argument('--expect-dev', type=int)
+p.add_argument('--expect-ino', type=int)
+p.add_argument('--root')
+if len(sys.argv) > 1 and sys.argv[1] in ('stat', 'list', 'probe', 'chapters', 'decode', 'frame', 'audio', 'subtitle'):
+    receipt['mode'] = sys.argv[1]
 a = p.parse_args()
 receipt['mode'] = a.mode
-if not (a.at >= 0 and 0 <= a.stream < 128 and 1 <= a.window <= 10) or (a.expect_size is None) != (a.expect_mtime_ns is None):
-    receipt['error'] = 'bad arguments'
+expects = (a.expect_size, a.expect_mtime_ns, a.expect_dev, a.expect_ino)
+if not (a.at >= 0 and 0 <= a.stream < 128 and 1 <= a.window <= 10) or len({x is None for x in expects}) != 1:
+    receipt['error'] = 'bad arguments: out of range'
     finish()
 
 if a.mode == 'list':
-    receipt['listing'] = {'complete': False, 'matching': 0, 'scanned': 0, 'cap': LIST_CAP, 'prefix': a.prefix}
+    receipt['listing'] = {'complete': False, 'matching': 0, 'scanned': 0, 'cap': LIST_CAP, 'prefix': a.prefix, 'directory': a.path}
+    confine(a.path, is_dir=True)
 
     def scan():
         entries, scanned, matching = [], 0, 0
@@ -104,7 +138,7 @@ if a.mode == 'list':
                     continue        # keep scanning: the scan covers the whole directory, only matching entries count toward the cap
                 st = e.stat(follow_symlinks=False)
                 kind = 'dir' if statmod.S_ISDIR(st.st_mode) else 'file' if statmod.S_ISREG(st.st_mode) else 'symlink' if statmod.S_ISLNK(st.st_mode) else 'other'
-                entries.append({'name': e.name, 'type': kind, 'size': st.st_size, 'mtime_ns': st.st_mtime_ns})
+                entries.append({'name': e.name, 'type': kind, 'size': st.st_size, 'mtime_ns': st.st_mtime_ns, 'dev': st.st_dev, 'ino': st.st_ino})
         return entries, scanned, matching
     try:
         value, timed_out = bounded(scan)
@@ -124,16 +158,31 @@ if a.mode == 'list':
                        'entries': entries[:LIST_CAP]}, sort_keys=True).encode())
 
 # every file mode: identity at the start, before anything is read
-expected = {'size': a.expect_size, 'mtime_ns': a.expect_mtime_ns} if a.expect_size is not None else None
+expected = {'size': a.expect_size, 'mtime_ns': a.expect_mtime_ns, 'dev': a.expect_dev, 'ino': a.expect_ino} if a.expect_size is not None else None
 receipt['identity']['expected'] = expected
+confine(a.path)
+
+
+def opened():
+    """Open ONCE, never following a final symlink; with --root, the opened descriptor must still name the confined path."""
+    fd = os.open(a.path, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, 'O_NOCTTY', 0))
+    st = os.fstat(fd)
+    if not statmod.S_ISREG(st.st_mode):
+        raise OSError('not a regular file')
+    if a.root is not None and os.path.isdir('/proc/self/fd') and os.readlink('/proc/self/fd/%d' % fd) != a.path:
+        raise OSError('the opened descriptor does not name the confined path')
+    return fd, st
+
+
 try:
-    st0, timed_out = bounded(lambda: os.stat(a.path))
+    value, timed_out = bounded(opened)
 except RuntimeError as e:
     receipt['error'] = str(e)
     finish()
 if timed_out:
     receipt.update(exit_code='timeout', timed_out=True)
     finish()
+fd, st0 = value
 receipt['identity']['start'] = ident(st0)
 if expected is not None:
     receipt['identity']['start_ok'] = ident(st0) == expected
@@ -143,26 +192,30 @@ if expected is not None:
 
 
 def close_identity():
+    """The end check: the opened file's identity now, and whether the path still names that file (device, inode)."""
     try:
-        st1, late = bounded(lambda: os.stat(a.path))
+        value, late = bounded(lambda: (os.fstat(fd), os.stat(a.path)))
     except RuntimeError as e:
         receipt['error'] = receipt['error'] or str(e)
+        receipt['identity']['same_file'] = False      # the path no longer names a file: not the opened one
+        receipt['source_unchanged'] = False
         return
     if late:
         receipt['timed_out'] = True
         return
+    st1, by_path = value
+    same = (by_path.st_dev, by_path.st_ino) == (st0.st_dev, st0.st_ino) and ident(by_path) == ident(st1)
     receipt['identity']['end'] = ident(st1)
-    receipt['source_unchanged'] = ident(st1) == ident(st0)
+    receipt['identity']['same_file'] = same
+    receipt['source_unchanged'] = ident(st1) == ident(st0) and same
     if expected is not None:
-        receipt['identity']['end_ok'] = ident(st1) == expected
+        receipt['identity']['end_ok'] = ident(st1) == expected and same
 
 
 if a.mode == 'stat':
     def fingerprint():
-        with open(a.path, 'rb') as f:
-            head = f.read(min(FINGER, st0.st_size))
-            f.seek(max(0, st0.st_size - FINGER))
-            tail = f.read(FINGER)
+        head = os.pread(fd, min(FINGER, st0.st_size), 0)
+        tail = os.pread(fd, FINGER, max(0, st0.st_size - FINGER))
         return head, tail
     try:
         value, timed_out = bounded(fingerprint, END_RESERVE_S)
@@ -210,21 +263,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(end - start + 1))
         self.end_headers()
         try:
-            with open(a.path, 'rb') as f:
-                f.seek(start)
-                left = end - start + 1
-                while left:
-                    with lock:
-                        n = min(32768, left, QUOTA - state['bytes_read'])
-                        if n <= 0:
-                            state['quota_exhausted'] = True
-                            break
-                        chunk = f.read(n)
-                        state['bytes_read'] += len(chunk)
-                    if not chunk:
+            pos, remaining = start, end - start + 1
+            while remaining:
+                with lock:
+                    n = min(32768, remaining, QUOTA - state['bytes_read'])
+                    if n <= 0:
+                        state['quota_exhausted'] = True
                         break
-                    self.wfile.write(chunk)
-                    left -= len(chunk)
+                    chunk = os.pread(fd, n, pos)       # from the descriptor opened at the start, never the path again
+                    state['bytes_read'] += len(chunk)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                pos += len(chunk)
+                remaining -= len(chunk)
         except (BrokenPipeError, ConnectionResetError):
             pass
         self.close_connection = True
@@ -238,7 +290,7 @@ server = Server(('127.0.0.1', 0), Handler)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 url = 'http://127.0.0.1:' + str(server.server_port) + '/sample'
 base = ['nice', '-n', '19']
-common = ['-threads', '1', '-probesize', '5000000', '-analyzeduration', '2000000']
+common = ['-threads', '1', '-probesize', '5000000', '-analyzeduration', '2000000', '-protocol_whitelist', 'http,tcp']
 if a.mode == 'probe':
     cmd = base + ['ffprobe', '-v', 'error'] + common + ['-show_entries', 'format=format_name,duration,size,bit_rate:format_tags:stream=index,codec_name,codec_type,profile,pix_fmt,width,height,channels,channel_layout,sample_rate,duration,bit_rate:stream_tags=language,title', '-of', 'json', url]
 elif a.mode == 'chapters':

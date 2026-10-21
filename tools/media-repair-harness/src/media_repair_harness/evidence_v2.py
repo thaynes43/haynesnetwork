@@ -826,8 +826,9 @@ def _derive(obs, known_duration=None):
         _derive_audiobook(d, data)
     elif tool == 'audio_sample':
         _derive_audio(d, data)
-    elif tool == 'subtitle_sample':
-        # tools behaviour v3-remote-1 only (#161): every earlier configuration shows an unknown tool as `unknown_tool`, so no earlier observation reaches this branch
+    elif tool == 'subtitle_sample' and _remote_evidence_active():
+        # tools behaviour v3-remote-1 only (#161), inside such a run (remote_evidence.enabled); everywhere else a subtitle_sample observation (case evidence
+        # named so) is read exactly as before, by the record branch below
         from . import remote_evidence
         remote_evidence.derive_subtitle(d, data)
     elif tool in ('ocr', 'frame_sample', 'arr_lookup', 'prior_record'):
@@ -838,6 +839,11 @@ def _derive(obs, known_duration=None):
     _plain_text_fallback(d, data)
     _finish(d, data)
     return d
+
+
+def _remote_evidence_active():
+    from . import remote_evidence
+    return remote_evidence.active()
 
 
 _PLAIN_KIND = {'ffprobe': ('container_damage', 'container'), 'audiobook_inspect': ('container_damage', 'container'), 'decode_sample': ('decoder_errors', 'decode'),

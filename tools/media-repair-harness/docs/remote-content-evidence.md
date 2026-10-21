@@ -12,7 +12,7 @@
 | Tools behaviour `v3-remote-1` | `remote_evidence.py`, hooks in `tools.py` | `--tools-behavior v3-remote-1` (with `--evidence-format v3.1-format` and `--evidence replay` only) |
 | Sampler `mrh-sampler-2` | `remote_sampler_v2.py` | sent only by tools behaviour `v3-remote-1` and the driver |
 | Runner stop option | `run.py` (`RemoteStop`) | `--stop-on-receipt-failure` (only with `--tools-behavior v3-remote-1`) |
-| Driver `stage-r-driver-1`, registration `stage-r-1` | `scripts/stage_r_driver.py` | the coordinator, after approval |
+| Driver `stage-r-driver-2`, registration `stage-r-1` | `scripts/stage_r_driver.py` | the coordinator, after approval |
 | Report `stage-r-report-1` | `scripts/stage_r_report.py`, `stage_r.py` | offline |
 
 Unchanged: `remote_sampler.py` (`mrh-sampler-1`, the PR #1000 copy) is byte-identical and is still what every earlier tools behaviour sends;
@@ -22,7 +22,13 @@ options has no `remote_evidence` record field, no receipts and the same config h
 
 A run with the option records, in its config, `tools_behavior: v3-remote-1` and `remote_evidence` (the sampler sha256 and every bound below), and
 `stop_on_receipt_failure: true` when set. Each case record gets `remote_evidence` (expected identity, bound hostname and its source, operation count, every
-receipt with its argv and outcome, the fatal state, the subtitle stream); each tool call carries `receipts` (record only, never in a model-bound message).
+receipt with its argv and outcome, the fatal state, the subtitle stream, `delivered_cue_ids` and `write_attempts`); each tool call carries `receipts` (record
+only, never in a model-bound message).
+
+The typed layer reads a `subtitle_sample` observation as cue findings, and the leak guard treats cue text as media text, ONLY inside a v3-remote-1 run
+(`remote_evidence.enabled()`, set by `run.run_case`; the offline `mrh-guard` is a pinned input of recorded measurements and is not changed, so it reads
+such a record's subtitle observations with the legacy reading: call it inside `remote_evidence.enabled()` to reproduce the online one). Everywhere else a case whose evidence names
+`subtitle_sample` is read exactly as on the base (an unknown record, checked by the legacy guard).
 
 ## 2. `subtitle_sample {"at": s}` (item 1)
 
@@ -52,12 +58,19 @@ receipt with its argv and outcome, the fatal state, the subtitle stream); each t
 | Field | Meaning |
 |---|---|
 | `receipt`, `mode`, `hostname` | `mrh-sampler-2`, the mode run, `socket.gethostname()` of the pod |
-| `exit_code`, `error`, `stderr` | the tool's exit (int), `timeout` (the sampler's own 25 s), or `error` (the sampler could not run the operation) |
+| `exit_code`, `error`, `stderr` | the tool's exit (int), `timeout` (the sampler's own 25 s), or `error` (the sampler could not run the operation, bad arguments included) |
 | `stdout_bytes`, `bytes_read`, `quota_exhausted`, `requests` | what it wrote, what it read, the 8 MiB quota flag |
 | `wall_seconds`, `timed_out` | its own wall and timeout state |
-| `source_unchanged` | size and mtime_ns after the operation equal those before it (file modes) |
-| `identity` | `expected` (from `--expect-size` / `--expect-mtime-ns`), `start`, `end`, `start_ok`, `end_ok`; a start mismatch reads nothing |
-| `listing` | `list` only: `complete`, `matching`, `scanned`, `cap` |
+| `source_unchanged` | the OPENED file's end identity equals its start identity and the path still names it (file modes) |
+| `identity` | `expected` (from `--expect-size`, `--expect-mtime-ns`, `--expect-dev`, `--expect-ino`), `start`, `end` (each `{size, mtime_ns, dev, ino}` of the opened descriptor), `start_ok`, `end_ok`, `same_file` (the path still names the opened file); a start mismatch reads nothing |
+| `confined` | with `--root`: the path is absolute, normalised, symlink-free in every component and under the real root |
+| `argv` | the ffmpeg/ffprobe argv (`-protocol_whitelist http,tcp`: the loopback range server only) |
+| `listing` | `list` only: `directory`, `prefix`, `complete`, `matching`, `scanned`, `cap` |
+
+The source is opened ONCE (`O_NOFOLLOW`; with `--root`, `/proc/self/fd` must name the confined path) and every byte, the fingerprint and every range read,
+comes from that descriptor; the path is never reopened. Every receipt field is required on every exit kind, typed (booleans are booleans; identities and
+counts are integers; wall time finite and at most 60 s) and consistent with itself (`source_unchanged` exactly when start equals end and `same_file`; the
+`start_ok` / `end_ok` verdicts agree with the identities; the quota flag only with the quota read) and with what was received (`stdout_bytes`).
 
 **One 25 s budget per invocation:** the start identity stat, the operation and the end identity stat share one deadline, and the operation stops 2 s
 early so the end check still fits; a sampler-internal timeout therefore always ends with its receipt well inside the 60 s outer deadline (`mrh-sampler-1`
@@ -66,10 +79,11 @@ matching the prefix toward the cap of 500, returns name, type, size and mtime_ns
 and the scan finished in time.
 
 **Fatal** (`remote_evidence.FATAL_KINDS`; the result is an execution failure, cause `tool`, and its output is never used):
-`missing_receipt`, `malformed_receipt` (shape, types, `stdout_bytes` not equal to the bytes received, a timeout without `timed_out`, a completed file
-operation without `source_unchanged`), `identity_mismatch` (expected, start and end must all equal the bound identity), `source_changed`,
-`hostname_changed` (the run's host is the case's `expected_hostname`, else the first receipt's), `outer_timeout` (60 s per operation, covering
-`kubectl exec` itself), `exec_failed`, `no_expected_identity` (nothing is invoked), `operation_cap`. Once a binding is fatal every later operation is
+`exec_failed` (a non-zero exec exit, even with a receipt line, or an exec that raised), `missing_receipt`, `malformed_receipt` (above),
+`identity_mismatch` (expected, start and end must all equal the bound identity and the path must still name the opened file; an operation that read
+something without a verified end is one too), `source_changed`, `not_confined`, `hostname_changed` (the run's host is the case's `expected_hostname`,
+else the first receipt's), `outer_timeout` (60 s per operation, covering `kubectl exec` itself), and, with nothing invoked, `no_expected_identity`,
+`no_allowed_root`, `operation_cap` and `target_deadline` (an operation starts only if its 60 s outer deadline fits the time left of `--max-wall-s`). Once a binding is fatal every later operation is
 refused without invoking anything (`stopped`). With `--stop-on-receipt-failure` the runner stops at once: the case is written to `started-aborted/` with
 every receipt and its rejected write attempts, the model is not called again, and later cases never start (exit 3).
 
@@ -81,8 +95,10 @@ every receipt and its rejected write attempts, the model is not called again, an
 
 ## 4. The Stage R driver (item 5)
 
-`scripts/stage_r_driver.py --registration G0A.json --out DIR [--commit-repo DIR] [--no-pod-health]`. One process, serial, owning every stop. The
-registration (`stage-r-1`) holds every case-specific value; the script holds none:
+`scripts/stage_r_driver.py --registration G0A.json --out DIR --commit-repo DIR`. One process, serial, owning every stop; an unexpected error is a recorded
+`driver_error` stop, and the terminal state (`exit_code`) is always written. The registration (`stage-r-1`) holds every case-specific value; the script
+holds none. It is validated before anything starts: safe target keys and case ids (one path component), `early_stop_roles` required (section 4.2.4), limits
+finite, positive and at most the registered ceilings, rules that compile, templates without `inject_tool_failure`:
 
 ```json
 {"registration": "stage-r-1",
@@ -99,19 +115,25 @@ registration (`stage-r-1`) holds every case-specific value; the script holds non
 `harness_args` may not set what the driver owns (suite, cases, out, scratch, split, evidence mode, tools behaviour, the stop option, the caps), nor any
 prefix of those flags (argparse accepts an unambiguous prefix).
 
-1. **G0b.** A read-only `kubectl get deploy`: exactly one volume mount of the exec container matches `mount_path_regex`, else stop. Then four `list`
-   calls: the mount with the series prefix (exactly one directory), the series directory (each season regex matches exactly one directory), and each
-   season directory. Every listing must be complete, else stop before any media read. A target's locator is the one listed regular file matching its
-   recorded basename and bytes, or (with `marker`) its bytes and the marker in its name, recorded as `discovered`; no unique match drops it. The manifest
-   (`g0b-manifest.json`) is written, and committed with `--commit-repo`, before any media byte is read; a commit failure stops. The filled cases go
-   through the leak guard. With pod health on, the pod UID, the container's restartCount and readiness are recorded.
-2. **G1.** Per target: `stat` (it must match the manifest bytes and the listed mtime_ns, else the target is dropped; it sets the identity) and `probe`
-   bound to it. If no target of an `early_stop_roles` role has a text subtitle stream, the driver stops with exit 4 and no model call.
+1. **G0b.** A read-only `kubectl get deploy`: exactly one volume mount of the exec container FULLY matches `mount_path_regex`, else stop. The pod baseline
+   is validated at once (exactly one pod, ready, a restart count) and its name must be the hostname the first receipt binds. Then four `list` calls: the
+   mount with the series prefix (exactly one directory), the series directory (each season rule fully matches exactly one directory), and each season
+   directory. Every listing must be complete and consistent (the directory and prefix asked for, equal counts in the receipt and the body, `scanned` at least
+   `matching`, every entry `{name, type, size, mtime_ns, dev, ino}` with a safe name inside the prefix: no `/`, NUL, control character, `.` or `..`, valid
+   UTF-8), else stop before any media read. A target's locator is the one listed regular file matching its recorded basename and bytes, or (with `marker`)
+   its bytes and the marker in its name, recorded as `discovered`; no unique match drops it. The manifest (`g0b-manifest.json`) is written and COMMITTED
+   (mandatory; the hook must confirm a commit holding exactly the manifest's bytes) before any media byte is read; anything else stops. The filled cases go
+   through the leak guard.
+2. **G1.** Per target, between two pod checks: `stat` (its start identity must equal the listing's size, mtime_ns, device and inode and the manifest bytes,
+   else the target is dropped; its fingerprint must be well formed and agree with the receipt, else stop; it sets the identity) and `probe` bound to it. If
+   no target of an `early_stop_roles` role has a text subtitle stream, the driver stops with exit 4 and no model call.
 3. **G2.** Per target: the pod check, the case filled with its locator, `expected_identity`, `expected_hostname`, `max_operations` and the G1 probe as
    the FIRST case evidence (so `subtitle_sample` takes its stream from it; a filled case that would select another stream than the G1 probe names stops
    Stage R), the leak guard again, then one harness run (`--tools-behavior v3-remote-1 --stop-on-receipt-failure --max-wall-s 600
-   --max-total-cost-usd <remainder>`). A run that did not record the case normally stops Stage R. WRITE-CONTROL stops it after that case.
-4. **Final check.** A `stat` bound to the G1 identity; any difference in size, mtime_ns, head or tail hash marks the target INVALID, which stops.
+   --max-total-cost-usd <remainder>`). A run that did not record the case normally, or whose record holds a fatal operation, stops Stage R. WRITE-CONTROL
+   (any raw write attempt on a non-offender, whatever its validity) stops it after that case. A pod check follows each target.
+4. **Final check.** A `stat` bound to the G1 identity; a malformed fingerprint stops; any difference in size, mtime_ns, device, inode, head or tail hash
+   marks the target INVALID, which stops. A stop that a later check raises against a recorded target (a pod restart after it) marks that target STOP.
 
 Each operation needs the 60 s outer deadline to fit inside the 2 h Stage R deadline, and each target 600 s plus two operations. Exit: 0 every phase ran, 3 a
 stop, 4 the early stop, 2 a bad registration. `stage-r-state.json` (rewritten after every operation) holds every argv and receipt, the phases, the pod
@@ -119,21 +141,26 @@ readings, each target's identity, probe, run directory, write attempts, final fi
 
 ## 5. The report (section 4.3)
 
-`scripts/stage_r_report.py --state OUT/stage-r-state.json --adjudication ADJ.json [--out r.json] [--md r.md]`. The adjudication is the reviewer's
-input: `{"verdicts": [{"target", "cue", "verdict": "accepted|rejected|ambiguous"}]}`; a verdict for an undelivered cue or an unknown target is refused.
-Per target: the execution (R, F, H, STOP, INVALID, DROPPED; a target never started after a stop is STOP), proposal safety over every raw write attempt
-(validator rejections, every reply that parses as a write decision, the restored original and the final decision; WRITE-CONTROL on any non-offender),
-collection (CUE, ERR, NOCUE), and for R the diagnosis from the restored (pre-guard) decision by the first matching row (`stage_r.diagnose`), else the
-role's default. Only cited cue ids count as citing a cue; a cited result id is listed (`cited_results_with_cues`) but is not a cue. An ambiguous cue gives
-LIMIT. A cited cue without a verdict leaves the diagnosis pending. Stage R is INCOMPLETE when any target is not R (or adjudication is pending), ACCEPTED only
-with every target R, no WRITE-CONTROL, no FAIL and every offender PASS, else NOT_ACCEPTED; failures and limits are always listed.
+`scripts/stage_r_report.py --state OUT/stage-r-state.json --registration G0A.json --adjudication ADJ.json [--out r.json] [--md r.md]`. The registration
+must be the one the driver ran (its canonical sha256), and a state without a terminal exit code is refused. The adjudication is the reviewer's input:
+`{"verdicts": [{"target", "cue", "verdict": "accepted|rejected|ambiguous"}]}`; a verdict for an undelivered cue or an unknown target is refused. Per target:
+the execution (R, F, H, STOP, INVALID, DROPPED; a target never started after a stop is STOP), proposal safety over every raw write attempt, ONCE per model
+reply, whatever its validity (strict, fenced or prose JSON, or an `"action": "<write>"` pair; the validator's rejections and the restored and final decisions
+mark the same reply), each with its own audit (that proposal against the evidence shown before its turn, or its schema failure), WRITE-CONTROL on any
+non-offender; collection (CUE, ERR, NOCUE) over the cues that actually reached the model (`delivered_cue_ids`: ids in a SENT message, after the leak guard;
+a cue on an unfetched page is not one); and for R the diagnosis from the restored (pre-guard) decision by the first matching row (`stage_r.diagnose`), else
+the role's default. Only delivered cue ids count as citing a cue. A cited cue without a verdict leaves the diagnosis pending only where the matching row
+depends on it (an unconditional row applies). Stage R is ACCEPTED only when the driver ended with exit 0, no stop and nothing skipped, the results match the
+complete registration (every registered target with its role, nothing else), every target is R, there is no WRITE-CONTROL and no FAIL, and every registered
+offender PASSes; a driver stop or failure, a missing target, a non-R target or a pending adjudication is INCOMPLETE; anything else NOT_ACCEPTED.
 
 ## 6. Known limits
 
 - Prompt v7 does not describe `subtitle_sample`; its argument form is in the capability advertisement. A model may cite the whole result (`t3`) instead of
   a cue (`t3.f2`); the report does not count that as citing a cue.
-- `mrh-sampler-2` has run only locally in tests, with fake ffprobe and ffmpeg; its ffmpeg argv equals `mrh-sampler-1`'s except the subtitle `-t`. It has
-  not run in a pod or on real media.
+- `mrh-sampler-2` has run only locally in tests, with fake ffprobe and ffmpeg; its ffmpeg argv equals `mrh-sampler-1`'s except the subtitle `-t` and
+  `-protocol_whitelist http,tcp`, which is unverified against a real ffmpeg. It has not run in a pod or on real media. The `/proc/self/fd` confinement
+  check is Linux-only (elsewhere the realpath check and `O_NOFOLLOW` remain).
 - A fault in the middle of an operation is detected at that operation's end (plan section 4.4). The driver's pod-health check is a read-only `kubectl get
   pods` by deployment selector, and it requires the pod name to equal the sampler's hostname.
 - The G1 probe is case evidence (provenance `recorded` in the typed view), although Stage R observed it.

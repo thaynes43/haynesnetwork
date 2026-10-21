@@ -283,9 +283,18 @@ def result_message(call_id, tool, res, remaining):
                        'output': res['output'], 'tool_calls_remaining': remaining}, ensure_ascii=False)
 
 
-def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto', run_id='', tool_output_bytes=None,
-             prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None, evidence_bounds=None, guards=None,
-             evidence_format=None, tools_behavior=None, stop_on_receipt_failure=False, remote_state=None, _inner=False):
+def run_case(case, case_sha, adapter, suite_dir, scratch, *args, **kw):
+    """Run one case through the turn protocol (`_run_case`).  #161: a case of tools behaviour v3-remote-1 runs inside `remote_evidence.enabled()`, the only
+    place the typed layer reads a subtitle_sample observation as cues and the leak guard treats cue text as media text; every other case runs as before."""
+    if kw.get('tools_behavior') in REMOTE_TOOLS_BEHAVIORS:
+        with _remote_evidence().enabled():
+            return _run_case(case, case_sha, adapter, suite_dir, scratch, *args, **kw)
+    return _run_case(case, case_sha, adapter, suite_dir, scratch, *args, **kw)
+
+
+def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto', run_id='', tool_output_bytes=None,
+              prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None, evidence_bounds=None, guards=None,
+              evidence_format=None, tools_behavior=None, stop_on_receipt_failure=False, remote_state=None, remote_time_left=None, _inner=False):
     """Run one case through the turn protocol.  Returns the run record (never raises for model/tool trouble)."""
     import shutil
     sm_case = getattr(adapter, 'schema_mode', None) is not None      # dev-c8 claude-schema-1: the run-level guard of schema_run.py (round 6)
@@ -311,7 +320,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     binding = None
     if remote_v1 and fixture.kind == 'remote':
         remote_state = remote_state if remote_state is not None else _remote_evidence().HostState()
-        binding = _remote_evidence().binding_for_case(case, remote_state)
+        binding = _remote_evidence().binding_for_case(case, remote_state, time_left=remote_time_left)
     ctx = T.Context(case, fixture, Path(scratch) / case['id'], runner=runner, which=which or shutil.which, ocr_backend=ocr_backend,
                     suite_dir=suite_dir, replay=replay, evidence_mode=evidence_mode, collect=collect, evidence_runner=evidence_runner,
                     evidence_which=evidence_which, evidence_bounds=evidence_bounds, tools_behavior=tools_behavior or (('v3' if v31fmt else 'v2') if v2fmt else 'v1'),
@@ -363,10 +372,13 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                     media_sources += T.epub_v3_sources(json.loads(e['output']), e['id'])
                 except ValueError:
                     pass
+            elif remote_v1 and e.get('tool') == 'subtitle_sample':
+                media_sources += _remote_evidence().sources(e['output'], e['id'])      # registered before the shadow blanks it (round 1)
         if session.last_shadow is not None:
             guard_alt[0] = session.last_shadow
     ev_ids = {e['id'] for e in evidence}
     known_tools = P.TOOLS + tuple(T.extra_tools(ctx))      # P.TOOLS for every configuration but tools behaviour v3-remote-1
+    sent_upto = [0]       # v3-remote-1: how many messages a model call has been sent (after the leak guard passed them): the delivered cue record
     turns, tool_calls = [], []
     repairs, forced, forced_reason, error = [], False, None, None
     violations = []   # protocol violations (a tool call outside tools_available): answered with a tool result, never repaired
@@ -393,6 +405,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
             else:
                 leakguard.check_messages(case, messages, ctx.forbidden_extra)  # raises LeakError: harness error, the model is not called
             try:
+                if remote_v1:
+                    sent_upto[0] = len(messages)
                 comp = adapter.complete(system, messages, schema=schema) if schema is not None else adapter.complete(system, messages)
             except A.AdapterError as e:
                 error = {'kind': 'adapter_error', 'message': str(e)[:500]}
@@ -500,8 +514,9 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                 raise
             e.partial = SR.minimal_aborted_record(case, case_sha, run_id, SR.safe_str(e, 2000), turns, pe, adapter)
         if remote_v1:
-            # #161 only (an earlier configuration's started-aborted record is unchanged): every receipt, and every raw write attempt the validator rejected
-            e.partial['remote_evidence'] = remote_record(ctx, binding, stop_on_receipt_failure)
+            # #161 only (an earlier configuration's started-aborted record is unchanged): every receipt, the cues delivered, every raw write attempt
+            e.partial['remote_evidence'] = remote_record(ctx, binding, stop_on_receipt_failure, messages[:sent_upto[0]], tool_calls, turns,
+                                                         _attempt_auditor(case, evidence, tool_calls, session, view, caps if v2fmt else None, v3fmt, EV3, prompt_version))
             e.partial['write_rejection'] = write_rejection_info(rejected_writes, None, False, None)
         raise
     except Exception as e:  # noqa: BLE001 - harness fault: keep the run, mark it
@@ -589,7 +604,9 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     if guard_rec is not None:
         record['guard'] = guard_rec
     if remote_v1:
-        record['remote_evidence'] = remote_record(ctx, binding, stop_on_receipt_failure)     # #161 only: receipts, identity, host, subtitle stream
+        # #161 only: receipts, identity, host, subtitle stream, the cue ids delivered, every raw write attempt with its own audit
+        record['remote_evidence'] = remote_record(ctx, binding, stop_on_receipt_failure, messages[:sent_upto[0]], tool_calls, turns,
+                                                  _attempt_auditor(case, evidence, tool_calls, session, view, caps, v3fmt, EV3, prompt_version))
     if v3fmt:
         record['evidence_format'] = EV3.format_record(session, caps, evidence_format)
     elif v2fmt:
@@ -615,11 +632,52 @@ def claude_schema_record(turns, sent_schema_sha, adapter):
                                           'reply_source': ((t.get('meta') or {}).get('schema') or {}).get('reply_source')} for t in turns]}
 
 
-def remote_record(ctx, binding, stop_on_receipt_failure):
-    """Record field of a tools-behaviour-v3-remote-1 case (absent in every other configuration): never shown to the model."""
+def remote_record(ctx, binding, stop_on_receipt_failure, sent_messages=(), tool_calls=(), turns=(), auditor=None):
+    """Record field of a tools-behaviour-v3-remote-1 case (absent in every other configuration): never shown to the model.  `delivered_cue_ids` are the cue
+    ids that reached the model in a sent message; `write_attempts` is every raw model reply expressing a write, whatever its validity, with its own audit."""
+    RE = _remote_evidence()
     rec = binding.record() if binding is not None else {'tools_behavior': ctx.tools_behavior, 'receipts': [], 'fatal': None, 'operations': 0,
                                                          'note': 'no remote fixture: no sampler operation is bound'}
-    return dict(rec, subtitle_stream=ctx.subtitle_stream, stop_on_receipt_failure=bool(stop_on_receipt_failure))
+    subs = [(c['id'], c.get('raw_output', c.get('output')), c['status']) for c in tool_calls
+            if c.get('tool') == 'subtitle_sample' and not c.get('remote_fatal') and c.get('status') in ('ok', 'partial', 'timeout')]
+    attempts = []
+    for t in turns:
+        intent = RE.raw_write_intent(t.get('text'))
+        if intent is None:
+            continue
+        item = {'turn': t.get('n'), 'action': intent['action'], 'parse': intent['parse'], 'reply_valid': bool(t.get('reply_valid'))}
+        try:
+            item['audit'] = auditor(t.get('n'), intent) if auditor else {'state': 'not_audited'}
+        except Exception as e:  # noqa: BLE001 - an audit failure is recorded, never a crash and never null
+            item['audit'] = {'state': 'audit_error', 'error': '%s: %s' % (type(e).__name__, str(e)[:200])}
+        attempts.append(item)
+    return dict(rec, subtitle_stream=ctx.subtitle_stream, stop_on_receipt_failure=bool(stop_on_receipt_failure),
+                delivered_cue_ids=RE.delivered_cue_ids(list(sent_messages), subs), write_attempts=attempts)
+
+
+def _attempt_auditor(case, evidence, tool_calls, session, view, caps, v3fmt, EV3, prompt_version):
+    """-> audit(turn, intent): one raw write proposal assessed against the evidence shown BEFORE that turn (case evidence and earlier tool results), never the
+    final decision's audit.  A proposal the decision schema rejects (or no parser reads) gets {'state': 'schema_failure', 'errors': [...]}."""
+    def audit(turn, intent):
+        prop = intent.get('proposal')
+        if not isinstance(prop, dict):
+            return {'state': 'schema_failure', 'errors': ['no JSON object could be read from the reply (%s)' % intent['parse']]}
+        if v3fmt:
+            errs = EV3.validate_decision(prop)
+        else:
+            _kind, errs = P.validate_turn(prop, case.get('tools_available'), prompt_version)
+        errs = [str(e)[:200] for e in errs if e]
+        if errs:
+            return {'state': 'schema_failure', 'errors': errs[:6]}
+        before = [c for c in tool_calls if (c.get('turn') or 0) < (turn or 0)]
+        resolve = make_resolver(case, before, session)
+        if v3fmt:
+            out = EV3.action_audit(dict(prop, evidence_refs=resolve(prop.get('evidence_refs', []))), evidence, before, view['context'], view['media_type'], caps)
+        else:
+            out = AU.compute(case, prop, before, prompt_version=prompt_version)
+        return {'state': 'audited', 'evidence_before_turn': [e['id'] for e in evidence] + [c['id'] for c in before],
+                'prerequisites': out.get('prerequisites'), 'unmet': out.get('unmet')}
+    return audit
 
 
 def evidence_format_record(session, caps, version):
@@ -1190,7 +1248,8 @@ def main(argv=None, runner=None):
                 rec = run_case(case, sha, adapter, suite_dir, scratch, ocr_backend=ocr_backend, replay=args.replay, run_id=run_id,
                                tool_output_bytes=args.tool_output_bytes, prompt_version=args.prompt, evidence_mode=args.evidence,
                                evidence_bounds=evidence_bounds, guards=args.guards, evidence_format=args.evidence_format,
-                               **({'tools_behavior': args.tools_behavior, 'stop_on_receipt_failure': args.stop_on_receipt_failure, 'remote_state': remote_state}
+                               **({'tools_behavior': args.tools_behavior, 'stop_on_receipt_failure': args.stop_on_receipt_failure, 'remote_state': remote_state,
+                                   'remote_time_left': (lambda: limits.max_wall_s - limits.elapsed()) if limits.max_wall_s is not None else None}
                                   if args.tools_behavior else {}), **({'runner': runner} if runner is not None else {}))
             except A.AbortRun as e:
                 aborted = str(e)

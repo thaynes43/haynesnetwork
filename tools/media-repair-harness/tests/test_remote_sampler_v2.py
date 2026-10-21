@@ -17,17 +17,17 @@ def op(pod, mode, path, binding, opts=(), bind=True):
 
 def ident(p):
     st = os.stat(p)
-    return {'size': st.st_size, 'mtime_ns': st.st_mtime_ns}
+    return {'size': st.st_size, 'mtime_ns': st.st_mtime_ns, 'dev': st.st_dev, 'ino': st.st_ino}
 
 
 class RealSampler(unittest.TestCase):
     def setUp(self):
-        self.root = Path(tempfile.mkdtemp())
+        self.root = Path(tempfile.mkdtemp()).resolve()
         self.file = H.media_file(self.root / 'show' / 'item.mkv')
         self.pod = H.LocalPod()
 
     def test_stat_fingerprint_and_receipt(self):
-        b = RE.Binding(host=RE.HostState())
+        b = RE.Binding(host=RE.HostState(), root=str(self.root))
         receipt, out = op(self.pod, 'stat', self.file, b, bind=False)
         fp = json.loads(out)
         data = self.file.read_bytes()
@@ -39,7 +39,7 @@ class RealSampler(unittest.TestCase):
         self.assertEqual(b.host.hostname, H.hostname())
 
     def test_bound_operations_check_identity_at_start_and_end(self):
-        b = RE.Binding(identity=ident(self.file), host=RE.HostState())
+        b = RE.Binding(identity=ident(self.file), host=RE.HostState(), root=str(self.root))
         receipt, _out = op(self.pod, 'stat', self.file, b)
         self.assertTrue(receipt['identity']['start_ok'] and receipt['identity']['end_ok'])
         receipt, out = op(self.pod, 'subtitle', self.file, b, ['--at', 30, '--stream', 3, '--window', 8])
@@ -51,7 +51,7 @@ class RealSampler(unittest.TestCase):
         self.assertEqual(json.loads(out)['streams'][3]['codec_name'], 'subrip')
 
     def test_changed_file_fails_closed_without_reading(self):
-        b = RE.Binding(identity=ident(self.file), host=RE.HostState())
+        b = RE.Binding(identity=ident(self.file), host=RE.HostState(), root=str(self.root))
         self.file.write_bytes(self.file.read_bytes() + b'x')
         with self.assertRaises(RE.FatalOperation) as cm:
             op(self.pod, 'subtitle', self.file, b, ['--at', 30, '--stream', 3])
@@ -71,7 +71,7 @@ class RealSampler(unittest.TestCase):
             (d / ('other-%03d' % i)).write_bytes(b'')
         for i in range(3):
             (d / ('Wanted %d' % i)).mkdir()
-        b = RE.Binding(host=RE.HostState())
+        b = RE.Binding(host=RE.HostState(), root=str(self.root))
         receipt, out = op(self.pod, 'list', d, b, ['--prefix', 'Wanted'], bind=False)
         data = json.loads(out)
         self.assertTrue(data['complete'])
@@ -85,7 +85,7 @@ class RealSampler(unittest.TestCase):
         self.assertEqual(len(data['entries']), RE.LIST_CAP)
 
     def test_missing_path_has_a_receipt_and_no_output(self):
-        b = RE.Binding(host=RE.HostState())
+        b = RE.Binding(host=RE.HostState(), root=str(self.root))
         receipt, out = op(self.pod, 'stat', self.root / 'nope.mkv', b, bind=False)
         self.assertEqual((receipt['exit_code'], out), ('error', b''))
         self.assertIn('FileNotFoundError', receipt['error'])
@@ -101,8 +101,10 @@ class RealSampler(unittest.TestCase):
         self.assertIn('LIMIT_S = 3 ', text)
         env = dict(os.environ, PATH=str(self.pod.bin) + os.pathsep + os.environ.get('PATH', ''))
         t0 = time.monotonic()
-        done = subprocess.run([sys.executable, '-', 'subtitle', str(slow), '--stream', '3', '--expect-size', str(os.stat(slow).st_size),
-                               '--expect-mtime-ns', str(os.stat(slow).st_mtime_ns)], input=text.encode(), capture_output=True, timeout=20, env=env)
+        i = ident(slow)
+        done = subprocess.run([sys.executable, '-', 'subtitle', str(slow), '--stream', '3', '--root', str(self.root)] +
+                              [str(x) for k in ('size', 'mtime_ns', 'dev', 'ino') for x in ('--expect-' + k.replace('_', '-'), i[k])],
+                              input=text.encode(), capture_output=True, timeout=20, env=env)
         wall = time.monotonic() - t0
         receipt, problem = RE.parse_receipt(done.stderr)
         self.assertIsNone(problem)
@@ -112,10 +114,60 @@ class RealSampler(unittest.TestCase):
         self.assertLess(receipt['wall_seconds'], 3.5)
         self.assertLess(wall, 10)
 
+    def test_a_path_replaced_during_the_operation_is_not_the_same_file(self):
+        """Round 1: identity is bound to the opened file, not the path.  The path is replaced by another file of the same size and mtime while the
+        operation runs: the receipt says same_file false, and the bound operation fails closed."""
+        import shutil
+        import threading
+        slow = H.media_file(self.root / 'swap.mkv', sleep=1.5)
+        twin = self.root / 'twin.mkv'
+        shutil.copy2(slow, twin)
+        orig = ident(slow)
+        b = RE.Binding(identity=orig, host=RE.HostState(), root=str(self.root))
+        timer = threading.Timer(0.6, lambda: os.replace(twin, slow))
+        timer.start()
+        try:
+            with self.assertRaises(RE.FatalOperation) as cm:
+                op(self.pod, 'subtitle', slow, b, ['--at', 1, '--stream', 3])
+        finally:
+            timer.join()
+        r = cm.exception.receipt
+        self.assertEqual((r['identity']['same_file'], r['source_unchanged'], r['identity']['end']), (False, False, orig))     # the opened file itself is unchanged
+        self.assertNotEqual(ident(slow)['ino'], orig['ino'])
+        self.assertEqual(cm.exception.kind, 'identity_mismatch')
+
+    def test_ffmpeg_reads_only_the_loopback_server(self):
+        b = RE.Binding(identity=ident(self.file), host=RE.HostState(), root=str(self.root))
+        receipt, _out = op(self.pod, 'subtitle', self.file, b, ['--at', 1, '--stream', 3])
+        argv = receipt['argv']
+        self.assertEqual(argv[argv.index('-protocol_whitelist') + 1], 'http,tcp')
+        self.assertLess(argv.index('-protocol_whitelist'), argv.index('-i'))
+
+    def test_paths_must_be_confined_and_symlink_free(self):
+        """Astra 3: the source is opened only under the allowed root, never through a symlink (any component) and never by a traversal path."""
+        outside = Path(tempfile.mkdtemp()).resolve()
+        H.media_file(outside / 'other.mkv')
+        (self.root / 'link.mkv').symlink_to(self.file)
+        (self.root / 'dirlink').symlink_to(self.file.parent)
+        for path in (outside / 'other.mkv', self.root / 'link.mkv', self.root / 'dirlink' / self.file.name, str(self.file.parent) + '/../show/' + self.file.name):
+            b = RE.Binding(host=RE.HostState(), root=str(self.root))
+            with self.assertRaises(RE.FatalOperation) as cm:
+                op(self.pod, 'stat', path, b, bind=False)
+            self.assertEqual(cm.exception.kind, 'not_confined', path)
+            self.assertEqual(cm.exception.receipt['bytes_read'], 0)
+        b = RE.Binding(host=RE.HostState(), root=str(self.root))
+        receipt, _out = op(self.pod, 'stat', self.file, b, bind=False)          # control: a confined real path
+        self.assertTrue(receipt['confined'])
+        self.assertEqual(set(receipt['identity']['start']), {'size', 'mtime_ns', 'dev', 'ino'})
+
     def test_bad_arguments_still_end_with_a_receipt(self):
-        b = RE.Binding(host=RE.HostState())
+        b = RE.Binding(host=RE.HostState(), root=str(self.root))
         receipt, out = op(self.pod, 'subtitle', self.file, b, ['--window', 50], bind=False)
-        self.assertEqual((receipt['exit_code'], receipt['error']), ('error', 'bad arguments'))
+        self.assertEqual((receipt['exit_code'], receipt['error']), ('error', 'bad arguments: out of range'))
+        for bad in (['--at', 'soon'], ['--bogus', '1']):           # argparse errors end with a receipt too (round 1)
+            receipt, out = op(self.pod, 'subtitle', self.file, b, bad, bind=False)
+            self.assertEqual(receipt['exit_code'], 'error')
+            self.assertTrue(receipt['error'].startswith('bad arguments: '))
 
 
 if __name__ == '__main__':

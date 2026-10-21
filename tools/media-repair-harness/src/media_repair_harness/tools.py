@@ -1520,8 +1520,8 @@ def call_tool(ctx, name, args):
                 res = ToolResult('error', 'tool crashed: %s: %s' % (type(e).__name__, str(e)[:200]))
         finally:
             pool.shutdown(wait=False)
-        if inject and inject.get('tool') == name:
-            res = _failure(inject.get('mode', 'error'), name, res)
+        if inject and inject.get('tool') == name and not (remote_v1 and res.extra.get('remote_fatal')):
+            res = _failure(inject.get('mode', 'error'), name, res)       # (v3-remote-1: an injected `partial` never hides a fatal operation)
     redactor = ctx.redact
     if remote_v1 and ctx.remote_binding is not None:
         res.extra['receipts'] = ctx.remote_binding.receipts[since:]      # record only (never in what the model sees): every receipt of this call

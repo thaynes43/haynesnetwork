@@ -40,6 +40,25 @@ earlier option set are unchanged.
   with a recorded probe could choose the G2 subtitle stream: the G1 probe now comes first, and a filled case that would select another stream than the G1
   probe names stops Stage R; (3) an argparse prefix of an owned flag (`--spl`) passed the `harness_args` guard: any `--` item that is a prefix of an owned flag
   is refused. Tests for each.
+* **Review round 1 of `f21f8f83`** (the coordinator's Opus review: one major, five minors, nits; AUDIT-ASTRA-59: 3 blockers, 13 majors, 2 minors; every
+  fix in the opt-in paths, the legacy configurations byte-identical): **receipts** a non-zero exec exit is fatal even with a receipt; every field is
+  required on every exit kind, typed (real booleans, integer identities, finite bounded wall time and byte counts) and consistent (`source_unchanged` with the
+  identities and `same_file`, the `*_ok` verdicts, the quota flag); an operation that read something without a verified end is fatal; **identity** binds
+  the bytes read: the sampler opens the source once (`O_NOFOLLOW`, confined under `--root`, symlink-free, `/proc/self/fd` checked), serves every read and
+  the fingerprint from that descriptor, and the identity is size, mtime_ns, device and inode; bad arguments end with a receipt; `-protocol_whitelist
+  http,tcp`; an injected `partial` never hides a fatal; an operation starts only if its 60 s fits the target deadline (`target_deadline`); SRT timing
+  components and order validated, a cut final cue marked `truncated`; **legacy gating** the typed reading of a `subtitle_sample` observation (and its media
+  treatment by the leak guard) happens only inside a v3-remote-1 run (`remote_evidence.enabled()`), so a legacy case with subtitle evidence is guarded as on
+  the base, and under the option initial subtitle evidence is a media source; **delivery** the record lists the cue ids that reached the model in a sent
+  message (`delivered_cue_ids`), and only those count; **write attempts** every raw reply expressing a write (strict, fenced or prose JSON, or an action
+  pair), once per reply, each with its own audit against the evidence before its turn (schema failures stated); **driver** every unexpected error is a
+  recorded stop with a terminal state; the registration is validated (safe keys and case ids, `early_stop_roles` required, finite limits within the ceilings,
+  no injection in templates, compiling rules); the G0b commit is mandatory and verified; the pod baseline is validated at once and bound to the hostname,
+  with checks around every G1 and G2 target; listings are cross-checked (directory, prefix, counts, entry schema, safe names); season and mount rules fully
+  match; the G1 stat's start identity is checked against the listing and its fingerprint shape validated, as the final one is; a record holding a fatal
+  operation stops; artifact paths stay under `--out`; a stop raised against a recorded target marks it STOP; **report** acceptance requires exit 0, no stop,
+  nothing skipped and the complete registration (passed with `--registration`, sha-checked), and adjudication only where a row needs it. Fixtures use
+  synthetic seasons and markers unrelated to any pilot target.
 ## dev-c8 (WO-W26, OpenProject #158): prompt v8, turn-v3.1, claude-schema-1, guards v4; offline, not measured
 
 `HARNESS_VERSION` is `dev-c8`. Every earlier prompt, format, guard version and adapter is unchanged; the recorded dev-c4 to dev-c7 runs, the dev-c6 replay

@@ -14,9 +14,14 @@ and Stage R acceptance or INCOMPLETE (stage_r.acceptance).
 The adjudication is an input written by the independent results reviewer: {"verdicts": [{"target": key, "cue": "t2.f1", "verdict": "accepted" |
 "rejected" | "ambiguous"}]}.  A verdict for a cue that was never delivered is refused; a cited cue without a verdict leaves the diagnosis pending (INCOMPLETE).
 
-Usage: stage_r_report.py --state OUT/stage-r-state.json --adjudication ADJ.json [--out report.json] [--md report.md]
+The results are checked against the COMPLETE frozen registration (its canonical sha256 must equal the one the driver recorded): every registered target
+present with its role, every registered offender PASS.  A state without a terminal exit code is refused; a driver stop, a non-zero exit or a skipped required
+step makes Stage R INCOMPLETE.  Only cues that actually reached the model (the record's `delivered_cue_ids`) count for collection, citation and adjudication.
+
+Usage: stage_r_report.py --state OUT/stage-r-state.json --registration G0A.json --adjudication ADJ.json [--out report.json] [--md report.md]
 """
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -59,7 +64,18 @@ def load_verdicts(adjudication):
     return out
 
 
-def evaluate(state, adjudication):
+def registration_sha256(registration):
+    """The canonical digest the driver records (`stage-r-state.json` registration_sha256)."""
+    return hashlib.sha256(json.dumps(registration, sort_keys=True).encode()).hexdigest()
+
+
+def evaluate(state, adjudication, registration):
+    if not isinstance(state, dict) or not isinstance(state.get('targets'), dict):
+        raise ValueError('the state has no targets')
+    if 'exit_code' not in state or not isinstance(state['exit_code'], int) or isinstance(state['exit_code'], bool):
+        raise ValueError('the state has no terminal exit code: the driver did not finish recording it (a crash or a run still in progress)')
+    if not isinstance(registration, dict) or registration_sha256(registration) != state.get('registration_sha256'):
+        raise ValueError('the registration given is not the one the driver ran (registration_sha256 differs)')
     verdicts = load_verdicts(adjudication)
     targets = []
     for key, st in state['targets'].items():
@@ -74,8 +90,9 @@ def evaluate(state, adjudication):
     unknown_targets = sorted(set(verdicts) - set(state['targets']))
     if unknown_targets:
         raise ValueError('adjudication names unknown targets: %s' % unknown_targets)
-    return {'report': REPORT_VERSION, 'stop': state.get('stop'), 'early_stop': state.get('early_stop'), 'targets': targets,
-            'stage_r': SR.acceptance(targets), 'cost_usd': state.get('cost_usd'), 'elapsed_s': state.get('elapsed_s'),
+    driver = {'exit_code': state['exit_code'], 'stop': state.get('stop'), 'skipped': state.get('skipped') or []}
+    return {'report': REPORT_VERSION, 'stop': state.get('stop'), 'early_stop': state.get('early_stop'), 'exit_code': state['exit_code'], 'targets': targets,
+            'stage_r': SR.acceptance(targets, driver, registration), 'cost_usd': state.get('cost_usd'), 'elapsed_s': state.get('elapsed_s'),
             'note': 'computed offline from the driver state, the run records and the adjudication; cue adjudication is the reviewer\'s input'}
 
 
@@ -95,17 +112,19 @@ def markdown(rep):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('--state', required=True)
+    ap.add_argument('--registration', required=True, help='the frozen G0a registration the driver ran')
     ap.add_argument('--adjudication', required=True)
     ap.add_argument('--out')
     ap.add_argument('--md')
     args = ap.parse_args(argv)
     state = load_json(args.state)
     adjudication = load_json(args.adjudication)
-    if state is None or adjudication is None:
-        print('cannot read the state or the adjudication', file=sys.stderr)
+    registration = load_json(args.registration)
+    if state is None or adjudication is None or registration is None:
+        print('cannot read the state, the registration or the adjudication', file=sys.stderr)
         return 2
     try:
-        rep = evaluate(state, adjudication)
+        rep = evaluate(state, adjudication, registration)
     except ValueError as e:
         print('bad input: %s' % e, file=sys.stderr)
         return 2

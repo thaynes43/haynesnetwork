@@ -72,7 +72,7 @@ def internal(obs):
 def blank_media(obs):
     """The harness-only shadow of an epub_inspect observation: every literal media string blanked at its known field (tools.epub_v3_blank); others as is."""
     from . import tools as T
-    if obs.get('tool') == SUBTITLE_TOOL:
+    if obs.get('tool') == SUBTITLE_TOOL and _subtitle_media():
         from . import remote_evidence as RE
         blanked = RE.blank(obs.get('output'))
         return obs if blanked is obs.get('output') else dict(obs, output=json.dumps(blanked, ensure_ascii=False))
@@ -88,8 +88,14 @@ def blank_media(obs):
     return dict(obs, output=json.dumps(T.epub_v3_blank(data), ensure_ascii=False))
 
 
+def _subtitle_media():
+    """Subtitle cue text is media text only inside a tools-behaviour-v3-remote-1 run; elsewhere it is read as before (no shadow, the legacy check)."""
+    from . import remote_evidence as RE
+    return RE.active()
+
+
 def carries_media(observations):
-    return any(o.get('tool') in ('epub_inspect', EXCERPT_TOOL, SUBTITLE_TOOL) for o in observations)
+    return any(o.get('tool') in ('epub_inspect', EXCERPT_TOOL) or (o.get('tool') == SUBTITLE_TOOL and _subtitle_media()) for o in observations)
 
 
 def display_tool(obs):
@@ -143,7 +149,7 @@ def kinds_of(obs, facts):
         fields = {k: EPUB_KINDS[k] for k in facts if k in EPUB_KINDS}
     elif tool == EXCERPT_TOOL:
         fields = {'excerpt': 'content'} if 'excerpt' in facts else {}
-    elif tool == SUBTITLE_TOOL:
+    elif tool == SUBTITLE_TOOL and _subtitle_media():
         fields = {'cues': 'content'} if 'cues' in facts else {}       # tools behaviour v3-remote-1: subtitle cues are content read by this run
     elif tool == 'prior_record':
         kind = FX.report_kind((_data(obs) or {}).get('evidence_method'))

@@ -5,7 +5,7 @@ import subprocess
 import th
 from media_repair_harness import remote_evidence as RE
 
-IDENT = {'size': 1000, 'mtime_ns': 5}
+IDENT = {'size': 1000, 'mtime_ns': 5, 'dev': 64, 'ino': 77}
 SRT = b"1\n00:00:01,000 --> 00:00:03,500\nHello there, <i>Professor</i>.\n\n2\n00:00:04,000 --> 00:00:06,000\n{\\an8}We meet at the\nlighthouse.\n\n"
 PROBE = {'format': {'format_name': 'matroska,webm', 'duration': '1300.0'},
          'streams': [{'index': 0, 'codec_type': 'video', 'codec_name': 'h264'}, {'index': 1, 'codec_type': 'audio', 'codec_name': 'aac'},
@@ -24,7 +24,8 @@ class Completed:
 def receipt(mode_, stdout=b'', host='pod-a', ident=IDENT, **over):
     r = {'receipt': RE.RECEIPT, 'mode': mode_, 'hostname': host, 'exit_code': 0, 'error': None, 'stdout_bytes': len(stdout), 'stderr': '',
          'bytes_read': 4096, 'quota_exhausted': False, 'requests': 1, 'wall_seconds': 1.5, 'timed_out': False, 'source_unchanged': True,
-         'identity': {'expected': ident, 'start': ident, 'end': ident, 'start_ok': True, 'end_ok': True}, 'argv': ['nice']}
+         'identity': {'expected': ident, 'start': ident, 'end': ident, 'start_ok': True if ident else None, 'end_ok': True if ident else None, 'same_file': True},
+         'argv': ['nice'], 'confined': True}
     r.update(over)
     return r
 
@@ -69,7 +70,7 @@ def outer_timeout(argv):
 
 
 def remote_case(id='rx-1', probe=PROBE, ident=IDENT, host='pod-a', tools=TOOLS, **extra):
-    fx = {'kind': 'remote', 'locator': 'remote:media/sampler/app:/lib/show/item.mkv'}
+    fx = {'kind': 'remote', 'locator': 'remote:media/sampler/app:/lib/show/item.mkv', 'allowed_root': '/lib'}
     if ident is not None:
         fx['expected_identity'] = ident
     if host is not None:
