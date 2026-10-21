@@ -51,32 +51,57 @@ def _lines(b):
     return [l for l in (b.decode('utf-8', 'replace') if isinstance(b, bytes) else b).splitlines() if l.strip()]
 
 
-LIVE1_ERROR_LINES = 3        # every behaviour keeps the first 3 diagnostic lines of a window
-LIVE2_DAMAGE_LINES = 8       # live-2: plus at most 8 later distinct lines that the allow-list reads as damage (each line is already clipped to 160 characters)
+LIVE1_ERROR_LINES = 3        # every behaviour keeps at most 3 diagnostic lines per window ...
+LIVE_LINE_CHARS = 160        # ... each shown in at most 160 characters plus a 3-character cut marker (_clip): 163 characters
+# live-2 keeps that budget exactly (at most 3 lines of at most 163 characters per window), so a live-2 window never holds more text than live-1's largest
+_ELIDE_HEADS = (24, 48, 80)
+
+
+def _shown_forms(line):
+    """The ways a window may show one diagnostic line within the 163-character budget, live-1's own clip first (`_clip(line, 160)`, exactly): then the start
+    and the end of the line with ' ... ' between them (the decoration a classifier strips stands at the start, the message at the end), then the end alone
+    after '... '.  Every form is at most 163 characters."""
+    t = ' '.join(line.split())
+    if len(t) <= LIVE_LINE_CHARS:
+        return [t]
+    budget = LIVE_LINE_CHARS + 3
+    return [t[:LIVE_LINE_CHARS] + '...'] + [t[:h] + ' ... ' + t[-(budget - h - 5):] for h in _ELIDE_HEADS] + ['... ' + t[-(budget - 4):]]
 
 
 def kept_error_lines(lines):
-    """Live collector behaviour live-2: the diagnostic lines a window keeps.  The first LIVE1_ERROR_LINES lines (exactly live-1's selection), then, in their
-    order, up to LIVE2_DAMAGE_LINES later DISTINCT lines that the diagnostic allow-list (evidence_v2.classify_line) reads as damage, so located damage
-    printed after start-up warnings is not lost and the record stays bounded.  The selection reads `diag-1`, whose damage set contains every later rule
-    set's (diag-2 and diag-3 only narrow the zip patterns, which no decoder prints); the typed layer classifies the kept lines again under its own rules.
+    """Live collector behaviour live-2: -> the diagnostic lines a window keeps, from its COMPLETE (scrubbed, uncut) lines, within live-1's budget of 3 lines of
+    at most 163 characters.  Each line is classified whole, before it is cut, by the diagnostic allow-list (evidence_v2.classify_line under `diag-1`, whose
+    damage set contains every later rule set's; the typed layer classifies the kept text again under its own rules):
+
+    * the first 3 lines are kept, as under live-1, each shown as live-1 shows it (`_clip(line, 160)`) unless the line is damage whole and that cut hides it:
+      then it is shown in the first other form (_shown_forms) that still reads as damage;
+    * only when none of those 3 shows damage, the first later line that is damage (and has such a form) takes the place of the third line.
+
+    So located damage printed after start-up warnings, or behind a long decoration, stays recognisable, and a window holds no more text than live-1 allows.
     The count of every line (`error_lines`, `problem_lines`) is unchanged, so the record still says how many lines were not kept."""
-    kept = list(lines[:LIVE1_ERROR_LINES])
-    if len(lines) <= LIVE1_ERROR_LINES:
-        return kept
     from .. import evidence_v2 as EV2       # (lazy: the typed layer's allow-lists; it imports nothing from the collectors)
-    seen, extra = set(kept), 0
     with EV2.diagnostic_rules('diag-1'):
+        def show(line):
+            forms = _shown_forms(line)
+            if len(forms) > 1 and EV2.classify_line(line) == 'damage':
+                for f in forms:
+                    if EV2.classify_line(f) == 'damage':
+                        return f, True
+            return forms[0], EV2.classify_line(forms[0]) == 'damage'
+
+        head = [show(l) for l in lines[:LIVE1_ERROR_LINES]]
+        if len(lines) <= LIVE1_ERROR_LINES or any(d for _f, d in head):
+            return [f for f, _d in head]
+        seen = set(lines[:LIVE1_ERROR_LINES])
         for line in lines[LIVE1_ERROR_LINES:]:
-            if extra >= LIVE2_DAMAGE_LINES:
-                break
             if line in seen:
                 continue
             seen.add(line)
             if EV2.classify_line(line) == 'damage':
-                kept.append(line)
-                extra += 1
-    return kept
+                shown, visible = show(line)
+                if visible:
+                    return [f for f, _d in head[:LIVE1_ERROR_LINES - 1]] + [shown]
+        return [f for f, _d in head]
 
 
 # ------------------------------------------------------------------ probe core (shared)
@@ -233,7 +258,7 @@ def decode_window(ctx, path, at, window, deadline, audio_only=False, timeout_s=N
     errs = [_clip(ctx.scrub(l), 160) for l in _lines(r.stderr)]
     frames, decoded = _progress(r.stdout)
     seg.update(exit_code=r.returncode, frames=frames, decoded_s=_f(decoded), error_lines=len(errs),
-               errors=kept_error_lines(errs) if getattr(ctx, 'live_behavior', 'live-1') == 'live-2' else errs[:3])
+               errors=kept_error_lines([ctx.scrub(l) for l in _lines(r.stderr)]) if getattr(ctx, 'live_behavior', 'live-1') == 'live-2' else errs[:3])
     if r.file_size_limit:
         seg['state'] = 'output_cap'  # the collector's own output cap killed ffmpeg: says nothing about the file
     elif r.timed_out:
@@ -576,7 +601,7 @@ def collect_audio(ctx, started):
                 seg['exit_code'] = r.returncode
                 seg['problem_lines'] = len(problems)
                 if problems:
-                    seg['problems'] = (kept_error_lines([_clip(ctx.scrub(x), 160) for x in problems]) if getattr(ctx, 'live_behavior', 'live-1') == 'live-2'
+                    seg['problems'] = (kept_error_lines([ctx.scrub(x) for x in problems]) if getattr(ctx, 'live_behavior', 'live-1') == 'live-2'
                                        else [_clip(ctx.scrub(x), 160) for x in problems[:3]])
                     errs.extend(problems[:3])
                 if r.returncode != 0 or problems:

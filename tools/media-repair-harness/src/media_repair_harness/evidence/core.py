@@ -180,14 +180,16 @@ class Deadline:
 
 # Live collector behaviours (W27).  `live-1` is every collector as it was, byte for byte (the default; every recorded live run).  `live-2` (opt-in, no runner
 # flag selects it yet) corrects two things and nothing else:
-#   * a decode window (and an audio level window) keeps its first 3 diagnostic lines as before PLUS, in order, up to LIVE2_DAMAGE_LINES later distinct lines that
-#     the diagnostic allow-list reads as damage (avtools.kept_error_lines), so located damage printed after start-up warnings survives; the record stays bounded;
+#   * a decode window (and an audio level window) classifies its diagnostic lines whole, before they are cut, and keeps at most 3 lines of at most 163
+#     characters, as live-1 does: the first 3, a damage line shown in a form that still reads as damage, and, only when none of them shows damage, the first
+#     later damage line in place of the third (avtools.kept_error_lines), so located damage after start-up warnings or behind a long decoration survives;
 #   * the EPUB collector resolves manifest hrefs exactly as tools behaviour v4 does (epubtool._resolve_live2): only `http`/`https` URLs and references with
 #     a network location are remote; every other href, a colon-named member (`Part1:Intro.xhtml`) and `data:`, `urn:` or `mailto:` included, names a
-#     LOCAL archive member, which is parsed when present and reported missing when absent; and, as v4's package check, every manifest item with an href is
-#     checked for a missing member (live-1 checks only items that have an id, once per id).
+#     LOCAL archive member, which is parsed when present and reported missing when absent; as v4's package check, every manifest item with an href is
+#     checked for a missing member (live-1 checks only items that have an id, once per id); every member name the record reports is cut at 200 characters.
 LIVE_BEHAVIORS = ('live-1', 'live-2')
 DEFAULT_LIVE_BEHAVIOR = 'live-1'
+LIVE2_KINDS = ('decode', 'audio', 'audiobook', 'epub')       # the collectors live-2 changes; only their records say `collector_behavior: live-2`
 
 
 class Ctx:

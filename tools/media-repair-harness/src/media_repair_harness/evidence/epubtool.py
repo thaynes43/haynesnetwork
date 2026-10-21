@@ -50,6 +50,16 @@ def _err(e):
     return '%s: %s' % (type(e).__name__, str(e)[:200])
 
 
+NAME_CHARS_LIVE2 = 200
+
+
+def _name_live2(name):
+    """live-2: a member name as the record reports it, cut at 200 characters like `_err` cuts a message (the cut says how much is left out), so a long href or
+    member name cannot push the record past a tool-result cap and take the failed stage with it.  The harness's cut marker is read as no text by the typed
+    layer's classifier (evidence_v2.HARNESS_MARKER_RX)."""
+    return name if len(name) <= NAME_CHARS_LIVE2 else '%s...[+%d chars]' % (name[:NAME_CHARS_LIVE2], len(name) - NAME_CHARS_LIVE2)
+
+
 def _resolve(base, href):
     parts = urlsplit(href)
     if parts.scheme or parts.netloc:
@@ -78,6 +88,7 @@ def collect_epub(ctx, started):
     b = used_bounds(ctx, EPUB_BOUNDS)
     live2 = getattr(ctx, 'live_behavior', 'live-1') == 'live-2'
     resolve = _resolve_live2 if live2 else _resolve
+    name = _name_live2 if live2 else (lambda n: n)       # live-2: every member name the record reports is cut at 200 characters
     path = Path(ctx.path)
     out = {'valid': None, 'stages_passed': [], 'findings': []}
     cov_ok = []
@@ -166,9 +177,9 @@ def collect_epub(ctx, started):
             opf = rootfiles[0].attrib['full-path']
         except Exception as e:  # noqa: BLE001
             return fail('opf_parse', 'container.xml: %s' % _err(e), cov_ok, cause=_cause(e))
-        out['opf'] = opf
+        out['opf'] = name(opf)
         if opf not in names:
-            return fail('opf_parse', 'container.xml names %s, which is not in the archive' % opf, cov_ok)
+            return fail('opf_parse', 'container.xml names %s, which is not in the archive' % name(opf), cov_ok)
         try:
             raw_o = _read(z, opf, b['epub_max_opf_bytes'])
             if b'<!ENTITY' in raw_o:
@@ -200,8 +211,8 @@ def collect_epub(ctx, started):
                 missing.append(target)
         out['manifest_items'] = len(manifest)
         if missing:
-            out['manifest_missing'] = missing[:10]
-            return fail('manifest', 'manifest names %d member(s) that are not in the archive: %s' % (len(missing), missing[:5]), cov_ok)
+            out['manifest_missing'] = [name(m) for m in missing[:10]]
+            return fail('manifest', 'manifest names %d member(s) that are not in the archive: %s' % (len(missing), [name(m) for m in missing[:5]]), cov_ok)
         out['stages_passed'].append('manifest')
         cov_ok.append('all %d manifest item(s) exist in the archive' % len(manifest))
         # --- spine
@@ -233,7 +244,7 @@ def collect_epub(ctx, started):
                 skipped_big += 1
                 continue
             except Exception as e:  # noqa: BLE001 - e.g. a member the zip layer cannot inflate
-                failed.append({'member': target, 'error': _err(e)})
+                failed.append({'member': name(target), 'error': _err(e)})
                 continue
             if b'<!ENTITY' in raw:
                 skipped_entity += 1  # internal entity declarations are not expanded here
@@ -243,7 +254,7 @@ def collect_epub(ctx, started):
                 parsed += 1
                 chars += sum(len((t or '').strip()) for t in tree.itertext())
             except ET.ParseError as e:
-                failed.append({'member': target, 'error': _err(e)})
+                failed.append({'member': name(target), 'error': _err(e)})
         out['xhtml'] = {'spine_documents': len(docs), 'parsed_ok': parsed, 'parse_failed': failed[:10], 'parse_failed_count': len(failed),
                         'skipped_over_size_cap': skipped_big, 'skipped_entity_declarations': skipped_entity,
                         'skipped_over_doc_cap': max(0, len(docs) - len(todo))}
