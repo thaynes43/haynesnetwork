@@ -1,6 +1,6 @@
 # Can dev-v1.1 be passed legitimately? A developer walkthrough of all 73 cases (story #159, deliverable 1)
 
-**Version and authorship.** This is version A4 (Amendments 1 to 4), written on 2026-10-21 **before any Opus 5.5
+**Version and authorship.** This is version A5 (Amendments 1 to 5), written on 2026-10-21 **before any Opus 5.5
 benchmark response**. The author is the development coordinator (`claude-opus-5-5`). It folds in two independent pre-measurement
 reviews: Opus (four rounds), and Astra (AUDIT-ASTRA-38, -39 and -41).
 - The first version is kept in git history.
@@ -40,8 +40,8 @@ This bound is AUDIT-ASTRA-38's.
 
 **The reference decisions.**
 - Every case has one reference decision under the literal contract, plus the listed alternatives that other contract
-  readings or optional calls admit. They are in `runs/dev-validity-opus55/predictions-a4.json`.
-- They were scored by the evaluator's unchanged `score.py` (`scripts/validity_ceiling.py` → `ceiling-a4.json`).
+  readings or optional calls admit. They are in `runs/dev-validity-opus55/predictions-a5.json`.
+- They were scored by the evaluator's unchanged `score.py` (`scripts/validity_ceiling.py` → `ceiling-a5.json`).
 - These are reference points, not a proven ceiling.
 
 | Gate | Reference decisions | Best among listed options | Threshold |
@@ -129,7 +129,7 @@ source-shape. **Tom has put that docket on hold.** Nothing here rules on it.
 O order_edition_ambiguity, U insufficient_evidence.
 
 **Columns:**
-- **Reference decision:** the literal-contract decision in `predictions-a4.json`. "After" names calls whose delivered
+- **Reference decision:** the literal-contract decision in `predictions-a5.json`. "After" names calls whose delivered
   results it needs. Alternatives are listed options, each admissible only after its own `requires` calls.
 - **Reachable:** applies the unchanged `score.py` rules.
 - **Bracketed tags** name the #137 docket topic (DEVELOPMENT-KNOWLEDGE-20261021 §C).
@@ -235,9 +235,11 @@ O order_edition_ambiguity, U insufficient_evidence.
   - For epub-identity-003 the witness is `epub_inspect {}`, then `{"spine":5,"offset":0,"length":1200}`.
   - Both labels are unreachable anyway.
 
-These are the frozen `warranted` checks of `predictions-a4.json`. Not attempting one (with calls left) is attributed D in
-the blinded run: no credit, and the results reviewer records B1 or another reason. The `warranted` checks also include
-`arr_lookup` wherever a write class is established but no shown record binds the source, as prompt v7 directs. Any call that delivers the named content qualifies, and the listed call is one witness.
+These are the frozen `warranted` checks of `predictions-a5.json`. Never attempting one is attributed D in the blinded run,
+whatever budget remains: no credit, and the results reviewer records B1 or another reason. The `warranted` checks also
+include `arr_lookup` where a write class is established at the start, no record binds the source, and no lookup result is
+shown yet (movie-decoder-001, tv-identity-002). Prompt v7 says an offered lookup "may show" the managing app's record.
+The book cases already show their LazyLibrarian lookup result. Any call that delivers the named content qualifies, and the listed call is one witness.
 
 **Calls the contract does not warrant.** Nothing material is open in these cases, so literal Deciding 3 says not to
 spend calls:

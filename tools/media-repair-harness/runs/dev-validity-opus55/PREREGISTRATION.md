@@ -540,3 +540,29 @@ Apply the first rule that holds, in this order, to each case, in the restored an
 - "Reaches the reference" = P + A1 + A2 + A3. It is reported four ways: as is, without T, without A3, and without both.
 - **Also reported:** the counts of H, F, D, P!, B2, B4 and B5; the coordinator's proposed category beside the
   reviewer's for every case; and the T cases.
+
+## 14. Amendment 5 (committed before any model call; earlier text stays as committed, and its history is the git log)
+
+**Why.** The delta reviews of `6f837bd8` were:
+- **Opus:** go-with-amendments. Must-fix: the `warranted` list did not apply its own rule consistently. Minor: add a
+  catch-all row.
+- **Astra `AUDIT-ASTRA-42`:** **go-with-amendments**, and explicitly "no remaining blocker to collecting the official
+  `score.py` measurement with independent attribution and D as the default". The majors:
+  1. A budget exhausted by unrelated calls could bypass the diligence check.
+  2. The `warranted` list was inconsistent: W3 was missing on two audiobook rename cases, W3 was conditional on three
+     EPUB cases, and epub-healthy-005 had mixed readings.
+
+Both confirmed:
+- the 13-row table is ordered and non-overlapping;
+- every one of the 81 frozen reference and alternative pairs is covered;
+- the six earlier probes resolve as intended;
+- the hashes, the arithmetic and 73/73 render equivalence hold.
+
+This amendment applies exactly the fixes both verdicts asked for. **Still no model call has been made.**
+
+| # | Finding | Change |
+|---|---|---|
+| 1 | Astra 1 | Row 4 now reads: **a `warranted` check was never attempted in the trajectory → D**, whatever budget remains at the decision. Calls spent elsewhere do not excuse it. A failed attempt counts as an attempt |
+| 2 | Astra 2, Opus must-fix | **`predictions-a5.json`** (sha256 `eb0890f968fc4865cfb709a6619e6714c37996ac08517bc9291441379496b6ae`) applies one rule (its `_about`). A check is warranted at the **initial** prefix when it inspects a material item **and** its result could change the class or the action, given the other prerequisites. **W1:** integrity, when M1 is open. **W2:** content, when the shown declarations contest identity and an offered tool can deliver content not already delivered. **W3:** `arr_lookup`, when a write class is established initially, the item is unbound and **no lookup result is already shown**. Checks that become warranted only after another read are not initial obligations. Result: 7 cases (epub-insuff-001 W1; epub-insuff-002, epub-identity-003, epub-naming-001 and tv-identity-004 W2; movie-decoder-001 and tv-identity-002 W3). The book cases, the two audiobook rename cases and epub-healthy-005 carry none, because each already shows its LazyLibrarian lookup result. `ceiling-a5.json` gives the same views as a3 and a4. a4 and every earlier file stay unchanged |
+| 3 | Opus minor | A final row is added to the §13 table: **14, anything else → D** |
+| 4 | Process | The go is given on these exact fixes. **Astra, the independent results reviewer, arbitrates every category after the run.** Any residual disagreement about an obligation or a judgement is D, never credit |

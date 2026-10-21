@@ -132,11 +132,31 @@ class FrozenCeiling(unittest.TestCase):
             for k in ('cf', 'alt', 'alt_kind', 'requires', 'hand_judgement', 'defeated_by', 'status'):
                 self.assertEqual(a4[cid][k], a3[cid][k], (cid, k))
         self.assertEqual(json.loads((VAL / 'ceiling-a4.json').read_text())['views'], json.loads((VAL / 'ceiling-a3.json').read_text())['views'])
+        self.assertEqual(hashlib.sha256((VAL / 'predictions-a4.json').read_bytes()).hexdigest(),
+                         '543aa7565249895f0e0549a0fd1e0306e18df255fbd3d5fee30587609ec7ae8e')
+
+    def test_amendment5_warranted_rule(self):
+        a5 = json.loads((VAL / 'predictions-a5.json').read_text())['cases']
+        a4 = json.loads((VAL / 'predictions-a4.json').read_text())['cases']
+        self.assertEqual(sorted(k for k, p in a5.items() if p['warranted']),
+                         ['epub-identity-003', 'epub-insuff-001', 'epub-insuff-002', 'epub-naming-001', 'movie-decoder-001', 'tv-identity-002', 'tv-identity-004'])
+        for cid in a5:
+            for k in ('cf', 'alt', 'alt_kind', 'requires', 'hand_judgement', 'defeated_by', 'status', 'why'):
+                self.assertEqual(a5[cid][k], a4[cid][k], (cid, k))
+        # W3 only where no arr_lookup result is already shown in the first message (render-equivalent to the Haiku turn 0)
+        haiku = RUNS / 'dev-c7' / 'devc7-haiku-5-5'
+        for cid, p in a5.items():
+            if not any(w.startswith('arr_lookup') for w in p['warranted']):
+                continue
+            prompt = json.loads((haiku / (cid + '.json')).read_text())['turns'][0]['raw_request']['prompt']
+            case = json.loads(prompt[prompt.index('[CASE]') + 6:prompt.index('\n\n[HARNESS]')].strip())
+            self.assertFalse([x for x in case['evidence']['items'] if x['tool'] == 'arr_lookup'], cid)
+        self.assertEqual(json.loads((VAL / 'ceiling-a5.json').read_text())['views'], json.loads((VAL / 'ceiling-a4.json').read_text())['views'])
 
     def test_predictions_cover_every_case_once(self):
         suite = th.require_suite().parent / 'suite-dev-v1.1'
         ids = sorted(c['id'] for c, _ in R.load_cases(str(suite)))
-        for name in ('predictions.json', 'predictions-a1.json', 'predictions-a2.json', 'predictions-a3.json', 'predictions-a4.json'):
+        for name in ('predictions.json', 'predictions-a1.json', 'predictions-a2.json', 'predictions-a3.json', 'predictions-a4.json', 'predictions-a5.json'):
             pred = json.loads((VAL / name).read_text())['cases']
             self.assertEqual(sorted(pred), ids, name)
             for cid, p in pred.items():
