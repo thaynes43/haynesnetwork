@@ -22,7 +22,8 @@ before the cut and shows a hidden damage message in an elided form; the live-2 E
 `data:` / `urn:` / `mailto:` members are clean on both paths; only the kinds live-2 changes are stamped.  Each new `*_live2` test fails at f399cda0.
 Review round of 8162e028 (AUDIT-ASTRA-52): the window budget is the BYTES live-1's own list takes in a tool result (CJK tails), a recognised reading is shown
 behind '[...] ' when no fixed cut keeps it, and the EPUB names are cut and listed within byte budgets, the CRC branch included.  Each new or rewritten
-`*_live2` test of that round fails at 8162e028.
+`*_live2` test of that round fails at 8162e028.  Round of ffd9a029 (AUDIT-ASTRA-53): audiobook windows keep the deferred live-2 lines, a manifest
+failure's final fields fit one byte budget, CRC evidence quotes the member name, and the omitted count comes from the whole list (each fails at ffd9a029).
 
 Synthetic, generic fixtures only (no dev-suite case content).  No model call, no ffmpeg (fake runners), no network."""
 import contextlib
@@ -309,6 +310,23 @@ class DamageAfterWarningsLive2(TE.Base):
             self.assertEqual(d.integrity, 'damaged')
             self.assertTrue(any(f['kind'] == 'audio_decode_errors' and f['known_defect'] for f in d.findings))
 
+    def test_an_audiobook_part_keeps_its_live2_lines_live2(self):
+        """Round 4 (the coordinator's Opus review, AUDIT-ASTRA-53 item 1): the audiobook collector copies each part's decode windows key by key, and the copy
+        dropped the deferred live-2 lines before collect() swapped them in, so 3 warnings and then recognised damage read unknown (still stamped live-2)."""
+        book = self.dir / 'book'
+        book.mkdir()
+        (book / 'part 1.m4b').write_bytes(b'part' * 50)
+        stderr = ('\n'.join([WARN] * 3 + [DAMAGE[0]]) + '\n').encode()
+        rules_ = [(TE.prog('ffprobe', '-show_format'), RunResult(0, TE.book_probe(), b'')), (TE.prog('ffmpeg', '-progress'), RunResult(0, TE.progress(3.0), stderr))]
+        recs = {b: self.run_kind('audiobook', rules_, path=book, clock=TE.Clock(), live_behavior=b)[0] for b in ('live-1', 'live-2')}
+        segs = recs['live-2']['output']['files'][0]['decode']['segments']
+        self.assertTrue(segs and all(DAMAGE[0] in s['errors'] for s in segs), segs)
+        self.assertNotIn('_errors_live2', json.dumps(recs['live-2']))
+        self.assertEqual(recs['live-2']['stderr'], recs['live-1']['stderr'])                 # the excerpt is live-1's
+        with rules('diag-3'):
+            typed = {b: EV2.derive(obs('t1', 'audiobook_inspect', r['status'], EVC.to_tool_result(r, cap=8192)['output'], backend='live')).integrity for b, r in recs.items()}
+        self.assertEqual(typed, {'live-1': 'unknown', 'live-2': 'damaged'})
+
     def test_only_the_collectors_live2_changes_are_stamped_live2(self):
         rec, _ = self.run_kind('probe', [(TE.prog('ffprobe', '-show_format'), RunResult(0, TE.probe_json(20.0), b''))], clock=TE.Clock(), live_behavior='live-2')
         self.assertNotIn('collector_behavior', rec)
@@ -489,16 +507,79 @@ class LiveResolverParityLive2(unittest.TestCase):
         tr = EVC.to_tool_result(rec, cap=8192)
         self.assertFalse(tr['truncated'])
         out = rec['output']
-        self.assertLess(len(json.dumps(out['manifest_missing'], ensure_ascii=False).encode()), 700)
+        jb = lambda v: len(json.dumps(v, ensure_ascii=False).encode())
+        self.assertLessEqual(jb(out['error']) + jb(rec['reason']) + jb(out['manifest_missing']), 2400 + 6)      # (round 4: FAILURE_FIELDS_BYTES_LIVE2)
         self.assertEqual(out['manifest_missing_omitted'] + len(out['manifest_missing']), 5)
         self.assertIn('more)', out['error'])
         with rules('diag-3'):
             live = EV2.derive(obs('t1', 'epub_inspect', rec['status'], tr['output'], backend='live'))
         self.assertEqual((live.integrity, live.package['manifest']), ('damaged', 'damaged'))
 
+    def test_escape_heavy_names_keep_the_final_fields_in_budget_live2(self):
+        """AUDIT-ASTRA-53 item 2: the list budget did not count the list's expansion in the message (Python's list form writes DEL as `\\x7f`, which JSON
+        escapes again): 20 absent names with %7F runs and a 1,004-character OPF name gave an 8,196-byte result and read unknown at 8 KiB.  live-2 budgets
+        the FINAL fields (error, reason, manifest_missing) as a tool result writes them."""
+        opf_name = 'OEBPS/' + 'o' * 993 + '.opf'
+        items = ''.join('<item id="x%d" href="x%d%s.xhtml" media-type="application/xhtml+xml"/>' % (k, k, '%7F' * 60) for k in range(20))
+        opf = ('<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="b"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+               '<dc:title>Alpha Book</dc:title><dc:identifier id="b">x-1</dc:identifier></metadata><manifest><item id="i0" href="ch1.xhtml" media-type="application/xhtml+xml"/>%s'
+               '</manifest><spine><itemref idref="i0"/></spine></package>' % items)
+        path = self.dir / 'escapes.epub'
+        with zipfile.ZipFile(path, 'w') as z:
+            z.writestr(zipfile.ZipInfo('mimetype'), 'application/epub+zip')
+            z.writestr('META-INF/container.xml', D.CONTAINER.replace('OEBPS/c.opf', opf_name))
+            z.writestr(opf_name, opf)
+            z.writestr('OEBPS/ch1.xhtml', CHAPTER)
+        rec = EVC.collect(str(path), ['epub'], live_behavior='live-2')[0]
+        out = rec['output']
+        tr = EVC.to_tool_result(rec, cap=8192)
+        self.assertFalse(tr['truncated'])
+        jb = lambda v: len(json.dumps(v, ensure_ascii=False).encode())
+        self.assertLessEqual(jb(out['error']) + jb(rec['reason']) + jb(out['manifest_missing']), 2400 + 6)       # FAILURE_FIELDS_BYTES_LIVE2
+        self.assertEqual(out['manifest_missing_omitted'] + len(out['manifest_missing']), 20)
+        for version in ('diag-1', 'diag-2', 'diag-3'):
+            with rules(version):
+                live = EV2.derive(obs('t1', 'epub_inspect', rec['status'], tr['output'], backend='live'))
+            self.assertEqual((live.integrity, live.package['manifest']), ('damaged', 'damaged'), version)
+
+    def test_the_omitted_count_comes_from_the_whole_list_live2(self):
+        """AUDIT-ASTRA-53 item 4: twenty short missing names list ten and say '(+10 more)'; manifest_missing_omitted counts them too."""
+        extra = ''.join('<item id="x%d" href="gone%d.xhtml" media-type="application/xhtml+xml"/>' % (k, k) for k in range(20))
+        rec = EVC.collect(str(_epub(self.dir / 'twenty.epub', [('ch1.xhtml', 'ch1.xhtml', CHAPTER)], extra_manifest=extra)), ['epub'], live_behavior='live-2')[0]
+        out = rec['output']
+        self.assertEqual((len(out['manifest_missing']), out.get('manifest_missing_omitted')), (10, 10))
+        self.assertTrue(out['error'].endswith('(+10 more)'), out['error'][-30:])
+
+    def test_crc_evidence_reads_the_same_whatever_the_name_says_live2(self):
+        """Round 4 (the Opus review, AUDIT-ASTRA-53 item 3): a cut member name could add or remove an execution tail ('OEBPS/' + 300 x + ': Permission denied'
+        read damage after the cut, execution under live-1; 'a' * 181 + ': Permission denied' + 'z' * 40 + '.xhtml' read execution after the cut, damage
+        before).  live-2 writes a genuine CRC failure as 'BadZipFile: CRC mismatch in member "<quoted name>"': the quote, the backslash, ':' and every line
+        break or control character are escaped inside the quotes, so the evidence is damage under every rule set, whatever the name."""
+        names = ('OEBPS/' + 'x' * 300 + ': Permission denied', 'a' * 181 + ': Permission denied' + 'z' * 40 + '.xhtml', 'a.xhtml: Permission denied',
+                 'q"\\: [Errno 13] Permission denied\n\u2028b: Input/output error', 'OEBPS/' + '\u4e66' * 150 + '.xhtml')
+        for k, member in enumerate(names):
+            path = self.dir / ('crcq%d.epub' % k)
+            with zipfile.ZipFile(path, 'w', zipfile.ZIP_STORED) as z:
+                z.writestr(zipfile.ZipInfo('mimetype'), 'application/epub+zip')
+                z.writestr('META-INF/container.xml', D.CONTAINER)
+                z.writestr(member, 'hello world body text')
+            raw = bytearray(path.read_bytes())
+            raw[raw.find(b'hello world')] ^= 0xFF
+            path.write_bytes(bytes(raw))
+            rec = EVC.collect(str(path), ['epub'], live_behavior='live-2')[0]
+            err = rec['output']['error']
+            self.assertTrue(err.startswith('BadZipFile: CRC mismatch in member "') and err.endswith('"'), err[:60])
+            self.assertNotIn(':', err[len('BadZipFile: CRC mismatch in member '):])
+            self.assertLessEqual(len(json.dumps(err, ensure_ascii=False).encode()), 300)
+            for version in ('diag-1', 'diag-2', 'diag-3'):
+                with rules(version):
+                    self.assertEqual(EV2.epub_failure('zip_crc', err), 'damage', (version, member[-24:]))
+                    live = EV2.derive(obs('t1', 'epub_inspect', rec['status'], EVC.to_tool_result(rec, cap=8192)['output'], backend='live'))
+                self.assertEqual((live.integrity, live.execution['cause']), ('damaged', 'input'), (version, member[-24:]))
+
     def test_a_crc_failure_in_a_long_member_name_keeps_its_stage_live2(self):
         """AUDIT-ASTRA-52 item 2: the zip_crc branch reported the whole member name (a 10,000-character name: 10,854 bytes even at cap=8192, unknown).
-        live-2 cuts it like every reported name; zipfile's `Bad CRC-32 for file '<name>'` is then written in the harness's allow-listed CRC wording."""
+        live-2 cuts it; zipfile's `Bad CRC-32 for file '<name>'` is written in the harness's allow-listed CRC wording with the name quoted (round 4)."""
         name = 'OEBPS/' + 'n' * 10000 + '.xhtml'
         path = _epub(self.dir / 'crc.epub', [('ch1.xhtml', 'ch1.xhtml', CHAPTER)])
         with zipfile.ZipFile(path, 'a') as z:
@@ -507,7 +588,7 @@ class LiveResolverParityLive2(unittest.TestCase):
         path.write_bytes(raw.replace(b'MARKER-CONTENT-0123456789', b'MARKER-CONTENT-9876543210'))      # same size, wrong CRC
         rec = EVC.collect(str(path), ['epub'], live_behavior='live-2')[0]
         self.assertEqual(rec['output']['stage'], 'zip_crc')
-        self.assertTrue(rec['output']['error'].startswith('BadZipFile: CRC mismatch in member OEBPS/nnn'), rec['output']['error'][:80])
+        self.assertTrue(rec['output']['error'].startswith('BadZipFile: CRC mismatch in member "OEBPS/nnn'), rec['output']['error'][:80])
         tr = EVC.to_tool_result(rec, cap=8192)
         self.assertLessEqual(len(tr['output'].encode()), 8192)
         for version in ('diag-1', 'diag-2', 'diag-3'):

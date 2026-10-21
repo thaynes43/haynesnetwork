@@ -801,7 +801,8 @@ def collect_audiobook(ctx, started, inputs):
             ds = _decode_summary(segs, skipped, dur, ctx.coverage_union)
             entry['decode'] = {k: ds[k] for k in ('segments_run', 'segments_clean', 'segments_with_errors', 'segments_short', 'segments_timeout', 'segments_output_cap',
                                                   'decoder_error_lines', 'decoded_s', 'clean')}
-            entry['decode']['segments'] = [{k: s.get(k) for k in ('at_s', 'state', 'decoded_s', 'error_lines', 'errors') if s.get(k) is not None} for s in segs]
+            entry['decode']['segments'] = [{k: s.get(k) for k in ('at_s', 'state', 'decoded_s', 'error_lines', 'errors', LIVE2_ERRORS_KEY) if s.get(k) is not None}
+                                          for s in segs]       # (live-2: the deferred lines travel along; collect() swaps them in)
             if skipped:
                 partial_reasons.append('%s: %d decode segments skipped (deadline)' % (part.name, skipped))
             if ds['segments_timeout']:

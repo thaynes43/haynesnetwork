@@ -52,7 +52,7 @@ def _err(e):
 
 
 NAME_BYTES_LIVE2 = 200       # live-2: a reported member name takes at most 200 bytes in a tool result (UTF-8, JSON-escaped), plus the cut marker
-LIST_BYTES_LIVE2 = 600       # live-2: a reported list of names takes at most 600 bytes; the names left out are counted ('+N more')
+FAILURE_FIELDS_BYTES_LIVE2 = 2400    # live-2: a manifest failure's error, reason and manifest_missing TOGETHER take at most this many bytes in a tool result
 PARSE_FAILED_BYTES_LIVE2 = 1200      # live-2: the parse_failed entries ({member, error}) take at most 1200 bytes; parse_failed_count counts them all
 
 
@@ -76,15 +76,39 @@ def _name_live2(name):
     return '%s...[+%d chars]' % (''.join(out), len(name) - len(out))
 
 
-def _names_live2(names, budget=LIST_BYTES_LIVE2):
-    """live-2: -> (the cut names that fit `budget` bytes as a list, the number left out).  At least one name is listed."""
-    shown = []
-    for n in names:
-        cut = _name_live2(n)
-        if shown and _jlen(shown + [cut]) > budget:
+def _manifest_failure_live2(missing):
+    """live-2: -> (message, listed names) of a manifest failure.  The names are cut (_name_live2), at most 10, and as many are listed as keep the FINAL fields
+    within FAILURE_FIELDS_BYTES_LIVE2 bytes as a tool result writes them: the message twice (`error`, and `reason` = 'manifest: ' + message), with the
+    names in Python's list form (whose escapes JSON escapes again), and the list once (`manifest_missing`).  Names left out are counted in the message
+    ('(+N more)'); with none listed the message still names the failure and the count."""
+    cut = [_name_live2(m) for m in missing[:10]]
+    for k in range(len(cut), -1, -1):
+        shown, more = cut[:k], len(missing) - k
+        msg = 'manifest names %d member(s) that are not in the archive%s%s' % (len(missing), (': %s' % shown) if shown else '', (' (+%d more)' % more) if more else '')
+        if 2 * _jlen(msg) + len('manifest: ') + _jlen(shown) <= FAILURE_FIELDS_BYTES_LIVE2:
+            return msg, shown
+    return msg, []
+
+
+# live-2: the characters a quoted member name never shows as themselves: the quote and the backslash (so the end quote is the name's end), ':' and every
+# line break or control character (so no text inside the quotes can read as `<separator> <execution error>` or start a line of its own)
+_QUOTE_UNSAFE = frozenset('\\":') | frozenset(chr(c) for c in range(0x20)) | frozenset('\x7f\x85\u2028\u2029')
+
+
+def _quoted_name_live2(name):
+    """live-2: a member name as CRC evidence: in double quotes, every _QUOTE_UNSAFE character written `\\uXXXX`, cut at NAME_BYTES_LIVE2 bytes as a tool
+    result writes it (never inside an escape), the cut marked inside the quotes.  Nothing a name holds can then end the quotes, start a line or put a
+    separator in front of an execution message, so the evidence classifies the same whatever the name says."""
+    out, size = [], 0
+    for ch in name:
+        tok = '\\u%04x' % ord(ch) if ch in _QUOTE_UNSAFE else ch
+        b = _jlen(tok) - 2
+        if size + b > NAME_BYTES_LIVE2:
             break
-        shown.append(cut)
-    return shown, len(names) - len(shown)
+        out.append(tok)
+        size += b
+    left = len(name) - len(out)
+    return '"%s%s"' % (''.join(out), ('...[+%d chars]' % left) if left else '')
 
 
 def _resolve(base, href):
@@ -160,18 +184,18 @@ def collect_epub(ctx, started):
                             break
                         n += len(chunk)
                         if n > i.file_size + 1024:  # lying header: more data than declared
-                            raise zipfile.BadZipFile('member %s inflates past its declared size' % i.filename)
+                            raise zipfile.BadZipFile('member inflates past its declared size' if live2 else 'member %s inflates past its declared size' % i.filename)
                 read_total += n
                 checked += 1
             except Exception as e:  # noqa: BLE001 - Bad CRC-32, truncated member, unsupported compression
                 if not live2:
                     crc_fail = '%s in member %s' % (_err(e), i.filename)
-                elif name(i.filename) != i.filename and isinstance(e, zipfile.BadZipFile) and str(e).startswith('Bad CRC-32 for file '):
-                    # live-2: zipfile's message quotes the whole name, which _err cuts; with the suffix cut as well the CRC failure could not be told from
-                    # the cut text, so it is written in the harness's own allow-listed wording, with the exception type kept
-                    crc_fail = 'BadZipFile: CRC mismatch in member %s' % name(i.filename)
+                elif isinstance(e, zipfile.BadZipFile) and str(e).startswith('Bad CRC-32 for file '):
+                    # live-2: zipfile's message holds the member name (`%r`), so text inside a name could change how it reads; the CRC failure is written in
+                    # the harness's allow-listed wording, the exception type kept, with the name quoted (damage under every rule set, whatever the name says)
+                    crc_fail = 'BadZipFile: CRC mismatch in member %s' % _quoted_name_live2(i.filename)
                 else:
-                    crc_fail = '%s in member %s' % (_err(e), name(i.filename))
+                    crc_fail = '%s in member %s' % (_err(e), _quoted_name_live2(i.filename))      # live-2: the exception's own message decides
                 crc_cause = _cause(e)
                 break
         out['crc_members_checked'] = checked
@@ -248,11 +272,11 @@ def collect_epub(ctx, started):
             if not live2:
                 out['manifest_missing'] = missing[:10]
                 return fail('manifest', 'manifest names %d member(s) that are not in the archive: %s' % (len(missing), missing[:5]), cov_ok)
-            shown, more = _names_live2(missing[:10])          # live-2: one byte-budgeted list, in the message (and so the reason) and in manifest_missing
+            msg, shown = _manifest_failure_live2(missing)      # live-2: error, reason and manifest_missing within one byte budget
             out['manifest_missing'] = shown
-            if more:
+            if len(missing) > len(shown):
                 out['manifest_missing_omitted'] = len(missing) - len(shown)
-            return fail('manifest', 'manifest names %d member(s) that are not in the archive: %s%s' % (len(missing), shown, ' (+%d more)' % (len(missing) - len(shown)) if len(missing) > len(shown) else ''), cov_ok)
+            return fail('manifest', msg, cov_ok)
         out['stages_passed'].append('manifest')
         cov_ok.append('all %d manifest item(s) exist in the archive' % len(manifest))
         # --- spine
