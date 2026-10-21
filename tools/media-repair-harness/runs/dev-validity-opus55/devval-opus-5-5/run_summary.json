@@ -1,0 +1,61 @@
+{
+  "aborted": null,
+  "cases_planned": 73,
+  "config_hash": "dac813affd7f316ac6f3f707d9a92750ed03924ea22d9ce8cfc523d5e5e686b1",
+  "cost_usd": 3.645938,
+  "evidence": {
+    "gaps": 1,
+    "gaps_by_type": {
+      "not_run": 1
+    },
+    "tool_calls_by_evidence_mode": {
+      "replay": 34
+    }
+  },
+  "evidence_format": "v3.1-format",
+  "evidence_mode": "replay",
+  "guards": {
+    "applied_by_rule": {},
+    "decisions_changed": 0,
+    "version": "v3"
+  },
+  "harness_git": {
+    "branch": "agent/mrh-validity-1021",
+    "dirty": false,
+    "sha": "495d0de262774b1bab410b099e6f35c54ed85b1f"
+  },
+  "harness_version": "dev-c7",
+  "incomplete_records": {},
+  "latency_s_per_case": {
+    "max": 29.392,
+    "median": 8.76,
+    "min": 3.586
+  },
+  "never_started": [],
+  "prompt": {
+    "sha256": "79a7fc73b855ccee6964c4752249477b070b79acebc3daf5c9c17a8a6b3eafb5",
+    "version": "v7"
+  },
+  "records_complete": true,
+  "records_written": 73,
+  "requested_model": "claude-opus-5-5",
+  "response_model_ids": [
+    "claude-opus-5-5"
+  ],
+  "run_id": "devval-opus-5-5",
+  "started_aborted": [],
+  "statement": "Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; this harness executed no write and changed no media, *arr, Plex or library state.",
+  "validity": {
+    "adapter_errors": 0,
+    "crashes": 0,
+    "final_decision_valid": 73,
+    "first_try_failure_modes": {},
+    "first_try_valid": 63,
+    "forced": 0,
+    "forced_after_rejected_write": 0,
+    "protocol_violations": 0,
+    "rejected_write_attempts": 1,
+    "repaired": 10
+  },
+  "writes_executed": 0
+}

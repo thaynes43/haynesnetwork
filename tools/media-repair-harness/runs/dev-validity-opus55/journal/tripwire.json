@@ -1,0 +1,10 @@
+{
+ "case": "audiobook-corrupt-001",
+ "tokens_in_total": 7983,
+ "chars_sent": 21955,
+ "chars_per_token": 2.75,
+ "limit": 15977.5,
+ "verdict": "ok",
+ "response_model": "claude-opus-5-5",
+ "at": "2026-10-21T14:15:10Z"
+}
