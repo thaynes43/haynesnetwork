@@ -592,7 +592,7 @@ class GuardV4Semantics(unittest.TestCase):
     def test_page_origin_and_uncalled_result_swaps(self):
         case = self.base(ocr('e2', 'ALPHA FILM'))
         call = {'id': 't1', 'turn': 1, 'tool': 'arr_lookup', 'args': {}, 'status': 'ok', 'output': json.dumps(binding()), 'raw_output': json.dumps(binding()), 'mode': 'stub'}
-        page = {'id': 't2', 'turn': 2, 'tool': 'page', 'args': {'cursor': 'p2'}, 'status': 'ok', 'output': '{}', 'continuation': True, 'pages_of': 't1', 'mode': 'pages'}
+        page = {'id': 't2', 'turn': 2, 'tool': 'page', 'args': {'cursor': 'p2'}, 'status': 'ok', 'output': '{}', 'continuation': True, 'pages_of': ['t1'], 'mode': 'pages'}
         _f, rec = guard(case, rename('t2'), tool_calls=[call, page])
         self.assertEqual(role(rec, 'R-SRC')['v4_status'], 'met')                   # a page of the binding record stands for that record
         _f, rec = guard(case, rename('t2'), tool_calls=[call])
@@ -609,10 +609,21 @@ class GuardV4Semantics(unittest.TestCase):
         two_pages = [{'id': 'evidence', 'kind': 'initial', 'pages': 1}, {'id': 't1', 'kind': 'result', 'pages': 2}]
         _f, rec = guard(case, rename('t1'), tool_calls=[other], messages=two_pages)
         self.assertEqual((role(rec, 'A-REN-0')['v4_status'], rec['applied']), ('undelivered', []))
-        page = {'id': 't2', 'turn': 2, 'tool': 'page', 'args': {'cursor': 'p2'}, 'status': 'ok', 'output': '{}', 'continuation': True, 'pages_of': 't1'}
+        page = {'id': 't2', 'turn': 2, 'tool': 'page', 'args': {'cursor': 'p2'}, 'status': 'ok', 'output': '{}', 'continuation': True, 'pages_of': ['t1']}
         _f, rec = guard(case, rename('t1'), tool_calls=[other, page], messages=two_pages)
         self.assertEqual(role(rec, 'A-REN-0')['v4_status'], 'enforced')
         self.assertEqual(DG.undelivered_ids([{'id': 'evidence', 'kind': 'initial', 'pages': 2}], [], ['e1', 'e2']), {'e1', 'e2'})
+
+    def test_page_keys_follow_the_runners_list_shape(self):
+        msgs = [{'id': 'evidence', 'kind': 'initial', 'pages': 2}, {'id': 't1', 'kind': 'result', 'pages': 2}]
+        ev_page = {'id': 't2', 'tool': 'page', 'continuation': True, 'pages_of': ['e2'], 'args': {'cursor': 'c-ev-2'}}
+        t1_page = {'id': 't3', 'tool': 'page', 'continuation': True, 'pages_of': ['t1'], 'args': {'cursor': 'c-t1-2'}}
+        self.assertEqual(DG.undelivered_ids(msgs, [], ['e1', 'e2']), {'e1', 'e2', 't1'})
+        self.assertEqual(DG.undelivered_ids(msgs, [t1_page], ['e1', 'e2']), {'e1', 'e2'})       # a result page counts for that result only ...
+        self.assertEqual(DG.undelivered_ids(msgs, [ev_page], ['e1', 'e2']), {'t1'})             # ... and a page of the first message for the first message
+        self.assertEqual(DG.undelivered_ids(msgs, [ev_page, t1_page], ['e1', 'e2']), set())
+        self.assertEqual(DG.undelivered_ids(msgs, [dict(t1_page, pages_of='t1')], ['e1', 'e2']), {'e1', 'e2'})   # an older string shape is read the same way
+        self.assertEqual(DG.undelivered_ids(msgs, [t1_page, dict(t1_page, id='t4')], ['e1', 'e2']), {'e1', 'e2'})   # a repeated cursor is one page
 
     def test_a_non_write_or_a_v2_decision_is_never_role_checked(self):
         case = self.base(ocr('e2', 'ALPHA FILM'))

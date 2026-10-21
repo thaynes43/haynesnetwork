@@ -200,11 +200,26 @@ def record_resolver(record, evidence_shown):
     return EV2.reference_resolver(known, EV2.emitted_ids(EV2.analyze(obs, {})), EV2.page_origin_map((record or {}).get('tool_calls')))
 
 
-def v4_context(context, media_type, capabilities, messages, tool_calls, evidence_format):
+def v4_context(context, media_type, capabilities, messages, tool_calls, evidence_format, evidence_ids=None):
     """What G-role needs beyond the decision: the model-visible context, media type and capability advertisement (audit v3's inputs), the evidence format (which
     typed layer built the observations) and the ids whose pages were not all delivered."""
     return {'context': context or {}, 'media_type': media_type, 'capabilities': list(capabilities or []), 'format': evidence_format,
-            'undelivered': sorted(undelivered_ids(messages, tool_calls))}
+            'undelivered': sorted(undelivered_ids(messages, tool_calls, evidence_ids))}
+
+
+def _page_key(pages_of, evidence_ids):
+    """The message a page fetch belongs to.  The runner records `pages_of` as a LIST of origin ids (session.page_origin): a page of a tool result names that one
+    result; a page of the first message names case evidence ids only.  (A bare string, an older shape, names one result.)"""
+    if isinstance(pages_of, str):
+        return pages_of
+    ids = [x for x in pages_of or [] if isinstance(x, str)]
+    if not ids:
+        return None
+    if evidence_ids is not None and set(ids) <= set(evidence_ids):
+        return 'evidence'
+    if evidence_ids is None and all(x.startswith('e') for x in ids):
+        return 'evidence'
+    return ids[0] if len(ids) == 1 else None
 
 
 def undelivered_ids(messages, tool_calls, evidence_ids=None):
@@ -215,8 +230,10 @@ def undelivered_ids(messages, tool_calls, evidence_ids=None):
         po = c.get('pages_of')
         if not (c.get('continuation') and po):
             continue
-        key = po if isinstance(po, str) else 'evidence'
-        fetched.setdefault(key, set()).add(str((c.get('args') or {}).get('cursor')))
+        key = _page_key(po, evidence_ids)
+        if key is None:
+            continue
+        fetched.setdefault(key, set()).add(str((c.get('args') or {}).get('cursor') or c.get('id')))
     out = set()
     for m in messages or []:
         if m.get('kind') not in ('initial', 'result'):
