@@ -208,8 +208,10 @@ view, as a word start. There is no key, no window and no negation guard.
   * They match case-insensitively at a word start (no letter before the stem, or a camel-case hump: `doRename`).
   * Up to three separators (space, `_`, `-`) are allowed between letters (`block list`, `re-name`, `re--name`).
   * Every inflection shares the stem: `rename`, `renamed`, `renaming`, `remapped`, `converted`, `blocklisted`.
-* **The normalised view** (`normalised_view`). Both the raw text and this view are scanned. The view is built in at most two bounded passes (the second
-  only when the first left something to decode, so an escape escaped once more, such as `\\n` in JSON, is decoded too), in this order:
+* **The normalised view** (`normalised_views`). The view is built in at most two bounded passes (the second only when the first left something to
+  decode, so an escape escaped once more, such as `\\n` in JSON, is decoded too). The raw text AND the view after EACH pass are scanned, so a
+  stem that only the first pass reveals (`\x5cremap` gives `\remap`) is not lost when the second pass decodes the escape in front of it
+  (`\r`). Each pass applies, in this order:
   1. decode HTML character references (`&#110;`, `&#x6e;`, `&#110` without its `;`, `&shy;` and every HTML5 named reference; a legacy name without `;`,
      such as `&shy`, by its longest prefix, as HTML does);
   2. decode escapes: JSON's single-character escapes (`\n`, `\t`, `\r`, `\b`, `\f`, `\/`, `\"`, `\\`, and Python's `\v`

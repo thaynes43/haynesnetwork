@@ -125,6 +125,8 @@ earlier option set are unchanged.
   sounding tool name: WRITE-CONTROL before the final stat, no later target, not ACCEPTED), a valid tool call whose `why` mentions renaming (no attempt,
   the run completes), and two seeded properties (2,114 writes in non-prose fields of valid tool calls counted and mapped; 600 valid replies with the
   mention only in `reason` or `why` not counted).
+  The advisory review of `7aef8ca8` found that the second pass could destroy a stem only the first pass revealed (`\x5cremap` gives `\remap`,
+  whose `\r` the second pass decodes): the stem scan now reads the raw text and every pass's view (`normalised_views`), with a regression test.
 ## dev-c8 (WO-W26, OpenProject #158): prompt v8, turn-v3.1, claude-schema-1, guards v4; offline, not measured
 
 `HARNESS_VERSION` is `dev-c8`. Every earlier prompt, format, guard version and adapter is unchanged; the recorded dev-c4 to dev-c7 runs, the dev-c6 replay

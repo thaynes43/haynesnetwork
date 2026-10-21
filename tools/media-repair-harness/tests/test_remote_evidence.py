@@ -822,7 +822,11 @@ class Round6(unittest.TestCase):
                  (r'Next step: \x62locklist the release.', 'escape'), ('Next step: c&#111;nvert the audio.', 'html_entity'),
                  ('Next step: re&#110ame the file.', 'html_entity'), ('Next step: re&shyname the file.', 'format_removed'),
                  ('Next step: r\u0301ename the file.', 'mark_removed'), ('Next step: r\u00e9map the season.', 'mark_removed'),
-                 (r'Next step: re\156ame the file.', 'escape')]
+                 (r'Next step: re\156ame the file.', 'escape'),
+                 # the advisory review of 7aef8ca8: a stem visible only after the FIRST pass, which the second pass would destroy by decoding the escape before it
+                 (r'Next step: \x5cremap the season.', 'escape'), (r'Next step: \x5cblocklist the release.', 'escape'),
+                 (r'Next step: \x5cconvert the audio.', 'escape'), (r'Next step: \u005crename the file.', 'escape'),
+                 ('{"recommendation": "Next step: \\u005cremap the season."}', 'escape')]
         for text, how in cases:
             intent = RE.raw_write_intent(text)
             self.assertIsNotNone(intent, text)
@@ -880,7 +884,7 @@ class Round6(unittest.TestCase):
     def test_any_exception_is_unresolved_with_partial_evidence(self):
         """Astra major 3: the whole detector is wrapped; any exception is UNRESOLVED and keeps the raw reply excerpt and the exception type."""
         from unittest import mock
-        for target, exc in (('json_spans', RecursionError('deep')), ('normalised_view', MemoryError()), ('structural_writes', ValueError('bad'))):
+        for target, exc in (('json_spans', RecursionError('deep')), ('normalised_views', MemoryError()), ('structural_writes', ValueError('bad'))):
             with mock.patch.object(RE, target, side_effect=exc):
                 intent = RE.raw_write_intent('Answer: {"action": "none"} and more')
             self.assertTrue(intent['unresolved'], target)

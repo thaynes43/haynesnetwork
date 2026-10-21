@@ -843,24 +843,34 @@ def normalised_view(text):
       6. Latin look-alikes folded (CONFUSABLES, a small fixed table).
     Case is kept, so camel-case humps still mark word starts; matching is case-insensitive.  `origin[k]` is the ORIGINAL span of view character k,
     `steps[k]` the normalisations that produced it, `removed` {original position: step} of every removed character.  Beyond REPLY_MAX_CHARS: Unresolved."""
+    return normalised_views(text)[-1]
+
+
+def normalised_views(text):
+    """-> [(view, origin, steps, removed)], ONE PER PASS (normalised_view is the last), every one mapped back to the original text.  The stem scan reads
+    every pass's view: a stem visible only after the first pass (`\\x5cremap` -> `\\remap`) must not be lost when the second decodes the escape in front of
+    it (`\\r` -> a carriage return)."""
     if not isinstance(text, str):
         raise Unresolved('the reply is no string')
-    view, origin, steps, removed = _normalise_pass(text)
+    out = [_normalise_pass(text)]
     for _ in range(NORMALISE_PASSES - 1):
+        view, origin, steps, removed = out[-1]
         if not _DECODE_RX.search(view):
             break                       # every other step is idempotent: only a decode can change a second pass
         v2, o2, s2, r2 = _normalise_pass(view)
         origin2 = [(origin[a][0], origin[b - 1][1]) for a, b in o2]
         steps2 = [s.union(*steps[a:b]) for s, (a, b) in zip(s2, o2)]
+        removed2 = dict(removed)
         for k, how in r2.items():
-            removed.update((p, how) for p in range(origin[k][0], origin[k][1]))
-        view, origin, steps = v2, origin2, steps2
-    return view, origin, steps, removed
+            removed2.update((p, how) for p in range(origin[k][0], origin[k][1]))
+        out.append((v2, origin2, steps2, removed2))
+    return out
 
 
 def stem_matches(text):
-    """The stem scan: every write-action stem at a word start, in the raw text AND in its normalised view, each mapped to its ORIGINAL span with the normalisations
-    that produced it (`normalisation`: [] for a raw match).  Matches of the two views at the same original span are one."""
+    """The stem scan: every write-action stem at a word start, in the raw text AND in every pass of its normalised view (normalised_views), each mapped to
+    its ORIGINAL span with the normalisations that produced it (`normalisation`: [] for a raw match).  Matches of several views at the same original span
+    are one."""
     stems = write_stems()
     rx = _stem_rx()
     found, seen = [], set()
@@ -875,17 +885,17 @@ def stem_matches(text):
         action = stems.get(re.sub(r'[\s_-]', '', m.group(0)).lower())
         if action:
             add(action, m.start(), m.end(), [])
-    view, origin, steps, removed = normalised_view(text)
-    for m in rx.finditer(view):
-        action = stems.get(re.sub(r'[\s_-]', '', m.group(0)).lower())
-        if not action:
-            continue
-        start, end = origin[m.start()][0], origin[m.end() - 1][1]
-        how = sorted(set().union(*steps[m.start():m.end()]) | {removed[k] for k in range(start, end) if k in removed})
-        if not how:     # the raw scan missed it only for its word boundary: the normalisation of the character before it made the word start
-            how = ['word_boundary'] + (sorted(steps[m.start() - 1] | {removed[k] for k in range(origin[m.start() - 1][1], start) if k in removed})
-                                       if m.start() else [])
-        add(action, start, end, how)
+    for view, origin, steps, removed in normalised_views(text):
+        for m in rx.finditer(view):
+            action = stems.get(re.sub(r'[\s_-]', '', m.group(0)).lower())
+            if not action:
+                continue
+            start, end = origin[m.start()][0], origin[m.end() - 1][1]
+            how = sorted(set().union(*steps[m.start():m.end()]) | {removed[k] for k in range(start, end) if k in removed})
+            if not how:     # the raw scan missed it only for its word boundary: the normalisation of the character before it made the word start
+                how = ['word_boundary'] + (sorted(steps[m.start() - 1] | {removed[k] for k in range(origin[m.start() - 1][1], start) if k in removed})
+                                           if m.start() else [])
+            add(action, start, end, how)
     return found
 
 
