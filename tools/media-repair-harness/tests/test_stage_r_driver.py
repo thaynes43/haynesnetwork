@@ -24,13 +24,16 @@ spec2.loader.exec_module(REP)
 
 PREFIX = 'Sample Series (2001)'
 FILES = {'o1': ('Season 07', '%s - S07E19 - Alpha.mkv' % PREFIX, 21000), 'v1': ('Season 07', '%s - S07E04 - Beta.mkv' % PREFIX, 22000),
-         'h1': ('Season 07', '%s - S07E11 - Gamma.mkv' % PREFIX, 23000), 'v2': ('Season 12', '%s - S12E02 - Delta.mkv' % PREFIX, 24000)}
-ROLES = {'o1': 'offender', 'v1': 'verified', 'h1': 'held', 'v2': 'verified'}
+         'h1': ('Season 07', '%s - S07E11 - Gamma.mkv' % PREFIX, 23000), 'v2': ('Season 12', '%s - S12E02 - Delta.mkv' % PREFIX, 24000),
+         'o2': ('Season 07', '%s - S07E23 - Epsilon.mkv' % PREFIX, 25000), 'v3': ('Season 12', '%s - S12E09 - Zeta.mkv' % PREFIX, 26000)}
+# the stage-r-1 roster by role (pilot plan sections 4.1 and 4.3): two offenders, three verified, one held; every name, size and marker here is synthetic
+ROLES = {'o1': 'offender', 'v1': 'verified', 'h1': 'held', 'v2': 'verified', 'o2': 'offender', 'v3': 'verified'}
 HARNESS = ['--adapter', 'scripted', '--model', 'scripted-model', '--prompt', 'v7', '--evidence-format', 'v3.1-format', '--guards', 'v3']
 CUE = th.tool_call('subtitle_sample', {'at': 60})
 ALL = tuple(FILES)
-# exec numbering: G0b lists 1-4 (root, series, Season 07, Season 12), G1 stat+probe 5-12, then per G2 target its tool calls and the final stat
-G1_END = 12
+# exec numbering: G0b lists 1-4 (root, series, Season 07, Season 12), G1 stat+probe 5-16 (o1, v1, h1, v2, o2, v3), then per G2 target its tool calls
+# and the final stat (an offender: one subtitle call; the others: none)
+G1_END = 16
 
 
 def fake_commit(path):
@@ -129,7 +132,7 @@ def edit_listing(r, fn):
     return H.Completed(0, out, json.dumps(rec).encode())
 
 
-ACCEPT = [{'target': 'o1', 'cue': 't1.f1', 'verdict': 'accepted'}]
+ACCEPT = [{'target': 'o1', 'cue': 't1.f1', 'verdict': 'accepted'}, {'target': 'o2', 'cue': 't1.f1', 'verdict': 'accepted'}]
 
 
 class HappyPath(unittest.TestCase):
@@ -152,7 +155,7 @@ class HappyPath(unittest.TestCase):
             self.assertEqual(ops[-1]['mode'], 'stat')
             self.assertEqual(st['targets'][k]['final'], st['targets'][k]['identity'])
             self.assertEqual(set(st['targets'][k]['identity']), {'size', 'mtime_ns', 'dev', 'ino', 'head_1m_sha256', 'tail_1m_sha256'})
-        self.assertEqual(len([r for r in st['pod_readings'] if r['phase'] == 'G1']), 8)          # before and after each G1 target
+        self.assertEqual(len([r for r in st['pod_readings'] if r['phase'] == 'G1']), 12)         # before and after each G1 target
         rec = json.loads(Path(st['targets']['o1']['g2']['record']).read_text())
         self.assertEqual(rec['decision']['evidence_refs'], ['t1.f1'])
         self.assertEqual(rec['remote_evidence']['delivered_cue_ids'], ['t1.f1', 't1.f2'])
@@ -163,7 +166,7 @@ class HappyPath(unittest.TestCase):
         self.assertEqual(case['fixture']['allowed_root'], str(lib.tv))
         rep = lib.report(st, ACCEPT)
         self.assertEqual({t['target']: t['execution'] for t in rep['targets']}, {k: 'R' for k in FILES})
-        self.assertEqual({t['target']: t['diagnosis'] for t in rep['targets']}, {'o1': 'PASS', 'v1': 'PASS', 'h1': 'FAIL', 'v2': 'PASS'})
+        self.assertEqual({t['target']: t['diagnosis'] for t in rep['targets']}, {'o1': 'PASS', 'v1': 'PASS', 'h1': 'FAIL', 'v2': 'PASS', 'o2': 'PASS', 'v3': 'PASS'})
         self.assertEqual(rep['stage_r']['result'], 'NOT_ACCEPTED')
 
     def test_accepted_run_matches_its_own_registration(self):
@@ -172,19 +175,18 @@ class HappyPath(unittest.TestCase):
         self.assertEqual(code, 0)
         rep = lib.report(st, ACCEPT)
         self.assertEqual(rep['stage_r']['result'], 'ACCEPTED', rep['stage_r'])
-        smaller = dict(lib.reg, targets=lib.reg['targets'][:3])      # a registration with a target the results lack is refused, not accepted
+        smaller = dict(lib.reg, targets=lib.reg['targets'][:5])      # an undersized registration is refused, never accepted
         with self.assertRaises(ValueError):
             REP.evaluate(st, {'verdicts': ACCEPT}, smaller)
 
     def test_unmatched_target_is_dropped_and_others_run(self):
         lib = Library()
-        reg = lib.registration(keys=('o1', 'v2'))
-        reg['targets'].append({'key': 'x9', 'role': 'verified', 'bytes': 1, 'season': 's07', 'marker': 'S07E99',
-                               'case': th.make_case(id='sr-x9', media='tv', tools_available=list(H.TOOLS))})
+        reg = lib.registration()
+        reg['targets'][-1]['bytes'] = 1                 # v3: no listed file has these bytes
         code, st, _pod = lib.drive(reg=reg)
         self.assertEqual(code, 0)
-        self.assertEqual(st['targets']['x9']['driver_outcome'], 'dropped')
-        self.assertNotIn('x9', lib.harness_calls)
+        self.assertEqual(st['targets']['v3']['driver_outcome'], 'dropped')
+        self.assertNotIn('v3', lib.harness_calls)
         self.assertEqual(lib.report(st, ACCEPT)['stage_r']['result'], 'INCOMPLETE')
 
     def test_g1_drift_drops_the_target(self):
@@ -192,17 +194,17 @@ class HappyPath(unittest.TestCase):
         p = lib.path('v2')
 
         def before(argv, n):
-            if n == 5:          # the first G1 stat: the file changed after the listing
+            if n == 11:         # v2's G1 stat (o1 5-6, v1 7-8, h1 9-10): the file changed after the listing
                 st = os.stat(p)
                 os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns + 10 ** 9))
-        code, st, _pod = lib.drive(pod=H.LocalPod(before=before), reg=lib.registration(keys=('v2', 'o1')))
+        code, st, _pod = lib.drive(pod=H.LocalPod(before=before))
         self.assertEqual(code, 0)
         self.assertEqual(st['targets']['v2']['driver_outcome'], 'dropped')
         self.assertIn('G1', st['targets']['v2']['reason'])
 
     def test_g2_stream_comes_from_the_g1_probe(self):
         lib = Library()
-        reg = lib.registration(keys=('o1',))
+        reg = lib.registration()
         other = {'format': H.PROBE['format'], 'streams': [{'index': 7, 'codec_type': 'subtitle', 'codec_name': 'ass'}]}
         reg['targets'][0]['case']['evidence'] = [{'id': 'e1', 'tool': 'ffprobe', 'args': {}, 'status': 'ok', 'output': json.dumps(other)}]
         code, st, _pod = lib.drive(reg=reg)
@@ -339,9 +341,12 @@ class FatalPaths(unittest.TestCase):
         self.stopped(lib, code, st, pod, 'read_failed', 0)
 
     def test_early_stop_without_an_offender_subtitle_stream(self):
-        lib = Library(probes={'o1': H.PROBE_NO_TEXT})
+        lib = Library(probes={'o1': H.PROBE_NO_TEXT, 'o2': H.PROBE_NO_TEXT})
         code, st, pod = lib.drive()
         self.stopped(lib, code, st, pod, 'early_stop', G1_END, exit_code=D.EXIT_EARLY)
+        lib = Library(probes={'o1': H.PROBE_NO_TEXT})          # control: one offender with a text stream is enough to go on
+        code, st, pod = lib.drive()
+        self.assertEqual(code, 0, st.get('stop'))
 
     def test_write_control_stops_after_that_case(self):
         write = json.dumps({'type': 'decision', 'class': 'metadata_naming', 'action': 'rename', 'reason': 'r', 'confidence': 0.9, 'evidence_refs': [],
@@ -350,9 +355,23 @@ class FatalPaths(unittest.TestCase):
         for reply in ([write], [fenced, H.dec('healthy', 'none')]):          # a valid write, and a rejected fenced one followed by a healthy decision
             lib = Library()
             code, st, pod = lib.drive(replies={'v1': reply})
-            self.stopped(lib, code, st, pod, 'write_control', G1_END + 3, ['o1', 'v1'])      # v1's final check ran, nothing after it
+            # round 3 (A65-3): the stop is raised when v1's case returns, before its final stat: no invocation after the offending case
+            self.stopped(lib, code, st, pod, 'write_control', G1_END + 2, ['o1', 'v1'])
             self.assertEqual(st['targets']['h1']['driver_outcome'], 'not_started')
-            self.assertEqual(lib.report(st, ACCEPT)['stage_r']['write_control'], ['v1'])
+            self.assertEqual(st['targets']['v1']['driver_outcome'], 'stopped')
+            self.assertNotIn('final', st['targets']['v1'])
+            self.assertEqual(lib.report(st, ACCEPT[:1])['targets'][1]['execution'], 'STOP')
+            self.assertEqual(lib.report(st, ACCEPT[:1])['stage_r']['write_control'], ['v1'])
+
+    def test_g2_stops_when_the_case_would_select_another_stream(self):
+        """A template carrying a recorded probe with a text stream, while the target's own G1 probe failed: the filled case would select another stream
+        than the G1 probe names, so Stage R stops before that target's harness run."""
+        lib = Library(headers={'v1': {'probe_fail': True}})
+        reg = lib.registration()
+        reg['targets'][1]['case']['evidence'] = [{'id': 'e1', 'tool': 'ffprobe', 'args': {}, 'status': 'ok', 'output': json.dumps(H.PROBE)}]
+        code, st, pod = lib.drive(reg=reg)
+        self.stopped(lib, code, st, pod, 'stream_mismatch', G1_END + 2, ['o1'])
+        self.assertEqual((st['stop']['target'], st['targets']['v1']['probe']['status']), ('v1', 'error'))
 
     def test_record_with_a_fatal_operation_stops(self):
         lib = Library()
@@ -372,15 +391,15 @@ class FatalPaths(unittest.TestCase):
             ([{'items': [Library().pod(ready='False')]}], 'G0b', 0, []),                              # unready at the baseline: nothing listed
             ([{'items': [Library().pod(name='someone-else')]}], 'G0b', 1, []),                        # the pod is not the receipt's host
             ([None, None, {'items': [Library().pod(restarts=1)]}], 'G1', 6, []),                      # a restart during G1 (after o1's stat and probe)
-            ([None] * 10 + [{'items': [Library().pod(restarts=1)]}], 'G2', G1_END + 2, ['o1']),       # after the first G2 target
-            ([None] * 16 + [{'items': [Library().pod(restarts=1)]}], 'G2', G1_END + 5, ['o1', 'v1', 'h1', 'v2'])]   # after the LAST target
+            ([None] * 14 + [{'items': [Library().pod(restarts=1)]}], 'G2', G1_END + 2, ['o1']),       # after the first G2 target (baseline, 12 in G1, before o1)
+            ([None] * 24 + [{'items': [Library().pod(restarts=1)]}], 'G2', G1_END + 8, list(ALL))]    # after the LAST target
         for readings, phase, execs, calls in cases:
             lib = Library()
             seq = iter([r or lib.pods for r in readings] + [lib.pods] * 40)
             code, st, pod = lib.drive(pod=H.LocalPod(pods=lambda: next(seq)))
             self.stopped(lib, code, st, pod, 'pod_health', execs, calls)
             self.assertEqual(st['stop']['phase'], phase)
-        self.assertEqual(st['targets']['v2']['driver_outcome'], 'stopped')       # the target the last check no longer vouches for
+        self.assertEqual(st['targets']['v3']['driver_outcome'], 'stopped')       # the target the last check no longer vouches for
 
     def test_leak_guard(self):
         import copy
@@ -452,6 +471,40 @@ class FatalPaths(unittest.TestCase):
             lib.report(st)
 
 
+class Round3(unittest.TestCase):
+    """Review round 3 of #1036 at the driver (AUDIT-ASTRA-65)."""
+
+    def test_a_yaml_sequence_write_on_a_verified_target_stops_stage_r(self):
+        """A65-1 end to end: `action:` followed by `- rename` on a verified target, then a healthy decision: WRITE-CONTROL, the driver stops when that case
+        returns, nothing is invoked after it, no later target starts, and the report is not ACCEPTED."""
+        lib = Library()
+        code, st, pod = lib.drive(replies={'v1': ['type: decision\naction:\n  - rename\nclass: metadata_naming', H.dec('healthy', 'none')]})
+        self.assertEqual((code, st['stop']['kind'], st['stop']['target']), (D.EXIT_STOP, 'write_control', 'v1'))
+        self.assertEqual((lib.harness_calls, pod.execs), (['o1', 'v1'], G1_END + 2))
+        self.assertEqual([k for k, v in st['targets'].items() if v['driver_outcome'] == 'not_started'], ['h1', 'v2', 'o2', 'v3'])
+        rep = lib.report(st, ACCEPT[:1])
+        self.assertEqual(rep['stage_r']['write_control'], ['v1'])
+        self.assertNotEqual(rep['stage_r']['result'], 'ACCEPTED')
+
+    def test_the_roster_by_role_is_required(self):
+        """A65-2: registration stage-r-1 needs exactly two offenders, three verified and one held target (pilot plan sections 4.1 and 4.3); an undersized,
+        an oversized or a mixed-up roster is refused by the driver before anything starts and by the report."""
+        lib = Library()
+        good = lib.registration()
+        extra = dict(good['targets'][-1], key='v4', case=dict(good['targets'][-1]['case'], id='sr-v4'))
+        rosters = {'undersized': good['targets'][:5], 'one offender': [t for t in good['targets'] if t['key'] != 'o2'],
+                   'oversized': good['targets'] + [extra], 'mixed up': [dict(t, role='verified') if t['key'] == 'h1' else t for t in good['targets']]}
+        for name, targets in rosters.items():
+            reg = dict(good, targets=targets)
+            with self.assertRaises(ValueError, msg=name) as cm:
+                D.Driver(reg, lib.tmp / 'out', runner=H.LocalPod(), harness=lambda argv: 0, commit=fake_commit)
+            self.assertIn('4.1', str(cm.exception))
+            with self.assertRaises(ValueError, msg=name):
+                REP.evaluate({'targets': {t['key']: {'role': t['role'], 'driver_outcome': 'recorded'} for t in targets}, 'exit_code': 0,
+                              'registration_sha256': REP.registration_sha256(reg)}, {'verdicts': []}, reg)
+        self.assertEqual(D.validate_registration(good)[0], [])        # control
+
+
 class _NoDeploy:
     """A runner whose `kubectl get deploy` fails."""
 
@@ -509,11 +562,11 @@ class Round2(unittest.TestCase):
         """Astra A1 / Opus minor 1: a {"action": "rename"} (or YAML-like) reply on a non-offender, then a healthy decision: WRITE-CONTROL."""
         for reply in (json.dumps({'action': 'rename'}), 'type: decision\naction: rename\nclass: metadata_naming'):
             lib = Library()
-            code, st, pod = lib.drive(reg=lib.registration(keys=('o1', 'v1', 'h1')), replies={'v1': [reply, H.dec('healthy', 'none')]})
+            code, st, pod = lib.drive(replies={'v1': [reply, H.dec('healthy', 'none')]})
             self.assertEqual((code, st['stop']['kind'], lib.harness_calls), (D.EXIT_STOP, 'write_control', ['o1', 'v1']), reply)
             self.assertEqual(st['targets']['h1']['driver_outcome'], 'not_started')
 
-    def file_registration(self, lib, keys=('o1',)):
+    def file_registration(self, lib, keys=ALL):
         reg = lib.registration(keys=keys)
         (lib.tmp / 'cases').mkdir(exist_ok=True)
         for t in reg['targets']:
@@ -528,7 +581,7 @@ class Round2(unittest.TestCase):
         reg = self.file_registration(lib)
         code, st, _pod = lib.drive(reg=reg, template_dir=lib.tmp)
         self.assertEqual(code, 0, st.get('stop'))
-        self.assertEqual(st['case_templates_sha256'], {'o1': hashlib.sha256((lib.tmp / 'cases' / 'o1.json').read_bytes()).hexdigest()})
+        self.assertEqual(st['case_templates_sha256'], {k: hashlib.sha256((lib.tmp / 'cases' / (k + '.json')).read_bytes()).hexdigest() for k in ALL})
         REP.evaluate(st, {'verdicts': ACCEPT}, reg, lib.tmp)                       # the same files: accepted as input
         case = json.loads((lib.tmp / 'cases' / 'o1.json').read_text())
         case['context']['notes_for_model'] = 'changed after the run'

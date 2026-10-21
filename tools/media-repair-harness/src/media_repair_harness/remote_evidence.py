@@ -651,60 +651,231 @@ def delivered_cue_ids(sent_messages, observations):
 
 
 # ------------------------------------------------------------------------------------------------------------------ raw write intents
-WRITE_INTENT_RULE = 'write-intent-2'
-_FENCE_RX = re.compile(r'```[A-Za-z0-9_-]*')
+WRITE_INTENT_RULE = 'write-intent-3'
+# The ONE definition of an action-like key: an identifier (or a short key phrase) whose components, split at underscores, hyphens, dots, spaces and
+# camel-case humps, each with any trailing digits removed, include one of these words.  `transaction` is one component, so it is not action-like.
+ACTION_KEY_WORDS = ('action', 'actions', 'operation', 'operations')
+# an object bound to an action-like key names its action in one of these fields
+ACTION_OBJECT_FIELDS = ('name', 'type', 'action')
+_FENCE_BLOCK_RX = re.compile(r'```[A-Za-z0-9_-]*[ \t]*\n(.*?)```', re.S)
 _UESC_RX = re.compile(r'\\u([0-9a-fA-F]{4})')
+_CAMEL_RX = re.compile(r'[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+')
+_TEXT_KEY_RX = re.compile(r"(?<![A-Za-z0-9_])[*_`\"']*([A-Za-z][A-Za-z0-9_]*(?:[ \t-][A-Za-z][A-Za-z0-9_]*){0,3})[*_`\"']*\s*[*_`]*\s*[:=]")
 
 
-def _write_action_rx():
-    """write-intent-2: an action-like KEY (any identifier containing "action", any case, quoted with ' or " or a backslash-escaped quote, or bare) bound by
-    ":" or "=" (optionally opening a list) to a VALUE that is one of the protocol's write actions (any case; the words of a multi-word action joined by _,
-    -, or spaces), quoted or bare.  Built from protocol.WRITE_ACTIONS, so a new write action is covered without editing a pattern."""
+def key_components(key):
+    """The lower-case components of an identifier or a short key phrase, trailing digits stripped: `proposed_action2` -> [proposed, action]."""
+    out = []
+    for part in re.split(r'[\s_\-.]+', str(key)):
+        for piece in _CAMEL_RX.findall(part) or [part]:
+            piece = piece.lower().rstrip('0123456789')
+            if piece:
+                out.append(piece)
+    return out
+
+
+def is_action_key(key):
+    return isinstance(key, str) and any(c in ACTION_KEY_WORDS for c in key_components(key))
+
+
+def canonical_action(value):
+    """Separators and case stripped: `blocklistAndSearch`, `blocklist and search` and `blocklist_and_search` are one value."""
+    return re.sub(r'[^a-z0-9]', '', str(value).lower())
+
+
+def _write_actions():
     from . import protocol as P
-    acts = '|'.join(r'[_\s-]*'.join(re.escape(w) for w in a.split('_')) for a in P.WRITE_ACTIONS)
-    q = r'(?:\\?["\'])?'
-    return re.compile(q + r'[A-Za-z_]*action[A-Za-z_]*' + q + r'\s*[:=]\s*\[?\s*' + q + r'\s*(' + acts + r')(?![A-Za-z0-9])', re.IGNORECASE)
+    return {canonical_action(a): a for a in P.WRITE_ACTIONS}
 
 
-def _canonical_action(text):
-    return re.sub(r'[\s-]+', '_', text.strip().lower())
+def write_of_value(value, writes=None):
+    """The write action a value bound to an action-like key names: a scalar, ANY element of a list, or an object whose name, type or action field does."""
+    writes = writes if writes is not None else _write_actions()
+    if isinstance(value, str):
+        return writes.get(canonical_action(value))
+    if isinstance(value, list):
+        for v in value:
+            w = write_of_value(v, writes)
+            if w:
+                return w
+        return None
+    if isinstance(value, dict):
+        for f in ACTION_OBJECT_FIELDS:
+            if isinstance(value.get(f), (str, list, dict)):
+                w = write_of_value(value[f], writes)
+                if w:
+                    return w
+    return None
+
+
+def structural_writes(obj, writes=None):
+    """Every write action an action-like key binds anywhere in a parsed structure, in order.  Only KEYS and the values bound to them are read: a prose
+    string value (a reason, a why, quoted text) is never scanned."""
+    writes = writes if writes is not None else _write_actions()
+    found = []
+
+    def walk(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if is_action_key(k):
+                    w = write_of_value(v, writes)
+                    if w and w not in found:
+                        found.append(w)
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(obj)
+    return found
+
+
+def _balanced_spans(text, limit=200):
+    """Candidate top-level `{...}` / `[...]` spans (quotes respected), at most `limit`."""
+    spans, stack, quote, esc = [], [], None, False
+    for i, ch in enumerate(text):
+        if quote:
+            if esc:
+                esc = False
+            elif ch == '\\':
+                esc = True
+            elif ch == quote:
+                quote = None
+            continue
+        if ch in '"\'':
+            quote = ch
+        elif ch in '{[':
+            stack.append(i)
+        elif ch in '}]' and stack:
+            j = stack.pop()
+            if not stack:
+                spans.append(text[j:i + 1])
+                if len(spans) >= limit:
+                    break
+    return spans
+
+
+def _yaml_like(text):
+    """A simple YAML-like reading: `key: value` lines (an inline [a, b] list kept as a list) and `key:` followed by `- item` lines -> [{key: value}]."""
+    out, key, seq = [], None, None
+    for line in text.splitlines():
+        m_item = re.match(r'^\s*[-*]\s+(.*\S)\s*$', line)
+        if key is not None and m_item:
+            seq.append(m_item.group(1).strip('\'"`'))
+            continue
+        if key is not None:
+            out.append({key: seq})
+            key, seq = None, None
+        m = re.match(r'^\s*[*_`"\']*([A-Za-z][\w \-.]{0,60}?)[*_`"\']*\s*[:=]\s*[*_`"\']*\s*(.*?)\s*$', line)
+        if not m:
+            continue
+        k, v = m.group(1).strip(), m.group(2)
+        if not v:
+            key, seq = k, []
+        elif v.startswith('[') and v.endswith(']'):
+            out.append({k: [x.strip().strip('\'"`') for x in v[1:-1].split(',')]})
+        else:
+            out.append({k: v.strip('\'"`*_')})
+    if key is not None:
+        out.append({key: seq})
+    return out
+
+
+def _literal(text):
+    import ast
+    return ast.literal_eval(text)
+
+
+def _text_scan(text, writes):
+    """The tolerant scan of an unparseable reply: an action-like key (a complete identifier or a short key phrase, with word boundaries; Markdown `**`, `_`
+    or backticks and quotes optional; any case), then `:` or `=` (emphasis may surround it), then a scalar, an inline list or a YAML sequence holding a
+    write action (its first one to three words, canonicalised).  Over-inclusive by design."""
+    found = []
+    for m in _TEXT_KEY_RX.finditer(text):
+        if not is_action_key(m.group(1)):
+            continue
+        rest = text[m.end():].lstrip()
+        if rest[:1] in '{[':                    # an object or a list bound to the key: read it with the same value rule as a parsed reply
+            span = (_balanced_spans(rest, 1) or [''])[0]
+            for loader in (json.loads, _literal):
+                try:
+                    w = write_of_value(loader(span), writes)
+                except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+                    continue
+                if w and w not in found:
+                    found.append(w)
+                break
+        line, _nl, after = text[m.end():].partition('\n')
+        body = line.strip().strip('*_` ')
+        if body.startswith('['):
+            items = re.split(r'[,\[\]]', body)
+        elif body:
+            items = [body]
+        else:                                   # a YAML sequence on the following lines
+            items = []
+            for nxt in after.splitlines():
+                mi = re.match(r'^\s*[-*]\s+(.*\S)', nxt)
+                if not mi:
+                    break
+                items.append(mi.group(1))
+        for item in items:
+            words = re.split(r'\s+', item.strip().strip('\'"`*_ ,.;'))
+            for n in (1, 2, 3):
+                w = writes.get(canonical_action(' '.join(words[:n])))
+                if w:
+                    if w not in found:
+                        found.append(w)
+                    break
+    return found
 
 
 def raw_write_intent(text):
-    """The write intent one raw model reply expresses, whatever its protocol validity -> {action, actions, parse, proposal, rule} or None.
+    """The write intent one raw model reply expresses -> {action, actions, parse, proposal, rule} or None.  Rule write-intent-3:
 
-    Rule write-intent-2 (over-inclusive by design: a false positive only makes Stage R stricter, a false negative would hide a write): EVERY reply is scanned,
-    whether it parsed or not, in its text and in a copy with \\uXXXX escapes and escaped quotes decoded, for a write action bound to an action-like key in
-    any common syntax (JSON, a Python literal, YAML-like `action: rename`, `action=rename`, nested anywhere, inside a string, any case).  Prose that never
-    binds a write action to such a key ("I would not rename it") is not an attempt.  `parse` says how readable the proposal is: `strict` (the protocol
-    parser reads a write decision), `lenient` (a JSON object in fences or prose with a write action), `pattern` (only the key binding); the audit of a
-    `pattern` attempt is a schema failure."""
+    * A reply the protocol parser reads strictly (one JSON value) is read STRUCTURALLY only: a write is an action-like key (is_action_key) bound, at any
+      depth, to a write action as a scalar, any element of a list, or an object whose name, type or action field is one (write_of_value).  Prose string
+      values (reason, why, quoted text) are never scanned, so "Considered action: rename, but ..." in a reason is no attempt.
+    * An unparseable reply is read over-inclusively: lenient structured parses first (fenced JSON blocks, every balanced JSON or Python-literal object or
+      list, a simple YAML-like `key: value` / `key:` + `- item` reading), walked the same way, then the tolerant text scan (_text_scan).  A false positive
+      only makes Stage R stricter; a false negative would hide a write.  Plain prose that binds no write action to an action-like key is never an attempt.
+    Write actions are matched with separators and case stripped (canonical_action)."""
+    import ast
     from . import protocol as P
     if not isinstance(text, str) or not text.strip():
         return None
-    decoded = _UESC_RX.sub(lambda m: chr(int(m.group(1), 16)), text).replace('\\"', '"').replace("\\'", "'")
-    rx = _write_action_rx()
-    actions = []
-    for src in (text, decoded):
-        for m in rx.finditer(src):
-            a = _canonical_action(m.group(1))
-            if a in P.WRITE_ACTIONS and a not in actions:
-                actions.append(a)
-    if not actions:
-        return None
+    writes = _write_actions()
     try:
         obj, _err, _diag = P.parse_reply(text)
-    except Exception:  # noqa: BLE001 - an unreadable reply is still scanned
+    except Exception:  # noqa: BLE001 - an unreadable reply is read as unparseable
         obj = None
-    if isinstance(obj, dict) and obj.get('type') == 'decision' and str(obj.get('action', '')).lower() in P.WRITE_ACTIONS:
-        return {'action': str(obj['action']).lower(), 'actions': actions, 'parse': 'strict', 'proposal': obj, 'rule': WRITE_INTENT_RULE}
-    body = _FENCE_RX.sub('', text)
-    i, j = body.find('{'), body.rfind('}')
-    if 0 <= i < j:
-        try:
-            cand = json.loads(body[i:j + 1])
-        except ValueError:
-            cand = None
-        if isinstance(cand, dict) and str(cand.get('action', '')).lower() in P.WRITE_ACTIONS:
-            return {'action': str(cand['action']).lower(), 'actions': actions, 'parse': 'lenient', 'proposal': cand, 'rule': WRITE_INTENT_RULE}
-    return {'action': actions[0], 'actions': actions, 'parse': 'pattern', 'proposal': None, 'rule': WRITE_INTENT_RULE}
+    if isinstance(obj, (dict, list)):
+        actions = structural_writes(obj, writes)
+        if not actions:
+            return None
+        top = writes.get(canonical_action(obj['action'])) if isinstance(obj, dict) and isinstance(obj.get('action'), str) else None
+        return {'action': top or actions[0], 'actions': actions, 'parse': 'strict',
+                'proposal': obj if top and obj.get('type') == 'decision' else None, 'rule': WRITE_INTENT_RULE}
+    decoded = _UESC_RX.sub(lambda m: chr(int(m.group(1), 16)), text)
+    actions, proposal, parse = [], None, None
+    for cand in _FENCE_BLOCK_RX.findall(text) + _balanced_spans(text) + _balanced_spans(decoded):
+        parsed = None
+        for loader in (json.loads, ast.literal_eval):
+            try:
+                parsed = loader(cand.strip())
+                break
+            except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+                continue
+        if isinstance(parsed, (dict, list)):
+            for a in structural_writes(parsed, writes):
+                if a not in actions:
+                    actions.append(a)
+                    parse = parse or 'lenient'
+            if proposal is None and isinstance(parsed, dict) and isinstance(parsed.get('action'), str) and writes.get(canonical_action(parsed['action'])):
+                proposal = parsed
+    for a in structural_writes(_yaml_like(text), writes) + _text_scan(text, writes) + _text_scan(decoded, writes):
+        if a not in actions:
+            actions.append(a)
+            parse = parse or 'pattern'
+    if not actions:
+        return None
+    top = writes.get(canonical_action(proposal['action'])) if proposal else None
+    return {'action': top or actions[0], 'actions': actions, 'parse': parse, 'proposal': proposal, 'rule': WRITE_INTENT_RULE}

@@ -83,6 +83,9 @@ def evaluate(state, adjudication, registration, registration_dir=None):
         raise ValueError('the state has no targets')
     if 'exit_code' not in state or not isinstance(state['exit_code'], int) or isinstance(state['exit_code'], bool):
         raise ValueError('the state has no terminal exit code: the driver did not finish recording it (a crash or a run still in progress)')
+    roster = SR.roster_errors(registration) if isinstance(registration, dict) else ['the registration is not an object']
+    if roster:
+        raise ValueError('; '.join(roster))
     if not isinstance(registration, dict) or registration_sha256(registration) != state.get('registration_sha256'):
         raise ValueError('the registration given is not the one the driver ran (registration_sha256 differs)')
     if registration_dir is not None:

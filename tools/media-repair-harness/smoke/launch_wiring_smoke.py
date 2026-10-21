@@ -32,12 +32,33 @@ ENV_LIMIT = MAX_ARG_STRLEN - 4096
 TOTAL_LIMIT = 240000   # kubectl apply stores the manifest in an annotation (262144 bytes max); the rest of the spec needs a margin
 
 
+def strip_comments(source):
+    """The source with every `#` comment removed (tokenize COMMENT tokens only: strings, docstrings and code untouched, every line kept, so line numbers in a
+    traceback stay right).  The parsed program is identical (tests/test_packaging.py compares the ASTs).  #161: the package outgrew the 240000-byte ceiling of
+    the apply annotation once dev-c8 and the remote evidence code joined it; comments travel no further than the checkout."""
+    import tokenize
+    lines = source.splitlines(keepends=True)
+    for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+        if tok.type == tokenize.COMMENT:
+            row, col = tok.start
+            line = lines[row - 1]
+            lines[row - 1] = line[:col].rstrip() + ('\n' if line.endswith('\n') else '')
+    return ''.join(lines)
+
+
 def bundle():
-    """The whole tarball as one base64 string (gzip: always present in the Job image, unlike lzma); `bundle_parts` splits it for the Job spec."""
+    """The whole tarball as one base64 string (gzip: always present in the Job image, unlike lzma); `bundle_parts` splits it for the Job spec.  Python files
+    travel without their comments (strip_comments)."""
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode='w:gz') as t:
         norm = lambda ti: (setattr(ti, 'uid', 0), setattr(ti, 'gid', 0), setattr(ti, 'mtime', 0), ti)[3]
         for name in FILES:
+            if name.endswith('.py'):
+                data = strip_comments((PACKAGE / name).read_text(encoding='utf-8')).encode('utf-8')
+                ti = norm(tarfile.TarInfo('media_repair_harness/' + name))
+                ti.size, ti.mode = len(data), 0o644
+                t.addfile(ti, io.BytesIO(data))
+                continue
             t.add(PACKAGE / name, arcname='media_repair_harness/' + name, filter=norm)
         for name in SMOKE_FILES:
             t.add(HERE / name, arcname='smoke/' + name, filter=norm)

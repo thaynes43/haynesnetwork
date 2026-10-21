@@ -243,6 +243,24 @@ class RealSampler(unittest.TestCase):
             self.assertEqual((cm.exception.kind, cm.exception.receipt['confined']), ('not_confined', False), mode)
             self.assertIn('cannot be verified', cm.exception.receipt['error'])
 
+    def test_a_directory_swapped_after_the_open_is_never_listed(self):
+        """Opus nit (round 3): the listing reads the OPENED directory; a swap of the path for a symlink to an outside tree between the open and the scan
+        changes nothing it lists.  This fails if the scan reads the path (os.scandir(a.path)) instead of the descriptor."""
+        lib = self.root / 'swaplib'
+        listed = lib / 'Season 1'
+        listed.mkdir(parents=True)
+        (listed / 'real.mkv').write_bytes(b'x')
+        outside = Path(tempfile.mkdtemp()).resolve() / 'Season 1'
+        outside.mkdir()
+        (outside / 'evil.mkv').write_bytes(b'y')
+        prelude = ('import os\n_sd = os.scandir\ndef _scan(x=None):\n    if not os.path.islink(%r):\n        os.rename(%r, %r)\n        os.symlink(%r, %r)\n'
+                   '    return _sd(x)\nos.scandir = _scan\n') % (str(listed), str(listed), str(lib / 'kept'), str(outside), str(listed))
+        b = RE.Binding(host=RE.HostState(), root=str(self.root))
+        receipt, out = op(H.LocalPod(prelude=prelude), 'list', listed, b, bind=False)
+        self.assertTrue(listed.is_symlink())                     # the swap happened between the open and the scan
+        self.assertEqual([e['name'] for e in json.loads(out)['entries']], ['real.mkv'])
+        self.assertTrue(receipt['confined'])
+
     def test_bad_arguments_still_end_with_a_receipt(self):
         b = RE.Binding(host=RE.HostState(), root=str(self.root))
         receipt, out = op(self.pod, 'subtitle', self.file, b, ['--window', 50], bind=False)

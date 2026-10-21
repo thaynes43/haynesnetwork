@@ -7,6 +7,24 @@ from . import protocol as P
 from . import remote_evidence as RE
 
 ROLES = ('offender', 'verified', 'held')
+# Registration stage-r-1 fixes the roster by ROLE (pilot plan v3.2 section 4.1, the six files: two offenders, three verified files -- the correct copy and the
+# two verified replacements -- and one held file; section 4.3: acceptance needs all six to end R and both offenders to PASS).  Only role counts: no target
+# name, id, size, series or episode value is in code.
+REGISTRATION_ROLE_COUNTS = {'stage-r-1': {'offender': 2, 'verified': 3, 'held': 1}}
+
+
+def roster_errors(registration):
+    """[] when the registration's targets have exactly the role counts its version requires, else the reasons."""
+    want = REGISTRATION_ROLE_COUNTS.get((registration or {}).get('registration'))
+    if want is None:
+        return ['unknown registration version %r (known: %s)' % ((registration or {}).get('registration'), sorted(REGISTRATION_ROLE_COUNTS))]
+    got = {r: 0 for r in ROLES}
+    for t in (registration or {}).get('targets') or []:
+        if isinstance(t, dict) and t.get('role') in got:
+            got[t['role']] += 1
+    if got != want or len((registration or {}).get('targets') or []) != sum(want.values()):
+        return ['registration %s needs exactly %s targets by role (pilot plan sections 4.1 and 4.3); it has %s' % (registration.get('registration'), want, got)]
+    return []
 EXECUTIONS = ('R', 'F', 'H', 'STOP', 'INVALID', 'DROPPED')
 INCOMPLETE_EXECUTIONS = ('STOP', 'INVALID', 'H', 'F', 'DROPPED')
 VERDICTS = ('accepted', 'rejected', 'ambiguous')

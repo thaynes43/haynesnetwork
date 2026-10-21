@@ -252,6 +252,17 @@ class FailClosed(unittest.TestCase):
         self.assertEqual(partial['remote_evidence']['receipts'][0]['fatal']['kind'], 'hostname_changed')
         suite.cleanup()
 
+    def test_the_experimental_claude_schema_mode_is_refused(self):
+        """Rebase onto #1035: schema mode re-runs a case through its own guard with a fixed argument set, which would drop the remote options."""
+        with self.assertRaises(SystemExit) as cm:
+            R.main(['--suite', 's', '--adapter', 'claude', '--model', 'm', '--out', tempfile.mkdtemp() + '/o', '--prompt', 'v7', '--evidence-format', 'v3.1-format',
+                    '--tools-behavior', 'v3-remote-1', '--claude-schema', 'json-schema-1', '--experimental-claude-schema'])
+        self.assertIn('refused with --claude-schema', str(cm.exception))
+        ad = A.ScriptedAdapter('m', [])
+        ad.schema_mode = 'json-schema-1'
+        with self.assertRaises(ValueError):
+            R.run_case(H.remote_case(), 'sha', ad, '.', tempfile.mkdtemp(), runner=H.FakeSampler(), which=th.NO_BINARIES, tools_behavior='v3-remote-1', **H.V31)
+
     def test_option_combinations_are_refused(self):
         with self.assertRaises(ValueError):
             R.check_remote_options(None, None, True)
@@ -457,14 +468,14 @@ class Round2(unittest.TestCase):
             'bare json': json.dumps({'action': 'rename'}), 'misspelt type': json.dumps({'type': 'decison', 'action': 'rename'}),
             'tool call with action': json.dumps(dict(tool, action='rename')), 'python literal': str(self.W),
             'yaml-like': 'type: decision\naction: rename\nclass: metadata_naming', 'equals': 'action=convert', 'uppercase': json.dumps(dict(self.W, action='RENAME')),
-            'nested alternative': json.dumps(dict(hdec, alternatives=[{'action': 'remap'}])), 'inside a string': json.dumps(dict(tool, why='{"action": "rename"}')),
+            'nested alternative': json.dumps(dict(hdec, alternatives=[{'action': 'remap'}])),
             'unicode escape': '{"type":"decision","action":"\\u0072ename"}', 'multi-word spaced': "{'Action': 'Blocklist and Search'}",
             'list value': 'actions: [convert]', 'other action key': '"proposed_action": "remap"', 'fenced': '```json\n%s\n```' % json.dumps(self.W),
             'healthy then prose write': json.dumps(hdec) + '\nor: {"action": "rename"}'}
         for name, text in found.items():
             intent = RE.raw_write_intent(text)
             self.assertIsNotNone(intent, name)
-            self.assertEqual(intent['rule'], 'write-intent-2')
+            self.assertEqual(intent['rule'], 'write-intent-3')
         self.assertEqual(RE.raw_write_intent(found['multi-word spaced'])['action'], 'blocklist_and_search')
         for text in ('I would not rename this file.', 'action: none', json.dumps(hdec), json.dumps(tool), 'the action is rename', 'rename it? no.', '', None):
             self.assertIsNone(RE.raw_write_intent(text), text)
@@ -552,6 +563,78 @@ class Round2(unittest.TestCase):
                                 ('subtitle', H.SRT, dict(requests=0)), ('subtitle', H.SRT, dict(wall_seconds=50))):
             self.assertTrue(RE.receipt_errors(H.receipt(mode, out, **over), mode, len(out)), (mode, over))
         self.assertEqual(RE.receipt_errors(H.receipt('subtitle', H.SRT), 'subtitle', len(H.SRT)), [])        # control
+
+
+class Round3(unittest.TestCase):
+    """Review round 3 of #1036 (AUDIT-ASTRA-65 and the Opus re-review of cdc17f22)."""
+
+    W = {'type': 'decision', 'class': 'metadata_naming', 'action': 'rename', 'reason': 'r', 'confidence': 0.9, 'evidence_refs': []}
+
+    @staticmethod
+    def dec(reason, action='none', cls='healthy'):
+        return json.dumps({'type': 'decision', 'class': cls, 'action': action, 'reason': reason, 'confidence': 0.8, 'evidence_refs': ['t1.f1']})
+
+    def test_write_intent_3_matrix(self):
+        """Rule write-intent-3: parsed replies structurally, unparseable ones over-inclusively; complete action-like keys; separators and case stripped."""
+        positives = {
+            'numbered key (text)': 'action2: rename', 'numbered compound key (json)': '{"proposed_action2":"rename"}',
+            'inline list, later element': 'actions: [none, rename]', 'yaml sequence': 'action:\n  - rename',
+            'markdown bold key': '**Action:** rename', 'markdown key phrase': '**Recommended action**: rename',
+            'object with name (fragment)': '"action": {"name": "rename"}', 'object with name (json)': '{"type": "decision", "action": {"name": "rename"}}',
+            'operation key (fragment)': '"operation": "rename"', 'operation key (json)': '{"operation": "rename"}', 'camel case value': '{"action": "blocklistAndSearch"}',
+            'squashed value': '{"action": "blocklistandsearch"}', 'spaced value': "{'Action': 'Blocklist and Search'}", 'python literal': str(self.W),
+            'list of objects, later': '{"actions": [{"kind": "x"}, {"type": "remap"}]}',
+            'nested anywhere': json.dumps({'type': 'decision', 'class': 'healthy', 'action': 'none', 'alternatives': [{'action': 'convert'}]}),
+            'equals': 'action=convert', 'uppercase json': '{"Action": "RENAME"}', 'fenced json': '```json\n' + json.dumps(self.W) + '\n```'}
+        for name, text in positives.items():
+            intent = RE.raw_write_intent(text)
+            self.assertIsNotNone(intent, name)
+            self.assertEqual(intent['rule'], 'write-intent-3', name)
+        self.assertEqual(RE.raw_write_intent(positives['camel case value'])['action'], 'blocklist_and_search')
+        negatives = {
+            'prose': 'I would not rename this file.', 'prose with the word action': 'the action is rename', 'transaction key': 'transaction: convert',
+            'reason: considered action': self.dec('Considered action: rename, but the evidence does not support it.'),
+            'reason: no action=': self.dec('No action=remap is warranted.'),
+            'reason quoting json': self.dec('A {"action": "rename"} would be premature.', 'escalate', 'identity_mismatch'),
+            'tool call why': json.dumps({'type': 'tool_call', 'tool': 'subtitle_sample', 'args': {'at': 60}, 'why': 'decide whether action: rename applies'}),
+            'reason with transaction': self.dec('No transaction: convert step happened.'), 'healthy': self.dec('Streams match.'), 'no write': 'action: none'}
+        for name, text in negatives.items():
+            self.assertIsNone(RE.raw_write_intent(text), name)
+        for key, want in (('action2', True), ('proposed_action2', True), ('proposedAction', True), ('nextOperation', True), ('actions', True),
+                          ('Recommended action', True), ('transaction', False), ('reaction', False), ('actionable', False), ('why', False)):
+            self.assertEqual(RE.is_action_key(key), want, key)
+
+    def test_legacy_subtitle_messages_are_byte_identical(self):
+        """Astra A65-4: with no new option, the model-visible message for a case whose evidence holds a failed, timed-out or unavailable subtitle_sample
+        observation is byte for byte the base's (digests computed at 713b433a, the merge base, by this same code)."""
+        base = {'error/v2': '10747be02fe7ff76684342419e2e0938b8d8489cfd470224c713dee249289e51', 'error/v3.1-format': '95bfaf57f6a06f8902cfd3b2c22de54913da0abeb58466dcc021896a34a3ca32', 'timeout/v2': '4c1743d01f75f5d966e18b3fa620c649f6b5d7626ad6c7a0d3a912ee54d1c3f2', 'timeout/v3.1-format': '9226cb8f964683e53c2fe5d9bbb677efb34a0706bfe7f2309a0c1e1e7c02ddd7', 'unavailable/v2': 'bdafddc98d8445f61b9cfd44ecb15c86a47d962b5af8e610d0b83641c0120182', 'unavailable/v3.1-format': '4dba741d55d1a806c35795553abf9e9b565b56fc27b64edd02f0d241e807771b'}
+        for status, output in (('error', 'subtitle_sample failed: could not run'), ('timeout', 'subtitle_sample exceeded the 60 s tool timeout'),
+                               ('unavailable', 'no subtitle cue in the window; nothing was observed')):
+            case = th.make_case(id='zzrx-legacy-1', media='tv', evidence=[{'id': 'e1', 'tool': 'subtitle_sample', 'status': status, 'args': {}, 'output': output}],
+                                tools_available=['ffprobe', 'arr_lookup'])
+            for prompt, fmt in (('v7', 'v3.1-format'), ('v4', 'v2')):
+                ad = A.ScriptedAdapter('model', [json.dumps({'type': 'decision', 'class': 'insufficient_evidence', 'action': 'escalate', 'confidence': 0.7,
+                                                             'reason': 'r', 'evidence_refs': []})] * 3)
+                R.run_case(case, 'sha', ad, '.', tempfile.mkdtemp(), which=th.NO_BINARIES, run_id='legacy-x', prompt_version=prompt, evidence_format=fmt, guards='v3')
+                text = json.dumps(ad.calls[0], sort_keys=True, ensure_ascii=False)
+                self.assertEqual(hashlib.sha256(text.encode()).hexdigest(), base[status + '/' + fmt], (status, fmt))
+                self.assertNotIn('subtitle text in the requested window', text)
+
+    def test_a_receipt_validation_exception_is_fatal(self):
+        """Opus nit: the catch-all around receipt_errors makes ANY exception during validation a fatal malformed receipt, never an ordinary error."""
+        orig = RE.receipt_errors
+
+        def boom(*a, **k):
+            raise RuntimeError('validator bug')
+        RE.receipt_errors = boom
+        try:
+            b = RE.binding_for_case(H.remote_case(), RE.HostState())
+            with self.assertRaises(RE.FatalOperation) as cm:
+                RE.run_operation(H.FakeSampler(), 'ns', 'deploy/x', 'app', 'subtitle', '/lib/show/item.mkv', b, ['--at', 1, '--stream', 3])
+        finally:
+            RE.receipt_errors = orig
+        self.assertEqual((cm.exception.kind, b.fatal['kind']), ('malformed_receipt', 'malformed_receipt'))
+        self.assertIn('RuntimeError', cm.exception.detail)
 
 
 class WriteAttempts(unittest.TestCase):

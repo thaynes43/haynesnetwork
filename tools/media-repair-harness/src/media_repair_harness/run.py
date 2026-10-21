@@ -287,6 +287,9 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, *args, **kw):
     """Run one case through the turn protocol (`_run_case`).  #161: a case of tools behaviour v3-remote-1 runs inside `remote_evidence.enabled()`, the only
     place the typed layer reads a subtitle_sample observation as cues and the leak guard treats cue text as media text; every other case runs as before."""
     if kw.get('tools_behavior') in REMOTE_TOOLS_BEHAVIORS:
+        if getattr(adapter, 'schema_mode', None) is not None:
+            raise ValueError('--tools-behavior %s is refused with the experimental Claude schema mode (its guard re-runs the case without the remote options)'
+                             % kw['tools_behavior'])
         with _remote_evidence().enabled():
             return _run_case(case, case_sha, adapter, suite_dir, scratch, *args, **kw)
     return _run_case(case, case_sha, adapter, suite_dir, scratch, *args, **kw)
@@ -1175,6 +1178,8 @@ def main(argv=None, runner=None):
     try:
         check_option_combination(args.prompt, args.evidence_format, args.guards, args.tool_output_bytes)
         check_remote_options(args.evidence_format, args.tools_behavior, args.stop_on_receipt_failure, args.evidence)
+        if args.tools_behavior and getattr(args, 'claude_schema', None):
+            raise ValueError('--tools-behavior is refused with --claude-schema (experimental; its guard re-runs a case without the remote options)')
     except ValueError as e:
         raise SystemExit(str(e))
     if args.no_spend_limit and (args.max_budget_usd is not None or args.max_total_cost_usd is not None):

@@ -205,7 +205,8 @@ class Acceptance(unittest.TestCase):
                 ('o2', 'offender', 'recorded', record('identity_mismatch', 'escalate', ['t1.f2'], cue)),
                 ('v1', 'verified', 'recorded', record('healthy', 'none', calls=cue)),
                 ('v2', 'verified', 'recorded', record('insufficient_evidence', 'escalate')),
-                ('h1', 'held', 'recorded', record('insufficient_evidence', 'escalate'))]
+                ('h1', 'held', 'recorded', record('insufficient_evidence', 'escalate')),
+                ('v3', 'verified', 'recorded', record('healthy', 'none'))]      # round 3: the stage-r-1 roster (2 offenders, 3 verified, 1 held)
 
     VERDICTS = {'verdicts': [{'target': 'o1', 'cue': 't1.f1', 'verdict': 'accepted'}, {'target': 'o2', 'cue': 't1.f2', 'verdict': 'accepted'}]}
 
@@ -232,26 +233,36 @@ class Acceptance(unittest.TestCase):
                 REP.evaluate(st, self.VERDICTS, self.registration(self.good()))
 
     def test_results_must_match_the_whole_registration(self):
-        """Round 1 (Astra 6): the roster comes from the registration (no fixed count): a missing target, a missing offender, or a role that differs."""
+        """Round 1 (Astra 6) and round 3 (A65-2): the registration must have the stage-r-1 roster by role (two offenders, three verified, one held; pilot
+        plan sections 4.1 and 4.3), and the results must hold exactly its targets with their roles."""
         good = self.good()
         reg = self.registration(good)
-        extra = dict(reg, targets=reg['targets'] + [{'key': 'v9', 'role': 'verified'}])
-        with tempfile.TemporaryDirectory() as tmp:
-            st = self.state(tmp, good, extra)
-            rep = REP.evaluate(st, self.VERDICTS, extra)
+        for name, targets in (('undersized', reg['targets'][:5]), ('one offender', [t for t in reg['targets'] if t['key'] != 'o2']),
+                              ('oversized', reg['targets'] + [{'key': 'v9', 'role': 'verified'}]),
+                              ('mixed up', [dict(t, role='verified') if t['key'] == 'h1' else t for t in reg['targets']])):
+            bad = dict(reg, targets=targets)
+            with tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(ValueError, msg=name):
+                    REP.evaluate(self.state(tmp, good, bad), self.VERDICTS, bad)
+        with tempfile.TemporaryDirectory() as tmp:            # a registered target missing from the results
+            st = self.state(tmp, good, reg)
+            st['targets'].pop('v3')
+            rep = REP.evaluate(st, self.VERDICTS, reg)
         self.assertEqual(rep['stage_r']['result'], 'INCOMPLETE')
-        one_offender = [t for t in good if t[0] != 'o2']
-        reg2 = dict(reg)          # registered with two offenders, results with one
-        with tempfile.TemporaryDirectory() as tmp:
-            rep = REP.evaluate(self.state(tmp, one_offender, reg2), {'verdicts': self.VERDICTS['verdicts'][:1]}, reg2)
+        with tempfile.TemporaryDirectory() as tmp:            # a result for an unregistered target
+            st = self.state(tmp, good, reg)
+            st['targets']['zz'] = {'role': 'verified', 'driver_outcome': 'dropped'}
+            rep = REP.evaluate(st, self.VERDICTS, reg)
         self.assertEqual(rep['stage_r']['result'], 'INCOMPLETE')
-        role = dict(reg, targets=[dict(t, role='verified') if t['key'] == 'h1' else t for t in reg['targets']])
-        with tempfile.TemporaryDirectory() as tmp:
-            rep = REP.evaluate(self.state(tmp, good, role), self.VERDICTS, role)
+        with tempfile.TemporaryDirectory() as tmp:            # a role that differs from the registration's
+            st = self.state(tmp, good, reg)
+            st['targets']['h1']['role'] = 'verified'
+            rep = REP.evaluate(st, self.VERDICTS, reg)
         self.assertEqual(rep['stage_r']['result'], 'INCOMPLETE')
+        other = dict(reg, targets=[dict(t, key=t['key'] + 'x') for t in reg['targets']])
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):           # not the registration the driver ran
-                REP.evaluate(self.state(tmp, good, reg), self.VERDICTS, extra)
+                REP.evaluate(self.state(tmp, good, reg), self.VERDICTS, other)
 
     def test_incomplete_for_each_non_r_execution(self):
         for outcome, rec in (('dropped', None), ('stopped', None), ('not_started', None), ('invalid', record()), ('recorded', record(forced=True)),

@@ -156,6 +156,7 @@ def validate_registration(reg, template_dir=None):
             errs.append('limits.g2_operations must be an integer from 1 to %d' % LIMIT_CEILINGS[k])
         elif k != 'g2_operations' and not (isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and 0 < v <= LIMIT_CEILINGS[k]):
             errs.append('limits.%s must be a finite number above 0 and at most the registered %s' % (k, LIMIT_CEILINGS[k]))
+    errs += SR.roster_errors(reg)
     keys, case_ids = set(), set()
     targets = reg.get('targets')
     if not isinstance(targets, list) or not targets:
@@ -611,9 +612,12 @@ class Driver:
             st['driver_outcome'] = 'recorded'
             safety = SR.proposal_safety(t['role'], record)
             st['write_attempts'] = safety['attempts']
-            self.final_check(t)
             if safety['write_control']:
+                # section 4.4 "Stage R stops after that case" with section 3.5 "after any fatal path the driver starts no further operation": the stop is
+                # raised when the case returns, before its final stat, so nothing is invoked after it; the target is STOP (WRITE-CONTROL)
+                st.update(driver_outcome='stopped', reason='WRITE-CONTROL: a write attempt on a non-offender target; no final check was started')
                 raise Stop('G2', 'write_control', 'a write attempt on a non-offender target (%s)' % [a['action'] for a in safety['attempts']], t['key'])
+            self.final_check(t)
             self.check_pod('G2', t['key'])
             self.save()
         self.current = None
@@ -659,7 +663,7 @@ class Driver:
     def _stopped(self, phase, kind, detail, target):
         self.state['stop'] = {'phase': phase, 'kind': kind, 'detail': detail, 'target': target}
         for key, st in self.state['targets'].items():
-            if st['driver_outcome'] == 'started' or (key == target and st['driver_outcome'] == 'recorded' and kind != 'write_control'):
+            if st['driver_outcome'] == 'started' or (key == target and st['driver_outcome'] == 'recorded'):
                 st['driver_outcome'] = 'stopped'        # the target the stop cut short, or whose recorded result the stop no longer vouches for
             if st['driver_outcome'] in ('stopped', 'not_started'):
                 st['reason'] = st['reason'] or '%s: %s %s' % ('stopped' if st['driver_outcome'] == 'stopped' else 'never started after the stop', phase, kind)

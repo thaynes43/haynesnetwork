@@ -69,6 +69,16 @@ earlier option set are unchanged.
   it; **driver** case template files are hashed into the state and checked by the report, templates stay under the registration directory, and the G0a
   `--guards v3` and tool list are enforced. Tests for each (including the A-B-A swap, the swap between the confinement check and the open, and no `/proc`);
   every fix was also reverted or mutated in a scratch copy to confirm its test fails.
+* **Review round 3 of `cdc17f22`** (the Opus re-review, clear-with-nits; AUDIT-ASTRA-65: three majors, one minor), after the rebase onto dev-c8
+  (`713b433a`): **write intents** rule `write-intent-3`: one definition of an action-like key (components `action`, `actions`, `operation`, digits stripped),
+  write actions canonicalised (separators and case), a binding as a scalar, any list element or an object's name/type/action; a strictly parsed reply is
+  read structurally only (no prose value is scanned), an unparseable one over-inclusively (fenced JSON, balanced JSON or Python literals, a YAML-like reading,
+  then a tolerant text scan with word-bounded keys and Markdown); **roster** registration `stage-r-1` needs exactly 2 offenders, 3 verified and 1 held
+  target (pilot plan sections 4.1, 4.3), refused by the driver and the report; **WRITE-CONTROL** raised when the case returns, before its final stat (no
+  invocation after it; the target is STOP); **legacy wording** the subtitle wording of "this call settled nothing about ..." is gated on v3-remote-1, and
+  the legacy model-visible messages equal the base's byte for byte; the A3 swap-after-open and the receipt-validation catch-all get tests; the
+  stream-mismatch driver test dropped in round 1 is restored. Rebase: `--tools-behavior` is refused with dev-c8's experimental `--claude-schema`, and the
+  wiring smoke bundle drops `#` comments to stay under its 240000-byte ceiling (identical ASTs, every line kept).
 ## dev-c8 (WO-W26, OpenProject #158): prompt v8, turn-v3.1, claude-schema-1, guards v4; offline, not measured
 
 `HARNESS_VERSION` is `dev-c8`. Every earlier prompt, format, guard version and adapter is unchanged; the recorded dev-c4 to dev-c7 runs, the dev-c6 replay

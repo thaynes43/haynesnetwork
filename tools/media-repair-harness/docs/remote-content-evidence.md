@@ -28,7 +28,9 @@ only, never in a model-bound message).
 The typed layer reads a `subtitle_sample` observation as cue findings, and the leak guard treats cue text as media text, ONLY inside a v3-remote-1 run
 (`remote_evidence.enabled()`, set by `run.run_case`; the offline `mrh-guard` is a pinned input of recorded measurements and is not changed, so it reads
 such a record's subtitle observations with the legacy reading: call it inside `remote_evidence.enabled()` to reproduce the online one). Everywhere else a case whose evidence names
-`subtitle_sample` is read exactly as on the base (an unknown record, checked by the legacy guard).
+`subtitle_sample` is read exactly as on the base (an unknown record, checked by the legacy guard, and named "its subject" when it settled nothing: the
+subtitle wording of that sentence is gated too; `tests/test_remote_evidence.Round3` compares the model-visible messages with the base byte for byte).
+`--tools-behavior` is refused with the experimental `--claude-schema` mode (#1035), whose guard re-runs a case with a fixed argument set.
 
 ## 2. `subtitle_sample {"at": s}` (item 1)
 
@@ -104,7 +106,9 @@ every receipt and its rejected write attempts, the model is not called again, an
 
 `scripts/stage_r_driver.py --registration G0A.json --out DIR --commit-repo DIR`. One process, serial, owning every stop; an unexpected error is a recorded
 `driver_error` stop, and the terminal state (`exit_code`) is always written. The registration (`stage-r-1`) holds every case-specific value; the script
-holds none. It is validated before anything starts: safe target keys and case ids (one path component), `early_stop_roles` required (section 4.2.4), limits
+holds none. It is validated before anything starts: the roster by role that registration `stage-r-1` requires (exactly two offenders, three verified and
+one held target: pilot plan section 4.1, the six files, and section 4.3, all six ending R with both offenders PASS; only role counts are in code, never a
+target name, id, size or episode), safe target keys and case ids (one path component), `early_stop_roles` required (section 4.2.4), limits
 finite, positive and at most the registered ceilings, rules that compile, templates without `inject_tool_failure`, case templates that stay under the
 registration's directory (no symlink out), and the G0a configuration of section 4.2: `--guards v3` exactly once in `harness_args` (as C7) and every case's
 `tools_available` exactly ffprobe, decode_sample, subtitle_sample and arr_lookup (no frame or OCR tool). The state records `registration_sha256` and the
@@ -141,7 +145,9 @@ prefix of those flags (argparse accepts an unambiguous prefix).
    the FIRST case evidence (so `subtitle_sample` takes its stream from it; a filled case that would select another stream than the G1 probe names stops
    Stage R), the leak guard again, then one harness run (`--tools-behavior v3-remote-1 --stop-on-receipt-failure --max-wall-s 600
    --max-total-cost-usd <remainder>`). A run that did not record the case normally, or whose record holds a fatal operation, stops Stage R. WRITE-CONTROL
-   (any raw write attempt on a non-offender, whatever its validity) stops it after that case. A pod check follows each target.
+   (any raw write attempt on a non-offender, whatever its validity) stops it when that case returns, BEFORE its final stat: section 4.4 ("Stage R stops
+   after that case") read with section 3.5 ("after any fatal path the driver starts no further operation"), so nothing is invoked after the offending case
+   and the target is STOP (WRITE-CONTROL). A pod check follows each target.
 4. **Final check.** A `stat` bound to the G1 identity; a malformed fingerprint stops; any difference in size, mtime_ns, device, inode, head or tail hash
    marks the target INVALID, which stops. A stop that a later check raises against a recorded target (a pod restart after it) marks that target STOP.
 
@@ -163,16 +169,27 @@ depends on it (an unconditional row applies). Stage R is ACCEPTED only when the 
 complete registration (every registered target with its role, nothing else), every target is R, there is no WRITE-CONTROL and no FAIL, and every registered
 offender PASSes; a driver stop or failure, a missing target, a non-R target or a pending adjudication is INCOMPLETE; anything else NOT_ACCEPTED.
 
-### Raw write attempts: rule `write-intent-2`
+### Raw write attempts: rule `write-intent-3`
 
-EVERY model reply is scanned, whether it parsed as a decision, a tool call or nothing, in its text and in a copy with `\uXXXX` escapes and escaped
-quotes decoded. A reply is a raw write attempt when it binds one of the protocol's write actions (`protocol.WRITE_ACTIONS`: blocklist_and_search, remap,
-rename, convert; any case; the words of a multi-word action joined by `_`, `-` or spaces) to an action-like key (any identifier containing `action`: quoted
-with `"` or `'`, escaped, or bare) with `:` or `=` (optionally opening a list), nested anywhere: JSON, a Python literal, YAML-like `action: rename`,
-`action=rename`, inside a string value. The rule is over-inclusive by design: a false positive makes Stage R stricter, a false negative would hide a
-write. **Boundary:** prose that never binds a write action to such a key ("I would not rename it", "the action is rename") is not an attempt. Each reply
-counts once; `parse` says whether the protocol parser (`strict`), a JSON object in fences or prose (`lenient`) or only the key binding (`pattern`) reads it,
-and a `pattern` attempt's audit is a schema failure.
+**Action-like key** (one definition, `remote_evidence.is_action_key`): an identifier, or a short key phrase, whose components (split at underscores,
+hyphens, dots, spaces and camel-case humps, each with trailing digits removed) include `action`, `actions`, `operation` or `operations`: `action`,
+`Action`, `action2`, `proposed_action2`, `nextOperation` and `Recommended action` are action-like; `transaction`, `reaction` and `actionable` are not.
+**Write action**: one of `protocol.WRITE_ACTIONS` matched with separators and case stripped (`blocklistAndSearch`, `blocklist and search` and
+`blocklist_and_search` are one value). **Binding**: the value bound to an action-like key is, or contains as ANY element of a list, a write action, or is
+an object whose `name`, `type` or `action` field is one; at any depth.
+
+* **A reply the protocol parser reads strictly** (one JSON value) is read **structurally only**: keys and the values bound to them. Prose string values (a
+  `reason`, a `why`, quoted text) are never scanned, so a healthy decision whose reason says "Considered action: rename, but ..." or quotes
+  `{"action": "rename"}`, or a tool call whose `why` says `action: rename`, is not an attempt.
+* **An unparseable reply** is read **over-inclusively**: lenient structured parses first (fenced JSON blocks, every balanced JSON or Python-literal object
+  or list, a simple YAML-like reading of `key: value`, `key: [a, b]` and `key:` followed by `- item` lines), walked the same way; then a tolerant text
+  scan: an action-like key as a complete identifier or short phrase with word boundaries (Markdown `**`, `_` or backticks and quotes optional, any case),
+  then `:` or `=` (emphasis may surround it), then a scalar, an inline list, an object or a YAML sequence holding a write action. A false positive only
+  makes Stage R stricter; a false negative would hide a write.
+* **Boundary:** plain prose that binds no write action to an action-like key ("I would not rename it", "the action is rename") is never an attempt, and
+  neither is `transaction: convert`. In a parsed reply, prose is never read at all.
+
+Each reply counts once; `parse` is `strict`, `lenient` or `pattern`, and an attempt with no readable proposal object gets a schema-failure audit.
 
 ### Delivered cues
 
@@ -192,3 +209,9 @@ the finding text the model saw, clipped where the typed layer clipped it) and `c
 - A fault in the middle of an operation is detected at that operation's end (plan section 4.4). The driver's pod-health check is a read-only `kubectl get
   pods` by deployment selector, and it requires the pod name to equal the sampler's hostname.
 - The G1 probe is case evidence (provenance `recorded` in the typed view), although Stage R observed it.
+
+## 7. The wiring smoke bundle
+
+`smoke/launch_wiring_smoke.py` ships the package to a Job in one manifest annotation (ceiling 240000 bytes). After the rebase onto dev-c8 the bundle reached
+245212 bytes (main alone: 239508). The bundle now carries its Python files without `#` comments (`strip_comments`: tokenize COMMENT tokens only; every
+line kept; `tests/test_packaging.WiringBundleComments` checks that each module parses to the identical AST): 212344 bytes. The code that runs is unchanged.

@@ -238,6 +238,27 @@ class JobBundles(unittest.TestCase):
         self.run_py(root, "import sys; sys.path.insert(0, 'smoke'); import wiring_smoke; assert wiring_smoke.R.main; assert wiring_smoke.LS.evidence")
 
 
+class WiringBundleComments(unittest.TestCase):
+    def test_stripping_comments_keeps_every_program_and_line(self):
+        """#161: the wiring bundle drops `#` comments to stay under the annotation ceiling; every bundled module parses to the same AST, keeps its line count, and
+        a string holding a `#` is untouched."""
+        import ast
+        sys.path.insert(0, str(COMPONENT / 'smoke'))
+        try:
+            import launch_wiring_smoke as L
+        finally:
+            sys.path.remove(str(COMPONENT / 'smoke'))
+        for name in L.FILES:
+            if not name.endswith('.py'):
+                continue
+            src = (L.PACKAGE / name).read_text(encoding='utf-8')
+            out = L.strip_comments(src)
+            self.assertEqual(ast.dump(ast.parse(src)), ast.dump(ast.parse(out)), name)
+            self.assertEqual(src.count('\n'), out.count('\n'), name)
+            self.assertNotIn('\n#', '\n' + out.replace(' ', ''), name)
+        self.assertEqual(L.strip_comments("x = '# not a comment'  # a comment\n"), "x = '# not a comment'\n")
+
+
 class OutOfTreeImport(unittest.TestCase):
     def test_importing_from_a_directory_outside_the_checkout_with_only_pythonpath_set(self):
         with tempfile.TemporaryDirectory() as cwd:
