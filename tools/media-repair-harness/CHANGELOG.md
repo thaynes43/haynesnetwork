@@ -134,6 +134,9 @@ earlier option set are unchanged.
   U+FDFA in a valid tool argument) is unresolved and stops Stage R. Tests: detector and driver regressions for every stem (WRITE-CONTROL before the
   final stat; the over-budget view a `write_analysis_unresolved` stop), a just-under-bound control, and three wrapped-line forms added to the
   normalisation property tests (3,399 and 2,132 writes, all counted and mapped).
+* **Review round 9 of `0c009595`** (the Opus re-review, clear; AUDIT-ASTRA-72: one minor): the input budgets are checked before the blank-reply early
+  return, so 262,145 spaces, newlines or U+3000 characters are unresolved (a stop before the final stat) instead of "no attempt"; a short blank reply
+  is still no attempt. Detector and driver regressions.
 ## dev-c8 (WO-W26, OpenProject #158): prompt v8, turn-v3.1, claude-schema-1, guards v4; offline, not measured
 
 `HARNESS_VERSION` is `dev-c8`. Every earlier prompt, format, guard version and adapter is unchanged; the recorded dev-c4 to dev-c7 runs, the dev-c6 replay

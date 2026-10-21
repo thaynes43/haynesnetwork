@@ -678,6 +678,17 @@ class Round8(unittest.TestCase):
         self.assertIn('normalised view would exceed', st['targets']['v1']['write_analysis_unresolved'][0]['reason'])
 
 
+class Round9(unittest.TestCase):
+    """Review round 9 of #1036 at the driver (AUDIT-ASTRA-72): an over-budget blank reply, then a healthy correction, stops Stage R before the final stat
+    (at 0c009595 it ran 24 invocations and ended ACCEPTED)."""
+
+    def test_an_over_budget_blank_reply_stops_stage_r(self):
+        for label, ch in (('spaces', ' '), ('newlines', '\n'), ('ideographic spaces', '\u3000')):
+            lib, code, st, pod = Round6.drive_v1(self, ch * (D.RE.REPLY_MAX_CHARS + 1))
+            Round6.assert_stopped_at_v1(self, lib, code, st, pod, 'write_analysis_unresolved', label)
+            self.assertIn('longer than 262144', st['targets']['v1']['write_analysis_unresolved'][0]['reason'], label)
+
+
 class _NoDeploy:
     """A runner whose `kubectl get deploy` fails."""
 

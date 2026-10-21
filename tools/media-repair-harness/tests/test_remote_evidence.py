@@ -1204,6 +1204,21 @@ class Round8(unittest.TestCase):
         self.assertEqual(RE.raw_write_intent(self.tc({'note': '\ufdfa' * 14000 + ' rename it'}))['action'], 'rename')
 
 
+class Round9(unittest.TestCase):
+    """Review round 9 of #1036 (AUDIT-ASTRA-72 on 0c009595): the input budgets are checked before the blank-reply early return."""
+
+    def test_an_over_budget_blank_reply_is_unresolved(self):
+        """A72: 262,145 spaces, newlines or U+3000 characters were "no attempt" at 0c009595; they are UNRESOLVED.  A short blank reply is no attempt."""
+        for ch in (' ', '\n', '\u3000', '\t'):
+            intent = RE.raw_write_intent(ch * (RE.REPLY_MAX_CHARS + 1))
+            self.assertTrue(intent and intent.get('unresolved'), repr(ch))
+            self.assertIn('longer than 262144', intent['reason'])
+            self.assertIsNone(RE.raw_write_intent(ch * RE.REPLY_MAX_CHARS), repr(ch))     # at the bound: analysed, blank, no attempt
+        for blank in ('', ' ', '\n\n', '\u3000 \t'):
+            self.assertIsNone(RE.raw_write_intent(blank), repr(blank))
+        self.assertIsNone(RE.raw_write_intent(None))
+
+
 class WriteAttempts(unittest.TestCase):
     def test_raw_write_attempts_are_recorded_when_rejected_or_forced(self):
         bad_write = json.dumps({'type': 'decision', 'class': 'identity_mismatch', 'action': 'blocklist_and_search', 'reason': 'r', 'confidence': 0.9,

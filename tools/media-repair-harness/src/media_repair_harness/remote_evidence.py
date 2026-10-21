@@ -1117,12 +1117,15 @@ def json_spans(text):
 
 
 def _intent(text):
-    if not isinstance(text, str) or not text.strip():
-        return None
+    if not isinstance(text, str):
+        return None                     # no reply text at all (a failed call)
+    # the input budgets come FIRST, before any early return: an over-budget reply is unresolved whatever it contains, blank included
     if len(text) > REPLY_MAX_CHARS:
         raise Unresolved('the reply is longer than %d characters' % REPLY_MAX_CHARS)
     if _bracket_depth(text) > MAX_DEPTH:
         raise Unresolved('the reply nests brackets deeper than %d' % MAX_DEPTH)
+    if not text.strip():
+        return None
     writes = _write_actions()
     prose = prose_fields()
     ok, obj = _strict(text)

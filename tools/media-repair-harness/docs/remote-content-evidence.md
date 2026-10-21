@@ -190,7 +190,8 @@ wrapped), an exhausted budget and unreadable input. **Unresolved is a fatal stop
 (the case itself is recorded normally); the driver stops Stage R when that case returns, before its final stat; the report counts the target as STOP, so
 Stage R is never ACCEPTED on it.
 
-**Budgets, checked before any processing** (recorded in the run config as `write_intent_budgets`):
+**Budgets, checked before any processing** (recorded in the run config as `write_intent_budgets`), and before any early return, so an over-budget
+reply is unresolved whatever it contains, a blank one included:
 * the reply length, at most 262,144 characters; the normalised view is held to the same bound WHILE it is built (an expanding character such as
   U+FDFA, 18 characters under NFKC, cannot push it past the bound), and exceeding it is unresolved;
 * the bracket nesting depth, at most 100, counted over the raw text before any parse, OUTSIDE double-quoted JSON strings (a bracket inside a string, such as
