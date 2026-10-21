@@ -98,7 +98,8 @@ WO-W25 (OpenProject #156) fixes nine recorded defects, each as a new version bes
 independent decode/runtime/edition comparisons, on turn-v3.1 (turn-v3 plus a length-specific repair hint; the one-per-case repair allowance is unchanged
 and recorded). `--guards v4` adds G-role (frozen `V4_SPEC`, in `guard_v4.py` since review round 3) to guards v3 on contract-v3 writes. `--adapter claude --claude-schema
 json-schema-1` forwards the per-case flat turn schema with `--json-schema` and keeps the model's first attempt as its reply (documented capability, offline
-fixtures only). The guards v4 what-if on the dev-c7 runs is `runs/dev-c8-guards-v4-whatif/` (`scripts/guards_v4_whatif.py`). No model has run v8; there
+fixtures only). It is EXPERIMENTAL: refused unless `--experimental-claude-schema` is also given, and not for registered or pre-registered measurements
+until OpenProject #164 clears (its fail-closed invariant is not established; `docs/dev-c8.md` lists the open findings). The guards v4 what-if on the dev-c7 runs is `runs/dev-c8-guards-v4-whatif/` (`scripts/guards_v4_whatif.py`). No model has run v8; there
 is no pre-registration. Details: `docs/dev-c8.md`, `CHANGELOG.md`.
 
 ## W27 versioned fixes (offline, not selectable in the runner)

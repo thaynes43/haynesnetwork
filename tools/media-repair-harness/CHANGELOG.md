@@ -15,7 +15,7 @@ other config field is compared equal). No model was called. Details: `docs/dev-c
 * **turn-v3.1** (prompt v8): a reply that fails only on a length limit gets a repair prompt naming the field, its decoded length, the hard limit and the
   soft budget, asking for a summary of the decisive evidence; mixed errors keep the turn-v3 prompt plus a length hint. Failure mode `length_limit`.
   The per-case repair allowance is unchanged and recorded (`prompt.repair_allowance`, config `repair_allowance`).
-* **claude-schema-1** (`--claude-schema json-schema-1`, opt-in): the CLI advertises `--json-schema`; the documented mechanism re-prompts internally, so
+* **claude-schema-1** (`--claude-schema json-schema-1`, opt-in; EXPERIMENTAL since review round 7, see below): the CLI advertises `--json-schema`; the documented mechanism re-prompts internally, so
   this adapter version reads `stream-json`, takes the model's first StructuredOutput attempt as the reply (CLI-internal retries recorded, never used) and
   records `schema_sent` from the CLI's own init event. Offline fixtures only; not exercised live.
 * **Guards v4** (`--guards v4`, format v3.1-format only): v3 unchanged, then G-role on decision-v3 writes (A-REN-1, the source-bound and managing-app
@@ -47,17 +47,30 @@ other config field is compared equal). No model was called. Details: `docs/dev-c
 * **Review round 5 (AUDIT-ASTRA-58, Opus nit):** claude-schema-1 is fail-closed by structure: guarded line-by-line decoding (size and nesting
   bounds), validated finite, non-negative, bounded receipts before any arithmetic, an unmetered call stops the run, model ids normalised to one string, a
   non-string result text is malformed, and an outer guard turns any other exception in the call, the parser or the accounting into an `AbortRun` with the
-  raw stream (a minimal started-aborted record when the full one cannot be built). A seeded mutation test checks the invariant. Offline replay accepts
+  raw stream (a minimal started-aborted record when the full one cannot be built). A seeded mutation test exercises the design target. Offline replay accepts
   only the recorded adapter's own preamble (dated post-freeze correction 6; count-neutral).
-* **Review round 6 (AUDIT-ASTRA-60, Opus minor):** the fail-closed guarantee moves to the run level for schema mode (`schema_run.py`, lazy):
+* **Review round 6 (AUDIT-ASTRA-60, Opus minor):** the fail-closed design target moves to the run level for schema mode (`schema_run.py`, lazy):
   - raw call bytes are kept losslessly before any parsing (`<run>/raw/*.raw`, base64 in the record), and schema-mode records are written ASCII-safe;
-  - every receipt is reconciled: a budget stop on any receipt always stops; conflicts, duplicate keys, lone surrogates and invalid UTF-8 are malformed;
+  - every receipt is reconciled: a budget stop on any receipt always stops the run (schema mode only, with or without a run cost cap; the legacy adapter
+    is unchanged); conflicts, duplicate keys, lone surrogates and invalid UTF-8 are malformed;
   - replies are parsed within bounds;
   - a stop is sticky before every case and call, and the exit is non-zero after any stop or unknown cost;
   - record building, writing, accounting and finalisation are guarded, keeping the primary stop reason and attaching any `secondary_failure`.
 
   The scope (`BaseException`s and OS-level failures are excluded) is stated in `docs/dev-c8.md`. A seeded run-level mutation test (96 mutated
-  two-case runs, 40 fault-injection runs) checks it.
+  two-case runs, 40 fault-injection runs) exercises it.
+* **Review round 7 (the round-6 stop rule applied):** AUDIT-ASTRA-61 and the Opus review falsified the schema-mode invariant again, so it is recorded
+  as a design target that is NOT established. `--claude-schema` is gated as experimental: it is refused unless `--experimental-claude-schema` is also
+  given (before any run directory, case or call); a gated run records `claude_schema_experimental: true` in its manifest; it must not be used in a
+  registered or pre-registered measurement until OpenProject #164 clears. Open findings, deferred to #164:
+  1. `splitlines()` also splits on U+2028 and other Unicode line separators, and the pre-scan drops a whole receipt line that has one oversized or deeply
+     nested field, so a stop can vanish (AUDIT-ASTRA-61 item 1);
+  2. duplicate-key recovery is last-key-wins, which can hide a result type or an init tools list (AUDIT-ASTRA-61 item 2);
+  3. hashing and base64 run before the `.raw` write, so a fault there loses the bytes (AUDIT-ASTRA-61 item 3);
+  4. the fallback record truncates the raw text and omits `meta.raw` (AUDIT-ASTRA-61 item 4);
+  5. conflicting valid receipt costs continue the run at the largest cost instead of stopping as unmetered (Opus minor).
+  The default (schema mode off), every legacy path, record byte and registered-configuration hash, `V4_SPEC`, `guard_v4` and the shadow records are
+  unchanged.
 
 ## W27 (OpenProject #145 remainder, the PR #1031 nits): evidence follow-ups, offline
 

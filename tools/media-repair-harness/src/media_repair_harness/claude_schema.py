@@ -3,7 +3,8 @@
 adapters.py imports this module only in schema mode (moved out of adapters.py in review round 3 to keep the wiring-smoke Job bundle under its ceiling).
 See adapters.ClaudeAdapter and docs/dev-c8.md section 3.
 
-FAIL-CLOSED BY STRUCTURE (review round 5).  In schema mode no input stream can make the run (a) lose the raw stream, (b) lose a budget or registration
+FAIL-CLOSED BY STRUCTURE (review round 5): a DESIGN TARGET, NOT ESTABLISHED (review round 7: AUDIT-ASTRA-61 and the Opus review falsified it again;
+the open findings are tracked in OpenProject #164, and --claude-schema is gated as experimental).  The target: in schema mode no input stream can make the run (a) lose the raw stream, (b) lose a budget or registration
 stop reason, (c) continue to another case after a stop, (d) exit 0 while a call's cost is unknown, or (e) raise anything but an evidence-carrying
 AdapterError or AbortRun.  The pipeline:
   1. decode_lines: every line on its own, behind a cheap pre-scan (size and nesting bounds) and a catch-all; an undecodable line is recorded as

@@ -1274,7 +1274,7 @@ def main_two_cases(first_raw, timeout=False, cap='1'):
     ad.preflight = lambda: {}
     out = Path(tempfile.mkdtemp(prefix='mrh-w26r4-')) / 'run'
     argv = ['--suite', str(ts.root), '--out', str(out), '--adapter', 'claude', '--model', 'm', '--prompt', 'v8', '--evidence-format', 'v3.1-format',
-            '--claude-schema', 'json-schema-1'] + (['--max-total-cost-usd', cap] if cap else [])
+            '--claude-schema', 'json-schema-1', '--experimental-claude-schema'] + (['--max-total-cost-usd', cap] if cap else [])
     with patch.object(R, 'build_adapter', return_value=ad), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         try:
             code = R.main(argv)
@@ -1675,7 +1675,7 @@ def main_run(first, timeout=False, cap='1', patches=()):
     ad.preflight = lambda: {}
     out = Path(tempfile.mkdtemp(prefix='mrh-w26r6-')) / 'run'
     argv = ['--suite', str(ts.root), '--out', str(out), '--adapter', 'claude', '--model', 'm', '--prompt', 'v8', '--evidence-format', 'v3.1-format',
-            '--claude-schema', 'json-schema-1'] + (['--max-total-cost-usd', cap] if cap else [])
+            '--claude-schema', 'json-schema-1', '--experimental-claude-schema'] + (['--max-total-cost-usd', cap] if cap else [])
     with contextlib.ExitStack() as stack:
         stack.enter_context(patch.object(R, 'build_adapter', return_value=ad))
         stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
@@ -1935,3 +1935,33 @@ class ReviewR6Mutation(unittest.TestCase):
                         self.assertNotEqual(code, 0, (name, patches[0][1], timeout, cap))
                         assert_run_invariant(self, data, code, man, out, calls, keeps=reason, where=(name, patches[0][1], timeout, cap))
         self.assertEqual(runs, 40)
+
+
+# ------------------------------------------------------------------------------------------------------------------------------ review round 7
+# The round-6 stop rule applied: --claude-schema is experimental (OpenProject #164) and refused without an explicit opt-in.
+class ReviewR7ExperimentalGate(unittest.TestCase):
+    def argv(self, out, *extra):
+        ts = th.TempSuite([arr_case('w26r7')])
+        self.addCleanup(ts.cleanup)
+        return ['--suite', str(ts.root), '--out', str(out), '--adapter', 'claude', '--model', 'm', '--prompt', 'v8', '--evidence-format', 'v3.1-format',
+                '--claude-schema', 'json-schema-1'] + list(extra)
+
+    def test_without_the_opt_in_it_is_refused_before_anything_starts(self):
+        from unittest.mock import patch
+        out = Path(tempfile.mkdtemp(prefix='mrh-w26r7-')) / 'run'
+        with patch.object(R, 'build_adapter', side_effect=AssertionError('no adapter may be built')), self.assertRaises(SystemExit) as cm:
+            R.main(self.argv(out))
+        self.assertIn('experimental', str(cm.exception.code))
+        self.assertIn('#164', str(cm.exception.code))
+        self.assertFalse(out.exists())                     # refused before the run directory, any case or any call
+
+    def test_with_the_opt_in_the_manifest_records_it(self):
+        good = dec3('short')
+        code, man, out, calls = main_run(stream(INIT, attempt(1, good), checked(1, False), result(structured=good, cost=0.02)))
+        self.assertEqual((code, man.get('claude_schema_experimental')), (0, True))
+
+    def test_the_gate_leaves_legacy_and_default_paths_alone(self):
+        args = R.build_parser().parse_args(['--suite', 's', '--adapter', 'claude', '--model', 'm', '--out', 'o', '--prompt', 'v7', '--evidence-format', 'v3.1-format'])
+        self.assertFalse(args.experimental_claude_schema)
+        self.assertIsNone(args.claude_schema)
+        self.assertNotIn('claude_schema_experimental', R.run_config(args, R.build_adapter(args), {}, None))

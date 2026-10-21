@@ -1026,9 +1026,13 @@ def build_parser():
     ap.add_argument('--codex-ephemeral', action='store_true', help='codex: do not keep the rollout (then no response model id can be recorded and G10 fails)')
     ap.add_argument('--script', help='scripted adapter: JSON list of replies')
     ap.add_argument('--claude-schema', choices=list(CLAUDE_SCHEMA_MODES), default=None,
-                    help='dev-c8, claude adapter only, opt-in: json-schema-1 forwards the per-case flat turn schema with the CLI\'s --json-schema (stream-json output); the '
-                         'model\'s FIRST StructuredOutput attempt is its reply, so CLI-internal retries grant no extra repair; schema_sent is recorded from the CLI\'s own '
-                         'init event.  Not exercised against a live model (docs and offline fixtures only).  Unset = the legacy adapter, byte for byte')
+                    help='EXPERIMENTAL (dev-c8), claude adapter only; refused unless --experimental-claude-schema is also given; must not be used in a registered '
+                         'or pre-registered measurement until OpenProject #164 clears.  json-schema-1 forwards the per-case flat turn schema with --json-schema and '
+                         'keeps the first response as the reply.  Open findings (#164): U+2028 line splitting and pre-scan drops of whole receipts (AUDIT-ASTRA-61 '
+                         '1), last-key-wins duplicate-key recovery (61-2), hashing before the .raw write (61-3), fallback raw text truncated without meta.raw '
+                         '(61-4), conflicting receipt costs continue at the max (Opus).  Unset = the legacy adapter, byte for byte')
+    ap.add_argument('--experimental-claude-schema', action='store_true',
+                    help='dev-c8: the explicit opt-in --claude-schema needs (experimental; see its help); recorded as claude_schema_experimental in the manifest')
     return ap
 
 
@@ -1047,6 +1051,9 @@ def main(argv=None):
         raise SystemExit('--num-ctx %d needs a context policy (--context-policy); without one the allowed values are %s' % (args.num_ctx, list(A.ALLOWED_NUM_CTX)))
     if args.context_policy is not None and args.num_ctx != A.CONTEXT_POLICIES[args.context_policy]['num_ctx']:
         raise SystemExit('--context-policy %s requires --num-ctx %d' % (args.context_policy, A.CONTEXT_POLICIES[args.context_policy]['num_ctx']))
+    if getattr(args, 'claude_schema', None) and not getattr(args, 'experimental_claude_schema', False):
+        raise SystemExit('--claude-schema is experimental (OpenProject #164: the schema-mode fail-closed invariant is not established) and is refused unless '
+                         '--experimental-claude-schema is also given; it must not be used in a registered or pre-registered measurement')
     if getattr(args, 'claude_schema', None) and (args.adapter != 'claude' or args.prompt == 'v1'):
         raise SystemExit('--claude-schema applies to the claude adapter with a prompt that has a per-case turn schema (v2 or later)')
     if args.gpu_fit_check and args.no_warmup:
@@ -1086,6 +1093,8 @@ def main(argv=None):
     records = []
     partials = []   # started-aborted cases (kept under started-aborted/, never scored); never-started = planned minus records minus these
     audit = None
+    if getattr(args, 'claude_schema', None):
+        manifest['claude_schema_experimental'] = True          # dev-c8 round 7: the experimental gate was passed explicitly (only then is the key present)
     if getattr(adapter, 'schema_mode', None) is not None:     # dev-c8 claude-schema-1: the run-level fail-closed loop (schema_run.py, round 6)
         from . import schema_run as SR
         return SR.run_loop(sys.modules[__name__], args, adapter, out, run_id, suite_dir, scratch, cases, ocr_backend, evidence_bounds, manifest, limits)

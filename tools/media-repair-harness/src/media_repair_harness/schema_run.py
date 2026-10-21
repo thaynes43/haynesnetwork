@@ -1,7 +1,8 @@
 """claude-schema-1 (dev-c8): the run-level half of the fail-closed guarantee (review round 6).  Loaded only when the run's adapter is the schema-mode
 Claude adapter; every legacy path, record and byte is untouched.
 
-THE INVARIANT, AND ITS SCOPE.  For a run whose adapter is in schema mode, no CLI output stream and no internal exception (an `Exception` raised while
+THE INVARIANT IS A DESIGN TARGET, NOT ESTABLISHED (review round 7: falsified again by AUDIT-ASTRA-61 and the Opus review; open findings in OpenProject
+#164; --claude-schema is gated as experimental).  THE TARGET, AND ITS SCOPE.  For a run whose adapter is in schema mode, no CLI output stream and no internal exception (an `Exception` raised while
 parsing a reply, building or writing a record, accounting, finalising, or formatting another exception) can make the run:
   (a) lose the raw call output: it is kept as bytes before any parsing (`<run>/raw/<case>-<n>.raw`, and base64 in the record);
   (b) lose an established stop reason (a missing schema registration, a budget stop, an unmetered call, a fail-closed stop): a later failure is attached

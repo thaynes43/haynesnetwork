@@ -76,7 +76,21 @@ So "the CLI can take a schema", but the advertised path would hide first-try fai
 envelope shows only the final, CLI-repaired object. Help and docs do not establish whether `--tools ""` (which this adapter must pass) keeps the
 `StructuredOutput` tool, or how a top-level `anyOf` schema is accepted.
 
-**Adapter version claude-schema-1** (opt-in, `--claude-schema json-schema-1`; unset is the legacy adapter, byte for byte):
+**Adapter version claude-schema-1: EXPERIMENTAL (review round 7, the round-6 stop rule applied).** `--claude-schema json-schema-1` is refused unless
+`--experimental-claude-schema` is also given (before any run directory, case or call); a run that passes the gate records
+`claude_schema_experimental: true` in its manifest. It must not be used in a registered or pre-registered measurement until OpenProject #164 clears.
+The default (schema mode off) and every legacy path, record byte and registered-configuration hash are unchanged by the gate.
+
+Open falsifications (AUDIT-ASTRA-61 and the Opus review of 9c986a7f), all tracked in OpenProject #164:
+1. `splitlines()` also splits on U+2028 and other Unicode line separators, and the pre-scan drops a whole receipt line that has one oversized or deeply
+   nested field, so a stop can vanish (AUDIT-ASTRA-61 item 1);
+2. duplicate-key recovery is last-key-wins, which can hide a result type or an init tools list (AUDIT-ASTRA-61 item 2);
+3. hashing and base64 run before the `.raw` write, so a fault there loses the bytes (AUDIT-ASTRA-61 item 3);
+4. the fallback record truncates the raw text and omits `meta.raw` (AUDIT-ASTRA-61 item 4);
+5. conflicting valid receipt costs continue the run at the largest cost instead of stopping as unmetered (Opus minor).
+
+**Adapter version claude-schema-1** (opt-in and experimental, `--claude-schema json-schema-1 --experimental-claude-schema`; unset is the legacy adapter,
+byte for byte):
 
 * sends the per-case **flat** turn schema (one object type at the top level; the harness's strict validator still decides) with `--json-schema`, and
   `--output-format stream-json --verbose`, so every StructuredOutput attempt and every CLI validation result is visible;
@@ -95,8 +109,8 @@ envelope shows only the final, CLI-repaired object. Help and docs do not establi
   of a call stopped at its budget, carries the untruncated raw request and stream, the attempts and the delivery record, which the runner keeps on the
   failed turn (other adapters' failed turns and timeouts keep their earlier shape). A missing tool stops the run even when the stream is malformed.
   Every wrapping keeps the error's classification (round 3): a budget stop (`error_max_budget_usd`) seen through a timeout's output or a malformed stream
-  is still a budget stop, and under a run cost cap a budget stop after a first response stops the run exactly as on the failing paths (without a cap the
-  first response is still the reply). An assistant event whose message id is not a string is a malformed event: the stream is rejected with its evidence
+  is still a budget stop. Since round 6 a budget stop always stops a schema-mode run, with or without a run cost cap (the first response is kept in the
+  record as evidence, not used as the reply). An assistant event whose message id is not a string is a malformed event: the stream is rejected with its evidence
   and receipt (not treated as id-less). Round 4 sweeps every field the parser keys on or adds up: a `tool_use` id, a `tool_result` `tool_use_id`, the
   result's `subtype`, `usage` and its token counts, `total_cost_usd` and `modelUsage`; a wrong-typed one makes the stream malformed while what can be kept
   (the receipt, the budget classification) is kept, and any other wrong-typed field ends in the same evidence-carrying error, never a harness crash. An
@@ -107,7 +121,7 @@ envelope shows only the final, CLI-repaired object. Help and docs do not establi
 * usage and cost come from the result event (they cover the CLI's internal attempts too); the CLI version is recorded from `claude --version` (and the
   init event's `claude_code_version` when present).
 
-**Fail-closed by structure (review round 5).** In schema mode no input stream can make the run (a) lose the raw stream, (b) lose a budget or
+**Fail-closed by structure (review round 5): a design target, NOT established.** The design aims for: in schema mode no input stream can make the run (a) lose the raw stream, (b) lose a budget or
 registration stop reason, (c) continue to another case after a stop, (d) exit 0 while a call's cost is unknown, or (e) raise anything but an
 evidence-carrying `AdapterError` or `AbortRun`. `claude_schema.py` is one pipeline:
 
@@ -123,8 +137,9 @@ evidence-carrying `AdapterError` or `AbortRun`. `claude_schema.py` is one pipeli
    stream. A started-aborted record that cannot be built is replaced by a minimal, always-serializable one, so the abort still propagates. The legacy
    adapter keeps its earlier behaviour, `harness_crash` included.
 
-**At the run level (review round 6, `schema_run.py`).** The parser being sound was not enough; the guarantee now covers the whole schema-mode run.
-For a run whose adapter is in schema mode, no CLI output stream and no internal `Exception` (raised while parsing a reply, building or writing a record,
+**At the run level (review round 6, `schema_run.py`): a design target, NOT established.** Round 7 records that this run-level guarantee does not hold:
+AUDIT-ASTRA-61 and the Opus review falsified it again (the five open findings above, tracked in #164), so it is a design target with known open
+falsifications, not a property of this code. The target: for a run whose adapter is in schema mode, no CLI output stream and no internal `Exception` (raised while parsing a reply, building or writing a record,
 accounting, finalising, or formatting another exception) can make the run:
 
 * (a) lose the raw call output. It is kept as bytes before any parsing, in `<run>/raw/<case>-<n>.raw` and as base64 in the record (`meta.raw`).
@@ -148,14 +163,15 @@ Supporting rules:
 file system itself (a full disk, a read-only or vanished run directory, the process being killed). Those can still end a run without the records above.
 Legacy adapters and their paths, including `harness_crash` and the exact bytes of legacy records, are unchanged.
 
-`tests/test_devc8.py` checks the parser-level invariant with `ReviewR5Mutation` and the run-level invariant with `ReviewR6Mutation`. `ReviewR6Mutation`
+`tests/test_devc8.py` exercises the parser-level target with `ReviewR5Mutation` and the run-level target with `ReviewR6Mutation`. They pass, but their
+mutation spaces did not include the five open falsifications, so passing them does not establish the invariant. `ReviewR6Mutation`
 is deterministic (seed 20261021) and runs 96 two-case main-loop runs over mutated streams (multiple and conflicting receipts, duplicate keys, nested
 JSON in reply and result text, invalid UTF-8 bytes, lone surrogates, field types, ordering, truncation; normal and timeout paths) plus 40 fault-injection
 runs (a `TypeError` in record building, an exception whose `__str__` raises, a failing finalisation, a failing write, a failing accounting step). Each
 run asserts that the raw bytes are on disk, the stop is kept, the second case never starts after a stop, and the exit is non-zero. `ReviewR5Mutation`, the
 parser-level test, is described below.
 
-`tests/test_devc8.py` (`ReviewR5Mutation`) checks the invariant with a deterministic, seeded mutation test: 204 one-case runs (68 mutated streams on the
+`tests/test_devc8.py` (`ReviewR5Mutation`) exercises the target with a deterministic, seeded mutation test: 204 one-case runs (68 mutated streams on the
 normal, timeout and malformed-stream paths) and 24 two-case main-loop runs, mutating types, magnitudes, nesting, ordering, truncation and extra lines
 around a budget receipt and a registration abort.
 
