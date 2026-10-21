@@ -194,7 +194,7 @@
  "gpu_safety": {
   "offline": "gpu-fit-offline.json: expected to fit fully (assumed qwen35 layout 20142 MiB of 24124 MiB free; conservative bound 23214 MiB); an estimate, never an authorisation",
   "gpu_fit_offline_json_sha256": "75c214829a3bd92246fd4a90873d52b81daaace1b2fce70eaa4fd024345e4e6e",
-  "runtime_check": "full-gpu-v2 (Amendment 1; was full-gpu-v1): one /api/ps read after the warm-up AND after every case call that reports a reload (load_duration above 1 s, or none reported); full GPU = only this model resident, size_vram == size, context_length (if reported) >= 16384; at the warm-up anything else unloads and skips (exit 3, gpu_fit_skip); at a reload it aborts (exit 3, gpu_fit_abort; the case started-aborted, unscored), unloads, no retry",
+  "runtime_check": "full-gpu-v2 (Amendment 1; was full-gpu-v1): one /api/ps read after the warm-up AND after every case call that reports a reload (load_duration above 1 s, or none reported); full GPU = only this model resident, size_vram == size, context_length (if reported) >= 16384; at the warm-up anything else unloads and skips (exit 3, gpu_fit_skip (full-gpu-v2), no case call); at a reload it aborts (exit 3, gpu_fit_abort; the case started-aborted, unscored), unloads, no retry. Amendment 2: a reload is detected only after the call that reloaded, so that one call (at most 120 s) may have run partly on the CPU; the run aborts at the first detected split, at most one call per run can be affected, and an eviction in the middle of a call cannot be prevented",
   "wall_cap_s": 2700,
   "cleanup_reserve_s": 180,
   "declare_activity": "dev-c7 qwen pass, scope ai,ollama-prime, ttl 60m",
@@ -435,5 +435,6 @@
   "day and plan state"
  ],
  "frozen_src_tree_sha1_before_amendment_1": "785f7e4f11b3d50aea531b8db978035da418909d",
- "amendment_1": "Pre-measurement review of 5f71b6d3 (Opus: P2, P3; Astra AUDIT-ASTRA-32: items 1 to 3), before any model call: full-gpu-v2 (re-check at every reload, abort if not 100% GPU); passability-3 (fidelity covers kinds, provenance and report metadata; body-identity dependence is undetermined; body evidence never inferred from key presence and never suppressing a materially different inspection); the repair-turn statement. Changed: frozen_src_tree_sha1, runs.qwen.argv / expected_config_hash, gpu_safety.runtime_check, passability, analysis_scripts."
+ "amendment_1": "Pre-measurement review of 5f71b6d3 (Opus: P2, P3; Astra AUDIT-ASTRA-32: items 1 to 3), before any model call: full-gpu-v2 (re-check at every reload, abort if not 100% GPU); passability-3 (fidelity covers kinds, provenance and report metadata; body-identity dependence is undetermined; body evidence never inferred from key presence and never suppressing a materially different inspection); the repair-turn statement. Changed: frozen_src_tree_sha1, runs.qwen.argv / expected_config_hash, gpu_safety.runtime_check, passability, analysis_scripts.",
+ "amendment_2": "Re-check of 1419f4b7 (Opus P3 x2; Astra AUDIT-ASTRA-33 cleared), text only: the full-gpu-v2 guarantee stated exactly (one reloading call may have run partly on the CPU; abort at the first detected split; that case unscored; at most one call per run; mid-call eviction not preventable) and gpu_fit_skip (full-gpu-v2) named. No code, prompt, hash or config hash change."
 }
