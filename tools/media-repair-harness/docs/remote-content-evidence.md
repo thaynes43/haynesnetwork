@@ -191,7 +191,8 @@ wrapped), an exhausted budget and unreadable input. **Unresolved is a fatal stop
 Stage R is never ACCEPTED on it.
 
 **Budgets, checked before any processing** (recorded in the run config as `write_intent_budgets`):
-* the reply length, at most 262,144 characters (the normalised view is held to the same bound);
+* the reply length, at most 262,144 characters; the normalised view is held to the same bound WHILE it is built (an expanding character such as
+  U+FDFA, 18 characters under NFKC, cannot push it past the bound), and exceeding it is unresolved;
 * the bracket nesting depth, at most 100, counted over the raw text before any parse, OUTSIDE double-quoted JSON strings (a bracket inside a string, such as
   a decision's `reason`, is text, not structure). The structural walks are iterative; a stray quote in prose can hide later brackets from this count, and
   anything that then nests deeper than Python's own recursion guard raises an error the wrapper turns into unresolved;
@@ -221,12 +222,15 @@ view, as a word start. There is no key, no window and no negation guard.
      accent of an accented letter);
   4. drop format characters (Unicode category Cf: zero-width space and joiners, word joiner, soft hyphen, byte-order mark) and control characters other
      than whitespace (category Cc: a backspace);
-  5. make every dash `-` (non-breaking hyphen) and every space ` `;
+  5. make every dash `-` (non-breaking hyphen) and every space ` `, then collapse every RUN of whitespace (a decoded newline and its indentation, tabs,
+     carriage returns, Unicode spaces) and separators (`_`, `-`) to ONE separator, so a line wrapped inside a stem (`block\n    list`,
+     `re-\n  name`) still matches;
   6. fold Latin look-alikes with a small fixed table (`CONFUSABLES`: Cyrillic and Greek letters that render as Latin ones).
 
   Case is kept, so camel-case humps still mark word starts; the match is case-insensitive. Every view character maps back to its original span (through
   both passes), so each match is recorded at its ORIGINAL position (`at`, the original `stem` text and an excerpt around it), with `normalisation` naming
-  the steps that produced it (`escape`, `html_entity`, `nfkc`, `mark_removed`, `format_removed`, `control_removed`, `dash`, `space`, `confusable`; a
+  the steps that produced it (`escape`, `html_entity`, `nfkc`, `mark_removed`, `format_removed`, `control_removed`, `dash`, `space`,
+  `separators_collapsed`, `confusable`; a
   match whose word start comes from the character before it is `word_boundary` plus that character's steps, so an escaped newline before `rename` is
   `["word_boundary", "escape"]`; `[]` for a raw match). A view that cannot be built within the bound is unresolved.
 
@@ -276,15 +280,16 @@ What is NOT counted: a schema-valid reply-level decision or tool call whose only
   fences of five kinds, prose before or after, a numbered list, a heading, a table, nested bullets, a long prefix and CRLF.
 * `Round4`: **3,000 schema-valid parsed replies, none counted, plus 1 positive check** (a JSON string of prose, not a schema-valid reply, is counted).
   The 3,000 are decisions and tool calls whose `reason` or `why` mentions keys and write actions in seven syntaxes.
-* `Round6`: **3,342 normalised writes, all counted and mapped.** The same syntaxes and wrappers, with the write's stem hidden by one of 18 normalisations:
+* `Round6`: **3,399 normalised writes, all counted and mapped.** The same syntaxes and wrappers, with the write's stem hidden by one of 21 normalisations:
   zero-width space, zero-width joiner, soft hyphen, word joiner, non-breaking hyphen, fullwidth, mathematical bold, a look-alike letter, a combining mark,
-  decimal (with and without `;`), hex and named HTML references, and hex, unicode, braced, octal and named escapes. Every match's original span
+  decimal (with and without `;`), hex and named HTML references, hex, unicode, braced, octal and named escapes, and (round 8) a line wrapped inside
+  the stem with indentation, after a hyphen, or with a tab. Every match's original span
   normalises back to the stem.
 * `Round6`: **500 schema-valid replies whose `reason` or `why` hides a write by one of those normalisations, none counted**; the same prose alone is
   counted.
-* `Round7`: **2,114 writes in NON-prose fields of schema-valid tool calls, all counted and mapped**: an args value at the top, in a list, in a nested object
+* `Round7`: **2,132 writes in NON-prose fields of schema-valid tool calls, all counted and mapped**: an args value at the top, in a list, in a nested object
   or a list of objects, under nine keys, behind six escaped-whitespace wrappers (newline before or after, tab, CRLF, form feed, none) × no normalisation
-  or one of the 18 above (every pair once, plus 2,000 seeded). Each reply is checked schema-valid.
+  or one of the 21 above (every pair once, plus 2,000 seeded). Each reply is checked schema-valid.
 * `Round7`: **600 schema-valid decisions and tool calls whose only write mention is in their own `reason` or `why`**, behind the same wrappers and
   normalisations, **none counted**; the same text in an `args` value is counted.
 

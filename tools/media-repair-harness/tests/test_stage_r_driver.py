@@ -653,6 +653,31 @@ class Round7(unittest.TestCase):
         self.assertEqual(st['targets']['v1']['write_attempts'], [])
 
 
+class Round8(unittest.TestCase):
+    """Review round 8 of #1036 at the driver (AUDIT-ASTRA-71): wrapped stems end in WRITE-CONTROL and an over-budget view in an unresolved stop, both
+    before the final stat, with no later target and never ACCEPTED (at 01b55281 the first two and the last ran 24 invocations and ended ACCEPTED)."""
+
+    @staticmethod
+    def tc(args):
+        return json.dumps({'type': 'tool_call', 'tool': 'arr_lookup', 'args': args, 'why': 'Inspect'}, ensure_ascii=False)
+
+    def test_wrapped_stems_stop_stage_r(self):
+        wrapped = 'Next step: block\n    list the release, then search again.'
+        for label, reply, action in (('wrapped prose', json.dumps({'recommendation': wrapped}), 'blocklist_and_search'),
+                                     ('wrapped valid args', self.tc({'command': wrapped}), 'blocklist_and_search'),
+                                     ('re-name', json.dumps({'recommendation': 'Next step: re-\n  name the file.'}), 'rename'),
+                                     ('re map', self.tc({'command': 'Next step: re\n\tmap the season.'}), 'remap'),
+                                     ('con vert', json.dumps({'recommendation': 'Next step: con\n      vert the audio.'}), 'convert')):
+            lib, code, st, pod = Round6.drive_v1(self, reply)
+            Round6.assert_stopped_at_v1(self, lib, code, st, pod, 'write_control', label)
+            self.assertEqual(st['targets']['v1']['write_attempts'][0]['action'], action, label)
+
+    def test_an_over_budget_view_stops_stage_r(self):
+        lib, code, st, pod = Round6.drive_v1(self, self.tc({'note': '\ufdfa' * 14564}))
+        Round6.assert_stopped_at_v1(self, lib, code, st, pod, 'write_analysis_unresolved', 'U+FDFA')
+        self.assertIn('normalised view would exceed', st['targets']['v1']['write_analysis_unresolved'][0]['reason'])
+
+
 class _NoDeploy:
     """A runner whose `kubectl get deploy` fails."""
 

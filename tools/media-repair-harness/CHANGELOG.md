@@ -127,6 +127,13 @@ earlier option set are unchanged.
   mention only in `reason` or `why` not counted).
   The advisory review of `7aef8ca8` found that the second pass could destroy a stem only the first pass revealed (`\x5cremap` gives `\remap`,
   whose `\r` the second pass decodes): the stem scan now reads the raw text and every pass's view (`normalised_views`), with a regression test.
+* **Review round 8 of `01b55281`** (the Opus re-review, clear; AUDIT-ASTRA-71: one major, one minor): the normalised view collapses every run of
+  whitespace (a decoded newline and its indentation, tabs, carriage returns, Unicode spaces) and separators to one separator, keeping the position
+  mapping, so a line wrapped inside a stem (`block\n    list`, `re-\n  name`, `re\n\tmap`, `con\r\n      vert`) is counted in prose, in a valid
+  tool call's args and in raw text; and the view is held to the 262,144-character bound while it is built, so an expanding character (14,564 copies of
+  U+FDFA in a valid tool argument) is unresolved and stops Stage R. Tests: detector and driver regressions for every stem (WRITE-CONTROL before the
+  final stat; the over-budget view a `write_analysis_unresolved` stop), a just-under-bound control, and three wrapped-line forms added to the
+  normalisation property tests (3,399 and 2,132 writes, all counted and mapped).
 ## dev-c8 (WO-W26, OpenProject #158): prompt v8, turn-v3.1, claude-schema-1, guards v4; offline, not measured
 
 `HARNESS_VERSION` is `dev-c8`. Every earlier prompt, format, guard version and adapter is unchanged; the recorded dev-c4 to dev-c7 runs, the dev-c6 replay

@@ -913,7 +913,10 @@ class Round6(unittest.TestCase):
         'hex escape': lambda w, r: _swap_one(w, r, None, '\\x%02x'), 'unicode escape': lambda w, r: _swap_one(w, r, None, '\\u%04x'),
         'braced escape': lambda w, r: _swap_one(w, r, None, '\\u{%x}'), 'named escape': lambda w, r: _swap_one(w, r, None, 'NAMED'),
         'octal escape': lambda w, r: _swap_one(w, r, None, '\\%03o'), 'reference without semicolon': lambda w, r: _swap_one(w, r, None, '&#%d'),
-        'combining mark': lambda w, r: w[:1] + '\u0301' + w[1:]}
+        'combining mark': lambda w, r: w[:1] + '\u0301' + w[1:],
+        # round 8 (AUDIT-ASTRA-71): a line wrapped inside the stem, with indentation
+        'wrapped line': lambda w, r: w[:2] + '\n    ' + w[2:], 'wrapped hyphen': lambda w, r: w[:2] + '-\n  ' + w[2:],
+        'wrapped tab': lambda w, r: w[:2] + '\n\t' + w[2:]}
 
     def test_property_normalised_writes_are_counted_and_mapped(self):
         """A seeded, bounded property (round 6): every round-4 syntax and wrapper with the write's stem hidden by one normalisation (format characters,
@@ -936,7 +939,7 @@ class Round6(unittest.TestCase):
             self.assertIn(action, intent['actions'], (ob, text))
             self.assert_mapped(text, intent, action)
             n += 1
-        self.assertEqual(n, len(S) * len(self.OBFUSCATIONS) + 3000)        # 3342 generated writes (19 syntaxes x 18 normalisations, plus 3000 seeded)
+        self.assertEqual(n, len(S) * len(self.OBFUSCATIONS) + 3000)        # 3399 generated writes (19 syntaxes x 21 normalisations, plus 3000 seeded)
         self.assertLess(time.monotonic() - t0, 60)
 
     def test_property_obfuscated_prose_in_a_valid_reply_is_not_counted(self):
@@ -1128,7 +1131,7 @@ class Round7(unittest.TestCase):
             self.assertIn(action, intent['actions'], (wrap, ob, reply))
             self.assert_mapped(reply, intent, action)
             n += 1
-        self.assertEqual(n, len(self.WS_WRAPPERS) * len(obs) + 2000)          # 2114 generated writes (6 wrappers x 19 forms, plus 2000 seeded)
+        self.assertEqual(n, len(self.WS_WRAPPERS) * len(obs) + 2000)          # 2132 generated writes (6 wrappers x 22 forms, plus 2000 seeded)
         self.assertLess(time.monotonic() - t0, 60)
 
     def test_property_writes_only_in_the_prose_field_are_not_counted(self):
@@ -1150,6 +1153,55 @@ class Round7(unittest.TestCase):
             self.assertTrue(self.valid(reply), reply)
             self.assertIsNone(RE.raw_write_intent(reply), reply)
             self.assertIsNotNone(RE.raw_write_intent(self.tc(tool, {'note': text[:200]})), text)
+
+
+class Round8(unittest.TestCase):
+    """Review round 8 of #1036 (AUDIT-ASTRA-71 on 01b55281): a wrapped stem with indentation, and the normalised view's output bound."""
+
+    WRAPPED = (('block\n    list', 'blocklist_and_search'), ('re-\n  name', 'rename'), ('re\n\tmap', 'remap'), ('con\r\n      vert', 'convert'),
+               ('Block\n\n\t  List', 'blocklist_and_search'), ('re\u3000\n name', 'rename'))
+    stem_of = staticmethod(Round6.stem_of)
+    assert_mapped = Round6.assert_mapped
+
+    @staticmethod
+    def tc(args, tool='arr_lookup', why='Inspect'):
+        return json.dumps({'type': 'tool_call', 'tool': tool, 'args': args, 'why': why}, ensure_ascii=False)
+
+    def test_wrapped_stems_are_counted(self):
+        """A71-1: a decoded newline plus indentation (or a tab, CRLF, a Unicode space) inside a stem is one separator in the normalised view, so a
+        line-wrapped write is counted -- in JSON prose, in a valid tool call's args, and in raw text -- at its original span; the same text only in a
+        valid reply's reason or why is not."""
+        for wrapped, action in self.WRAPPED:
+            text = 'Next step: %s the release, then check again.' % wrapped
+            for reply in (json.dumps({'recommendation': text}), self.tc({'command': text}), text, json.dumps({'recommendation': text}, ensure_ascii=False)):
+                intent = RE.raw_write_intent(reply)
+                self.assertTrue(intent and not intent.get('unresolved'), reply)
+                self.assertEqual(intent['action'], action, reply)
+                found = self.assert_mapped(reply, intent, action)
+                if reply is not text:       # escaped: only the view (decoded, then collapsed) can match; raw text with up to three separators matches raw
+                    self.assertTrue(any('separators_collapsed' in e['normalisation'] for e in found), (reply, found))
+            self.assertIsNone(RE.raw_write_intent(self.tc({'at': 4}, 'subtitle_sample', text[:200])), text)
+            self.assertIsNone(RE.raw_write_intent(json.dumps({'type': 'decision', 'class': 'healthy', 'action': 'none', 'reason': text, 'confidence': 0.5,
+                                                              'evidence_refs': []})), text)
+        reply = json.dumps({'recommendation': 'Next step: block\n    list the release, then search again.'})
+        e = [e for e in RE.raw_write_intent(reply)['evidence'] if e.get('by') == 'stem'][0]
+        start = reply.index('block')
+        self.assertEqual((e['at'], e['stem']), ([start, reply.index('list') + 4], reply[start:reply.index('list') + 4]))
+
+    def test_the_normalised_view_is_bounded_as_it_is_built(self):
+        """A71-2: an expanding character (U+FDFA becomes 18 characters under NFKC) cannot push the view past REPLY_MAX_CHARS: 14,564 of them in a valid
+        tool argument (a 14,647-character reply) are UNRESOLVED, not "no attempt"; 14,500 (a view just under the bound) are analysed as usual."""
+        over = self.tc({'note': '\ufdfa' * 14564})
+        self.assertLess(len(over), RE.SPAN_MAX_CHARS)
+        intent = RE.raw_write_intent(over)
+        self.assertTrue(intent['unresolved'])
+        self.assertIn('normalised view would exceed 262144', intent['reason'])
+        with self.assertRaises(RE.Unresolved):
+            RE.normalised_view(over)
+        under = self.tc({'note': '\ufdfa' * 14500})
+        self.assertLessEqual(len(RE.normalised_view(under)[0]), RE.REPLY_MAX_CHARS)
+        self.assertIsNone(RE.raw_write_intent(under))
+        self.assertEqual(RE.raw_write_intent(self.tc({'note': '\ufdfa' * 14000 + ' rename it'}))['action'], 'rename')
 
 
 class WriteAttempts(unittest.TestCase):

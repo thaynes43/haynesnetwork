@@ -808,6 +808,14 @@ def _normalise_pass(text):
                     if folded:
                         c = folded
                         st.add('confusable')
+                    if (c in '_-' or c.isspace()) and view and (view[-1] in '_-' or view[-1].isspace()):
+                        # a run of whitespace (a decoded newline and its indentation, tabs, Unicode spaces) and separators is ONE separator
+                        view[-1] = ' '
+                        origin[-1] = (origin[-1][0], end)
+                        steps[-1] = steps[-1] | st | {'separators_collapsed'}
+                        continue
+                    if len(view) >= REPLY_MAX_CHARS:       # the output bound, checked before the view grows past it
+                        raise Unresolved('the normalised view would exceed %d characters' % REPLY_MAX_CHARS)
                     view.append(c)
                     origin.append((start, end))
                     steps.append(st)
@@ -839,8 +847,11 @@ def normalised_view(text):
       3. NFKC applied (fullwidth and mathematical letters, ligatures), then combining marks removed (category Mn: a combining accent, accented letters);
       4. format characters (category Cf: zero-width space and joiners, word joiner, soft hyphen, byte-order mark) and control characters other than
          whitespace (category Cc: a backspace) removed;
-      5. every dash (Pd) made `-` and every space (Zs) made ` `;
+      5. every dash (Pd) made `-` and every space (Zs) made ` `; then every RUN of whitespace (a decoded newline and its indentation, tabs, carriage
+         returns, Unicode spaces) and separators (`_`, `-`) made one separator, so a wrapped line (`block\\n    list`) still matches;
       6. Latin look-alikes folded (CONFUSABLES, a small fixed table).
+    The view is held to REPLY_MAX_CHARS while it is built (an expanding character such as U+FDFA cannot push it past the bound): exceeding it is
+    Unresolved.
     Case is kept, so camel-case humps still mark word starts; matching is case-insensitive.  `origin[k]` is the ORIGINAL span of view character k,
     `steps[k]` the normalisations that produced it, `removed` {original position: step} of every removed character.  Beyond REPLY_MAX_CHARS: Unresolved."""
     return normalised_views(text)[-1]
