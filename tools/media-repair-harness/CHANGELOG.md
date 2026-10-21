@@ -1,5 +1,39 @@
 # Harness changelog
 
+## W28 (OpenProject #161): remote content evidence, fail-closed receipts and the Stage R driver, offline
+
+`HARNESS_VERSION` stays `dev-c8`. **No model call, no cluster access**: every behaviour change is a new opt-in version (`docs/remote-content-evidence.md`);
+`remote_sampler.py` (mrh-sampler-1), `protocol.TOOLS`, `tools.REGISTRY`, every prompt and schema, and the config, records and replay identity of every
+earlier option set are unchanged.
+
+* **Tools behaviour `v3-remote-1`** (`remote_evidence.py`; runner `--tools-behavior v3-remote-1`, only with `--evidence-format v3.1-format` and `--evidence
+  replay`): tools behaviour v3 plus `subtitle_sample {"at": s}` (pilot plan section 3 item 1): the first text subtitle stream (subrip, ass, ssa, mov_text)
+  of the case's first ok probe result, chosen without a sampler call; offsets chosen by the model only; an 8 s window through mrh-sampler-2 or local ffmpeg;
+  each cue a `subtitle_cue` finding (citable id, stream, window) with `kinds` provenance `observed`, field `cues: content`; no stream, an empty window,
+  malformed SRT or a failed run gives `unavailable` or an execution failure, never content; cue text is media text under leakguard-media-2 (sources and a
+  blanked shadow). The capability advertisement states the argument form and the stream.
+* **Sampler `mrh-sampler-2`** (`remote_sampler_v2.py`, item 3): a terminal receipt on every invocation (hostname, exit, `source_unchanged`, `bytes_read`,
+  quota, wall, timeout, identity at start and end); `stat` under the 25 s limit; `list <dir> [--prefix p]` (whole-directory scan, the 500 cap counts only
+  matching entries, `complete`, no media bytes); `--expect-size` / `--expect-mtime-ns` (a start mismatch reads nothing); subtitle `--window` 1 to 10 s.
+* **Fail-closed receipts and identity binding** (item 2, item 4): every remote operation of v3-remote-1 (ffprobe, decode, frame, audio, audiobook, subtitle)
+  carries the expected identity and is validated; a missing or malformed receipt, a mismatch, `source_unchanged: false`, a changed host, a 60 s outer
+  timeout or a failed exec is fatal (an execution failure, cause tool, its output unused; every later operation refused without an invocation).
+  `quota_exhausted` and a sampler-internal timeout with a valid receipt are scope limits. Receipts are record-only (`tool_calls[].receipts`,
+  `remote_evidence`).
+* **`--stop-on-receipt-failure`** (item 2): the first fatal operation stops the run (`RemoteStop`, exit 3): the case is written to `started-aborted/`
+  with every receipt and its rejected write attempts; no further invocation; later cases never start. `run.main(runner=)` is the driver's test seam.
+* **Stage R driver** (`scripts/stage_r_driver.py`, item 5): G0b discovery (one mount, complete listings, unique locators, the manifest written and
+  optionally committed before any media read, the leak guard on the filled cases), G1 identity (`stat` must match the bytes and listed mtime_ns, else
+  dropped; `probe` bound), the registered early stop, G2 (the G1 probe injected as case evidence, the leak guard again, one harness run per target under the
+  stop option, the 600 s and remaining-$ caps), WRITE-CONTROL, the final bound `stat` (INVALID on any difference) and optional pod-health reads; any fatal
+  path starts no further operation or target. No target, title or id is in the script; the registration (`stage-r-1`) holds them.
+* **Stage R report** (`scripts/stage_r_report.py`, `stage_r.py`, section 4.3): execution, proposal safety over every raw write attempt, CUE / ERR / NOCUE,
+  the diagnosis rows with role defaults from the restored decision, the adjudication input, and ACCEPTED / NOT_ACCEPTED / INCOMPLETE.
+* Tests: `tests/test_remote_evidence.py` (the scripted model-free end-to-end run, absent / empty / malformed subtitles, quota and internal timeout, every
+  fatal receipt path, the stop option through `main`, raw write attempts, legacy identity), `tests/test_remote_sampler_v2.py` (the real sampler run
+  locally), `tests/test_stage_r_driver.py` (driver end to end and each fatal path: outer timeout, missing and malformed receipt, host change, identity change
+  in G2, final mismatch, incomplete listing, mount selection, early stop, WRITE-CONTROL, pod restart, G1 drift), `tests/test_stage_r_report.py` (every row
+  and default).
 ## dev-c8 (WO-W26, OpenProject #158): prompt v8, turn-v3.1, claude-schema-1, guards v4; offline, not measured
 
 `HARNESS_VERSION` is `dev-c8`. Every earlier prompt, format, guard version and adapter is unchanged; the recorded dev-c4 to dev-c7 runs, the dev-c6 replay

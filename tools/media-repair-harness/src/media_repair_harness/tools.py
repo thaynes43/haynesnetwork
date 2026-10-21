@@ -95,8 +95,10 @@ class Fixture:
             parts = head.split('/')
             if len(parts) < 2 or not path.startswith('/'):
                 raise ValueError('remote locator must be remote:<ns>/<deploy>[/<container>]:<abs path>')
-            return cls('remote', path=path, namespace=parts[0], deploy=parts[1],
-                       container=parts[2] if len(parts) > 2 else 'app', sha256=fx.get('sha256'))
+            out = cls('remote', path=path, namespace=parts[0], deploy=parts[1],
+                      container=parts[2] if len(parts) > 2 else 'app', sha256=fx.get('sha256'))
+            out.exec_target = fx.get('exec_target')     # read by tools behaviour v3-remote-1 only (default deploy/<deployment>)
+            return out
         p = Path(os.path.expanduser(loc))
         if not p.is_absolute():
             p = Path(suite_dir) / p
@@ -123,17 +125,22 @@ class Fixture:
 # of `evidence/` on the case's own local media file; a case without a local media path that exists gets `unavailable` with the reason.
 EVIDENCE_MODES = ('replay', 'live')
 TOOLS_BEHAVIORS = ('v1', 'v2', 'v3', 'v4')
+# v3-remote-1 (#161, remote_evidence.py): tools behaviour v3 unchanged plus subtitle_sample, the mrh-sampler-2 receipts and expected-identity binding of
+# every remote operation.  Selected only by `--tools-behavior v3-remote-1` (with `--evidence-format v3.1-format`); v1 to v4 (TOOLS_BEHAVIORS, pinned by the
+# W25 / W27 tests) are byte-identical.
+REMOTE_V1 = 'v3-remote-1'
+REMOTE_TOOLS_BEHAVIORS = (REMOTE_V1,)
 
 
 def _v2plus(ctx):
     """Tools behaviour v2, v3 or v4: v3 (dev-c7, evidence format v3.1-format) is v2 plus the EPUB body excerpts (epub_text.py), every v2 rule unchanged;
     v4 (W25) is v3 plus three EPUB package-check corrections (_epub_stage remote_ok, _inspect_v4, SIZE_CAP_V4)."""
-    return ctx.tools_behavior in ('v2', 'v3', 'v4')
+    return ctx.tools_behavior in ('v2', 'v3', 'v4', REMOTE_V1)
 
 
 def _v3plus(ctx):
     """Tools behaviour v3 or v4: the EPUB body excerpts and the literal media text (v4 changes only the package check, see tool_epub_inspect)."""
-    return ctx.tools_behavior in ('v3', 'v4')
+    return ctx.tools_behavior in ('v3', 'v4', REMOTE_V1)
 
 
 # Tools behaviour v4 words two EPUB results that only diagnostic rules diag-2 recognise (`the spine documents contain no text` is damage there; under diag-1
@@ -168,10 +175,10 @@ LIVE_DEADLINE_S = TOOL_TIMEOUT_S - 15
 class Context:
     def __init__(self, case, fixture, scratch, runner=subprocess.run, which=shutil.which, ocr_backend=None,
                  suite_dir=None, replay='auto', evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None,
-                 evidence_bounds=None, tools_behavior='v1', keep_raw=False, live_behavior=evcol.DEFAULT_LIVE_BEHAVIOR):
+                 evidence_bounds=None, tools_behavior='v1', keep_raw=False, live_behavior=evcol.DEFAULT_LIVE_BEHAVIOR, remote_binding=None):
         assert replay in ('auto', 'off', 'force')
         assert evidence_mode in EVIDENCE_MODES, evidence_mode
-        assert tools_behavior in TOOLS_BEHAVIORS, tools_behavior
+        assert tools_behavior in TOOLS_BEHAVIORS + REMOTE_TOOLS_BEHAVIORS, tools_behavior
         assert live_behavior in evcol.LIVE_BEHAVIORS, live_behavior
         if tools_behavior == 'v4':
             _check_v4_pairing()
@@ -197,6 +204,10 @@ class Context:
         self.forbidden_extra = extra
         self.frames, self.frame_t = {}, {}  # name -> path (None = virtual replay frame), name -> seconds
         self.scratch.mkdir(parents=True, exist_ok=True)
+        # tools behaviour v3-remote-1 only: the identity binding of every remote operation (remote_evidence.Binding) and the subtitle stream the case's probe
+        # result names (set by the runner before the capabilities are computed).  Unused by every other tools behaviour.
+        self.remote_binding = remote_binding
+        self.subtitle_stream = None
 
 
 def _redact(self, text):
@@ -219,6 +230,8 @@ def _num(args, key, default, lo, hi):
 
 
 def _run_remote(ctx, mode, at=0.0, stream=0):
+    if ctx.tools_behavior == REMOTE_V1:
+        return _remote_evidence().run_remote(ctx, mode, at, stream)      # receipts, identity binding, fail-closed (raises FatalOperation)
     fx = ctx.fixture
     cmd = ['kubectl', '-n', fx.namespace, 'exec', '-i', 'deploy/' + fx.deploy, '-c', fx.container, '--',
            'python3', '-', mode, fx.path, '--at', str(at), '--stream', str(int(stream))]
@@ -238,6 +251,23 @@ def _run_remote(ctx, mode, at=0.0, stream=0):
     elif r.returncode:
         info = {'exit_code': r.returncode, 'stderr': ''}
     return info, r.stdout, None
+
+
+def _remote_evidence():
+    from . import remote_evidence
+    return remote_evidence
+
+
+def registry(ctx):
+    """The tools a context can run: REGISTRY, plus subtitle_sample under tools behaviour v3-remote-1 only."""
+    if ctx.tools_behavior == REMOTE_V1:
+        return dict(REGISTRY, subtitle_sample=_remote_evidence().tool_subtitle_sample)
+    return REGISTRY
+
+
+def extra_tools(ctx):
+    """Tool names beyond protocol.TOOLS that this context runs (empty for every tools behaviour but v3-remote-1)."""
+    return _remote_evidence().EXTRA_TOOLS if ctx.tools_behavior == REMOTE_V1 else ()
 
 
 def _local_bin(ctx, name):
@@ -1287,6 +1317,8 @@ def live_tool(tool, args, ctx):
 # operation that was not called.  It mirrors `_backend` without running anything.
 def capability(ctx, name):
     cap = {'tool': name}
+    if name == 'subtitle_sample' and ctx.tools_behavior == REMOTE_V1:
+        return _subtitle_capability(ctx, cap)
     live = ctx.evidence_mode == 'live' and name in LIVE_KINDS
     if name == 'arr_lookup':
         cap.update(backend='stub', available=True, note='case-provided records only')
@@ -1373,6 +1405,26 @@ def capability(ctx, name):
     return cap
 
 
+def _subtitle_capability(ctx, cap):
+    """tools behaviour v3-remote-1: what subtitle_sample can do for this item, from the fixture and the probe result only (nothing is run)."""
+    RE = _remote_evidence()
+    cap.update(args='{"at": seconds}: one %d s window from that offset; the stream is the first text subtitle stream (%s) of the probe result, never an argument'
+               % (RE.SUBTITLE_WINDOW_S, ', '.join(RE.TEXT_SUBTITLE_CODECS)), window_s=RE.SUBTITLE_WINDOW_S, offsets_s='any')
+    stream = ctx.subtitle_stream
+    bad = _need_media(ctx)
+    if stream is None:
+        cap.update(backend=None, available=False, why='the probe result of this item lists no text subtitle stream')
+    elif bad is not None or ctx.fixture.kind == 'pinned':
+        cap.update(backend=None, available=False, why=bad.output if bad is not None else 'only a recorded observation of this item exists')
+    elif ctx.fixture.kind == 'remote':
+        cap.update(backend='remote', available=True, stream={'index': stream['index'], 'codec': stream['codec'], 'language': stream.get('language')})
+    elif ctx.which('ffmpeg'):
+        cap.update(backend='local', available=True, stream={'index': stream['index'], 'codec': stream['codec'], 'language': stream.get('language')})
+    else:
+        cap.update(backend=None, available=False, why='no subtitle sampler is available for this item (no remote sampler and no local ffmpeg)')
+    return cap
+
+
 # tools behaviour v3: the static description of the excerpt arguments (no file, result or label is read to write it)
 EXCERPT_CAPABILITY = {'args': '{} = the package check with the body index and the default excerpts; {"spine": n, "offset": n, "length": n} = one excerpt',
                       'spine': 'spine position from 0, in reading order', 'offset': 'Unicode code points into that spine item\'s body text, from 0',
@@ -1381,7 +1433,8 @@ EXCERPT_CAPABILITY = {'args': '{} = the package check with the body index and th
 
 def capabilities(ctx):
     """One advertisement per OFFERED tool, in the order the case lists them."""
-    return [capability(ctx, name) for name in (ctx.case.get('tools_available') or []) if name in REGISTRY]
+    reg = registry(ctx)
+    return [capability(ctx, name) for name in (ctx.case.get('tools_available') or []) if name in reg]
 
 
 REGISTRY = {'ffprobe': tool_ffprobe, 'decode_sample': tool_decode_sample, 'frame_sample': tool_frame_sample,
@@ -1421,9 +1474,12 @@ def call_tool(ctx, name, args):
     started = time.monotonic()
     inject = ctx.case.get('inject_tool_failure')
     offered = ctx.case.get('tools_available') or []
-    if name not in REGISTRY or name not in offered:
+    reg = registry(ctx)
+    remote_v1 = ctx.tools_behavior == REMOTE_V1
+    since = len(ctx.remote_binding.receipts) if remote_v1 and ctx.remote_binding is not None else 0
+    if name not in reg or name not in offered:
         # the capability is absent for this case: `unavailable`, and the call itself is a protocol violation (recorded by the runner)
-        res = ToolResult('unavailable', 'tool %s is not offered for this case; nothing ran. Offered: %s' % (repr(name) if name in REGISTRY else 'requested', ', '.join(offered) or 'none'),
+        res = ToolResult('unavailable', 'tool %s is not offered for this case; nothing ran. Offered: %s' % (repr(name) if name in reg else 'requested', ', '.join(offered) or 'none'),
                          protocol_violation='tool_not_offered')
     elif inject and inject.get('tool') == name and inject.get('mode', 'error') in ('error', 'timeout'):
         res = _failure(inject['mode'], name, None)  # nothing is run: the failure is the whole result
@@ -1440,7 +1496,7 @@ def call_tool(ctx, name, args):
                 return live_tool(name, args, ctx)
             if ctx.fixture.kind == 'pinned' and name != 'arr_lookup':
                 return _pinned(name, args, ctx)
-            return REGISTRY[name](args, ctx)
+            return reg[name](args, ctx)
         ctx.cancel = threading.Event() if ctx.evidence_mode == 'live' else None
         ctx.live_thread = None
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -1451,15 +1507,27 @@ def call_tool(ctx, name, args):
             res = ToolResult('timeout', '%s exceeded the %d s tool timeout' % (name, TOOL_TIMEOUT_S))
             if ctx.cancel is not None:
                 _stop_collector(ctx, fut)
+            if remote_v1 and ctx.remote_binding is not None and ctx.fixture.kind == 'remote':
+                # v3-remote-1: the operation outlived the tool deadline, so no receipt can be trusted to come: fatal, and nothing further is invoked
+                ctx.remote_binding.fatal = ctx.remote_binding.fatal or {'kind': 'outer_timeout', 'detail': 'the %d s tool deadline expired' % TOOL_TIMEOUT_S, 'cause': 'tool'}
+                res = ToolResult('error', _remote_evidence().fatal_text(name), mode='remote', remote_fatal=ctx.remote_binding.fatal)
         except ValueError as e:
             res = ToolResult('error', 'bad arguments: %s' % e)
         except Exception as e:  # noqa: BLE001 - tool boundary
-            res = ToolResult('error', 'tool crashed: %s: %s' % (type(e).__name__, str(e)[:200]))
+            if remote_v1 and isinstance(e, _remote_evidence().FatalOperation):
+                res = ToolResult('error', _remote_evidence().fatal_text(name), mode='remote', remote_fatal=e.as_record())     # its output is never used
+            else:
+                res = ToolResult('error', 'tool crashed: %s: %s' % (type(e).__name__, str(e)[:200]))
         finally:
             pool.shutdown(wait=False)
         if inject and inject.get('tool') == name:
             res = _failure(inject.get('mode', 'error'), name, res)
     redactor = ctx.redact
+    if remote_v1 and ctx.remote_binding is not None:
+        res.extra['receipts'] = ctx.remote_binding.receipts[since:]      # record only (never in what the model sees): every receipt of this call
+    if remote_v1 and name == 'subtitle_sample' and isinstance(res.output, dict):
+        res = ToolResult(res.status, _remote_evidence().redact_output(res.output, ctx.redact), **res.extra)     # harness strings redacted, cue text kept as read
+        redactor = None
     if _v3plus(ctx) and name == 'epub_inspect' and isinstance(res.output, dict):
         res = ToolResult(res.status, epub_v3_redact(res.output, ctx.redact), **res.extra)      # locators aliased, media text kept as read
         redactor = None

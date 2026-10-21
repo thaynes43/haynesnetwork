@@ -826,6 +826,10 @@ def _derive(obs, known_duration=None):
         _derive_audiobook(d, data)
     elif tool == 'audio_sample':
         _derive_audio(d, data)
+    elif tool == 'subtitle_sample':
+        # tools behaviour v3-remote-1 only (#161): every earlier configuration shows an unknown tool as `unknown_tool`, so no earlier observation reaches this branch
+        from . import remote_evidence
+        remote_evidence.derive_subtitle(d, data)
     elif tool in ('ocr', 'frame_sample', 'arr_lookup', 'prior_record'):
         _derive_record(d, data)
     else:
@@ -932,7 +936,8 @@ def _finish(d, data):
 
 AREA = {'ffprobe': 'the container, stream and chapter metadata', 'decode_sample': 'decodability of the requested window', 'frame_sample': 'the picture at the requested offset',
         'audio_sample': 'audio levels in the requested window', 'ocr': 'on-screen text at the requested offset', 'epub_inspect': 'the EPUB archive and package',
-        'audiobook_inspect': 'audiobook parts, chapters and tags', 'arr_lookup': 'the *arr record', 'prior_record': 'the prior record'}
+        'audiobook_inspect': 'audiobook parts, chapters and tags', 'arr_lookup': 'the *arr record', 'prior_record': 'the prior record',
+        'subtitle_sample': 'subtitle text in the requested window'}
 
 
 # ---- ffprobe

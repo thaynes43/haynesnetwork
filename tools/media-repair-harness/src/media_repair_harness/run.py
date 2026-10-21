@@ -234,6 +234,35 @@ def check_option_combination(prompt_version, evidence_format=None, guards=None, 
             raise ValueError('--evidence-format v2 uses --tool-output-bytes as the page budget (a message is paginated to fit it): it must be between %d and %d, got %s' % (EV2.MIN_WIRE_BYTES, EV2.WIRE_BYTES, tool_output_bytes))
 
 
+# #161: tools behaviour v3-remote-1 (remote_evidence.py) and the stop option.  Both opt-in; unset, nothing below changes any configuration.
+REMOTE_TOOLS_BEHAVIORS = T.REMOTE_TOOLS_BEHAVIORS
+
+
+class RemoteStop(A.AbortRun):
+    """`--stop-on-receipt-failure`: a remote operation failed closed.  The case is kept as started_aborted with every receipt; no further sampler operation is
+    invoked and no later case starts."""
+
+
+def check_remote_options(evidence_format=None, tools_behavior=None, stop_on_receipt_failure=False, evidence_mode='replay'):
+    """Raise ValueError for an unsupported combination of the #161 options."""
+    if tools_behavior is None:
+        if stop_on_receipt_failure:
+            raise ValueError('--stop-on-receipt-failure stops on a failed sampler receipt and is valid only with --tools-behavior %s' % REMOTE_TOOLS_BEHAVIORS[0])
+        return
+    if tools_behavior not in REMOTE_TOOLS_BEHAVIORS:
+        raise ValueError('unknown tools behaviour %r (selectable: %s; unset keeps the behaviour the evidence format selects)' % (tools_behavior, ', '.join(REMOTE_TOOLS_BEHAVIORS)))
+    if evidence_format != CONTRACT_V31_FORMAT:
+        raise ValueError('--tools-behavior %s is tools behaviour v3 plus remote content evidence and is accepted with --evidence-format %s only (got %s)' % (
+            tools_behavior, CONTRACT_V31_FORMAT, evidence_format or 'the legacy format'))
+    if evidence_mode != 'replay':
+        raise ValueError('--tools-behavior %s reads through the replay/remote path and is accepted with --evidence replay only' % tools_behavior)
+
+
+def _remote_evidence():
+    from . import remote_evidence
+    return remote_evidence
+
+
 safe_args = EV2.safe_args
 
 
@@ -256,7 +285,7 @@ def result_message(call_id, tool, res, remaining):
 
 def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto', run_id='', tool_output_bytes=None,
              prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None, evidence_bounds=None, guards=None,
-             evidence_format=None, _inner=False):
+             evidence_format=None, tools_behavior=None, stop_on_receipt_failure=False, remote_state=None, _inner=False):
     """Run one case through the turn protocol.  Returns the run record (never raises for model/tool trouble)."""
     import shutil
     sm_case = getattr(adapter, 'schema_mode', None) is not None      # dev-c8 claude-schema-1: the run-level guard of schema_run.py (round 6)
@@ -269,6 +298,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
             run_id=run_id, tool_output_bytes=tool_output_bytes, prompt_version=prompt_version, evidence_mode=evidence_mode, collect=collect,
             evidence_runner=evidence_runner, evidence_which=evidence_which, evidence_bounds=evidence_bounds, guards=guards, evidence_format=evidence_format))
     check_option_combination(prompt_version, evidence_format, guards, tool_output_bytes)
+    check_remote_options(evidence_format, tools_behavior, stop_on_receipt_failure, evidence_mode)
+    remote_v1 = tools_behavior in REMOTE_TOOLS_BEHAVIORS
     v31fmt = evidence_format == CONTRACT_V31_FORMAT
     v3fmt = evidence_format == 'v3' or v31fmt     # contract v3: turn-v3, decision-v3, audit v3 (format v3 or v3.1-format)
     v2fmt = evidence_format == 'v2' or v3fmt   # the typed formats share tools behaviour v2, raw outputs, pagination and the reference resolver
@@ -277,10 +308,14 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     fixture = T.Fixture.from_case(case, suite_dir)
     fixture_info = fixture.verify_local()
+    binding = None
+    if remote_v1 and fixture.kind == 'remote':
+        remote_state = remote_state if remote_state is not None else _remote_evidence().HostState()
+        binding = _remote_evidence().binding_for_case(case, remote_state)
     ctx = T.Context(case, fixture, Path(scratch) / case['id'], runner=runner, which=which or shutil.which, ocr_backend=ocr_backend,
                     suite_dir=suite_dir, replay=replay, evidence_mode=evidence_mode, collect=collect, evidence_runner=evidence_runner,
-                    evidence_which=evidence_which, evidence_bounds=evidence_bounds, tools_behavior=('v3' if v31fmt else 'v2') if v2fmt else 'v1',
-                    keep_raw=v2fmt)
+                    evidence_which=evidence_which, evidence_bounds=evidence_bounds, tools_behavior=tools_behavior or (('v3' if v31fmt else 'v2') if v2fmt else 'v1'),
+                    keep_raw=v2fmt, **({'remote_binding': binding} if remote_v1 else {}))
     if tool_output_bytes:
         ctx.output_cap = tool_output_bytes
     model_alias = leakguard.alias(run_id, case['id'])
@@ -288,6 +323,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     wire_budget = min(EV2.WIRE_BYTES, tool_output_bytes) if tool_output_bytes else EV2.WIRE_BYTES   # --tool-output-bytes is the page budget under format v2
     if v2fmt:
         evidence = resolve_evidence_raw(case, suite_dir, ctx.redact, literal_epub=v31fmt)
+        if remote_v1:
+            ctx.subtitle_stream = _remote_evidence().select_subtitle_stream(evidence)     # from the case's existing probe result; nothing is invoked
         view = P.case_view(case, [], case_alias=model_alias)
         caps = T.capabilities(ctx)
         if v3fmt:
@@ -329,6 +366,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
         if session.last_shadow is not None:
             guard_alt[0] = session.last_shadow
     ev_ids = {e['id'] for e in evidence}
+    known_tools = P.TOOLS + tuple(T.extra_tools(ctx))      # P.TOOLS for every configuration but tools behaviour v3-remote-1
     turns, tool_calls = [], []
     repairs, forced, forced_reason, error = [], False, None, None
     violations = []   # protocol violations (a tool call outside tools_available): answered with a tool result, never repaired
@@ -402,7 +440,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
             call_id = 't%d' % (len(tool_calls) + 1)
             remaining = P.MAX_TOOL_CALLS - len(tool_calls) - 1
             suffix = '' if remaining else '\n' + P.BUDGET_MESSAGE
-            if v2fmt and is_cursor_call(obj['args']) and obj['tool'] in (case.get('tools_available') or []) and obj['tool'] in P.TOOLS:
+            if v2fmt and is_cursor_call(obj['args']) and obj['tool'] in (case.get('tools_available') or []) and obj['tool'] in known_tools:
                 # a page fetch: not a tool run, but one of the 6 calls (stated in the page object); served from the pages this case's own session holds
                 status, text = session.fetch(obj['args']['cursor'], call_id, obj['tool'], remaining, suffix)
                 origins, origin_status = session.page_origin(obj['args']['cursor'])
@@ -424,8 +462,14 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                     parsed = None
                 if isinstance(parsed, dict):
                     media_sources += T.epub_v3_sources(parsed, call_id)
-            shown_tool = obj['tool'] if obj['tool'] in P.TOOLS else 'unknown_tool'  # model-chosen text is never echoed back
+            elif remote_v1 and obj['tool'] == 'subtitle_sample':
+                media_sources += _remote_evidence().sources(res.get('raw_output', res['output']), call_id)     # cue text is media text (leakguard-media-2)
+            shown_tool = obj['tool'] if obj['tool'] in known_tools else 'unknown_tool'  # model-chosen text is never echoed back
             tool_calls.append({'id': call_id, 'turn': turn['n'], 'tool': str(obj['tool'])[:64], 'args': obj['args'], 'why': obj.get('why'), **res})
+            if remote_v1 and res.get('remote_fatal') and stop_on_receipt_failure:
+                # #161: the first failed receipt stops the run here: the model is not called again, nothing further is invoked, later cases never start
+                raise RemoteStop('remote operation failed closed (%s) in case %s call %s; --stop-on-receipt-failure stops the run' % (
+                    res['remote_fatal'].get('kind'), case['id'], call_id))
             if res.get('protocol_violation'):
                 violations.append({'turn': turn['n'], 'call': call_id, 'kind': res['protocol_violation'], 'tool': str(obj['tool'])[:64],
                                    'answered_with': res['status']})
@@ -455,6 +499,10 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
             if not sm_case:
                 raise
             e.partial = SR.minimal_aborted_record(case, case_sha, run_id, SR.safe_str(e, 2000), turns, pe, adapter)
+        if remote_v1:
+            # #161 only (an earlier configuration's started-aborted record is unchanged): every receipt, and every raw write attempt the validator rejected
+            e.partial['remote_evidence'] = remote_record(ctx, binding, stop_on_receipt_failure)
+            e.partial['write_rejection'] = write_rejection_info(rejected_writes, None, False, None)
         raise
     except Exception as e:  # noqa: BLE001 - harness fault: keep the run, mark it
         error = {'kind': 'harness_crash', 'message': '%s: %s' % (type(e).__name__, e), 'leak_guard': isinstance(e, leakguard.LeakError), 'traceback': traceback.format_exc()[-1500:]}
@@ -540,6 +588,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     }
     if guard_rec is not None:
         record['guard'] = guard_rec
+    if remote_v1:
+        record['remote_evidence'] = remote_record(ctx, binding, stop_on_receipt_failure)     # #161 only: receipts, identity, host, subtitle stream
     if v3fmt:
         record['evidence_format'] = EV3.format_record(session, caps, evidence_format)
     elif v2fmt:
@@ -563,6 +613,13 @@ def claude_schema_record(turns, sent_schema_sha, adapter):
             'schema_delivery_per_turn': [{'n': t.get('n'), 'tool_registered': ((t.get('meta') or {}).get('schema') or {}).get('tool_registered'),
                                           'attempts': ((t.get('meta') or {}).get('schema') or {}).get('attempts'),
                                           'reply_source': ((t.get('meta') or {}).get('schema') or {}).get('reply_source')} for t in turns]}
+
+
+def remote_record(ctx, binding, stop_on_receipt_failure):
+    """Record field of a tools-behaviour-v3-remote-1 case (absent in every other configuration): never shown to the model."""
+    rec = binding.record() if binding is not None else {'tools_behavior': ctx.tools_behavior, 'receipts': [], 'fatal': None, 'operations': 0,
+                                                         'note': 'no remote fixture: no sampler operation is bound'}
+    return dict(rec, subtitle_stream=ctx.subtitle_stream, stop_on_receipt_failure=bool(stop_on_receipt_failure))
 
 
 def evidence_format_record(session, caps, version):
@@ -982,6 +1039,10 @@ def run_config(args, adapter, evidence_bounds, evcol_clamped):
         config.update(_ev3().CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes), decision_schema_sha256=sha256_bytes(canonical(P.turn_schema_v3(['ffprobe'])).encode()))
     elif args.evidence_format:   # likewise only when on; the three versions it selects are recorded so the config hash tells the formats apart
         config.update(evidence_format=args.evidence_format, tools_behavior='v2', audit_version='v2', page_contract=EV2.PAGE_CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes))
+    if getattr(args, 'tools_behavior', None):   # #161, only when set: the tools behaviour and every registered bound of the remote evidence, so the config hash tells it apart
+        config.update(tools_behavior=args.tools_behavior, remote_evidence=_remote_evidence().config())
+    if getattr(args, 'stop_on_receipt_failure', False):
+        config['stop_on_receipt_failure'] = True
     return config
 
 
@@ -1035,14 +1096,24 @@ def build_parser():
                          '(61-4), conflicting receipt costs continue at the max (Opus).  Unset = the legacy adapter, byte for byte')
     ap.add_argument('--experimental-claude-schema', action='store_true',
                     help='dev-c8: the explicit opt-in --claude-schema needs (experimental; see its help); recorded as claude_schema_experimental in the manifest')
+    ap.add_argument('--tools-behavior', choices=list(REMOTE_TOOLS_BEHAVIORS), default=None,
+                    help='#161, opt-in: v3-remote-1 is tools behaviour v3 plus subtitle_sample {"at": s} (the first text subtitle stream of the case\'s probe result), the '
+                         'mrh-sampler-2 receipts (hostname, source_unchanged, bytes_read, quota, wall, timeout) and the expected-identity binding (fixture.expected_identity) '
+                         'of every remote operation; a missing or malformed receipt, an identity mismatch, source_unchanged false, a changed host or an outer timeout '
+                         'fails closed (cause tool). Only with --evidence-format v3.1-format and --evidence replay. Unset = the behaviour the evidence format selects')
+    ap.add_argument('--stop-on-receipt-failure', action='store_true',
+                    help='#161, opt-in, with --tools-behavior v3-remote-1: the first remote operation that fails closed stops the run (exit 3): the case is kept as '
+                         'started_aborted with every receipt, no further sampler operation is invoked and later cases never start')
     return ap
 
 
-def main(argv=None):
+def main(argv=None, runner=None):
+    """`runner` (#161, default subprocess.run) is the process runner of the remote tools: the Stage R driver's seam for a fake runner in tests."""
     args = build_parser().parse_args(argv)
 
     try:
         check_option_combination(args.prompt, args.evidence_format, args.guards, args.tool_output_bytes)
+        check_remote_options(args.evidence_format, args.tools_behavior, args.stop_on_receipt_failure, args.evidence)
     except ValueError as e:
         raise SystemExit(str(e))
     if args.no_spend_limit and (args.max_budget_usd is not None or args.max_total_cost_usd is not None):
@@ -1092,6 +1163,7 @@ def main(argv=None):
                 'python': platform.python_version(), 'suite_dir': str(suite_dir),
                 'case_ids': [c['id'] for c, _ in cases], 'case_sha256': {c['id']: s for c, s in cases}}
     aborted = None
+    remote_state = _remote_evidence().HostState() if args.tools_behavior else None     # #161: one pod hostname for the whole run
     records = []
     partials = []   # started-aborted cases (kept under started-aborted/, never scored); never-started = planned minus records minus these
     audit = None
@@ -1117,7 +1189,9 @@ def main(argv=None):
             try:
                 rec = run_case(case, sha, adapter, suite_dir, scratch, ocr_backend=ocr_backend, replay=args.replay, run_id=run_id,
                                tool_output_bytes=args.tool_output_bytes, prompt_version=args.prompt, evidence_mode=args.evidence,
-                               evidence_bounds=evidence_bounds, guards=args.guards, evidence_format=args.evidence_format)
+                               evidence_bounds=evidence_bounds, guards=args.guards, evidence_format=args.evidence_format,
+                               **({'tools_behavior': args.tools_behavior, 'stop_on_receipt_failure': args.stop_on_receipt_failure, 'remote_state': remote_state}
+                                  if args.tools_behavior else {}), **({'runner': runner} if runner is not None else {}))
             except A.AbortRun as e:
                 aborted = str(e)
                 partial = getattr(e, 'partial', None)
