@@ -1,7 +1,7 @@
 """Tools behaviour v3 (dev-c7): bounded, offset-addressed EPUB body excerpts with their locations, and the declared table of contents kept apart.
 
 FROZEN EXTRACTION RULES `xhtml-body-text-1` (committed before this code was run on any dev-suite EPUB; `RULES` is pinned by digest in
-tests/test_devc7_excerpts.py, and a change is a new rule id, never an edit of this one):
+tests/test_devc7.py (EXCERPT_RULES_SHA), and a change is a new rule id, never an edit of this one):
 
 * Addressing.  Body text is read only from spine items, addressed by their SPINE POSITION `spine` (0-based, the OPF spine's reading order,
   as the vendored inspector lists it).  Every result names the item's archive MEMBER path (the manifest href resolved against the OPF
