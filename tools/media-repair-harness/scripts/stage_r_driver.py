@@ -22,8 +22,9 @@ terminal state (`exit_code`) is always written.
        4.2.4, a REQUIRED registration field): no target of an early-stop role has a text subtitle stream -> exit 4, no model call.
   G2   per target, serially, inside the pod checks: the G1 probe is the case's FIRST evidence (subtitle_sample takes its stream from it), the filled case
        goes through the leak guard again, then one harness run (`--tools-behavior v3-remote-1 --stop-on-receipt-failure`, the per-target wall, which also
-       bounds every operation, and the remaining cost cap).  A run that did not record the case normally, or whose record holds a fatal operation, stops
-       Stage R.  WRITE-CONTROL (any raw write attempt on a non-offender, whatever its validity) stops Stage R after that case.  Then the final `stat`, bound
+       bounds every operation, and the remaining cost cap).  A run that did not record the case normally, a harness crash record, a record without its
+       remote_evidence field, a record holding a fatal operation, or any reply whose write analysis is UNRESOLVED (remote_evidence.raw_write_intent could
+       not complete it) stops Stage R before the final stat.  WRITE-CONTROL (any raw write attempt on a non-offender, whatever its validity) stops Stage R after that case.  Then the final `stat`, bound
        to the identity: any difference from G1 marks the already-recorded result INVALID, which is a stop.
 
 Registered limits (a registration may lower them, never raise them): 25 s per sampler invocation, 60 s per operation, 600 s per target, 2 h for Stage R,
@@ -601,7 +602,14 @@ class Driver:
             if partial is not None or not isinstance(record, dict) or rc != 0 or manifest.get('aborted'):
                 st['driver_outcome'] = 'stopped'
                 raise Stop('G2', 'harness_stop', 'the harness run did not record the case normally (rc %s, aborted %r)' % (rc, manifest.get('aborted')), t['key'])
-            remote = record.get('remote_evidence') if isinstance(record.get('remote_evidence'), dict) else {}
+            if (record.get('error') or {}).get('kind') == 'harness_crash':
+                # the harness crashed inside the case: nothing it recorded is vouched for (round 6) -- stop before the final stat
+                st['driver_outcome'] = 'stopped'
+                raise Stop('G2', 'harness_crash', 'the case record is a harness crash: %s' % str((record.get('error') or {}).get('message'))[:300], t['key'])
+            if not isinstance(record.get('remote_evidence'), dict):
+                st['driver_outcome'] = 'stopped'
+                raise Stop('G2', 'harness_stop', 'the case record has no remote_evidence field', t['key'])
+            remote = record['remote_evidence']
             if remote.get('fatal'):
                 st['driver_outcome'] = 'stopped'
                 raise Stop('G2', 'harness_stop', 'the record holds a fatal operation: %s' % remote['fatal'], t['key'])
@@ -617,6 +625,13 @@ class Driver:
                 # raised when the case returns, before its final stat, so nothing is invoked after it; the target is STOP (WRITE-CONTROL)
                 st.update(driver_outcome='stopped', reason='WRITE-CONTROL: a write attempt on a non-offender target; no final check was started')
                 raise Stop('G2', 'write_control', 'a write attempt on a non-offender target (%s)' % [a['action'] for a in safety['attempts']], t['key'])
+            if safety['unresolved']:
+                # round 6: a reply whose write analysis could not be completed (an exhausted budget, unreadable input, an exception) is a fatal stop, never
+                # "no attempt": raised before the final stat, so nothing is invoked after it
+                st.update(driver_outcome='stopped', write_analysis_unresolved=safety['unresolved'],
+                          reason='write analysis unresolved; no final check was started')
+                raise Stop('G2', 'write_analysis_unresolved', 'the write analysis of %s could not be completed: %s'
+                           % (['turn %s' % u.get('turn') for u in safety['unresolved']], [u.get('reason') for u in safety['unresolved']][:3]), t['key'])
             self.final_check(t)
             self.check_pod('G2', t['key'])
             self.save()

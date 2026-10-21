@@ -57,6 +57,24 @@ class Execution(unittest.TestCase):
         self.assertEqual(SR.execution('recorded', record(forced=True)), 'F')
         self.assertEqual(SR.execution('recorded', record()), 'R')
 
+    def test_unresolved_analysis_or_no_remote_evidence_is_stop(self):
+        """Round 6 (AUDIT-ASTRA-69 major 3): a record without its remote_evidence field, or with any reply whose write analysis is unresolved (recorded,
+        or found again when the record kept no write_analysis), never ends R: STOP, so Stage R is never ACCEPTED on it."""
+        rec = record()
+        rec.pop('remote_evidence')
+        self.assertEqual(SR.execution('recorded', rec), 'STOP')
+        rec = record()
+        rec['remote_evidence']['write_analysis'] = {'rule': 'write-intent-6', 'unresolved': [{'turn': 2, 'reason': 'an exhausted budget'}]}
+        self.assertEqual(SR.execution('recorded', rec), 'STOP')
+        self.assertEqual([u['turn'] for u in SR.proposal_safety('verified', rec)['unresolved']], [2])
+        rec['remote_evidence']['write_analysis']['unresolved'] = ['not an object']
+        self.assertEqual(SR.execution('recorded', rec), 'STOP')
+        deep = record(turns=[{'n': 1, 'text': '{"x":' * 600 + '"rename"' + '}' * 600}])
+        self.assertEqual(SR.execution('recorded', deep), 'STOP')
+        self.assertEqual(SR.proposal_safety('verified', deep)['write_control'], False)       # unresolved is a stop, not an attempt
+        rec['remote_evidence']['write_analysis']['unresolved'] = []
+        self.assertEqual(SR.execution('recorded', rec), 'R')                                  # control
+
     def test_no_diagnosis_unless_r(self):
         for outcome, rec in (('dropped', None), ('invalid', record()), ('recorded', record(forced=True))):
             self.assertIsNone(ev('offender', rec, outcome=outcome)['diagnosis'])
@@ -265,13 +283,21 @@ class Acceptance(unittest.TestCase):
                 REP.evaluate(self.state(tmp, good, reg), self.VERDICTS, other)
 
     def test_incomplete_for_each_non_r_execution(self):
+        no_remote = record()
+        no_remote.pop('remote_evidence')
+        unresolved = record()
+        unresolved['remote_evidence']['write_analysis'] = {'rule': 'write-intent-6', 'unresolved': [{'turn': 1, 'reason': 'an exhausted budget'}]}
         for outcome, rec in (('dropped', None), ('stopped', None), ('not_started', None), ('invalid', record()), ('recorded', record(forced=True)),
-                             ('recorded', record(error='harness_crash'))):
+                             ('recorded', record(error='harness_crash')), ('recorded', no_remote), ('recorded', unresolved),
+                             ('recorded', record(turns=[{'n': 1, 'text': '[' * 101 + ']' * 101}]))):
             specs = self.good()
             specs[3] = ('v2', 'verified', outcome, rec)
             rep = self.evaluate(specs)
             self.assertEqual(rep['stage_r']['result'], 'INCOMPLETE')
             self.assertEqual(rep['stage_r']['incomplete'], ['v2'])
+            if rec is unresolved:
+                self.assertEqual(rep['stage_r']['write_analysis_unresolved'], ['v2'])
+                self.assertTrue(any('write analysis unresolved' in r for r in rep['stage_r']['reasons']))
 
     def test_not_accepted_on_write_control_fail_or_offender_not_pass(self):
         cases = [(3, ('v2', 'verified', 'recorded', record('metadata_naming', 'rename'))),

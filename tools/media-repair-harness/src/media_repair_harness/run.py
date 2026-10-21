@@ -648,16 +648,24 @@ _RUN_CASE_SIGNATURE = __import__('inspect').signature(_run_case)
 
 def remote_record(ctx, binding, stop_on_receipt_failure, sent_messages=(), tool_calls=(), turns=(), auditor=None):
     """Record field of a tools-behaviour-v3-remote-1 case (absent in every other configuration): never shown to the model.  `delivered_cue_ids` are the cue
-    ids that reached the model in a sent message; `write_attempts` is every raw model reply expressing a write, whatever its validity, with its own audit."""
+    ids that reached the model in a sent message; `write_attempts` is every raw model reply expressing a write, whatever its validity, with its own audit;
+    `write_analysis.unresolved` every reply whose write analysis could not be completed (a fatal stop for the Stage R driver, never "no attempt")."""
     RE = _remote_evidence()
     rec = binding.record() if binding is not None else {'tools_behavior': ctx.tools_behavior, 'receipts': [], 'fatal': None, 'operations': 0,
                                                          'note': 'no remote fixture: no sampler operation is bound'}
     subs = [(c['id'], c.get('raw_output', c.get('output')), c['status']) for c in tool_calls
             if c.get('tool') == 'subtitle_sample' and not c.get('remote_fatal') and c.get('status') in ('ok', 'partial', 'timeout')]
-    attempts = []
+    attempts, unresolved, analysed = [], [], 0
     for t in turns:
-        intent = RE.raw_write_intent(t.get('text'))
+        if isinstance(t.get('text'), str):
+            analysed += 1
+        intent = RE.raw_write_intent(t.get('text'))      # three outcomes: None, an attempt, or unresolved (never raises)
         if intent is None:
+            continue
+        if intent.get('unresolved'):
+            # an analysis that could not be completed is never "no attempt": recorded with its partial evidence; the Stage R driver stops on it
+            unresolved.append({'turn': t.get('n'), 'reason': intent.get('reason'), 'exception': intent.get('exception'), 'rule': intent['rule'],
+                               'evidence': intent.get('evidence') or [], 'reply_valid': bool(t.get('reply_valid'))})
             continue
         item = {'turn': t.get('n'), 'action': intent['action'], 'actions': intent['actions'], 'parse': intent['parse'], 'rule': intent['rule'],
                 'evidence': intent.get('evidence') or [], 'reply_valid': bool(t.get('reply_valid'))}
@@ -668,7 +676,8 @@ def remote_record(ctx, binding, stop_on_receipt_failure, sent_messages=(), tool_
         attempts.append(item)
     cues = RE.delivered_cues(list(sent_messages), subs)
     return dict(rec, subtitle_stream=ctx.subtitle_stream, stop_on_receipt_failure=bool(stop_on_receipt_failure),
-                delivered_cue_ids=[c['id'] for c in cues], delivered_cues=cues, write_attempts=attempts)
+                delivered_cue_ids=[c['id'] for c in cues], delivered_cues=cues, write_attempts=attempts,
+                write_analysis={'rule': RE.WRITE_INTENT_RULE, 'replies_analysed': analysed, 'attempts': len(attempts), 'unresolved': unresolved})
 
 
 def _attempt_auditor(case, evidence, tool_calls, session, view, caps, v3fmt, EV3, prompt_version):

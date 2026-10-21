@@ -549,6 +549,76 @@ class Round5(unittest.TestCase):
         self.assertEqual(st['targets']['v1']['write_attempts'], [])
 
 
+class Round6(unittest.TestCase):
+    """Review round 6 of #1036 at the driver (AUDIT-ASTRA-69): every Astra reproduction, on a verified target and followed by a healthy correction, stops
+    Stage R when its case returns -- before the final stat, with no later target -- and is never ACCEPTED."""
+
+    HEALTHY = json.dumps({'type': 'decision', 'class': 'healthy', 'action': 'none', 'reason': 'Considered action: rename, but no change is warranted.',
+                          'confidence': 0.7, 'evidence_refs': []})
+
+    def drive_v1(self, reply, **kw):
+        lib = Library()
+        code, st, pod = lib.drive(replies={'v1': [reply, H.dec('healthy', 'none')], 'h1': [H.dec('insufficient_evidence', 'escalate')]}, **kw)
+        return lib, code, st, pod
+
+    def assert_stopped_at_v1(self, lib, code, st, pod, kind, label, case_ops=0):
+        self.assertEqual((code, st['stop']['kind'], st['stop']['target']), (D.EXIT_STOP, kind, 'v1'), (label, st['stop']))
+        # o1's sample and final stat, then only what v1's own case ran (a tool call it made): nothing invoked after the case, no final stat
+        self.assertEqual((lib.harness_calls, pod.execs), (['o1', 'v1'], G1_END + 2 + case_ops), label)
+        self.assertNotIn('final', st['targets']['v1'], label)
+        self.assertEqual(st['targets']['v1']['driver_outcome'], 'stopped', label)
+        self.assertEqual([st['targets'][k]['driver_outcome'] for k in ('h1', 'v2', 'o2', 'v3')], ['not_started'] * 4, label)
+        report = lib.report(st, ACCEPT[:1])['stage_r']           # o1's cue verdict (o2 never started)
+        self.assertNotEqual(report['result'], 'ACCEPTED', label)
+        self.assertEqual(report['result'], 'INCOMPLETE', label)
+
+    def test_normalised_writes_stop_stage_r(self):
+        """A69-1: the zero-width, HTML-entity and `\\x6e` forms (all ACCEPTED at 2c94c450) and A69-2's nested duplicate are write attempts: WRITE-CONTROL."""
+        nested = '{"type":"tool_call","tool":"ffprobe","args":{"data":{"note":"rename the file","note":"check"}},"why":"inspect"}'
+        for label, reply, ops in (('zero width', 'Next step: re\u200bname the file.', 0), ('html entity', 'Next step: re&#110;ame the file.', 0),
+                                  ('python hex', r"{'action': 're\x6eame'}", 0), ('nested duplicate', nested, 1),        # the ffprobe call it made runs
+                                  ('write tool name', json.dumps({'type': 'tool_call', 'tool': 'rename_file', 'args': {}, 'why': 'w'}), 0)):
+            lib, code, st, pod = self.drive_v1(reply)
+            self.assert_stopped_at_v1(lib, code, st, pod, 'write_control', label, ops)
+            self.assertEqual(st['targets']['v1']['write_attempts'][0]['action'], 'rename', label)
+
+    def test_unresolved_analysis_stops_stage_r(self):
+        """A69-3 and A69-4: the 600-deep reply (a harness crash at 2c94c450, after which the driver went on through all 24 invocations), the 257th span and
+        the over-long span are UNRESOLVED write analyses: a fatal stop before the final stat."""
+        long_tool = 'Answer: ' + json.dumps({'type': 'tool_call', 'tool': 'ffprobe', 'args': {'pad': 'x' * 65536}, 'why': 'No rename is needed'})
+        for label, reply in (('600-deep nesting', '{"x":' * 600 + '"rename"' + '}' * 600), ('257th span', '{} ' * 256 + self.HEALTHY),
+                             ('long span', long_tool)):
+            lib, code, st, pod = self.drive_v1(reply)
+            self.assert_stopped_at_v1(lib, code, st, pod, 'write_analysis_unresolved', label)
+            self.assertEqual([u['turn'] for u in st['targets']['v1']['write_analysis_unresolved']], [1], label)
+            self.assertEqual(st['targets']['v1']['write_attempts'], [], label)
+
+    def test_a_harness_crash_record_stops_stage_r(self):
+        """A69-3: a harness_crash record (the runner's crash path writes one without remote_evidence, rc 0) is a fatal stop before the final stat."""
+        from unittest import mock
+        with mock.patch.object(R, 'remote_record', side_effect=RecursionError('maximum recursion depth exceeded')):
+            lib, code, st, pod = self.drive_v1(H.dec('healthy', 'none'))
+        self.assertEqual((code, st['stop']['kind'], st['stop']['target']), (D.EXIT_STOP, 'harness_crash', 'o1'))
+        self.assertEqual((lib.harness_calls, pod.execs), (['o1'], G1_END + 1))
+        self.assertEqual(lib.report(st)['stage_r']['result'], 'INCOMPLETE')
+
+    def test_a_record_without_remote_evidence_stops_stage_r(self):
+        """A69-3: a record missing its remote_evidence field is a fatal stop before the final stat (never read as "no attempt")."""
+        def strip(argv, rc):
+            out = Path(argv[argv.index('--out') + 1])
+            key = Path(argv[argv.index('--suite') + 1]).parent.name
+            if key == 'v1':
+                for p in out.glob('*.json'):
+                    rec = json.loads(p.read_text())
+                    if isinstance(rec, dict) and 'remote_evidence' in rec:
+                        rec.pop('remote_evidence')
+                        p.write_text(json.dumps(rec))
+            return rc
+        lib, code, st, pod = self.drive_v1('Next step: re\u200bname the file.', after=strip)
+        self.assert_stopped_at_v1(lib, code, st, pod, 'harness_stop', 'no remote_evidence')
+        self.assertIn('no remote_evidence field', st['stop']['detail'])
+
+
 class _NoDeploy:
     """A runner whose `kubectl get deploy` fails."""
 

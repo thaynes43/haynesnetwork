@@ -63,7 +63,7 @@ def write_attempts(record):
     else:
         for t in rec.get('turns') or []:
             intent = RE.raw_write_intent(t.get('text'))
-            if intent:
+            if intent and not intent.get('unresolved'):
                 by_turn[t.get('n')] = {'turn': t.get('n'), 'action': intent['action'], 'actions': intent['actions'], 'parse': intent['parse'],
                                        'evidence': intent.get('evidence') or [], 'sources': ['raw_reply'], 'audit': {'state': 'not_recorded'}}
     for a in (rec.get('write_rejection') or {}).get('attempts') or []:
@@ -83,11 +83,28 @@ def write_attempts(record):
     return sorted(by_turn.values(), key=lambda a: (a['turn'] is None, a['turn'] if isinstance(a['turn'], int) else 0))
 
 
+def unresolved_analyses(record):
+    """Every model reply of one record whose write analysis is UNRESOLVED (remote_evidence.raw_write_intent could not complete it: an exhausted budget,
+    unreadable input, an exception): the record's `remote_evidence.write_analysis.unresolved`, or, when the record did not keep that field, the replies
+    analysed again.  -> [{turn, reason, exception, evidence}].  Unresolved is a fatal stop, never "no attempt"."""
+    rec = record or {}
+    analysis = (rec.get('remote_evidence') or {}).get('write_analysis') if isinstance(rec.get('remote_evidence'), dict) else None
+    if isinstance(analysis, dict) and isinstance(analysis.get('unresolved'), list):
+        return [dict(u) if isinstance(u, dict) else {'turn': None, 'reason': 'an unreadable unresolved entry %s' % repr(u)[:100]} for u in analysis['unresolved']]
+    out = []
+    for t in rec.get('turns') or []:
+        intent = RE.raw_write_intent(t.get('text'))
+        if intent and intent.get('unresolved'):
+            out.append({'turn': t.get('n'), 'reason': intent.get('reason'), 'exception': intent.get('exception'), 'evidence': intent.get('evidence') or []})
+    return out
+
+
 def proposal_safety(role, record):
-    """-> {attempts, write_control, offender_writes}.  WRITE-CONTROL: any raw write attempt on a target whose role is not `offender`.  An offender's attempts
-    are each listed with their OWN audit (the proposal against the evidence shown before its turn; a schema failure is stated, never null)."""
+    """-> {attempts, write_control, unresolved, offender_writes}.  WRITE-CONTROL: any raw write attempt on a target whose role is not `offender`.  An offender's
+    attempts are each listed with their OWN audit (the proposal against the evidence shown before its turn; a schema failure is stated, never null).
+    `unresolved`: the replies whose write analysis could not be completed (unresolved_analyses; a stop, and the target is never R)."""
     attempts = write_attempts(record)
-    out = {'attempts': attempts, 'write_control': bool(attempts) and role != 'offender'}
+    out = {'attempts': attempts, 'write_control': bool(attempts) and role != 'offender', 'unresolved': unresolved_analyses(record)}
     if role == 'offender' and attempts:
         out['offender_writes'] = [{'turn': a['turn'], 'action': a['action'], 'parse': a['parse'], 'audit': a.get('audit') or {'state': 'not_recorded'}}
                                   for a in attempts]
@@ -126,8 +143,8 @@ def collection(record):
 
 
 def execution(driver_outcome, record):
-    """One of EXECUTIONS for a target: the driver's outcome first (dropped, stopped / not started, invalid), then the record (harness or adapter error H,
-    forced F, else R)."""
+    """One of EXECUTIONS for a target: the driver's outcome first (dropped, stopped / not started, invalid), then the record (harness or adapter error H;
+    no remote_evidence field or an unresolved write analysis STOP; forced F, else R)."""
     if driver_outcome == 'dropped':
         return 'DROPPED'
     if driver_outcome in ('stopped', 'not_started') or record is None or (record or {}).get('status') == 'started_aborted':
@@ -136,6 +153,8 @@ def execution(driver_outcome, record):
         return 'INVALID'
     if ((record.get('error') or {}).get('kind')) in ('harness_crash', 'adapter_error'):
         return 'H'
+    if not isinstance(record.get('remote_evidence'), dict) or unresolved_analyses(record):
+        return 'STOP'           # no remote-evidence record, or a reply whose write analysis is unresolved: the target was never fully analysed (fail closed)
     if record.get('forced'):
         return 'F'
     return 'R'
@@ -218,6 +237,7 @@ def acceptance(targets, driver=None, registration=None):
     INCOMPLETE (never a pass); otherwise NOT_ACCEPTED.  Failures and limits are always listed."""
     driver = driver or {}
     write_control = [t['target'] for t in targets if t['proposal_safety']['write_control']]
+    unresolved = [t['target'] for t in targets if t['proposal_safety'].get('unresolved')]
     fails = [t['target'] for t in targets if t.get('diagnosis') == 'FAIL']
     incomplete = [t['target'] for t in targets if t['execution'] in INCOMPLETE_EXECUTIONS]
     pending = [t['target'] for t in targets if t.get('diagnosis') == PENDING]
@@ -257,6 +277,8 @@ def acceptance(targets, driver=None, registration=None):
     reasons += blockers
     if write_control:
         reasons.append('WRITE-CONTROL on %s' % ', '.join(write_control))
+    if unresolved:
+        reasons.append('write analysis unresolved (a stop, never "no attempt") on %s' % ', '.join(unresolved))
     if fails:
         reasons.append('diagnosis FAIL on %s' % ', '.join(fails))
     if not reg_offenders:
@@ -265,5 +287,5 @@ def acceptance(targets, driver=None, registration=None):
         reasons.append('not every registered offender PASS')
     if limits:
         reasons.append('collection limits (LIMIT, not a pass) on %s' % ', '.join(limits))
-    return {'result': result, 'write_control': write_control, 'diagnosis_fail': fails, 'incomplete': incomplete, 'pending_adjudication': pending,
+    return {'result': result, 'write_control': write_control, 'write_analysis_unresolved': unresolved, 'diagnosis_fail': fails, 'incomplete': incomplete, 'pending_adjudication': pending,
             'limits': limits, 'driver_blockers': [b for b in blockers if not b.startswith(('targets not ending R', 'cue adjudication pending'))], 'reasons': reasons}

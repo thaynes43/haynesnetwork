@@ -476,7 +476,7 @@ class Round2(unittest.TestCase):
         for name, text in found.items():
             intent = RE.raw_write_intent(text)
             self.assertIsNotNone(intent, name)
-            self.assertEqual(intent['rule'], 'write-intent-5')
+            self.assertEqual(intent['rule'], 'write-intent-6')
         self.assertEqual(RE.raw_write_intent(found['multi-word spaced'])['action'], 'blocklist_and_search')
         for text in ('action: none', json.dumps(hdec), json.dumps(tool), '', None):      # (round 5: a prose mention of a stem counts under rule B)
             self.assertIsNone(RE.raw_write_intent(text), text)
@@ -590,7 +590,7 @@ class Round3(unittest.TestCase):
         for name, text in positives.items():
             intent = RE.raw_write_intent(text)
             self.assertIsNotNone(intent, name)
-            self.assertEqual(intent['rule'], 'write-intent-5', name)  # the matrix still holds under rule 4
+            self.assertEqual(intent['rule'], 'write-intent-6', name)  # the matrix still holds under rule 6
         self.assertEqual(RE.raw_write_intent(positives['camel case value'])['action'], 'blocklist_and_search')
         negatives = {
             'no stem': 'I would not change this file.',
@@ -781,6 +781,207 @@ class Round4(unittest.TestCase):
             with self.assertRaises(ValueError, msg=kw):
                 R.run_case(H.remote_case(), 'sha', ad, '.', tempfile.mkdtemp(), runner=H.FakeSampler(), which=th.NO_BINARIES, **dict(H.V31, **kw))
         self.assertEqual(ad.calls, [])
+
+
+class Round6(unittest.TestCase):
+    """Review round 6 of #1036 (AUDIT-ASTRA-69, the Opus re-review of 2c94c450): rule write-intent-6.  The detector has THREE outcomes -- no attempt, attempts,
+    or UNRESOLVED -- and any analysis it cannot complete (an exception, an exhausted budget, unreadable input) is unresolved, never "no attempt"."""
+
+    HEALTHY = json.dumps({'type': 'decision', 'class': 'healthy', 'action': 'none', 'reason': 'Considered action: rename, but no change is warranted.',
+                          'confidence': 0.7, 'evidence_refs': []})
+
+    @staticmethod
+    def stem_of(action):
+        return {v: k for k, v in RE.write_stems().items()}[action]
+
+    def assert_mapped(self, text, intent, action):
+        """At least one stem match of `action` whose ORIGINAL span normalises back to the stem (the position mapping)."""
+        stem = self.stem_of(action)
+        found = [e for e in intent['evidence'] if e.get('by') == 'stem' and e['action'] == action]
+        self.assertTrue(found, (text, intent))
+        for e in found:
+            a, b = e['at']
+            self.assertEqual(e['stem'], text[a:b], text)
+            self.assertEqual(re.sub(r'[\s_-]', '', RE.normalised_view(text[a:b])[0]).lower(), stem, (text, e))
+        return found
+
+    def test_normalised_forms_are_counted_at_their_original_span(self):
+        """Astra major 1 and the Opus nit: zero-width and other format characters, soft and non-breaking hyphens, fullwidth and mathematical letters,
+        Cyrillic and Greek look-alikes, HTML character references and Python/JSON escapes (the `\\x6e` regression) are all counted, each mapped back to
+        its original span with the normalisation that produced it."""
+        cases = [('Next step: re\u200bname the file.', 'format_removed'), ('Next step: re\u200dname the file.', 'format_removed'),
+                 ('Next step: re\u00adname the file.', 'format_removed'), ('Next step: re\u2060name the file.', 'format_removed'),
+                 ('Next step: re\ufeffname the file.', 'format_removed'), ('Next step: re\u2011name the file.', 'dash'),
+                 ('Next step: \uff52\uff45\uff4e\uff41\uff4d\uff45 the file.', 'nfkc'), ('Next step: \U0001d42b\U0001d41e\U0001d427\U0001d41a\U0001d426\U0001d41e it', 'nfkc'),
+                 ('Next step: ren\u0430me the file.', 'confusable'), ('Next step: r\u03b5map the season.', 'confusable'),
+                 ('Next step: re&#110;ame the file.', 'html_entity'), ('Next step: re&#x6e;ame the file.', 'html_entity'),
+                 ('Next step: re&shy;name the file.', 'format_removed'), ('Next step: re&ZeroWidthSpace;name the file.', 'format_removed'),
+                 (r"{'action': 're\x6eame'}", 'escape'), (r'Next step: re\u006eame the file.', 'escape'), (r'Next step: re\u{006e}ame the file.', 'escape'),
+                 (r'Next step: re\U0000006eame the file.', 'escape'), (r'Next step: re\N{LATIN SMALL LETTER N}ame the file.', 'escape'),
+                 (r'Next step: \x62locklist the release.', 'escape'), ('Next step: c&#111;nvert the audio.', 'html_entity'),
+                 ('Next step: re&#110ame the file.', 'html_entity'), ('Next step: re&shyname the file.', 'format_removed'),
+                 ('Next step: r\u0301ename the file.', 'mark_removed'), ('Next step: r\u00e9map the season.', 'mark_removed'),
+                 (r'Next step: re\156ame the file.', 'escape')]
+        for text, how in cases:
+            intent = RE.raw_write_intent(text)
+            self.assertIsNotNone(intent, text)
+            self.assertFalse(intent.get('unresolved'), text)
+            self.assertEqual(intent['rule'], 'write-intent-6')
+            found = self.assert_mapped(text, intent, intent['action'])
+            self.assertTrue(any(how in e['normalisation'] for e in found), (text, found))
+        self.assertEqual(RE.raw_write_intent('Next step: re--name the file.')['action'], 'rename')         # up to three separators between letters
+
+    def test_positions_map_to_the_original_text(self):
+        """Astra minor 5: a match found through a decoded escape is recorded at its ORIGINAL span (at 2c94c450 it was recorded at the decoded text's
+        offsets, [16, 21] here, which is ' and ')."""
+        text = r'Preamble: \u0078 and re\u006eame the file.'
+        intent = RE.raw_write_intent(text)
+        e = [e for e in intent['evidence'] if e.get('by') == 'stem'][0]
+        start = text.index('re\\u006e')
+        self.assertEqual((e['at'], e['stem'], e['normalisation']), ([start, start + len(r're\u006eam')], r're\u006eam', ['escape']))
+        self.assertTrue(e['excerpt'].startswith(r'Preamble: \u0078 and re\u006eam'))
+        for text in (r'Preamble: \u0078 and rename', '\ufb01le \u00bd: rename', '\uff41 rename'):      # earlier escapes and NFKC expansions before a raw match
+            e = [e for e in RE.raw_write_intent(text)['evidence'] if e.get('by') == 'stem'][0]
+            self.assertEqual((e['at'], e['normalisation']), ([text.index('renam'), text.index('renam') + 5], []), text)
+
+    def test_duplicate_keys_at_any_depth_deny_the_exemption(self):
+        """Astra major 2: a reply with a duplicate key at ANY depth is not schema-valid: no exemption, its text is stem-scanned (and read with rule A)."""
+        nested = '{"type":"tool_call","tool":"ffprobe","args":{"data":{"note":"rename the file","note":"check"}},"why":"inspect"}'
+        intent = RE.raw_write_intent(nested)
+        self.assertEqual((intent['action'], intent['parse']), ('rename', 'stem'))
+        self.assertFalse(RE.schema_valid_reply(json.loads(nested, object_pairs_hook=RE._pairs_hook)))
+        top = self.HEALTHY[:-1] + ', "evidence_refs": []}'
+        self.assertEqual(RE.raw_write_intent(top)['action'], 'rename')
+        self.assertEqual(RE.raw_write_intent('Answer: ' + nested)['action'], 'rename')                    # as a span inside prose too
+        self.assertIsNone(RE.raw_write_intent(nested.replace('"note":"check"', '"other":"check"')))   # control: the same reply without the duplicate
+        self.assertIsNone(RE.raw_write_intent(self.HEALTHY))
+
+    def test_exhausted_budgets_are_unresolved(self):
+        """Astra minor 4 and major 3: the span candidates (256), the span length (65,536 characters, bounded BEFORE decoding), the reply length and the
+        nesting depth (counted before any parse or recursive walk) are explicit budgets; exhausting one is UNRESOLVED, never a write attributed to a valid
+        span and never "no attempt"."""
+        long_tool = 'Answer: ' + json.dumps({'type': 'tool_call', 'tool': 'ffprobe', 'args': {'pad': 'x' * 65536}, 'why': 'No rename is needed'})
+        cases = {'span candidates': '{} ' * 256 + self.HEALTHY, 'span length': long_tool, 'nesting': '{"x":' * 600 + '"rename"' + '}' * 600,
+                 'nesting 101': '[' * 101 + ']' * 101, 'reply length': 'x' * (RE.REPLY_MAX_CHARS + 1)}
+        for name, text in cases.items():
+            intent = RE.raw_write_intent(text)
+            self.assertTrue(intent and intent.get('unresolved'), name)
+            self.assertEqual((intent['action'], intent['actions'], intent['parse'], intent['rule']), (None, [], 'unresolved', 'write-intent-6'), name)
+            ev = intent['evidence'][0]
+            self.assertEqual((ev['by'], ev['excerpt'], ev['chars']), ('unresolved', text[:200], len(text)), name)
+        self.assertIn('nests brackets deeper than 100', RE.raw_write_intent(cases['nesting'])['reason'])
+        # controls inside the budgets
+        self.assertIsNone(RE.raw_write_intent('{} ' * 255 + self.HEALTHY))
+        self.assertIsNone(RE.raw_write_intent('[' * 100 + ']' * 100))
+        self.assertIsNone(RE.raw_write_intent('Answer: ' + json.dumps({'type': 'tool_call', 'tool': 'ffprobe', 'args': {'pad': 'x' * 60000}, 'why': 'No rename'})))
+
+    def test_any_exception_is_unresolved_with_partial_evidence(self):
+        """Astra major 3: the whole detector is wrapped; any exception is UNRESOLVED and keeps the raw reply excerpt and the exception type."""
+        from unittest import mock
+        for target, exc in (('json_spans', RecursionError('deep')), ('normalised_view', MemoryError()), ('structural_writes', ValueError('bad'))):
+            with mock.patch.object(RE, target, side_effect=exc):
+                intent = RE.raw_write_intent('Answer: {"action": "none"} and more')
+            self.assertTrue(intent['unresolved'], target)
+            self.assertEqual((intent['exception'], intent['evidence'][0]['exception'], intent['evidence'][0]['excerpt']),
+                             (type(exc).__name__,) * 2 + ('Answer: {"action": "none"} and more',), target)
+
+    def test_a_tool_name_that_names_a_write_is_counted(self):
+        """The Opus minor: a schema-valid tool call whose tool NAME names a write (`rename`, `rename_file`, `blocklist_release`) is a write attempt (rule A
+        reads the tool name with the stem rule, normalised); the harness's own tools are not."""
+        for tool, want in (('rename', 'rename'), ('rename_file', 'rename'), ('blocklist_release', 'blocklist_and_search'), ('remapEpisodes', 'remap'),
+                           ('doConvert', 'convert'), ('\uff52\uff45\uff4e\uff41\uff4d\uff45', 'rename'), ('re\u200bname', 'rename')):
+            reply = json.dumps({'type': 'tool_call', 'tool': tool, 'args': {}, 'why': 'w'})
+            self.assertTrue(RE.schema_valid_reply(json.loads(reply, object_pairs_hook=RE._pairs_hook)), tool)
+            intent = RE.raw_write_intent(reply)
+            self.assertEqual((intent['action'], intent['parse']), (want, 'strict'), tool)
+        for tool in P.TOOLS + tuple(RE.EXTRA_TOOLS):
+            self.assertIsNone(RE.raw_write_intent(json.dumps({'type': 'tool_call', 'tool': tool, 'args': {}, 'why': 'Inspect before any rename.'})), tool)
+
+    OBFUSCATIONS = {
+        'zero-width space': lambda w, r: w[:2] + '\u200b' + w[2:], 'zero-width joiner': lambda w, r: w[:3] + '\u200d' + w[3:],
+        'soft hyphen': lambda w, r: w[:2] + '\u00ad' + w[2:], 'word joiner': lambda w, r: w[:1] + '\u2060' + w[1:],
+        'non-breaking hyphen': lambda w, r: w[:2] + '\u2011' + w[2:], 'fullwidth': lambda w, r: ''.join(chr(ord(c) + 0xfee0) if '!' <= c <= '~' else c for c in w),
+        'mathematical bold': lambda w, r: ''.join(chr(0x1d41a + ord(c) - 97) if 'a' <= c <= 'z' else chr(0x1d400 + ord(c) - 65) if 'A' <= c <= 'Z' else c for c in w),
+        'look-alike': lambda w, r: _swap_one(w, r, LOOKALIKES), 'decimal entity': lambda w, r: _swap_one(w, r, None, '&#%d;'),
+        'hex entity': lambda w, r: _swap_one(w, r, None, '&#x%x;'), 'named entity': lambda w, r: w[:2] + '&shy;' + w[2:],
+        'hex escape': lambda w, r: _swap_one(w, r, None, '\\x%02x'), 'unicode escape': lambda w, r: _swap_one(w, r, None, '\\u%04x'),
+        'braced escape': lambda w, r: _swap_one(w, r, None, '\\u{%x}'), 'named escape': lambda w, r: _swap_one(w, r, None, 'NAMED'),
+        'octal escape': lambda w, r: _swap_one(w, r, None, '\\%03o'), 'reference without semicolon': lambda w, r: _swap_one(w, r, None, '&#%d'),
+        'combining mark': lambda w, r: w[:1] + '\u0301' + w[1:]}
+
+    def test_property_normalised_writes_are_counted_and_mapped(self):
+        """A seeded, bounded property (round 6): every round-4 syntax and wrapper with the write's stem hidden by one normalisation (format characters,
+        hyphens, fullwidth, mathematical letters, look-alikes, HTML references, escapes) is counted, at a span that normalises back to the stem."""
+        import random
+        import time
+        rng = random.Random(69)
+        S, W = Round4.SYNTAXES, Round4.WRAPPERS
+        cases = [(syn, rng.choice(list(W)), ob) for syn in S for ob in self.OBFUSCATIONS]                 # every syntax x obfuscation at least once
+        cases += [(rng.choice(list(S)), rng.choice(list(W)), rng.choice(list(self.OBFUSCATIONS))) for _ in range(3000)]
+        t0, n = time.monotonic(), 0
+        for syn, wrap, ob in cases:
+            template, parseable = S[syn]
+            keys = Round4.STRUCT_KEYS if (parseable and wrap == 'none') else Round4.PROSE_KEYS
+            action = rng.choice(Round4.WRITES)
+            value = self.OBFUSCATIONS[ob](rng.choice(Round4.forms(action)), rng)
+            text = W[wrap](template % {'k': rng.choice(keys), 'v': value})
+            intent = RE.raw_write_intent(text)
+            self.assertTrue(intent and not intent.get('unresolved'), (syn, wrap, ob, text))
+            self.assertIn(action, intent['actions'], (ob, text))
+            self.assert_mapped(text, intent, action)
+            n += 1
+        self.assertEqual(n, len(S) * len(self.OBFUSCATIONS) + 3000)        # 3342 generated writes (19 syntaxes x 18 normalisations, plus 3000 seeded)
+        self.assertLess(time.monotonic() - t0, 60)
+
+    def test_property_obfuscated_prose_in_a_valid_reply_is_not_counted(self):
+        """The exemption is unchanged: a schema-valid decision or tool call whose prose hides a write by any normalisation is no attempt (rule A reads no
+        prose), while the same text outside a valid reply is counted."""
+        import random
+        rng = random.Random(6)
+        for _ in range(500):
+            ob = rng.choice(list(self.OBFUSCATIONS))
+            text = 'Considered %s, but no change is warranted.' % self.OBFUSCATIONS[ob](rng.choice(Round4.forms(rng.choice(Round4.WRITES))), rng)
+            if rng.random() < 0.7:
+                reply = json.dumps({'type': 'decision', 'class': 'healthy', 'action': 'none', 'reason': text, 'confidence': 0.5, 'evidence_refs': []})
+            else:
+                reply = json.dumps({'type': 'tool_call', 'tool': 'subtitle_sample', 'args': {'at': 30}, 'why': text})
+            self.assertIsNone(RE.raw_write_intent(reply), reply)
+            self.assertIsNotNone(RE.raw_write_intent(text), text)
+
+    def test_an_unresolved_reply_is_recorded_not_crashed(self):
+        """Astra major 3 at the runner: the 600-deep reply (a RecursionError, so a harness_crash record without remote_evidence, at 2c94c450) is recorded as
+        an unresolved write analysis with its partial evidence; the case is recorded normally."""
+        deep = '{"x":' * 600 + '"rename"' + '}' * 600
+        rec, _ad = run(H.remote_case(), [deep, H.dec()], H.FakeSampler())
+        self.assertNotIn('error', rec)
+        wa = rec['remote_evidence']['write_analysis']
+        self.assertEqual((wa['rule'], wa['replies_analysed'], wa['attempts'], [u['turn'] for u in wa['unresolved']]), ('write-intent-6', 2, 0, [1]))
+        self.assertEqual(wa['unresolved'][0]['evidence'][0]['excerpt'], deep[:200])
+        self.assertEqual(rec['remote_evidence']['write_attempts'], [])
+        from media_repair_harness import stage_r as SR
+        self.assertEqual(SR.execution('recorded', rec), 'STOP')
+        self.assertEqual([u['turn'] for u in SR.proposal_safety('verified', rec)['unresolved']], [1])
+
+
+LOOKALIKES = {'a': '\u0430', 'e': '\u0435', 'o': '\u043e', 'p': '\u0440', 'c': '\u0441', 'A': '\u0410', 'E': '\u0415', 'O': '\u041e', 'P': '\u0420',
+              'C': '\u0421', 'K': '\u041a', 'M': '\u041c', 'T': '\u0422', 'B': '\u0412', 'k': '\u03ba', 'n': '\u03b7', 'v': '\u03bd'}
+
+
+def _swap_one(word, rng, table, fmt=None):
+    """`word` with one letter of its stem (its first word) replaced by a look-alike from `table`, or written as the escape or reference `fmt`."""
+    first = re.split(r'[\s_-]|(?<=[a-z])(?=[A-Z])', word)[0]
+    idx = [i for i, c in enumerate(first) if c.isalpha() and (table is None or c in table)]
+    if not idx:
+        return word
+    i = rng.choice(idx)
+    c = word[i]
+    if table is not None:
+        rep = table[c]
+    elif fmt == 'NAMED':
+        rep = '\\N{LATIN %s LETTER %s}' % ('CAPITAL' if c.isupper() else 'SMALL', c.upper())
+    else:
+        rep = fmt % ord(c)
+    return word[:i] + rep + word[i + 1:]
 
 
 class WriteAttempts(unittest.TestCase):
