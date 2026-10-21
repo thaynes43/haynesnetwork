@@ -3,12 +3,16 @@ import hashlib
 import json
 from pathlib import Path
 
-HARNESS_VERSION = 'dev-c7'  # recorded in every run record and manifest
+HARNESS_VERSION = 'dev-c8'  # recorded in every run record and manifest
 PROTOCOL_VERSION = 'v1'  # the v1 turn protocol (prompt v1); prompt v2 has its own, see PROMPT_VERSIONS
-PROMPT_VERSIONS = ('v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7')
+PROMPT_VERSIONS = ('v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8')
 # Prompt text and turn protocol are versioned apart: v3 (dev-c3) is new prompt text on the unchanged v2 turn protocol (audit object,
 # tool_not_offered violations, per-case schema).  Anything that is about the protocol asks `protocol_of(version)`, not the prompt version.
-PROMPT_PROTOCOL = {'v1': 'v1', 'v2': 'v2', 'v3': 'v2', 'v4': 'v2', 'v5': 'v2', 'v6': 'v3', 'v7': 'v3'}
+PROMPT_PROTOCOL = {'v1': 'v1', 'v2': 'v2', 'v3': 'v2', 'v4': 'v2', 'v5': 'v2', 'v6': 'v3', 'v7': 'v3', 'v8': 'v3'}
+# v8 (dev-c8) is prompt text on turn protocol v3 / decision-v3 with ONE protocol minor change, the length-specific repair hint (`turn-v3.1`, see
+# repair_prompt_v31): the turn rules, the decision schema, the validator and the per-case repair allowance are those of v3.  Valid only with `--evidence-format v3.1-format`.
+TURN_PROTOCOL_NAME = {'v8': 'turn-v3.1'}      # the recorded protocol name where it is not 'turn-' + protocol_of(version)
+LENGTH_REPAIR_PROMPTS = ('v8',)               # prompts whose repair prompt names a length failure (turn-v3.1)
 # v7 (dev-c7) is prompt text on the same turn protocol v3 / decision-v3 as v6, valid only with `--evidence-format v3.1-format`; v6 stays frozen.
 # v6 (dev-c6) is the one prompt that declares contract v3: it speaks turn protocol v3 (decision schema `decision-v3`: a write carries a source binding and an
 # action-specific target object; none and escalate carry neither), valid only with `--evidence-format v3` (run.check_option_combination).
@@ -16,7 +20,7 @@ V2_TURN_PROTOCOLS = ('v2', 'v3')   # protocols that share the v2 turn rules (too
 # Prompt versions whose per-case Ollama `format` schema is exact about the tool enum: a case that offers NO tool gets no tool-call branch at all.
 # v2 and v3 keep the dev-c2/dev-c3 behaviour (an empty tools_available fell back to the full tool list there, which is how muse-glimmer:30b called
 # tools no case offered on 11 dev cases); changing it for them would change what those prompts measure.
-STRICT_TOOL_SCHEMA = ('v4', 'v5', 'v6', 'v7')
+STRICT_TOOL_SCHEMA = ('v4', 'v5', 'v6', 'v7', 'v8')
 DEFAULT_PROMPT = 'v1'  # stays v1 until checkpoint 2c
 PROMPT_DIR = Path(__file__).resolve().parent / 'prompts'
 MAX_TOOL_CALLS = 6
@@ -112,10 +116,11 @@ def get_prompt(version=DEFAULT_PROMPT):
     records); v2 is prompts/v2.txt and v3 (dev-c3) is prompts/v3.txt, each sent exactly as its file reads (one trailing newline removed).
     v3 (dev-c3), v4 (dev-c4) and v5 (dev-c5; valid only with `--evidence-format v2`, see run.check_option_combination) are new text on the v2 turn protocol, see protocol_of.
     v6 (dev-c6) declares contract v3 and speaks turn protocol v3; it is valid only with `--evidence-format v3`.  v7 (dev-c7) is new text on turn protocol v3,
-    valid only with `--evidence-format v3.1-format`."""
+    valid only with `--evidence-format v3.1-format`.  v8 (dev-c8) is new text on turn-v3.1 (turn-v3 plus the length-specific repair hint), also valid only
+    with `--evidence-format v3.1-format`."""
     if version == 'v1':
         text = SYSTEM_PROMPT
-    elif version in ('v2', 'v3', 'v4', 'v5', 'v6', 'v7'):
+    elif version in ('v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8'):
         text = (PROMPT_DIR / (version + '.txt')).read_text(encoding='utf-8').rstrip('\n')
     else:
         raise ValueError('unknown prompt version %r (known: %s)' % (version, ', '.join(PROMPT_VERSIONS)))
@@ -439,6 +444,68 @@ def repair_prompt(error, modes=()):
     text = REPAIR_PROMPT.format(error=error)
     hints = [REPAIR_HINTS[m] for m in modes if m in REPAIR_HINTS]
     return text + (' Hints: ' + '; '.join(hints) + '.' if hints else '')
+
+
+# ---- turn protocol v3.1 (prompt v8, dev-c8): the length-specific repair hint ------------------------------------------------------------
+# Hard limits are unchanged (the validator decides); the soft budgets are the targets prompt v8 states, guidance only (never a validation failure).
+# Lengths are Python string lengths of the DECODED JSON value (code points): an escape such as \n or \u00e9 in the reply text is one character.
+LENGTH_FIELDS = {'reason': {'limit': 400, 'soft': 300, 'kind': 'decision', 'asks': 'a short summary of the decisive evidence'},
+                 'why': {'limit': 200, 'soft': 120, 'kind': 'tool_call', 'asks': 'a short summary of what the call should show'}}
+LENGTH_MODE = 'length_limit'
+REPAIR_ALLOWANCE = {'per': 'case', 'repair_prompts_max': 1,
+                    'note': 'unchanged from turn-v1/v2/v3: one repair prompt per case for any invalid reply; a later invalid reply ends in the forced escalate'}
+
+
+def length_failures(obj):
+    """-> [{field, chars, limit, soft}] for each string field of a reply over its hard limit (decoded characters).  Only reason (a decision) and why (a tool call)
+    have a soft budget; any other length error is an ordinary validation error."""
+    out = []
+    if not isinstance(obj, dict):
+        return out
+    for field, spec in LENGTH_FIELDS.items():
+        v = obj.get(field)
+        if obj.get('type') == spec['kind'] and isinstance(v, str) and len(v) > spec['limit']:
+            out.append({'field': field, 'chars': len(v), 'limit': spec['limit'], 'soft': spec['soft']})
+    return out
+
+
+def length_only(obj, prompt_version, tools_available=None):
+    """True when a rejected reply fails ONLY on the length of reason / why: with each over-long field replaced by a one-character placeholder the same
+    validator accepts it.  A reply with any other error (a semantic or shape error next to the overflow) is not length-only."""
+    over = length_failures(obj)
+    if not over:
+        return False
+    probe = dict(obj, **{o['field']: 'x' for o in over})
+    kind, errs = validate_turn(probe, tools_available, prompt_version)
+    return kind is not None and not errs
+
+
+def failure_modes_v31(prompt_version, text, obj, errors, diag=None):
+    """turn-v3.1: the turn-v3 modes plus `length_limit` when a reason / why is over its hard limit (alone or next to other errors)."""
+    modes = set(failure_modes_for(prompt_version, text, obj, errors, diag))
+    if length_failures(obj):
+        modes.add(LENGTH_MODE)
+    return sorted(modes)
+
+
+def repair_prompt_v31(error, modes, obj, prompt_version, tools_available=None):
+    """-> (text, info).  The one repair prompt of turn-v3.1.  A reply that failed ONLY on a length limit gets the length-specific form: the field, its decoded
+    length, the hard limit and the soft budget, and a request to summarise the decisive evidence.  Any other rejected reply gets the turn-v3 repair prompt; when a
+    length failure is among its errors, one length hint per field is added to its hints.  The wording never says which decision to make.  The allowance is
+    unchanged (one per case; REPAIR_ALLOWANCE)."""
+    over = length_failures(obj)
+    only = length_only(obj, prompt_version, tools_available)
+    info = {'repair_protocol': 'turn-v3.1', 'length_only': only, 'length_fields': over}
+    if only:
+        parts = ['%s has %d characters; the limit is %d (aim for about %d)' % (o['field'], o['chars'], o['limit'], o['soft']) for o in over]
+        asks = '; '.join('rewrite %s as %s' % (o['field'], LENGTH_FIELDS[o['field']]['asks']) for o in over)
+        text = ('Your last reply was rejected only for its length: %s. Reply again with exactly one JSON object following the protocol, nothing else: %s, '
+                'with any material limitation that affects the decision, and do not restate rules that are satisfied.' % ('; '.join(parts), asks))
+        return text, info
+    hints = [REPAIR_HINTS[m] for m in modes if m in REPAIR_HINTS]
+    hints += ['%s is at most %d characters (aim for about %d): rewrite it as %s' % (o['field'], o['limit'], o['soft'], LENGTH_FIELDS[o['field']]['asks']) for o in over]
+    text = REPAIR_PROMPT.format(error=error) + (' Hints: ' + '; '.join(hints) + '.' if hints else '')
+    return text, info
 
 
 def forced_decision(reason):

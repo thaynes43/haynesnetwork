@@ -91,7 +91,7 @@ class Tmp(unittest.TestCase):
 # ---------------------------------------------------------------------------------------------------------------- versions
 class Versions(unittest.TestCase):
     def test_harness_version_and_the_new_names(self):
-        self.assertEqual(P.HARNESS_VERSION, 'dev-c7')
+        self.assertEqual(P.HARNESS_VERSION, 'dev-c8')      # dev-c8 moved it; v7 and format v3.1-format are unchanged
         self.assertEqual(EV31.FORMAT_VERSION, 'v3.1-format')       # never "v3.1": that is the rubric amendment
         self.assertNotEqual(EV31.FORMAT_VERSION, RB.RUBRIC_V31_VERSION)
         self.assertEqual((EV31.TOOLS_BEHAVIOR, EV31.RUBRIC_VERSION, EV31.CHECKER_RUBRIC), ('v3', 'contract-v3-rubric-3.2', 'contract-v3-rubric-3.1'))
@@ -155,7 +155,7 @@ class Versions(unittest.TestCase):
         ts = th.TempSuite([case])
         rec, _ad = ev2h.scripted_run(case, ts, [json.dumps(d3())], prompt='v7', evidence_format='v3.1-format', guards='v3', which=th.NO_BINARIES)
         ef = rec['evidence_format']
-        self.assertEqual((rec['harness_version'], rec['prompt']['version'], rec['prompt']['protocol']), ('dev-c7', 'v7', 'turn-v3'))
+        self.assertEqual((rec['harness_version'], rec['prompt']['version'], rec['prompt']['protocol']), ('dev-c8', 'v7', 'turn-v3'))
         self.assertEqual((ef['version'], ef['tools_behavior'], ef['rubric'], ef['checker_rubric'], ef['excerpt_rule'], ef['protocol'], ef['decision_schema'], ef['audit_version']),
                          ('v3.1-format', 'v3', 'contract-v3-rubric-3.2', 'contract-v3-rubric-3.1', 'xhtml-body-text-3', 'turn-v3', 'decision-v3', 'v3'))
         self.assertEqual(ef['excerpt_rules_sha256'], EV31.ET.rules_digest())

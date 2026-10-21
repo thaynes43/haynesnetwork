@@ -1,5 +1,90 @@
 # Harness changelog
 
+## dev-c8 (WO-W26, OpenProject #158): prompt v8, turn-v3.1, claude-schema-1, guards v4; offline, not measured
+
+`HARNESS_VERSION` is `dev-c8`. Every earlier prompt, format, guard version and adapter is unchanged; the recorded dev-c4 to dev-c7 runs, the dev-c6 replay
+and the W25 artifacts reproduce (the registered dev-c7 commands rebuild their config hash under the version label they were registered with, and every
+other config field is compared equal). No model was called. Details: `docs/dev-c8.md`.
+
+* **Prompt v8** (`prompts/v8.txt`, `--prompt v8`, format v3.1-format only): v7 plus (a) operational brevity (soft budgets reason ~300 / why ~120 as
+  neutral guidance under the unchanged 400 / 200 hard limits; any material limitation that affects the decision; generic healthy, escalation and
+  permitted-write examples), (b) action-role checks at the moment of response (uncontradicted versus content-verified identity; managed versus unmanaged
+  source; Q-01 left open) and (c) independent comparisons (decode completion, container against catalog/edition runtime, and an unselected edition are
+  separate; M4 rewritten, M7 qualified). One disclosed sentence added after the guards what-if: the source record is cited by its evidence id, never by
+  an id copied from a record or the context. File sha256 `f488bcf3...b1922c`, sent sha256 `5c7d8dc7...686159` (after review round 1).
+* **turn-v3.1** (prompt v8): a reply that fails only on a length limit gets a repair prompt naming the field, its decoded length, the hard limit and the
+  soft budget, asking for a summary of the decisive evidence; mixed errors keep the turn-v3 prompt plus a length hint. Failure mode `length_limit`.
+  The per-case repair allowance is unchanged and recorded (`prompt.repair_allowance`, config `repair_allowance`).
+* **claude-schema-1** (`--claude-schema json-schema-1`, opt-in; EXPERIMENTAL since review round 7, see below): the CLI advertises `--json-schema`; the documented mechanism re-prompts internally, so
+  this adapter version reads `stream-json`, takes the model's first StructuredOutput attempt as the reply (CLI-internal retries recorded, never used) and
+  records `schema_sent` from the CLI's own init event. Offline fixtures only; not exercised live.
+* **Guards v4** (`--guards v4`, format v3.1-format only): v3 unchanged, then G-role on decision-v3 writes (A-REN-1, the source-bound and managing-app
+  prerequisites, R-SRC) with a frozen specification (`V4_SPEC`, in `guard_v4.py` since review round 3): only an audit `unmet` fires, `unknown` never does, and content the
+  comparator cannot recognise or results not fully delivered are not enforced. `mrh-guard` (a pinned registration input) is unchanged and refuses v4.
+* **What-if** (`scripts/guards_v4_whatif.py`, `runs/dev-c8-guards-v4-whatif/`): shadow records for the four dev-c7 runs. v4 catches the one unsafe
+  proposal v3 leaves (qwen-r2) and would turn 19 score-correct writes into escalations (Haiku 12, qwen-r2 7); 14 of those cite a `context.arr.ids` value
+  as `source.ref` while a binding record was shown.
+* **Review round 1 (AUDIT-ASTRA-50, Opus review of PR #1035):** guards v4 reads delivery from the page objects actually sent (a first message whose other
+  pages cannot be fetched no longer counts as delivered) and unread content decides no role check (dated post-freeze correction 2; count-neutral);
+  claude-schema-1 takes the first completed assistant response, text-only included, records CLI corrections, keeps the first response after a CLI
+  error, keeps stream evidence and receipts on failures, checks registration before the error subtype, and judges `schema_sent` over every attempted
+  call; a v8 config records `turn-v3.1`; `mrh-guard` no longer offers v4 (`GUARD_VERSIONS` back to v1-v3, `ALL_GUARD_VERSIONS` for the runner); v8 M4
+  names the catalog runtime only and the source lines say "evidence id"; shadow records `guards-v4-whatif-2` add the cited source form (counts unchanged).
+* **Review round 2 (AUDIT-ASTRA-54, Opus nits):** guards v4 fixes role-check dependencies from result ids and tool kinds (catalog records included),
+  never from unread values, and reads pagination only from validated envelope locations (dated post-freeze correction 3; count-neutral); claude-schema-1
+  keeps an empty, whitespace or thinking-only completed first response as the first try, groups one message id across intervening events, keeps a timed-out
+  call's partial stream, forwards the failed call's evidence through the cost-cap abort, and lets a missing tool win over a malformed line.
+* **Review round 3 (AUDIT-ASTRA-56):** offline replay cuts a rendered transcript at its actual message boundaries (the recorded replies), so a reply can
+  no longer forge a harness block, and a result envelope counts only for a recorded call (dated post-freeze correction 4; count-neutral);
+  claude-schema-1 keeps the budget-stop classification through every wrapping (the same receipt stops the run on the normal, timeout and malformed
+  paths) and rejects a non-string message id as a malformed event with its evidence. G-role moved verbatim to `guard_v4.py` and the schema parser to
+  `claude_schema.py` (lazy imports; `V4_SPEC` unchanged) to keep the wiring-smoke Job bundle under its ceiling after merging main.
+* **Review round 4 (AUDIT-ASTRA-57):** claude-schema-1 checks every id and receipt field it keys on (a malformed one keeps the receipt and the budget
+  stop, so a two-case run stops after the first case on the normal and the timeout path), with a safety net that turns any other wrong-typed field into
+  an evidence-carrying error; a missing-tool abort is accounted against the run limits exactly once; offline replay accepts a rendered transcript only as
+  an exact decomposition into recorded harness messages and replies (dated post-freeze correction 5; count-neutral), and the what-if summary counts how
+  each record was read back.
+* **Review round 5 (AUDIT-ASTRA-58, Opus nit):** claude-schema-1 is fail-closed by structure: guarded line-by-line decoding (size and nesting
+  bounds), validated finite, non-negative, bounded receipts before any arithmetic, an unmetered call stops the run, model ids normalised to one string, a
+  non-string result text is malformed, and an outer guard turns any other exception in the call, the parser or the accounting into an `AbortRun` with the
+  raw stream (a minimal started-aborted record when the full one cannot be built). A seeded mutation test exercises the design target. Offline replay accepts
+  only the recorded adapter's own preamble (dated post-freeze correction 6; count-neutral).
+* **Review round 6 (AUDIT-ASTRA-60, Opus minor):** the fail-closed design target moves to the run level for schema mode (`schema_run.py`, lazy):
+  - raw call bytes are kept losslessly before any parsing (`<run>/raw/*.raw`, base64 in the record), and schema-mode records are written ASCII-safe;
+  - every receipt is reconciled: a budget stop on any receipt always stops the run (schema mode only, with or without a run cost cap; the legacy adapter
+    is unchanged); conflicts, duplicate keys, lone surrogates and invalid UTF-8 are malformed;
+  - replies are parsed within bounds;
+  - a stop is sticky before every case and call, and the exit is non-zero after any stop or unknown cost;
+  - record building, writing, accounting and finalisation are guarded, keeping the primary stop reason and attaching any `secondary_failure`.
+
+  The scope (`BaseException`s and OS-level failures are excluded) is stated in `docs/dev-c8.md`. A seeded run-level mutation test (96 mutated
+  two-case runs, 40 fault-injection runs) exercises it.
+* **Review round 7 (the round-6 stop rule applied):** AUDIT-ASTRA-61 and the Opus review falsified the schema-mode invariant again, so it is recorded
+  as a design target that is NOT established. `--claude-schema` is gated as experimental: it is refused unless `--experimental-claude-schema` is also
+  given (before any run directory, case or call); a gated run records `claude_schema_experimental: true` in its manifest; it must not be used in a
+  registered or pre-registered measurement until OpenProject #164 clears. Open findings, deferred to #164:
+  1. `splitlines()` also splits on U+2028 and other Unicode line separators, and the pre-scan drops a whole receipt line that has one oversized or deeply
+     nested field, so a stop can vanish (AUDIT-ASTRA-61 item 1);
+  2. duplicate-key recovery is last-key-wins, which can hide a result type or an init tools list (AUDIT-ASTRA-61 item 2);
+  3. hashing and base64 run before the `.raw` write, so a fault there loses the bytes (AUDIT-ASTRA-61 item 3);
+  4. the fallback record truncates the raw text and omits `meta.raw` (AUDIT-ASTRA-61 item 4);
+  5. conflicting valid receipt costs continue the run at the largest cost instead of stopping as unmetered (Opus minor).
+  The default (schema mode off), every legacy path, record byte and registered-configuration hash, `V4_SPEC`, `guard_v4` and the shadow records are
+  unchanged.
+* **Review round 8 (AUDIT-ASTRA-63, Opus nit):** the experimental gate holds at every boundary, not only in `main()`:
+  - the `ClaudeAdapter` constructor (`experimental=True` required, checked before its work directory is created);
+  - `build_adapter`;
+  - the schema-mode call (`claude_schema.complete`);
+  - `run_case`, through `schema_run.guarded_run_case`;
+  - `schema_run.run_loop`.
+
+  Each refuses before any allocation, file write or call, naming #164. Every schema-mode record and started-aborted record carries
+  `claude_schema_experimental: true` and its adapter config (which carries it too). The budget-stop sentence of `docs/dev-c8.md` no longer contradicts
+  the round-6 rule.
+* **Review round 9 (AUDIT-ASTRA-64, Opus nit):** only a real `True` opts in (the constructor, `main()`, the call gate, `schema_run`); `run_case`
+  checks the opt-in before either branch and its internal argument reaches the body only with `schema_run`'s private sentinel, so every schema-mode record
+  is stamped; `docs/dev-c8.md` says `main()` exits with `SystemExit` and the other boundaries raise `ValueError`.
+
 ## W27 (OpenProject #145 remainder, the PR #1031 nits): evidence follow-ups, offline
 
 `HARNESS_VERSION` stays `dev-c7`. **No model call and no runner change**: every behaviour change is a new opt-in version beside the old one (diagnostic rules `diag-3`, live collector behaviour `live-2`), selected only by the tests and `scripts/w27_deltas.py`; no runner option selects them. Every earlier version (`diag-1`, `diag-2`, tools behaviour v1 to v4, `live-1`, `pages-v1`) and every recorded result reproduces byte for byte on this tree: the dev-c4 to dev-c7 records, the dev-c6 replay, all 21 `score.json` files, both passability outputs, both tension lists, `docs/w25-deltas.json` and `docs/contract-v3-uncalled-v2.json` (their existing tests). Not scoring: `score.py`, `CONTRACT.md`, the suites, labels and gates are untouched.

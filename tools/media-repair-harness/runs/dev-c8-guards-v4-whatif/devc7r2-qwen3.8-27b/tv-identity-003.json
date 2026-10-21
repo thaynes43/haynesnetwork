@@ -1,0 +1,121 @@
+{
+ "audit_fidelity": {},
+ "case_id": "tv-identity-003",
+ "direction": null,
+ "input_record": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b/tv-identity-003.json",
+ "input_record_sha256": "0da8081c24aa99ee143b86b9aa16c6bfcb6482b88b008fb4ea345ed5e3443a8d",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "blocklist_and_search",
+  "class": "identity_mismatch",
+  "confidence": 0.95,
+  "evidence_refs": [
+   "e3",
+   "e4",
+   "e1"
+  ],
+  "reason": "OCR at 1s reads 'HARBOR LIGHTS / S01E03 / THE SALT WIND'; catalog (e4) lists S01E04 'Night Ferry'. File tags (e1) also say episode_sort 3, title 'The Salt Wind'. Content observation contradicts catalog on episode number and title; managing app sonarr present, source bound to e4's file.",
+  "source": {
+   "ref": "e4"
+  },
+  "target": {
+   "kind": "release_of_source",
+   "source_ref": "e4"
+  },
+  "type": "decision"
+ },
+ "run": "devc7r2-qwen3.8-27b",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": true,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-2",
+ "source_reference": {
+  "binding": "met",
+  "cited": "e4",
+  "kind": "evidence_id"
+ },
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "blocklist_and_search",
+   "class": "identity_mismatch",
+   "confidence": 0.95,
+   "evidence_refs": [
+    "e3",
+    "e4",
+    "e1"
+   ],
+   "reason": "OCR at 1s reads 'HARBOR LIGHTS / S01E03 / THE SALT WIND'; catalog (e4) lists S01E04 'Night Ferry'. File tags (e1) also say episode_sort 3, title 'The Salt Wind'. Content observation contradicts catalog on episode number and title; managing app sonarr present, source bound to e4's file.",
+   "source": {
+    "ref": "e4"
+   },
+   "target": {
+    "kind": "release_of_source",
+    "source_ref": "e4"
+   },
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "blocklist_and_search",
+   "class": "identity_mismatch",
+   "confidence": 0.95,
+   "evidence_refs": [
+    "e3",
+    "e4",
+    "e1"
+   ],
+   "reason": "OCR at 1s reads 'HARBOR LIGHTS / S01E03 / THE SALT WIND'; catalog (e4) lists S01E04 'Night Ferry'. File tags (e1) also say episode_sort 3, title 'The Salt Wind'. Content observation contradicts catalog on episode number and title; managing app sonarr present, source bound to e4's file.",
+   "source": {
+    "ref": "e4"
+   },
+   "target": {
+    "kind": "release_of_source",
+    "source_ref": "e4"
+   },
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [
+   {
+    "audit_state": "met",
+    "check": "managed_app",
+    "detail": "",
+    "id": "A-BLK-1",
+    "refs": [
+     "context.arr.app"
+    ],
+    "v4_status": "met"
+   },
+   {
+    "audit_state": "met",
+    "check": "source_bound",
+    "detail": "",
+    "id": "A-BLK-2",
+    "refs": [
+     "e4"
+    ],
+    "v4_status": "met"
+   },
+   {
+    "audit_state": "met",
+    "check": "source_ref_qualifies",
+    "detail": "",
+    "id": "R-SRC",
+    "refs": [
+     "e4"
+    ],
+    "v4_status": "met"
+   }
+  ],
+  "rule": null
+ }
+}

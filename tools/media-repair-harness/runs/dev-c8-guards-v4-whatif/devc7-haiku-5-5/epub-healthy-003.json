@@ -1,0 +1,65 @@
+{
+ "audit_fidelity": {},
+ "case_id": "epub-healthy-003",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-haiku-5-5/epub-healthy-003.json",
+ "input_record_sha256": "fcc7ba68d9656c5fafc2f8407cf7705add3aecd258e9a09be827cd9ce22c84b2",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "none",
+  "class": "healthy",
+  "confidence": 0.6,
+  "evidence_refs": [
+   "e1",
+   "t2",
+   "e2"
+  ],
+  "reason": "Package checks (zip_open, zip_crc, opf_parse, manifest, spine) are all clean in e1 with no defects, conflicts or vetoes. Body text of spine 1 reads ANNE OF GREEN GABLES, matching the catalog title; declared title and creator match. Not checked: container, duration, and body text beyond spine 1 (u1, u2, u4). Healthy only within that stated scope.",
+  "type": "decision"
+ },
+ "run": "devc7-haiku-5-5",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-haiku-5-5-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-2",
+ "source_reference": null,
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.6,
+   "evidence_refs": [
+    "e1",
+    "t2",
+    "e2"
+   ],
+   "reason": "Package checks (zip_open, zip_crc, opf_parse, manifest, spine) are all clean in e1 with no defects, conflicts or vetoes. Body text of spine 1 reads ANNE OF GREEN GABLES, matching the catalog title; declared title and creator match. Not checked: container, duration, and body text beyond spine 1 (u1, u2, u4). Healthy only within that stated scope.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.6,
+   "evidence_refs": [
+    "e1",
+    "t2",
+    "e2"
+   ],
+   "reason": "Package checks (zip_open, zip_crc, opf_parse, manifest, spine) are all clean in e1 with no defects, conflicts or vetoes. Body text of spine 1 reads ANNE OF GREEN GABLES, matching the catalog title; declared title and creator match. Not checked: container, duration, and body text beyond spine 1 (u1, u2, u4). Healthy only within that stated scope.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

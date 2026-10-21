@@ -14,6 +14,8 @@ import unittest
 from pathlib import Path
 
 import th
+from media_repair_harness import protocol as P
+from test_devc7_measure import registered_harness_version
 from media_repair_harness import guard as G
 from media_repair_harness import run as R
 
@@ -106,7 +108,7 @@ def run_stubbed(fake, guard, n_cases=2):
         return ad
     R.build_adapter = build
     try:
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()), registered_harness_version('dev-c7'):
             code = R.main(registered_argv(ts.root, out, tempfile.mkdtemp()))
     finally:
         R.build_adapter = orig
@@ -119,7 +121,11 @@ class RegisteredCommand(unittest.TestCase):
     def test_expected_config_hash_is_rebuilt_offline_and_equals_dev_c7_qwen(self):
         tpl = template()
         args = R.build_parser().parse_args(tpl['run']['argv'])
-        cfg = R.run_config(args, R.build_adapter(args), {}, None)
+        with registered_harness_version('dev-c7'):        # dev-c8: registered under dev-c7; only that label moved (the rest is compared below)
+            cfg = R.run_config(args, R.build_adapter(args), {}, None)
+        now = R.run_config(args, R.build_adapter(args), {}, None)
+        self.assertEqual(now.pop('harness_version'), P.HARNESS_VERSION)
+        self.assertEqual(now, {k: v for k, v in cfg.items() if k != 'harness_version'})
         got = R.sha256_bytes(R.canonical(cfg).encode())
         self.assertEqual(got, EXPECTED_CONFIG_HASH)
         self.assertEqual(tpl['run']['expected_config_hash'], EXPECTED_CONFIG_HASH)

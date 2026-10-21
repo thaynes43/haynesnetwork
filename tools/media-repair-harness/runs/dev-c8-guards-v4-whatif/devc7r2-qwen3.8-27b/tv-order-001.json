@@ -1,0 +1,65 @@
+{
+ "audit_fidelity": {},
+ "case_id": "tv-order-001",
+ "direction": null,
+ "input_record": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b/tv-order-001.json",
+ "input_record_sha256": "acd0c93d33dca65546b00baccf3f0d00f48cccdc1a36ac59e48128c45b1b370b",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "escalate",
+  "class": "order_edition_ambiguity",
+  "confidence": 0.85,
+  "evidence_refs": [
+   "e3",
+   "e4",
+   "t1"
+  ],
+  "reason": "The file's content (OCR: HARBOR LIGHTS / THE GLASS HARBOR) and tags match the title 'The Glass Harbor', but the catalog lists two legitimate orderings: aired (E04=Night Ferry, E05=The Glass Harbor) and dvd (E04=The Glass Harbor, E05=Night Ferry). library_episode_order is null, so no case-supplied choice settles which ordering applies. The file is attached to episode 4, which is correct under dvd (",
+  "type": "decision"
+ },
+ "run": "devc7r2-qwen3.8-27b",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-2",
+ "source_reference": null,
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "order_edition_ambiguity",
+   "confidence": 0.85,
+   "evidence_refs": [
+    "e3",
+    "e4",
+    "t1"
+   ],
+   "reason": "The file's content (OCR: HARBOR LIGHTS / THE GLASS HARBOR) and tags match the title 'The Glass Harbor', but the catalog lists two legitimate orderings: aired (E04=Night Ferry, E05=The Glass Harbor) and dvd (E04=The Glass Harbor, E05=Night Ferry). library_episode_order is null, so no case-supplied choice settles which ordering applies. The file is attached to episode 4, which is correct under dvd (",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "order_edition_ambiguity",
+   "confidence": 0.85,
+   "evidence_refs": [
+    "e3",
+    "e4",
+    "t1"
+   ],
+   "reason": "The file's content (OCR: HARBOR LIGHTS / THE GLASS HARBOR) and tags match the title 'The Glass Harbor', but the catalog lists two legitimate orderings: aired (E04=Night Ferry, E05=The Glass Harbor) and dvd (E04=The Glass Harbor, E05=Night Ferry). library_episode_order is null, so no case-supplied choice settles which ordering applies. The file is attached to episode 4, which is correct under dvd (",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

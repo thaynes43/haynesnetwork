@@ -23,11 +23,14 @@ class AdapterError(Exception):
     `usage` is the receipt the failed call itself reported (a CLI error payload carries tokens and a cost), `cost_usd` its cost, else None;
     `budget_exceeded` marks a CLI that stopped because the call's own `--max-budget-usd` was reached."""
 
-    def __init__(self, message='', cost_usd=None, usage=None, budget_exceeded=False):
+    def __init__(self, message='', cost_usd=None, usage=None, budget_exceeded=False, evidence=None):
         super().__init__(message)
         self.usage = usage
         self.cost_usd = cost_usd if cost_usd is not None else ((usage or {}).get('cost_usd'))
         self.budget_exceeded = budget_exceeded
+        # dev-c8 (claude-schema-1 only): what the failed call still showed -- raw_request, raw_response (untruncated) and meta (schema delivery, attempts);
+        # the runner keeps it on the failed turn.  None for every other adapter, whose failed turns keep their earlier shape.
+        self.evidence = evidence
 
 
 class AbortRun(Exception):
@@ -392,18 +395,42 @@ CLAUDE_FLAGS = ['--tools', '', '--strict-mcp-config', '--mcp-config', '{"mcpServ
                 '--setting-sources', '', '--no-session-persistence']
 
 
+# dev-c8: reply-schema delivery for the Claude CLI (opt-in adapter version claude-schema-1; `schema_mode=None` is the legacy adapter, byte for byte).
+# Advertised by the pinned CLI's `--help` (`--json-schema <schema>`, print mode) and documented (headless mode, Agent SDK structured outputs): the CLI adds a
+# `StructuredOutput` tool whose input is the reply, validates it client-side and RE-PROMPTS on a mismatch until it is valid or the run ends with
+# `error_max_structured_output_retries`; the `json` envelope then carries only the final `structured_output`.  To keep the model's first try and grant no extra
+# repair, this mode reads the `stream-json` event stream and takes the FIRST StructuredOutput attempt as the reply; later CLI-internal attempts and the CLI's own
+# validation results are recorded (turns[].meta.schema) and never used.  Whether the CLI registered the tool is read from its init event, not assumed.
+CLAUDE_SCHEMA_ADAPTER_VERSION = 'claude-schema-1'
+SCHEMA_GATE = ('claude-schema-1 is experimental (OpenProject #164: its fail-closed invariant is not established) and needs an explicit opt-in: '
+               'experimental=True, or --experimental-claude-schema on the command line; never in a registered or pre-registered measurement')
+STRUCTURED_OUTPUT_TOOL = 'StructuredOutput'
+
+
 class ClaudeAdapter(Adapter):
     name = 'claude'
     digest_na_reason = 'hosted API model: no weights digest; the response model id is recorded instead'
 
-    def __init__(self, model, effort=None, max_budget_usd=2.0, timeout=240, runner=subprocess.run):
+    def __init__(self, model, effort=None, max_budget_usd=2.0, timeout=240, runner=subprocess.run, schema_mode=None, experimental=False):
         super().__init__(model)
+        if schema_mode is not None and experimental is not True:     # dev-c8 rounds 8, 9: only a real True, before any allocation
+            raise ValueError(SCHEMA_GATE)
+        if schema_mode is not None and schema_mode != 'json-schema-1':
+            raise ValueError('unknown claude schema mode %r (known: json-schema-1)' % (schema_mode,))
         self.effort, self.max_budget_usd, self.timeout, self.runner = effort, max_budget_usd, timeout, runner
         self.workdir = tempfile.mkdtemp(prefix='mrh-claude-')
+        self.schema_mode = schema_mode
+        self.schema_experimental = schema_mode is not None
+        if schema_mode is not None:
+            self.schema_name = 'flat'      # the runner builds the flat per-case turn schema (one object type at the top level) for this mode
 
     def config(self):
-        return {'adapter': self.name, 'model': self.requested_model, 'effort': self.effort, 'flags': CLAUDE_FLAGS,
-                'output_format': 'json', 'max_budget_usd': self.max_budget_usd, 'timeout_s': self.timeout}
+        c = {'adapter': self.name, 'model': self.requested_model, 'effort': self.effort, 'flags': CLAUDE_FLAGS,
+             'output_format': 'json', 'max_budget_usd': self.max_budget_usd, 'timeout_s': self.timeout}
+        if self.schema_mode is not None:      # only in schema mode: the legacy config (and config hash) keeps its shape
+            c.update(adapter_version=CLAUDE_SCHEMA_ADAPTER_VERSION, schema_mode=self.schema_mode, output_format='stream-json', schema_variant='flat', claude_schema_experimental=True,
+                     reply_from='first StructuredOutput attempt (CLI-internal retries recorded, never used)')
+        return c
 
     def preflight(self):
         if not shutil.which('claude'):
@@ -420,7 +447,18 @@ class ClaudeAdapter(Adapter):
             cmd += ['--effort', self.effort]
         return cmd
 
+    def argv_schema(self, system, schema):
+        """claude-schema-1: the legacy argv with `--output-format stream-json --verbose` (the event stream shows every StructuredOutput attempt) and
+        `--json-schema <the per-case flat turn schema>`."""
+        cmd = self.argv(system)
+        i = cmd.index('--output-format')
+        cmd[i + 1] = 'stream-json'
+        return cmd[:i + 2] + ['--verbose', '--json-schema', json.dumps(schema, separators=(',', ':'), sort_keys=True)] + cmd[i + 2:]
+
     def complete(self, system, messages, schema=None):
+        if self.schema_mode is not None and schema is not None:     # claude-schema-1: the whole call runs behind its fail-closed guard (claude_schema.py)
+            from . import claude_schema
+            return claude_schema.complete(self, system, messages, schema)
         prompt = render_transcript(messages)
         cmd = self.argv(system)
         started = time.monotonic()
@@ -458,6 +496,17 @@ def parse_claude(raw, stderr, returncode, req, wall):
                                                         'num_turns': d.get('num_turns'), 'stop_reason': d.get('stop_reason'),
                                                         'permission_denials': d.get('permission_denials')},
                       meta={'model_usage': d.get('modelUsage')})
+
+
+def _sha256_text(s):
+    import hashlib
+    return hashlib.sha256(s.encode()).hexdigest()
+
+
+def parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode='json-schema-1'):
+    """claude-schema-1's stream parser (claude_schema.py; loaded only in schema mode)."""
+    from . import claude_schema
+    return claude_schema.parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode)
 
 
 CODEX_FLAGS = ['--json', '-s', 'read-only', '--skip-git-repo-check', '--ignore-user-config', '--ignore-rules']

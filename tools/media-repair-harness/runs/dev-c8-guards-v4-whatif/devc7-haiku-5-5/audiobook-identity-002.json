@@ -1,0 +1,65 @@
+{
+ "audit_fidelity": {},
+ "case_id": "audiobook-identity-002",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-haiku-5-5/audiobook-identity-002.json",
+ "input_record_sha256": "2d623e73fbaf76d9033fcad5ef1a6250e96d2f81a46da1aaf71fbf93bbb3f734",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "escalate",
+  "class": "insufficient_evidence",
+  "confidence": 0.4,
+  "evidence_refs": [
+   "e1",
+   "e2",
+   "t1"
+  ],
+  "reason": "Container duration 12.0s differs from the 20s catalog runtime beyond tolerance (M4), and no decode was run, so stream contents are unchecked. Tags match the catalog title, album and artist. Chapter titles differ from the catalog list, but only declarations show this, so identity is contested, not contradicted. No known defect was found, but healthy is not established. Escalate for human review.",
+  "type": "decision"
+ },
+ "run": "devc7-haiku-5-5",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-haiku-5-5-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-2",
+ "source_reference": null,
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "insufficient_evidence",
+   "confidence": 0.4,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "t1"
+   ],
+   "reason": "Container duration 12.0s differs from the 20s catalog runtime beyond tolerance (M4), and no decode was run, so stream contents are unchecked. Tags match the catalog title, album and artist. Chapter titles differ from the catalog list, but only declarations show this, so identity is contested, not contradicted. No known defect was found, but healthy is not established. Escalate for human review.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "insufficient_evidence",
+   "confidence": 0.4,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "t1"
+   ],
+   "reason": "Container duration 12.0s differs from the 20s catalog runtime beyond tolerance (M4), and no decode was run, so stream contents are unchecked. Tags match the catalog title, album and artist. Chapter titles differ from the catalog list, but only declarations show this, so identity is contested, not contradicted. No known defect was found, but healthy is not established. Escalate for human review.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

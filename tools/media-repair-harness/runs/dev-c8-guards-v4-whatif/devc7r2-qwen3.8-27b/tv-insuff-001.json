@@ -1,0 +1,65 @@
+{
+ "audit_fidelity": {},
+ "case_id": "tv-insuff-001",
+ "direction": null,
+ "input_record": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b/tv-insuff-001.json",
+ "input_record_sha256": "23572d1074f32e116306d410f849aedd37438d0fcefcf75fc0f175414dd94ad1",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "none",
+  "class": "healthy",
+  "confidence": 0.55,
+  "evidence_refs": [
+   "e1",
+   "e2",
+   "e3"
+  ],
+  "reason": "Container parsed clean (matroska/webm, h264 video, HE-AAC audio, eng) with no findings or vetoes; 0-4s decode window clean, exit 0, no error lines. No stated client, so no decoder_incompatible. No naming-surface value shown as empty or differing, and no content observation contradicting the catalog identity (Pokemon S3E34), so identity is uncontradicted. Open items (container duration, stream-dec-",
+  "type": "decision"
+ },
+ "run": "devc7r2-qwen3.8-27b",
+ "score_facts": {
+  "original_false_diagnosis": true,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-2",
+ "source_reference": null,
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.55,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "reason": "Container parsed clean (matroska/webm, h264 video, HE-AAC audio, eng) with no findings or vetoes; 0-4s decode window clean, exit 0, no error lines. No stated client, so no decoder_incompatible. No naming-surface value shown as empty or differing, and no content observation contradicting the catalog identity (Pokemon S3E34), so identity is uncontradicted. Open items (container duration, stream-dec-",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.55,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "reason": "Container parsed clean (matroska/webm, h264 video, HE-AAC audio, eng) with no findings or vetoes; 0-4s decode window clean, exit 0, no error lines. No stated client, so no decoder_incompatible. No naming-surface value shown as empty or differing, and no content observation contradicting the catalog identity (Pokemon S3E34), so identity is uncontradicted. Open items (container duration, stream-dec-",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

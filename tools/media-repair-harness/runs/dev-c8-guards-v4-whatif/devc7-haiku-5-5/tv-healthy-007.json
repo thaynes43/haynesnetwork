@@ -1,0 +1,68 @@
+{
+ "audit_fidelity": {},
+ "case_id": "tv-healthy-007",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-haiku-5-5/tv-healthy-007.json",
+ "input_record_sha256": "f25343565499523eab9aa2a11be0d35e31f5a1c4bb71cb8837aa79c8340fa9e9",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "none",
+  "class": "healthy",
+  "confidence": 0.7,
+  "evidence_refs": [
+   "e1",
+   "e2",
+   "e3",
+   "e4"
+  ],
+  "reason": "ffprobe ran ok and is clean at container level; duration 8.046 s matches the 8 s runtime. Decode 0-4 s is clean. OCR at 1 s reads HARBOR LIGHTS / THE GLASS HARBOR, matching episode 4 under the library's dvd order. No known defects, conflicts or vetoes. The unchecked 4-8.046 s remainder and unrecorded stream selection are not material: no client is stated.",
+  "type": "decision"
+ },
+ "run": "devc7-haiku-5-5",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-haiku-5-5-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-2",
+ "source_reference": null,
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.7,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "reason": "ffprobe ran ok and is clean at container level; duration 8.046 s matches the 8 s runtime. Decode 0-4 s is clean. OCR at 1 s reads HARBOR LIGHTS / THE GLASS HARBOR, matching episode 4 under the library's dvd order. No known defects, conflicts or vetoes. The unchecked 4-8.046 s remainder and unrecorded stream selection are not material: no client is stated.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.7,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "reason": "ffprobe ran ok and is clean at container level; duration 8.046 s matches the 8 s runtime. Decode 0-4 s is clean. OCR at 1 s reads HARBOR LIGHTS / THE GLASS HARBOR, matching episode 4 under the library's dvd order. No known defects, conflicts or vetoes. The unchecked 4-8.046 s remainder and unrecorded stream selection are not material: no client is stated.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

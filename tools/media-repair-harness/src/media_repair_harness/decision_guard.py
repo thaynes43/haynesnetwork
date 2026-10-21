@@ -40,6 +40,9 @@ the shown observations; G-write reads the class, the action, evidence_refs and t
 the validator requires, and the audit-object checks belong to turn protocol v2 only), so contract v3 needs no new guard version.  The only difference is the
 shape of the escalate a guard writes: under turn protocol v3 it carries no target (none and escalate have neither source nor target in decision-v3).  A v3
 record's derived fields use audit v3 (evidence_v3.action_audit).
+
+Guards v4 (dev-c8, `--guards v4`): G-role lives in `guard_v4.py` (the frozen `V4_SPEC`, delivery and the role checks), imported only when v4 runs,
+so no other configuration loads it.
 """
 import copy
 
@@ -50,9 +53,12 @@ from . import protocol as P
 from . import tools as T
 
 GUARD_VERSION = 'v1'          # the version a bare `--guards v1` means and the one measured in runs/dev-c4; v1 behaviour never changes
-GUARD_VERSIONS = ('v1', 'v2', 'v3')
+GUARD_VERSIONS = ('v1', 'v2', 'v3')          # what `mrh-guard` (a pinned registration input) offers: unchanged, so it never offers v4
+ALL_GUARD_VERSIONS = GUARD_VERSIONS + ('v4',)  # dev-c8: what the runner (`--guards`, contract-v3 formats only for v4) and `apply` accept
 RULE_HEALTHY = 'G-healthy'
 RULE_WRITE = 'G-write'
+RULE_ROLE = 'G-role'
+
 # computed audit checks the guard does not act on: `target_in_context` matches the model's free-text target against the case's identifiers and calls a
 # target "broad" when it also names a series or an id of a wider scope, so a correct, specific target written in another form fails it (seen in the
 # offline what-if).  It stays in the record's action_audit; it just is not a reason to overrule a decision.
@@ -154,20 +160,30 @@ def record_resolver(record, evidence_shown):
     return EV2.reference_resolver(known, EV2.emitted_ids(EV2.analyze(obs, {})), EV2.page_origin_map((record or {}).get('tool_calls')))
 
 
-def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=False, version=GUARD_VERSION, resolve=None):
+
+def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=False, version=GUARD_VERSION, resolve=None, v4ctx=None):
     """-> (final_decision, guard_record).  The input decision is never modified.  `resolve` (the one reference resolver) normalises the references the checks read;
-    the original decision, with its references as written, is what the record keeps."""
-    if version not in GUARD_VERSIONS:
-        raise ValueError('unknown guard version %r (known: %s)' % (version, ', '.join(GUARD_VERSIONS)))
+    the original decision, with its references as written, is what the record keeps.  v4: the v3 checks first, unchanged; then G-role when `v4ctx` (a
+    contract-v3 run's context, see v4_context) is given."""
+    if version not in ALL_GUARD_VERSIONS:
+        raise ValueError('unknown guard version %r (known: %s)' % (version, ', '.join(ALL_GUARD_VERSIONS)))
     original = decision
     if resolve is not None and decision:
         decision = dict(decision, evidence_refs=resolve(decision.get('evidence_refs')))
     applied = []
-    reason = check_healthy_v3(decision, evidence_shown, tool_calls) if version == 'v3' else check_healthy(decision, evidence_shown, tool_calls)
+    base = 'v3' if version == 'v4' else version          # v4 inherits v3 exactly
+    reason = check_healthy_v3(decision, evidence_shown, tool_calls) if base == 'v3' else check_healthy(decision, evidence_shown, tool_calls)
     rule = RULE_HEALTHY
     if reason is None:
-        reason = check_write(case, decision, tool_calls, prompt_version, forced, version, evidence_shown)
+        reason = check_write(case, decision, tool_calls, prompt_version, forced, base, evidence_shown)
         rule = RULE_WRITE
+    role_checks = None
+    if version == 'v4':
+        role_checks = []
+        if reason is None and v4ctx is not None and decision:
+            from . import guard_v4 as GV4          # dev-c8: loaded only when v4 runs
+            reason, role_checks = GV4.check_role_v4(decision, v4ctx, evidence_shown, tool_calls)
+            rule = RULE_ROLE
     if reason is not None:
         applied.append({'rule': rule, 'original': copy.deepcopy(original), 'reason': reason})
         final = guard_escalation(rule, reason)
@@ -175,7 +191,12 @@ def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=Fal
             final.pop('target', None)        # decision-v3: an escalate has no target
     else:
         final = original
-    return final, {'version': version, 'applied': applied, 'final_changed': bool(applied)}
+    rec = {'version': version, 'applied': applied, 'final_changed': bool(applied)}
+    if role_checks is not None:          # v4 only: every role check, fired or not (a v1 to v3 guard record keeps its shape)
+        rec['role_checks'] = role_checks
+        if v4ctx is None:
+            rec['role_note'] = 'G-role not evaluated: not a contract-v3 run'
+    return final, rec
 
 
 def _protocol(prompt_version):
@@ -231,13 +252,19 @@ def apply_to_record(record, case, evidence_shown, version=GUARD_VERSION):
     """Offline: a COPY of a run record with the guards applied.  Always carries `guard`; when a guard fires, the decision and the fields
     derived from it are replaced and the model's original stays in `guard.applied[].original`.  A record that was already guarded is first
     returned to the model's own decision, so guarding never stacks and another guard version can be applied to a guarded run."""
+    if version == 'v4' and _v3_format(record) not in V3_FORMATS:
+        raise ValueError('guards v4 checks decision-v3 roles and applies to contract-v3 records only (record %s)' % (record or {}).get('case_id'))
     rec = copy.deepcopy(record)
     if rec.get('guard'):
         rec = restore_original(rec, case, evidence_shown)
         rec.pop('guard')
     pv = (rec.get('prompt') or {}).get('version') or P.DEFAULT_PROMPT
     resolve = record_resolver(rec, evidence_shown)
-    final, guard = apply(case, rec['decision'], rec.get('tool_calls') or [], evidence_shown, pv, bool(rec.get('forced')), version, resolve=resolve)
+    v4ctx = None
+    if version == 'v4':
+        from . import guard_v4 as GV4
+        v4ctx = GV4.record_v4_context(rec, case, evidence_shown)
+    final, guard = apply(case, rec['decision'], rec.get('tool_calls') or [], evidence_shown, pv, bool(rec.get('forced')), version, resolve=resolve, v4ctx=v4ctx)
     rec['guard'] = guard
     if guard['final_changed']:
         rec['decision'] = final
@@ -245,6 +272,7 @@ def apply_to_record(record, case, evidence_shown, version=GUARD_VERSION):
         rec.update(derived_fields(case, final, rec.get('tool_calls') or [], evidence_shown, rec.get('evidence_mode', 'replay'), pv,
                                   bool(rec.get('forced')), outcome_step, resolve, bool(rec.get('evidence_format')), _v3_caps(rec), _v3_format(rec)))
     return rec
+
 
 
 def restore_original(record, case, evidence_shown):

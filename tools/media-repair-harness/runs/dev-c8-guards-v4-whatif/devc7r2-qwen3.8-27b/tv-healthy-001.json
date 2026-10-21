@@ -1,0 +1,55 @@
+{
+ "audit_fidelity": null,
+ "case_id": "tv-healthy-001",
+ "direction": null,
+ "input_record": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b/tv-healthy-001.json",
+ "input_record_sha256": "4c1e9e6e42b240d6f7b5e3cca1b212f290349e686bfa63536459b31086c2c3b0",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "none",
+  "class": "healthy",
+  "confidence": 0.55,
+  "evidence_refs": [
+   "e1"
+  ],
+  "reason": "Reported content (embedded subtitle opening cards) names both expected episodes 1 and 2 with titles matching the catalog exactly; identity is content-confirmed and uncontradicted. No complaint, no known defect, no collector veto, no naming-surface value shown to be empty or differing, no client stated. Container integrity was not checked, but with no specific complaint and no material uncertainty,",
+  "type": "decision"
+ },
+ "run": "devc7r2-qwen3.8-27b",
+ "score_facts": {
+  "original_false_diagnosis": true,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-2",
+ "source_reference": null,
+ "v3": {
+  "changed": true,
+  "decision": {
+   "action": "escalate",
+   "class": "insufficient_evidence",
+   "confidence": 0.0,
+   "evidence_refs": [],
+   "reason": "guard G-healthy (not the model): healthy/none with no clean integrity result (probe, decode, package or audiobook check) in the evidence; none was offered or run",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": "G-healthy"
+ },
+ "v4": {
+  "changed": true,
+  "decision": {
+   "action": "escalate",
+   "class": "insufficient_evidence",
+   "confidence": 0.0,
+   "evidence_refs": [],
+   "reason": "guard G-healthy (not the model): healthy/none with no clean integrity result (probe, decode, package or audiobook check) in the evidence; none was offered or run",
+   "type": "decision"
+  },
+  "reason": "healthy/none with no clean integrity result (probe, decode, package or audiobook check) in the evidence; none was offered or run",
+  "role_checks": [],
+  "rule": "G-healthy"
+ }
+}
