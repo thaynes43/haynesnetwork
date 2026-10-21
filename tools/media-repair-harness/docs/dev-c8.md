@@ -107,6 +107,26 @@ envelope shows only the final, CLI-repaired object. Help and docs do not establi
 * usage and cost come from the result event (they cover the CLI's internal attempts too); the CLI version is recorded from `claude --version` (and the
   init event's `claude_code_version` when present).
 
+**Fail-closed by structure (review round 5).** In schema mode no input stream can make the run (a) lose the raw stream, (b) lose a budget or
+registration stop reason, (c) continue to another case after a stop, (d) exit 0 while a call's cost is unknown, or (e) raise anything but an
+evidence-carrying `AdapterError` or `AbortRun`. `claude_schema.py` is one pipeline:
+
+1. each stream line is decoded on its own, behind a pre-scan (at most 1 MiB, nesting at most 64) and a catch-all; an undecodable line is recorded as
+   malformed and never discards another event or the raw stream;
+2. every field used is validated before any arithmetic or storage: ids (a string or absent); token counts and cost (finite, non-negative, bounded:
+   10^9 tokens, $10,000); `subtype` and the result text (strings); model ids, normalised to one string (the requested model when reported, else the only
+   one, else the sorted ids joined);
+3. classification in a fixed order: a registration missing in any init event stops the run; a cost that is absent or fails validation stops the run
+   (an unmetered call, with the budget subtype named when present); malformed lines or fields, or a CLI error with no completed response, are an
+   `AdapterError` keeping the receipt and a validated budget flag; otherwise the first completed response;
+4. an outer guard around the whole call, the parser and the run-limit accounting turns anything else into a fail-closed `AbortRun` carrying the raw
+   stream. A started-aborted record that cannot be built is replaced by a minimal, always-serializable one, so the abort still propagates. The legacy
+   adapter keeps its earlier behaviour, `harness_crash` included.
+
+`tests/test_devc8.py` (`ReviewR5Mutation`) checks the invariant with a deterministic, seeded mutation test: 204 one-case runs (68 mutated streams on the
+normal, timeout and malformed-stream paths) and 24 two-case main-loop runs, mutating types, magnitudes, nesting, ordering, truncation and extra lines
+around a budget receipt and a registration abort.
+
 Offline fixtures (`tests/test_devc8.py`) are built from the documented event shapes; they verify schema forwarding, native envelope extraction, malformed
 and missing output, usage accounting and truthful recording. **Not verified: any live behaviour** (whether `--tools ""` keeps the tool, the exact event
 fields of 2.1.296, schema acceptance). The first live use needs one bounded call in a measurement story; until then Claude runs keep harness-side
@@ -190,9 +210,15 @@ Each corrects how the frozen predicates are implemented, not what they are; each
   every result counts as unread. The what-if summary now counts how each record was read back (`wire_read_back`). Count-neutral: all 224 inputs
   decompose exactly (`ok` 223, `no_request` 1 for the aborted qwen record with no turns, `unreadable` 0), the same single non-write has unread content, the
   224 shadow records are byte-identical, and only `summary.json` / `summary.md` gained the new field.
+* **2026-10-21, correction 6 (review round 5, AUDIT-ASTRA-58 item 4):** correction 5 accepted any text ending in `\n\n---\n\n` before the case message as a
+  Codex system prefix. Only the recorded adapter's own preamble is accepted now: none for Claude (its system prompt is a separate argument), and for Codex
+  exactly the recorded system prompt (the prompt version whose sha256 the record carries) followed by `\n\n---\n\n`. Any other prefix, or another
+  adapter's request shape, is `unreadable`. Count-neutral: all 224 inputs still decompose (`ok` 223, `no_request` 1), the same single non-write has
+  unread content, and the 224 shadow records and the what-if summary are byte-identical.
 * Implementation digest of G-role (`v4_context`, `_page_key`, `undelivered_ids`, `_envelope`, `_valid_page`, `wire_pages`, `wire_undelivered`,
-  `transcript_harness_blocks`, `expected_harness_messages`, `record_wire`, `record_wire_texts`, `_deciding`, `check_role_v4`, `record_v4_context`,
-  `NO_IDENTITY_TOOLS`): `b85a63d6ec7150f69f27f1f675d0a3ee76891ad9ad988a7fb4ea9491f0ad03e3` (pinned in `tests/test_devc8.py`; after correction 4 it was
+  `transcript_harness_blocks`, `expected_harness_messages`, `adapter_preamble`, `record_wire`, `record_wire_texts`, `_deciding`, `check_role_v4`,
+  `record_v4_context`, `NO_IDENTITY_TOOLS`): `2db40e92ed686affe72d0a20ece33091c203857cf747dfcdba62e9a4fc421768` (pinned in `tests/test_devc8.py`; after
+  correction 5 it was `b85a63d6ec7150f69f27f1f675d0a3ee76891ad9ad988a7fb4ea9491f0ad03e3`, after correction 4 it was
   `e7a2b212ecc8449376901e2afd011fccac94f91d79af93858e0f9ddd9c07606c`, after correction 3 `6da4d2e3e8088d2bae0411b41f74880f7d0ff46e04ec485c773581214e376d2e`,
   after correction 2 `b51e0705ee19547a1a9ada0100c5417a43b31f66454f8a026b23fce9c375dd9f`).
 

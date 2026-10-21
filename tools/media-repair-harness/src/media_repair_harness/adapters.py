@@ -451,24 +451,20 @@ class ClaudeAdapter(Adapter):
         return cmd[:i + 2] + ['--verbose', '--json-schema', json.dumps(schema, separators=(',', ':'), sort_keys=True)] + cmd[i + 2:]
 
     def complete(self, system, messages, schema=None):
+        if self.schema_mode is not None and schema is not None:     # claude-schema-1: the whole call runs behind its fail-closed guard (claude_schema.py)
+            from . import claude_schema
+            return claude_schema.complete(self, system, messages, schema)
         prompt = render_transcript(messages)
-        schema_mode = self.schema_mode is not None and schema is not None
-        cmd = self.argv_schema(system, schema) if schema_mode else self.argv(system)
+        cmd = self.argv(system)
         started = time.monotonic()
         try:
             r = self.runner(cmd, input=prompt.encode(), capture_output=True, timeout=self.timeout, cwd=self.workdir)
-        except subprocess.TimeoutExpired as te:
-            if not schema_mode:
-                raise AdapterError('claude CLI timed out after %d s' % self.timeout)
-            from . import claude_schema
-            raise claude_schema.timeout_error(self, te, cmd, system, prompt, schema, time.monotonic() - started)
+        except subprocess.TimeoutExpired:
+            raise AdapterError('claude CLI timed out after %d s' % self.timeout)
         wall = time.monotonic() - started
         raw = r.stdout.decode(errors='replace')
         req = {'argv': cmd[:cmd.index('--system-prompt')] + ['--system-prompt', '<system>'] + cmd[cmd.index('--system-prompt') + 2:],
                'system_prompt': system, 'prompt': prompt}
-        if schema_mode:
-            req['json_schema_sha256'] = _sha256_text(json.dumps(schema, separators=(',', ':'), sort_keys=True))
-            return parse_claude_stream(raw, r.stderr.decode(errors='replace'), r.returncode, req, wall, self.schema_mode)
         return parse_claude(raw, r.stderr.decode(errors='replace'), r.returncode, req, wall)
 
     def finish(self):

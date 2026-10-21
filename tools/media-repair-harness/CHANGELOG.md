@@ -44,6 +44,11 @@ other config field is compared equal). No model was called. Details: `docs/dev-c
   an evidence-carrying error; a missing-tool abort is accounted against the run limits exactly once; offline replay accepts a rendered transcript only as
   an exact decomposition into recorded harness messages and replies (dated post-freeze correction 5; count-neutral), and the what-if summary counts how
   each record was read back.
+* **Review round 5 (AUDIT-ASTRA-58, Opus nit):** claude-schema-1 is fail-closed by structure: guarded line-by-line decoding (size and nesting
+  bounds), validated finite, non-negative, bounded receipts before any arithmetic, an unmetered call stops the run, model ids normalised to one string, a
+  non-string result text is malformed, and an outer guard turns any other exception in the call, the parser or the accounting into an `AbortRun` with the
+  raw stream (a minimal started-aborted record when the full one cannot be built). A seeded mutation test checks the invariant. Offline replay accepts
+  only the recorded adapter's own preamble (dated post-freeze correction 6; count-neutral).
 
 ## W27 (OpenProject #145 remainder, the PR #1031 nits): evidence follow-ups, offline
 

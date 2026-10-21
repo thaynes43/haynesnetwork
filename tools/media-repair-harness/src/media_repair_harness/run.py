@@ -439,8 +439,13 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                           'failure_modes': fc.get('failure_modes', ['adapter_error', 'cost_cap_budget_exceeded']), **({'usage': fc['usage']} if fc.get('usage') else {}),
                           **{k: fc[k] for k in ('native', 'gpu_refit', 'raw_request', 'raw_response', 'meta') if fc.get(k)}})     # (dev-c7 full-gpu-v2: the reload's receipt and /api/ps reading; dev-c8 claude-schema-1: the call's evidence)
         # a STARTED case that the run's abort cut short is never lost: turns, tool calls, usage and the reason travel with the exception (main writes them to started-aborted/)
-        e.partial = started_aborted_record(case, case_sha, adapter, prompt, run_id, started_at, time.monotonic() - started_wall, turns, tool_calls, repairs, str(e),
-                                           evidence_mode, evidence_format)
+        try:
+            e.partial = started_aborted_record(case, case_sha, adapter, prompt, run_id, started_at, time.monotonic() - started_wall, turns, tool_calls, repairs, str(e),
+                                               evidence_mode, evidence_format)
+        except Exception as pe:  # noqa: BLE001 - dev-c8 claude-schema-1 only (review round 5): the abort propagates even if its record cannot be built
+            if getattr(adapter, 'schema_mode', None) is None:
+                raise
+            e.partial = minimal_aborted_record(case, case_sha, run_id, str(e), turns, pe)
         raise
     except Exception as e:  # noqa: BLE001 - harness fault: keep the run, mark it
         error = {'kind': 'harness_crash', 'message': '%s: %s' % (type(e).__name__, e), 'leak_guard': isinstance(e, leakguard.LeakError), 'traceback': traceback.format_exc()[-1500:]}
@@ -608,6 +613,17 @@ def started_aborted_record(case, case_sha, adapter, prompt, run_id, started_at, 
             'requested_model': getattr(adapter, 'requested_model', None),
             'response_model_ids': sorted({t.get('response_model') for t in turns if t.get('response_model')}),
             'usage': usage, 'turns': turns, 'tool_calls': tool_calls, 'repair_prompts': repairs}
+
+
+def minimal_aborted_record(case, case_sha, run_id, reason, turns, exc):
+    """dev-c8 claude-schema-1: the started-aborted record when the full one cannot be built.  Only strings and numbers, so it always serializes: the abort
+    reason, the build error and every raw stream and error the turns hold."""
+    def s(x):
+        return x if isinstance(x, str) else None
+    return {'record_version': 1, 'status': 'started_aborted', 'scored': False, 'abort_reason': str(reason), 'case_id': str(case.get('id')), 'case_sha256': s(case_sha),
+            'harness_version': P.HARNESS_VERSION, 'run_id': str(run_id), 'partial_record_error': '%s: %s' % (type(exc).__name__, str(exc)[:300]),
+            'turns': [{'n': t.get('n') if isinstance(t.get('n'), int) else None, 'error': s(t.get('error')), 'text': s(t.get('text')),
+                       'raw_response': s(t.get('raw_response'))} for t in turns if isinstance(t, dict)]}
 
 
 def crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay'):
@@ -828,6 +844,17 @@ class RunLimits:
         self.cost += cost
         self.max_call_cost = max(self.max_call_cost, cost)
 
+    def _guarded(self, adapter, fn, evidence=None):
+        """dev-c8 claude-schema-1 (review round 5): accounting a schema-mode call can never crash the run; a failure is a fail-closed stop."""
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001 - schema mode only
+            ab = A.AbortRun('claude-schema-1: accounting a call failed (%s); stopping the run (fail closed)' % type(e).__name__)
+            ab.failed_call = dict({k: v for k, v in (evidence or {}).items() if k in ('raw_request', 'raw_response', 'meta')},
+                                  error='accounting failed: %s' % type(e).__name__, failure_modes=['adapter_error', 'fail_closed'])
+            self.stopped = self.stopped or str(ab)
+            raise ab
+
     def wrap(self, adapter):
         """Hook the caps into the adapter instance (its class is untouched)."""
         orig_before, orig_complete = adapter.before_case, adapter.complete
@@ -839,18 +866,23 @@ class RunLimits:
 
         def complete(system, messages, schema=None):
             self.before_call(adapter)
+            sm = getattr(adapter, 'schema_mode', None) is not None and schema is not None      # dev-c8: a claude-schema-1 call
             try:
                 comp = orig_complete(system, messages, schema=schema) if schema is not None else orig_complete(system, messages)
             except A.AbortRun as ab:
                 fc = getattr(ab, 'failed_call', None)
-                if getattr(adapter, 'schema_mode', None) is not None and fc:
-                    # dev-c8 claude-schema-1 (review round 4): an abort the call itself raised (the CLI did not register the schema tool) still spent what its
-                    # receipt says: account it exactly once, and keep the abort's own reason as the stop reason.  Other adapters' aborts are unchanged.
-                    self.account((fc.get('usage') or {}).get('cost_usd'))
+                if sm and fc:
+                    # dev-c8 claude-schema-1 (review rounds 4 and 5): an abort the call itself raised (a missing tool, an unmetered call, the fail-closed guard)
+                    # still spent what its receipt says: account it exactly once, and keep the abort's own reason as the stop reason.  Other adapters' aborts
+                    # are unchanged.
+                    self._guarded(adapter, lambda: self.account((fc.get('usage') or {}).get('cost_usd')), fc)
                     self.stopped = self.stopped or str(ab)
                 raise
             except A.AdapterError as e:
-                self.account(getattr(e, 'cost_usd', None))
+                if sm:
+                    self._guarded(adapter, lambda: self.account(getattr(e, 'cost_usd', None)), getattr(e, 'evidence', None))
+                else:
+                    self.account(getattr(e, 'cost_usd', None))
                 if self.max_cost_usd is not None and getattr(e, 'budget_exceeded', False):
                     # the CLI stopped the call at its own lowered budget: that is the cost cap, not a model failure, and not a scored forced escalate
                     ab = A.AbortRun('cost cap reached by a call: the Claude CLI stopped it at its per-call budget (cumulative reported cost $%.4f of $%.2f)' % (self.cost, self.max_cost_usd))
@@ -859,7 +891,11 @@ class RunLimits:
                     self.stopped = str(ab)
                     raise ab
                 raise
-            self.account((getattr(comp, 'usage', None) or {}).get('cost_usd'))
+            if sm:
+                self._guarded(adapter, lambda: self.account((getattr(comp, 'usage', None) or {}).get('cost_usd')),
+                              {'raw_request': comp.raw_request, 'raw_response': comp.raw_response, 'meta': comp.meta})
+            else:
+                self.account((getattr(comp, 'usage', None) or {}).get('cost_usd'))
             if self.max_cost_usd is not None and (getattr(comp, 'native', None) or {}).get('subtype') == 'error_max_budget_usd':
                 # dev-c8 claude-schema-1: the CLI stopped this call at its per-call budget after a first response.  Under a run cap that is the cost
                 # cap, classified exactly as when the same receipt arrives on a failing path (review round 3): the run stops, the evidence travels.

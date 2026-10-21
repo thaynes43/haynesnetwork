@@ -137,18 +137,16 @@ CASE_LABEL, REPLY_SEP, HARNESS_SEP = '[CASE]\n', '\n\n[YOUR PREVIOUS REPLY]\n', 
 TRANSCRIPT_TAIL = '\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.'
 
 
-def transcript_harness_blocks(prompt, replies, expected=None):
+def transcript_harness_blocks(prompt, replies, expected=None, preamble=''):
     """The harness-authored messages of a rendered transcript (adapters.render_transcript) as an EXACT decomposition (post-freeze corrections 4 and 5):
     the transcript must be, in order and with nothing left over, the case message (one JSON envelope), then for each recorded reply its label, the reply
     text exactly as recorded (turns[].text) and the harness message that answered it, then the closing request.  `expected` names that harness message
     per reply from the record: ('repair', <the recorded repair prompt text>) or ('result', <the recorded tool call id>, a tool_result envelope with that id,
     optionally followed by the budget notice).  -> the list of harness texts, or None when anything does not match (the caller then treats every result
     as unread)."""
-    if not isinstance(prompt, str):
-        return None
-    i = prompt.find(CASE_LABEL)
-    if i < 0 or not (i == 0 or prompt[:i].endswith('\n\n---\n\n')):      # codex prefixes the system prompt and a rule
-        return None
+    if not isinstance(prompt, str) or not isinstance(preamble, str) or not prompt.startswith(preamble + CASE_LABEL):
+        return None                     # correction 6: only the recorded adapter's own preamble may precede the case message
+    i = len(preamble)
     if not prompt.endswith(TRANSCRIPT_TAIL):
         return None
     body, pos = prompt[:len(prompt) - len(TRANSCRIPT_TAIL)], i + len(CASE_LABEL)
@@ -211,6 +209,24 @@ def expected_harness_messages(record, turns):
     return out
 
 
+def adapter_preamble(record, req):
+    """The text the recorded adapter puts before the case message (correction 6): none for Claude (its system prompt is a separate argument); for Codex
+    exactly the recorded system prompt and a rule (`<system>\n\n---\n\n`), the prompt text being the one whose sha256 the record carries.  -> the
+    preamble, or None for any other request shape (then the transcript is unreadable)."""
+    argv = (req or {}).get('argv') or []
+    tool = argv[0] if argv and isinstance(argv[0], str) else None
+    if tool == 'claude':
+        return ''
+    if tool == 'codex':
+        pv = ((record or {}).get('prompt') or {})
+        try:
+            pr = P.get_prompt(pv.get('version'))
+        except (ValueError, TypeError):
+            return None
+        return pr['text'] + '\n\n---\n\n' if pr['sha256'] == pv.get('sha256') else None
+    return None
+
+
 def record_wire(record):
     """{'status': 'ok' | 'no_request' | 'unreadable', 'texts': [...]}: the harness-authored texts of the last recorded request, by actual message
     boundaries: a message list by role and index; a rendered transcript by its exact decomposition (transcript_harness_blocks)."""
@@ -221,7 +237,8 @@ def record_wire(record):
             return {'status': 'ok', 'texts': [m.get('content') for m in req['messages'] if isinstance(m, dict) and m.get('role') == 'user']}
         if isinstance(req, dict) and isinstance(req.get('prompt'), str):
             earlier = turns[:idx]
-            blocks = transcript_harness_blocks(req['prompt'], [t.get('text') for t in earlier], expected_harness_messages(record, earlier))
+            pre = adapter_preamble(record, req)
+            blocks = None if pre is None else transcript_harness_blocks(req['prompt'], [t.get('text') for t in earlier], expected_harness_messages(record, earlier), pre)
             return {'status': 'ok', 'texts': blocks} if blocks is not None else {'status': 'unreadable', 'texts': None}
     return {'status': 'no_request', 'texts': None}
 

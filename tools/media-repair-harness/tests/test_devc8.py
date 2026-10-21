@@ -6,6 +6,8 @@ before any dev-c7 what-if count was computed (A36 items 1 and 5); they do not de
 import copy
 import hashlib
 import json
+import math
+import random
 import re
 import tempfile
 import unittest
@@ -381,10 +383,14 @@ class ClaudeSchema(unittest.TestCase):
         self.assertEqual((comp.text, comp.meta['schema']['reply_source'], comp.meta['schema']['structured_output_present']), ('', 'none', False))
         ad = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, result(text='{"type":"decision"}'))]), schema_mode='json-schema-1')
         self.assertEqual(ad.complete('S', [], schema=self.SCHEMA).meta['schema']['reply_source'], 'result_text')
-        for bad in ('not json\n', stream(INIT), '', stream(INIT, result(subtype='error_during_execution'))):
+        ad = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, result(subtype='error_during_execution'))]), schema_mode='json-schema-1')
+        with self.assertRaises(A.AdapterError):
+            ad.complete('S', [], schema=self.SCHEMA)
+        for bad in ('not json\n', stream(INIT), ''):        # no receipt at all: an unmetered call stops the run (review round 5, fail closed)
             ad = A.ClaudeAdapter('m', runner=FakeRunner([bad]), schema_mode='json-schema-1')
-            with self.assertRaises(A.AdapterError, msg=bad[:40]):
+            with self.assertRaises(A.AbortRun, msg=bad[:40]) as cm:
                 ad.complete('S', [], schema=self.SCHEMA)
+            self.assertEqual(cm.exception.failed_call['raw_response'], bad)
         try:
             A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, result(subtype='error_max_budget_usd', cost=0.5))]), schema_mode='json-schema-1').complete('S', [], schema=self.SCHEMA)
         except A.AdapterError as e:
@@ -773,7 +779,8 @@ class ReviewA1UnreadContent(unittest.TestCase):
         texts = GV4.record_wire_texts(rec)
         self.assertEqual(GV4.wire_undelivered(texts, ['e1', 'e2']), {'e1', 'e2'})
         transcript = A.render_transcript([{'role': 'user', 'content': t} for t in texts])     # the CLI adapters' request shape
-        self.assertEqual(GV4.wire_undelivered(GV4.record_wire_texts({'turns': [{'raw_request': {'prompt': transcript}}]}), ['e1', 'e2']), {'e1', 'e2'})
+        self.assertEqual(GV4.wire_undelivered(GV4.record_wire_texts({'turns': [{'raw_request': {'argv': ['claude', '-p'], 'prompt': transcript}}]}), ['e1', 'e2']),
+                         {'e1', 'e2'})
 
     def test_fully_delivered_content_still_decides(self):
         case = movie_case(app=None, evidence=[ev2h.ev('e1', 'ffprobe', output=PROBE), ocr('e2', 'ALPHA FILM')])
@@ -937,12 +944,12 @@ class ReviewFrozenCounts(unittest.TestCase):
 def g_role_digest():
     import inspect
     fns = (GV4.v4_context, GV4._page_key, GV4.undelivered_ids, GV4._envelope, GV4._valid_page, GV4.wire_pages, GV4.wire_undelivered,
-           GV4.transcript_harness_blocks, GV4.expected_harness_messages, GV4.record_wire, GV4.record_wire_texts, GV4._deciding, GV4.check_role_v4,
+           GV4.transcript_harness_blocks, GV4.expected_harness_messages, GV4.adapter_preamble, GV4.record_wire, GV4.record_wire_texts, GV4._deciding, GV4.check_role_v4,
            GV4.record_v4_context)
     return hashlib.sha256((''.join(inspect.getsource(f) for f in fns) + repr(GV4.NO_IDENTITY_TOOLS)).encode()).hexdigest()
 
 
-G_ROLE_DIGEST = 'b85a63d6ec7150f69f27f1f675d0a3ee76891ad9ad988a7fb4ea9491f0ad03e3'      # after post-freeze correction 5 (review round 4); correction 4's was e7a2b212...9c07606c, correction 3's 6da4d2e3...4e376d2e, correction 2's b51e0705...c375dd9f
+G_ROLE_DIGEST = '2db40e92ed686affe72d0a20ece33091c203857cf747dfcdba62e9a4fc421768'      # after post-freeze correction 6 (review round 5); correction 5's was b85a63d6...0ad03e3, correction 4's e7a2b212...9c07606c, correction 3's 6da4d2e3...4e376d2e, correction 2's b51e0705...c375dd9f
 
 
 class ReviewO3ImplementationDigest(unittest.TestCase):
@@ -1087,10 +1094,10 @@ class ReviewR2FailureEvidence(unittest.TestCase):
         e = cm.exception
         self.assertTrue(str(e).startswith('claude CLI timed out after 240 s'))
         self.assertEqual((e.cost_usd, e.evidence['raw_response'], e.evidence['meta']['schema']['attempts']), (0.5, partial, 1))
-        cut = stream(INIT, attempt(1, bad))[:-40]                                  # no result event yet, last line cut
-        with self.assertRaises(A.AdapterError) as cm:
+        cut = stream(INIT, attempt(1, bad))[:-40]                                  # no result event yet, last line cut: unmetered, the run stops
+        with self.assertRaises(A.AbortRun) as cm:
             self.timeout_adapter(cut).complete('S', [], schema=self.SCHEMA)
-        self.assertEqual(cm.exception.evidence['raw_response'], cut)
+        self.assertEqual(cm.exception.failed_call['raw_response'], cut)
         with self.assertRaises(A.AdapterError) as cm:
             self.timeout_adapter(partial, schema_mode=None).complete('S', [], schema=self.SCHEMA)
         self.assertEqual((str(cm.exception), cm.exception.evidence), ('claude CLI timed out after 240 s', None))     # legacy: unchanged
@@ -1231,7 +1238,7 @@ class ReviewR3MessageIds(unittest.TestCase):
             t0 = rec['turns'][0]
             self.assertNotIn('error', {k: v for k, v in (rec.get('error') or {}).items() if v == 'harness_crash'})
             self.assertEqual((t0['failure_modes'], t0['raw_response'], t0['usage']['cost_usd']), (['adapter_error'], raw, 0.4), mid)
-            self.assertIn('message id is not a string', t0['error'])
+            self.assertIn('message id that is not a string', t0['error'])
 
     def test_a_string_id_control(self):
         good = dec3('ok')
@@ -1364,3 +1371,268 @@ class ReviewR4ExactDecomposition(unittest.TestCase):
     def test_the_what_if_counts_how_records_were_read_back(self):
         s = json.loads((th.COMPONENT / 'runs' / 'dev-c8-guards-v4-whatif' / 'summary.json').read_text())
         self.assertEqual([r['wire_read_back'] for r in s['runs']], [{'ok': 73}, {'ok': 73}, {'no_request': 1, 'ok': 4}, {'ok': 73}])
+
+
+# ------------------------------------------------------------------------------------------------------------------------------ review round 5
+# AUDIT-ASTRA-58 and the Opus nit of PR #1035 @ 67386dc3, and the fail-closed invariant: in schema mode no input stream can make the run (a) lose the
+# raw stream, (b) lose a budget or registration stop reason, (c) continue to another case after a stop, (d) exit 0 while a call's cost is unknown, or
+# (e) raise anything but an evidence-carrying AdapterError or AbortRun.
+def run_one(raw, path='normal', cap=1.0):
+    """One case through run_case (with a run cost cap when `cap`): -> (record or partial, AbortRun or None, unexpected exception or None)."""
+    import subprocess
+    case = arr_case('w26r5-one')
+    ts = th.TempSuite([case])
+    text = raw + 'bad JSON\n' if path == 'malformed' else raw
+
+    def runner(cmd, **kw):
+        if cmd[:2] == ['claude', '--version']:
+            return FakeProc('fixture')
+        if path == 'timeout':
+            raise subprocess.TimeoutExpired(cmd, 240, output=text.encode())
+        return FakeProc(text)
+    ad = A.ClaudeAdapter('m', runner=runner, schema_mode='json-schema-1')
+    ad.runtime_version = 'fixture'
+    lim = None
+    if cap is not None:
+        lim = R.RunLimits(max_cost_usd=cap)
+        lim.wrap(ad)
+        lim.start()
+    try:
+        rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='w26r5', prompt_version='v8', evidence_format='v3.1-format', which=th.NO_BINARIES)
+        return rec, None, None, text, lim
+    except A.AbortRun as ab:
+        return ab.partial, ab, None, text, lim
+    except Exception as e:  # noqa: BLE001 - invariant (e)
+        return None, None, e, text, lim
+
+
+def assert_invariants(tc, rec, ab, err, text, keeps=None, where=''):
+    tc.assertIsNone(err, (where, err))                                                         # (e)
+    tc.assertIsNotNone(rec, where)
+    tc.assertNotEqual((rec.get('error') or {}).get('kind'), 'harness_crash', where)
+    first = (rec.get('turns') or [{}])[0]
+    tc.assertEqual(first.get('raw_response', ''), text, where)                                # (a) the stream of the first call
+    if keeps:                                                                                  # (b)
+        tc.assertIsNotNone(ab, where)
+        tc.assertIn(keeps, str(ab), where)
+    if ab is None:                                                                             # (d): a run that goes on knows every call's cost
+        for t in rec.get('turns') or []:
+            c = (t.get('usage') or {}).get('cost_usd')
+            tc.assertTrue(isinstance(c, float) and math.isfinite(c), (where, c))
+
+
+class ReviewR5Receipts(unittest.TestCase):
+    """R5-1: a receipt's numbers are validated (finite, non-negative, bounded) before any arithmetic; an invalid cost stops the run."""
+
+    def test_invalid_costs_stop_the_run_on_every_path(self):
+        good = dec3('short')
+        for cost in (10 ** 400, float('nan'), float('inf'), -1, -0.01, '0.4', True, [0.4], 10 ** 5):
+            raw = stream(INIT, attempt(1, good), dict(result(subtype='error_max_budget_usd'), total_cost_usd=cost))
+            for path in ('normal', 'timeout', 'malformed'):
+                for cap in (1.0, None):
+                    rec, ab, err, text, lim = run_one(raw, path, cap)
+                    where = (repr(cost)[:20], path, cap)
+                    assert_invariants(self, rec, ab, err, text, keeps='cannot be metered', where=where)
+                    if lim is not None:
+                        self.assertTrue(lim.stopped, where)
+
+    def test_two_cases_stop_after_the_first(self):
+        good = dec3('short')
+        for timeout in (False, True):
+            raw = stream(INIT, attempt(1, good), dict(result(subtype='error_max_budget_usd'), total_cost_usd=10 ** 400))
+            code, man, calls = main_two_cases(raw, timeout=timeout)
+            self.assertEqual((code, len(calls), man['never_started']), (3, 1, ['w26r4-second']), timeout)
+
+    def test_valid_receipt_control(self):
+        good = dec3('short')
+        rec, ab, err, text, lim = run_one(stream(INIT, attempt(1, good), checked(1, False), result(structured=good, cost=0.25)))
+        assert_invariants(self, rec, ab, err, text, where='control')
+        self.assertEqual((ab, rec['usage']['cost_usd']), (None, 0.25))
+
+
+class ReviewR5Decoding(unittest.TestCase):
+    """R5-2: lines are decoded one by one behind a pre-scan and a catch-all; an undecodable line never discards the others or the stop reasons."""
+
+    def test_a_deep_line_is_malformed_and_the_rest_survives(self):
+        deep = '[' * 1100 + ']' * 1100
+        events, bad = claude_schema().decode_lines(stream(INIT) + deep + '\n' + stream(result(cost=0.4)))
+        self.assertEqual(([e.get('type') for e in events], len(bad)), (['system', 'result'], 1))
+        self.assertIn('nesting deeper', bad[0])
+        good = dec3('short')
+        after_budget = stream(INIT, attempt(1, good), result(subtype='error_max_budget_usd', cost=0.4)) + deep + '\n'
+        before_registration = deep + '\n' + stream(dict(INIT, tools=[]), result(cost=0.3))
+        for path in ('normal', 'timeout', 'malformed'):
+            rec, ab, err, text, lim = run_one(after_budget, path)
+            assert_invariants(self, rec, ab, err, text, keeps='cost cap reached', where=('budget', path))
+            rec, ab, err, text, lim = run_one(before_registration, path)
+            assert_invariants(self, rec, ab, err, text, keeps='StructuredOutput', where=('registration', path))
+            code, man, calls = main_two_cases(after_budget, timeout=path == 'timeout')
+            self.assertEqual((code, len(calls)), (3, 1), path)
+
+    def test_a_long_line_is_bounded(self):
+        events, bad = claude_schema().decode_lines('"' + 'x' * (claude_schema().MAX_LINE_CHARS + 1) + '"\n' + stream(result(cost=0.1)))
+        self.assertEqual((len(events), len(bad)), (1, 1))
+
+
+def claude_schema():
+    from media_repair_harness import claude_schema as CS
+    return CS
+
+
+class ReviewR5Models(unittest.TestCase):
+    """R5-3: model ids are one string at the schema boundary; an abort propagates even when its record cannot be built."""
+
+    def test_two_models_then_an_abort_keeps_the_partial_record(self):
+        call = tcall()
+        first = stream(INIT, attempt(1, call), checked(1, False), dict(result(structured=call, cost=0.1), modelUsage={'m': {}, 'claude-small': {}}))
+        for second in (stream(INIT, result(subtype='error_max_budget_usd', cost=0.2)), stream(dict(INIT, tools=[]), result(cost=0.2))):
+            rec, ab = claude_run(arr_case(), [first, second], limits=R.RunLimits(max_cost_usd=1.0))
+            self.assertIsNotNone(ab)
+            self.assertEqual(rec['status'], 'started_aborted')
+            self.assertEqual(rec['response_model_ids'], ['m'])                      # the requested model, reported among others
+            self.assertEqual(rec['usage']['cost_usd'], 0.3)
+        comp = A.ClaudeAdapter('other', runner=FakeRunner([first]), schema_mode='json-schema-1').complete('S', [], schema=ClaudeSchema.SCHEMA)
+        self.assertEqual(comp.response_model, 'claude-small+m')                      # neither is the requested one: the sorted ids, one string
+
+    def test_the_abort_propagates_when_its_record_cannot_be_built(self):
+        from unittest.mock import patch
+        raw = stream(dict(INIT, tools=[]), result(cost=0.2))
+        with patch.object(R, 'started_aborted_record', side_effect=TypeError('unhashable')):
+            rec, ab = claude_run(arr_case(), [raw])
+        self.assertIsNotNone(ab)
+        self.assertEqual((rec['status'], rec['partial_record_error'].split(':')[0], rec['turns'][0]['raw_response']), ('started_aborted', 'TypeError', raw))
+        json.dumps(rec)
+
+    def test_legacy_record_building_is_unchanged(self):
+        from unittest.mock import patch
+        case = arr_case()
+        ts = th.TempSuite([case])
+        ad = A.ScriptedAdapter('s', [A.AbortRun('legacy abort')])
+        with patch.object(R, 'started_aborted_record', side_effect=TypeError('unhashable')), self.assertRaises(TypeError):
+            R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='w26r5', prompt_version='v8', evidence_format='v3.1-format', which=th.NO_BINARIES)
+
+
+class ReviewR5Preamble(unittest.TestCase):
+    """R5-4 (correction 6): only the recorded adapter's own preamble may precede the case message."""
+
+    def test_surplus_pre_case_material_is_unreadable(self):
+        rec, _off = ReviewR3Boundaries().run_pair('not JSON')
+        self.assertEqual(GV4.record_wire(rec)['status'], 'ok')
+        req = rec['turns'][-1]['raw_request']
+        for name, prompt, tool in (('claude with surplus', 'an unrecorded reply\n\n---\n\n' + req['prompt'], 'claude'),
+                                   ('codex with another system', 'some other system\n\n---\n\n' + req['prompt'], 'codex'),
+                                   ('codex without a system', req['prompt'], 'codex'),
+                                   ('an unknown adapter', req['prompt'], 'other')):
+            r = copy.deepcopy(rec)
+            r['turns'][-1]['raw_request'].update(prompt=prompt, argv=[tool] + req['argv'][1:])
+            self.assertEqual(GV4.record_wire(r)['status'], 'unreadable', name)
+        r = copy.deepcopy(rec)                                                         # control: the codex shape with the recorded system prompt
+        r['turns'][-1]['raw_request'].update(prompt=P.get_prompt('v8')['text'] + '\n\n---\n\n' + req['prompt'], argv=['codex'] + req['argv'][1:])
+        self.assertEqual(GV4.record_wire(r)['status'], 'ok')
+
+
+class ReviewR5ResultText(unittest.TestCase):
+    """Opus nit: a non-string result text is malformed, never stored as the reply."""
+
+    def test_a_non_string_result_text_is_malformed(self):
+        for value in ({'a': 1}, ['x'], 5):
+            rec, ab, err, text, lim = run_one(stream(INIT, dict(result(cost=0.1), result=value)), cap=None)
+            assert_invariants(self, rec, ab, err, text, where=repr(value))
+            t0 = rec['turns'][0]
+            self.assertEqual(t0['failure_modes'], ['adapter_error'])
+            self.assertNotIn('text', t0)
+            self.assertIn('result is not a string', t0['error'])
+
+
+class ReviewR5OuterGuard(unittest.TestCase):
+    """The outer guard: any other exception in schema mode is a fail-closed AbortRun with the raw stream; the legacy adapter keeps harness_crash."""
+
+    def test_schema_mode_fails_closed(self):
+        from unittest.mock import patch
+        CS = claude_schema()
+        raw = stream(INIT, attempt(1, dec3('ok')), result(cost=0.1))
+        for target in ('check_result', 'decode_lines', '_responses'):
+            with patch.object(CS, target, side_effect=RuntimeError('boom')):
+                rec, ab, err, text, lim = run_one(raw)
+            assert_invariants(self, rec, ab, err, text, keeps='fail closed', where=target)
+
+    def test_the_legacy_adapter_keeps_harness_crash(self):
+        from unittest.mock import patch
+        case = arr_case()
+        ts = th.TempSuite([case])
+        ad = A.ClaudeAdapter('m', runner=FakeRunner([json.dumps(result(text=json.dumps(dec3('ok'))))]))
+        with patch.object(A, 'parse_claude', side_effect=RuntimeError('boom')):
+            rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='w26r5', prompt_version='v7', evidence_format='v3.1-format', which=th.NO_BINARIES)
+        self.assertEqual(rec['error']['kind'], 'harness_crash')
+
+
+class ReviewR5Mutation(unittest.TestCase):
+    """A deterministic, seeded, bounded mutation test of the invariant over the schema parser and the main loop (one process, serial; about 200 one-case
+    runs and 24 two-case main-loop runs, a few seconds of CPU).  Types, magnitudes, nesting, ordering, truncation and extra lines are mutated around a
+    budget receipt and a registration abort, on the normal, timeout and malformed-stream paths."""
+    SEED = 20261021
+    POOL = (10 ** 400, float('nan'), float('inf'), -1, '0.4', True, [], {}, None, 1e20, [[[[1]]]])
+
+    def bases(self):
+        good = dec3('short')
+        return {'budget': ([INIT, attempt(1, good), checked(1, True), result(subtype='error_max_budget_usd', cost=0.4)], 3, 'cost cap reached'),
+                'registration': ([dict(INIT, tools=[]), attempt(1, good), result(cost=0.3)], 0, 'StructuredOutput')}
+
+    KINDS = ('field', 'id', 'nest', 'shuffle', 'truncate', 'extra', 'none')
+
+    def mutate(self, rng, events, stop_index, reason):
+        """-> (kind, stream text, the stop reason the result must carry, or None when the mutation may have removed the stop)."""
+        lines = [json.dumps(e) for e in events]
+        kind = rng.choice(self.KINDS)
+        keeps = reason
+        if kind == 'field':
+            i = rng.randrange(len(events))
+            ev = copy.deepcopy(events[i])
+            key = rng.choice(['total_cost_usd', 'subtype', 'usage', 'modelUsage', 'result', 'is_error', 'tools'])
+            ev[key] = rng.choice(self.POOL)
+            lines[i] = json.dumps(ev)
+            if i == stop_index:
+                keeps = None                                         # the stop event itself changed
+            elif ev.get('type') == 'system' and key == 'tools' and isinstance(ev['tools'], list):
+                keeps = 'StructuredOutput'                           # an init listing tools without the schema tool: the registration stop comes first
+        elif kind == 'id':
+            i = rng.randrange(len(events))
+            ev = copy.deepcopy(events[i])
+            if isinstance(ev.get('message'), dict):
+                ev['message']['id'] = rng.choice(self.POOL)
+            lines[i] = json.dumps(ev)
+        elif kind == 'nest':
+            k = rng.choice([10, 70, 1100])
+            lines.insert(rng.randrange(len(lines) + 1), '[' * k + ']' * k if rng.random() < 0.5 else '{"a":' * k + '1' + '}' * k)
+        elif kind == 'shuffle':
+            rng.shuffle(lines)
+        elif kind == 'truncate':
+            text = '\n'.join(lines)
+            return kind, text[:rng.randrange(len(text) + 1)], None
+        elif kind == 'extra':
+            for _ in range(rng.randrange(1, 4)):
+                lines.insert(rng.randrange(len(lines) + 1), rng.choice(['not json', '', '"x"', '[1,2]', '{"type":"assistant","message":5}', 'x' * 5000]))
+        return kind, '\n'.join(lines) + '\n', keeps
+
+    def test_the_invariant_holds_under_mutation(self):
+        rng = random.Random(self.SEED)
+        runs = mains = 0
+        kinds = {}
+        for name, (events, stop_index, reason) in self.bases().items():
+            for k in range(34):
+                kind, text, keeps = self.mutate(rng, events, stop_index, reason)
+                kinds[kind] = kinds.get(kind, 0) + 1
+                for path in ('normal', 'timeout', 'malformed'):
+                    rec, ab, err, sent, lim = run_one(text, path)
+                    runs += 1
+                    assert_invariants(self, rec, ab, err, sent, keeps=keeps, where=(name, k, kind, path, text[:80]))
+                if k % 6 == 0:
+                    for path in ('normal', 'timeout'):
+                        code, man, calls = main_two_cases(text, timeout=path == 'timeout')
+                        mains += 1
+                        if code != 0:                                                  # (c) a stopped run never reaches the second case
+                            self.assertEqual(len(calls), 1, (name, k, path))
+                        else:                                                          # (d) exit 0 only with every cost known
+                            self.assertIsNone(man['limits_state']['cost_unreported'], (name, k, path))
+        self.assertEqual((runs, mains), (204, 24))
+        self.assertEqual(set(kinds), set(self.KINDS), kinds)                  # every mutation kind was exercised
