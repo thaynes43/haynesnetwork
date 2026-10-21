@@ -1,0 +1,61 @@
+{
+ "audit_fidelity": {},
+ "case_id": "epub-corrupt-003",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-haiku-5-5/epub-corrupt-003.json",
+ "input_record_sha256": "4ac3018190d4bfaaca53a86f6a6a95117c6bf49a904b013475bcaae609faa3e2",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "escalate",
+  "class": "corrupt_file",
+  "confidence": 0.8,
+  "evidence_refs": [
+   "e1",
+   "t1"
+  ],
+  "reason": "e1.f1 is a located known_defect: the OPF package fails to parse (invalid token, line 2 col 336, stage opf_parse). The epub_inspect result is an error with cause input, not tool, so the finding stands. No arr record shows a linked file, so the source is not bound and blocklist_and_search cannot be proposed. Manifest and spine are unchecked; a retry of epub_inspect already failed.",
+  "type": "decision"
+ },
+ "run": "devc7-haiku-5-5",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-haiku-5-5-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "corrupt_file",
+   "confidence": 0.8,
+   "evidence_refs": [
+    "e1",
+    "t1"
+   ],
+   "reason": "e1.f1 is a located known_defect: the OPF package fails to parse (invalid token, line 2 col 336, stage opf_parse). The epub_inspect result is an error with cause input, not tool, so the finding stands. No arr record shows a linked file, so the source is not bound and blocklist_and_search cannot be proposed. Manifest and spine are unchecked; a retry of epub_inspect already failed.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "corrupt_file",
+   "confidence": 0.8,
+   "evidence_refs": [
+    "e1",
+    "t1"
+   ],
+   "reason": "e1.f1 is a located known_defect: the OPF package fails to parse (invalid token, line 2 col 336, stage opf_parse). The epub_inspect result is an error with cause input, not tool, so the finding stands. No arr record shows a linked file, so the source is not bound and blocklist_and_search cannot be proposed. Manifest and spine are unchecked; a retry of epub_inspect already failed.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

@@ -1,0 +1,111 @@
+{
+ "audit_fidelity": {},
+ "case_id": "movie-naming-001",
+ "direction": "metadata_naming/rename -> insufficient_evidence/escalate",
+ "input_record": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b/movie-naming-001.json",
+ "input_record_sha256": "eaa0ca4edefbe492c564f12535f4a03eb2e37e2fabd3dc52476f273992f7bf14",
+ "newly_intercepted_by_v4": true,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "rename",
+  "class": "metadata_naming",
+  "confidence": 0.85,
+  "evidence_refs": [
+   "e1",
+   "e2",
+   "e3",
+   "e4",
+   "t1"
+  ],
+  "reason": "Catalog (e4/t1) lists Quiet Orbit year 2019; file name says (2011), a naming-surface difference. Container probe e1 ran ok and is clean (matroska, 8.046 s, h264/aac); decode 0-4 s clean; OCR at 1 s reads QUIET ORBIT, matching the catalog title, so identity is content-verified and uncontradicted. No known defects or vetoes. Only the year marker in the file name is wrong.",
+  "source": {
+   "ref": "case_item"
+  },
+  "target": {
+   "kind": "rename_of_source",
+   "new_value": "Quiet Orbit (2019).mkv",
+   "old_value": "Quiet Orbit (2011).mkv"
+  },
+  "type": "decision"
+ },
+ "run": "devc7r2-qwen3.8-27b",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": true,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "rename",
+   "class": "metadata_naming",
+   "confidence": 0.85,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+    "t1"
+   ],
+   "reason": "Catalog (e4/t1) lists Quiet Orbit year 2019; file name says (2011), a naming-surface difference. Container probe e1 ran ok and is clean (matroska, 8.046 s, h264/aac); decode 0-4 s clean; OCR at 1 s reads QUIET ORBIT, matching the catalog title, so identity is content-verified and uncontradicted. No known defects or vetoes. Only the year marker in the file name is wrong.",
+   "source": {
+    "ref": "case_item"
+   },
+   "target": {
+    "kind": "rename_of_source",
+    "new_value": "Quiet Orbit (2019).mkv",
+    "old_value": "Quiet Orbit (2011).mkv"
+   },
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": true,
+  "decision": {
+   "action": "escalate",
+   "class": "insufficient_evidence",
+   "confidence": 0.0,
+   "evidence_refs": [],
+   "reason": "guard G-role (not the model): rename with unmet role prerequisite(s): A-REN-1 (a declaration disagrees on an identity or edition attribute and no content settles it); R-SRC (the cited source case_item is not a shown record that binds this file)",
+   "type": "decision"
+  },
+  "reason": "rename with unmet role prerequisite(s): A-REN-1 (a declaration disagrees on an identity or edition attribute and no content settles it); R-SRC (the cited source case_item is not a shown record that binds this file)",
+  "role_checks": [
+   {
+    "audit_state": "met",
+    "check": "source_bound",
+    "detail": "",
+    "id": "A-REN-0",
+    "refs": [
+     "e4"
+    ],
+    "v4_status": "met"
+   },
+   {
+    "audit_state": "unmet",
+    "check": "identity_level",
+    "detail": "a declaration disagrees on an identity or edition attribute and no content settles it",
+    "id": "A-REN-1",
+    "refs": [
+     "context.filename"
+    ],
+    "v4_status": "enforced"
+   },
+   {
+    "audit_state": "unmet",
+    "check": "source_ref_qualifies",
+    "detail": "the cited source case_item is not a shown record that binds this file",
+    "id": "R-SRC",
+    "refs": [
+     "case_item"
+    ],
+    "v4_status": "enforced"
+   }
+  ],
+  "rule": "G-role"
+ }
+}

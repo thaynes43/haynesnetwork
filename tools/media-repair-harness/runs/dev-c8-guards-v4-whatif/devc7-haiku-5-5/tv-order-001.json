@@ -1,0 +1,67 @@
+{
+ "audit_fidelity": {},
+ "case_id": "tv-order-001",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-haiku-5-5/tv-order-001.json",
+ "input_record_sha256": "857276bb2d4f9e10b3baa1c4465c3f87998af61f20f15f00bc6a0e96cae39b02",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "escalate",
+  "class": "order_edition_ambiguity",
+  "confidence": 0.6,
+  "evidence_refs": [
+   "e1",
+   "e2",
+   "e3",
+   "e4"
+  ],
+  "reason": "Container is clean (e1) with duration matching runtime. OCR (e3) and the title tag read The Glass Harbor. Sonarr lists aired ep4 as Night Ferry and dvd ep4 as The Glass Harbor (e4). The observations fit the dvd order, but the aired order is also listed and library_episode_order is null, so no case choice settles it. Decode covered only 0-4 s of 8.046 s (e2); the rest is unchecked.",
+  "type": "decision"
+ },
+ "run": "devc7-haiku-5-5",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-haiku-5-5-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "order_edition_ambiguity",
+   "confidence": 0.6,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "reason": "Container is clean (e1) with duration matching runtime. OCR (e3) and the title tag read The Glass Harbor. Sonarr lists aired ep4 as Night Ferry and dvd ep4 as The Glass Harbor (e4). The observations fit the dvd order, but the aired order is also listed and library_episode_order is null, so no case choice settles it. Decode covered only 0-4 s of 8.046 s (e2); the rest is unchecked.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "order_edition_ambiguity",
+   "confidence": 0.6,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "reason": "Container is clean (e1) with duration matching runtime. OCR (e3) and the title tag read The Glass Harbor. Sonarr lists aired ep4 as Night Ferry and dvd ep4 as The Glass Harbor (e4). The observations fit the dvd order, but the aired order is also listed and library_episode_order is null, so no case choice settles it. Decode covered only 0-4 s of 8.046 s (e2); the rest is unchecked.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

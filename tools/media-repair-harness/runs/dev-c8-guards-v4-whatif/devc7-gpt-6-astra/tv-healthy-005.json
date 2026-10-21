@@ -1,0 +1,64 @@
+{
+ "audit_fidelity": {},
+ "case_id": "tv-healthy-005",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-gpt-6-astra/tv-healthy-005.json",
+ "input_record_sha256": "496f105f41629c5e602ec449c71347b26d06b71009bdf3d2ab427723d4df199a",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "none",
+  "class": "healthy",
+  "confidence": 0.97,
+  "evidence_refs": [
+   "e1",
+   "e2",
+   "e3"
+  ],
+  "reason": "Container inspection is clean, and filename and declarations agree with the catalog. No defects or material conflicts are shown. The 0–4 s decode was clean, but its stream selection is unrecorded; 4–8.046 s remains unchecked.",
+  "type": "decision"
+ },
+ "run": "devc7-gpt-6-astra",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-gpt-6-astra-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.97,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "reason": "Container inspection is clean, and filename and declarations agree with the catalog. No defects or material conflicts are shown. The 0–4 s decode was clean, but its stream selection is unrecorded; 4–8.046 s remains unchecked.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.97,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "reason": "Container inspection is clean, and filename and declarations agree with the catalog. No defects or material conflicts are shown. The 0–4 s decode was clean, but its stream selection is unrecorded; 4–8.046 s remains unchecked.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

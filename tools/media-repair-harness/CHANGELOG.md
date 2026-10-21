@@ -1,5 +1,30 @@
 # Harness changelog
 
+## dev-c8 (WO-W26, OpenProject #158): prompt v8, turn-v3.1, claude-schema-1, guards v4; offline, not measured
+
+`HARNESS_VERSION` is `dev-c8`. Every earlier prompt, format, guard version and adapter is unchanged; the recorded dev-c4 to dev-c7 runs, the dev-c6 replay
+and the W25 artifacts reproduce (the registered dev-c7 commands rebuild their config hash under the version label they were registered with, and every
+other config field is compared equal). No model was called. Details: `docs/dev-c8.md`.
+
+* **Prompt v8** (`prompts/v8.txt`, `--prompt v8`, format v3.1-format only): v7 plus (a) operational brevity (soft budgets reason ~300 / why ~120 as
+  neutral guidance under the unchanged 400 / 200 hard limits; any material limitation that affects the decision; generic healthy, escalation and
+  permitted-write examples), (b) action-role checks at the moment of response (uncontradicted versus content-verified identity; managed versus unmanaged
+  source; Q-01 left open) and (c) independent comparisons (decode completion, container against catalog/edition runtime, and an unselected edition are
+  separate; M4 rewritten, M7 qualified). One disclosed sentence added after the guards what-if: the source record is cited by its evidence id, never by
+  an id copied from a record or the context. File sha256 `d1b921b6...e987a4`, sent sha256 `213c9d7d...4d8a5e`.
+* **turn-v3.1** (prompt v8): a reply that fails only on a length limit gets a repair prompt naming the field, its decoded length, the hard limit and the
+  soft budget, asking for a summary of the decisive evidence; mixed errors keep the turn-v3 prompt plus a length hint. Failure mode `length_limit`.
+  The per-case repair allowance is unchanged and recorded (`prompt.repair_allowance`, config `repair_allowance`).
+* **claude-schema-1** (`--claude-schema json-schema-1`, opt-in): the CLI advertises `--json-schema`; the documented mechanism re-prompts internally, so
+  this adapter version reads `stream-json`, takes the model's first StructuredOutput attempt as the reply (CLI-internal retries recorded, never used) and
+  records `schema_sent` from the CLI's own init event. Offline fixtures only; not exercised live.
+* **Guards v4** (`--guards v4`, format v3.1-format only): v3 unchanged, then G-role on decision-v3 writes (A-REN-1, the source-bound and managing-app
+  prerequisites, R-SRC) with a frozen specification (`decision_guard.V4_SPEC`): only an audit `unmet` fires, `unknown` never does, and content the
+  comparator cannot recognise or results not fully delivered are not enforced. `mrh-guard` (a pinned registration input) is unchanged and refuses v4.
+* **What-if** (`scripts/guards_v4_whatif.py`, `runs/dev-c8-guards-v4-whatif/`): shadow records for the four dev-c7 runs. v4 catches the one unsafe
+  proposal v3 leaves (qwen-r2) and would turn 19 score-correct writes into escalations (Haiku 12, qwen-r2 7); 14 of those cite a `context.arr.ids` value
+  as `source.ref` while a binding record was shown.
+
 ## W25b (OpenProject #156): review fixes for PR #1031, offline
 
 Fixes in place in the W25 versions, which nothing had selected yet (no recorded run, no runner flag): every legacy version and result is unchanged and reproduces byte for byte (the dev-c4 to dev-c7 records, the dev-c6 replay, all 21 `score.json` files, both passability outputs and the v3.1 tension list). No model call.

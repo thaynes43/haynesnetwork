@@ -1,0 +1,67 @@
+{
+ "audit_fidelity": {},
+ "case_id": "movie-healthy-003",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-gpt-6-astra/movie-healthy-003.json",
+ "input_record_sha256": "be476043739171126199068903c8824a7b9450c241d308a9ac31e1592a72b059",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "none",
+  "class": "healthy",
+  "confidence": 0.96,
+  "evidence_refs": [
+   "e1",
+   "e2",
+   "e3",
+   "e4"
+  ],
+  "reason": "Container inspection is clean, on-screen title matches Quiet Orbit, and the filename uses an accepted alias. Runtime matches the listed theatrical edition. The decode window was clean from 0–4 s; stream selection was unrecorded and 4–8.046 s remains unchecked.",
+  "type": "decision"
+ },
+ "run": "devc7-gpt-6-astra",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-gpt-6-astra-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.96,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "reason": "Container inspection is clean, on-screen title matches Quiet Orbit, and the filename uses an accepted alias. Runtime matches the listed theatrical edition. The decode window was clean from 0–4 s; stream selection was unrecorded and 4–8.046 s remains unchecked.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.96,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "reason": "Container inspection is clean, on-screen title matches Quiet Orbit, and the filename uses an accepted alias. Runtime matches the listed theatrical edition. The decode window was clean from 0–4 s; stream selection was unrecorded and 4–8.046 s remains unchecked.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

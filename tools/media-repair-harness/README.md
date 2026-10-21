@@ -92,6 +92,15 @@ dev-c4 measurements (dev split only, tuned, not a predictor of held-out; dev-v1.
 
 WO-W25 (OpenProject #156) fixes nine recorded defects, each as a new version beside the old one: tools behaviour v4 (EPUB image-only spine documents, remote manifest hrefs, the size-cap wording), diagnostic rules `diag-2` (anchored open-tail zip patterns, colons in `zip_crc` member names), the rubric v3.3 checker (`experimental/contract_v3/prereq_v33.py`; D32-1 to D32-3; written after labels had been read) and counter `uncalled-2` (format v3.1-format records, EPUB excerpts and unfetched pages). Every runner configuration still selects the earlier versions, and every earlier result reproduces. Tools behaviour v4 is built only under `diag-2` (W25b review fixes). Offline: `scripts/w25_deltas.py`, `scripts/contract_v3_tension.py --checker v3.3 --diagnostic-rules diag-2`, `scripts/contract_v3_uncalled_v2.py`. Details: `CHANGELOG.md`, `docs/contract-v3.md` section 17, `docs/evidence-format-v2.md` (last section).
 
+## dev-c8: prompt v8, turn-v3.1, Claude reply schema, guards v4 (opt-in, not measured)
+
+`--evidence-format v3.1-format --prompt v8` (guards off, v3 or v4) is v7 with operational brevity, action-role checks at the moment of response and
+independent decode/runtime/edition comparisons, on turn-v3.1 (turn-v3 plus a length-specific repair hint; the one-per-case repair allowance is unchanged
+and recorded). `--guards v4` adds G-role (frozen `decision_guard.V4_SPEC`) to guards v3 on contract-v3 writes. `--adapter claude --claude-schema
+json-schema-1` forwards the per-case flat turn schema with `--json-schema` and keeps the model's first attempt as its reply (documented capability, offline
+fixtures only). The guards v4 what-if on the dev-c7 runs is `runs/dev-c8-guards-v4-whatif/` (`scripts/guards_v4_whatif.py`). No model has run v8; there
+is no pre-registration. Details: `docs/dev-c8.md`, `CHANGELOG.md`.
+
 ## Layout
 
 | File (under `src/media_repair_harness/` unless noted) | Role |

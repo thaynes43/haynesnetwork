@@ -1,0 +1,64 @@
+{
+ "audit_fidelity": {},
+ "case_id": "tv-insuff-003",
+ "direction": null,
+ "input_record": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b/tv-insuff-003.json",
+ "input_record_sha256": "527487bc401c2abb950b74f6815da56565c083ccdacbfc0c0d3452e1ef541192",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "none",
+  "class": "healthy",
+  "confidence": 0.8,
+  "evidence_refs": [
+   "e1",
+   "t1",
+   "e3"
+  ],
+  "reason": "Container parsed clean (e1), full decode ran to completion with exit 0 and decoded span 8.0s vs 8.046s duration (shortfall 0.046s, within 1s tolerance, t1). No known defects, no vetoes. Identity uncontradicted: filename and catalog agree on S01E06 Gull Rock; no content observation contradicts. No client stated. Unchecked remainder 8.0-8.046s is ordinary, not material.",
+  "type": "decision"
+ },
+ "run": "devc7r2-qwen3.8-27b",
+ "score_facts": {
+  "original_false_diagnosis": true,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.8,
+   "evidence_refs": [
+    "e1",
+    "t1",
+    "e3"
+   ],
+   "reason": "Container parsed clean (e1), full decode ran to completion with exit 0 and decoded span 8.0s vs 8.046s duration (shortfall 0.046s, within 1s tolerance, t1). No known defects, no vetoes. Identity uncontradicted: filename and catalog agree on S01E06 Gull Rock; no content observation contradicts. No client stated. Unchecked remainder 8.0-8.046s is ordinary, not material.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.8,
+   "evidence_refs": [
+    "e1",
+    "t1",
+    "e3"
+   ],
+   "reason": "Container parsed clean (e1), full decode ran to completion with exit 0 and decoded span 8.0s vs 8.046s duration (shortfall 0.046s, within 1s tolerance, t1). No known defects, no vetoes. Identity uncontradicted: filename and catalog agree on S01E06 Gull Rock; no content observation contradicts. No client stated. Unchecked remainder 8.0-8.046s is ordinary, not material.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

@@ -1,0 +1,64 @@
+{
+ "audit_fidelity": {},
+ "case_id": "tv-insuff-002",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-gpt-6-astra/tv-insuff-002.json",
+ "input_record_sha256": "65b368327d0a7c23340d8554a44fc96b06a59da8ad19f433b483cd4c4337e3b5",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "none",
+  "class": "healthy",
+  "confidence": 0.97,
+  "evidence_refs": [
+   "e1",
+   "e2",
+   "e3"
+  ],
+  "reason": "Container integrity is clean, naming and declarations agree with the catalog, and no damage or material uncertainty is shown. The clean decode covers only 0–4 seconds with streams unrecorded; the remaining 4–8.046 seconds are unchecked.",
+  "type": "decision"
+ },
+ "run": "devc7-gpt-6-astra",
+ "score_facts": {
+  "original_false_diagnosis": true,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-gpt-6-astra-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.97,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "reason": "Container integrity is clean, naming and declarations agree with the catalog, and no damage or material uncertainty is shown. The clean decode covers only 0–4 seconds with streams unrecorded; the remaining 4–8.046 seconds are unchecked.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.97,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "reason": "Container integrity is clean, naming and declarations agree with the catalog, and no damage or material uncertainty is shown. The clean decode covers only 0–4 seconds with streams unrecorded; the remaining 4–8.046 seconds are unchecked.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

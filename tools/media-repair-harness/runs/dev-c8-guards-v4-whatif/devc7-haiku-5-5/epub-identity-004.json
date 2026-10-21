@@ -1,0 +1,64 @@
+{
+ "audit_fidelity": {},
+ "case_id": "epub-identity-004",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-haiku-5-5/epub-identity-004.json",
+ "input_record_sha256": "b4483fe65c101305bcb3a950df080d32e82457ef29ae9199b8cc726ded5de896",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "escalate",
+  "class": "identity_mismatch",
+  "confidence": 0.7,
+  "evidence_refs": [
+   "t2",
+   "t3",
+   "e2"
+  ],
+  "reason": "Completed excerpt t2 (spine 5) reads as Anne of Windy Poplars, not Anne of Green Gables per catalog e2. Blocklist needs a record bound to this file; t3 shows none, so it is unbound. Remap needs a catalog record of the true item and a free slot: not shown. Only one excerpt was read; other body text is unread (u1, u2, u5).",
+  "type": "decision"
+ },
+ "run": "devc7-haiku-5-5",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-haiku-5-5-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "identity_mismatch",
+   "confidence": 0.7,
+   "evidence_refs": [
+    "t2",
+    "t3",
+    "e2"
+   ],
+   "reason": "Completed excerpt t2 (spine 5) reads as Anne of Windy Poplars, not Anne of Green Gables per catalog e2. Blocklist needs a record bound to this file; t3 shows none, so it is unbound. Remap needs a catalog record of the true item and a free slot: not shown. Only one excerpt was read; other body text is unread (u1, u2, u5).",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "identity_mismatch",
+   "confidence": 0.7,
+   "evidence_refs": [
+    "t2",
+    "t3",
+    "e2"
+   ],
+   "reason": "Completed excerpt t2 (spine 5) reads as Anne of Windy Poplars, not Anne of Green Gables per catalog e2. Blocklist needs a record bound to this file; t3 shows none, so it is unbound. Remap needs a catalog record of the true item and a free slot: not shown. Only one excerpt was read; other body text is unread (u1, u2, u5).",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

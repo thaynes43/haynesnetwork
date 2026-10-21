@@ -1,0 +1,61 @@
+{
+ "audit_fidelity": {},
+ "case_id": "epub-corrupt-004",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-haiku-5-5/epub-corrupt-004.json",
+ "input_record_sha256": "5e037594383cefa6153724b53bdfff44515e1dda8a88d874985d00f7988e5f57",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "escalate",
+  "class": "corrupt_file",
+  "confidence": 0.8,
+  "evidence_refs": [
+   "e1",
+   "t1"
+  ],
+  "reason": "Located known_defect e1.f1: zip_crc mismatch in OEBPS/c2.xhtml. e1 errored with cause input, so its positive finding still supports the diagnosis. Blocklist needs a catalog record linking this file, and t1 shows none (no file field), so the source is unbound. Package stages opf_parse, manifest and spine and the container are unchecked. Identity is not content-verified.",
+  "type": "decision"
+ },
+ "run": "devc7-haiku-5-5",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-haiku-5-5-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "corrupt_file",
+   "confidence": 0.8,
+   "evidence_refs": [
+    "e1",
+    "t1"
+   ],
+   "reason": "Located known_defect e1.f1: zip_crc mismatch in OEBPS/c2.xhtml. e1 errored with cause input, so its positive finding still supports the diagnosis. Blocklist needs a catalog record linking this file, and t1 shows none (no file field), so the source is unbound. Package stages opf_parse, manifest and spine and the container are unchecked. Identity is not content-verified.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "corrupt_file",
+   "confidence": 0.8,
+   "evidence_refs": [
+    "e1",
+    "t1"
+   ],
+   "reason": "Located known_defect e1.f1: zip_crc mismatch in OEBPS/c2.xhtml. e1 errored with cause input, so its positive finding still supports the diagnosis. Blocklist needs a catalog record linking this file, and t1 shows none (no file field), so the source is unbound. Package stages opf_parse, manifest and spine and the container are unchecked. Identity is not content-verified.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

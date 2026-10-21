@@ -1,0 +1,70 @@
+{
+ "audit_fidelity": {},
+ "case_id": "tv-healthy-007",
+ "direction": null,
+ "input_record": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b/tv-healthy-007.json",
+ "input_record_sha256": "128cc7bb48a534ed5fda9d90558e53995d261258e2e28c5e0c70a87350b069ab",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "none",
+  "class": "healthy",
+  "confidence": 0.82,
+  "evidence_refs": [
+   "e1",
+   "e2",
+   "e3",
+   "e4",
+   "t1"
+  ],
+  "reason": "Container parsed clean (e1); 0-4s decode clean (e2); OCR shows 'HARBOR LIGHTS / THE GLASS HARBOR' matching catalog title (e3). Library order is dvd where ep4='The Glass Harbor', so identity is consistent. Filename matches catalog. No known defects, no vetoes. Unchecked remainder 4-8.046s is not material without a complaint.",
+  "type": "decision"
+ },
+ "run": "devc7r2-qwen3.8-27b",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.82,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+    "t1"
+   ],
+   "reason": "Container parsed clean (e1); 0-4s decode clean (e2); OCR shows 'HARBOR LIGHTS / THE GLASS HARBOR' matching catalog title (e3). Library order is dvd where ep4='The Glass Harbor', so identity is consistent. Filename matches catalog. No known defects, no vetoes. Unchecked remainder 4-8.046s is not material without a complaint.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.82,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+    "t1"
+   ],
+   "reason": "Container parsed clean (e1); 0-4s decode clean (e2); OCR shows 'HARBOR LIGHTS / THE GLASS HARBOR' matching catalog title (e3). Library order is dvd where ep4='The Glass Harbor', so identity is consistent. Filename matches catalog. No known defects, no vetoes. Unchecked remainder 4-8.046s is not material without a complaint.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

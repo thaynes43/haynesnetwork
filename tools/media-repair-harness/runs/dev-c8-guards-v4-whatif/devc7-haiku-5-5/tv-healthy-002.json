@@ -1,0 +1,64 @@
+{
+ "audit_fidelity": {},
+ "case_id": "tv-healthy-002",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-haiku-5-5/tv-healthy-002.json",
+ "input_record_sha256": "44e4e5a622c2d3956157e61f02b347a1e6aac05f199503c1c0cff739fb668d24",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "none",
+  "class": "healthy",
+  "confidence": 0.6,
+  "evidence_refs": [
+   "e1",
+   "e2",
+   "e3"
+  ],
+  "reason": "e1 is a container probe with status ok, parsed with video and AAC audio streams and no findings. e2 decoded 0 to 4 s with exit 0 and no errors. e3 OCR at 62 s reads the expected story title. No defects, conflicts or vetoes. Open items u1 to u3 (duration unstated, decode beyond 4 s, stream selection unrecorded) give no signal. Healthy covers only the checked scope.",
+  "type": "decision"
+ },
+ "run": "devc7-haiku-5-5",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-haiku-5-5-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.6,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "reason": "e1 is a container probe with status ok, parsed with video and AAC audio streams and no findings. e2 decoded 0 to 4 s with exit 0 and no errors. e3 OCR at 62 s reads the expected story title. No defects, conflicts or vetoes. Open items u1 to u3 (duration unstated, decode beyond 4 s, stream selection unrecorded) give no signal. Healthy covers only the checked scope.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.6,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "reason": "e1 is a container probe with status ok, parsed with video and AAC audio streams and no findings. e2 decoded 0 to 4 s with exit 0 and no errors. e3 OCR at 62 s reads the expected story title. No defects, conflicts or vetoes. Open items u1 to u3 (duration unstated, decode beyond 4 s, stream selection unrecorded) give no signal. Healthy covers only the checked scope.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

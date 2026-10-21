@@ -1,0 +1,64 @@
+{
+ "audit_fidelity": {},
+ "case_id": "tv-healthy-006",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-haiku-5-5/tv-healthy-006.json",
+ "input_record_sha256": "aee93c1352b5175811faaf52885f54cc7c82beee29a87a4d56843011ada69c79",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "none",
+  "class": "healthy",
+  "confidence": 0.8,
+  "evidence_refs": [
+   "e1",
+   "e2",
+   "e3"
+  ],
+  "reason": "Container clean (e1 ran ok, no findings). Full decode e2 ran ok, exit 0, decoded 6.0 s of 6.046 s (0.046 s shortfall, within 1 s tolerance, not a conflict). Client comparison complete, all 6 fields supported (e1 streams, only-stream selection). Tags and filename agree with catalog (e3). Unchecked: 6.0-6.046 s and unrecorded decode stream selection; no on-screen identity check. None material.",
+  "type": "decision"
+ },
+ "run": "devc7-haiku-5-5",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-haiku-5-5-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.8,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "reason": "Container clean (e1 ran ok, no findings). Full decode e2 ran ok, exit 0, decoded 6.0 s of 6.046 s (0.046 s shortfall, within 1 s tolerance, not a conflict). Client comparison complete, all 6 fields supported (e1 streams, only-stream selection). Tags and filename agree with catalog (e3). Unchecked: 6.0-6.046 s and unrecorded decode stream selection; no on-screen identity check. None material.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.8,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "reason": "Container clean (e1 ran ok, no findings). Full decode e2 ran ok, exit 0, decoded 6.0 s of 6.046 s (0.046 s shortfall, within 1 s tolerance, not a conflict). Client comparison complete, all 6 fields supported (e1 streams, only-stream selection). Tags and filename agree with catalog (e3). Unchecked: 6.0-6.046 s and unrecorded decode stream selection; no on-screen identity check. None material.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

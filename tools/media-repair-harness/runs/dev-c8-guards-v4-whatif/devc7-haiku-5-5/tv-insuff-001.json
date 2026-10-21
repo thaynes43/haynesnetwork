@@ -1,0 +1,61 @@
+{
+ "audit_fidelity": {},
+ "case_id": "tv-insuff-001",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-haiku-5-5/tv-insuff-001.json",
+ "input_record_sha256": "e8b45d8d482fdc2dd11fbbef6393947b88e57784da497e35e438747700cc757c",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "none",
+  "class": "healthy",
+  "confidence": 0.6,
+  "evidence_refs": [
+   "e1",
+   "e2"
+  ],
+  "reason": "ffprobe ran ok and parsed a clean Matroska container (h264 video, AAC audio) with no defects. The 0-4 s decode window is clean. No content contradicts the catalog; subtitle cue e3 is unverified report_unknown. Unchecked: container duration, decode past 4 s, stream selection. No material uncertainty applies.",
+  "type": "decision"
+ },
+ "run": "devc7-haiku-5-5",
+ "score_facts": {
+  "original_false_diagnosis": true,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-haiku-5-5-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.6,
+   "evidence_refs": [
+    "e1",
+    "e2"
+   ],
+   "reason": "ffprobe ran ok and parsed a clean Matroska container (h264 video, AAC audio) with no defects. The 0-4 s decode window is clean. No content contradicts the catalog; subtitle cue e3 is unverified report_unknown. Unchecked: container duration, decode past 4 s, stream selection. No material uncertainty applies.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.6,
+   "evidence_refs": [
+    "e1",
+    "e2"
+   ],
+   "reason": "ffprobe ran ok and parsed a clean Matroska container (h264 video, AAC audio) with no defects. The 0-4 s decode window is clean. No content contradicts the catalog; subtitle cue e3 is unverified report_unknown. Unchecked: container duration, decode past 4 s, stream selection. No material uncertainty applies.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

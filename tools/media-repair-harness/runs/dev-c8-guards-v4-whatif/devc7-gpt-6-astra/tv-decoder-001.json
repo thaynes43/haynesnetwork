@@ -1,0 +1,103 @@
+{
+ "audit_fidelity": {},
+ "case_id": "tv-decoder-001",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-gpt-6-astra/tv-decoder-001.json",
+ "input_record_sha256": "15a1ca5ed69cb0c955b94fc1da424be877647abbe3dee65ee4d40709b2213d52",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "convert",
+  "class": "decoder_incompatible",
+  "confidence": 1.0,
+  "evidence_refs": [
+   "e1",
+   "e3"
+  ],
+  "reason": "The defined client cannot direct-play the only video stream: its 10-bit H.264 yuv420p10le exceeds the client's 8-bit yuv420p support. The container is clean; this is incompatibility, not demonstrated corruption. Propose conversion to a compatible isolated copy.",
+  "source": {
+   "ref": "e3"
+  },
+  "target": {
+   "allocated_by": "executor",
+   "kind": "isolated_copy"
+  },
+  "type": "decision"
+ },
+ "run": "devc7-gpt-6-astra",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": true,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-gpt-6-astra-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "convert",
+   "class": "decoder_incompatible",
+   "confidence": 1.0,
+   "evidence_refs": [
+    "e1",
+    "e3"
+   ],
+   "reason": "The defined client cannot direct-play the only video stream: its 10-bit H.264 yuv420p10le exceeds the client's 8-bit yuv420p support. The container is clean; this is incompatibility, not demonstrated corruption. Propose conversion to a compatible isolated copy.",
+   "source": {
+    "ref": "e3"
+   },
+   "target": {
+    "allocated_by": "executor",
+    "kind": "isolated_copy"
+   },
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "convert",
+   "class": "decoder_incompatible",
+   "confidence": 1.0,
+   "evidence_refs": [
+    "e1",
+    "e3"
+   ],
+   "reason": "The defined client cannot direct-play the only video stream: its 10-bit H.264 yuv420p10le exceeds the client's 8-bit yuv420p support. The container is clean; this is incompatibility, not demonstrated corruption. Propose conversion to a compatible isolated copy.",
+   "source": {
+    "ref": "e3"
+   },
+   "target": {
+    "allocated_by": "executor",
+    "kind": "isolated_copy"
+   },
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [
+   {
+    "audit_state": "met",
+    "check": "source_bound",
+    "detail": "",
+    "id": "A-CNV-0",
+    "refs": [
+     "e3"
+    ],
+    "v4_status": "met"
+   },
+   {
+    "audit_state": "met",
+    "check": "source_ref_qualifies",
+    "detail": "",
+    "id": "R-SRC",
+    "refs": [
+     "e3"
+    ],
+    "v4_status": "met"
+   }
+  ],
+  "rule": null
+ }
+}

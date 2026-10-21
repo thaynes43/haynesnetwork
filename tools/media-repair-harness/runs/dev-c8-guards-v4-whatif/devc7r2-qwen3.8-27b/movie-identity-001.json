@@ -1,0 +1,58 @@
+{
+ "audit_fidelity": {},
+ "case_id": "movie-identity-001",
+ "direction": null,
+ "input_record": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b/movie-identity-001.json",
+ "input_record_sha256": "fe56f038fdba1c541a1f4b8fd87c112b4cf942a3bf8a48d8d2bda81ff9dd622e",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "escalate",
+  "class": "identity_mismatch",
+  "confidence": 0.4,
+  "evidence_refs": [
+   "e1"
+  ],
+  "reason": "Catalog expects 'Zom 100: Bucket List of the Dead'; the only prior record (e1, report_unknown, method 'reported release title') claims title 'The Convert' (2023). No content observation, no integrity check, and no tools are available to verify identity or integrity. The disagreement is declaration/report-level only, so identity is contested, not contradicted; no write prerequisites are met. Escal",
+  "type": "decision"
+ },
+ "run": "devc7r2-qwen3.8-27b",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "identity_mismatch",
+   "confidence": 0.4,
+   "evidence_refs": [
+    "e1"
+   ],
+   "reason": "Catalog expects 'Zom 100: Bucket List of the Dead'; the only prior record (e1, report_unknown, method 'reported release title') claims title 'The Convert' (2023). No content observation, no integrity check, and no tools are available to verify identity or integrity. The disagreement is declaration/report-level only, so identity is contested, not contradicted; no write prerequisites are met. Escal",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "identity_mismatch",
+   "confidence": 0.4,
+   "evidence_refs": [
+    "e1"
+   ],
+   "reason": "Catalog expects 'Zom 100: Bucket List of the Dead'; the only prior record (e1, report_unknown, method 'reported release title') claims title 'The Convert' (2023). No content observation, no integrity check, and no tools are available to verify identity or integrity. The disagreement is declaration/report-level only, so identity is contested, not contradicted; no write prerequisites are met. Escal",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

@@ -1,0 +1,64 @@
+{
+ "audit_fidelity": {},
+ "case_id": "epub-identity-005",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-haiku-5-5/epub-identity-005.json",
+ "input_record_sha256": "2e86ff358d024f3c8130027beabae402839b5baef193b1f099ae0feb780a9a9c",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "escalate",
+  "class": "insufficient_evidence",
+  "confidence": 0.5,
+  "evidence_refs": [
+   "t1",
+   "e1",
+   "e2"
+  ],
+  "reason": "Title, author and language match the catalog. Body headings (Tide Tables, Cedar, Salt and Cedar) match the declared nav TOC but differ from arr expected_toc (Rain, Salt, Lanterns). Whether this is a different edition or a true identity mismatch is unresolved. Container not checked; package stages clean. No write is supported.",
+  "type": "decision"
+ },
+ "run": "devc7-haiku-5-5",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-haiku-5-5-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "insufficient_evidence",
+   "confidence": 0.5,
+   "evidence_refs": [
+    "t1",
+    "e1",
+    "e2"
+   ],
+   "reason": "Title, author and language match the catalog. Body headings (Tide Tables, Cedar, Salt and Cedar) match the declared nav TOC but differ from arr expected_toc (Rain, Salt, Lanterns). Whether this is a different edition or a true identity mismatch is unresolved. Container not checked; package stages clean. No write is supported.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "insufficient_evidence",
+   "confidence": 0.5,
+   "evidence_refs": [
+    "t1",
+    "e1",
+    "e2"
+   ],
+   "reason": "Title, author and language match the catalog. Body headings (Tide Tables, Cedar, Salt and Cedar) match the declared nav TOC but differ from arr expected_toc (Rain, Salt, Lanterns). Whether this is a different edition or a true identity mismatch is unresolved. Container not checked; package stages clean. No write is supported.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

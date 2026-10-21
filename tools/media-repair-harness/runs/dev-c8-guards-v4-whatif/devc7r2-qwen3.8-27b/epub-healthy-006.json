@@ -1,0 +1,64 @@
+{
+ "audit_fidelity": {},
+ "case_id": "epub-healthy-006",
+ "direction": null,
+ "input_record": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b/epub-healthy-006.json",
+ "input_record_sha256": "4124a3729c0b7a8494df00bf889f869b7081de342a0c5d69f12ad6559e6f8655",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "none",
+  "class": "healthy",
+  "confidence": 0.92,
+  "evidence_refs": [
+   "e1",
+   "t1",
+   "e2"
+  ],
+  "reason": "Package check (zip_open, zip_crc, opf_parse, manifest, spine) all clean. Body text confirms title 'The Lamplighter's Note' and author 'Mira Tolland', matching catalog. No known defects, no vetoes, no material uncertainty. Identity confirmed by content. Unchecked remainder (container-level) is not material.",
+  "type": "decision"
+ },
+ "run": "devc7r2-qwen3.8-27b",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.92,
+   "evidence_refs": [
+    "e1",
+    "t1",
+    "e2"
+   ],
+   "reason": "Package check (zip_open, zip_crc, opf_parse, manifest, spine) all clean. Body text confirms title 'The Lamplighter's Note' and author 'Mira Tolland', matching catalog. No known defects, no vetoes, no material uncertainty. Identity confirmed by content. Unchecked remainder (container-level) is not material.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.92,
+   "evidence_refs": [
+    "e1",
+    "t1",
+    "e2"
+   ],
+   "reason": "Package check (zip_open, zip_crc, opf_parse, manifest, spine) all clean. Body text confirms title 'The Lamplighter's Note' and author 'Mira Tolland', matching catalog. No known defects, no vetoes, no material uncertainty. Identity confirmed by content. Unchecked remainder (container-level) is not material.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

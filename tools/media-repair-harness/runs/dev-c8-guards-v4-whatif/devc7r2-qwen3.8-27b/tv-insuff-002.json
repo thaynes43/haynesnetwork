@@ -1,0 +1,67 @@
+{
+ "audit_fidelity": {},
+ "case_id": "tv-insuff-002",
+ "direction": null,
+ "input_record": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b/tv-insuff-002.json",
+ "input_record_sha256": "f8e7bd52fe6e63017ff221528fa9519765597407f23850257b877d7337ab04df",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "escalate",
+  "class": "insufficient_evidence",
+  "confidence": 0.6,
+  "evidence_refs": [
+   "e1",
+   "e2",
+   "e3",
+   "t4"
+  ],
+  "reason": "Identity is content-confirmed (t4 OCR: HARBOR LIGHTS S01E02 LAMP OIL) and naming matches the catalog (e1 tags, e3 file). Container is clean (e1) and 0-4s decoded clean (e2). But the 4-8.046s remainder is unchecked: every decode attempt (t1,t2,t3) failed with tool cause, so no positively clean integrity result covers the whole file (M1). No known_defect, no veto, no client stated. Integrity is unse",
+  "type": "decision"
+ },
+ "run": "devc7r2-qwen3.8-27b",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "insufficient_evidence",
+   "confidence": 0.6,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3",
+    "t4"
+   ],
+   "reason": "Identity is content-confirmed (t4 OCR: HARBOR LIGHTS S01E02 LAMP OIL) and naming matches the catalog (e1 tags, e3 file). Container is clean (e1) and 0-4s decoded clean (e2). But the 4-8.046s remainder is unchecked: every decode attempt (t1,t2,t3) failed with tool cause, so no positively clean integrity result covers the whole file (M1). No known_defect, no veto, no client stated. Integrity is unse",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "insufficient_evidence",
+   "confidence": 0.6,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "e3",
+    "t4"
+   ],
+   "reason": "Identity is content-confirmed (t4 OCR: HARBOR LIGHTS S01E02 LAMP OIL) and naming matches the catalog (e1 tags, e3 file). Container is clean (e1) and 0-4s decoded clean (e2). But the 4-8.046s remainder is unchecked: every decode attempt (t1,t2,t3) failed with tool cause, so no positively clean integrity result covers the whole file (M1). No known_defect, no veto, no client stated. Integrity is unse",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

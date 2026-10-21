@@ -1,0 +1,111 @@
+{
+ "audit_fidelity": {},
+ "case_id": "epub-corrupt-001",
+ "direction": null,
+ "input_record": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b/epub-corrupt-001.json",
+ "input_record_sha256": "515b9aa55d414cccba60504fc248f70ab78c7fa1eccb2761d14484822ba209c5",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "blocklist_and_search",
+  "class": "corrupt_file",
+  "confidence": 0.95,
+  "evidence_refs": [
+   "e1",
+   "e2"
+  ],
+  "reason": "epub_inspect failed at zip_open with a located known_defect (BadZipFile: File is not a zip file), so the file is not a valid EPUB package. The managing app is lazylibrarian (e2), so the release of this source can be blocklisted and a good copy searched. No other class is established; identity and naming are unreachable because the package cannot be opened.",
+  "source": {
+   "ref": "case_item"
+  },
+  "target": {
+   "kind": "release_of_source",
+   "source_ref": "case_item"
+  },
+  "type": "decision"
+ },
+ "run": "devc7r2-qwen3.8-27b",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": true,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "blocklist_and_search",
+   "class": "corrupt_file",
+   "confidence": 0.95,
+   "evidence_refs": [
+    "e1",
+    "e2"
+   ],
+   "reason": "epub_inspect failed at zip_open with a located known_defect (BadZipFile: File is not a zip file), so the file is not a valid EPUB package. The managing app is lazylibrarian (e2), so the release of this source can be blocklisted and a good copy searched. No other class is established; identity and naming are unreachable because the package cannot be opened.",
+   "source": {
+    "ref": "case_item"
+   },
+   "target": {
+    "kind": "release_of_source",
+    "source_ref": "case_item"
+   },
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "blocklist_and_search",
+   "class": "corrupt_file",
+   "confidence": 0.95,
+   "evidence_refs": [
+    "e1",
+    "e2"
+   ],
+   "reason": "epub_inspect failed at zip_open with a located known_defect (BadZipFile: File is not a zip file), so the file is not a valid EPUB package. The managing app is lazylibrarian (e2), so the release of this source can be blocklisted and a good copy searched. No other class is established; identity and naming are unreachable because the package cannot be opened.",
+   "source": {
+    "ref": "case_item"
+   },
+   "target": {
+    "kind": "release_of_source",
+    "source_ref": "case_item"
+   },
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [
+   {
+    "audit_state": "met",
+    "check": "managed_app",
+    "detail": "",
+    "id": "A-BLK-1",
+    "refs": [
+     "context.arr.app"
+    ],
+    "v4_status": "met"
+   },
+   {
+    "audit_state": "unknown",
+    "check": "source_bound",
+    "detail": "no complete managed record of this item states which file it links",
+    "id": "A-BLK-2",
+    "refs": [],
+    "v4_status": "unknown"
+   },
+   {
+    "audit_state": "unknown",
+    "check": "source_ref_qualifies",
+    "detail": "no complete managed record of this item states which file it links",
+    "id": "R-SRC",
+    "refs": [
+     "case_item"
+    ],
+    "v4_status": "unknown"
+   }
+  ],
+  "rule": null
+ }
+}

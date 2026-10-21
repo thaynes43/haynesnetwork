@@ -9,6 +9,7 @@ import json
 import re
 import tempfile
 import unittest
+from pathlib import Path
 
 import ev2h
 import th
@@ -22,8 +23,8 @@ from media_repair_harness.experimental.contract_v3 import prereq as PQ
 from media_repair_harness.experimental.contract_v3 import rubric as RB
 from test_v3 import need_both_suites, suite_cases, word
 
-V8_FILE_SHA256 = 'fe016088a9472387c1c20ca7f80800af9b01be45353d752b0fca37d56331003f'
-V8_ASSEMBLED_SHA256 = '2e7cd2df2a9ddc8730491ad88a89e46c164979ac2cae908ccb0e2bf12b7ecae8'
+V8_FILE_SHA256 = 'd1b921b6661c44ad9433c33d2455cba13c78988ecc7d9a5652047217a7e987a4'
+V8_ASSEMBLED_SHA256 = '213c9d7d2b396d349b50ceb2ea377ad9385f06dd3ff4dbcc4e1bbe63ed4d8a5e'
 V7_ASSEMBLED_SHA256 = P.get_prompt('v7')['sha256']      # pinned in test_devc7.py; repeated here only to show v8 left it alone
 
 
@@ -96,7 +97,8 @@ class PromptV8(unittest.TestCase):
         t = v8()
         for s in ('uncontradicted identity (nothing shown disagrees with the catalog) is not content-verified identity',
                   'rename needs the second', "a prior record's claim that is not report_content never verifies identity",
-                  'case_item is never that record; case_item is the source only when context.arr.app is null', 'If a role is not filled, keep the class and escalate.'):
+                  'case_item is never that record; case_item is the source only when context.arr.app is null', 'If a role is not filled, keep the class and escalate.',
+                  'cited by its evidence id (an e or t id as shown), never by an id copied from a field of a record or of the context'):
             self.assertIn(s, t)
         q01 = 'The contract leaves open which of the two classes a remap belongs to; both are accepted.'
         self.assertEqual((t.count(q01), P.get_prompt('v7')['text'].count(q01)), (1, 1))
@@ -651,6 +653,55 @@ class EditionAndRuntimeControls(unittest.TestCase):
         sel = dict(ctx, expected={'title': 'Alpha Film', 'edition': 'Extended'})
         self.assertEqual(self.m(self.obs(8.0, rec(two)), sel)['M7'], 'unmet')                          # a case-supplied choice settles it
         self.assertEqual(self.m(self.obs(8.0), ctx)['M7'], 'unmet')                                    # no edition field at all is not edition uncertainty
+
+
+class GuardV4Online(unittest.TestCase):
+    def test_a_v8_run_with_guards_v4_records_the_role_checks(self):
+        d = {'type': 'decision', 'class': 'metadata_naming', 'action': 'rename', 'source': {'ref': 'case_item'},
+             'target': {'kind': 'rename_of_source', 'old_value': 'Alpha Show - S01E02.mkv', 'new_value': 'Alpha Show - S01E02 - Lamp.mkv'},
+             'reason': 'r', 'confidence': 0.5, 'evidence_refs': []}
+        rec, _ad = run8([d], guards='v4')
+        g = rec['guard']
+        self.assertEqual(g['version'], 'v4')
+        self.assertIn('role_checks', g)
+        self.assertTrue(g['final_changed'])
+        self.assertEqual(g['applied'][0]['original'], d)
+        self.assertEqual(rec['decision']['action'], 'escalate')
+        rec3, _ad = run8([d], guards='v3')
+        self.assertNotIn('role_checks', rec3['guard'])
+
+
+class GuardV4WhatIf(unittest.TestCase):
+    """The committed shadow records reproduce byte for byte from the recorded runs, the frozen spec and the archived score facts (no model, no rescoring)."""
+
+    RUNS = ('runs/dev-c7/devc7-gpt-6-astra', 'runs/dev-c7/devc7-haiku-5-5', 'runs/dev-c7/devc7-qwen3.8-27b', 'runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b')
+
+    @th.needs_suite
+    def test_the_shadow_records_reproduce(self):
+        import subprocess
+        import sys
+        suite = th.REPO_ROOT / '.agents' / 'context' / 'media-repair-harness-2026-10-19' / 'suite-dev-v1.1'
+        if not (suite / 'cases').is_dir():
+            th.require_suite()
+            self.skipTest('suite-dev-v1.1 not present')
+        out = Path(tempfile.mkdtemp(prefix='mrh-w26-whatif-'))
+        subprocess.run([sys.executable, str(th.COMPONENT / 'scripts' / 'guards_v4_whatif.py'), '--suite', str(suite), '--out', str(out)] +
+                       [str(th.COMPONENT / r) for r in self.RUNS], check=True, capture_output=True)
+        committed = th.COMPONENT / 'runs' / 'dev-c8-guards-v4-whatif'
+        got = sorted(p.relative_to(out) for p in out.rglob('*') if p.is_file())
+        self.assertEqual(got, sorted(p.relative_to(committed) for p in committed.rglob('*') if p.is_file()))
+        for rel in got:
+            self.assertEqual((out / rel).read_bytes(), (committed / rel).read_bytes(), str(rel))
+
+    def test_the_accounting_is_kept_apart(self):
+        s = json.loads((th.COMPONENT / 'runs' / 'dev-c8-guards-v4-whatif' / 'summary.json').read_text())
+        self.assertEqual(s['guards_v4_spec_sha256'], V4_SPEC_SHA256)
+        self.assertEqual([r['run'] for r in s['runs']], ['devc7-gpt-6-astra', 'devc7-haiku-5-5', 'devc7-qwen3.8-27b', 'devc7r2-qwen3.8-27b'])   # qwen-r2 apart from the run it aborted
+        for r in s['runs']:
+            self.assertEqual(r['v3_replay_mismatches'], [], r['run'])
+            self.assertEqual(r['audit_fidelity_differences'], {}, r['run'])
+            for k in ('original_unsafe_proposals_unchanged', 'newly_intercepted_by_v4', 'newly_intercepted_score_correct_writes'):
+                self.assertIn(k, r)
 
 
 V4_SPEC_SHA256 = '13652ea81fe43b2658a26e791df8b0ded33d5c4e69b48e7d7de68a9a4a22c87d'

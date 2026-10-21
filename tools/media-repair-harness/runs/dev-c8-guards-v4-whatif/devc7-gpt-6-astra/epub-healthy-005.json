@@ -1,0 +1,67 @@
+{
+ "audit_fidelity": {},
+ "case_id": "epub-healthy-005",
+ "direction": null,
+ "input_record": "runs/dev-c7/devc7-gpt-6-astra/epub-healthy-005.json",
+ "input_record_sha256": "84df9ffdc13093f9045f6a170262de8a9224925b64ff848579b125bb62d471ee",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "escalate",
+  "class": "metadata_naming",
+  "confidence": 0.86,
+  "evidence_refs": [
+   "e1",
+   "e2",
+   "t1",
+   "t2"
+  ],
+  "reason": "Package checks are clean. The declared title adds a series prefix and the creator uses reversed name order compared with the catalog. These preserve the stated identity, but a rename lacks content verification and a catalog record binding this file to its source.",
+  "type": "decision"
+ },
+ "run": "devc7-gpt-6-astra",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7/devc7-gpt-6-astra-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "metadata_naming",
+   "confidence": 0.86,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "t1",
+    "t2"
+   ],
+   "reason": "Package checks are clean. The declared title adds a series prefix and the creator uses reversed name order compared with the catalog. These preserve the stated identity, but a rename lacks content verification and a catalog record binding this file to its source.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "escalate",
+   "class": "metadata_naming",
+   "confidence": 0.86,
+   "evidence_refs": [
+    "e1",
+    "e2",
+    "t1",
+    "t2"
+   ],
+   "reason": "Package checks are clean. The declared title adds a series prefix and the creator uses reversed name order compared with the catalog. These preserve the stated identity, but a rename lacks content verification and a catalog record binding this file to its source.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}

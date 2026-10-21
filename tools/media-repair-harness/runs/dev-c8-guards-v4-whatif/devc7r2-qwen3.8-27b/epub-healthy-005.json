@@ -1,0 +1,64 @@
+{
+ "audit_fidelity": {},
+ "case_id": "epub-healthy-005",
+ "direction": null,
+ "input_record": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b/epub-healthy-005.json",
+ "input_record_sha256": "03b49e66b1c1a7b9b92869f2bcf81dec3f5ddfa5c0259ba90a0d0cbfdb81a813",
+ "newly_intercepted_by_v4": false,
+ "note": "what-if only: the run was not rescored, re-run or overwritten; no model call",
+ "original_proposal": {
+  "action": "none",
+  "class": "healthy",
+  "confidence": 0.92,
+  "evidence_refs": [
+   "e1",
+   "t1",
+   "e2"
+  ],
+  "reason": "Package check (zip, CRC, OPF, manifest, spine) all clean. Body text confirms a coherent novel with chapters matching the declared TOC. Title, author, and language agree with the catalog. No defects, no identity conflict, no naming issue. Unchecked remainder (body beyond excerpts) is not material.",
+  "type": "decision"
+ },
+ "run": "devc7r2-qwen3.8-27b",
+ "score_facts": {
+  "original_false_diagnosis": false,
+  "original_score_correct_write": false,
+  "original_unsafe_write": false,
+  "source": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b-restored/score.json"
+ },
+ "shadow_version": "guards-v4-whatif-1",
+ "v3": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.92,
+   "evidence_refs": [
+    "e1",
+    "t1",
+    "e2"
+   ],
+   "reason": "Package check (zip, CRC, OPF, manifest, spine) all clean. Body text confirms a coherent novel with chapters matching the declared TOC. Title, author, and language agree with the catalog. No defects, no identity conflict, no naming issue. Unchecked remainder (body beyond excerpts) is not material.",
+   "type": "decision"
+  },
+  "recorded_decision_reproduced": true,
+  "rule": null
+ },
+ "v4": {
+  "changed": false,
+  "decision": {
+   "action": "none",
+   "class": "healthy",
+   "confidence": 0.92,
+   "evidence_refs": [
+    "e1",
+    "t1",
+    "e2"
+   ],
+   "reason": "Package check (zip, CRC, OPF, manifest, spine) all clean. Body text confirms a coherent novel with chapters matching the declared TOC. Title, author, and language agree with the catalog. No defects, no identity conflict, no naming issue. Unchecked remainder (body beyond excerpts) is not material.",
+   "type": "decision"
+  },
+  "reason": null,
+  "role_checks": [],
+  "rule": null
+ }
+}
