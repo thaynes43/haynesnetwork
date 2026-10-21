@@ -41,10 +41,12 @@ CLARIFICATIONS_V32 = (
              'stated. A tag reading or a hash stays a declaration or a report; a report, whatever its kind, is never an observation of this run.',
      'source': 'facts.report_kind and rubric.REPORT_METHOD_VOCABULARY / NEGATED_METHOD_RX (unchanged)'},
     {'id': 'C32-4', 'clarifies': 'statement kinds of EPUB body text (tools behaviour v3)',
-     'text': 'EPUB body excerpts and observed body headings read by tools behaviour v3 (rule xhtml-body-text-1) are content with the provenance of the '
-             'read; OPF metadata and the declared table of contents are declarations. An observed heading is an observation, never by itself a verdict on '
-             'identity. The v3.1 checker does not read excerpts or headings (free-text identity is judged, section 13), so the prerequisites it computes are '
-             'unchanged by them.',
+     'text': 'EPUB body excerpts and observed body headings read by tools behaviour v3 (rule xhtml-body-text-2) are content with the provenance of the '
+             'read; OPF metadata, the declared table of contents and every navigation region inside a spine document are declarations, never body text or '
+             'observed headings. An observed heading is an observation, never by itself a verdict on identity. The legacy spine heads (the first six words of '
+             'all character data of a spine document, head title, styles and navigation included) are labelled legacy_mixed and establish no content '
+             'identity under format v3.1-format: its audit withholds them from the checker. The v3.1 checker does not read excerpts or headings (free-text '
+             'identity is judged, section 13).',
      'source': 'epub_text.py, evidence_v31.py; prereq.py unchanged'},
 )
 
@@ -61,6 +63,12 @@ OPEN_DISAGREEMENTS_V32 = (
                 'report_declaration under the frozen rule, not report_unknown. Neither kind is content, so neither lets a report establish D-ID-1.',
      'status': 'recorded, not resolved: the frozen rule is kept (rubrics unchanged); the v3.1 presentation shows every matched vocabulary class so the '
                'mixed method is visible; "ambiguous" is read as a method that matches no vocabulary word (report_unknown)'},
+    {'id': 'D32-3', 'between': 'v3.0 section 1 / prereq.View.statements (EPUB spine text is content) and how spine_heads are made (tools.py, the vendored '
+                               'inspector: the first six words of ALL character data of a spine document)',
+     'finding': 'the unchanged checker types spine_heads as content, so a head title or navigation text alone can make identity content_verified (a head '
+                'title naming the catalog title with a body heading naming another work reads content_verified)',
+     'status': 'recorded, not resolved for the checker and every earlier configuration (unchanged); format v3.1-format labels the heads legacy_mixed and '
+               'its audit withholds them from the checker, so there they establish nothing'},
 )
 
 RUBRIC_V32 = dict(RB.RUBRIC_V31, version=RUBRIC_V32_VERSION, amends=RB.RUBRIC_V31_VERSION, kind='clarification (no check changed)',

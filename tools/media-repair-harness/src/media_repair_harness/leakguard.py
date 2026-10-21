@@ -160,3 +160,84 @@ def check_messages(case, messages, extra_paths=()):
         hits = sorted({kind for kind, rx in mine if rx.search(content)})
         if hits:
             raise LeakError('forbidden token(s) %s in model-bound message %d' % (hits, i + 1))
+
+
+# ---- leakguard-media-1 (dev-c7, format v3.1-format only; the legacy check above is unchanged and still applies everywhere else) --------------------------
+# Text READ FROM THE MEDIA (tools-v3 EPUB excerpts, headings, declared TOC text, the legacy heads, OPF values) is the item's own content.  Checking it with the
+# legacy tokens refuses ordinary words: a family word that is already the visible title, a truth-class word ("healthy") in a novel's prose, a short
+# provenance value ("new") inside "knew".  In media text only TRUE IDENTIFIERS are refused: the case id, the fixture file names and stems, and provenance PATH
+# pieces, each word-bounded and only when at least SYSTEM_MIN_LEN characters long (the check_system rule), and only when the identifier is not already visible
+# in the case context the model is shown.  Everything the harness wrote in the same message keeps the legacy check.  A refusal is a LeakError, recorded as a
+# harness error exactly as before: the model answered the earlier turns, and the request that would carry the tool result is not sent.
+MEDIA_RULE = 'leakguard-media-1'
+_MARKER_RX = re.compile(r'\.\.\.\[\+\d+ chars: detail [^\]]*\]$')
+
+
+def media_tokens(case, extra_paths=()):
+    """-> [(kind, compiled regex)] of the true identifiers checked in media text."""
+    cands = [('case_id', str(case.get('id') or ''))]
+    for b in fixture_basenames(case, extra_paths):
+        cands += [('fixture_name', b), ('fixture_stem', Path(b).stem)]
+    for piece in re.split(r'\s+', str(case.get('provenance') or '')):
+        piece = piece.strip('(),;')
+        if len(piece) >= 8 and ('/' in piece or '@' in piece):
+            cands.append(('provenance_path', piece))
+    out, seen = [], set()
+    for kind, t in cands:
+        if len(t) >= SYSTEM_MIN_LEN and (kind, t) not in seen:
+            seen.add((kind, t))
+            out.append((kind, _ci(t)))
+    return out
+
+
+def _mask(obj, media):
+    """-> (the JSON value with every string read from the media blanked, [the media strings found]).  A string counts as media text when, without the
+    harness's own externalisation marker, it is a non-empty part of a string the tool read from the media (pages and details carry pieces of it)."""
+    found = []
+
+    def walk(v):
+        if isinstance(v, str):
+            core = _MARKER_RX.sub('', v)
+            if core and any(core in m for m in media):
+                found.append(core)
+                return ''
+            return v
+        if isinstance(v, list):
+            return [walk(x) for x in v]
+        if isinstance(v, dict):
+            return {k: walk(x) for k, x in v.items()}
+        return v
+    return walk(obj), found
+
+
+def _legacy_hits(content, toks):
+    mine = toks
+    if content.startswith(GENERIC_PREFIXES):
+        mine = [(k, rx) for k, rx in toks if k not in GENERIC_KINDS]
+    return sorted({kind for kind, rx in mine if rx.search(content)})
+
+
+def check_messages_media(case, messages, media_texts, visible='', extra_paths=()):
+    """Guard for a format v3.1-format request (MEDIA_RULE): harness-written text gets the legacy check; text read from the media gets the identifier check."""
+    import json
+    toks = forbidden_tokens(case, extra_paths)
+    media = [m for m in media_texts if m]
+    mtoks = [(k, rx) for k, rx in media_tokens(case, extra_paths) if not rx.search(visible or '')]
+    for i, m in enumerate(messages):
+        if m.get('role') != 'user':
+            continue
+        content = m.get('content', '')
+        head, sep, tail = content.partition('\n')
+        masked, found = None, []
+        if media:
+            try:
+                masked, found = _mask(json.loads(head), media)
+            except ValueError:
+                found = []
+        harness_text = content if not found else json.dumps(masked, ensure_ascii=False) + sep + tail
+        hits = _legacy_hits(harness_text, toks)
+        if hits:
+            raise LeakError('forbidden token(s) %s in model-bound message %d' % (hits, i + 1))
+        mhits = sorted({kind for kind, rx in mtoks for t in found if rx.search(t)})
+        if mhits:
+            raise LeakError('forbidden identifier(s) %s in text read from the media, model-bound message %d (%s)' % (mhits, i + 1, MEDIA_RULE))

@@ -14,8 +14,8 @@ What changes against format v3 (and nothing else):
   result only, by the neutral "body text outside the shown excerpts was not read by this result".  An explicit excerpt is typed as a reading,
   not an integrity check (internally the observation is `epub_text`; the model sees the tool it called, `epub_inspect`).
 * Statement kinds.  Every epub_inspect, excerpt and prior-record item carries `kinds`: its provenance and the statement kind of each
-  declaration, content or report field (OPF metadata and the declared table of contents are declarations; spine heads, body excerpts and
-  observed headings are content; a prior record's `observed` is the kind its stated method names).
+  declaration, content or report field (OPF metadata and the declared table of contents are declarations; body excerpts and observed headings are
+  content; the legacy spine heads are `legacy_mixed`; a prior record's `observed` is the kind its stated method names).
 * Prior-record provenance.  Every prior record carries `report`: the method as stated (or its presence state), the frozen vocabulary classes it
   matches, whether it is negated, and the kind derived from it by the frozen rule (`facts.report_kind`, the checker's own).  The original
   values and method stay in its facts unchanged.  A report never becomes an observation of this run.
@@ -24,9 +24,10 @@ Links (`available_check`), open items, coverage, the client comparison, paginati
 unchanged.  Nothing here classifies or recommends.
 """
 import copy
+import json
 import re
 
-from . import epub_text as ET
+from . import epub_text_v2 as ET        # extraction rule xhtml-body-text-2 (xhtml-body-text-1 stays frozen in epub_text.py)
 from . import evidence_v2 as EV2
 from . import evidence_v3 as EV3
 from . import protocol as P
@@ -46,8 +47,11 @@ CONTRACT = dict(EV3.CONTRACT, evidence_format=FORMAT_VERSION, tools_behavior=TOO
 EXCERPT_TOOL = 'epub_text'        # the typed layer's name for an explicit excerpt result (a reading); never shown to the model
 BODY_UNREAD = 'body text outside the shown excerpts was not read by this result'
 _V2_BODY_RX = (re.compile(r'^no body text beyond the shown spine heads was read$'), re.compile(r'^only the first \d+ of \d+ spine items are shown as text'))
+# `spine_heads` are the vendored inspector's first six words of ALL character data of a spine document (its head title, styles and navigation together with
+# the body).  Under v3.1-format they are labelled `legacy_mixed` (their real provenance) and withheld from the checker (AUDIT-ASTRA-27 item 3, D32-3).
+LEGACY_HEADS = 'legacy_mixed'
 EPUB_KINDS = {'title': 'declaration', 'creator': 'declaration', 'language': 'declaration', 'identifier': 'declaration', 'opf': 'declaration',
-              'declared_toc': 'declaration', 'spine_heads': 'content', 'body': 'content'}
+              'declared_toc': 'declaration', 'spine_heads': LEGACY_HEADS, 'body': 'content'}
 
 
 # ---------------------------------------------------------------------------------------------------------------- observations
@@ -297,9 +301,29 @@ class Session(EV3.Session):
 
 
 # ---------------------------------------------------------------------------------------------------------------- the audit and the record
+def without_legacy_heads(obs):
+    """The observation the checker reads under v3.1-format: an epub_inspect result without its `spine_heads` (legacy_mixed: they mix the head title, styles and
+    navigation with body text, so they never establish content identity here).  Every other observation, and every other field, is unchanged."""
+    if obs.get('tool') != 'epub_inspect':
+        return obs
+    out = obs.get('output')
+    try:
+        data = json.loads(out) if isinstance(out, str) else (copy.deepcopy(out) if isinstance(out, dict) else None)
+    except ValueError:
+        return obs
+    if not isinstance(data, dict):
+        return obs
+    inner = data.get('observation') if isinstance(data.get('observation'), dict) and 'recorded_as' in data else data
+    if 'spine_heads' not in inner:
+        return obs
+    inner.pop('spine_heads')
+    return dict(obs, output=json.dumps(data, ensure_ascii=False))
+
+
 def shown_observations(evidence_shown, tool_calls):
-    """The observations the model saw, as the unchanged v3 audit reads them, with an explicit excerpt typed as a reading (it is never a package check)."""
-    return [internal(o) for o in EV3.shown_observations(evidence_shown, tool_calls)]
+    """The observations the model saw, as the unchanged v3 audit reads them: an explicit excerpt typed as a reading (never a package check), and the legacy
+    spine heads withheld from the checker (they are not body text)."""
+    return [without_legacy_heads(internal(o)) for o in EV3.shown_observations(evidence_shown, tool_calls)]
 
 
 def action_audit(decision, evidence_shown, tool_calls, context, media_type, capabilities, forced=False):

@@ -283,6 +283,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     sent_schema = (schema if schema is not None else getattr(adapter, 'schema', None)) if getattr(adapter, 'name', None) == 'ollama' else None
     sent_schema_sha = sha256_bytes(canonical(sent_schema).encode()) if sent_schema is not None else None
     messages = [{'role': 'user', 'content': (json.dumps(view, ensure_ascii=False, separators=(',', ':')) if v2fmt else json.dumps(view, ensure_ascii=False, sort_keys=True))}]
+    # format v3.1-format: the leak guard checks text read from the media with its own rule (leakguard.MEDIA_RULE); every other configuration keeps the legacy check
+    media_texts, visible_context = [], json.dumps(view.get('context') or {}, ensure_ascii=False)
     ev_ids = {e['id'] for e in evidence}
     turns, tool_calls = [], []
     repairs, forced, forced_reason, error = [], False, None, None
@@ -304,7 +306,10 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                 force('model call limit reached without a decision')
                 break
             n_calls += 1
-            leakguard.check_messages(case, messages, ctx.forbidden_extra)  # raises LeakError: harness error, the model is not called
+            if v31fmt:
+                leakguard.check_messages_media(case, messages, media_texts, visible_context, ctx.forbidden_extra)   # raises LeakError, as below
+            else:
+                leakguard.check_messages(case, messages, ctx.forbidden_extra)  # raises LeakError: harness error, the model is not called
             try:
                 comp = adapter.complete(system, messages, schema=schema) if schema is not None else adapter.complete(system, messages)
             except A.AdapterError as e:
@@ -360,6 +365,13 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                 messages += [{'role': 'assistant', 'content': comp.text}, {'role': 'user', 'content': text}]
                 continue
             res = T.call_tool(ctx, obj['tool'], obj['args'])
+            if v31fmt and obj['tool'] == 'epub_inspect':
+                try:
+                    parsed = json.loads(res.get('raw_output', res['output']))
+                except ValueError:
+                    parsed = None
+                if isinstance(parsed, dict):
+                    media_texts.extend(T.epub_v3_literals(parsed))
             shown_tool = obj['tool'] if obj['tool'] in P.TOOLS else 'unknown_tool'  # model-chosen text is never echoed back
             tool_calls.append({'id': call_id, 'turn': turn['n'], 'tool': str(obj['tool'])[:64], 'args': obj['args'], 'why': obj.get('why'), **res})
             if res.get('protocol_violation'):

@@ -811,8 +811,43 @@ def tool_epub_inspect(args, ctx):
 
 
 def _epub_text():
-    from . import epub_text
-    return epub_text
+    """Tools behaviour v3's extraction rule: `xhtml-body-text-2` (epub_text_v2.py).  `xhtml-body-text-1` (epub_text.py) stays frozen and is not selected."""
+    from . import epub_text_v2
+    return epub_text_v2
+
+
+# Tools behaviour v3: text READ FROM THE MEDIA is never rewritten (AUDIT-ASTRA-27 item 1).  The legacy redaction runs over the whole serialised result and can
+# replace a body word that collides with the fixture's name by the case's display name, inventing text.  Under v3 only LOCATORS (archive paths, error and
+# harness messages) are aliased; the literal media text below is shown as read, and the leak guard decides whether a message carrying it may be sent.
+EPUB_LITERAL_TOP = ('spine_heads', 'dc_title', 'dc_creator', 'dc_language', 'dc_identifier')
+EPUB_LITERAL_SECTIONS = ('body', 'excerpt', 'declared_toc')
+
+
+def _epub_v3_walk(value, fn, literal=False, section=None, top=True):
+    if isinstance(value, str):
+        return fn(value, literal)
+    if isinstance(value, list):
+        return [_epub_v3_walk(x, fn, literal, section, False) for x in value]
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            sec = k if (top and k in EPUB_LITERAL_SECTIONS) else section
+            lit = literal or (top and k in EPUB_LITERAL_TOP) or (sec is not None and k == 'text')
+            out[k] = _epub_v3_walk(v, fn, lit, sec, False)
+        return out
+    return value
+
+
+def epub_v3_redact(output, redact):
+    """A tools-v3 epub_inspect output with its locators aliased and its literal media text untouched."""
+    return _epub_v3_walk(output, lambda v, lit: v if lit else redact(v))
+
+
+def epub_v3_literals(output):
+    """The literal media strings of a tools-v3 epub_inspect output (what the media leak rule checks)."""
+    found = []
+    _epub_v3_walk(output, lambda v, lit: found.append(v) if lit and v else None)
+    return found
 
 
 def _entry_count(path):
@@ -1201,7 +1236,11 @@ def call_tool(ctx, name, args):
             pool.shutdown(wait=False)
         if inject and inject.get('tool') == name:
             res = _failure(inject.get('mode', 'error'), name, res)
-    out = res.bounded(ctx.redact, cap=ctx.output_cap, keep_raw=True) if ctx.keep_raw else res.bounded(ctx.redact, cap=ctx.output_cap)
+    redactor = ctx.redact
+    if ctx.tools_behavior == 'v3' and name == 'epub_inspect' and isinstance(res.output, dict):
+        res = ToolResult(res.status, epub_v3_redact(res.output, ctx.redact), **res.extra)      # locators aliased, media text kept as read
+        redactor = None
+    out = res.bounded(redactor, cap=ctx.output_cap, keep_raw=True) if ctx.keep_raw else res.bounded(redactor, cap=ctx.output_cap)
     out['evidence_mode'] = ctx.evidence_mode   # record only; result_message (what the model sees) never carries it
     out['wall_s'] = round(time.monotonic() - started, 3)
     return out

@@ -20,7 +20,8 @@ COMPONENT = HERE.parent
 REPO = COMPONENT.parents[1]
 sys.path.insert(0, str(COMPONENT / 'src'))
 
-from media_repair_harness import epub_text as ET          # noqa: E402
+from media_repair_harness import adapters as A           # noqa: E402
+from media_repair_harness import epub_text_v2 as ET       # noqa: E402  (tools behaviour v3 reads with xhtml-body-text-2)
 from media_repair_harness import evidence_v2 as EV2       # noqa: E402
 from media_repair_harness import evidence_v3 as EV3       # noqa: E402
 from media_repair_harness import evidence_v31 as EV31     # noqa: E402
@@ -62,6 +63,63 @@ def call(ctx, session, args, call_id='t1'):
     obs = EV2.make_observation(call_id, 'epub_inspect', EV2.safe_args(args), res['status'], res.get('raw_output', res['output']), res.get('mode'), 'tool')
     text, npages = session.result(obs, call_id, 5)
     return res, EV2.nbytes(text.split('\n')[0]), npages, session.log[-1]['bytes']
+
+
+OUTPUT_RESERVE_TOKENS = 640       # run.py: the Ollama num_predict of a turn-v2 / turn-v3 prompt (v7 speaks turn-v3)
+MAX_WHY = 'w' * 200               # the longest tool-call reason the protocol allows
+MAX_REASON = 'r' * 400            # the longest decision reason
+
+
+class Capture(A.ScriptedAdapter):
+    def __init__(self, model, replies):
+        super().__init__(model, replies)
+        self.sent = []
+
+    def complete(self, system, messages, schema=None):
+        self.sent.append(len(system) + sum(len(m['content']) for m in messages))
+        return super().complete(system, messages, schema)
+
+
+def excerpt_sequence(path, d, calls):
+    """The maximal excerpt sequence a model could request after the default call: 1200 code points at a time through the spine, `calls` calls."""
+    out = []
+    for i, (_m, text, _h, _n) in enumerate(ET.read_items(path, d)):
+        off = 0
+        while off < len(text) and len(out) < calls:
+            out.append({'spine': i, 'offset': off, 'length': ET.MAX_EXCERPT_CHARS})
+            off += ET.MAX_EXCERPT_CHARS
+        if len(out) >= calls:
+            break
+    return out
+
+
+def conversation(case, sdir, budget, args_seq):
+    """Run the real runner with scripted maximal replies (no model): -> (max over requests of the 3-characters-per-token estimate of the WHOLE request,
+    system prompt and every accumulated message, plus the output reserve; the number of requests; the leak-guard error or None)."""
+    replies = [json.dumps({'type': 'tool_call', 'tool': 'epub_inspect', 'why': MAX_WHY, 'args': a}) for a in args_seq]
+    replies.append(json.dumps({'type': 'decision', 'class': 'insufficient_evidence', 'action': 'escalate', 'reason': MAX_REASON, 'confidence': 0.5, 'evidence_refs': ['e1']}))
+    ad = Capture('size-model', replies)
+    rec = R.run_case(case, 'sha', ad, sdir, tempfile.mkdtemp(prefix='mrh-w22-size-'), run_id='size', prompt_version='v7', evidence_format='v3.1-format',
+                     guards='v3', replay='auto', which=lambda _n: None, tool_output_bytes=budget)
+    err = (rec.get('error') or {}).get('message')
+    return (max(ad.sent) // 3 + OUTPUT_RESERVE_TOKENS if ad.sent else None), len(ad.sent), err
+
+
+def refusal_scan(case, sdir):
+    """Over ALL text the tools read from this EPUB (the default view and every spine item's whole body text): does the legacy check, or leakguard-media-1,
+    find a forbidden token?  -> (legacy kinds, media kinds); text is never printed."""
+    fixture = T.Fixture.from_case(case, sdir)
+    ctx = T.Context(case, fixture, tempfile.mkdtemp(prefix='mrh-w22-scan-'), which=lambda _n: None, suite_dir=sdir, tools_behavior='v3', keep_raw=True)
+    res = T.call_tool(ctx, 'epub_inspect', {})
+    if res['status'] != 'ok':
+        return None
+    texts = T.epub_v3_literals(json.loads(res['raw_output']))
+    d = T._epub_module().inspect(fixture.path)
+    texts += [t for _m, t, _h, _n in ET.read_items(fixture.path, d)]
+    visible = json.dumps(P.case_view(case, [])['context'], ensure_ascii=False)
+    legacy = sorted({k for t in texts for k in leakguard.find_leaks(case, t, ctx.forbidden_extra)})
+    media = sorted({k for k, rx in leakguard.media_tokens(case, ctx.forbidden_extra) if not rx.search(visible) for t in texts if rx.search(t)})
+    return legacy, media
 
 
 def main(argv=None):
@@ -130,6 +188,35 @@ def main(argv=None):
                 _r4, w4, p4, _l4 = call(ctx3, s3, {'spine': 0, 'offset': 0, 'length': ET.MAX_EXCERPT_CHARS}, 't2')
                 sizes[b]['v3_max_excerpt_wire_bytes'].append(w4)
                 sizes[b]['v3_max_excerpt_pages'].append(p4)
+        conv = {str(b): {'default': [], 'maximal': [], 'requests_max': 0} for b in (8192, 4096)}
+        refusals = {'scanned': 0, 'legacy_rule_cases': 0, 'media_rule_cases': 0, 'legacy_kinds': {}, 'media_kinds': {}, 'run_refusals': 0}
+        for c in epub_cases:
+            if FORBIDDEN_CACHE in str((c.get('fixture') or {}).get('locator') or ''):
+                continue
+            scan = refusal_scan(c, sdir)
+            if scan is None:
+                continue
+            refusals['scanned'] += 1
+            for key, kinds in (('legacy', scan[0]), ('media', scan[1])):
+                refusals[key + '_rule_cases'] += bool(kinds)
+                for k in kinds:
+                    refusals[key + '_kinds'][k] = refusals[key + '_kinds'].get(k, 0) + 1
+            fixture = T.Fixture.from_case(c, sdir)
+            seq = excerpt_sequence(fixture.path, T._epub_module().inspect(fixture.path), 5)
+            for b in (8192, 4096):
+                for seq_name, args_seq in (('default', [{}]), ('maximal', [{}] + seq)):
+                    est, n, err = conversation(c, sdir, b, args_seq)
+                    refusals['run_refusals'] += bool(err)
+                    if est is not None:
+                        conv[str(b)][seq_name].append(est)
+                    conv[str(b)]['requests_max'] = max(conv[str(b)]['requests_max'], n)
+        ep['full_conversation'] = {b: {'default_sequence': dict(stats(v['default']), at_or_over_8192=sum(1 for x in v['default'] if x >= 8192)),
+                                       'maximal_sequence': dict(stats(v['maximal']), at_or_over_8192=sum(1 for x in v['maximal'] if x >= 8192)),
+                                       'requests_max': v['requests_max']} for b, v in conv.items()}
+        ep['full_conversation_note'] = ('max over the requests of one conversation of (system prompt + every accumulated message) / 3 characters per token, plus the '
+                                        '%d-token output reserve; replies are maximal (200-character why, 400-character reason); default = epub_inspect {} then '
+                                        'a decision; maximal = {} then five 1200-code-point excerpts through the spine, then a decision' % OUTPUT_RESERVE_TOKENS)
+        ep['refusals'] = refusals
         ep['measured'] = len(raw_v3)
         ep['raw_tool_output_bytes'] = {'tools_v2': stats(raw_v2), 'tools_v3': stats(raw_v3)}
         ep['spine_items'] = stats(items_total)
@@ -140,6 +227,10 @@ def main(argv=None):
         out['epub'] = ep
         report['suites'][name] = out
     v6, v7 = P.get_prompt('v6')['text'], P.get_prompt('v7')['text']
+    report['context_policy_candidate'] = ('NOT FROZEN (a documented measurement prerequisite): run every case with a uniform --tool-output-bytes 4096; the '
+                                          'primary context flag is the model runtime\'s REPORTED prompt-token count (prompt_at_context_limit, '
+                                          'context_full_after_generation), the 3-characters-per-token estimate is a secondary flag; a run whose reported '
+                                          'tokens reach the context is kept and reported, never dropped from a denominator')
     report['prompt'] = {'v6_bytes': len(v6.encode()), 'v7_bytes': len(v7.encode()), 'v7_minus_v6_bytes': len(v7.encode()) - len(v6.encode()),
                         'v6_tokens_estimate_3cpt': len(v6) // 3, 'v7_tokens_estimate_3cpt': len(v7) // 3,
                         'context_note': 'the 8192-token local context of the qwen runs is the binding budget: the system prompt and every message share it'}

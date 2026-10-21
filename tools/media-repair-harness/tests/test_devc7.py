@@ -26,10 +26,10 @@ from media_repair_harness.experimental.contract_v3 import rubric as RB
 from media_repair_harness.experimental.contract_v3 import rubric_v32 as RB32
 
 # pins: prompts/v7.txt (file bytes and the assembled text the model is sent), the rubric v3.2 object and the frozen excerpt rules
-V7_FILE_SHA256 = '282f1583dbf86a5414e348df66fa1af4e4b15e7b21c30b743aa819de2d172e1e'
-V7_ASSEMBLED_SHA256 = '21897b4c5cc9e38d6a7a4f60aa6f8eff2aaef9fbe4562291b76ba6a6e8c1fb20'
-RUBRIC_V32_SHA = '4b1a17ed9f179e91e1d4a6eed816e01de399d0f4e0dec812e3cee78e6df9a565'
-EXCERPT_RULES_SHA = '42bd495a35615ac031e050aea30d2cc7e7aaf586ab28759b6148aac66d197a52'
+V7_FILE_SHA256 = '0875cc586b18debb241cfb569b5387a4b5da71064726fc3610bed8776fdfe8f9'
+V7_ASSEMBLED_SHA256 = '79a7fc73b855ccee6964c4752249477b070b79acebc3daf5c9c17a8a6b3eafb5'
+RUBRIC_V32_SHA = '6b4e5991b7d5a192b83ec4237ff29ddca9d8e9ef3302387836de82a6ecc7b085'
+EXCERPT_RULES_SHA = '42bd495a35615ac031e050aea30d2cc7e7aaf586ab28759b6148aac66d197a52'   # xhtml-body-text-1, frozen (no longer selected)
 
 CONTAINER = ('<?xml version="1.0"?><container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0"><rootfiles>'
              '<rootfile full-path="OEBPS/c.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')
@@ -128,7 +128,7 @@ class Versions(unittest.TestCase):
         for k, v in RB.RUBRIC_V31.items():                                       # v3.2 adds clarifications and changes nothing of v3.1
             self.assertEqual(RB32.RUBRIC_V32[k], v, k) if k not in ('version', 'amends') else None
         self.assertEqual([c['id'] for c in RB32.CLARIFICATIONS_V32], ['C32-1', 'C32-2', 'C32-3', 'C32-4'])
-        self.assertEqual([d['id'] for d in RB32.OPEN_DISAGREEMENTS_V32], ['D32-1', 'D32-2'])
+        self.assertEqual([d['id'] for d in RB32.OPEN_DISAGREEMENTS_V32], ['D32-1', 'D32-2', 'D32-3'])
         doc = json.loads((th.COMPONENT / 'docs' / 'contract-v3-prerequisites-v3.2.json').read_text())
         self.assertEqual(doc, json.loads(RB32.canonical_json_v32()))
 
@@ -157,8 +157,8 @@ class Versions(unittest.TestCase):
         ef = rec['evidence_format']
         self.assertEqual((rec['harness_version'], rec['prompt']['version'], rec['prompt']['protocol']), ('dev-c7', 'v7', 'turn-v3'))
         self.assertEqual((ef['version'], ef['tools_behavior'], ef['rubric'], ef['checker_rubric'], ef['excerpt_rule'], ef['protocol'], ef['decision_schema'], ef['audit_version']),
-                         ('v3.1-format', 'v3', 'contract-v3-rubric-3.2', 'contract-v3-rubric-3.1', 'xhtml-body-text-1', 'turn-v3', 'decision-v3', 'v3'))
-        self.assertEqual(ef['excerpt_rules_sha256'], ET.rules_digest())
+                         ('v3.1-format', 'v3', 'contract-v3-rubric-3.2', 'contract-v3-rubric-3.1', 'xhtml-body-text-2', 'turn-v3', 'decision-v3', 'v3'))
+        self.assertEqual(ef['excerpt_rules_sha256'], EV31.ET.rules_digest())
         self.assertEqual(rec['action_audit']['checker_rubric'], 'contract-v3-rubric-3.1')
 
 
@@ -327,7 +327,7 @@ class Excerpts(Tmp):
         p = self.epub(items, nav=[('Declared One', 'c0.xhtml'), ('Declared Two', 'c1.xhtml#s')])
         _r, o = self.call(p)
         b = o['body']
-        self.assertEqual((b['extraction'], b['items_total'], len(b['index']), len(b['excerpts'])), ('xhtml-body-text-1', 5, 5, 3))
+        self.assertEqual((b['extraction'], b['items_total'], len(b['index']), len(b['excerpts'])), ('xhtml-body-text-2', 5, 5, 3))
         self.assertEqual([e['spine'] for e in b['excerpts']], [0, 1, 2])
         self.assertEqual(b['excerpts'][1]['end'], ET.DEFAULT_EXCERPT_CHARS)
         self.assertEqual(b['excerpts'][1]['next_offset'], ET.DEFAULT_EXCERPT_CHARS)
@@ -641,11 +641,12 @@ class CompleteV7RequestsOfBothPublicSuites(unittest.TestCase):
         for case, rec, ad in self.rows:
             err = rec.get('error')
             if err is not None:
-                # LIMIT (recorded, not changed): the unchanged leak guard fails CLOSED when real EPUB body text contains a hidden case token (the family word
-                # or a provenance piece).  The model is not called with that message; the run is a harness error.  Only EPUB cases, only this cause.
+                # A refusal is a harness error kept in the denominators: the model answered the earlier turns (here its tool call), and the request that would
+                # carry the tool result is not sent.  Under leakguard-media-1 only a true identifier in text read from the media is refused (none in the
+                # public suites when this was written; at 3327a201 the legacy check refused 4 runs on a family word and on the provenance value "new").
                 self.assertEqual((err['kind'], err['leak_guard']), ('harness_crash', True), case['id'])
                 self.assertIn('epub_inspect', case.get('tools_available') or [], case['id'])
-                self.assertRegex(err['message'], r"^LeakError: forbidden token\(s\) \['(family|provenance)'\] in model-bound message [3-9]", case['id'])
+                self.assertIn('text read from the media', err['message'], case['id'])
                 fail_closed.append(case['id'])
                 continue
             text = json.dumps([s['messages'] for s in ad.sent], ensure_ascii=False)
@@ -664,7 +665,7 @@ class CompleteV7RequestsOfBothPublicSuites(unittest.TestCase):
                 self.assertTrue(all(b <= 8192 for b in m['bytes']), (case['id'], m))
             epub_calls += sum(1 for c in rec['tool_calls'] if c['tool'] == 'epub_inspect')
         self.assertGreaterEqual(epub_calls, 34 - len(fail_closed))     # 17 epub_inspect cases per suite; a fail-closed run stops after its first call
-        self.assertLessEqual(len(fail_closed), 4, fail_closed)          # 2 cases per suite when this was written (CHANGELOG, limits)
+        self.assertEqual(fail_closed, [])                               # under leakguard-media-1 (4 runs refused at 3327a201)
         print('\nv7 suite-wide: %d runs, %d fail closed on the leak guard (EPUB body text naming a hidden token)' % (len(self.rows), len(fail_closed)))
 
 
