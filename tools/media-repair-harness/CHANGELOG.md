@@ -1,5 +1,22 @@
 # Harness changelog
 
+## W29 (OpenProject #160): Stage R G0a pre-registration, offline
+
+No behaviour change: nothing under `src/`, and no change to `stage_r_driver.py` or `stage_r_report.py`. **No model call, no cluster access.**
+
+* `runs/stage-r-pilot-1/`:
+  * `registration.json` (`stage-r-1`, which the driver validates);
+  * the six case templates (`cases/`), without locators or labels;
+  * `leakguard-g0a.json`;
+  * `offline-validation.json`;
+  * `PREREGISTRATION.md`, which lists every element of pilot plan v3.2 §4.2 item 1 and where it lives.
+* `scripts/stage_r_g0a.py`: the config hash, the leak guard over the filled templates, and the driver against fake runners only (`SyntheticBazarr`, a
+  scripted stand-in for the Claude adapter, a fake manifest commit), under a PATH tripwire.
+* `tests/test_stage_r_pilot1.py` pins the registration digest, the template digests, the config hash and the sampler sha256. It checks that the driver
+  accepts the registration, and that both outputs reproduce.
+* **Not ready for A0/A1.** Blocking gap G-1 (`PREREGISTRATION.md` §2): Bazarr's library is under `/data/haynestower/Media/TV Shows`, not on a mount of
+  its own, so §4.1 step 2 as the driver implements it stops at G0b.
+
 ## W28 (OpenProject #161): remote content evidence, fail-closed receipts and the Stage R driver, offline
 
 `HARNESS_VERSION` stays `dev-c8`. **No model call, no cluster access**: every behaviour change is a new opt-in version (`docs/remote-content-evidence.md`);

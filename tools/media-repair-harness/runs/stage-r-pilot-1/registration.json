@@ -1,0 +1,192 @@
+{
+  "registration": "stage-r-1",
+  "about": "Stage R G0a pre-registration (OpenProject #160, epic #48; pilot plan v3.2, tools/media-repair-harness/docs/pilot-plan-v3.md sections 4.1 to 4.4 and 6). Loaded and validated by scripts/stage_r_driver.py. Keys the driver does not read are registered records for the reviewers and the report; PREREGISTRATION.md lists where every section 4.2 item 1 element lives. Roles are labels: they are here and in no case template.",
+  "harness_commit": "a35e68a1a2f0ed2f34435f25700ad8531cf4110f",
+  "exec": {
+    "namespace": "media",
+    "deployment": "bazarr",
+    "container": "app",
+    "target": "deploy/bazarr"
+  },
+  "pod_resolution": {
+    "exec_target": "deploy/bazarr",
+    "container": "app",
+    "rule": "kubectl exec resolves deploy/bazarr to its pod; at G0b the driver reads the pods of the deployment's matchLabels selector (read-only kubectl get pods): exactly one pod, Ready, with the app container's restartCount; its name, UID and restartCount are recorded as the baseline (stage-r-state.json pod) and the name must equal the hostname the first receipt binds. Every later pod check must match that baseline.",
+    "uid_recorded_at": "G0b"
+  },
+  "discovery": {
+    "mount_path_regex": "/data/haynestower",
+    "series_prefix": "Pokémon (1997)",
+    "season_dirs": {
+      "s03": "^Season 0?3$",
+      "s20": "^Season 20$"
+    },
+    "list_calls": 4,
+    "procedure": [
+      "1. Read the TV library mount path from Bazarr's deployment volume mounts (A0 read-only kubectl get deploy): exactly one mount of container app fully matching mount_path_regex.",
+      "2. list <tv root> --prefix \"Pokémon (1997)\": exactly one directory.",
+      "3. list <series dir>: season directories matched exactly by ^Season 0?3$ and ^Season 20$, each unique.",
+      "4. list each season directory.",
+      "Each of the four listings must be complete. A target's locator is accepted only when exactly one listed entry matches it: a recorded basename and its bytes, or for S03E01 and S03E02 the bytes and the S03E01/S03E02 marker in the name (the basename found is recorded as discovered, not as a baseline). No unique match drops the target. Nothing is inferred from episode titles."
+    ],
+    "mount_rule_source": "haynes-ops kubernetes/main/apps/media/bazarr/app/helmrelease.yaml at 1c514a7b: the app container mounts /config, /data/haynestower (NFS haynestower.haynesnetwork:/mnt/user/data) and /tmp; the library is under /data/haynestower",
+    "known_gap": "the TV library is not its own mount: the 2026-10-18 receipts (.agents/context/media-repair-av-2026-10-18) read TV files under /data/haynestower/Media/TV Shows, so step 2 run on the mount root finds no series directory and G0b stops (PREREGISTRATION.md section 2)"
+  },
+  "targets": [
+    {
+      "key": "s03e36",
+      "role": "offender",
+      "slot": "S03E36",
+      "catalog_title": "Hot Matches!",
+      "file_id": 79758,
+      "bytes": 1157254475,
+      "season": "s03",
+      "basename": "Pokémon (1997) - S03E36 - Hot Matches! [WEBDL-1080p][AAC 2.0][h264]-SHIRT.mkv",
+      "case_template": "cases/s03e36.json",
+      "case_template_sha256": "d03bbcf0936d0a6dbd0fadd868a3a37dc9329ef67dc8c4e4b5a637b05fcb6ce1",
+      "baseline_document": ".agents/context/2026-10-13-pokemon-wrong-content-copy-mappings.md",
+      "locator_rule": "recorded basename and bytes",
+      "role_basis": "offender: the mapping note records it holds the S20E114 story"
+    },
+    {
+      "key": "s03e38",
+      "role": "offender",
+      "slot": "S03E38",
+      "catalog_title": "Fowl Play",
+      "file_id": 79761,
+      "bytes": 1094807805,
+      "season": "s03",
+      "basename": "Pokémon (1997) - S03E38 - Fowl Play [WEBDL-1080p][AAC 2.0][h264]-SHIRT.mkv",
+      "case_template": "cases/s03e38.json",
+      "case_template_sha256": "154fcd065de78721f85f04bfd1309cdc828e2792644b3c6fca7a8571379ae62b",
+      "baseline_document": ".agents/context/2026-10-13-pokemon-wrong-content-copy-mappings.md",
+      "locator_rule": "recorded basename and bytes",
+      "role_basis": "offender: the mapping note records it holds the S20E116 story"
+    },
+    {
+      "key": "s20e114",
+      "role": "verified",
+      "slot": "S20E114",
+      "catalog_title": "Mega Evolution Bonds",
+      "file_id": 35703,
+      "bytes": 965379645,
+      "season": "s20",
+      "basename": "Pokémon (1997) - S20E114 - Mega Evolution Bonds [WEBDL-1080p][EAC3 2.0][h264]-Kitsune.mkv",
+      "case_template": "cases/s20e114.json",
+      "case_template_sha256": "6f5bbd20a6ea2819c738996c7a1ca888e18b95eae007ce97358d43bfed3e4a73",
+      "baseline_document": ".agents/context/2026-10-13-pokemon-wrong-content-copy-mappings.md",
+      "locator_rule": "recorded basename and bytes",
+      "role_basis": "correct copy (verified): the mapping note's same-content destination of S03E36"
+    },
+    {
+      "key": "s03e01",
+      "role": "verified",
+      "slot": "S03E01",
+      "catalog_title": "Don't Touch That 'Dile",
+      "file_id": 80008,
+      "bytes": 1563438952,
+      "season": "s03",
+      "marker": "S03E01",
+      "case_template": "cases/s03e01.json",
+      "case_template_sha256": "62cef53e4f99a3117f3041c822253a1a63961c8991c33d883ec4b2130fe1c160",
+      "baseline_document": ".agents/context/2026-10-14-pokemon-completed-slot-proof.md",
+      "locator_rule": "bytes and the S03E01 marker in the name; the basename found is recorded as discovered",
+      "role_basis": "verified replacement (completed-slot proof, accepted 2026-10-14T07:30:49Z; English AAC)"
+    },
+    {
+      "key": "s03e02",
+      "role": "verified",
+      "slot": "S03E02",
+      "catalog_title": "The Double Trouble Header",
+      "file_id": 80011,
+      "bytes": 1516287508,
+      "season": "s03",
+      "marker": "S03E02",
+      "case_template": "cases/s03e02.json",
+      "case_template_sha256": "a1c93db0d5cdc9fdc74805b377fb3a25d94ae96877b5a0adc4d3b5f062b74d6e",
+      "baseline_document": ".agents/context/2026-10-14-pokemon-completed-slot-proof.md",
+      "locator_rule": "bytes and the S03E02 marker in the name; the basename found is recorded as discovered",
+      "role_basis": "verified replacement (completed-slot proof, accepted 2026-10-14T07:30:49Z; English AAC)"
+    },
+    {
+      "key": "s03e08",
+      "role": "held",
+      "slot": "S03E08",
+      "catalog_title": "Snubbull Snobbery",
+      "file_id": 33063,
+      "bytes": 1111015509,
+      "season": "s03",
+      "basename": "Pokémon (1997) - S03E08 - Snubbull Snobbery [WEBDL-1080p][AAC 2.0][x264]-SHIRT.mkv",
+      "case_template": "cases/s03e08.json",
+      "case_template_sha256": "2ac70a81c2165fff6c0627c0829418cd1aa3eba6485721132c1f85974e3776aa",
+      "baseline_document": ".agents/context/2026-10-13-pokemon-wrong-content-copy-mappings.md",
+      "locator_rule": "recorded basename and bytes",
+      "role_basis": "held: the mapping note records it holds S20E97; no safe source was proved"
+    }
+  ],
+  "harness_args": [
+    "--adapter",
+    "claude",
+    "--model",
+    "claude-opus-5-5",
+    "--prompt",
+    "v7",
+    "--evidence-format",
+    "v3.1-format",
+    "--guards",
+    "v3",
+    "--tool-output-bytes",
+    "8192"
+  ],
+  "early_stop_roles": [
+    "offender"
+  ],
+  "limits": {
+    "target_wall_s": 600,
+    "stage_wall_s": 7200,
+    "total_cost_usd": 10.0,
+    "g2_operations": 6
+  },
+  "expected_config_hash": {
+    "first_g2_target": "ead303989e397a02a96aa504e872f1369c72328e9d4dae3922c26fe51a34be56",
+    "rule": "rebuilt offline (scripts/stage_r_g0a.py config) from harness_args plus the driver-owned flags with the whole $10 cap remaining; every later G2 target records the same config except limits.max_total_cost_usd, the remainder the driver passes (its g2.argv). A recorded config_hash that differs otherwise is a deviation"
+  },
+  "deadlines_s": {
+    "sampler_invocation": 25,
+    "outer_per_operation": 60,
+    "harness_wall_per_target": 600,
+    "stage_r": 7200
+  },
+  "sampler_operations_per_file": {
+    "G1": 2,
+    "G2": 6,
+    "final": 1,
+    "total": 9
+  },
+  "cost_cap_usd": 10.0,
+  "tools_behavior": "v3-remote-1",
+  "stop_on_receipt_failure": true,
+  "guards": "v3",
+  "configuration": "C7 (prompt v7, evidence format v3.1-format, guards v3, page budget 8192 bytes) with tools behaviour v3-remote-1",
+  "tools_available": [
+    "ffprobe",
+    "decode_sample",
+    "subtitle_sample",
+    "arr_lookup"
+  ],
+  "tools_note": "arr_lookup is the historical stub: it serves only the catalog record each template carries (recorded from the in-repo documents); no frame, OCR or audio tool; no Sonarr, Radarr or Plex call",
+  "model": "claude-opus-5-5",
+  "diagnosis_source": "restored (pre-guard) original decision; the guarded decision is reported separately",
+  "sampler": {
+    "receipt": "mrh-sampler-2",
+    "file": "tools/media-repair-harness/src/media_repair_harness/remote_sampler_v2.py",
+    "sha256": "870f1f98979aeb42b199e4473a359ca107d6e7942cdb02f33e8b1fe8f899f885"
+  },
+  "write_intent_rule": "write-intent-7",
+  "report": "stage-r-report-1",
+  "coordinator": {
+    "session": "session_01Qfm9fTQbZ8Hv8FJAxJnkiR",
+    "pod": "haynesnetwork-1021-123343",
+    "model": "claude-opus-5-5"
+  }
+}

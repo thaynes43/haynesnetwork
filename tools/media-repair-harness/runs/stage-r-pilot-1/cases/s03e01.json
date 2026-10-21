@@ -1,0 +1,41 @@
+{
+  "id": "sr1-d",
+  "media_type": "tv",
+  "context": {
+    "title": "Pokémon (1997) S03E01",
+    "expected": {
+      "series": "Pokémon (1997)",
+      "season": 3,
+      "episode": 1,
+      "episode_title": "Don't Touch That 'Dile"
+    },
+    "arr": {
+      "app": "sonarr",
+      "ids": {
+        "seriesId": 549,
+        "tvdbId": 76703,
+        "episodeFileId": 80008
+      }
+    },
+    "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+  },
+  "evidence": [
+    {
+      "id": "e1",
+      "tool": "arr_lookup",
+      "args": {
+        "app": "sonarr",
+        "seriesId": 549,
+        "episodeFileId": 80008
+      },
+      "status": "ok",
+      "output": "{\"app\":\"sonarr\",\"episode\":{\"episode\":1,\"season\":3,\"title\":\"Don't Touch That 'Dile\"},\"file\":{\"episodeFileId\":80008,\"size\":1563438952},\"recorded\":\"historical catalog record from a document dated 2026-10-14; not a live Sonarr read\",\"series\":\"Pokémon (1997)\",\"series_ids\":{\"seriesId\":549,\"tvdbId\":76703}}"
+    }
+  ],
+  "tools_available": [
+    "ffprobe",
+    "decode_sample",
+    "subtitle_sample",
+    "arr_lookup"
+  ]
+}
