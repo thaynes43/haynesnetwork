@@ -8,7 +8,9 @@ import unittest
 from pathlib import Path
 
 import th
+from media_repair_harness import protocol as P
 from media_repair_harness import run as R
+from test_devc7_measure import registered_harness_version
 
 RUNS = th.COMPONENT / 'runs'
 VAL = RUNS / 'dev-validity-opus55'
@@ -25,10 +27,14 @@ class RegisteredOpusCommand(unittest.TestCase):
     def test_expected_config_hash_and_only_model_differs(self):
         suite = str(th.require_suite().parent / 'suite-dev-v1.1')
         tpl = json.loads((VAL / 'manifest-template.json').read_text())
-        opus = config_for(tpl['argv'], suite)
+        with registered_harness_version('dev-c7'):          # dev-c8: registered under dev-c7; only that label moved (the rest is compared below)
+            opus = config_for(tpl['argv'], suite)
+            haiku_argv = json.loads((RUNS / 'dev-c7' / 'manifest-template.json').read_text())['runs']['haiku']['argv']
+            haiku = config_for(haiku_argv, suite)
+        now = config_for(tpl['argv'], suite)
+        self.assertEqual(now.pop('harness_version'), P.HARNESS_VERSION)
+        self.assertEqual(now, {k: v for k, v in opus.items() if k != 'harness_version'})
         self.assertEqual(R.sha256_bytes(R.canonical(opus).encode()), tpl['expected_config_hash'])
-        haiku_argv = json.loads((RUNS / 'dev-c7' / 'manifest-template.json').read_text())['runs']['haiku']['argv']
-        haiku = config_for(haiku_argv, suite)
         self.assertEqual(R.sha256_bytes(R.canonical(haiku).encode()), tpl['haiku_reference']['expected_config_hash'])
         self.assertEqual(haiku['adapter_config'].pop('model'), 'claude-haiku-5-5')
         self.assertEqual(opus['adapter_config'].pop('model'), 'claude-opus-5-5')
