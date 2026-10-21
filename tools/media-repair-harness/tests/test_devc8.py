@@ -350,7 +350,7 @@ class ClaudeSchema(unittest.TestCase):
     def test_schema_forwarding_and_the_first_attempt_is_the_reply(self):
         first, second = dec3('i' * 450), dec3('short')
         fr = FakeRunner([stream(INIT, attempt(1, first), checked(1, True), attempt(2, second), checked(2, False), result(structured=second))])
-        ad = A.ClaudeAdapter('claude-test-model', runner=fr, schema_mode='json-schema-1')
+        ad = A.ClaudeAdapter('claude-test-model', runner=fr, schema_mode='json-schema-1', experimental=True)
         comp = ad.complete('SYS', [{'role': 'user', 'content': 'x'}], schema=self.SCHEMA)
         cmd = fr.cmds[0]
         self.assertEqual(cmd[cmd.index('--output-format') + 1], 'stream-json')
@@ -373,39 +373,39 @@ class ClaudeSchema(unittest.TestCase):
     def test_exhausted_cli_retries_still_return_the_first_attempt(self):
         first = dec3('j' * 500)
         fr = FakeRunner([stream(INIT, attempt(1, first), checked(1, True), attempt(2, first), checked(2, True), result(subtype='error_max_structured_output_retries'))])
-        comp = A.ClaudeAdapter('m', runner=fr, schema_mode='json-schema-1').complete('S', [{'role': 'user', 'content': 'x'}], schema=self.SCHEMA)
+        comp = A.ClaudeAdapter('m', runner=fr, schema_mode='json-schema-1', experimental=True).complete('S', [{'role': 'user', 'content': 'x'}], schema=self.SCHEMA)
         self.assertEqual((json.loads(comp.text), comp.native['subtype'], comp.meta['schema']['result_subtype']), (first, 'error_max_structured_output_retries',
                                                                                                                   'error_max_structured_output_retries'))
 
     def test_missing_and_malformed_output(self):
-        ad = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, result(text=''))]), schema_mode='json-schema-1')
+        ad = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, result(text=''))]), schema_mode='json-schema-1', experimental=True)
         comp = ad.complete('S', [{'role': 'user', 'content': 'x'}], schema=self.SCHEMA)
         self.assertEqual((comp.text, comp.meta['schema']['reply_source'], comp.meta['schema']['structured_output_present']), ('', 'none', False))
-        ad = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, result(text='{"type":"decision"}'))]), schema_mode='json-schema-1')
+        ad = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, result(text='{"type":"decision"}'))]), schema_mode='json-schema-1', experimental=True)
         self.assertEqual(ad.complete('S', [], schema=self.SCHEMA).meta['schema']['reply_source'], 'result_text')
-        ad = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, result(subtype='error_during_execution'))]), schema_mode='json-schema-1')
+        ad = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, result(subtype='error_during_execution'))]), schema_mode='json-schema-1', experimental=True)
         with self.assertRaises(A.AdapterError):
             ad.complete('S', [], schema=self.SCHEMA)
         for bad in ('not json\n', stream(INIT), ''):        # no receipt at all: an unmetered call stops the run (review round 5, fail closed)
-            ad = A.ClaudeAdapter('m', runner=FakeRunner([bad]), schema_mode='json-schema-1')
+            ad = A.ClaudeAdapter('m', runner=FakeRunner([bad]), schema_mode='json-schema-1', experimental=True)
             with self.assertRaises(A.AbortRun, msg=bad[:40]) as cm:
                 ad.complete('S', [], schema=self.SCHEMA)
             self.assertEqual(cm.exception.failed_call['raw_response'], bad)
         with self.assertRaises(A.AbortRun) as cm:      # round 6: a budget stop always stops the run, keeping its receipt
-            A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, result(subtype='error_max_budget_usd', cost=0.5))]), schema_mode='json-schema-1').complete('S', [], schema=self.SCHEMA)
+            A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, result(subtype='error_max_budget_usd', cost=0.5))]), schema_mode='json-schema-1', experimental=True).complete('S', [], schema=self.SCHEMA)
         self.assertEqual(cm.exception.failed_call['usage']['cost_usd'], 0.5)
 
     def test_a_schema_the_cli_did_not_register_stops_the_run(self):
         init = dict(INIT, tools=[])
         with self.assertRaises(A.AbortRun) as cm:
-            A.ClaudeAdapter('m', runner=FakeRunner([stream(init, result(text=json.dumps(dec3('x'))))]), schema_mode='json-schema-1').complete('S', [], schema=self.SCHEMA)
+            A.ClaudeAdapter('m', runner=FakeRunner([stream(init, result(text=json.dumps(dec3('x'))))]), schema_mode='json-schema-1', experimental=True).complete('S', [], schema=self.SCHEMA)
         self.assertEqual(cm.exception.failed_call['failure_modes'], ['adapter_error', 'schema_not_registered'])
 
     def run_claude(self, outs, case=None):
         case = case or arr_case()
         ts = th.TempSuite([case])
         fr = FakeRunner(outs)
-        ad = A.ClaudeAdapter('claude-test-model', runner=fr, schema_mode='json-schema-1')
+        ad = A.ClaudeAdapter('claude-test-model', runner=fr, schema_mode='json-schema-1', experimental=True)
         ad.preflight = lambda: None
         ad.runtime_version = '2.1.296 (Claude Code)'
         rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='w26', prompt_version='v8', evidence_format='v3.1-format', which=th.NO_BINARIES)
@@ -834,7 +834,7 @@ class ReviewA2FirstResponse(unittest.TestCase):
         good = dec3('ok')
         split = [{'type': 'assistant', 'message': {'id': 'm1', 'content': [{'type': 'text', 'text': 'Calling the tool.'}]}},
                  {'type': 'assistant', 'message': {'id': 'm1', 'content': [{'type': 'tool_use', 'id': 'tu1', 'name': 'StructuredOutput', 'input': good}]}}]
-        comp = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, *split, checked(1, False), result(structured=good))]), schema_mode='json-schema-1').complete(
+        comp = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, *split, checked(1, False), result(structured=good))]), schema_mode='json-schema-1', experimental=True).complete(
             'S', [], schema=self.SCHEMA)
         self.assertEqual((json.loads(comp.text), comp.meta['schema']['responses'], comp.meta['schema']['cli_internal_retries']), (good, 1, 0))
 
@@ -876,7 +876,7 @@ class ReviewA3ErrorEvidence(unittest.TestCase):
 
     def test_registration_is_checked_before_the_error_subtype(self):
         with self.assertRaises(A.AbortRun) as cm:
-            A.ClaudeAdapter('m', runner=FakeRunner([stream(dict(INIT, tools=[]), result(subtype='error_during_execution'))]), schema_mode='json-schema-1').complete(
+            A.ClaudeAdapter('m', runner=FakeRunner([stream(dict(INIT, tools=[]), result(subtype='error_during_execution'))]), schema_mode='json-schema-1', experimental=True).complete(
                 'S', [], schema=self.SCHEMA)
         self.assertEqual(cm.exception.failed_call['meta']['schema']['tool_registered'], False)
 
@@ -1061,16 +1061,16 @@ class ReviewR2Responses(unittest.TestCase):
         rate = {'type': 'rate_limit_event', 'rate_limit_info': {'status': 'allowed'}}
         evs = [self.assistant('m1', {'type': 'text', 'text': 'Calling the tool.'}), rate,
                self.assistant('m1', {'type': 'tool_use', 'id': 'tu1', 'name': 'StructuredOutput', 'input': good})]
-        comp = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, *evs, checked(1, False), result(structured=good))]), schema_mode='json-schema-1').complete(
+        comp = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, *evs, checked(1, False), result(structured=good))]), schema_mode='json-schema-1', experimental=True).complete(
             'S', [], schema=self.SCHEMA)
         self.assertEqual((json.loads(comp.text), comp.meta['schema']['responses'], comp.meta['schema']['cli_internal_retries']), (good, 1, 0))
         idless = [self.assistant(None, {'type': 'text', 'text': 'Calling the tool.'}), rate,
                   self.assistant(None, {'type': 'tool_use', 'id': 'tu1', 'name': 'StructuredOutput', 'input': good})]
-        comp = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, *idless, checked(1, False), result(structured=good))]), schema_mode='json-schema-1').complete(
+        comp = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, *idless, checked(1, False), result(structured=good))]), schema_mode='json-schema-1', experimental=True).complete(
             'S', [], schema=self.SCHEMA)
         self.assertEqual(comp.meta['schema']['responses'], 1)
         split = [self.assistant(None, {'type': 'text', 'text': 'no tool'}), nudge(), self.assistant(None, {'type': 'tool_use', 'id': 'tu1', 'name': 'StructuredOutput', 'input': good})]
-        comp = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, *split, checked(1, False), result(structured=good))]), schema_mode='json-schema-1').complete(
+        comp = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, *split, checked(1, False), result(structured=good))]), schema_mode='json-schema-1', experimental=True).complete(
             'S', [], schema=self.SCHEMA)
         self.assertEqual((comp.text, comp.meta['schema']['responses'], comp.meta['schema']['cli_internal_retries']), ('no tool', 2, 1))
 
@@ -1079,12 +1079,12 @@ class ReviewR2FailureEvidence(unittest.TestCase):
     """R2-4 / Opus nit 2: a timed-out call keeps its partial stream; the budget abort keeps the failed call's evidence; a missing tool wins over a malformed line."""
     SCHEMA = ClaudeSchema.SCHEMA
 
-    def timeout_adapter(self, partial, schema_mode='json-schema-1'):
+    def timeout_adapter(self, partial, schema_mode='json-schema-1', experimental=True):
         import subprocess
 
         def runner(cmd, **kw):
             raise subprocess.TimeoutExpired(cmd, 240, output=partial.encode() if partial is not None else None)
-        return A.ClaudeAdapter('m', runner=runner, schema_mode=schema_mode)
+        return A.ClaudeAdapter('m', runner=runner, schema_mode=schema_mode, experimental=schema_mode is not None)
 
     def test_a_timeout_keeps_the_partial_stream(self):
         bad = dec3('w' * 450)
@@ -1118,7 +1118,7 @@ class ReviewR2FailureEvidence(unittest.TestCase):
         raw = stream(INIT, attempt(1, dec3('x' * 450))) + 'not JSON\n' + stream(result(subtype='error_max_budget_usd', cost=0.4))
         case = arr_case()
         ts = th.TempSuite([case])
-        ad = A.ClaudeAdapter('m', runner=FakeRunner([raw]), schema_mode='json-schema-1')
+        ad = A.ClaudeAdapter('m', runner=FakeRunner([raw]), schema_mode='json-schema-1', experimental=True)
         limits = R.RunLimits(max_cost_usd=1.0)
         limits.wrap(ad)
         limits.start()
@@ -1130,14 +1130,14 @@ class ReviewR2FailureEvidence(unittest.TestCase):
     def test_a_missing_tool_wins_over_a_malformed_line(self):
         raw = stream(dict(INIT, tools=[])) + 'not JSON\n' + stream(result(cost=0.1))
         with self.assertRaises(A.AbortRun):
-            A.ClaudeAdapter('m', runner=FakeRunner([raw]), schema_mode='json-schema-1').complete('S', [], schema=self.SCHEMA)
+            A.ClaudeAdapter('m', runner=FakeRunner([raw]), schema_mode='json-schema-1', experimental=True).complete('S', [], schema=self.SCHEMA)
 
 
 # ------------------------------------------------------------------------------------------------------------------------------ review round 3
 # AUDIT-ASTRA-56 of PR #1035 @ 741f9876.  Each fails at 741f9876 and passes after the fix; each has a control.
 def claude_run(case, outs=None, runner=None, guards=None, limits=None):
     ts = th.TempSuite([case])
-    ad = A.ClaudeAdapter('m', runner=runner or FakeRunner(outs), schema_mode='json-schema-1')
+    ad = A.ClaudeAdapter('m', runner=runner or FakeRunner(outs), schema_mode='json-schema-1', experimental=True)
     ad.runtime_version = 'fixture'
     if limits is not None:
         limits.wrap(ad)
@@ -1269,7 +1269,7 @@ def main_two_cases(first_raw, timeout=False, cap='1'):
         if timeout and len(calls) == 1:
             raise subprocess.TimeoutExpired(cmd, 240, output=raw.encode())
         return FakeProc(raw)
-    ad = A.ClaudeAdapter('m', runner=runner, schema_mode='json-schema-1')
+    ad = A.ClaudeAdapter('m', runner=runner, schema_mode='json-schema-1', experimental=True)
     ad.runtime_version = 'fixture'
     ad.preflight = lambda: {}
     out = Path(tempfile.mkdtemp(prefix='mrh-w26r4-')) / 'run'
@@ -1391,7 +1391,7 @@ def run_one(raw, path='normal', cap=1.0):
         if path == 'timeout':
             raise subprocess.TimeoutExpired(cmd, 240, output=text.encode())
         return FakeProc(text)
-    ad = A.ClaudeAdapter('m', runner=runner, schema_mode='json-schema-1')
+    ad = A.ClaudeAdapter('m', runner=runner, schema_mode='json-schema-1', experimental=True)
     ad.runtime_version = 'fixture'
     lim = None
     if cap is not None:
@@ -1492,7 +1492,7 @@ class ReviewR5Models(unittest.TestCase):
             self.assertEqual(rec['status'], 'started_aborted')
             self.assertEqual(rec['response_model_ids'], ['m'])                      # the requested model, reported among others
             self.assertEqual(rec['usage']['cost_usd'], 0.3)
-        comp = A.ClaudeAdapter('other', runner=FakeRunner([first]), schema_mode='json-schema-1').complete('S', [], schema=ClaudeSchema.SCHEMA)
+        comp = A.ClaudeAdapter('other', runner=FakeRunner([first]), schema_mode='json-schema-1', experimental=True).complete('S', [], schema=ClaudeSchema.SCHEMA)
         self.assertEqual(comp.response_model, 'claude-small+m')                      # neither is the requested one: the sorted ids, one string
 
     def test_the_abort_propagates_when_its_record_cannot_be_built(self):
@@ -1669,7 +1669,7 @@ def main_run(first, timeout=False, cap='1', patches=()):
         proc = FakeProc('')
         proc.stdout = data
         return proc
-    ad = A.ClaudeAdapter('m', runner=runner, schema_mode='json-schema-1')
+    ad = A.ClaudeAdapter('m', runner=runner, schema_mode='json-schema-1', experimental=True)
     holder['ad'] = ad
     ad.runtime_version = 'fixture'
     ad.preflight = lambda: {}
@@ -1733,20 +1733,20 @@ class ReviewR6Receipts(unittest.TestCase):
         conflict = stream(INIT, attempt(1, good), result(structured=good, cost=0.1), result(structured=good, cost=0.3))
         comp_err = None
         try:
-            A.ClaudeAdapter('m', runner=FakeRunner([conflict]), schema_mode='json-schema-1').complete('S', [], schema=ClaudeSchema.SCHEMA)
+            A.ClaudeAdapter('m', runner=FakeRunner([conflict]), schema_mode='json-schema-1', experimental=True).complete('S', [], schema=ClaudeSchema.SCHEMA)
         except A.AdapterError as e:
             comp_err = e
         self.assertIn('disagree', str(comp_err))
         self.assertEqual(comp_err.cost_usd, 0.3)                                                    # the largest receipt is accounted
         dup = stream(INIT, attempt(1, good)) + '{"type":"result","subtype":"success","total_cost_usd":0.01,"total_cost_usd":0.4}\n'
         with self.assertRaises(A.AbortRun) as cm:                                                   # an ambiguous receipt is unmetered
-            A.ClaudeAdapter('m', runner=FakeRunner([dup]), schema_mode='json-schema-1').complete('S', [], schema=ClaudeSchema.SCHEMA)
+            A.ClaudeAdapter('m', runner=FakeRunner([dup]), schema_mode='json-schema-1', experimental=True).complete('S', [], schema=ClaudeSchema.SCHEMA)
         self.assertIn('duplicate key', cm.exception.failed_call['meta']['schema']['stream_problems'][0])
 
     def test_identical_duplicate_receipts_control(self):
         good = dec3('short')
         comp = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, attempt(1, good), result(structured=good, cost=0.2), result(structured=good, cost=0.2))]),
-                               schema_mode='json-schema-1').complete('S', [], schema=ClaudeSchema.SCHEMA)
+                               schema_mode='json-schema-1', experimental=True).complete('S', [], schema=ClaudeSchema.SCHEMA)
         self.assertEqual((comp.usage['cost_usd'], comp.meta['schema']['receipts']), (0.2, 2))
 
 
@@ -1825,7 +1825,7 @@ class ReviewR6Faults(unittest.TestCase):
         self.assertIn('RuntimeError', rec['turns'][0]['secondary_failure'])
 
     def test_no_call_starts_after_a_stop(self):
-        ad = A.ClaudeAdapter('m', runner=FakeRunner([stream(dict(INIT, tools=[]), result(cost=0.2)), stream(INIT, result(cost=0.1))]), schema_mode='json-schema-1')
+        ad = A.ClaudeAdapter('m', runner=FakeRunner([stream(dict(INIT, tools=[]), result(cost=0.2)), stream(INIT, result(cost=0.1))]), schema_mode='json-schema-1', experimental=True)
         with self.assertRaises(A.AbortRun):
             ad.complete('S', [], schema=ClaudeSchema.SCHEMA)
         with self.assertRaises(A.AbortRun) as cm:
@@ -1965,3 +1965,58 @@ class ReviewR7ExperimentalGate(unittest.TestCase):
         self.assertFalse(args.experimental_claude_schema)
         self.assertIsNone(args.claude_schema)
         self.assertNotIn('claude_schema_experimental', R.run_config(args, R.build_adapter(args), {}, None))
+
+
+# ------------------------------------------------------------------------------------------------------------------------------ review round 8
+# AUDIT-ASTRA-63: the experimental gate holds at every programmatic boundary, and every schema-mode record identifies itself.
+class ReviewR8Boundaries(unittest.TestCase):
+    def test_every_programmatic_entry_point_refuses_without_the_opt_in(self):
+        import os
+        calls = []
+
+        def runner(cmd, **kw):
+            calls.append(cmd)
+            return FakeProc(stream(INIT, result(cost=0.1)))
+        before = set(os.listdir(tempfile.gettempdir()))
+        with self.assertRaises(ValueError) as cm:                                  # 1. the adapter constructor, before its workdir exists
+            A.ClaudeAdapter('m', runner=runner, schema_mode='json-schema-1')
+        self.assertIn('#164', str(cm.exception))
+        self.assertEqual({d for d in set(os.listdir(tempfile.gettempdir())) - before if d.startswith('mrh-claude-')}, set())
+        args = R.build_parser().parse_args(['--suite', 's', '--adapter', 'claude', '--model', 'm', '--out', 'o', '--prompt', 'v8', '--evidence-format',
+                                            'v3.1-format', '--claude-schema', 'json-schema-1'])
+        with self.assertRaises(ValueError):                                         # 2. the factory, with the schema args and no opt-in
+            R.build_adapter(args)
+        ad = A.ClaudeAdapter('m', runner=runner, schema_mode='json-schema-1', experimental=True)
+        ad.schema_experimental = False                                              # an adapter whose opt-in was removed after construction
+        with self.assertRaises(ValueError):                                         # 3. the call boundary
+            ad.complete('S', [], schema=ClaudeSchema.SCHEMA)
+        case = arr_case('w26r8')
+        ts = th.TempSuite([case])
+        self.addCleanup(ts.cleanup)
+        scratch = Path(tempfile.mkdtemp(prefix='mrh-w26r8-'))
+        with self.assertRaises(ValueError):                                         # 4. run_case (through schema_run.guarded_run_case)
+            R.run_case(case, 'sha', ad, ts.root, scratch, run_id='w26r8', prompt_version='v8', evidence_format='v3.1-format', which=th.NO_BINARIES)
+        from media_repair_harness import schema_run as SR
+        out = scratch / 'run'
+        out.mkdir()
+        with self.assertRaises(ValueError):                                         # 5. schema_run.run_loop
+            SR.run_loop(R, args, ad, out, 'w26r8', ts.root, scratch, [(case, 'sha')], None, {}, {'case_ids': [case['id']]}, R.RunLimits())
+        self.assertEqual((calls, list(out.iterdir()), list(scratch.glob('w26r8*'))), ([], [], []))     # no call, no file
+
+    def test_with_the_opt_in_every_record_carries_the_marker(self):
+        good = dec3('short')
+        code, man, out, calls = main_run(stream(INIT, attempt(1, good), checked(1, False), result(structured=good, cost=0.02)))
+        self.assertEqual(code, 0)
+        self.assertTrue(man['claude_schema_experimental'])
+        self.assertTrue(man['config']['adapter_config']['claude_schema_experimental'])
+        for cid in man['records_written']:
+            rec = json.loads((out / (cid + '.json')).read_text())
+            self.assertEqual((rec['claude_schema_experimental'], rec['adapter_config']['claude_schema_experimental']), (True, True), cid)
+        code, man, out, calls = main_run(stream(dict(INIT, tools=[]), result(cost=0.2)))       # a started-aborted record too
+        part = json.loads((out / 'started-aborted' / (FIRST + '.json')).read_text())
+        self.assertEqual((code, part['claude_schema_experimental'], part['adapter_config']['claude_schema_experimental']), (3, True, True))
+
+    def test_the_legacy_adapter_is_unchanged(self):
+        ad = A.ClaudeAdapter('m', runner=FakeRunner([]))
+        self.assertNotIn('claude_schema_experimental', ad.config())
+        self.assertFalse(ad.schema_experimental)

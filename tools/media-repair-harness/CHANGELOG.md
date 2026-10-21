@@ -71,6 +71,16 @@ other config field is compared equal). No model was called. Details: `docs/dev-c
   5. conflicting valid receipt costs continue the run at the largest cost instead of stopping as unmetered (Opus minor).
   The default (schema mode off), every legacy path, record byte and registered-configuration hash, `V4_SPEC`, `guard_v4` and the shadow records are
   unchanged.
+* **Review round 8 (AUDIT-ASTRA-63, Opus nit):** the experimental gate holds at every boundary, not only in `main()`:
+  - the `ClaudeAdapter` constructor (`experimental=True` required, checked before its work directory is created);
+  - `build_adapter`;
+  - the schema-mode call (`claude_schema.complete`);
+  - `run_case`, through `schema_run.guarded_run_case`;
+  - `schema_run.run_loop`.
+
+  Each refuses before any allocation, file write or call, naming #164. Every schema-mode record and started-aborted record carries
+  `claude_schema_experimental: true` and its adapter config (which carries it too). The budget-stop sentence of `docs/dev-c8.md` no longer contradicts
+  the round-6 rule.
 
 ## W27 (OpenProject #145 remainder, the PR #1031 nits): evidence follow-ups, offline
 

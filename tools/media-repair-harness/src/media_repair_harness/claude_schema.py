@@ -439,6 +439,9 @@ def _stop(adapter, ab):
 
 def complete(adapter, system, messages, schema):
     """ClaudeAdapter.complete in schema mode, behind the outer guard."""
+    if getattr(adapter, 'schema_experimental', False) is not True:       # round 8: refused at the call boundary too, before the CLI runs
+        from .adapters import SCHEMA_GATE
+        raise ValueError(SCHEMA_GATE)
     raw, req, raw_meta = '', None, None
     if getattr(adapter, 'schema_stop', None):
         raise _stop(adapter, AbortRun('claude-schema-1: a stop was already established (%s); no further call starts' % adapter.schema_stop))

@@ -98,10 +98,38 @@ def stop(adapter, reason, partial=None, secondary=None):
     return ab
 
 
+# ---------------------------------------------------------------------------------------------------------------------------- the experimental gate (round 8)
+def require_opt_in(adapter):
+    """Every schema_run entry point refuses an adapter that was not explicitly opted in, before any allocation, file write or call."""
+    if getattr(adapter, 'schema_experimental', False) is not True:
+        raise ValueError(A.SCHEMA_GATE)
+
+
+def stamp(obj, adapter):
+    """Every record and started-aborted record of a schema-mode adapter identifies itself as experimental (with the adapter config it ran under)."""
+    if isinstance(obj, dict):
+        obj['claude_schema_experimental'] = True
+        try:
+            obj['adapter_config'] = adapter.config()
+        except Exception as e:  # noqa: BLE001
+            obj['adapter_config'] = {'claude_schema_experimental': True, 'config_error': safe_str(e)}
+    return obj
+
+
 # ---------------------------------------------------------------------------------------------------------------------------- the guarded case
 def guarded_run_case(R, kw):
     """run_case for a schema-mode adapter: no case starts after a stop; an abort always carries a finalisable partial record; any other failure, a
     harness-crash record or a record with an unknown cost becomes a fail-closed stop that keeps the primary reason."""
+    adapter, case, sha, run_id = kw['adapter'], kw['case'], kw['case_sha'], kw.get('run_id', '')
+    require_opt_in(adapter)
+    try:
+        return stamp(_guarded_run_case(R, kw), adapter)
+    except A.AbortRun as e:
+        stamp(getattr(e, 'partial', None), adapter)
+        raise
+
+
+def _guarded_run_case(R, kw):
     adapter, case, sha, run_id = kw['adapter'], kw['case'], kw['case_sha'], kw.get('run_id', '')
     if getattr(adapter, 'schema_stop', None):
         raise stop(adapter, None, minimal_aborted_record(case, sha, run_id, adapter.schema_stop, [], None, adapter))
@@ -135,6 +163,8 @@ def write_json(path, obj):
 
 def run_loop(R, args, adapter, out, run_id, suite_dir, scratch, cases, ocr_backend, evidence_bounds, manifest, limits):
     """main()'s case loop and finalisation for a schema-mode run (main hands over after building the manifest)."""
+    require_opt_in(adapter)
+    manifest['claude_schema_experimental'] = True
     aborted, records, partials, audit, secondary = None, [], [], None, []
 
     def note(what, e):
@@ -166,7 +196,8 @@ def run_loop(R, args, adapter, out, run_id, suite_dir, scratch, cases, ocr_backe
                                  evidence_bounds=evidence_bounds, guards=args.guards, evidence_format=args.evidence_format)
             except A.AbortRun as e:
                 aborted = safe_str(e, 2000)
-                partial = e.partial if finalizable(getattr(e, 'partial', None)) else minimal_aborted_record(case, sha, run_id, aborted, [], None, adapter)
+                partial = stamp(e.partial if finalizable(getattr(e, 'partial', None)) else minimal_aborted_record(case, sha, run_id, aborted, [], None, adapter),
+                                adapter)
                 if getattr(e, 'secondary_failure', None):
                     partial.setdefault('secondary_failure', e.secondary_failure)
                 try:

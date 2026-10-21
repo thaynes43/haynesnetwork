@@ -402,6 +402,8 @@ CLAUDE_FLAGS = ['--tools', '', '--strict-mcp-config', '--mcp-config', '{"mcpServ
 # repair, this mode reads the `stream-json` event stream and takes the FIRST StructuredOutput attempt as the reply; later CLI-internal attempts and the CLI's own
 # validation results are recorded (turns[].meta.schema) and never used.  Whether the CLI registered the tool is read from its init event, not assumed.
 CLAUDE_SCHEMA_ADAPTER_VERSION = 'claude-schema-1'
+SCHEMA_GATE = ('claude-schema-1 is experimental (OpenProject #164: its fail-closed invariant is not established) and needs an explicit opt-in: '
+               'experimental=True, or --experimental-claude-schema on the command line; never in a registered or pre-registered measurement')
 STRUCTURED_OUTPUT_TOOL = 'StructuredOutput'
 
 
@@ -409,13 +411,16 @@ class ClaudeAdapter(Adapter):
     name = 'claude'
     digest_na_reason = 'hosted API model: no weights digest; the response model id is recorded instead'
 
-    def __init__(self, model, effort=None, max_budget_usd=2.0, timeout=240, runner=subprocess.run, schema_mode=None):
+    def __init__(self, model, effort=None, max_budget_usd=2.0, timeout=240, runner=subprocess.run, schema_mode=None, experimental=False):
         super().__init__(model)
-        self.effort, self.max_budget_usd, self.timeout, self.runner = effort, max_budget_usd, timeout, runner
-        self.workdir = tempfile.mkdtemp(prefix='mrh-claude-')
+        if schema_mode is not None and not experimental:     # dev-c8 round 8: refused before any allocation
+            raise ValueError(SCHEMA_GATE)
         if schema_mode is not None and schema_mode != 'json-schema-1':
             raise ValueError('unknown claude schema mode %r (known: json-schema-1)' % (schema_mode,))
+        self.effort, self.max_budget_usd, self.timeout, self.runner = effort, max_budget_usd, timeout, runner
+        self.workdir = tempfile.mkdtemp(prefix='mrh-claude-')
         self.schema_mode = schema_mode
+        self.schema_experimental = schema_mode is not None
         if schema_mode is not None:
             self.schema_name = 'flat'      # the runner builds the flat per-case turn schema (one object type at the top level) for this mode
 
@@ -423,7 +428,7 @@ class ClaudeAdapter(Adapter):
         c = {'adapter': self.name, 'model': self.requested_model, 'effort': self.effort, 'flags': CLAUDE_FLAGS,
              'output_format': 'json', 'max_budget_usd': self.max_budget_usd, 'timeout_s': self.timeout}
         if self.schema_mode is not None:      # only in schema mode: the legacy config (and config hash) keeps its shape
-            c.update(adapter_version=CLAUDE_SCHEMA_ADAPTER_VERSION, schema_mode=self.schema_mode, output_format='stream-json', schema_variant='flat',
+            c.update(adapter_version=CLAUDE_SCHEMA_ADAPTER_VERSION, schema_mode=self.schema_mode, output_format='stream-json', schema_variant='flat', claude_schema_experimental=True,
                      reply_from='first StructuredOutput attempt (CLI-internal retries recorded, never used)')
         return c
 

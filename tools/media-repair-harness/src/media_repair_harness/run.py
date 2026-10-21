@@ -943,7 +943,8 @@ def build_adapter(args):
                                context_policy=getattr(args, 'context_policy', None), gpu_fit_check=getattr(args, 'gpu_fit_check', None))
     if args.adapter == 'claude':
         budget = None if getattr(args, 'no_spend_limit', False) else (args.max_budget_usd if args.max_budget_usd is not None else 2.0)
-        return A.ClaudeAdapter(model, effort=args.effort, max_budget_usd=budget, schema_mode=getattr(args, 'claude_schema', None))
+        return A.ClaudeAdapter(model, effort=args.effort, max_budget_usd=budget, schema_mode=getattr(args, 'claude_schema', None),
+                               experimental=getattr(args, 'experimental_claude_schema', False))
     if args.adapter == 'codex':
         return A.CodexAdapter(model, effort=args.effort, record_session=not args.codex_ephemeral)
     if args.adapter == 'scripted':

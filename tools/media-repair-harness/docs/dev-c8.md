@@ -80,6 +80,17 @@ envelope shows only the final, CLI-repaired object. Help and docs do not establi
 `--experimental-claude-schema` is also given (before any run directory, case or call); a run that passes the gate records
 `claude_schema_experimental: true` in its manifest. It must not be used in a registered or pre-registered measurement until OpenProject #164 clears.
 The default (schema mode off) and every legacy path, record byte and registered-configuration hash are unchanged by the gate.
+**Review round 8 (AUDIT-ASTRA-63): the gate holds at every boundary, not only in `main()`.** Each of these raises a `ValueError` naming #164 before
+any allocation, file write or call:
+1. `main()`, without `--experimental-claude-schema`, before the run directory, any case or any call;
+2. the `ClaudeAdapter` constructor, with `schema_mode` set and no `experimental=True`, before its work directory exists;
+3. `build_adapter`, with the schema arguments and no opt-in (it passes the opt-in to the constructor);
+4. the schema-mode call itself, `claude_schema.complete`, for an adapter not opted in, before the CLI runs;
+5. `run_case`, through `schema_run.guarded_run_case`;
+6. `schema_run.run_loop`.
+
+Every record and started-aborted record made through a schema-mode adapter carries `claude_schema_experimental: true` and the adapter config it ran
+under, which itself carries `claude_schema_experimental: true`; so does the manifest.
 
 Open falsifications (AUDIT-ASTRA-61 and the Opus review of 9c986a7f), all tracked in OpenProject #164:
 1. `splitlines()` also splits on U+2028 and other Unicode line separators, and the pre-scan drops a whole receipt line that has one oversized or deeply
@@ -101,8 +112,9 @@ byte for byte):
   it); an event without an id joins the open response unless a user event (a CLI correction or a tool result) came after it. Later responses (`cli_internal_retries`), the CLI's injected corrections
   (`cli_corrections`), its validation results, the final `structured_output` and the result text are recorded in `turns[].meta.schema` and never used:
   no extra repair, first-try failures stay first-try failures;
-* a CLI error after the first response (`error_max_structured_output_retries`, `error_max_budget_usd`, ...) still yields that first response, with the
-  error recorded (`cli_error_after_first_response`, `result_subtype`); the run's cost cap is still checked before the next call. No response at all: the
+* a CLI error after the first response other than a budget stop (for example `error_max_structured_output_retries`) still yields that first response,
+  with the error recorded (`cli_error_after_first_response`, `result_subtype`). A budget stop (`error_max_budget_usd`) does not: since round 6 it stops
+  the schema run, and the first response stays in the record only as evidence. No response at all: the
   result text is the reply (empty when none), recorded as `reply_source`;
 * failures keep their evidence (A50-3, round 2): a non-JSON line rejects the stream but keeps the receipt of a valid result event; a timed-out call keeps
   its partial stream (attempts, delivery record, a receipt if one arrived); every adapter error and abort of this mode, including the run cost cap's abort
