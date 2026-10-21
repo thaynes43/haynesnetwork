@@ -123,6 +123,38 @@ evidence-carrying `AdapterError` or `AbortRun`. `claude_schema.py` is one pipeli
    stream. A started-aborted record that cannot be built is replaced by a minimal, always-serializable one, so the abort still propagates. The legacy
    adapter keeps its earlier behaviour, `harness_crash` included.
 
+**At the run level (review round 6, `schema_run.py`).** The parser being sound was not enough; the guarantee now covers the whole schema-mode run.
+For a run whose adapter is in schema mode, no CLI output stream and no internal `Exception` (raised while parsing a reply, building or writing a record,
+accounting, finalising, or formatting another exception) can make the run:
+
+* (a) lose the raw call output. It is kept as bytes before any parsing, in `<run>/raw/<case>-<n>.raw` and as base64 in the record (`meta.raw`).
+  Invalid UTF-8 is malformed, and the original bytes are kept;
+* (b) lose an established stop reason (a missing schema registration, a budget stop, an unmetered call, a fail-closed stop). A later failure is attached
+  as `secondary_failure` and never replaces it;
+* (c) start another case or call after a stop. The stop is sticky on the adapter and is checked before every case and every call;
+* (d) exit 0 after a stop or with a call whose cost is unknown;
+* (e) record `harness_crash` and go on. Such a failure becomes a fail-closed stop.
+
+Supporting rules:
+
+* every result receipt of a call is reconciled. A budget subtype on any receipt is a stop, and in schema mode a budget stop always stops the run.
+  Receipts that disagree, duplicate JSON keys and lone surrogates are malformed. The cost accounted is the largest receipt: a result event reports the
+  call's running total, so summing would double count;
+* a reply is parsed behind the same size and nesting bounds as the stream, so deeply nested JSON in a reply is an invalid reply, not a crash;
+* schema-mode records are written with `ensure_ascii=True`;
+* a started-aborted record that cannot be built is replaced by a minimal one that finalisation can read.
+
+**Not covered:** process-control `BaseException`s (`KeyboardInterrupt`, `SystemExit`, `GeneratorExit`), and failures of the operating system or the
+file system itself (a full disk, a read-only or vanished run directory, the process being killed). Those can still end a run without the records above.
+Legacy adapters and their paths, including `harness_crash` and the exact bytes of legacy records, are unchanged.
+
+`tests/test_devc8.py` checks the parser-level invariant with `ReviewR5Mutation` and the run-level invariant with `ReviewR6Mutation`. `ReviewR6Mutation`
+is deterministic (seed 20261021) and runs 96 two-case main-loop runs over mutated streams (multiple and conflicting receipts, duplicate keys, nested
+JSON in reply and result text, invalid UTF-8 bytes, lone surrogates, field types, ordering, truncation; normal and timeout paths) plus 40 fault-injection
+runs (a `TypeError` in record building, an exception whose `__str__` raises, a failing finalisation, a failing write, a failing accounting step). Each
+run asserts that the raw bytes are on disk, the stop is kept, the second case never starts after a stop, and the exit is non-zero. `ReviewR5Mutation`, the
+parser-level test, is described below.
+
 `tests/test_devc8.py` (`ReviewR5Mutation`) checks the invariant with a deterministic, seeded mutation test: 204 one-case runs (68 mutated streams on the
 normal, timeout and malformed-stream paths) and 24 two-case main-loop runs, mutating types, magnitudes, nesting, ordering, truncation and extra lines
 around a budget receipt and a registration abort.

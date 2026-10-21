@@ -256,9 +256,17 @@ def result_message(call_id, tool, res, remaining):
 
 def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto', run_id='', tool_output_bytes=None,
              prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None, evidence_bounds=None, guards=None,
-             evidence_format=None):
+             evidence_format=None, _inner=False):
     """Run one case through the turn protocol.  Returns the run record (never raises for model/tool trouble)."""
     import shutil
+    sm_case = getattr(adapter, 'schema_mode', None) is not None      # dev-c8 claude-schema-1: the run-level guard of schema_run.py (round 6)
+    if sm_case:
+        from . import schema_run as SR
+    if sm_case and not _inner:
+        return SR.guarded_run_case(sys.modules[__name__], dict(
+            case=case, case_sha=case_sha, adapter=adapter, suite_dir=suite_dir, scratch=scratch, ocr_backend=ocr_backend, runner=runner, which=which, replay=replay,
+            run_id=run_id, tool_output_bytes=tool_output_bytes, prompt_version=prompt_version, evidence_mode=evidence_mode, collect=collect,
+            evidence_runner=evidence_runner, evidence_which=evidence_which, evidence_bounds=evidence_bounds, guards=guards, evidence_format=evidence_format))
     check_option_combination(prompt_version, evidence_format, guards, tool_output_bytes)
     v31fmt = evidence_format == CONTRACT_V31_FORMAT
     v3fmt = evidence_format == 'v3' or v31fmt     # contract v3: turn-v3, decision-v3, audit v3 (format v3 or v3.1-format)
@@ -356,7 +364,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                 force('model call failed: ' + str(e)[:200])
                 break
             load_s += comp.load_s
-            obj, perr, diag = P.parse_reply(comp.text)
+            obj, perr, diag = SR.parse_reply(comp.text) if sm_case else P.parse_reply(comp.text)
             kind, verrs = (None, [perr]) if perr else P.validate_turn(obj, case.get('tools_available'), prompt_version)
             offered_bad = P.tool_not_offered(obj, case.get('tools_available')) if (v2 and kind == 'tool_call') else None
             fm = P.failure_modes_v31 if prompt_version in P.LENGTH_REPAIR_PROMPTS else P.failure_modes_for     # turn-v3.1 (v8) adds the length_limit mode
@@ -437,15 +445,15 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
         if fc:
             turns.append({'n': len(turns) + 1, 'error': fc['error'], 'attempt': 'repair' if repairs else 'first', 'reply_valid': False,
                           'failure_modes': fc.get('failure_modes', ['adapter_error', 'cost_cap_budget_exceeded']), **({'usage': fc['usage']} if fc.get('usage') else {}),
-                          **{k: fc[k] for k in ('native', 'gpu_refit', 'raw_request', 'raw_response', 'meta') if fc.get(k)}})     # (dev-c7 full-gpu-v2: the reload's receipt and /api/ps reading; dev-c8 claude-schema-1: the call's evidence)
+                          **{k: fc[k] for k in ('native', 'gpu_refit', 'raw_request', 'raw_response', 'meta', 'secondary_failure') if fc.get(k)}})     # (dev-c7 full-gpu-v2: the reload's receipt and /api/ps reading; dev-c8 claude-schema-1: the call's evidence)
         # a STARTED case that the run's abort cut short is never lost: turns, tool calls, usage and the reason travel with the exception (main writes them to started-aborted/)
         try:
             e.partial = started_aborted_record(case, case_sha, adapter, prompt, run_id, started_at, time.monotonic() - started_wall, turns, tool_calls, repairs, str(e),
                                                evidence_mode, evidence_format)
-        except Exception as pe:  # noqa: BLE001 - dev-c8 claude-schema-1 only (review round 5): the abort propagates even if its record cannot be built
-            if getattr(adapter, 'schema_mode', None) is None:
+        except Exception as pe:  # noqa: BLE001 - dev-c8 claude-schema-1 only (rounds 5, 6): the abort propagates even if its record cannot be built
+            if not sm_case:
                 raise
-            e.partial = minimal_aborted_record(case, case_sha, run_id, str(e), turns, pe)
+            e.partial = SR.minimal_aborted_record(case, case_sha, run_id, SR.safe_str(e, 2000), turns, pe, adapter)
         raise
     except Exception as e:  # noqa: BLE001 - harness fault: keep the run, mark it
         error = {'kind': 'harness_crash', 'message': '%s: %s' % (type(e).__name__, e), 'leak_guard': isinstance(e, leakguard.LeakError), 'traceback': traceback.format_exc()[-1500:]}
@@ -613,17 +621,6 @@ def started_aborted_record(case, case_sha, adapter, prompt, run_id, started_at, 
             'requested_model': getattr(adapter, 'requested_model', None),
             'response_model_ids': sorted({t.get('response_model') for t in turns if t.get('response_model')}),
             'usage': usage, 'turns': turns, 'tool_calls': tool_calls, 'repair_prompts': repairs}
-
-
-def minimal_aborted_record(case, case_sha, run_id, reason, turns, exc):
-    """dev-c8 claude-schema-1: the started-aborted record when the full one cannot be built.  Only strings and numbers, so it always serializes: the abort
-    reason, the build error and every raw stream and error the turns hold."""
-    def s(x):
-        return x if isinstance(x, str) else None
-    return {'record_version': 1, 'status': 'started_aborted', 'scored': False, 'abort_reason': str(reason), 'case_id': str(case.get('id')), 'case_sha256': s(case_sha),
-            'harness_version': P.HARNESS_VERSION, 'run_id': str(run_id), 'partial_record_error': '%s: %s' % (type(exc).__name__, str(exc)[:300]),
-            'turns': [{'n': t.get('n') if isinstance(t.get('n'), int) else None, 'error': s(t.get('error')), 'text': s(t.get('text')),
-                       'raw_response': s(t.get('raw_response'))} for t in turns if isinstance(t, dict)]}
 
 
 def crash_record(case, case_sha, adapter, exc, prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay'):
@@ -844,14 +841,20 @@ class RunLimits:
         self.cost += cost
         self.max_call_cost = max(self.max_call_cost, cost)
 
-    def _guarded(self, adapter, fn, evidence=None):
-        """dev-c8 claude-schema-1 (review round 5): accounting a schema-mode call can never crash the run; a failure is a fail-closed stop."""
+    def _guarded(self, adapter, fn, evidence=None, original=None, primary=None):
+        """dev-c8 claude-schema-1 (rounds 5, 6): accounting a schema-mode call can never crash the run.  A failure is a fail-closed stop that keeps the
+        primary classification: an abort the call raised stays the abort (the failure is attached as `secondary_failure`), and the receipt is kept."""
         try:
             return fn()
         except Exception as e:  # noqa: BLE001 - schema mode only
-            ab = A.AbortRun('claude-schema-1: accounting a call failed (%s); stopping the run (fail closed)' % type(e).__name__)
-            ab.failed_call = dict({k: v for k, v in (evidence or {}).items() if k in ('raw_request', 'raw_response', 'meta')},
-                                  error='accounting failed: %s' % type(e).__name__, failure_modes=['adapter_error', 'fail_closed'])
+            secondary = 'accounting failed: %s' % type(e).__name__
+            if original is not None:
+                (getattr(original, 'failed_call', None) or {}).setdefault('secondary_failure', secondary)
+                self.stopped = self.stopped or str(original)
+                raise original
+            ab = A.AbortRun('claude-schema-1: accounting failed %s (%s); stopping the run (fail closed)' % (primary or '', type(e).__name__))
+            ab.failed_call = dict({k: v for k, v in (evidence or {}).items() if k in ('raw_request', 'raw_response', 'meta', 'usage')},
+                                  error=str(ab), secondary_failure=secondary, failure_modes=['adapter_error', 'fail_closed'])
             self.stopped = self.stopped or str(ab)
             raise ab
 
@@ -865,8 +868,10 @@ class RunLimits:
             return orig_before()
 
         def complete(system, messages, schema=None):
-            self.before_call(adapter)
             sm = getattr(adapter, 'schema_mode', None) is not None and schema is not None      # dev-c8: a claude-schema-1 call
+            if sm and self.stopped:                    # round 6, Rule B: an established stop is unconditional; no call starts after it
+                raise A.AbortRun(self.stopped)
+            self.before_call(adapter)
             try:
                 comp = orig_complete(system, messages, schema=schema) if schema is not None else orig_complete(system, messages)
             except A.AbortRun as ab:
@@ -875,12 +880,13 @@ class RunLimits:
                     # dev-c8 claude-schema-1 (review rounds 4 and 5): an abort the call itself raised (a missing tool, an unmetered call, the fail-closed guard)
                     # still spent what its receipt says: account it exactly once, and keep the abort's own reason as the stop reason.  Other adapters' aborts
                     # are unchanged.
-                    self._guarded(adapter, lambda: self.account((fc.get('usage') or {}).get('cost_usd')), fc)
+                    self._guarded(adapter, lambda: self.account((fc.get('usage') or {}).get('cost_usd')), fc, original=ab)
                     self.stopped = self.stopped or str(ab)
                 raise
             except A.AdapterError as e:
                 if sm:
-                    self._guarded(adapter, lambda: self.account(getattr(e, 'cost_usd', None)), getattr(e, 'evidence', None))
+                    self._guarded(adapter, lambda: self.account(getattr(e, 'cost_usd', None)), dict(getattr(e, 'evidence', None) or {}, usage=e.usage),
+                                  primary='after a failed call (%s)' % type(e).__name__)
                 else:
                     self.account(getattr(e, 'cost_usd', None))
                 if self.max_cost_usd is not None and getattr(e, 'budget_exceeded', False):
@@ -893,7 +899,8 @@ class RunLimits:
                 raise
             if sm:
                 self._guarded(adapter, lambda: self.account((getattr(comp, 'usage', None) or {}).get('cost_usd')),
-                              {'raw_request': comp.raw_request, 'raw_response': comp.raw_response, 'meta': comp.meta})
+                              {'raw_request': comp.raw_request, 'raw_response': comp.raw_response, 'meta': comp.meta, 'usage': comp.usage},
+                              primary='after a completed call')
             else:
                 self.account((getattr(comp, 'usage', None) or {}).get('cost_usd'))
             if self.max_cost_usd is not None and (getattr(comp, 'native', None) or {}).get('subtype') == 'error_max_budget_usd':
@@ -1079,6 +1086,9 @@ def main(argv=None):
     records = []
     partials = []   # started-aborted cases (kept under started-aborted/, never scored); never-started = planned minus records minus these
     audit = None
+    if getattr(adapter, 'schema_mode', None) is not None:     # dev-c8 claude-schema-1: the run-level fail-closed loop (schema_run.py, round 6)
+        from . import schema_run as SR
+        return SR.run_loop(sys.modules[__name__], args, adapter, out, run_id, suite_dir, scratch, cases, ocr_backend, evidence_bounds, manifest, limits)
     if limits.enabled:
         limits.wrap(adapter)
         limits.start()

@@ -391,10 +391,9 @@ class ClaudeSchema(unittest.TestCase):
             with self.assertRaises(A.AbortRun, msg=bad[:40]) as cm:
                 ad.complete('S', [], schema=self.SCHEMA)
             self.assertEqual(cm.exception.failed_call['raw_response'], bad)
-        try:
+        with self.assertRaises(A.AbortRun) as cm:      # round 6: a budget stop always stops the run, keeping its receipt
             A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, result(subtype='error_max_budget_usd', cost=0.5))]), schema_mode='json-schema-1').complete('S', [], schema=self.SCHEMA)
-        except A.AdapterError as e:
-            self.assertEqual((e.budget_exceeded, e.cost_usd), (True, 0.5))          # the failed call keeps its receipt
+        self.assertEqual(cm.exception.failed_call['usage']['cost_usd'], 0.5)
 
     def test_a_schema_the_cli_did_not_register_stops_the_run(self):
         init = dict(INIT, tools=[])
@@ -847,15 +846,16 @@ class ReviewA3ErrorEvidence(unittest.TestCase):
     """A3 / O2: a CLI error after the first response keeps that response; failures keep the stream, the attempts, the delivery record and the receipt."""
 
     def test_budget_stop_after_an_overlong_first_attempt_keeps_the_attempt(self):
+        # round 6: a budget stop always stops the run; the first attempt, the receipt and the stream stay in the started-aborted turn
         bad, good = dec3('u' * 450), dec3('short')
-        rec, _fr = self.run_claude([stream(INIT, attempt(1, bad), checked(1, True), result(subtype='error_max_budget_usd', cost=0.5)),
-                                    stream(INIT, attempt(1, good), checked(1, False), result(structured=good))])
-        t0 = rec['turns'][0]
-        self.assertEqual(json.loads(t0['text']), bad)
-        self.assertIn('length_limit', t0['failure_modes'])
-        self.assertTrue(t0['meta']['schema']['cli_error_after_first_response'])
+        with self.assertRaises(A.AbortRun) as cm:
+            self.run_claude([stream(INIT, attempt(1, bad), checked(1, True), result(subtype='error_max_budget_usd', cost=0.5)),
+                             stream(INIT, attempt(1, good), checked(1, False), result(structured=good))])
+        t0 = cm.exception.partial['turns'][0]
+        self.assertEqual(t0['meta']['schema']['attempt_inputs'][0], bad)
         self.assertEqual((t0['meta']['schema']['result_subtype'], t0['usage']['cost_usd']), ('error_max_budget_usd', 0.5))
         self.assertIn('error_max_budget_usd', t0['raw_response'])
+        self.assertIn('cost cap reached by a call', str(cm.exception))
 
     def test_a_malformed_stream_is_rejected_but_keeps_its_receipt_and_stream(self):
         raw = stream(INIT, attempt(1, dec3('v' * 450))) + 'not JSON\n' + stream(result(cost=0.5))
@@ -1217,12 +1217,13 @@ class ReviewR3BudgetSignal(unittest.TestCase):
                 self.assertTrue(lim.stopped, (name, path))
                 self.assertEqual(rec['turns'][-1]['raw_response'], raw, (name, path))
 
-    def test_without_a_run_cap_the_first_attempt_is_still_the_reply(self):
+    def test_without_a_run_cap_a_budget_stop_still_stops(self):
+        # round 6 (an established stop is unconditional): without a run cap the budget stop also stops the run, with the first attempt kept
         bad, good = dec3('y' * 450), dec3('short')
         rec, ab = claude_run(arr_case(), [stream(INIT, attempt(1, bad), checked(1, True), result(subtype='error_max_budget_usd', cost=0.4)),
                                           stream(INIT, attempt(1, good), result(structured=good))])
-        self.assertIsNone(ab)
-        self.assertEqual(json.loads(rec['turns'][0]['text']), bad)
+        self.assertIsNotNone(ab)
+        self.assertEqual(rec['turns'][0]['meta']['schema']['attempt_inputs'][0], bad)
 
 
 class ReviewR3MessageIds(unittest.TestCase):
@@ -1432,7 +1433,7 @@ class ReviewR5Receipts(unittest.TestCase):
                 for cap in (1.0, None):
                     rec, ab, err, text, lim = run_one(raw, path, cap)
                     where = (repr(cost)[:20], path, cap)
-                    assert_invariants(self, rec, ab, err, text, keeps='cannot be metered', where=where)
+                    assert_invariants(self, rec, ab, err, text, keeps='could not be validated', where=where)     # round 6: the budget stop is primary
                     if lim is not None:
                         self.assertTrue(lim.stopped, where)
 
@@ -1551,7 +1552,7 @@ class ReviewR5OuterGuard(unittest.TestCase):
         from unittest.mock import patch
         CS = claude_schema()
         raw = stream(INIT, attempt(1, dec3('ok')), result(cost=0.1))
-        for target in ('check_result', 'decode_lines', '_responses'):
+        for target in ('check_result', 'decode_lines_ex', '_responses', 'reconcile'):
             with patch.object(CS, target, side_effect=RuntimeError('boom')):
                 rec, ab, err, text, lim = run_one(raw)
             assert_invariants(self, rec, ab, err, text, keeps='fail closed', where=target)
@@ -1636,3 +1637,301 @@ class ReviewR5Mutation(unittest.TestCase):
                             self.assertIsNone(man['limits_state']['cost_unreported'], (name, k, path))
         self.assertEqual((runs, mains), (204, 24))
         self.assertEqual(set(kinds), set(self.KINDS), kinds)                  # every mutation kind was exercised
+
+
+# ------------------------------------------------------------------------------------------------------------------------------ review round 6
+# AUDIT-ASTRA-60 of PR #1035 @ 282110b0: the guarantee moves to the run level (schema_run.py).  Rule A: raw first, losslessly; Rule B: an established
+# stop is unconditional; Rule C: everything after the call is guarded.  Each regression fails at 282110b0; each has a control.
+FIRST, SECOND = 'w26r6-first', 'w26r6-second'
+
+
+def main_run(first, timeout=False, cap='1', patches=()):
+    """main() over two synthetic cases; every call of the first case gets `first` (str or bytes; through a timeout's output when `timeout`), every call of
+    the second a valid stream.  -> (exit code, manifest, run dir, calls)."""
+    import contextlib
+    import io
+    import subprocess
+    from unittest.mock import patch
+    cases = [copy.deepcopy(arr_case(FIRST)), copy.deepcopy(arr_case(SECOND))]
+    ts = th.TempSuite(cases)
+    good = dec3('short')
+    ok = stream(INIT, attempt(1, good), checked(1, False), result(structured=good, cost=0.01))
+    calls = []
+    holder = {}
+
+    def runner(cmd, **kw):
+        calls.append(getattr(holder['ad'], 'current_case', None))
+        if getattr(holder['ad'], 'current_case', None) != FIRST:
+            return FakeProc(ok)
+        data = first if isinstance(first, bytes) else first.encode('utf-8', 'surrogatepass')
+        if timeout:
+            raise subprocess.TimeoutExpired(cmd, 240, output=data)
+        proc = FakeProc('')
+        proc.stdout = data
+        return proc
+    ad = A.ClaudeAdapter('m', runner=runner, schema_mode='json-schema-1')
+    holder['ad'] = ad
+    ad.runtime_version = 'fixture'
+    ad.preflight = lambda: {}
+    out = Path(tempfile.mkdtemp(prefix='mrh-w26r6-')) / 'run'
+    argv = ['--suite', str(ts.root), '--out', str(out), '--adapter', 'claude', '--model', 'm', '--prompt', 'v8', '--evidence-format', 'v3.1-format',
+            '--claude-schema', 'json-schema-1'] + (['--max-total-cost-usd', cap] if cap else [])
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch.object(R, 'build_adapter', return_value=ad))
+        stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+        stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+        for obj, name, value in patches:
+            stack.enter_context(patch.object(obj, name, value))
+        try:
+            code = R.main(argv)
+        except SystemExit as e:
+            code = e.code
+    man = json.loads((out / 'manifest.json').read_text())
+    return code, man, out, calls
+
+
+def assert_run_invariant(tc, first, code, man, out, calls, keeps=None, where=''):
+    """The run-level invariant: (a) the first call's bytes are on disk, losslessly; (b) a stop the stream carries is the run's reason; (c) after a stop in
+    the first case the second never starts; (d) exit 0 only when no stop was established and every cost is known."""
+    data = first if isinstance(first, bytes) else first.encode('utf-8', 'surrogatepass')
+    raws = sorted((out / 'raw').glob(FIRST + '-*.raw')) if (out / 'raw').is_dir() else []
+    tc.assertTrue(raws, where)
+    tc.assertEqual(raws[0].read_bytes(), data, where)                                                      # (a)
+    if keeps:
+        tc.assertIn(keeps, man.get('aborted') or '', where)                                                 # (b)
+    if FIRST in man['started_aborted'] or (man.get('aborted') and FIRST not in man['records_written']):
+        tc.assertNotIn(SECOND, man['records_written'] + man['started_aborted'], where)                       # (c)
+        tc.assertNotIn(SECOND, calls, where)
+    if code == 0:                                                                                           # (d)
+        tc.assertFalse(man.get('aborted'), where)
+        tc.assertIsNone((man.get('limits_state') or {}).get('cost_unreported'), where)
+        for cid in man['records_written']:
+            rec = json.loads((out / (cid + '.json')).read_text())
+            tc.assertTrue(isinstance(rec['usage']['cost_usd'], float), where)
+    else:
+        tc.assertTrue(man.get('aborted'), where)
+    for f in out.rglob('*.json'):                                                                          # every record is plain ASCII JSON
+        f.read_text(encoding='ascii')
+
+
+class ReviewR6Receipts(unittest.TestCase):
+    """R6-1: every receipt is reconciled: a budget stop on any receipt stops the run; conflicting receipts and duplicate keys are malformed; the cost
+    accounted is the largest receipt."""
+
+    def test_a_later_receipt_cannot_erase_a_budget_stop(self):
+        good = dec3('short')
+        raw = stream(INIT, attempt(1, good), result(subtype='error_max_budget_usd', cost=0.4), result(structured=good, cost=0.01))
+        for timeout in (False, True):
+            code, man, out, calls = main_run(raw, timeout=timeout)
+            assert_run_invariant(self, raw, code, man, out, calls, keeps='cost cap reached by a call', where=timeout)
+            self.assertEqual((code, man['limits_state']['cost_usd']), (3, 0.4))
+        code, man, out, calls = main_run(raw + 'bad JSON\n')
+        assert_run_invariant(self, raw + 'bad JSON\n', code, man, out, calls, keeps='cost cap reached by a call')
+
+    def test_conflicting_receipts_and_duplicate_keys_are_malformed(self):
+        good = dec3('short')
+        conflict = stream(INIT, attempt(1, good), result(structured=good, cost=0.1), result(structured=good, cost=0.3))
+        comp_err = None
+        try:
+            A.ClaudeAdapter('m', runner=FakeRunner([conflict]), schema_mode='json-schema-1').complete('S', [], schema=ClaudeSchema.SCHEMA)
+        except A.AdapterError as e:
+            comp_err = e
+        self.assertIn('disagree', str(comp_err))
+        self.assertEqual(comp_err.cost_usd, 0.3)                                                    # the largest receipt is accounted
+        dup = stream(INIT, attempt(1, good)) + '{"type":"result","subtype":"success","total_cost_usd":0.01,"total_cost_usd":0.4}\n'
+        with self.assertRaises(A.AbortRun) as cm:                                                   # an ambiguous receipt is unmetered
+            A.ClaudeAdapter('m', runner=FakeRunner([dup]), schema_mode='json-schema-1').complete('S', [], schema=ClaudeSchema.SCHEMA)
+        self.assertIn('duplicate key', cm.exception.failed_call['meta']['schema']['stream_problems'][0])
+
+    def test_identical_duplicate_receipts_control(self):
+        good = dec3('short')
+        comp = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, attempt(1, good), result(structured=good, cost=0.2), result(structured=good, cost=0.2))]),
+                               schema_mode='json-schema-1').complete('S', [], schema=ClaudeSchema.SCHEMA)
+        self.assertEqual((comp.usage['cost_usd'], comp.meta['schema']['receipts']), (0.2, 2))
+
+
+class ReviewR6RepliesAndBytes(unittest.TestCase):
+    """R6-2 and R6-3: nested JSON in reply or result text is an invalid reply, never a crash; invalid UTF-8 and lone surrogates are malformed, the bytes
+    are kept losslessly and every record is writable."""
+
+    def test_deeply_nested_reply_text_is_an_invalid_reply(self):
+        deep = '[' * 1100 + ']' * 1100
+        for raw in (stream(INIT, text_response('m1', None).__class__({'type': 'assistant', 'message': {'id': 'm1', 'content': [{'type': 'text', 'text': deep}]}}),
+                           result(cost=0.1)),
+                    stream(INIT, result(text=deep, cost=0.1))):
+            code, man, out, calls = main_run(raw, cap=None)
+            assert_run_invariant(self, raw, code, man, out, calls)
+            rec = json.loads((out / (FIRST + '.json')).read_text())
+            self.assertIn('over the bounds', rec['turns'][0]['validation_errors'][0])
+            self.assertEqual((code, man['records_written']), (0, [FIRST, SECOND]))                   # an invalid reply is not a stop
+
+    def test_lone_surrogates_and_invalid_utf8(self):
+        good = dec3('short')
+        surrogate = stream(INIT, attempt(1, good)) + '{"type":"result","subtype":"success","total_cost_usd":0.1,"modelUsage":{"\\ud800":{}}}\n'
+        code, man, out, calls = main_run(surrogate, cap=None)
+        assert_run_invariant(self, surrogate, code, man, out, calls)
+        rec = json.loads((out / (FIRST + '.json')).read_text())
+        self.assertIn('lone surrogate', rec['turns'][0]['error'])
+        bad_bytes = stream(INIT, attempt(1, good), result(structured=good, cost=0.1)).encode().replace(b'short', b'sh\xff\xfeort', 1)     # inside a reply string
+        code, man, out, calls = main_run(bad_bytes, cap=None)
+        assert_run_invariant(self, bad_bytes, code, man, out, calls)
+        rec = json.loads((out / (FIRST + '.json')).read_text())
+        self.assertIn('not valid UTF-8', rec['turns'][0]['error'])
+        import base64
+        self.assertEqual(base64.b64decode(rec['turns'][0]['meta']['raw']['b64']), bad_bytes)
+
+
+class ReviewR6Faults(unittest.TestCase):
+    """R6-4 and R6-5: injected faults in record building, exception formatting, finalisation and writing end in a stop that keeps its primary reason."""
+
+    class Unprintable(TypeError):
+        def __str__(self):
+            raise RuntimeError('no')
+
+    def test_injected_faults_keep_the_stop(self):
+        registration = stream(dict(INIT, tools=[]), result(cost=0.2))
+        budget = stream(INIT, attempt(1, dec3('short')), result(subtype='error_max_budget_usd', cost=0.4))
+
+        def boom_record(*a, **k):
+            raise TypeError('unhashable')
+
+        def unprintable(*a, **k):
+            raise self.Unprintable()
+
+        def boom_summary(*a, **k):
+            raise KeyError('usage')
+
+        from media_repair_harness import schema_run as SR
+        real_write = SR.write_json
+
+        def failing_record_write(path, obj):
+            if path.name == FIRST + '.json' or path.parent.name == 'started-aborted':
+                raise OSError('injected')
+            return real_write(path, obj)
+        for raw, reason in ((registration, 'StructuredOutput'), (budget, 'cost cap reached by a call')):
+            for patches in ([(R, 'started_aborted_record', boom_record)], [(R, 'started_aborted_record', unprintable)], [(R, 'summarize_run', boom_summary)],
+                            [(SR, 'write_json', failing_record_write)], [(R.RunLimits, 'account', boom_record)]):
+                code, man, out, calls = main_run(raw, patches=patches)
+                where = (reason, patches[0][1])
+                self.assertEqual(code, 3, where)
+                assert_run_invariant(self, raw, code, man, out, calls, keeps=reason, where=where)
+
+    def test_a_parser_failure_keeps_the_known_registration(self):
+        from unittest.mock import patch
+        CS = claude_schema()
+        with patch.object(CS, '_responses', side_effect=RuntimeError('boom')):
+            rec, ab, err, text, lim = run_one(stream(dict(INIT, tools=[]), result(cost=0.2)))
+        self.assertIn('StructuredOutput', str(ab))
+        self.assertIn('RuntimeError', rec['turns'][0]['secondary_failure'])
+
+    def test_no_call_starts_after_a_stop(self):
+        ad = A.ClaudeAdapter('m', runner=FakeRunner([stream(dict(INIT, tools=[]), result(cost=0.2)), stream(INIT, result(cost=0.1))]), schema_mode='json-schema-1')
+        with self.assertRaises(A.AbortRun):
+            ad.complete('S', [], schema=ClaudeSchema.SCHEMA)
+        with self.assertRaises(A.AbortRun) as cm:
+            ad.complete('S', [], schema=ClaudeSchema.SCHEMA)
+        self.assertIn('already established', str(cm.exception))
+
+    def test_a_clean_two_case_run_control(self):
+        good = dec3('short')
+        raw = stream(INIT, attempt(1, good), checked(1, False), result(structured=good, cost=0.02))
+        code, man, out, calls = main_run(raw)
+        assert_run_invariant(self, raw, code, man, out, calls)
+        self.assertEqual((code, man['records_written']), (0, [FIRST, SECOND]))
+
+
+class ReviewR6Mutation(unittest.TestCase):
+    """The round-5 mutation test extended to the run level: multiple and conflicting receipts, duplicate keys, nested JSON in reply and result text,
+    invalid UTF-8 bytes and lone surrogates in string fields, and injected faults.  Deterministic (seeded), single process, serial: 96 two-case main-loop
+    runs over mutated streams and 40 fault-injection runs, a few seconds of CPU."""
+    SEED = 20261021
+    KINDS = ('receipts', 'dupkey', 'nested_text', 'utf8', 'surrogate', 'field', 'shuffle', 'truncate')
+
+    def bases(self):
+        good = dec3('short')
+        return {'budget': ([INIT, attempt(1, good), checked(1, True), result(subtype='error_max_budget_usd', cost=0.4)], 3, 'cost cap reached'),
+                'registration': ([dict(INIT, tools=[]), attempt(1, good), result(cost=0.3)], 0, 'StructuredOutput')}
+
+    def mutate(self, rng, events, stop_index, reason):
+        """-> (kind, stream bytes, the stop reason the run must keep, or None when the mutation may have removed the stop)."""
+        lines = [json.dumps(e) for e in events]
+        kind = rng.choice(self.KINDS)
+        keeps = reason
+        if kind == 'receipts':
+            extra = result(subtype=rng.choice(['success', 'error_during_execution', 'error_max_budget_usd']), cost=rng.choice([0.01, 0.4, 0.9]))
+            lines.insert(rng.randrange(len(lines) + 1), json.dumps(extra))
+            if extra['subtype'] == 'error_max_budget_usd' and reason != 'StructuredOutput':
+                keeps = 'cost cap reached'
+        elif kind == 'dupkey':
+            i = rng.randrange(len(lines))
+            lines[i] = lines[i][:-1] + ', "type": %s}' % json.dumps(events[i].get('type'))
+        elif kind == 'nested_text':
+            k = rng.choice([70, 1100])
+            ev = {'type': 'assistant', 'message': {'id': 'mx', 'content': [{'type': 'text', 'text': '[' * k + ']' * k}]}}
+            lines.insert(rng.randrange(1, len(lines) + 1), json.dumps(ev))
+        elif kind == 'utf8':
+            i = rng.randrange(len(lines))
+            b = '\n'.join(lines[:i]).encode() + (b'\n' if i else b'') + b'\xff\xfe\xc3(' + b'\n' + '\n'.join(lines[i:]).encode() + b'\n'
+            return kind, b, keeps
+        elif kind == 'surrogate':
+            i = rng.randrange(len(lines))
+            lines[i] = lines[i][:-1] + ', "x_note": "\\ud800"}'
+        elif kind == 'field':
+            i = rng.randrange(len(events))
+            ev = copy.deepcopy(events[i])
+            key = rng.choice(['total_cost_usd', 'subtype', 'usage', 'modelUsage', 'result'])
+            ev[key] = rng.choice((10 ** 400, float('nan'), -1, '0.4', [], {}, None, '[' * 70 + ']' * 70))
+            lines[i] = json.dumps(ev)
+            keeps = None if i == stop_index else keeps
+        elif kind == 'shuffle':
+            rng.shuffle(lines)
+        elif kind == 'truncate':
+            text = '\n'.join(lines)
+            return kind, text[:rng.randrange(len(text) + 1)].encode(), None
+        return kind, ('\n'.join(lines) + '\n').encode(), keeps
+
+    def test_the_run_level_invariant_holds_under_mutation(self):
+        rng = random.Random(self.SEED)
+        runs = 0
+        kinds = {}
+        for name, (events, stop_index, reason) in self.bases().items():
+            for k in range(24):
+                kind, data, keeps = self.mutate(rng, events, stop_index, reason)
+                kinds[kind] = kinds.get(kind, 0) + 1
+                for timeout in (False, True):
+                    code, man, out, calls = main_run(data, timeout=timeout)
+                    runs += 1
+                    assert_run_invariant(self, data, code, man, out, calls, keeps=keeps, where=(name, k, kind, timeout))
+        self.assertEqual(runs, 96)
+        self.assertEqual(set(kinds), set(self.KINDS), kinds)
+
+    def test_the_run_level_invariant_holds_under_injected_faults(self):
+        from media_repair_harness import schema_run as SR
+        real_write = SR.write_json
+
+        class Unprintable(TypeError):
+            def __str__(self):
+                raise RuntimeError('no')
+
+        def raiser(exc):
+            def f(*a, **k):
+                raise exc
+            return f
+
+        def failing_write(path, obj):
+            if path.name.startswith(FIRST) or path.parent.name == 'started-aborted' or path.name == 'run_summary.json':
+                raise OSError('injected')
+            return real_write(path, obj)
+        faults = [[(R, 'started_aborted_record', raiser(TypeError('x')))], [(R, 'started_aborted_record', raiser(Unprintable()))],
+                  [(R, 'summarize_run', raiser(KeyError('usage')))], [(SR, 'write_json', failing_write)], [(R.RunLimits, 'account', raiser(TypeError('x')))]]
+        runs = 0
+        for name, (events, stop_index, reason) in self.bases().items():
+            data = ('\n'.join(json.dumps(e) for e in events) + '\n').encode()
+            for patches in faults:
+                for timeout in (False, True):
+                    for cap in ('1', None):
+                        code, man, out, calls = main_run(data, timeout=timeout, cap=cap, patches=patches)
+                        runs += 1
+                        self.assertNotEqual(code, 0, (name, patches[0][1], timeout, cap))
+                        assert_run_invariant(self, data, code, man, out, calls, keeps=reason, where=(name, patches[0][1], timeout, cap))
+        self.assertEqual(runs, 40)

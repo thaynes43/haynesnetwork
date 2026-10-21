@@ -49,6 +49,15 @@ other config field is compared equal). No model was called. Details: `docs/dev-c
   non-string result text is malformed, and an outer guard turns any other exception in the call, the parser or the accounting into an `AbortRun` with the
   raw stream (a minimal started-aborted record when the full one cannot be built). A seeded mutation test checks the invariant. Offline replay accepts
   only the recorded adapter's own preamble (dated post-freeze correction 6; count-neutral).
+* **Review round 6 (AUDIT-ASTRA-60, Opus minor):** the fail-closed guarantee moves to the run level for schema mode (`schema_run.py`, lazy):
+  - raw call bytes are kept losslessly before any parsing (`<run>/raw/*.raw`, base64 in the record), and schema-mode records are written ASCII-safe;
+  - every receipt is reconciled: a budget stop on any receipt always stops; conflicts, duplicate keys, lone surrogates and invalid UTF-8 are malformed;
+  - replies are parsed within bounds;
+  - a stop is sticky before every case and call, and the exit is non-zero after any stop or unknown cost;
+  - record building, writing, accounting and finalisation are guarded, keeping the primary stop reason and attaching any `secondary_failure`.
+
+  The scope (`BaseException`s and OS-level failures are excluded) is stated in `docs/dev-c8.md`. A seeded run-level mutation test (96 mutated
+  two-case runs, 40 fault-injection runs) checks it.
 
 ## W27 (OpenProject #145 remainder, the PR #1031 nits): evidence follow-ups, offline
 
