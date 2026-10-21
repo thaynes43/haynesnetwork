@@ -34,6 +34,12 @@ earlier option set are unchanged.
   locally), `tests/test_stage_r_driver.py` (driver end to end and each fatal path: outer timeout, missing and malformed receipt, host change, identity change
   in G2, final mismatch, incomplete listing, mount selection, early stop, WRITE-CONTROL, pod restart, G1 drift), `tests/test_stage_r_report.py` (every row
   and default).
+* **Review round of `f4902cf3`** (the Claude advisory review on #1036, three mediums): (1) `mrh-sampler-2`'s 25 s limit applied per step (start stat,
+  operation, end stat: up to about 75 s, past the 60 s outer deadline, so a slow mount turned a non-fatal internal timeout into a fatal outer timeout): it is
+  now one budget for the whole invocation, the operation stopping 2 s early for the end identity check; (2) the driver put the G1 probe last, so a template
+  with a recorded probe could choose the G2 subtitle stream: the G1 probe now comes first, and a filled case that would select another stream than the G1
+  probe names stops Stage R; (3) an argparse prefix of an owned flag (`--spl`) passed the `harness_args` guard: any `--` item that is a prefix of an owned flag
+  is refused. Tests for each.
 ## dev-c8 (WO-W26, OpenProject #158): prompt v8, turn-v3.1, claude-schema-1, guards v4; offline, not measured
 
 `HARNESS_VERSION` is `dev-c8`. Every earlier prompt, format, guard version and adapter is unchanged; the recorded dev-c4 to dev-c7 runs, the dev-c6 replay

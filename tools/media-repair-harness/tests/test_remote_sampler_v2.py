@@ -90,6 +90,28 @@ class RealSampler(unittest.TestCase):
         self.assertEqual((receipt['exit_code'], out), ('error', b''))
         self.assertIn('FileNotFoundError', receipt['error'])
 
+    def test_the_limit_covers_the_whole_invocation(self):
+        """A slow operation is stopped by the sampler itself, inside one budget shared by the start stat, the operation and the end stat, and still ends with a
+        receipt whose end identity was checked (run with the budget lowered to 3 s so the test stays short)."""
+        import subprocess
+        import sys
+        import time
+        slow = H.media_file(self.root / 'slow.mkv', sleep=30)
+        text = RE.SAMPLER.read_text().replace('LIMIT_S = 25 ', 'LIMIT_S = 3 ', 1)
+        self.assertIn('LIMIT_S = 3 ', text)
+        env = dict(os.environ, PATH=str(self.pod.bin) + os.pathsep + os.environ.get('PATH', ''))
+        t0 = time.monotonic()
+        done = subprocess.run([sys.executable, '-', 'subtitle', str(slow), '--stream', '3', '--expect-size', str(os.stat(slow).st_size),
+                               '--expect-mtime-ns', str(os.stat(slow).st_mtime_ns)], input=text.encode(), capture_output=True, timeout=20, env=env)
+        wall = time.monotonic() - t0
+        receipt, problem = RE.parse_receipt(done.stderr)
+        self.assertIsNone(problem)
+        self.assertEqual(RE.receipt_errors(receipt, 'subtitle', len(done.stdout)), [])
+        self.assertEqual((receipt['exit_code'], receipt['timed_out']), ('timeout', True))
+        self.assertTrue(receipt['identity']['end_ok'])
+        self.assertLess(receipt['wall_seconds'], 3.5)
+        self.assertLess(wall, 10)
+
     def test_bad_arguments_still_end_with_a_receipt(self):
         b = RE.Binding(host=RE.HostState())
         receipt, out = op(self.pod, 'subtitle', self.file, b, ['--window', 50], bind=False)

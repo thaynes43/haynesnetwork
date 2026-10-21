@@ -88,7 +88,8 @@ def load_registration(path):
         keys.add(t.get('key'))
     if not reg.get('targets'):
         errs.append('no targets')
-    owned = [a for a in reg.get('harness_args') or [] if a.split('=')[0] in OWNED_FLAGS]
+    # argparse accepts an unambiguous prefix of a long option (`--spl` for `--split`): any `--` item that is a prefix of an owned flag is refused too
+    owned = [a for a in reg.get('harness_args') or [] if isinstance(a, str) and a.startswith('--') and any(f.startswith(a.split('=')[0]) for f in OWNED_FLAGS)]
     if owned:
         errs.append('harness_args may not set what the driver owns: %s' % owned)
     if errs:
@@ -319,7 +320,8 @@ class Driver:
             n = 1
             while 'e%d' % n in ids:
                 n += 1
-            case['evidence'] = list(case.get('evidence') or []) + [dict(st['probe'], id='e%d' % n)]
+            # FIRST: subtitle_sample takes its stream from the first ok probe of the case evidence, which must be this file's G1 probe
+            case['evidence'] = [dict(st['probe'], id='e%d' % n)] + list(case.get('evidence') or [])
         return case
 
     def leak_check(self, phase, t, case):
@@ -342,6 +344,10 @@ class Driver:
                 raise Stop('G2', 'cost_cap', 'the $%.2f Stage R cost cap is used' % self.total_cost, t['key'])
             self.check_pod('G2', t['key'])
             case = self.fill(t)
+            stream = RE.select_subtitle_stream(case['evidence'])
+            want = st.get('subtitle_stream')
+            if (stream or {}).get('index') != (want or {}).get('index') or (stream or {}).get('codec') != (want or {}).get('codec'):
+                raise Stop('G2', 'stream_mismatch', 'the filled case would select subtitle stream %s, the G1 probe names %s' % (stream, want), t['key'])
             self.leak_check('G2', t, case)
             suite = self.out / 'g2' / t['key'] / 'suite'
             (suite / 'cases').mkdir(parents=True, exist_ok=True)

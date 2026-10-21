@@ -4,7 +4,11 @@ Run inside the target pod through `kubectl exec -i <target> -c <container> -- py
 LAST stderr line: one JSON object with "receipt": "mrh-sampler-2".  A run that ends without one (killed, crashed, cut) has no receipt, and the harness treats
 that as fatal.  remote_sampler.py (the PR #1000 copy, mrh-sampler-1) is unchanged and is still what every earlier tools behaviour sends.
 
-Modes and bounds (stdlib only, nice 19, one ffmpeg thread):
+Bounds: 25 s for the WHOLE invocation (the start stat, the operation and the end stat share one deadline; the operation stops 2 s early so the end identity
+check still fits), an 8 MiB input quota, nice 19, one ffmpeg thread, stdlib only.  So a sampler-internal timeout always ends well inside the harness's 60 s outer
+deadline, with its receipt.
+
+Modes:
   stat     size, mtime_ns and the sha256 of the first and last 1 MiB, under the same 25 s limit as every other mode (mrh-sampler-1's stat had none)
   list     <dir> [--prefix p]: the entries of one directory (basename, type, size, mtime_ns), from a scan of the WHOLE directory.  At most 500 entries that
            match the prefix are returned, and only matching entries count toward that cap.  `complete` is true only when the scan finished inside 25 s and
@@ -19,11 +23,13 @@ after the operation (end).  A start mismatch reads nothing.  `source_unchanged` 
 import argparse, hashlib, http.server, json, os, re, socket, stat as statmod, subprocess, sys, threading, time
 
 RECEIPT = 'mrh-sampler-2'
-LIMIT_S = 25
+LIMIT_S = 25          # the WHOLE invocation: the start stat, the operation and the end stat share it
+END_RESERVE_S = 2     # kept back from the operation for the end identity check
 QUOTA = 8388608
 LIST_CAP = 500
 FINGER = 1048576
 started = time.monotonic()
+deadline = started + LIMIT_S
 receipt = {'receipt': RECEIPT, 'mode': None, 'hostname': socket.gethostname(), 'exit_code': 'error', 'error': None, 'stdout_bytes': 0, 'stderr': '',
            'bytes_read': 0, 'quota_exhausted': False, 'requests': 0, 'wall_seconds': 0.0, 'timed_out': False, 'source_unchanged': None,
            'identity': {'expected': None, 'start': None, 'end': None, 'start_ok': None, 'end_ok': None}, 'argv': None}
@@ -44,8 +50,13 @@ def ident(st):
     return {'size': st.st_size, 'mtime_ns': st.st_mtime_ns}
 
 
-def bounded(work):
-    """Run `work` in a thread for at most LIMIT_S.  -> (value, timed_out)."""
+def left(reserve=0.0):
+    """Seconds left of the whole-invocation budget, less `reserve` (never below a small floor, so an expired budget times out at once)."""
+    return max(0.05, deadline - time.monotonic() - reserve)
+
+
+def bounded(work, reserve=0.0):
+    """Run `work` in a thread for at most what is left of the LIMIT_S budget (less `reserve`).  -> (value, timed_out)."""
     box = {}
 
     def run():
@@ -55,7 +66,7 @@ def bounded(work):
             box['error'] = '%s: %s' % (type(e).__name__, str(e)[:300])
     t = threading.Thread(target=run, daemon=True)
     t.start()
-    t.join(LIMIT_S)
+    t.join(left(reserve))
     if t.is_alive():
         return None, True
     if 'error' in box:
@@ -154,7 +165,7 @@ if a.mode == 'stat':
             tail = f.read(FINGER)
         return head, tail
     try:
-        value, timed_out = bounded(fingerprint)
+        value, timed_out = bounded(fingerprint, END_RESERVE_S)
     except RuntimeError as e:
         receipt['error'] = str(e)
         finish()
@@ -245,7 +256,7 @@ else:
 receipt['argv'] = cmd
 payload = b''
 try:
-    r = subprocess.run(cmd, capture_output=True, timeout=LIMIT_S)
+    r = subprocess.run(cmd, capture_output=True, timeout=left(END_RESERVE_S))
     receipt.update(exit_code=r.returncode, stderr=r.stderr.decode(errors='replace')[:8000])
     payload = r.stdout
 except subprocess.TimeoutExpired as e:

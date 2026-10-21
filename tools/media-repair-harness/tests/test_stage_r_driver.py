@@ -29,12 +29,12 @@ CUE = th.tool_call('subtitle_sample', {'at': 60})
 
 
 class Library:
-    def __init__(self, probes=None, extra_mount=False, season_files=0):
+    def __init__(self, probes=None, extra_mount=False, season_files=0, headers=None):
         self.tmp = Path(tempfile.mkdtemp())
         self.tv = self.tmp / 'mnt' / 'tv'
         series = self.tv / PREFIX
         for key, (season, name, size) in FILES.items():
-            H.media_file(series / season / name, probe=(probes or {}).get(key, H.PROBE), size=size)
+            H.media_file(series / season / name, probe=(probes or {}).get(key, H.PROBE), size=size, **(headers or {}).get(key, {}))
         (self.tv / 'Another Show').mkdir()
         for i in range(season_files):
             (series / 'Season 20' / ('pad-%03d.nfo' % i)).write_bytes(b'')
@@ -286,14 +286,41 @@ class FatalPaths(unittest.TestCase):
         self.assertEqual(d.state['stop']['kind'], 'pod_health')
         self.assertEqual(lib.harness_calls, ['o1'])
 
+    def test_g2_stream_comes_from_the_g1_probe(self):
+        """A template that already carries a recorded probe naming another text stream: the G1 probe goes first, so G2 samples the G1 stream."""
+        lib = Library()
+        reg = lib.registration(keys=('o1',))
+        other = {'format': H.PROBE['format'], 'streams': [{'index': 7, 'codec_type': 'subtitle', 'codec_name': 'ass'}]}
+        reg['targets'][0]['case']['evidence'] = [{'id': 'e1', 'tool': 'ffprobe', 'args': {}, 'status': 'ok', 'output': json.dumps(other)}]
+        code, st, pod = lib.drive(reg=reg)
+        self.assertEqual(code, 0, st.get('stop'))
+        sub = [o for o in st['operations'] if o.get('mode') == 'subtitle'][0]['argv']
+        self.assertEqual(sub[sub.index('--stream') + 1], '3')
+        case = json.loads((lib.tmp / 'out' / 'g2' / 'o1' / 'suite' / 'cases' / 'sr-o1.json').read_text())
+        self.assertEqual([e['id'] for e in case['evidence']], ['e2', 'e1'])
+
+    def test_g2_stops_when_the_case_would_select_another_stream(self):
+        lib = Library(headers={'v1': {'probe_fail': True}})
+        reg = lib.registration(keys=('o1', 'v1'))
+        reg['targets'][1]['case']['evidence'] = [{'id': 'e1', 'tool': 'ffprobe', 'args': {}, 'status': 'ok', 'output': json.dumps(H.PROBE)}]
+        code, st, pod = lib.drive(reg=reg)
+        self.assertEqual(code, D.EXIT_STOP)
+        self.assertEqual((st['stop']['kind'], st['stop']['target']), ('stream_mismatch', 'v1'))
+        self.assertEqual(st['targets']['v1']['probe']['status'], 'error')
+        self.assertEqual(lib.harness_calls, ['o1'])
+
     def test_registration_is_validated(self):
         lib = Library()
         reg = lib.registration()
-        reg['harness_args'] = HARNESS + ['--max-wall-s', '5']
         p = lib.tmp / 'reg.json'
+        for owned in (['--max-wall-s', '5'], ['--spl', 'heldout'], ['--tools-b=v3-remote-1'], ['--evid', 'live'], ['--no-spend']):
+            reg['harness_args'] = HARNESS + owned
+            p.write_text(json.dumps(reg))
+            with self.assertRaises(ValueError, msg=owned):
+                D.load_registration(p)
+        reg['harness_args'] = HARNESS + ['--max-budget-usd', '1', '--effort', 'xhigh']
         p.write_text(json.dumps(reg))
-        with self.assertRaises(ValueError):
-            D.load_registration(p)
+        D.load_registration(p)
         reg = lib.registration()
         reg['targets'][0]['marker'] = 'S03E10'
         p.write_text(json.dumps(reg))

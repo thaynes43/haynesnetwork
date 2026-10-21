@@ -92,7 +92,11 @@ from pathlib import Path  # noqa: E402
 FAKE_FFPROBE = '''#!%s
 import json, sys, urllib.request
 data = urllib.request.urlopen(urllib.request.Request(sys.argv[-1], headers={'Range': 'bytes=0-8191'}), timeout=5).read()
-print(json.dumps(json.loads(data.split(b'\\n', 1)[0])['probe']))
+hdr = json.loads(data.split(b'\\n', 1)[0])
+if hdr.get('probe_fail'):
+    sys.stderr.write('Invalid data found when processing input\\n')
+    sys.exit(1)
+print(json.dumps(hdr['probe']))
 '''
 FAKE_FFMPEG = '''#!%s
 import json, sys, urllib.request
@@ -100,6 +104,9 @@ a = sys.argv
 url, fmt = a[a.index('-i') + 1], a[a.index('-f') + 1]
 data = urllib.request.urlopen(urllib.request.Request(url, headers={'Range': 'bytes=0-8191'}), timeout=5).read()
 hdr = json.loads(data.split(b'\\n', 1)[0])
+if hdr.get('sleep'):
+    import time
+    time.sleep(hdr['sleep'])
 if fmt == 'srt':
     sys.stdout.write(hdr.get('srt', ''))
 '''
@@ -115,9 +122,10 @@ def fake_bin():
     return d
 
 
-def media_file(path, probe=PROBE, srt=SRT.decode(), size=20000):
-    """A synthetic 'media' file: one JSON header line the fake ffprobe / ffmpeg read through the sampler's range server, padded to `size` bytes."""
-    head = (json.dumps({'probe': probe, 'srt': srt}) + '\n').encode()
+def media_file(path, probe=PROBE, srt=SRT.decode(), size=20000, **hdr):
+    """A synthetic 'media' file: one JSON header line the fake ffprobe / ffmpeg read through the sampler's range server, padded to `size` bytes.
+    `probe_fail=True` makes the fake ffprobe fail; `sleep=s` makes the fake ffmpeg sleep first."""
+    head = (json.dumps(dict({'probe': probe, 'srt': srt}, **hdr)) + '\n').encode()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(head + b'\0' * max(0, size - len(head)))
     return path

@@ -59,7 +59,9 @@ receipt with its argv and outcome, the fatal state, the subtitle stream); each t
 | `identity` | `expected` (from `--expect-size` / `--expect-mtime-ns`), `start`, `end`, `start_ok`, `end_ok`; a start mismatch reads nothing |
 | `listing` | `list` only: `complete`, `matching`, `scanned`, `cap` |
 
-New modes: `stat` now runs under the 25 s limit (`mrh-sampler-1`'s did not); `list <dir> [--prefix p]` scans the whole directory, counts only entries
+**One 25 s budget per invocation:** the start identity stat, the operation and the end identity stat share one deadline, and the operation stops 2 s
+early so the end check still fits; a sampler-internal timeout therefore always ends with its receipt well inside the 60 s outer deadline (`mrh-sampler-1`
+gave each step its own 25 s). New modes: `stat` now runs under that limit (`mrh-sampler-1`'s did not); `list <dir> [--prefix p]` scans the whole directory, counts only entries
 matching the prefix toward the cap of 500, returns name, type, size and mtime_ns, opens no file, and is `complete` only when fewer than 500 entries matched
 and the scan finished in time.
 
@@ -73,7 +75,7 @@ every receipt and its rejected write attempts, the model is not called again, an
 
 **Not fatal:** `quota_exhausted`, or a sampler-internal timeout with a valid terminal receipt: they limit that operation's completed scope.
 
-**Registered deadlines and caps** (`remote_evidence`): 25 s inside the sampler, 60 s outer per operation, 600 s harness wall per target
+**Registered deadlines and caps** (`remote_evidence`): 25 s for the whole sampler invocation, 60 s outer per operation, 600 s harness wall per target
 (`--max-wall-s`), 2 h for all of Stage R, $10 in total (`--max-total-cost-usd`, the remainder per target). The exec target is configurable
 (`fixture.exec_target`, registration `exec.target`; default `deploy/<deployment>`).
 
@@ -94,7 +96,8 @@ registration (`stage-r-1`) holds every case-specific value; the script holds non
  "limits": {"target_wall_s": 600, "stage_wall_s": 7200, "total_cost_usd": 10.0, "g2_operations": 6}}
 ```
 
-`harness_args` may not set what the driver owns (suite, cases, out, scratch, evidence mode, tools behaviour, the stop option, the caps).
+`harness_args` may not set what the driver owns (suite, cases, out, scratch, split, evidence mode, tools behaviour, the stop option, the caps), nor any
+prefix of those flags (argparse accepts an unambiguous prefix).
 
 1. **G0b.** A read-only `kubectl get deploy`: exactly one volume mount of the exec container matches `mount_path_regex`, else stop. Then four `list`
    calls: the mount with the series prefix (exactly one directory), the series directory (each season regex matches exactly one directory), and each
@@ -105,7 +108,8 @@ registration (`stage-r-1`) holds every case-specific value; the script holds non
 2. **G1.** Per target: `stat` (it must match the manifest bytes and the listed mtime_ns, else the target is dropped; it sets the identity) and `probe`
    bound to it. If no target of an `early_stop_roles` role has a text subtitle stream, the driver stops with exit 4 and no model call.
 3. **G2.** Per target: the pod check, the case filled with its locator, `expected_identity`, `expected_hostname`, `max_operations` and the G1 probe as
-   initial evidence, the leak guard again, then one harness run (`--tools-behavior v3-remote-1 --stop-on-receipt-failure --max-wall-s 600
+   the FIRST case evidence (so `subtitle_sample` takes its stream from it; a filled case that would select another stream than the G1 probe names stops
+   Stage R), the leak guard again, then one harness run (`--tools-behavior v3-remote-1 --stop-on-receipt-failure --max-wall-s 600
    --max-total-cost-usd <remainder>`). A run that did not record the case normally stops Stage R. WRITE-CONTROL stops it after that case.
 4. **Final check.** A `stat` bound to the G1 identity; any difference in size, mtime_ns, head or tail hash marks the target INVALID, which stops.
 
