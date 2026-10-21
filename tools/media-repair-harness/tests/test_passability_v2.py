@@ -186,6 +186,19 @@ class TheV31Changes(D7.Tmp):
         self.assertGreaterEqual(costs[8192], 1)
 
 
+def available_here(src_dir, suite):
+    """Case ids whose fixture resolves in this checkout as it did on the pod that made the dev-c6 run (test_devc7_replay's rule): the 4 pod-local EPUB
+    fixtures outside git are unavailable coverage on a CI checkout, where the tools-v3 inspection legitimately differs, and are left out of the comparison."""
+    from media_repair_harness import tools as T
+    ok = set()
+    cases = {c['id']: c for c, _ in R.load_cases(str(suite))}
+    for p in sorted(Path(src_dir).glob('*-*-[0-9]*.json')):
+        rec = json.loads(p.read_text())
+        if T.Fixture.from_case(cases[rec['case_id']], R.suite_root(str(suite))).verify_local() == rec['fixture']:
+            ok.add(rec['case_id'])
+    return ok
+
+
 @th.needs_suite
 class Control(unittest.TestCase):
     """A scripted (no model) C7 run that replays the dev-c6 gpt-6-astra run's recorded tool calls and its model decisions under v7 + v3.1-format: passability-2
@@ -223,11 +236,13 @@ class Control(unittest.TestCase):
         from media_repair_harness import guard_cli
         guard_cli.guard_run(root / 'run', str(suite), root / 'restored', restore=True)
         out = P2.report(root / 'run', root / 'restored', str(suite))
-        want = {r['case']: r['category'] for r in json.loads((th.COMPONENT / 'runs' / 'dev-c6' / 'passability.json').read_text())['rows']}
-        got = {r['case']: r['category'] for r in out['rows']}
+        here = available_here(src, suite)
+        want = {r['case']: r['category'] for r in json.loads((th.COMPONENT / 'runs' / 'dev-c6' / 'passability.json').read_text())['rows'] if r['case'] in here}
+        got = {r['case']: r['category'] for r in out['rows'] if r['case'] in here}
+        self.assertGreaterEqual(len(here), 69)                          # at most the 4 pod-local fixture cases are unavailable here
         self.assertEqual(got, want)
         self.assertEqual((out['policy']['version'], out['wire_bytes']), ('passability-2', 8192))
-        epub_rows = [r for r in out['rows'] if r['case'].startswith('epub-') and 'witness' in r]
+        epub_rows = [r for r in out['rows'] if r['case'].startswith('epub-') and 'witness' in r and r['case'] in here]
         self.assertTrue(epub_rows)
         self.assertTrue(any(r['witness']['pool'] >= 1 for r in epub_rows))          # the tools-v3 epub_inspect {} is served (body text), unlike passability-1
 

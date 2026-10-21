@@ -312,6 +312,19 @@ class EveryCategoryAndIsolation(unittest.TestCase):
             P3.report(d, d, str(d))
 
 
+def available_here(src_dir, suite):
+    """Case ids whose fixture resolves in this checkout as it did on the pod that made the dev-c6 run (test_devc7_replay's rule): the 4 pod-local EPUB
+    fixtures outside git are unavailable coverage on a CI checkout, where the tools-v3 inspection legitimately differs, and are left out of the comparison."""
+    from media_repair_harness import tools as T
+    ok = set()
+    cases = {c['id']: c for c, _ in R.load_cases(str(suite))}
+    for p in sorted(Path(src_dir).glob('*-*-[0-9]*.json')):
+        rec = json.loads(p.read_text())
+        if T.Fixture.from_case(cases[rec['case_id']], R.suite_root(str(suite))).verify_local() == rec['fixture']:
+            ok.add(rec['case_id'])
+    return ok
+
+
 @th.needs_suite
 class Control(unittest.TestCase):
     """The scripted (no model) C7 replay of the dev-c6 gpt-6-astra decisions: passability-3 gives every row passability-1's dev-c6 category except the rows
@@ -351,11 +364,13 @@ class Control(unittest.TestCase):
         from media_repair_harness import guard_cli
         guard_cli.guard_run(root / 'run', str(suite), root / 'restored', restore=True)
         out = P3.report(root / 'run', root / 'restored', str(suite))
-        want = {r['case']: r['category'] for r in json.loads((th.COMPONENT / 'runs' / 'dev-c6' / 'passability.json').read_text())['rows']}
-        got = {r['case']: r['category'] for r in out['rows']}
+        here = available_here(src, suite)
+        self.assertGreaterEqual(len(here), 69)                          # at most the 4 pod-local fixture cases are unavailable here
+        want = {r['case']: r['category'] for r in json.loads((th.COMPONENT / 'runs' / 'dev-c6' / 'passability.json').read_text())['rows'] if r['case'] in here}
+        got = {r['case']: r['category'] for r in out['rows'] if r['case'] in here}
         changed = {c: want[c] for c in want if got.get(c) != want[c]}
         self.assertEqual(set(got), set(want))
-        self.assertEqual(changed, self.BODY_RULE_CHANGES)
+        self.assertEqual(changed, {c: v for c, v in self.BODY_RULE_CHANGES.items() if c in here})
         rows = {r['case']: r for r in out['rows']}
         for c, computed in self.BODY_RULE_CHANGES.items():
             self.assertEqual((rows[c]['category'], rows[c]['computed_category']), ('undetermined (hand judgement)', computed))
