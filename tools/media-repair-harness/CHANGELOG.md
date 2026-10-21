@@ -34,6 +34,11 @@ other config field is compared equal). No model was called. Details: `docs/dev-c
   never from unread values, and reads pagination only from validated envelope locations (dated post-freeze correction 3; count-neutral); claude-schema-1
   keeps an empty, whitespace or thinking-only completed first response as the first try, groups one message id across intervening events, keeps a timed-out
   call's partial stream, forwards the failed call's evidence through the cost-cap abort, and lets a missing tool win over a malformed line.
+* **Review round 3 (AUDIT-ASTRA-56):** offline replay cuts a rendered transcript at its actual message boundaries (the recorded replies), so a reply can
+  no longer forge a harness block, and a result envelope counts only for a recorded call (dated post-freeze correction 4; count-neutral);
+  claude-schema-1 keeps the budget-stop classification through every wrapping (the same receipt stops the run on the normal, timeout and malformed
+  paths) and rejects a non-string message id as a malformed event with its evidence. G-role moved verbatim to `guard_v4.py` and the schema parser to
+  `claude_schema.py` (lazy imports; `V4_SPEC` unchanged) to keep the wiring-smoke Job bundle under its ceiling after merging main.
 
 ## W27 (OpenProject #145 remainder, the PR #1031 nits): evidence follow-ups, offline
 

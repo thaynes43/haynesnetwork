@@ -452,8 +452,11 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     resolve = make_resolver(case, tool_calls, session)
     if guards:
         # the guards read references through the same resolver as the record: they see the decision with its references normalised, the record keeps the original
-        v4ctx = DG.v4_context(view['context'], view['media_type'], caps, list(session.log), tool_calls, evidence_format, [e['id'] for e in evidence],
-                              wire_texts=[m['content'] for m in messages if m['role'] == 'user']) if (guards == 'v4' and v3fmt) else None
+        v4ctx = None
+        if guards == 'v4' and v3fmt:
+            from . import guard_v4 as GV4      # dev-c8: loaded only when v4 runs
+            v4ctx = GV4.v4_context(view['context'], view['media_type'], caps, list(session.log), tool_calls, evidence_format, [e['id'] for e in evidence],
+                                   wire_texts=[m['content'] for m in messages if m['role'] == 'user'], known_calls=[c['id'] for c in tool_calls])
         final, guard_rec = DG.apply(case, decision, tool_calls, evidence, prompt_version, forced=forced, version=guards, resolve=resolve if v2fmt else None, v4ctx=v4ctx)
         decision = final
 
@@ -849,6 +852,14 @@ class RunLimits:
                     raise ab
                 raise
             self.account((getattr(comp, 'usage', None) or {}).get('cost_usd'))
+            if self.max_cost_usd is not None and (getattr(comp, 'native', None) or {}).get('subtype') == 'error_max_budget_usd':
+                # dev-c8 claude-schema-1: the CLI stopped this call at its per-call budget after a first response.  Under a run cap that is the cost
+                # cap, classified exactly as when the same receipt arrives on a failing path (review round 3): the run stops, the evidence travels.
+                ab = A.AbortRun('cost cap reached by a call: the Claude CLI stopped it at its per-call budget (cumulative reported cost $%.4f of $%.2f)' % (self.cost, self.max_cost_usd))
+                ab.failed_call = {'error': 'error_max_budget_usd after the first response', 'usage': comp.usage, 'raw_request': comp.raw_request,
+                                  'raw_response': comp.raw_response, 'meta': comp.meta}
+                self.stopped = str(ab)
+                raise ab
             return comp
         adapter.before_case, adapter.complete = before_case, complete
         return adapter

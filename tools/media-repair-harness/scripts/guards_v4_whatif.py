@@ -25,6 +25,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / 'src'))
 
 from media_repair_harness import decision_guard as DG  # noqa: E402
+from media_repair_harness import guard_v4 as GV4  # noqa: E402
 from media_repair_harness import protocol as P  # noqa: E402
 from media_repair_harness import run as R  # noqa: E402
 from media_repair_harness import tools as T  # noqa: E402
@@ -186,7 +187,7 @@ def main(argv=None):
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     root = Path(a.root).resolve()
-    summary = {'shadow_version': SHADOW_VERSION, 'guards_v4_spec_sha256': hashlib.sha256(json.dumps(DG.V4_SPEC, sort_keys=True).encode()).hexdigest(),
+    summary = {'shadow_version': SHADOW_VERSION, 'guards_v4_spec_sha256': hashlib.sha256(json.dumps(GV4.V4_SPEC, sort_keys=True).encode()).hexdigest(),
                'inputs': [str(Path(r).resolve().relative_to(root)) for r in a.runs], 'runs': []}
     for r in a.runs:
         shadows, scored = shadow_run(Path(r).resolve(), suite_dir, cases, shas, root)

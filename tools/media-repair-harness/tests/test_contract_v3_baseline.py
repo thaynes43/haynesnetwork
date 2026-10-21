@@ -65,7 +65,7 @@ class Replay(A.ScriptedAdapter):
         return super().complete(system, messages, schema)
 
 
-WIRING_MODULES = ('evidence_v3.py', 'evidence_v31.py', 'decision_guard.py')     # dev-c6 and dev-c7: the production modules that import the contract-v3 modules; dev-c8: guards v4 (lazily, only when v4 runs)
+WIRING_MODULES = ('evidence_v3.py', 'evidence_v31.py', 'decision_guard.py', 'guard_v4.py')     # dev-c6 and dev-c7: the production modules that import the contract-v3 modules; dev-c8: guards v4 (lazily, only when v4 runs)
 
 
 class NoProductionImport(unittest.TestCase):

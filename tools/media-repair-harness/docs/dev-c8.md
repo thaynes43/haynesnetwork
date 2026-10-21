@@ -93,7 +93,11 @@ envelope shows only the final, CLI-repaired object. Help and docs do not establi
 * failures keep their evidence (A50-3, round 2): a non-JSON line rejects the stream but keeps the receipt of a valid result event; a timed-out call keeps
   its partial stream (attempts, delivery record, a receipt if one arrived); every adapter error and abort of this mode, including the run cost cap's abort
   of a call stopped at its budget, carries the untruncated raw request and stream, the attempts and the delivery record, which the runner keeps on the
-  failed turn (other adapters' failed turns and timeouts keep their earlier shape). A missing tool stops the run even when the stream is malformed;
+  failed turn (other adapters' failed turns and timeouts keep their earlier shape). A missing tool stops the run even when the stream is malformed.
+  Every wrapping keeps the error's classification (round 3): a budget stop (`error_max_budget_usd`) seen through a timeout's output or a malformed stream
+  is still a budget stop, and under a run cost cap a budget stop after a first response stops the run exactly as on the failing paths (without a cap the
+  first response is still the reply). An assistant event whose message id is not a string is a malformed event: the stream is rejected with its evidence
+  and receipt (not treated as id-less);
 * `schema_sent` is true only when **every attempted call**, a failed one included (A50-4), carried the flag **and** its own init event listed
   `StructuredOutput`. An init event without it stops the run (`AbortRun`), checked before any error subtype (O2), instead of recording a schema that was
   not sent; an init event without a tool list, or a call that left no stream, records `schema_sent: false`;
@@ -107,7 +111,10 @@ validation with `schema_sent: false`, as before.
 
 ## 4. Guards v4 (G-role): frozen specification
 
-Frozen in `decision_guard.V4_SPEC` (sha256 pinned in `tests/test_devc8.py`) and committed before any dev-c7 what-if count was computed (A36 item 1).
+Frozen in `V4_SPEC` (sha256 pinned in `tests/test_devc8.py`) and committed in `decision_guard.py` before any dev-c7 what-if count was computed (A36 item
+1). **Review round 3:** the G-role code, `V4_SPEC` included, moved verbatim to `guard_v4.py` (imported only when v4 runs), and the schema stream parser to
+`claude_schema.py` (imported only in schema mode), because after merging main (#1034) the wiring-smoke Job bundle, which carries `decision_guard.py` and
+`adapters.py`, exceeded its 240,000-byte ceiling. The content and sha256 of `V4_SPEC` are unchanged.
 
 * **Inherits** guards v3 unchanged (G-healthy v3, G-write v3), evaluated first. The unknown exemption applies to the new checks only.
 * **Scope:** a decision-v3 write on a contract-v3 record. The audit is the record audit's own `targets.audit_v3` (rubric v3.1 checker), over the
@@ -165,9 +172,17 @@ Each corrects how the frozen predicates are implemented, not what they are; each
   it. It is now read only from the envelope (the first message's `evidence.page`, a tool result's `output.page`), with the source id (`evidence`, the
   message's own id, or an earlier message's id for a page fetch), the contract and the page bounds validated. Count-neutral: the trusted reading finds the
   same single input record with unread content (a non-write); the 224 shadow records reproduce byte for byte and every count is unchanged.
+* **2026-10-21, correction 4 (review round 3, AUDIT-ASTRA-56 item 1):** offline replay split a rendered transcript on its labels, so a model reply that
+  contained `[HARNESS]` and a forged envelope became a trusted harness block. A transcript is now cut at its actual message boundaries: the model's
+  earlier replies are known exactly (`turns[].text`, in order) and each is consumed whole between its two labels (`transcript_harness_blocks`); a
+  transcript that does not decompose into exactly those replies counts as unreadable and every result as unread. A message list is read by role and
+  index, as before. A tool-result envelope counts only for a recorded tool call. Online and offline now agree on the forged reply and its plain
+  control. Count-neutral: all 224 inputs decompose (one aborted record has no request, as before), the trusted reading finds the same single record
+  with unread content (a non-write), and the 224 shadow records reproduce byte for byte.
 * Implementation digest of G-role (`v4_context`, `_page_key`, `undelivered_ids`, `_envelope`, `_valid_page`, `wire_pages`, `wire_undelivered`,
-  `record_wire_texts`, `_deciding`, `check_role_v4`, `record_v4_context`, `NO_IDENTITY_TOOLS`): `6da4d2e3e8088d2bae0411b41f74880f7d0ff46e04ec485c773581214e376d2e`
-  (pinned in `tests/test_devc8.py`; after correction 2 it was `b51e0705ee19547a1a9ada0100c5417a43b31f66454f8a026b23fce9c375dd9f`).
+  `transcript_harness_blocks`, `record_wire`, `record_wire_texts`, `_deciding`, `check_role_v4`, `record_v4_context`, `NO_IDENTITY_TOOLS`):
+  `e7a2b212ecc8449376901e2afd011fccac94f91d79af93858e0f9ddd9c07606c` (pinned in `tests/test_devc8.py`; after correction 3 it was
+  `6da4d2e3e8088d2bae0411b41f74880f7d0ff46e04ec485c773581214e376d2e`, after correction 2 `b51e0705ee19547a1a9ada0100c5417a43b31f66454f8a026b23fce9c375dd9f`).
 
 ## 5. Guards v4 what-if on the recorded dev-c7 runs (offline shadow records)
 
