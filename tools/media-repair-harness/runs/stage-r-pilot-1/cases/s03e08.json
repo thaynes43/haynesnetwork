@@ -1,0 +1,41 @@
+{
+  "id": "sr1-f",
+  "media_type": "tv",
+  "context": {
+    "title": "Pokémon (1997) S03E08",
+    "expected": {
+      "series": "Pokémon (1997)",
+      "season": 3,
+      "episode": 8,
+      "episode_title": "Snubbull Snobbery"
+    },
+    "arr": {
+      "app": "sonarr",
+      "ids": {
+        "seriesId": 549,
+        "tvdbId": 76703,
+        "episodeFileId": 33063
+      }
+    },
+    "notes_for_model": "A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports."
+  },
+  "evidence": [
+    {
+      "id": "e1",
+      "tool": "arr_lookup",
+      "args": {
+        "app": "sonarr",
+        "seriesId": 549,
+        "episodeFileId": 33063
+      },
+      "status": "ok",
+      "output": "{\"app\":\"sonarr\",\"episode\":{\"episode\":8,\"season\":3,\"title\":\"Snubbull Snobbery\"},\"file\":{\"episodeFileId\":33063,\"size\":1111015509},\"recorded\":\"historical catalog record from a document dated 2026-10-13; not a live Sonarr read\",\"series\":\"Pokémon (1997)\",\"series_ids\":{\"seriesId\":549,\"tvdbId\":76703}}"
+    }
+  ],
+  "tools_available": [
+    "ffprobe",
+    "decode_sample",
+    "subtitle_sample",
+    "arr_lookup"
+  ]
+}

@@ -1,0 +1,176 @@
+{
+  "about": "G0a leak guard (pilot plan section 4.2 item 1): each template filled as G0b fills it, with a SYNTHETIC locator (the recorded basename, or for a marker target a placeholder name, since its basename is discovered at G0b), checked by the driver's own leak_check (the legacy leak guard over the model-visible view: case id, fixture names and stems, truth, family, provenance); plus a label scan of the template file (role and class words, the baseline notes' words, every other target's slot and catalog title).  G0b and G2 run the same leak guard again on the real fills.",
+  "command": "python3 tools/media-repair-harness/scripts/stage_r_g0a.py leakguard",
+  "registration_sha256": "d16c4a6fd9d6cd7b6a3eab99508b1dbfe47a8cbb304d5d89529c7e52240532d8",
+  "result": "pass",
+  "templates": {
+    "s03e01": {
+      "case_id": "sr1-d",
+      "file": "cases/s03e01.json",
+      "forbidden_fields_absent": [
+        "family",
+        "fixture",
+        "inject_tool_failure",
+        "outcome_step",
+        "provenance",
+        "solvable",
+        "split",
+        "supported_actions",
+        "truth"
+      ],
+      "label_hits": [],
+      "label_terms_checked": 37,
+      "leak_guard_hits": [],
+      "locator_used": "placeholder (marker target)",
+      "model_visible_keys": [
+        "case_id",
+        "context",
+        "evidence",
+        "media_type",
+        "tool_call_budget",
+        "tools_available"
+      ],
+      "sha256": "62cef53e4f99a3117f3041c822253a1a63961c8991c33d883ec4b2130fe1c160"
+    },
+    "s03e02": {
+      "case_id": "sr1-e",
+      "file": "cases/s03e02.json",
+      "forbidden_fields_absent": [
+        "family",
+        "fixture",
+        "inject_tool_failure",
+        "outcome_step",
+        "provenance",
+        "solvable",
+        "split",
+        "supported_actions",
+        "truth"
+      ],
+      "label_hits": [],
+      "label_terms_checked": 37,
+      "leak_guard_hits": [],
+      "locator_used": "placeholder (marker target)",
+      "model_visible_keys": [
+        "case_id",
+        "context",
+        "evidence",
+        "media_type",
+        "tool_call_budget",
+        "tools_available"
+      ],
+      "sha256": "a1c93db0d5cdc9fdc74805b377fb3a25d94ae96877b5a0adc4d3b5f062b74d6e"
+    },
+    "s03e08": {
+      "case_id": "sr1-f",
+      "file": "cases/s03e08.json",
+      "forbidden_fields_absent": [
+        "family",
+        "fixture",
+        "inject_tool_failure",
+        "outcome_step",
+        "provenance",
+        "solvable",
+        "split",
+        "supported_actions",
+        "truth"
+      ],
+      "label_hits": [],
+      "label_terms_checked": 37,
+      "leak_guard_hits": [],
+      "locator_used": "recorded basename",
+      "model_visible_keys": [
+        "case_id",
+        "context",
+        "evidence",
+        "media_type",
+        "tool_call_budget",
+        "tools_available"
+      ],
+      "sha256": "2ac70a81c2165fff6c0627c0829418cd1aa3eba6485721132c1f85974e3776aa"
+    },
+    "s03e36": {
+      "case_id": "sr1-a",
+      "file": "cases/s03e36.json",
+      "forbidden_fields_absent": [
+        "family",
+        "fixture",
+        "inject_tool_failure",
+        "outcome_step",
+        "provenance",
+        "solvable",
+        "split",
+        "supported_actions",
+        "truth"
+      ],
+      "label_hits": [],
+      "label_terms_checked": 37,
+      "leak_guard_hits": [],
+      "locator_used": "recorded basename",
+      "model_visible_keys": [
+        "case_id",
+        "context",
+        "evidence",
+        "media_type",
+        "tool_call_budget",
+        "tools_available"
+      ],
+      "sha256": "d03bbcf0936d0a6dbd0fadd868a3a37dc9329ef67dc8c4e4b5a637b05fcb6ce1"
+    },
+    "s03e38": {
+      "case_id": "sr1-b",
+      "file": "cases/s03e38.json",
+      "forbidden_fields_absent": [
+        "family",
+        "fixture",
+        "inject_tool_failure",
+        "outcome_step",
+        "provenance",
+        "solvable",
+        "split",
+        "supported_actions",
+        "truth"
+      ],
+      "label_hits": [],
+      "label_terms_checked": 37,
+      "leak_guard_hits": [],
+      "locator_used": "recorded basename",
+      "model_visible_keys": [
+        "case_id",
+        "context",
+        "evidence",
+        "media_type",
+        "tool_call_budget",
+        "tools_available"
+      ],
+      "sha256": "154fcd065de78721f85f04bfd1309cdc828e2792644b3c6fca7a8571379ae62b"
+    },
+    "s20e114": {
+      "case_id": "sr1-c",
+      "file": "cases/s20e114.json",
+      "forbidden_fields_absent": [
+        "family",
+        "fixture",
+        "inject_tool_failure",
+        "outcome_step",
+        "provenance",
+        "solvable",
+        "split",
+        "supported_actions",
+        "truth"
+      ],
+      "label_hits": [],
+      "label_terms_checked": 37,
+      "leak_guard_hits": [],
+      "locator_used": "recorded basename",
+      "model_visible_keys": [
+        "case_id",
+        "context",
+        "evidence",
+        "media_type",
+        "tool_call_budget",
+        "tools_available"
+      ],
+      "sha256": "6f5bbd20a6ea2819c738996c7a1ca888e18b95eae007ce97358d43bfed3e4a73"
+    }
+  }
+}

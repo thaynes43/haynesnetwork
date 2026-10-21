@@ -1,0 +1,1635 @@
+{
+  "about": "Offline validation of the G0a registration (pilot plan section 4.2 item 1, WO-W29 deliverable 4): the driver loads and validates this registration, then runs against FAKE runners only (SyntheticBazarr for kubectl, a scripted stand-in for the Claude adapter, a fake manifest commit) under a PATH tripwire.  No model call, no cluster access, no media read.",
+  "command": "python3 tools/media-repair-harness/scripts/stage_r_g0a.py validate",
+  "registered_config_hash_first_target": "ead303989e397a02a96aa504e872f1369c72328e9d4dae3922c26fe51a34be56",
+  "registration_sha256": "d16c4a6fd9d6cd7b6a3eab99508b1dbfe47a8cbb304d5d89529c7e52240532d8",
+  "registration_validates": true,
+  "result": "pass",
+  "scenarios": [
+    {
+      "about": "The registration as committed, on a SYNTHETIC layout with the series directly under the mount (what the driver assumes): every phase runs, a cue reaches the model with a citable id, every target ends recorded.  Role-neutral scripted replies, so the diagnoses carry no expected answer.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "subtitle",
+        "stat",
+        "subtitle",
+        "stat",
+        "subtitle",
+        "stat",
+        "subtitle",
+        "stat",
+        "subtitle",
+        "stat",
+        "subtitle",
+        "stat"
+      ],
+      "exit_code": 0,
+      "first_target": {
+        "decision_evidence_refs": [
+          "t1.f1"
+        ],
+        "delivered_cue_ids": [
+          "t1.f1",
+          "t1.f2"
+        ],
+        "first_evidence_tool": "ffprobe",
+        "fixture_kind": "remote",
+        "operations_per_file_max": 4
+      },
+      "g0b_manifest": [
+        {
+          "basename_source": "recorded",
+          "key": "s03e36",
+          "provenance": "listed at G0b",
+          "role": "offender"
+        },
+        {
+          "basename_source": "recorded",
+          "key": "s03e38",
+          "provenance": "listed at G0b",
+          "role": "offender"
+        },
+        {
+          "basename_source": "recorded",
+          "key": "s20e114",
+          "provenance": "listed at G0b",
+          "role": "verified"
+        },
+        {
+          "basename_source": "discovered",
+          "key": "s03e01",
+          "provenance": "listed at G0b",
+          "role": "verified"
+        },
+        {
+          "basename_source": "discovered",
+          "key": "s03e02",
+          "provenance": "listed at G0b",
+          "role": "verified"
+        },
+        {
+          "basename_source": "recorded",
+          "key": "s03e08",
+          "provenance": "listed at G0b",
+          "role": "held"
+        }
+      ],
+      "g2_config_hashes": {
+        "s03e01": {
+          "config_hash": "c5a6bd00f226cd49f62678cbc053a19dc277b807f292b3f676504b6e772889ea",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.7
+        },
+        "s03e02": {
+          "config_hash": "1a3c6781552726aa06f29cbfd0aa3a700b6d6e9501ea5b93430b5c8200150635",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.6
+        },
+        "s03e08": {
+          "config_hash": "836d8598b81469b3f461f2560fae9b8f2bed88a05fec563b043151bee5447f26",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.5
+        },
+        "s03e36": {
+          "config_hash": "ead303989e397a02a96aa504e872f1369c72328e9d4dae3922c26fe51a34be56",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 10.0
+        },
+        "s03e38": {
+          "config_hash": "ecd0b8b36d9ccc7579b8303db58ee27d81e39f9a4513e210363f21350d204af0",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.9
+        },
+        "s20e114": {
+          "config_hash": "efc3d423730afbdd8b9c648b97609ca615967138d96d8d878603ccb8fea8bfd9",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.8
+        }
+      },
+      "harness_runs": [
+        "s03e36",
+        "s03e38",
+        "s20e114",
+        "s03e01",
+        "s03e02",
+        "s03e08"
+      ],
+      "kubectl_get_reads": 26,
+      "model_calls": 12,
+      "pod_baseline_recorded_at_g0b": {
+        "name": "bazarr-5c9d7f8b6-synth1",
+        "restart_count": 0,
+        "uid": "synthetic-uid-0001"
+      },
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "NOT_ACCEPTED",
+      "report_targets": {
+        "s03e01": {
+          "collection": "CUE",
+          "diagnosis": "SAFE",
+          "execution": "R"
+        },
+        "s03e02": {
+          "collection": "CUE",
+          "diagnosis": "SAFE",
+          "execution": "R"
+        },
+        "s03e08": {
+          "collection": "CUE",
+          "diagnosis": "PASS",
+          "execution": "R"
+        },
+        "s03e36": {
+          "collection": "CUE",
+          "diagnosis": "MISS",
+          "execution": "R"
+        },
+        "s03e38": {
+          "collection": "CUE",
+          "diagnosis": "MISS",
+          "execution": "R"
+        },
+        "s20e114": {
+          "collection": "CUE",
+          "diagnosis": "SAFE",
+          "execution": "R"
+        }
+      },
+      "sampler_exec_calls": 28,
+      "scenario": "happy_path_synthetic_flat_layout",
+      "state_exit_code": 0,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": null,
+      "targets": {
+        "s03e01": "recorded",
+        "s03e02": "recorded",
+        "s03e08": "recorded",
+        "s03e36": "recorded",
+        "s03e38": "recorded",
+        "s20e114": "recorded"
+      }
+    },
+    {
+      "about": "The layout the GitOps mounts and the 2026-10-18 receipts document: the library is /data/haynestower/Media/TV Shows, a subdirectory of the only matching mount.  The driver lists the mount with the series prefix, finds no series directory and stops before any media read (the gap).",
+      "exec_modes": [
+        "list"
+      ],
+      "exit_code": 3,
+      "harness_runs": [],
+      "kubectl_get_reads": 2,
+      "model_calls": 0,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e38": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 1,
+      "scenario": "gap_documented_layout",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "discovery",
+        "phase": "G0b",
+        "target": null
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "not_started",
+        "s03e38": "not_started",
+        "s20e114": "not_started"
+      }
+    },
+    {
+      "about": "A season directory with 500 or more matching entries: the listing is incomplete and discovery stops before any media read.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list"
+      ],
+      "exit_code": 3,
+      "harness_runs": [],
+      "kubectl_get_reads": 2,
+      "model_calls": 0,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e38": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 3,
+      "scenario": "incomplete_listing",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "incomplete_listing",
+        "phase": "G0b",
+        "target": null
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "not_started",
+        "s03e38": "not_started",
+        "s20e114": "not_started"
+      }
+    },
+    {
+      "about": "The second listing returns no receipt line: fatal, nothing further starts.",
+      "exec_modes": [
+        "list",
+        "list"
+      ],
+      "exit_code": 3,
+      "harness_runs": [],
+      "kubectl_get_reads": 2,
+      "model_calls": 0,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e38": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 2,
+      "scenario": "missing_receipt",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "missing_receipt",
+        "phase": "G0b",
+        "target": null
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "not_started",
+        "s03e38": "not_started",
+        "s20e114": "not_started"
+      }
+    },
+    {
+      "about": "The G0b manifest commit hook fails: Stage R stops before any media byte is read.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list"
+      ],
+      "exit_code": 3,
+      "harness_runs": [],
+      "kubectl_get_reads": 2,
+      "model_calls": 0,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e38": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 4,
+      "scenario": "manifest_commit_failure",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "manifest_commit",
+        "phase": "G0b",
+        "target": null
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "not_started",
+        "s03e38": "not_started",
+        "s20e114": "not_started"
+      }
+    },
+    {
+      "about": "A target changes between its listing and its G1 stat: it is DROPPED and the others go on; Stage R is INCOMPLETE.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "subtitle",
+        "stat",
+        "subtitle",
+        "stat",
+        "subtitle",
+        "stat",
+        "subtitle",
+        "stat",
+        "subtitle",
+        "stat"
+      ],
+      "exit_code": 0,
+      "g2_config_hashes": {
+        "s03e01": {
+          "config_hash": "efc3d423730afbdd8b9c648b97609ca615967138d96d8d878603ccb8fea8bfd9",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.8
+        },
+        "s03e02": {
+          "config_hash": "c5a6bd00f226cd49f62678cbc053a19dc277b807f292b3f676504b6e772889ea",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.7
+        },
+        "s03e08": {
+          "config_hash": "1a3c6781552726aa06f29cbfd0aa3a700b6d6e9501ea5b93430b5c8200150635",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.6
+        },
+        "s03e36": {
+          "config_hash": "ead303989e397a02a96aa504e872f1369c72328e9d4dae3922c26fe51a34be56",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 10.0
+        },
+        "s03e38": {
+          "config_hash": "ecd0b8b36d9ccc7579b8303db58ee27d81e39f9a4513e210363f21350d204af0",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.9
+        }
+      },
+      "harness_runs": [
+        "s03e36",
+        "s03e38",
+        "s03e01",
+        "s03e02",
+        "s03e08"
+      ],
+      "kubectl_get_reads": 24,
+      "model_calls": 10,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "CUE",
+          "diagnosis": "SAFE",
+          "execution": "R"
+        },
+        "s03e02": {
+          "collection": "CUE",
+          "diagnosis": "SAFE",
+          "execution": "R"
+        },
+        "s03e08": {
+          "collection": "CUE",
+          "diagnosis": "PASS",
+          "execution": "R"
+        },
+        "s03e36": {
+          "collection": "CUE",
+          "diagnosis": "MISS",
+          "execution": "R"
+        },
+        "s03e38": {
+          "collection": "CUE",
+          "diagnosis": "MISS",
+          "execution": "R"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "DROPPED"
+        }
+      },
+      "sampler_exec_calls": 25,
+      "scenario": "g1_drift_drops_a_target",
+      "state_exit_code": 0,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": null,
+      "targets": {
+        "s03e01": "recorded",
+        "s03e02": "recorded",
+        "s03e08": "recorded",
+        "s03e36": "recorded",
+        "s03e38": "recorded",
+        "s20e114": "dropped"
+      }
+    },
+    {
+      "about": "A G1 receipt names another host: fatal, nothing further starts.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list",
+        "stat",
+        "probe"
+      ],
+      "exit_code": 3,
+      "harness_runs": [],
+      "kubectl_get_reads": 3,
+      "model_calls": 0,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e38": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 6,
+      "scenario": "hostname_change_in_g1",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "hostname_changed",
+        "phase": "G1",
+        "target": "s03e36"
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "not_started",
+        "s03e38": "not_started",
+        "s20e114": "not_started"
+      }
+    },
+    {
+      "about": "The 60 s outer deadline of a G1 operation expires (no receipt): fatal, nothing further starts.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list",
+        "stat",
+        "probe",
+        "stat",
+        "probe"
+      ],
+      "exit_code": 3,
+      "harness_runs": [],
+      "kubectl_get_reads": 5,
+      "model_calls": 0,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e38": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 8,
+      "scenario": "outer_timeout_in_g1",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "outer_timeout",
+        "phase": "G1",
+        "target": "s03e38"
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "not_started",
+        "s03e38": "not_started",
+        "s20e114": "not_started"
+      }
+    },
+    {
+      "about": "Neither offender has a text subtitle stream: the registered early stop (exit 4) before G2, no model call.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe"
+      ],
+      "exit_code": 4,
+      "harness_runs": [],
+      "kubectl_get_reads": 14,
+      "model_calls": 0,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e38": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 16,
+      "scenario": "early_stop_no_offender_text_subtitle",
+      "state_exit_code": 4,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "early_stop",
+        "phase": "G1",
+        "target": null
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "not_started",
+        "s03e38": "not_started",
+        "s20e114": "not_started"
+      }
+    },
+    {
+      "about": "The first target changes between G1 and its first G2 sampler operation: the harness run stops (started_aborted) and the driver starts nothing further.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "subtitle"
+      ],
+      "exit_code": 3,
+      "g2_config_hashes": {
+        "s03e36": {
+          "config_hash": "ead303989e397a02a96aa504e872f1369c72328e9d4dae3922c26fe51a34be56",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 10.0
+        }
+      },
+      "harness_runs": [
+        "s03e36"
+      ],
+      "kubectl_get_reads": 15,
+      "model_calls": 1,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "ERR",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e38": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 17,
+      "scenario": "identity_change_inside_g2",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "harness_stop",
+        "phase": "G2",
+        "target": "s03e36"
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "stopped",
+        "s03e38": "not_started",
+        "s20e114": "not_started"
+      }
+    },
+    {
+      "about": "The G1 probe of the first target carries its case id in a container tag: the G2 leak guard stops Stage R before any harness run.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe"
+      ],
+      "exit_code": 3,
+      "harness_runs": [],
+      "kubectl_get_reads": 15,
+      "model_calls": 0,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e38": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 16,
+      "scenario": "leak_guard_on_the_filled_case",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "leak_guard",
+        "phase": "G2",
+        "target": "s03e36"
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "not_started",
+        "s03e38": "not_started",
+        "s20e114": "not_started"
+      }
+    },
+    {
+      "about": "A rename reply on a verified target (rejected by validation), then a healthy decision: WRITE-CONTROL, Stage R stops when that case returns, before its final stat.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "subtitle",
+        "stat",
+        "subtitle",
+        "stat"
+      ],
+      "exit_code": 3,
+      "g2_config_hashes": {
+        "s03e36": {
+          "config_hash": "ead303989e397a02a96aa504e872f1369c72328e9d4dae3922c26fe51a34be56",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 10.0
+        },
+        "s03e38": {
+          "config_hash": "ecd0b8b36d9ccc7579b8303db58ee27d81e39f9a4513e210363f21350d204af0",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.9
+        },
+        "s20e114": {
+          "config_hash": "efc3d423730afbdd8b9c648b97609ca615967138d96d8d878603ccb8fea8bfd9",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.8
+        }
+      },
+      "harness_runs": [
+        "s03e36",
+        "s03e38",
+        "s20e114"
+      ],
+      "kubectl_get_reads": 19,
+      "model_calls": 6,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "CUE",
+          "diagnosis": "MISS",
+          "execution": "R"
+        },
+        "s03e38": {
+          "collection": "CUE",
+          "diagnosis": "MISS",
+          "execution": "R"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 20,
+      "scenario": "write_control_on_a_non_offender",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "write_control",
+        "phase": "G2",
+        "target": "s20e114"
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "recorded",
+        "s03e38": "recorded",
+        "s20e114": "stopped"
+      }
+    },
+    {
+      "about": "An over-budget reply on a verified target: the write analysis is unresolved, a stop before the final stat.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "subtitle",
+        "stat",
+        "subtitle",
+        "stat"
+      ],
+      "exit_code": 3,
+      "g2_config_hashes": {
+        "s03e36": {
+          "config_hash": "ead303989e397a02a96aa504e872f1369c72328e9d4dae3922c26fe51a34be56",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 10.0
+        },
+        "s03e38": {
+          "config_hash": "ecd0b8b36d9ccc7579b8303db58ee27d81e39f9a4513e210363f21350d204af0",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.9
+        },
+        "s20e114": {
+          "config_hash": "efc3d423730afbdd8b9c648b97609ca615967138d96d8d878603ccb8fea8bfd9",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.8
+        }
+      },
+      "harness_runs": [
+        "s03e36",
+        "s03e38",
+        "s20e114"
+      ],
+      "kubectl_get_reads": 19,
+      "model_calls": 6,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "CUE",
+          "diagnosis": "MISS",
+          "execution": "R"
+        },
+        "s03e38": {
+          "collection": "CUE",
+          "diagnosis": "MISS",
+          "execution": "R"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 20,
+      "scenario": "write_analysis_unresolved",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "write_analysis_unresolved",
+        "phase": "G2",
+        "target": "s20e114"
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "recorded",
+        "s03e38": "recorded",
+        "s20e114": "stopped"
+      }
+    },
+    {
+      "about": "The first target's content changes before its final stat (same size, mtime and inode): INVALID, which is a stop.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "subtitle",
+        "stat"
+      ],
+      "exit_code": 3,
+      "g2_config_hashes": {
+        "s03e36": {
+          "config_hash": "ead303989e397a02a96aa504e872f1369c72328e9d4dae3922c26fe51a34be56",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 10.0
+        }
+      },
+      "harness_runs": [
+        "s03e36"
+      ],
+      "kubectl_get_reads": 15,
+      "model_calls": 2,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "CUE",
+          "diagnosis": null,
+          "execution": "INVALID"
+        },
+        "s03e38": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 18,
+      "scenario": "final_fingerprint_mismatch",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "final_mismatch",
+        "phase": "final",
+        "target": "s03e36"
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "invalid",
+        "s03e38": "not_started",
+        "s20e114": "not_started"
+      }
+    },
+    {
+      "about": "The Bazarr pod reports a container restart after the first G2 target: a pod-health stop.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "subtitle",
+        "stat"
+      ],
+      "exit_code": 3,
+      "g2_config_hashes": {
+        "s03e36": {
+          "config_hash": "ead303989e397a02a96aa504e872f1369c72328e9d4dae3922c26fe51a34be56",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 10.0
+        }
+      },
+      "harness_runs": [
+        "s03e36"
+      ],
+      "kubectl_get_reads": 17,
+      "model_calls": 2,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "CUE",
+          "diagnosis": "MISS",
+          "execution": "R"
+        },
+        "s03e38": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 18,
+      "scenario": "pod_restart_between_targets",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "pod_health",
+        "phase": "G2",
+        "target": "s03e38"
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "recorded",
+        "s03e38": "not_started",
+        "s20e114": "not_started"
+      }
+    },
+    {
+      "about": "Each scripted call reports $5: the first target spends the $10 cap, so the driver starts no second target.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "subtitle",
+        "stat"
+      ],
+      "exit_code": 3,
+      "g2_config_hashes": {
+        "s03e36": {
+          "config_hash": "ead303989e397a02a96aa504e872f1369c72328e9d4dae3922c26fe51a34be56",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 10.0
+        }
+      },
+      "harness_runs": [
+        "s03e36"
+      ],
+      "kubectl_get_reads": 16,
+      "model_calls": 2,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "CUE",
+          "diagnosis": "MISS",
+          "execution": "R"
+        },
+        "s03e38": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 18,
+      "scenario": "cost_cap",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "cost_cap",
+        "phase": "G2",
+        "target": "s03e38"
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "recorded",
+        "s03e38": "not_started",
+        "s20e114": "not_started"
+      }
+    },
+    {
+      "about": "A slow first target leaves too little of the 2 h Stage R deadline for the next target plus two operations: a stop.",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "subtitle",
+        "stat",
+        "subtitle",
+        "stat",
+        "subtitle"
+      ],
+      "exit_code": 3,
+      "g2_config_hashes": {
+        "s03e36": {
+          "config_hash": "ead303989e397a02a96aa504e872f1369c72328e9d4dae3922c26fe51a34be56",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 10.0
+        },
+        "s03e38": {
+          "config_hash": "ecd0b8b36d9ccc7579b8303db58ee27d81e39f9a4513e210363f21350d204af0",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.9
+        },
+        "s20e114": {
+          "config_hash": "efc3d423730afbdd8b9c648b97609ca615967138d96d8d878603ccb8fea8bfd9",
+          "config_without_cost_remainder_equals_registered": true,
+          "max_total_cost_usd": 9.8
+        }
+      },
+      "harness_runs": [
+        "s03e36",
+        "s03e38",
+        "s20e114"
+      ],
+      "kubectl_get_reads": 19,
+      "model_calls": 6,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "CUE",
+          "diagnosis": "MISS",
+          "execution": "R"
+        },
+        "s03e38": {
+          "collection": "CUE",
+          "diagnosis": "MISS",
+          "execution": "R"
+        },
+        "s20e114": {
+          "collection": "CUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 21,
+      "scenario": "stage_deadline",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": {
+        "kind": "stage_deadline",
+        "phase": "final",
+        "target": "s20e114"
+      },
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "recorded",
+        "s03e38": "recorded",
+        "s20e114": "stopped"
+      }
+    },
+    {
+      "about": "The #159 tripwire trips at the first model call; the watcher interrupts the driver (KeyboardInterrupt).  The driver writes its terminal state (exit code 3) and starts nothing further; the stop reason is not in the state (a declared gap).",
+      "exec_modes": [
+        "list",
+        "list",
+        "list",
+        "list",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe",
+        "stat",
+        "probe"
+      ],
+      "exit_code": "KeyboardInterrupt (propagated after the terminal state was written)",
+      "harness_runs": [
+        "s03e36"
+      ],
+      "kubectl_get_reads": 15,
+      "model_calls": 1,
+      "real_operations": {
+        "manifest_commit": "fake hook (no git commit)",
+        "path_tripwire_hits": []
+      },
+      "report": "INCOMPLETE",
+      "report_targets": {
+        "s03e01": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e02": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e08": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e36": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s03e38": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        },
+        "s20e114": {
+          "collection": "NOCUE",
+          "diagnosis": null,
+          "execution": "STOP"
+        }
+      },
+      "sampler_exec_calls": 16,
+      "scenario": "tripwire_interrupt",
+      "state_exit_code": 3,
+      "state_records_registration_sha256": true,
+      "state_records_template_digests": true,
+      "stop": null,
+      "targets": {
+        "s03e01": "not_started",
+        "s03e02": "not_started",
+        "s03e08": "not_started",
+        "s03e36": "started",
+        "s03e38": "not_started",
+        "s20e114": "not_started"
+      }
+    }
+  ]
+}
