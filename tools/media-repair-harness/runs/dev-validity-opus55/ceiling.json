@@ -1,0 +1,1700 @@
+{
+ "contract_label_fails": [
+  "audiobook-corrupt-001",
+  "audiobook-corrupt-002",
+  "audiobook-identity-001",
+  "audiobook-identity-002",
+  "audiobook-naming-001",
+  "audiobook-outcome-001",
+  "audiobook-outcome-002",
+  "epub-corrupt-001",
+  "epub-corrupt-002",
+  "epub-corrupt-003",
+  "epub-corrupt-004",
+  "epub-corrupt-005",
+  "epub-identity-001",
+  "epub-identity-002",
+  "epub-identity-003",
+  "epub-identity-005",
+  "epub-naming-001",
+  "epub-outcome-001",
+  "epub-outcome-002",
+  "movie-decoder-001",
+  "movie-identity-001",
+  "movie-naming-001",
+  "tv-identity-002",
+  "tv-insuff-001"
+ ],
+ "never_correct_under_contract": [
+  "audiobook-corrupt-001",
+  "audiobook-corrupt-002",
+  "audiobook-identity-001",
+  "audiobook-identity-002",
+  "audiobook-naming-001",
+  "audiobook-outcome-001",
+  "audiobook-outcome-002",
+  "epub-corrupt-001",
+  "epub-corrupt-002",
+  "epub-corrupt-003",
+  "epub-corrupt-004",
+  "epub-corrupt-005",
+  "epub-identity-001",
+  "epub-identity-002",
+  "epub-identity-003",
+  "epub-identity-005",
+  "epub-naming-001",
+  "epub-outcome-001",
+  "epub-outcome-002",
+  "movie-identity-001",
+  "movie-naming-001",
+  "tv-identity-002"
+ ],
+ "note": "G6-G10 not applicable (decision-only records)",
+ "per_case": {
+  "audiobook-corrupt-001": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "corrupt_file",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "audiobook-corrupt-002": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "corrupt_file",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "audiobook-corrupt-003": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "corrupt_file",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "corrupt_file"
+  },
+  "audiobook-healthy-001": {
+   "accepted": [
+    "insufficient_evidence"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence"
+  },
+  "audiobook-healthy-002": {
+   "accepted": [
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "healthy",
+    "none"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy"
+  },
+  "audiobook-healthy-003": {
+   "accepted": [
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "healthy",
+    "none"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy"
+  },
+  "audiobook-identity-001": {
+   "accepted": [
+    "identity_mismatch"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch"
+  },
+  "audiobook-identity-002": {
+   "accepted": [
+    "identity_mismatch"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch"
+  },
+  "audiobook-insuff-001": {
+   "accepted": [
+    "insufficient_evidence",
+    "metadata_naming"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "metadata_naming",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence"
+  },
+  "audiobook-naming-001": {
+   "accepted": [
+    "metadata_naming"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "metadata_naming",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "rename"
+   ],
+   "truth": "metadata_naming"
+  },
+  "audiobook-order-001": {
+   "accepted": [
+    "order_edition_ambiguity",
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "order_edition_ambiguity",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "escalate",
+    "none"
+   ],
+   "truth": "order_edition_ambiguity"
+  },
+  "audiobook-outcome-001": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "corrupt_file",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "audiobook-outcome-002": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "corrupt_file",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "epub-corrupt-001": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "corrupt_file",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "epub-corrupt-002": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "corrupt_file",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "epub-corrupt-003": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "corrupt_file",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "epub-corrupt-004": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "corrupt_file",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "epub-corrupt-005": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "corrupt_file",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "epub-healthy-001": {
+   "accepted": [
+    "insufficient_evidence"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence"
+  },
+  "epub-healthy-002": {
+   "accepted": [
+    "insufficient_evidence"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence"
+  },
+  "epub-healthy-003": {
+   "accepted": [
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "healthy",
+    "none"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy"
+  },
+  "epub-healthy-004": {
+   "accepted": [
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "healthy",
+    "none"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy"
+  },
+  "epub-healthy-005": {
+   "accepted": [
+    "metadata_naming",
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "metadata_naming",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "ambiguous",
+   "supported": [
+    "rename",
+    "none",
+    "escalate"
+   ],
+   "truth": "metadata_naming"
+  },
+  "epub-healthy-006": {
+   "accepted": [
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "healthy",
+    "none"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy"
+  },
+  "epub-identity-001": {
+   "accepted": [
+    "identity_mismatch"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "identity_mismatch"
+  },
+  "epub-identity-002": {
+   "accepted": [
+    "identity_mismatch"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch"
+  },
+  "epub-identity-003": {
+   "accepted": [
+    "identity_mismatch"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "identity_mismatch",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "exploration",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch"
+  },
+  "epub-identity-004": {
+   "accepted": [
+    "identity_mismatch"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "identity_mismatch",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "exploration",
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "identity_mismatch"
+  },
+  "epub-identity-005": {
+   "accepted": [
+    "identity_mismatch"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "identity_mismatch",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "ambiguous",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch"
+  },
+  "epub-insuff-001": {
+   "accepted": [
+    "insufficient_evidence"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence"
+  },
+  "epub-insuff-002": {
+   "accepted": [
+    "identity_mismatch"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "identity_mismatch",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "exploration",
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "identity_mismatch"
+  },
+  "epub-naming-001": {
+   "accepted": [
+    "metadata_naming"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "metadata_naming",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "exploration",
+   "supported": [
+    "rename"
+   ],
+   "truth": "metadata_naming"
+  },
+  "epub-outcome-001": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "corrupt_file",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "epub-outcome-002": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "corrupt_file",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "movie-corrupt-001": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "corrupt_file",
+    "blocklist_and_search"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "movie-corrupt-002": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "corrupt_file",
+    "blocklist_and_search"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "movie-corrupt-003": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "corrupt_file",
+    "blocklist_and_search"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "corrupt_file"
+  },
+  "movie-decoder-001": {
+   "accepted": [
+    "decoder_incompatible"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "decoder_incompatible",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "ambiguous",
+   "supported": [
+    "convert"
+   ],
+   "truth": "decoder_incompatible"
+  },
+  "movie-decoder-002": {
+   "accepted": [
+    "decoder_incompatible"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "decoder_incompatible",
+    "convert"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "convert"
+   ],
+   "truth": "decoder_incompatible"
+  },
+  "movie-healthy-001": {
+   "accepted": [
+    "insufficient_evidence"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence"
+  },
+  "movie-healthy-002": {
+   "accepted": [
+    "insufficient_evidence"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence"
+  },
+  "movie-healthy-003": {
+   "accepted": [
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "healthy",
+    "none"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy"
+  },
+  "movie-healthy-004": {
+   "accepted": [
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "healthy",
+    "none"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy"
+  },
+  "movie-identity-001": {
+   "accepted": [
+    "identity_mismatch"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "identity_mismatch"
+  },
+  "movie-identity-002": {
+   "accepted": [
+    "identity_mismatch"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "identity_mismatch",
+    "blocklist_and_search"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch"
+  },
+  "movie-insuff-001": {
+   "accepted": [
+    "insufficient_evidence",
+    "order_edition_ambiguity"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence"
+  },
+  "movie-naming-001": {
+   "accepted": [
+    "metadata_naming"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "ambiguous",
+   "supported": [
+    "rename"
+   ],
+   "truth": "metadata_naming"
+  },
+  "movie-order-001": {
+   "accepted": [
+    "order_edition_ambiguity"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "order_edition_ambiguity",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "escalate"
+   ],
+   "truth": "order_edition_ambiguity"
+  },
+  "movie-outcome-001": {
+   "accepted": [
+    "decoder_incompatible"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "decoder_incompatible",
+    "convert"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "convert"
+   ],
+   "truth": "decoder_incompatible"
+  },
+  "movie-outcome-002": {
+   "accepted": [
+    "decoder_incompatible"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "decoder_incompatible",
+    "convert"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "convert"
+   ],
+   "truth": "decoder_incompatible"
+  },
+  "tv-corrupt-001": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "corrupt_file",
+    "blocklist_and_search"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "tv-corrupt-002": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "corrupt_file",
+    "blocklist_and_search"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "tv-corrupt-003": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "corrupt_file",
+    "blocklist_and_search"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "exploration",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "tv-decoder-001": {
+   "accepted": [
+    "decoder_incompatible"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "decoder_incompatible",
+    "convert"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "convert"
+   ],
+   "truth": "decoder_incompatible"
+  },
+  "tv-healthy-001": {
+   "accepted": [
+    "insufficient_evidence"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence"
+  },
+  "tv-healthy-002": {
+   "accepted": [
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "healthy",
+    "none"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy"
+  },
+  "tv-healthy-003": {
+   "accepted": [
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "healthy",
+    "none"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy"
+  },
+  "tv-healthy-004": {
+   "accepted": [
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "healthy",
+    "none"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy"
+  },
+  "tv-healthy-005": {
+   "accepted": [
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "healthy",
+    "none"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy"
+  },
+  "tv-healthy-006": {
+   "accepted": [
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "healthy",
+    "none"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy"
+  },
+  "tv-healthy-007": {
+   "accepted": [
+    "healthy"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "healthy",
+    "none"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "none"
+   ],
+   "truth": "healthy"
+  },
+  "tv-identity-001": {
+   "accepted": [
+    "identity_mismatch"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "identity_mismatch",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "identity_mismatch"
+  },
+  "tv-identity-002": {
+   "accepted": [
+    "identity_mismatch"
+   ],
+   "any_option_correct": false,
+   "cf": [
+    "identity_mismatch",
+    "escalate"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": true,
+   "cf_unsafe_write": false,
+   "status": "ambiguous",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch"
+  },
+  "tv-identity-003": {
+   "accepted": [
+    "identity_mismatch"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "identity_mismatch",
+    "blocklist_and_search"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "identity_mismatch"
+  },
+  "tv-identity-004": {
+   "accepted": [
+    "identity_mismatch"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "identity_mismatch",
+    "blocklist_and_search"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "exploration",
+   "supported": [
+    "blocklist_and_search",
+    "escalate"
+   ],
+   "truth": "identity_mismatch"
+  },
+  "tv-insuff-001": {
+   "accepted": [
+    "insufficient_evidence"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "healthy",
+    "none"
+   ],
+   "cf_correct": false,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "ambiguous",
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence"
+  },
+  "tv-insuff-002": {
+   "accepted": [
+    "insufficient_evidence"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "exploration",
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence"
+  },
+  "tv-insuff-003": {
+   "accepted": [
+    "insufficient_evidence"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "insufficient_evidence",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "escalate"
+   ],
+   "truth": "insufficient_evidence"
+  },
+  "tv-naming-001": {
+   "accepted": [
+    "metadata_naming"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "metadata_naming",
+    "rename"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "rename"
+   ],
+   "truth": "metadata_naming"
+  },
+  "tv-order-001": {
+   "accepted": [
+    "order_edition_ambiguity"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "order_edition_ambiguity",
+    "escalate"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "escalate"
+   ],
+   "truth": "order_edition_ambiguity"
+  },
+  "tv-outcome-001": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "corrupt_file",
+    "blocklist_and_search"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "tv-outcome-002": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "corrupt_file",
+    "blocklist_and_search"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  },
+  "tv-outcome-003": {
+   "accepted": [
+    "corrupt_file"
+   ],
+   "any_option_correct": true,
+   "cf": [
+    "corrupt_file",
+    "blocklist_and_search"
+   ],
+   "cf_correct": true,
+   "cf_false_abstention": false,
+   "cf_unsafe_write": false,
+   "status": "established",
+   "supported": [
+    "blocklist_and_search"
+   ],
+   "truth": "corrupt_file"
+  }
+ },
+ "score_py": "/home/dev/work/mrh-validity-1021/.agents/context/media-repair-harness-2026-10-19/harness/score.py",
+ "tool": "validity_ceiling.py",
+ "views": {
+  "contract": {
+   "gates": {
+    "G1": {
+     "detail": {
+      "cases": []
+     },
+     "pass": true,
+     "value": 0
+    },
+    "G2": {
+     "detail": {
+      "healthy_escalated": 0,
+      "left_alone": 13,
+      "n": 13
+     },
+     "pass": true,
+     "value": 1.0
+    },
+    "G3": {
+     "detail": {
+      "classes_below_2_of_3": {
+       "corrupt_file": 0.4762,
+       "identity_mismatch": 0.4286,
+       "metadata_naming": 0.4
+      },
+      "n": 61
+     },
+     "pass": false,
+     "value": 0.623
+    },
+    "G4": {
+     "detail": {
+      "n": 15
+     },
+     "pass": true,
+     "value": 0.9333
+    },
+    "G5": {
+     "detail": {
+      "excluded": "abstention classes and cases whose supported set includes escalate",
+      "n": 49
+     },
+     "pass": false,
+     "value": 0.4286
+    }
+   },
+   "per_class": {
+    "corrupt_file": {
+     "accuracy": 0.4762,
+     "correct": 10,
+     "n": 21
+    },
+    "decoder_incompatible": {
+     "accuracy": 0.8,
+     "correct": 4,
+     "n": 5
+    },
+    "healthy": {
+     "accuracy": 1.0,
+     "correct": 13,
+     "n": 13
+    },
+    "identity_mismatch": {
+     "accuracy": 0.4286,
+     "correct": 6,
+     "n": 14
+    },
+    "metadata_naming": {
+     "accuracy": 0.4,
+     "correct": 2,
+     "n": 5
+    },
+    "order_edition_ambiguity": {
+     "accuracy": 1.0,
+     "correct": 3,
+     "n": 3
+    }
+   }
+  },
+  "contract-best": {
+   "gates": {
+    "G1": {
+     "detail": {
+      "cases": []
+     },
+     "pass": true,
+     "value": 0
+    },
+    "G2": {
+     "detail": {
+      "healthy_escalated": 0,
+      "left_alone": 13,
+      "n": 13
+     },
+     "pass": true,
+     "value": 1.0
+    },
+    "G3": {
+     "detail": {
+      "classes_below_2_of_3": {
+       "corrupt_file": 0.4762,
+       "identity_mismatch": 0.4286,
+       "metadata_naming": 0.4
+      },
+      "n": 61
+     },
+     "pass": false,
+     "value": 0.6393
+    },
+    "G4": {
+     "detail": {
+      "n": 15
+     },
+     "pass": true,
+     "value": 1.0
+    },
+    "G5": {
+     "detail": {
+      "excluded": "abstention classes and cases whose supported set includes escalate",
+      "n": 49
+     },
+     "pass": false,
+     "value": 0.4082
+    }
+   },
+   "per_class": {
+    "corrupt_file": {
+     "accuracy": 0.4762,
+     "correct": 10,
+     "n": 21
+    },
+    "decoder_incompatible": {
+     "accuracy": 1.0,
+     "correct": 5,
+     "n": 5
+    },
+    "healthy": {
+     "accuracy": 1.0,
+     "correct": 13,
+     "n": 13
+    },
+    "identity_mismatch": {
+     "accuracy": 0.4286,
+     "correct": 6,
+     "n": 14
+    },
+    "metadata_naming": {
+     "accuracy": 0.4,
+     "correct": 2,
+     "n": 5
+    },
+    "order_edition_ambiguity": {
+     "accuracy": 1.0,
+     "correct": 3,
+     "n": 3
+    }
+   }
+  },
+  "contract-worst": {
+   "gates": {
+    "G1": {
+     "detail": {
+      "cases": []
+     },
+     "pass": true,
+     "value": 0
+    },
+    "G2": {
+     "detail": {
+      "healthy_escalated": 0,
+      "left_alone": 13,
+      "n": 13
+     },
+     "pass": true,
+     "value": 1.0
+    },
+    "G3": {
+     "detail": {
+      "classes_below_2_of_3": {
+       "corrupt_file": 0.4286,
+       "identity_mismatch": 0.1429,
+       "metadata_naming": 0.4
+      },
+      "n": 61
+     },
+     "pass": false,
+     "value": 0.541
+    },
+    "G4": {
+     "detail": {
+      "n": 15
+     },
+     "pass": false,
+     "value": 0.8667
+    },
+    "G5": {
+     "detail": {
+      "excluded": "abstention classes and cases whose supported set includes escalate",
+      "n": 49
+     },
+     "pass": false,
+     "value": 0.4694
+    }
+   },
+   "per_class": {
+    "corrupt_file": {
+     "accuracy": 0.4286,
+     "correct": 9,
+     "n": 21
+    },
+    "decoder_incompatible": {
+     "accuracy": 0.8,
+     "correct": 4,
+     "n": 5
+    },
+    "healthy": {
+     "accuracy": 1.0,
+     "correct": 13,
+     "n": 13
+    },
+    "identity_mismatch": {
+     "accuracy": 0.1429,
+     "correct": 2,
+     "n": 14
+    },
+    "metadata_naming": {
+     "accuracy": 0.4,
+     "correct": 2,
+     "n": 5
+    },
+    "order_edition_ambiguity": {
+     "accuracy": 1.0,
+     "correct": 3,
+     "n": 3
+    }
+   }
+  },
+  "label": {
+   "gates": {
+    "G1": {
+     "detail": {
+      "cases": []
+     },
+     "pass": true,
+     "value": 0
+    },
+    "G2": {
+     "detail": {
+      "healthy_escalated": 0,
+      "left_alone": 13,
+      "n": 13
+     },
+     "pass": true,
+     "value": 1.0
+    },
+    "G3": {
+     "detail": {
+      "classes_below_2_of_3": {},
+      "n": 61
+     },
+     "pass": true,
+     "value": 1.0
+    },
+    "G4": {
+     "detail": {
+      "n": 15
+     },
+     "pass": true,
+     "value": 1.0
+    },
+    "G5": {
+     "detail": {
+      "excluded": "abstention classes and cases whose supported set includes escalate",
+      "n": 49
+     },
+     "pass": true,
+     "value": 0.0
+    }
+   },
+   "per_class": {
+    "corrupt_file": {
+     "accuracy": 1.0,
+     "correct": 21,
+     "n": 21
+    },
+    "decoder_incompatible": {
+     "accuracy": 1.0,
+     "correct": 5,
+     "n": 5
+    },
+    "healthy": {
+     "accuracy": 1.0,
+     "correct": 13,
+     "n": 13
+    },
+    "identity_mismatch": {
+     "accuracy": 1.0,
+     "correct": 14,
+     "n": 14
+    },
+    "metadata_naming": {
+     "accuracy": 1.0,
+     "correct": 5,
+     "n": 5
+    },
+    "order_edition_ambiguity": {
+     "accuracy": 1.0,
+     "correct": 3,
+     "n": 3
+    }
+   }
+  }
+ }
+}
