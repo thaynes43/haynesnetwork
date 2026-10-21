@@ -659,16 +659,17 @@ class GuardV4Online(unittest.TestCase):
     def test_a_v8_run_with_guards_v4_records_the_role_checks(self):
         d = {'type': 'decision', 'class': 'metadata_naming', 'action': 'rename', 'source': {'ref': 'case_item'},
              'target': {'kind': 'rename_of_source', 'old_value': 'Alpha Show - S01E02.mkv', 'new_value': 'Alpha Show - S01E02 - Lamp.mkv'},
-             'reason': 'r', 'confidence': 0.5, 'evidence_refs': []}
-        rec, _ad = run8([d], guards='v4')
+             'reason': 'r', 'confidence': 0.5, 'evidence_refs': ['e1']}
+        case = arr_case()
+        case['evidence'] = [ev2h.ev('e1', 'ffprobe', output=PROBE)]          # a cited clean probe: guards v3 leave the rename alone
+        rec3, _ad = run8([d], guards='v3', case=copy.deepcopy(case))
+        self.assertEqual((rec3['guard']['final_changed'], 'role_checks' in rec3['guard']), (False, False))
+        rec, _ad = run8([d], guards='v4', case=case)
         g = rec['guard']
-        self.assertEqual(g['version'], 'v4')
-        self.assertIn('role_checks', g)
-        self.assertTrue(g['final_changed'])
-        self.assertEqual(g['applied'][0]['original'], d)
+        self.assertEqual((g['version'], g['final_changed'], g['applied'][0]['rule'], g['applied'][0]['original']), ('v4', True, 'G-role', d))
+        self.assertEqual({c['id']: c['v4_status'] for c in g['role_checks']}, {'A-REN-0': 'unknown', 'A-REN-1': 'enforced', 'R-SRC': 'unknown'})
         self.assertEqual(rec['decision']['action'], 'escalate')
-        rec3, _ad = run8([d], guards='v3')
-        self.assertNotIn('role_checks', rec3['guard'])
+        self.assertEqual(rec['action_audit']['intent']['action'], 'escalate')        # the record's derived fields describe the final decision
 
 
 class GuardV4WhatIf(unittest.TestCase):
