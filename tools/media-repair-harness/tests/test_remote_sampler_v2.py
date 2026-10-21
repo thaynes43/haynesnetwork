@@ -160,6 +160,25 @@ class RealSampler(unittest.TestCase):
         self.assertTrue(receipt['confined'])
         self.assertEqual(set(receipt['identity']['start']), {'size', 'mtime_ns', 'dev', 'ino'})
 
+    def test_a_slow_confinement_check_stays_inside_the_budget(self):
+        """Advisory review of 1a13c355: realpath runs inside the shared budget, so a hung mount during the confinement check still ends, early, with a
+        receipt (budget lowered to 2 s; realpath made slow); the harness reads it as not confined."""
+        import subprocess
+        import sys
+        import time
+        slow = 'import os.path as _p, time as _t\n_r = _p.realpath\n_p.realpath = lambda x, **k: (_t.sleep(30), _r(x))[1]\n'
+        text = slow + RE.SAMPLER.read_text().replace('LIMIT_S = 25 ', 'LIMIT_S = 2 ', 1)
+        t0 = time.monotonic()
+        done = subprocess.run([sys.executable, '-', 'stat', str(self.file), '--root', str(self.root)], input=text.encode(), capture_output=True, timeout=20)
+        self.assertLess(time.monotonic() - t0, 8)
+        receipt, problem = RE.parse_receipt(done.stderr)
+        self.assertIsNone(problem)
+        self.assertEqual((receipt['exit_code'], receipt['timed_out'], receipt['confined'], receipt['bytes_read']), ('timeout', True, None, 0))
+        pod = H.LocalPod(after=lambda argv, n, r: H.Completed(0, b'', done.stderr))
+        with self.assertRaises(RE.FatalOperation) as cm:
+            op(pod, 'stat', self.file, RE.Binding(host=RE.HostState(), root=str(self.root)), bind=False)
+        self.assertEqual(cm.exception.kind, 'not_confined')
+
     def test_bad_arguments_still_end_with_a_receipt(self):
         b = RE.Binding(host=RE.HostState(), root=str(self.root))
         receipt, out = op(self.pod, 'subtitle', self.file, b, ['--window', 50], bind=False)

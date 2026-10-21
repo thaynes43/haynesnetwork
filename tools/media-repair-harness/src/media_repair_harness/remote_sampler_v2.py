@@ -59,8 +59,15 @@ def confine(path, is_dir=False):
     root itself).  Sets receipt['confined']; a path that is not confined ends the invocation with nothing read."""
     if a.root is None:
         return
-    root = os.path.realpath(a.root)
-    real = os.path.realpath(path)
+    try:
+        value, late = bounded(lambda: (os.path.realpath(a.root), os.path.realpath(path)))     # realpath stats every component: inside the budget too
+    except RuntimeError as e:
+        receipt['error'] = str(e)
+        finish()
+    if late:
+        receipt.update(exit_code='timeout', timed_out=True, error='confinement not established before the limit; nothing was read')
+        finish()
+    root, real = value
     ok = (os.path.isabs(path) and os.path.normpath(path) == path and real == path and '\n' not in path and '\0' not in path
           and (real.startswith(root.rstrip('/') + '/') or (is_dir and real == root)))
     receipt['confined'] = ok
