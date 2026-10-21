@@ -1,0 +1,130 @@
+{
+  "budgets": {
+    "4096": {
+      "advertised": {
+        "calibrated_at_or_over_16384": 0,
+        "calibrated_at_or_over_input_budget_15744": 0,
+        "calibrated_max": 11365,
+        "estimate_at_or_over_16384": 0,
+        "estimate_max": 14833,
+        "estimate_median": 10498,
+        "n": 73
+      },
+      "all_sequences": {
+        "calibrated_at_or_over_16384": 0,
+        "calibrated_at_or_over_input_budget_15744": 0,
+        "calibrated_max": 11365,
+        "estimate_at_or_over_16384": 0,
+        "estimate_max": 14833,
+        "estimate_median": 8570,
+        "n": 383
+      },
+      "epub_maximal": {
+        "calibrated_at_or_over_16384": 0,
+        "calibrated_at_or_over_input_budget_15744": 0,
+        "calibrated_max": 10852,
+        "estimate_at_or_over_16384": 0,
+        "estimate_max": 14154,
+        "estimate_median": 11870,
+        "n": 9
+      },
+      "epub_page_fetch": {
+        "calibrated_at_or_over_16384": 0,
+        "calibrated_at_or_over_input_budget_15744": 0,
+        "calibrated_max": 10164,
+        "estimate_at_or_over_16384": 0,
+        "estimate_max": 13243,
+        "estimate_median": 10727,
+        "n": 9
+      },
+      "first": {
+        "calibrated_at_or_over_16384": 0,
+        "calibrated_at_or_over_input_budget_15744": 0,
+        "calibrated_max": 6565,
+        "estimate_at_or_over_16384": 0,
+        "estimate_max": 8481,
+        "estimate_median": 8223,
+        "n": 73
+      },
+      "harness_errors": 0,
+      "multi_page_first_messages": 28,
+      "recorded": {
+        "calibrated_at_or_over_16384": 0,
+        "calibrated_at_or_over_input_budget_15744": 0,
+        "calibrated_max": 9043,
+        "estimate_at_or_over_16384": 0,
+        "estimate_max": 11760,
+        "estimate_median": 8570,
+        "n": 219
+      },
+      "requests_max": 7
+    },
+    "8192": {
+      "advertised": {
+        "calibrated_at_or_over_16384": 0,
+        "calibrated_at_or_over_input_budget_15744": 0,
+        "calibrated_max": 12224,
+        "estimate_at_or_over_16384": 0,
+        "estimate_max": 15970,
+        "estimate_median": 10148,
+        "n": 73
+      },
+      "all_sequences": {
+        "calibrated_at_or_over_16384": 0,
+        "calibrated_at_or_over_input_budget_15744": 0,
+        "calibrated_max": 12224,
+        "estimate_at_or_over_16384": 0,
+        "estimate_max": 15970,
+        "estimate_median": 8850,
+        "n": 383
+      },
+      "epub_maximal": {
+        "calibrated_at_or_over_16384": 0,
+        "calibrated_at_or_over_input_budget_15744": 0,
+        "calibrated_max": 11013,
+        "estimate_at_or_over_16384": 0,
+        "estimate_max": 14367,
+        "estimate_median": 11049,
+        "n": 9
+      },
+      "epub_page_fetch": {
+        "calibrated_at_or_over_16384": 0,
+        "calibrated_at_or_over_input_budget_15744": 0,
+        "calibrated_max": 9480,
+        "estimate_at_or_over_16384": 0,
+        "estimate_max": 12339,
+        "estimate_median": 10077,
+        "n": 9
+      },
+      "first": {
+        "calibrated_at_or_over_16384": 0,
+        "calibrated_at_or_over_input_budget_15744": 0,
+        "calibrated_max": 7273,
+        "estimate_at_or_over_16384": 0,
+        "estimate_max": 9418,
+        "estimate_median": 8223,
+        "n": 73
+      },
+      "harness_errors": 0,
+      "multi_page_first_messages": 0,
+      "recorded": {
+        "calibrated_at_or_over_16384": 0,
+        "calibrated_at_or_over_input_budget_15744": 0,
+        "calibrated_max": 8807,
+        "estimate_at_or_over_16384": 0,
+        "estimate_max": 11448,
+        "estimate_median": 8570,
+        "n": 219
+      },
+      "requests_max": 7
+    }
+  },
+  "calibrated_chars_per_token": 3.97,
+  "cases": 73,
+  "input_budget_tokens": 15744,
+  "note": "aggregates only; offline; no model call; prompt v7 + format v3.1-format, suite-dev-v1.1 dev split, scripted maximal replies",
+  "num_ctx": 16384,
+  "output_reserve_tokens": 640,
+  "v7_system_chars": 19500,
+  "v7_system_plus_reserve_tokens_estimate": 7140
+}

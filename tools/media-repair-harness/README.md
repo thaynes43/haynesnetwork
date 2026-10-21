@@ -155,6 +155,13 @@ More than 0.20 stalled s/s for 2 consecutive samples, any restart or pod change,
 A cancelled in-flight case is kept as a failed record. The model is unloaded at the end of every batch. Every ollama turn records `meta.context` (reported prompt tokens, a 3-chars-per-token estimate, flags such as
 `prompt_at_context_limit`); the case record carries `context_check`. `--tool-output-bytes N` lowers the cap on one tool result for small local contexts (the system prompt still says 8 KiB; the cut is marked `...[truncated]`).
 
+**dev-c7 measurement flags (WO-W23; versioned, opt-in, ollama only; unset = byte-identical to before, proven against the recorded dev-c6 configs and context records in `tests/test_devc7_measure.py`):**
+`--context-policy ctx16k-v1` is the only way to send a `num_ctx` outside 4096 / 8192: it requires `--num-ctx 16384` (Tom's ruling for the dev-c7 qwen run only), records the policy in the adapter config,
+adds the per-turn flag `prompt_reaches_input_budget` (reported `prompt_eval_count >= num_ctx - num_predict`) and the per-case flag `reported_prompt_did_not_grow` (a later turn whose reported prompt is not above
+the previous turn's prompt plus its output: Ollama drops whole old messages when a chat prompt exceeds `num_ctx`, which can leave the count below the limit). `--gpu-fit-check full-gpu-v1` reads `/api/ps`
+once after the warm-up: unless the model this run loaded is the only resident and `size_vram == size` (and a reported context length is not below the requested one), the run unloads it and stops before any
+case (exit 3, `aborted: gpu_fit_skip ...`, the reading in `manifest.preflight.gpu_fit`). It needs the warm-up.
+
 ### GPU etiquette (Ollama Prime)
 
 Preflight reads `/api/version`, `/api/tags`, `/api/ps` and the GPU snapshot. It aborts, without loading or evicting anything, if a model this run did not load is resident, if the GPU has a compute
