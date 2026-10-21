@@ -127,7 +127,7 @@ TOOLS_BEHAVIORS = ('v1', 'v2', 'v3', 'v4')
 
 def _v2plus(ctx):
     """Tools behaviour v2, v3 or v4: v3 (dev-c7, evidence format v3.1-format) is v2 plus the EPUB body excerpts (epub_text.py), every v2 rule unchanged;
-    v4 (W25) is v3 plus three EPUB package-check corrections (_epub_stage_v4, _inspect_v4, SIZE_CAP_V4)."""
+    v4 (W25) is v3 plus three EPUB package-check corrections (_epub_stage remote_ok, _inspect_v4, SIZE_CAP_V4)."""
     return ctx.tools_behavior in ('v2', 'v3', 'v4')
 
 
