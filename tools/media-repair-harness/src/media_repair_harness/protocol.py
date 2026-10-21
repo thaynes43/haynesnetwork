@@ -3,19 +3,20 @@ import hashlib
 import json
 from pathlib import Path
 
-HARNESS_VERSION = 'dev-c6'  # recorded in every run record and manifest
+HARNESS_VERSION = 'dev-c7'  # recorded in every run record and manifest
 PROTOCOL_VERSION = 'v1'  # the v1 turn protocol (prompt v1); prompt v2 has its own, see PROMPT_VERSIONS
-PROMPT_VERSIONS = ('v1', 'v2', 'v3', 'v4', 'v5', 'v6')
+PROMPT_VERSIONS = ('v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7')
 # Prompt text and turn protocol are versioned apart: v3 (dev-c3) is new prompt text on the unchanged v2 turn protocol (audit object,
 # tool_not_offered violations, per-case schema).  Anything that is about the protocol asks `protocol_of(version)`, not the prompt version.
-PROMPT_PROTOCOL = {'v1': 'v1', 'v2': 'v2', 'v3': 'v2', 'v4': 'v2', 'v5': 'v2', 'v6': 'v3'}
+PROMPT_PROTOCOL = {'v1': 'v1', 'v2': 'v2', 'v3': 'v2', 'v4': 'v2', 'v5': 'v2', 'v6': 'v3', 'v7': 'v3'}
+# v7 (dev-c7) is prompt text on the same turn protocol v3 / decision-v3 as v6, valid only with `--evidence-format v3.1-format`; v6 stays frozen.
 # v6 (dev-c6) is the one prompt that declares contract v3: it speaks turn protocol v3 (decision schema `decision-v3`: a write carries a source binding and an
 # action-specific target object; none and escalate carry neither), valid only with `--evidence-format v3` (run.check_option_combination).
 V2_TURN_PROTOCOLS = ('v2', 'v3')   # protocols that share the v2 turn rules (tool_not_offered violations, the repair hints, the per-case schema); v3 changes the decision only
 # Prompt versions whose per-case Ollama `format` schema is exact about the tool enum: a case that offers NO tool gets no tool-call branch at all.
 # v2 and v3 keep the dev-c2/dev-c3 behaviour (an empty tools_available fell back to the full tool list there, which is how muse-glimmer:30b called
 # tools no case offered on 11 dev cases); changing it for them would change what those prompts measure.
-STRICT_TOOL_SCHEMA = ('v4', 'v5', 'v6')
+STRICT_TOOL_SCHEMA = ('v4', 'v5', 'v6', 'v7')
 DEFAULT_PROMPT = 'v1'  # stays v1 until checkpoint 2c
 PROMPT_DIR = Path(__file__).resolve().parent / 'prompts'
 MAX_TOOL_CALLS = 6
@@ -110,10 +111,11 @@ def get_prompt(version=DEFAULT_PROMPT):
     """-> {'version', 'text', 'sha256'}.  v1 is SYSTEM_PROMPT above (unchanged, so its sha matches the checkpoint 1
     records); v2 is prompts/v2.txt and v3 (dev-c3) is prompts/v3.txt, each sent exactly as its file reads (one trailing newline removed).
     v3 (dev-c3), v4 (dev-c4) and v5 (dev-c5; valid only with `--evidence-format v2`, see run.check_option_combination) are new text on the v2 turn protocol, see protocol_of.
-    v6 (dev-c6) declares contract v3 and speaks turn protocol v3; it is valid only with `--evidence-format v3`."""
+    v6 (dev-c6) declares contract v3 and speaks turn protocol v3; it is valid only with `--evidence-format v3`.  v7 (dev-c7) is new text on turn protocol v3,
+    valid only with `--evidence-format v3.1-format`."""
     if version == 'v1':
         text = SYSTEM_PROMPT
-    elif version in ('v2', 'v3', 'v4', 'v5', 'v6'):
+    elif version in ('v2', 'v3', 'v4', 'v5', 'v6', 'v7'):
         text = (PROMPT_DIR / (version + '.txt')).read_text(encoding='utf-8').rstrip('\n')
     else:
         raise ValueError('unknown prompt version %r (known: %s)' % (version, ', '.join(PROMPT_VERSIONS)))

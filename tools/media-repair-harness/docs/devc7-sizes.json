@@ -1,0 +1,618 @@
+{
+  "context_floor": {
+    "note": "v7's system prompt and the output reserve alone are about 7140 estimated tokens of an 8192-token context, before any case evidence; no --tool-output-bytes budget can bring a conversation with a tool result under 8192, so a local 8192-context measurement of v7 is not feasible as built (estimates, not demonstrated truncation)",
+    "v7_system_prompt_plus_output_reserve_tokens_estimate": 7140
+  },
+  "context_policy_candidate": "NOT FROZEN (a documented measurement prerequisite): run every case with a uniform --tool-output-bytes 4096; the primary context flag is the model runtime's REPORTED prompt-token count (prompt_at_context_limit, context_full_after_generation), the 3-characters-per-token estimate is a secondary flag; a run whose reported tokens reach the context is kept and reported, never dropped from a denominator",
+  "excerpt_rule": "xhtml-body-text-3",
+  "excerpt_rules_sha256": "f7bc75e2330ab888b9d3e48fd37860bd410e41b218ef345547da3d0f64b7b7d1",
+  "note": "aggregates only; offline; no model call; format v3.1-format / tools v3 against format v3 / tools v2 on the same cases",
+  "prompt": {
+    "context_note": "the 8192-token local context of the qwen runs is the binding budget: the system prompt and every message share it",
+    "v6_bytes": 16347,
+    "v6_tokens_estimate_3cpt": 5449,
+    "v7_bytes": 19500,
+    "v7_minus_v6_bytes": 3153,
+    "v7_tokens_estimate_3cpt": 6500
+  },
+  "suites": {
+    "suite-dev-v1": {
+      "cases": 73,
+      "epub": {
+        "declared_toc_source": {
+          "error": 0,
+          "nav": 6,
+          "ncx": 3,
+          "none": 0
+        },
+        "forbidden_cache_skipped": 0,
+        "full_conversation": {
+          "2560": {
+            "default_sequence": {
+              "at_or_over_8192": 9,
+              "max": 8879,
+              "median": 8784,
+              "n": 9
+            },
+            "maximal_sequence": {
+              "at_or_over_8192": 9,
+              "max": 12547,
+              "median": 10445,
+              "n": 9
+            },
+            "page_fetch_sequence": {
+              "at_or_over_8192": 9,
+              "max": 12908,
+              "median": 11279,
+              "n": 9
+            },
+            "requests_max": 7
+          },
+          "4096": {
+            "default_sequence": {
+              "at_or_over_8192": 9,
+              "max": 9613,
+              "median": 9451,
+              "n": 9
+            },
+            "maximal_sequence": {
+              "at_or_over_8192": 9,
+              "max": 13361,
+              "median": 11213,
+              "n": 9
+            },
+            "page_fetch_sequence": {
+              "at_or_over_8192": 9,
+              "max": 13219,
+              "median": 10702,
+              "n": 9
+            },
+            "requests_max": 7
+          },
+          "8192": {
+            "default_sequence": {
+              "at_or_over_8192": 9,
+              "max": 10909,
+              "median": 9405,
+              "n": 9
+            },
+            "maximal_sequence": {
+              "at_or_over_8192": 9,
+              "max": 14343,
+              "median": 11025,
+              "n": 9
+            },
+            "page_fetch_sequence": {
+              "at_or_over_8192": 9,
+              "max": 12315,
+              "median": 10053,
+              "n": 9
+            },
+            "requests_max": 7
+          }
+        },
+        "full_conversation_note": "max over the requests of one conversation of (system prompt + every accumulated message) / 3 characters per token, plus the 640-token output reserve; replies are maximal (200-character why, 400-character reason); default = epub_inspect {} then a decision; maximal = {} then five 1200-code-point excerpts through the spine, then a decision; page_fetch = {}, every page of it fetched by cursor, one maximal excerpt and every page of it, then a decision (at most 7 requests)",
+        "measured": 9,
+        "not_ok_default_call": {
+          "error": 8
+        },
+        "observed_headings_in_index": {
+          "max": 23,
+          "median": 3,
+          "n": 9
+        },
+        "offering_epub_inspect": 17,
+        "raw_tool_output_bytes": {
+          "tools_v2": {
+            "max": 562,
+            "median": 482,
+            "n": 9
+          },
+          "tools_v3": {
+            "max": 9023,
+            "median": 2511,
+            "n": 9
+          }
+        },
+        "refusals": {
+          "legacy_kinds": {
+            "family": 1,
+            "provenance": 1,
+            "truth_class": 1
+          },
+          "legacy_rule_cases": 3,
+          "media_kinds": {},
+          "media_rule_cases": 0,
+          "run_refusals": 0,
+          "scanned": 9
+        },
+        "spine_items": {
+          "max": 53,
+          "median": 3,
+          "n": 9
+        },
+        "unavailable_here": 0,
+        "wire": {
+          "2560": {
+            "v2_default_wire_bytes": {
+              "max": 1564,
+              "median": 1285,
+              "n": 9
+            },
+            "v3_default_pages": {
+              "max": 7,
+              "multi_page": 8
+            },
+            "v3_default_wire_bytes": {
+              "max": 2439,
+              "median": 2174,
+              "n": 9
+            },
+            "v3_max_excerpt_pages": {
+              "max": 1,
+              "multi_page": 0
+            },
+            "v3_max_excerpt_wire_bytes": {
+              "max": 1458,
+              "median": 1183,
+              "n": 9
+            }
+          },
+          "4096": {
+            "v2_default_wire_bytes": {
+              "max": 1564,
+              "median": 1285,
+              "n": 9
+            },
+            "v3_default_pages": {
+              "max": 4,
+              "multi_page": 6
+            },
+            "v3_default_wire_bytes": {
+              "max": 3921,
+              "median": 3569,
+              "n": 9
+            },
+            "v3_max_excerpt_pages": {
+              "max": 1,
+              "multi_page": 0
+            },
+            "v3_max_excerpt_wire_bytes": {
+              "max": 1548,
+              "median": 976,
+              "n": 9
+            }
+          },
+          "8192": {
+            "v2_default_wire_bytes": {
+              "max": 1564,
+              "median": 1285,
+              "n": 9
+            },
+            "v3_default_pages": {
+              "max": 2,
+              "multi_page": 1
+            },
+            "v3_default_wire_bytes": {
+              "max": 7874,
+              "median": 3429,
+              "n": 9
+            },
+            "v3_max_excerpt_pages": {
+              "max": 1,
+              "multi_page": 0
+            },
+            "v3_max_excerpt_wire_bytes": {
+              "max": 1708,
+              "median": 976,
+              "n": 9
+            }
+          }
+        }
+      },
+      "first_message": {
+        "2560": {
+          "v3": {
+            "estimate_at_or_over_8192_tokens": 0,
+            "first_page_bytes": {
+              "max": 2553,
+              "median": 2452,
+              "n": 73
+            },
+            "max_pages": 5,
+            "multi_page_first_messages": 51,
+            "page_budget_errors": 0,
+            "system_plus_first_tokens_estimate": {
+              "max": 6300,
+              "median": 6266,
+              "n": 73
+            }
+          },
+          "v3.1-format": {
+            "estimate_at_or_over_8192_tokens": 0,
+            "first_page_bytes": {
+              "max": 2545,
+              "median": 2458,
+              "n": 73
+            },
+            "max_pages": 5,
+            "multi_page_first_messages": 56,
+            "page_budget_errors": 0,
+            "system_plus_first_tokens_estimate": {
+              "max": 7348,
+              "median": 7319,
+              "n": 73
+            }
+          }
+        },
+        "4096": {
+          "v3": {
+            "estimate_at_or_over_8192_tokens": 0,
+            "first_page_bytes": {
+              "max": 4064,
+              "median": 2759,
+              "n": 73
+            },
+            "max_pages": 3,
+            "multi_page_first_messages": 28,
+            "page_budget_errors": 0,
+            "system_plus_first_tokens_estimate": {
+              "max": 6803,
+              "median": 6368,
+              "n": 73
+            }
+          },
+          "v3.1-format": {
+            "estimate_at_or_over_8192_tokens": 0,
+            "first_page_bytes": {
+              "max": 4068,
+              "median": 3229,
+              "n": 73
+            },
+            "max_pages": 3,
+            "multi_page_first_messages": 28,
+            "page_budget_errors": 0,
+            "system_plus_first_tokens_estimate": {
+              "max": 7856,
+              "median": 7576,
+              "n": 73
+            }
+          }
+        },
+        "8192": {
+          "v3": {
+            "estimate_at_or_over_8192_tokens": 0,
+            "first_page_bytes": {
+              "max": 6952,
+              "median": 2759,
+              "n": 73
+            },
+            "max_pages": 1,
+            "multi_page_first_messages": 0,
+            "page_budget_errors": 0,
+            "system_plus_first_tokens_estimate": {
+              "max": 7766,
+              "median": 6368,
+              "n": 73
+            }
+          },
+          "v3.1-format": {
+            "estimate_at_or_over_8192_tokens": 24,
+            "first_page_bytes": {
+              "max": 6961,
+              "median": 3229,
+              "n": 73
+            },
+            "max_pages": 1,
+            "multi_page_first_messages": 0,
+            "page_budget_errors": 0,
+            "system_plus_first_tokens_estimate": {
+              "max": 8820,
+              "median": 7576,
+              "n": 73
+            }
+          }
+        }
+      }
+    },
+    "suite-dev-v1.1": {
+      "cases": 73,
+      "epub": {
+        "declared_toc_source": {
+          "error": 0,
+          "nav": 6,
+          "ncx": 3,
+          "none": 0
+        },
+        "forbidden_cache_skipped": 0,
+        "full_conversation": {
+          "2560": {
+            "default_sequence": {
+              "at_or_over_8192": 9,
+              "max": 8877,
+              "median": 8784,
+              "n": 9
+            },
+            "maximal_sequence": {
+              "at_or_over_8192": 9,
+              "max": 12562,
+              "median": 10410,
+              "n": 9
+            },
+            "page_fetch_sequence": {
+              "at_or_over_8192": 9,
+              "max": 12935,
+              "median": 11297,
+              "n": 9
+            },
+            "requests_max": 7
+          },
+          "4096": {
+            "default_sequence": {
+              "at_or_over_8192": 9,
+              "max": 9637,
+              "median": 9485,
+              "n": 9
+            },
+            "maximal_sequence": {
+              "at_or_over_8192": 9,
+              "max": 13385,
+              "median": 11237,
+              "n": 9
+            },
+            "page_fetch_sequence": {
+              "at_or_over_8192": 9,
+              "max": 13243,
+              "median": 10727,
+              "n": 9
+            },
+            "requests_max": 7
+          },
+          "8192": {
+            "default_sequence": {
+              "at_or_over_8192": 9,
+              "max": 10933,
+              "median": 9439,
+              "n": 9
+            },
+            "maximal_sequence": {
+              "at_or_over_8192": 9,
+              "max": 14367,
+              "median": 11049,
+              "n": 9
+            },
+            "page_fetch_sequence": {
+              "at_or_over_8192": 9,
+              "max": 12339,
+              "median": 10077,
+              "n": 9
+            },
+            "requests_max": 7
+          }
+        },
+        "full_conversation_note": "max over the requests of one conversation of (system prompt + every accumulated message) / 3 characters per token, plus the 640-token output reserve; replies are maximal (200-character why, 400-character reason); default = epub_inspect {} then a decision; maximal = {} then five 1200-code-point excerpts through the spine, then a decision; page_fetch = {}, every page of it fetched by cursor, one maximal excerpt and every page of it, then a decision (at most 7 requests)",
+        "measured": 9,
+        "not_ok_default_call": {
+          "error": 8
+        },
+        "observed_headings_in_index": {
+          "max": 23,
+          "median": 3,
+          "n": 9
+        },
+        "offering_epub_inspect": 17,
+        "raw_tool_output_bytes": {
+          "tools_v2": {
+            "max": 562,
+            "median": 482,
+            "n": 9
+          },
+          "tools_v3": {
+            "max": 9023,
+            "median": 2511,
+            "n": 9
+          }
+        },
+        "refusals": {
+          "legacy_kinds": {
+            "family": 1,
+            "provenance": 1,
+            "truth_class": 1
+          },
+          "legacy_rule_cases": 3,
+          "media_kinds": {},
+          "media_rule_cases": 0,
+          "run_refusals": 0,
+          "scanned": 9
+        },
+        "spine_items": {
+          "max": 53,
+          "median": 3,
+          "n": 9
+        },
+        "unavailable_here": 0,
+        "wire": {
+          "2560": {
+            "v2_default_wire_bytes": {
+              "max": 1564,
+              "median": 1285,
+              "n": 9
+            },
+            "v3_default_pages": {
+              "max": 7,
+              "multi_page": 8
+            },
+            "v3_default_wire_bytes": {
+              "max": 2439,
+              "median": 2174,
+              "n": 9
+            },
+            "v3_max_excerpt_pages": {
+              "max": 1,
+              "multi_page": 0
+            },
+            "v3_max_excerpt_wire_bytes": {
+              "max": 1458,
+              "median": 1183,
+              "n": 9
+            }
+          },
+          "4096": {
+            "v2_default_wire_bytes": {
+              "max": 1564,
+              "median": 1285,
+              "n": 9
+            },
+            "v3_default_pages": {
+              "max": 4,
+              "multi_page": 6
+            },
+            "v3_default_wire_bytes": {
+              "max": 3921,
+              "median": 3569,
+              "n": 9
+            },
+            "v3_max_excerpt_pages": {
+              "max": 1,
+              "multi_page": 0
+            },
+            "v3_max_excerpt_wire_bytes": {
+              "max": 1548,
+              "median": 976,
+              "n": 9
+            }
+          },
+          "8192": {
+            "v2_default_wire_bytes": {
+              "max": 1564,
+              "median": 1285,
+              "n": 9
+            },
+            "v3_default_pages": {
+              "max": 2,
+              "multi_page": 1
+            },
+            "v3_default_wire_bytes": {
+              "max": 7874,
+              "median": 3429,
+              "n": 9
+            },
+            "v3_max_excerpt_pages": {
+              "max": 1,
+              "multi_page": 0
+            },
+            "v3_max_excerpt_wire_bytes": {
+              "max": 1708,
+              "median": 976,
+              "n": 9
+            }
+          }
+        }
+      },
+      "first_message": {
+        "2560": {
+          "v3": {
+            "estimate_at_or_over_8192_tokens": 0,
+            "first_page_bytes": {
+              "max": 2546,
+              "median": 2406,
+              "n": 73
+            },
+            "max_pages": 5,
+            "multi_page_first_messages": 54,
+            "page_budget_errors": 0,
+            "system_plus_first_tokens_estimate": {
+              "max": 6297,
+              "median": 6251,
+              "n": 73
+            }
+          },
+          "v3.1-format": {
+            "estimate_at_or_over_8192_tokens": 0,
+            "first_page_bytes": {
+              "max": 2543,
+              "median": 2436,
+              "n": 73
+            },
+            "max_pages": 5,
+            "multi_page_first_messages": 56,
+            "page_budget_errors": 0,
+            "system_plus_first_tokens_estimate": {
+              "max": 7347,
+              "median": 7312,
+              "n": 73
+            }
+          }
+        },
+        "4096": {
+          "v3": {
+            "estimate_at_or_over_8192_tokens": 0,
+            "first_page_bytes": {
+              "max": 4014,
+              "median": 2867,
+              "n": 73
+            },
+            "max_pages": 3,
+            "multi_page_first_messages": 28,
+            "page_budget_errors": 0,
+            "system_plus_first_tokens_estimate": {
+              "max": 6787,
+              "median": 6404,
+              "n": 73
+            }
+          },
+          "v3.1-format": {
+            "estimate_at_or_over_8192_tokens": 0,
+            "first_page_bytes": {
+              "max": 4023,
+              "median": 3249,
+              "n": 73
+            },
+            "max_pages": 3,
+            "multi_page_first_messages": 28,
+            "page_budget_errors": 0,
+            "system_plus_first_tokens_estimate": {
+              "max": 7841,
+              "median": 7583,
+              "n": 73
+            }
+          }
+        },
+        "8192": {
+          "v3": {
+            "estimate_at_or_over_8192_tokens": 0,
+            "first_page_bytes": {
+              "max": 6826,
+              "median": 2867,
+              "n": 73
+            },
+            "max_pages": 1,
+            "multi_page_first_messages": 0,
+            "page_budget_errors": 0,
+            "system_plus_first_tokens_estimate": {
+              "max": 7724,
+              "median": 6404,
+              "n": 73
+            }
+          },
+          "v3.1-format": {
+            "estimate_at_or_over_8192_tokens": 24,
+            "first_page_bytes": {
+              "max": 6835,
+              "median": 3249,
+              "n": 73
+            },
+            "max_pages": 1,
+            "multi_page_first_messages": 0,
+            "page_budget_errors": 0,
+            "system_plus_first_tokens_estimate": {
+              "max": 8778,
+              "median": 7583,
+              "n": 73
+            }
+          }
+        }
+      }
+    }
+  }
+}

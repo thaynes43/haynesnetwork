@@ -45,17 +45,17 @@ class PromptV6(unittest.TestCase):
         self.v6 = P.get_prompt('v6')['text']
 
     def test_selectable_on_turn_protocol_v3_and_v1_to_v5_are_byte_identical(self):
-        self.assertEqual(P.PROMPT_VERSIONS, ('v1', 'v2', 'v3', 'v4', 'v5', 'v6'))
+        self.assertEqual(P.PROMPT_VERSIONS, ('v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7'))     # dev-c7 added v7 (tests/test_devc7.py)
         self.assertEqual(P.DEFAULT_PROMPT, 'v1')
-        self.assertEqual([P.protocol_of(v) for v in P.PROMPT_VERSIONS], ['v1', 'v2', 'v2', 'v2', 'v2', 'v3'])
+        self.assertEqual([P.protocol_of(v) for v in P.PROMPT_VERSIONS], ['v1', 'v2', 'v2', 'v2', 'v2', 'v3', 'v3'])
         for v, sha in OLD_SHA.items():
             self.assertEqual(P.get_prompt(v)['sha256'], sha, v)
         self.assertEqual(hashlib.sha256((P.PROMPT_DIR / 'v5.txt').read_bytes()).hexdigest(), V5_FILE_SHA256)
         self.assertEqual(hashlib.sha256((P.PROMPT_DIR / 'v6.txt').read_bytes()).hexdigest(), V6_FILE_SHA256)
         self.assertEqual(P.get_prompt('v6')['sha256'], V6_SENT_SHA256)
-        self.assertEqual(P.HARNESS_VERSION, 'dev-c6')
+        self.assertEqual(P.HARNESS_VERSION, 'dev-c7')       # dev-c7 moved it; v6 and its measured text are unchanged
         with self.assertRaises(ValueError):
-            P.get_prompt('v7')
+            P.get_prompt('v8')      # dev-c7 added v7
 
     def test_the_v1_to_v5_turn_schemas_are_unchanged(self):
         # every v1 to v5 schema (both variants, four tool lists) hashes as on main 43ce9e9f, before dev-c6; v6 has its own

@@ -65,13 +65,13 @@ class Replay(A.ScriptedAdapter):
         return super().complete(system, messages, schema)
 
 
-WIRING_MODULE = 'evidence_v3.py'     # dev-c6: the one production module that imports the contract-v3 modules
+WIRING_MODULES = ('evidence_v3.py', 'evidence_v31.py')     # dev-c6 and dev-c7: the production modules that import the contract-v3 modules
 
 
 class NoProductionImport(unittest.TestCase):
     def test_no_module_outside_experimental_imports_it(self):
         for p in sorted(SRC.rglob('*.py')):
-            if 'experimental' in p.parts or p.name == WIRING_MODULE:
+            if 'experimental' in p.parts or p.name in WIRING_MODULES:
                 continue
             tree = ast.parse(p.read_text())
             for node in ast.walk(tree):
@@ -93,7 +93,7 @@ class NoProductionImport(unittest.TestCase):
 
     def test_the_runner_offers_v3_only_as_contract_v3_with_prompt_v6(self):
         # dev-c6 replaced `test_the_runner_offers_no_v3_option`: format v3 is now selectable, but only as one version with prompt v6
-        self.assertEqual(R.EVIDENCE_FORMATS, ('v2', 'v3'))
+        self.assertEqual(R.EVIDENCE_FORMATS, ('v2', 'v3', 'v3.1-format'))      # dev-c7 added v3.1-format (prompt v7 only; tests/test_devc7.py)
         for pv in ('v1', 'v2', 'v3', 'v4', 'v5'):
             with self.assertRaises(ValueError):
                 R.check_option_combination(pv, 'v3')
@@ -103,7 +103,7 @@ class NoProductionImport(unittest.TestCase):
         import subprocess
         import sys
         code = ('import sys, media_repair_harness.run as r, media_repair_harness.guard_cli, media_repair_harness.score_compat; '
-                'print(sorted(m for m in sys.modules if "experimental" in m or m.endswith("evidence_v3")))')
+                'print(sorted(m for m in sys.modules if "experimental" in m or m.endswith("evidence_v3") or m.endswith("evidence_v31") or m.endswith("epub_text")))')
         out = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, env=dict(__import__('os').environ, PYTHONPATH=str(SRC.parent)))
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertEqual(out.stdout.strip(), '[]')
