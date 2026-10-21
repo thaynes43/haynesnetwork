@@ -639,7 +639,9 @@ def delivered_cues(sent_messages, observations):
         _cue_findings(obj, known_set, found)
         for f in found:
             text = f['detail']
-            seen.setdefault(f['id'], {'id': f['id'], 'text_seen': text, 'clipped': bool('detail_full' in f or text.endswith('...') or '...[+' in text)})
+            # clipped: the typed layer marks every clip with detail_full (a page cut leaves its own `...[+N chars` marker); a line that merely ends in an
+            # ellipsis is the subtitle's own text, not a clip
+            seen.setdefault(f['id'], {'id': f['id'], 'text_seen': text, 'clipped': bool('detail_full' in f or '...[+' in text)})
     return [seen[c] for c in known if c in seen]
 
 

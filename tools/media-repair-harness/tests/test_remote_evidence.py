@@ -512,10 +512,12 @@ class Round2(unittest.TestCase):
         """Opus nit: the report gives the cue text exactly as the model saw it, clipped where it was, and says it was clipped."""
         from media_repair_harness import stage_r as SR
         long = 'x' * 50 + ' SECRET-AT-THE-END ' + 'y' * 200
-        srt = ('1\n00:00:01,000 --> 00:00:02,000\n%s\n\n2\n00:00:03,000 --> 00:00:04,000\nShort line.\n\n' % long).encode()
+        srt = ('1\n00:00:01,000 --> 00:00:02,000\n%s\n\n2\n00:00:03,000 --> 00:00:04,000\nShort line.\n\n'
+               '3\n00:00:05,000 --> 00:00:06,000\nAnd then...\n\n' % long).encode()
         rec, _ad = run(H.remote_case(), [th.tool_call('subtitle_sample', {'at': 60}), H.dec()], H.FakeSampler(default=H.answer(stdout=srt)))
         cues = SR.delivered_cues(rec)
-        self.assertEqual([(c['id'], c['clipped']) for c in cues], [('t1.f1', True), ('t1.f2', False)])
+        self.assertEqual([(c['id'], c['clipped']) for c in cues], [('t1.f1', True), ('t1.f2', False), ('t1.f3', False)])   # a line's own ellipsis is no clip
+        self.assertEqual(cues[2]['text'], 'And then...')
         self.assertTrue(cues[0]['text'].endswith('...'))
         self.assertLessEqual(len(cues[0]['text']), 163)
         self.assertEqual(cues[1]['text'], 'Short line.')
