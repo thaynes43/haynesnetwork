@@ -3,16 +3,19 @@ import hashlib
 import json
 from pathlib import Path
 
-HARNESS_VERSION = 'dev-c5'  # recorded in every run record and manifest
+HARNESS_VERSION = 'dev-c6'  # recorded in every run record and manifest
 PROTOCOL_VERSION = 'v1'  # the v1 turn protocol (prompt v1); prompt v2 has its own, see PROMPT_VERSIONS
-PROMPT_VERSIONS = ('v1', 'v2', 'v3', 'v4', 'v5')
+PROMPT_VERSIONS = ('v1', 'v2', 'v3', 'v4', 'v5', 'v6')
 # Prompt text and turn protocol are versioned apart: v3 (dev-c3) is new prompt text on the unchanged v2 turn protocol (audit object,
 # tool_not_offered violations, per-case schema).  Anything that is about the protocol asks `protocol_of(version)`, not the prompt version.
-PROMPT_PROTOCOL = {'v1': 'v1', 'v2': 'v2', 'v3': 'v2', 'v4': 'v2', 'v5': 'v2'}
+PROMPT_PROTOCOL = {'v1': 'v1', 'v2': 'v2', 'v3': 'v2', 'v4': 'v2', 'v5': 'v2', 'v6': 'v3'}
+# v6 (dev-c6) is the one prompt that declares contract v3: it speaks turn protocol v3 (decision schema `decision-v3`: a write carries a source binding and an
+# action-specific target object; none and escalate carry neither), valid only with `--evidence-format v3` (run.check_option_combination).
+V2_TURN_PROTOCOLS = ('v2', 'v3')   # protocols that share the v2 turn rules (tool_not_offered violations, the repair hints, the per-case schema); v3 changes the decision only
 # Prompt versions whose per-case Ollama `format` schema is exact about the tool enum: a case that offers NO tool gets no tool-call branch at all.
 # v2 and v3 keep the dev-c2/dev-c3 behaviour (an empty tools_available fell back to the full tool list there, which is how muse-glimmer:30b called
 # tools no case offered on 11 dev cases); changing it for them would change what those prompts measure.
-STRICT_TOOL_SCHEMA = ('v4', 'v5')
+STRICT_TOOL_SCHEMA = ('v4', 'v5', 'v6')
 DEFAULT_PROMPT = 'v1'  # stays v1 until checkpoint 2c
 PROMPT_DIR = Path(__file__).resolve().parent / 'prompts'
 MAX_TOOL_CALLS = 6
@@ -96,7 +99,7 @@ BUDGET_MESSAGE = ('Tool budget exhausted (6 of 6 used). No more tool calls are p
 
 
 def protocol_of(prompt_version):
-    """The turn protocol ('v1' or 'v2') a prompt version speaks.  Unknown versions raise (never a silent v1)."""
+    """The turn protocol ('v1', 'v2' or 'v3') a prompt version speaks.  Unknown versions raise (never a silent v1)."""
     try:
         return PROMPT_PROTOCOL[prompt_version]
     except KeyError:
@@ -106,10 +109,11 @@ def protocol_of(prompt_version):
 def get_prompt(version=DEFAULT_PROMPT):
     """-> {'version', 'text', 'sha256'}.  v1 is SYSTEM_PROMPT above (unchanged, so its sha matches the checkpoint 1
     records); v2 is prompts/v2.txt and v3 (dev-c3) is prompts/v3.txt, each sent exactly as its file reads (one trailing newline removed).
-    v3 (dev-c3), v4 (dev-c4) and v5 (dev-c5; valid only with `--evidence-format v2`, see run.check_option_combination) are new text on the v2 turn protocol, see protocol_of."""
+    v3 (dev-c3), v4 (dev-c4) and v5 (dev-c5; valid only with `--evidence-format v2`, see run.check_option_combination) are new text on the v2 turn protocol, see protocol_of.
+    v6 (dev-c6) declares contract v3 and speaks turn protocol v3; it is valid only with `--evidence-format v3`."""
     if version == 'v1':
         text = SYSTEM_PROMPT
-    elif version in ('v2', 'v3', 'v4', 'v5'):
+    elif version in ('v2', 'v3', 'v4', 'v5', 'v6'):
         text = (PROMPT_DIR / (version + '.txt')).read_text(encoding='utf-8').rstrip('\n')
     else:
         raise ValueError('unknown prompt version %r (known: %s)' % (version, ', '.join(PROMPT_VERSIONS)))
@@ -173,6 +177,8 @@ def turn_schema(prompt_version=DEFAULT_PROMPT, tools=None, flat=False):
     v4 (STRICT_TOOL_SCHEMA): a case that offers no tool (an empty list or no `tools_available` key) gets no tool-call branch, so only a decision is possible."""
     if prompt_version == 'v1':
         return FLAT_TURN_SCHEMA if flat else TURN_SCHEMA
+    if protocol_of(prompt_version) == 'v3':
+        return turn_schema_v3(tools, flat)
     no_tools = prompt_version in STRICT_TOOL_SCHEMA and not tools   # an empty list or a missing key: no tool is offered
     if no_tools:
         if not flat:
@@ -187,6 +193,72 @@ def turn_schema(prompt_version=DEFAULT_PROMPT, tools=None, flat=False):
              'args': {'type': 'object'}, 'action': {'enum': list(ACTIONS)}, 'audit': AUDIT_SCHEMA}
     props.update({k: v for k, v in _DECISION_V2_PROPS.items() if k != 'type'})
     return {'type': 'object', 'properties': props, 'required': ['type'], 'additionalProperties': False}
+
+
+# ---- turn protocol v3 (prompt v6, contract v3): decision schema `decision-v3` -------------------------------------------------------------------
+# A write carries `source` {"ref": <the evidence id that binds the source, or "case_item" for an item with no managing app>} and a `target` object of the
+# action's kind; none and escalate carry neither.  The validator is the frozen `experimental/contract_v3/targets.validate_decision_v3` (evidence_v3.validate_decision);
+# the schema below is only the grammar handed to a constrained engine (Ollama `format`), written to accept exactly what that validator accepts for each shape.
+_STR = lambda lo, hi: {'type': 'string', 'minLength': lo, 'maxLength': hi}   # noqa: E731
+_DECISION_V3_COMMON = {
+    'reason': _STR(1, 400),
+    'confidence': {'type': 'number', 'minimum': 0, 'maximum': 1},
+    'evidence_refs': {'type': 'array', 'items': _STR(1, 16), 'maxItems': 12},
+}
+TARGET_V3 = {
+    'blocklist_and_search': {'kind': {'enum': ['release_of_source']}, 'source_ref': _STR(1, 16)},
+    'remap': {'kind': {'enum': ['destination_slot']}, 'slot_ref': _STR(1, 16), 'slot_free_ref': _STR(1, 16)},
+    'rename': {'kind': {'enum': ['rename_of_source']}, 'old_value': _STR(1, 200), 'new_value': _STR(1, 200)},
+    'convert': {'kind': {'enum': ['isolated_copy']}, 'allocated_by': {'enum': ['executor']}},
+}
+
+
+def _decision_v3_nowrite():
+    props = {'type': {'enum': ['decision']}, 'class': {'enum': list(CLASSES)}, 'action': {'enum': ['none', 'escalate']}}
+    props.update(_DECISION_V3_COMMON)
+    return {'type': 'object', 'properties': props, 'required': list(props), 'additionalProperties': False}
+
+
+def _decision_v3_write(action):
+    tgt = TARGET_V3[action]
+    props = {'type': {'enum': ['decision']}, 'class': {'enum': list(CLASSES)}, 'action': {'enum': [action]},
+             'source': {'type': 'object', 'properties': {'ref': _STR(1, 16)}, 'required': ['ref'], 'additionalProperties': False},
+             'target': {'type': 'object', 'properties': dict(tgt), 'required': list(tgt), 'additionalProperties': False}}
+    props.update(_DECISION_V3_COMMON)
+    return {'type': 'object', 'properties': props, 'required': list(props), 'additionalProperties': False}
+
+
+def turn_schema_v3(tools=None, flat=False):
+    """The `format` schema of turn protocol v3: a tool call (the case's tool enum; none when no tool is offered), a decision without a write, and one branch per write
+    action with its target kind.  flat=True: one object, only `type` required (the strict validator still decides)."""
+    branches = ([tool_call_schema_v2(tools)] if tools else []) + [_decision_v3_nowrite()] + [_decision_v3_write(a) for a in WRITE_ACTIONS]
+    if not flat:
+        return {'anyOf': branches}
+    props = {'type': {'enum': (['tool_call'] if tools else []) + ['decision']}}
+    if tools:
+        props.update(tool=tool_call_schema_v2(tools)['properties']['tool'], why={'type': 'string', 'maxLength': 200}, args={'type': 'object'})
+    props.update({'class': {'enum': list(CLASSES)}, 'action': {'enum': list(ACTIONS)}, 'source': {'type': 'object'}, 'target': {'type': 'object'}})
+    props.update(_DECISION_V3_COMMON)
+    return {'type': 'object', 'properties': props, 'required': ['type'], 'additionalProperties': False}
+
+
+def validate_turn_v3(obj, tools_available=None):
+    """Return (kind, errors) for turn protocol v3.  A tool call is checked exactly as in v2 (a call to a tool the case does not offer is a recorded protocol violation,
+    not an invalid reply); a decision by the frozen decision-v3 validator (complete and total: types, ranges, the source binding, the action's target kind; an
+    executor-allocated copy for convert; no source or target on none / escalate)."""
+    if isinstance(obj, dict) and obj.get('type') == 'decision':
+        from . import evidence_v3 as EV3
+        errs = EV3.validate_decision(obj)
+        return ('decision' if not errs else None), errs
+    return validate_turn_v2(obj, tools_available)
+
+
+def forced_decision_for(prompt_version, reason):
+    """The harness-written forced escalate in the decision shape of the prompt's protocol: v1 / v2 as `forced_decision`; v3 carries no target."""
+    d = forced_decision(reason)
+    if protocol_of(prompt_version) == 'v3':
+        d.pop('target')
+    return d
 
 
 def _key_errors(obj, allowed, what, optional=()):
@@ -343,6 +415,23 @@ def failure_modes(text, obj, errors, diag=None):
     return sorted(modes)
 
 
+# turn protocol v3 (prompt v6): a write needs no audit object, so the audit hints are not given; the decision-v3 shape gets its own hint
+REPAIR_HINTS['decision_v3_shape'] = ('a write has "source":{"ref":"<evidence id>"} and a "target" object of its action\'s kind, as in the reply format; '
+                                     'none and escalate have neither source nor target')
+
+
+def failure_modes_for(prompt_version, text, obj, errors, diag=None):
+    """`failure_modes` for the prompt's protocol: v1 and v2 unchanged; v3 drops the audit modes (decision-v3 has no required audit) and tags a decision-v3 shape error."""
+    modes = failure_modes(text, obj, errors, diag)
+    if protocol_of(prompt_version) != 'v3':
+        return modes
+    modes = {m for m in modes if m not in ('audit_missing', 'audit_malformed')}
+    if isinstance(obj, dict) and obj.get('type') == 'decision' and any(
+            ('source' in e or 'target' in e or 'keys not allowed' in e or 'missing keys' in e) for e in errors or []):
+        modes.add('decision_v3_shape')
+    return sorted(modes)
+
+
 def repair_prompt(error, modes=()):
     """The one repair prompt.  Generic text only: the validator error plus a fixed hint per failure mode."""
     text = REPAIR_PROMPT.format(error=error)
@@ -363,6 +452,8 @@ def validate_turn(obj, tools_available=None, prompt_version='v1'):
     """Return (kind, errors).  kind is 'tool_call', 'decision' or None; errors is a list of strings."""
     if protocol_of(prompt_version) == 'v2':
         return validate_turn_v2(obj, tools_available)
+    if protocol_of(prompt_version) == 'v3':
+        return validate_turn_v3(obj, tools_available)
     errs = []
     if not isinstance(obj, dict):
         return None, ['reply is not a JSON object']

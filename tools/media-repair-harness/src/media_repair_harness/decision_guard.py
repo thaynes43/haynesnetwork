@@ -34,6 +34,12 @@ Guards v3 (W18, `--guards v3`, any prompt; v1 and v2 are unchanged)
                 integrity result there is nothing to support healthy.  It never infers whole-file health from a clean sample and it can only abstain.  The reason
                 names the finding kind, its location and the observation id; the model's decision stays in `guard.applied[].original`.
   G-write v3    Exactly the v2 relaxations.
+
+Contract v3 (dev-c6, `--evidence-format v3 --prompt v6`): guards v3 apply UNCHANGED to a decision-v3 decision.  G-healthy v3 reads the class, the action and
+the shown observations; G-write reads the class, the action, evidence_refs and the context (its `target_named` check is met by the decision-v3 target object
+the validator requires, and the audit-object checks belong to turn protocol v2 only), so contract v3 needs no new guard version.  The only difference is the
+shape of the escalate a guard writes: under turn protocol v3 it carries no target (none and escalate have neither source nor target in decision-v3).  A v3
+record's derived fields use audit v3 (evidence_v3.action_audit).
 """
 import copy
 
@@ -165,18 +171,31 @@ def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=Fal
     if reason is not None:
         applied.append({'rule': rule, 'original': copy.deepcopy(original), 'reason': reason})
         final = guard_escalation(rule, reason)
+        if _protocol(prompt_version) == 'v3':
+            final.pop('target', None)        # decision-v3: an escalate has no target
     else:
         final = original
     return final, {'version': version, 'applied': applied, 'final_changed': bool(applied)}
 
 
-def derived_fields(case, decision, tool_calls, evidence_shown, evidence_mode, prompt_version, forced, outcome_step, resolve=None, v2=False):
+def _protocol(prompt_version):
+    try:
+        return P.protocol_of(prompt_version)
+    except ValueError:
+        return None
+
+
+def derived_fields(case, decision, tool_calls, evidence_shown, evidence_mode, prompt_version, forced, outcome_step, resolve=None, v2=False, v3=None):
     """Record fields that are computed from the decision (run_case computes the same ones); used when a guard replaced it.  For a format-v2 record the references go
-    through the same resolver and the audit is audit v2, as in the run."""
+    through the same resolver and the audit is audit v2, as in the run; for a format-v3 record (`v3` = its recorded capabilities) the audit is audit v3."""
     ev_ids = {e['id'] for e in evidence_shown}
     call_ids = {c['id'] for c in tool_calls}
     refs = resolve(decision.get('evidence_refs', [])) if resolve else decision.get('evidence_refs', [])
-    if v2:
+    if v3 is not None:
+        from . import evidence_v3 as EV3
+        view = P.case_view(case, [])
+        action_audit = EV3.action_audit(dict(decision, evidence_refs=refs), evidence_shown, tool_calls, view['context'], view['media_type'], v3, forced=forced)
+    elif v2:
         action_audit = AU.compute(case, dict(decision, evidence_refs=refs), tool_calls, forced=forced, prompt_version=prompt_version, audit_version='v2', shown=evidence_shown)
     else:
         action_audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version)
@@ -189,6 +208,12 @@ def derived_fields(case, decision, tool_calls, evidence_shown, evidence_mode, pr
         'action_audit': action_audit,
         'evidence': GP.evidence_summary(case, tool_calls, evidence_mode, decision, live_kinds=T.LIVE_KINDS),
     }
+
+
+def _v3_caps(record):
+    """The recorded capability advertisement of a format-v3 record (what its audit v3 reads), else None."""
+    ef = (record or {}).get('evidence_format')
+    return list(ef.get('capabilities') or []) if isinstance(ef, dict) and ef.get('version') == 'v3' else None
 
 
 def apply_to_record(record, case, evidence_shown, version=GUARD_VERSION):
@@ -207,7 +232,7 @@ def apply_to_record(record, case, evidence_shown, version=GUARD_VERSION):
         rec['decision'] = final
         outcome_step = (rec.get('action_audit') or {}).get('outcome_step')
         rec.update(derived_fields(case, final, rec.get('tool_calls') or [], evidence_shown, rec.get('evidence_mode', 'replay'), pv,
-                                  bool(rec.get('forced')), outcome_step, resolve, bool(rec.get('evidence_format'))))
+                                  bool(rec.get('forced')), outcome_step, resolve, bool(rec.get('evidence_format')), _v3_caps(rec)))
     return rec
 
 
@@ -223,6 +248,7 @@ def restore_original(record, case, evidence_shown):
         pv = (rec.get('prompt') or {}).get('version') or P.DEFAULT_PROMPT
         rec['decision'] = copy.deepcopy(orig)
         rec.update(derived_fields(case, orig, rec.get('tool_calls') or [], evidence_shown, rec.get('evidence_mode', 'replay'), pv,
-                                  bool(rec.get('forced')), (rec.get('action_audit') or {}).get('outcome_step'), record_resolver(rec, evidence_shown), bool(rec.get('evidence_format'))))
+                                  bool(rec.get('forced')), (rec.get('action_audit') or {}).get('outcome_step'), record_resolver(rec, evidence_shown), bool(rec.get('evidence_format')),
+                                  _v3_caps(rec)))
     rec['guard'] = dict(guard, restored=True)
     return rec

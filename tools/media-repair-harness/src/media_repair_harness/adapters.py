@@ -295,8 +295,9 @@ class ClaudeAdapter(Adapter):
         return self.describe()
 
     def argv(self, system):
-        cmd = ['claude', '-p', '--model', self.requested_model, '--output-format', 'json', '--system-prompt', system,
-               '--max-budget-usd', str(self.max_budget_usd)] + CLAUDE_FLAGS
+        # max_budget_usd None (dev-c6, `--no-spend-limit`): no spend-limit flag at all; usage accounting and the timeout stay.  The default (2.0) is unchanged.
+        cmd = ['claude', '-p', '--model', self.requested_model, '--output-format', 'json', '--system-prompt', system] + \
+              (['--max-budget-usd', str(self.max_budget_usd)] if self.max_budget_usd is not None else []) + CLAUDE_FLAGS
         if self.effort:
             cmd += ['--effort', self.effort]
         return cmd
@@ -364,7 +365,7 @@ class CodexAdapter(Adapter):
 
     def config(self):
         return {'adapter': self.name, 'model': self.requested_model, 'effort': self.effort, 'flags': CODEX_FLAGS,
-                'trim': CODEX_TRIM, 'ephemeral': not self.record_session}
+                'trim': CODEX_TRIM, 'ephemeral': not self.record_session, 'timeout_s': self.timeout}
 
     def preflight(self):
         if not shutil.which('codex'):

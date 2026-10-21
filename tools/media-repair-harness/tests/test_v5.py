@@ -45,14 +45,14 @@ class PromptV5(unittest.TestCase):
         self.v5 = P.get_prompt('v5')['text']
 
     def test_selectable_on_the_v2_turn_protocol_and_v1_to_v4_are_byte_identical(self):
-        self.assertEqual(P.PROMPT_VERSIONS, ('v1', 'v2', 'v3', 'v4', 'v5'))
+        self.assertEqual(P.PROMPT_VERSIONS[:5], ('v1', 'v2', 'v3', 'v4', 'v5'))
         self.assertEqual(P.DEFAULT_PROMPT, 'v1')
         self.assertEqual(P.protocol_of('v5'), 'v2')
         for v, sha in OLD_SHA.items():
             self.assertEqual(P.get_prompt(v)['sha256'], sha, v)
-        self.assertEqual(len({P.get_prompt(v)['sha256'] for v in P.PROMPT_VERSIONS}), 5)
+        self.assertEqual(len({P.get_prompt(v)['sha256'] for v in P.PROMPT_VERSIONS[:5]}), 5)
         self.assertEqual(P.get_prompt('v5')['sha256'], hashlib.sha256(self.v5.encode()).hexdigest())
-        self.assertEqual(P.HARNESS_VERSION, 'dev-c5')
+        self.assertEqual(P.HARNESS_VERSION, 'dev-c6')       # dev-c6 moved it; v5 and its measured text are unchanged
 
     def test_the_per_case_schema_is_the_v4_one(self):
         for tools in ([], None, ['ffprobe'], ['ffprobe', 'decode_sample', 'arr_lookup']):
@@ -223,7 +223,7 @@ class RefusedWithTheLegacyFormat(unittest.TestCase):
     def test_a_v5_run_records_the_prompt_and_the_format_and_uses_the_v4_audit_tables(self):
         case = case_with([ev('e1', 'arr_lookup', output='x')])
         rec, ad = v5_run(case, [dec('insufficient_evidence', 'escalate')])
-        self.assertEqual((rec['harness_version'], rec['prompt']['version'], rec['prompt']['protocol']), ('dev-c5', 'v5', 'turn-v2'))
+        self.assertEqual((rec['harness_version'], rec['prompt']['version'], rec['prompt']['protocol']), ('dev-c6', 'v5', 'turn-v2'))
         self.assertEqual(rec['prompt']['sha256'], P.get_prompt('v5')['sha256'])
         self.assertEqual(ad.full[0]['system'], P.get_prompt('v5')['text'])
         self.assertEqual((rec['evidence_format']['version'], rec['action_audit']['audit_version']), ('v2', 'v2'))

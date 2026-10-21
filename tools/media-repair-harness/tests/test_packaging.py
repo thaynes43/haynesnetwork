@@ -22,7 +22,7 @@ COMPONENT = th.COMPONENT
 
 # Digests of what the model is sent, taken from the frozen dev-c2 candidate (e27f2385) before the move into the package.  The full
 # replay-identity comparison lives in test_wiring.ReplayIdentity; these are the short, explicit pins.
-HARNESS_VERSION = 'dev-c5'
+HARNESS_VERSION = 'dev-c6'
 PROMPT_SHA256 = {'v1': '30749f5dc7065a2ddd70967cd6888e91d237030e1b025bc6dac19ca51fed9ee8',
                  'v2': '351f40fd20e548b675b8678b62d56bda727976b20b2427fcb1fbdefa4138533a'}
 GOLDEN_SHA256 = '8f4f17373e857c90509b4768f426b668b520683c8c353993028f771f8eb2e411'
@@ -31,6 +31,7 @@ PROMPT_FILE_SHA256 = {'v2.txt': 'b63a9e9b5558a1f1fbb94fcdd8624d1c3e46f8990a3af2d
 V3_FILE_SHA256 = '6e53ac6e0964e6f427569ab1f4ef6e0b679f6877ec84af8cf7199d5cc4019d1e'
 V4_FILE_SHA256 = '48bad0e41baa113df432545566a34d3bc0d01e2c5bd0f27fe0bcedb923c73a8a'   # dev-c4: prompts/v4.txt, the text measured in runs/dev-c4
 V5_FILE_SHA256 = '4db2a64ccba83d2ae2fe3d6da9843369d49676019e39519a50464c8ad128e863'   # dev-c5: prompts/v5.txt, the text measured in runs/dev-c5 (frozen by its PREREGISTRATION.md)
+# dev-c6: prompts/v6.txt (contract v3), pinned in tests/test_v6.py and frozen by runs/dev-c6/PREREGISTRATION.md; v1 to v5 are untouched
 V3_SENT_SHA256 = 'b1fd9e855839'   # prefix of the sha256 the dev-c3 runs record as prompt.sha256 (prompt text sent, one trailing newline removed)
 
 
@@ -47,6 +48,7 @@ class Pinned(unittest.TestCase):
         v3 = files.pop('v3.txt')
         v4 = files.pop('v4.txt')
         v5 = files.pop('v5.txt')
+        files.pop('v6.txt')     # dev-c6 (pinned in test_v6.py)
         self.assertEqual(files, PROMPT_FILE_SHA256)   # v2.txt (and v1, which lives in protocol.py) are the dev-c2 bytes
         self.assertEqual(v3, V3_FILE_SHA256)
         self.assertEqual(v4, V4_FILE_SHA256)   # dev-c4 added v4.txt; v1, v2 and v3 are untouched

@@ -1,6 +1,7 @@
 """Contract v3 (WO-W20) baseline identity: the experimental prototypes change nothing that exists.
 
-* No production module imports `media_repair_harness.experimental` (it is not a selectable configuration).
+* No production module imports `media_repair_harness.experimental` except `evidence_v3`, the one module that wires contract v3 into the runner (dev-c6); the runner
+  imports it only for a run that selects `--evidence-format v3` (with `--prompt v6`), so every other configuration never loads the prototypes.
 * The committed baseline manifests are pinned byte for byte (dev-c5 both views, dev-c4 fresh runs).
 * dev-c5, re-rendered offline: every recorded case is re-run through the UNCHANGED runner with the model's recorded replies played back (no model
   call); every request sent (system text, the user messages, the Ollama schema) equals the recorded raw request, and the decision, guard outcome,
@@ -64,10 +65,13 @@ class Replay(A.ScriptedAdapter):
         return super().complete(system, messages, schema)
 
 
+WIRING_MODULE = 'evidence_v3.py'     # dev-c6: the one production module that imports the contract-v3 modules
+
+
 class NoProductionImport(unittest.TestCase):
     def test_no_module_outside_experimental_imports_it(self):
         for p in sorted(SRC.rglob('*.py')):
-            if 'experimental' in p.parts:
+            if 'experimental' in p.parts or p.name == WIRING_MODULE:
                 continue
             tree = ast.parse(p.read_text())
             for node in ast.walk(tree):
@@ -87,10 +91,22 @@ class NoProductionImport(unittest.TestCase):
             text = p.read_text()
             self.assertNotIn('open(', text.replace('_open(', ''), p.name)     # the prototypes read no file: their inputs are arguments
 
-    def test_the_runner_offers_no_v3_option(self):
-        self.assertEqual(R.EVIDENCE_FORMATS, ('v2',))
-        with self.assertRaises(ValueError):
-            R.check_option_combination('v5', 'v3')
+    def test_the_runner_offers_v3_only_as_contract_v3_with_prompt_v6(self):
+        # dev-c6 replaced `test_the_runner_offers_no_v3_option`: format v3 is now selectable, but only as one version with prompt v6
+        self.assertEqual(R.EVIDENCE_FORMATS, ('v2', 'v3'))
+        for pv in ('v1', 'v2', 'v3', 'v4', 'v5'):
+            with self.assertRaises(ValueError):
+                R.check_option_combination(pv, 'v3')
+        R.check_option_combination('v6', 'v3')
+
+    def test_a_run_without_format_v3_never_imports_the_prototypes(self):
+        import subprocess
+        import sys
+        code = ('import sys, media_repair_harness.run as r, media_repair_harness.guard_cli, media_repair_harness.score_compat; '
+                'print(sorted(m for m in sys.modules if "experimental" in m or m.endswith("evidence_v3")))')
+        out = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, env=dict(__import__('os').environ, PYTHONPATH=str(SRC.parent)))
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout.strip(), '[]')
 
 
 class PinnedManifests(unittest.TestCase):
