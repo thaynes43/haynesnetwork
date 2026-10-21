@@ -67,6 +67,16 @@ def epub_bytes(items, extra_manifest='', spine=None, members=()):
     return buf.getvalue()
 
 
+def pod_local_fixtures_missing():
+    """True in a checkout without the public suite's pod-local EPUB fixtures (CI): results computed on the pod, where they exist, legitimately differ there
+    (those cases advertise epub_inspect as unavailable), as docs/contract-v3.md section 13 says."""
+    for p in (B.SUITE_V11 / 'cases').glob('epub-*.json'):
+        fx = T.Fixture.from_case(json.loads(p.read_text()), B.SUITE_V11)
+        if fx.kind == 'local' and not Path(fx.path).is_file():
+            return True
+    return False
+
+
 class EpubCase(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix='mrh-w25-')
@@ -383,12 +393,11 @@ class UncalledCounterV2OnDevC7(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('uncalled_v2_script', th.COMPONENT / 'scripts' / 'contract_v3_uncalled_v2.py')
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
+        if pod_local_fixtures_missing():
+            self.skipTest('a pod-local EPUB fixture is not in this checkout: the resolved case evidence differs here')
         out = Path(tempfile.mkdtemp(prefix='mrh-w25-')) / 'u.json'
         with contextlib.redirect_stdout(io.StringIO()):
             mod.main(['--out', str(out)])
-        if any(T.Fixture.from_case(json.loads(p.read_text()), B.SUITE_V11).kind == 'local' and not Path(T.Fixture.from_case(json.loads(p.read_text()), B.SUITE_V11).path).is_file()
-               for p in (B.SUITE_V11 / 'cases').glob('epub-*.json')):
-            self.skipTest('a pod-local EPUB fixture is not in this checkout; the recorded advertisement is still used, but the resolved evidence differs')
         self.assertEqual(out.read_text(), (DOCS / 'contract-v3-uncalled-v2.json').read_text())
 
 
@@ -404,6 +413,8 @@ class EarlierVersionsUnchanged(unittest.TestCase):
 
     def test_the_v31_tension_list_reproduces(self):
         B.need_v11()
+        if pod_local_fixtures_missing():
+            self.skipTest('a pod-local EPUB fixture is not in this checkout: the advertisements, and so the list, legitimately differ here')
         import importlib.util
         spec = importlib.util.spec_from_file_location('tension_script', th.COMPONENT / 'scripts' / 'contract_v3_tension.py')
         mod = importlib.util.module_from_spec(spec)
@@ -506,8 +517,7 @@ class PassabilityReproduces(unittest.TestCase):
         return out.read_bytes()
 
     def test_dev_c6_and_dev_c7(self):
-        epubs = [json.loads(p.read_text()) for p in (B.SUITE_V11 / 'cases').glob('epub-*.json')]
-        if any(T.Fixture.from_case(c, B.SUITE_V11).kind == 'local' and not Path(T.Fixture.from_case(c, B.SUITE_V11).path).is_file() for c in epubs):
+        if pod_local_fixtures_missing():
             self.skipTest('a pod-local EPUB fixture is not in this checkout: the exploration result legitimately differs here')
         self.assertEqual(self.run_script('passability.py', 'dev-c6', 'devc6-gpt-6-astra'), (B.RUNS / 'dev-c6' / 'passability.json').read_bytes())
         self.assertEqual(self.run_script('passability_v3.py', 'dev-c7', 'devc7-gpt-6-astra'), (B.RUNS / 'dev-c7' / 'passability.json').read_bytes())
