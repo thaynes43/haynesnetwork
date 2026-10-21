@@ -843,7 +843,8 @@ class RunLimits:
                 if self.max_cost_usd is not None and getattr(e, 'budget_exceeded', False):
                     # the CLI stopped the call at its own lowered budget: that is the cost cap, not a model failure, and not a scored forced escalate
                     ab = A.AbortRun('cost cap reached by a call: the Claude CLI stopped it at its per-call budget (cumulative reported cost $%.4f of $%.2f)' % (self.cost, self.max_cost_usd))
-                    ab.failed_call = {'error': str(e)[:500], 'usage': e.usage or ({'cost_usd': e.cost_usd} if e.cost_usd is not None else None)}
+                    ab.failed_call = {'error': str(e)[:500], 'usage': e.usage or ({'cost_usd': e.cost_usd} if e.cost_usd is not None else None),
+                                      **(getattr(e, 'evidence', None) or {})}     # dev-c8 claude-schema-1: the call's stream and delivery record travel with the abort
                     self.stopped = str(ab)
                     raise ab
                 raise

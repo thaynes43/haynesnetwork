@@ -933,11 +933,192 @@ class ReviewFrozenCounts(unittest.TestCase):
                          [{}, {'context_arr_id, binding met': 12}, {}, {'case_item, binding met': 4, 'case_item, binding unknown': 2, 'context_arr_id, binding met': 2}])
 
 
+def g_role_digest():
+    import inspect
+    fns = (DG.v4_context, DG._page_key, DG.undelivered_ids, DG._envelope, DG._valid_page, DG.wire_pages, DG.wire_undelivered, DG.record_wire_texts,
+           DG._deciding, DG.check_role_v4, DG.record_v4_context)
+    return hashlib.sha256((''.join(inspect.getsource(f) for f in fns) + repr(DG.NO_IDENTITY_TOOLS)).encode()).hexdigest()
+
+
+G_ROLE_DIGEST = '6da4d2e3e8088d2bae0411b41f74880f7d0ff46e04ec485c773581214e376d2e'      # after post-freeze correction 3 (review round 2); correction 2's digest was b51e0705...c375dd9f
+
+
 class ReviewO3ImplementationDigest(unittest.TestCase):
     def test_the_g_role_implementation_is_the_documented_one(self):
         import inspect
-        fns = (DG.v4_context, DG._page_key, DG.undelivered_ids, DG.wire_pages, DG.wire_undelivered, DG.record_wire_texts, DG._deciding, DG.check_role_v4,
-               DG.record_v4_context)
-        got = hashlib.sha256(''.join(inspect.getsource(f) for f in fns).encode()).hexdigest()
-        self.assertEqual(got, 'b51e0705ee19547a1a9ada0100c5417a43b31f66454f8a026b23fce9c375dd9f')      # a change here is a dated post-freeze correction (docs/dev-c8.md)
+        self.assertEqual(g_role_digest(), G_ROLE_DIGEST)      # a change here is a dated post-freeze correction (docs/dev-c8.md section 4)
+        got = g_role_digest()
         self.assertIn(got, (th.COMPONENT / 'docs' / 'dev-c8.md').read_text(encoding='utf-8'))
+
+
+# ------------------------------------------------------------------------------------------------------------------------------ review round 2
+# AUDIT-ASTRA-54 (adversarial variants) and the Opus nits of PR #1035 @ 3e2cfecb.  Each fails at 3e2cfecb and passes after the fix.
+class ReviewR2Delivery(unittest.TestCase):
+    """R2-1: what a role check depends on is fixed by the ids and tool kinds of the shown results, never by their unread values; catalog records count."""
+
+    def catalog_run(self, episode):
+        from unittest.mock import patch
+        from media_repair_harness import tools as T
+        case = ev2h.case_with([ev2h.ev('e1', 'ffprobe', output=PROBE), ocr('e2', 'ALPHA SHOW S01E02')], tools=('arr_lookup',), cid='w26r2-cat', media='tv')
+        case['context'].update(title='Alpha Show', filename='Alpha Show.mkv', expected={'series': 'Alpha Show', 'runtime_s': 8}, arr={'app': 'sonarr', 'ids': {'episodeFileId': 7}})
+        data = {'a_padding': [{'key': i, 'value': 'unrelated neutral catalog detail'} for i in range(400)], 'app': 'sonarr',
+                'episode': {'season': 1, 'episode': episode, 'title': 'Lamp'}, 'file': {'relativePath': 'Alpha Show.mkv', 'id': 7}}
+        ts = th.TempSuite([case])
+        ad = A.ScriptedAdapter('s', [json.dumps(ev2h.tc('arr_lookup')), json.dumps(rename('t1', old='Alpha Show.mkv', new='Alpha Show - S01E02.mkv'))])
+        with patch.dict(T.REGISTRY, {'arr_lookup': lambda args, ctx: T.ToolResult('ok', data, mode='stub')}):
+            rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='w26r2', prompt_version='v8', evidence_format='v3.1-format', guards='v4',
+                             which=th.NO_BINARIES)
+        return rec
+
+    def test_an_unread_catalog_value_cannot_change_the_decision(self):
+        a, b = self.catalog_run(2), self.catalog_run(3)
+        strip = lambda texts: [re.sub(r'c[0-9a-f]{15}', 'CURSOR', s) for s in texts]       # opaque cursors aside, the delivered evidence is identical
+        self.assertEqual(strip(DG.record_wire_texts(a)), strip(DG.record_wire_texts(b)))
+        self.assertEqual(DG.wire_pages(DG.record_wire_texts(a))['t1']['seen'], {1})
+        self.assertEqual((a['decision'], a['guard']['role_checks']), (b['decision'], b['guard']['role_checks']))
+        self.assertEqual({c['id']: c['v4_status'] for c in a['guard']['role_checks']}, {'A-REN-0': 'undelivered', 'A-REN-1': 'undelivered', 'R-SRC': 'undelivered'})
+
+    def shape_run(self, tags):
+        probe = copy.deepcopy(PROBE)
+        probe['format']['tags'] = tags
+        case = movie_case(app=None, evidence=[ev2h.ev('e1', 'ffprobe', output=PROBE),
+                                              ev2h.ev('e2', 'arr_lookup', output={'a_padding': [{'x': i, 'text': 'neutral detail'} for i in range(400)]}),
+                                              ev2h.ev('e3', 'ffprobe', output=probe)])
+        case['tools_available'] = []
+        ts = th.TempSuite([case])
+        return R.run_case(case, 'sha', A.ScriptedAdapter('s', [json.dumps(rename('case_item'))]), ts.root, tempfile.mkdtemp(), run_id='w26r2', prompt_version='v8',
+                          evidence_format='v3.1-format', guards='v4', which=th.NO_BINARIES)
+
+    def test_an_unread_statement_cannot_change_the_dependencies(self):
+        a, b = self.shape_run({}), self.shape_run({'title': 'Alpha Film'})
+        self.assertEqual(DG.record_wire_texts(a), DG.record_wire_texts(b))
+        self.assertEqual((a['decision'], a['guard']['role_checks']), (b['decision'], b['guard']['role_checks']))
+
+    def page_spoof_run(self, spoof):
+        record = binding()
+        if spoof:
+            record['page'] = {'contract': 'pages-v1', 'source': 'e2', 'n': 1, 'of': 2}
+        case = movie_case(evidence=[ev2h.ev('e1', 'ffprobe', output=PROBE), ocr('e2', 'ALPHA FILM 1999'), ev2h.ev('e3', 'arr_lookup', output=record)])
+        case['tools_available'] = []
+        ts = th.TempSuite([case])
+        return R.run_case(case, 'sha', A.ScriptedAdapter('s', [json.dumps(rename('e3'))]), ts.root, tempfile.mkdtemp(), run_id='w26r2', prompt_version='v8',
+                          evidence_format='v3.1-format', guards='v4', which=th.NO_BINARIES)
+
+    def test_evidence_content_cannot_impersonate_page_metadata(self):
+        a, b = self.page_spoof_run(False), self.page_spoof_run(True)
+        self.assertEqual(DG.wire_pages(DG.record_wire_texts(b)), {})
+        self.assertEqual(a['decision']['action'], b['decision']['action'])
+        self.assertEqual(a['guard']['role_checks'], b['guard']['role_checks'])
+
+    def test_only_valid_envelope_pages_count(self):
+        def first(page):
+            return json.dumps({'case_id': 'c', 'evidence': {'items': [], 'page': page}})
+
+        def result(own, page):
+            return json.dumps({'type': 'tool_result', 'id': own, 'output': {'page': page, 'facts': {'page': {'contract': 'pages-v1', 'source': own, 'n': 1, 'of': 9}}}})
+        ok = {'contract': 'pages-v1', 'source': 'evidence', 'n': 1, 'of': 2}
+        self.assertEqual(DG.wire_pages([first(ok)]), {'evidence': {'of': 2, 'seen': {1}}})
+        for bad in (dict(ok, n=3), dict(ok, n=0), dict(ok, source='e2'), dict(ok, contract='x'), dict(ok, of=True), dict(ok, n='1')):
+            self.assertEqual(DG.wire_pages([first(bad)]), {}, bad)
+        t1 = {'contract': 'pages-v1', 'source': 't1', 'n': 1, 'of': 2}
+        self.assertEqual(DG.wire_pages([first(None), result('t1', t1)]), {'t1': {'of': 2, 'seen': {1}}})         # the nested facts.page is content
+        self.assertEqual(DG.wire_pages([first(None), result('t1', dict(t1, source='t7'))]), {})                   # a source no message carried
+        self.assertEqual(DG.wire_pages([first(None), result('t1', t1), result('t2', dict(t1, n=2))])['t1']['seen'], {1, 2})   # a page fetch names its origin
+
+
+class ReviewR2Responses(unittest.TestCase):
+    """R2-3 / Opus nits 1 and 3: an explicitly completed empty, whitespace or thinking-only response is the first try; events of one message id are one
+    response across intervening events; id-less events join the open response until a user event."""
+    SCHEMA = ClaudeSchema.SCHEMA
+    run_claude = ClaudeSchema.run_claude
+
+    def assistant(self, mid, *blocks):
+        m = {'content': list(blocks), 'stop_reason': 'end_turn'}
+        if mid is not None:
+            m['id'] = mid
+        return {'type': 'assistant', 'message': m}
+
+    def test_an_empty_completed_first_response_is_an_invalid_first_try(self):
+        good = dec3('short')
+        for empty in ((), ({'type': 'text', 'text': '   \n'},), ({'type': 'thinking', 'thinking': 'considering'},)):
+            s1 = stream(INIT, self.assistant('m1', *empty), nudge(), attempt(2, good), checked(2, False), result(structured=good))
+            rec, _fr = self.run_claude([s1, stream(INIT, attempt(1, good), checked(1, False), result(structured=good))])
+            s = rec['turns'][0]['meta']['schema']
+            self.assertFalse(rec['first_try_valid'], empty)
+            self.assertEqual((rec['turns'][0]['text'], s['reply_source'], s['first_response_kind'], s['cli_internal_retries']), ('', 'first_assistant_empty', 'empty', 1), empty)
+
+    def test_one_message_id_is_one_response_across_other_events(self):
+        good = dec3('ok')
+        rate = {'type': 'rate_limit_event', 'rate_limit_info': {'status': 'allowed'}}
+        evs = [self.assistant('m1', {'type': 'text', 'text': 'Calling the tool.'}), rate,
+               self.assistant('m1', {'type': 'tool_use', 'id': 'tu1', 'name': 'StructuredOutput', 'input': good})]
+        comp = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, *evs, checked(1, False), result(structured=good))]), schema_mode='json-schema-1').complete(
+            'S', [], schema=self.SCHEMA)
+        self.assertEqual((json.loads(comp.text), comp.meta['schema']['responses'], comp.meta['schema']['cli_internal_retries']), (good, 1, 0))
+        idless = [self.assistant(None, {'type': 'text', 'text': 'Calling the tool.'}), rate,
+                  self.assistant(None, {'type': 'tool_use', 'id': 'tu1', 'name': 'StructuredOutput', 'input': good})]
+        comp = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, *idless, checked(1, False), result(structured=good))]), schema_mode='json-schema-1').complete(
+            'S', [], schema=self.SCHEMA)
+        self.assertEqual(comp.meta['schema']['responses'], 1)
+        split = [self.assistant(None, {'type': 'text', 'text': 'no tool'}), nudge(), self.assistant(None, {'type': 'tool_use', 'id': 'tu1', 'name': 'StructuredOutput', 'input': good})]
+        comp = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, *split, checked(1, False), result(structured=good))]), schema_mode='json-schema-1').complete(
+            'S', [], schema=self.SCHEMA)
+        self.assertEqual((comp.text, comp.meta['schema']['responses'], comp.meta['schema']['cli_internal_retries']), ('no tool', 2, 1))
+
+
+class ReviewR2FailureEvidence(unittest.TestCase):
+    """R2-4 / Opus nit 2: a timed-out call keeps its partial stream; the budget abort keeps the failed call's evidence; a missing tool wins over a malformed line."""
+    SCHEMA = ClaudeSchema.SCHEMA
+
+    def timeout_adapter(self, partial, schema_mode='json-schema-1'):
+        import subprocess
+
+        def runner(cmd, **kw):
+            raise subprocess.TimeoutExpired(cmd, 240, output=partial.encode() if partial is not None else None)
+        return A.ClaudeAdapter('m', runner=runner, schema_mode=schema_mode)
+
+    def test_a_timeout_keeps_the_partial_stream(self):
+        bad = dec3('w' * 450)
+        partial = stream(INIT, attempt(1, bad), checked(1, True), result(subtype='error_during_execution', cost=0.5))
+        with self.assertRaises(A.AdapterError) as cm:
+            self.timeout_adapter(partial).complete('S', [], schema=self.SCHEMA)
+        e = cm.exception
+        self.assertTrue(str(e).startswith('claude CLI timed out after 240 s'))
+        self.assertEqual((e.cost_usd, e.evidence['raw_response'], e.evidence['meta']['schema']['attempts']), (0.5, partial, 1))
+        cut = stream(INIT, attempt(1, bad))[:-40]                                  # no result event yet, last line cut
+        with self.assertRaises(A.AdapterError) as cm:
+            self.timeout_adapter(cut).complete('S', [], schema=self.SCHEMA)
+        self.assertEqual(cm.exception.evidence['raw_response'], cut)
+        with self.assertRaises(A.AdapterError) as cm:
+            self.timeout_adapter(partial, schema_mode=None).complete('S', [], schema=self.SCHEMA)
+        self.assertEqual((str(cm.exception), cm.exception.evidence), ('claude CLI timed out after 240 s', None))     # legacy: unchanged
+
+    def test_a_timed_out_turn_records_the_evidence(self):
+        partial = stream(INIT, attempt(1, dec3('w' * 450)), result(subtype='error_during_execution', cost=0.5))
+        case = arr_case()
+        ts = th.TempSuite([case])
+        ad = self.timeout_adapter(partial)
+        rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='w26r2', prompt_version='v8', evidence_format='v3.1-format', which=th.NO_BINARIES)
+        t0 = rec['turns'][0]
+        self.assertEqual((t0['raw_response'], t0['usage']['cost_usd'], t0['meta']['schema']['attempts']), (partial, 0.5, 1))
+        self.assertTrue(t0['meta']['schema']['tool_registered'])
+        self.assertTrue(rec['prompt']['schema_sent'])            # the timed-out call's own init event confirmed the tool: delivery is true, the call still failed
+        self.assertTrue(rec['forced'])
+
+    def test_the_budget_abort_keeps_the_failed_calls_evidence(self):
+        raw = stream(INIT, attempt(1, dec3('x' * 450))) + 'not JSON\n' + stream(result(subtype='error_max_budget_usd', cost=0.4))
+        case = arr_case()
+        ts = th.TempSuite([case])
+        ad = A.ClaudeAdapter('m', runner=FakeRunner([raw]), schema_mode='json-schema-1')
+        limits = R.RunLimits(max_cost_usd=1.0)
+        limits.wrap(ad)
+        limits.start()
+        with self.assertRaises(A.AbortRun) as cm:
+            R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='w26r2', prompt_version='v8', evidence_format='v3.1-format', which=th.NO_BINARIES)
+        turn = cm.exception.partial['turns'][-1]
+        self.assertEqual((turn['raw_response'], turn['usage']['cost_usd'], turn['meta']['schema']['attempts']), (raw, 0.4, 1))
+
+    def test_a_missing_tool_wins_over_a_malformed_line(self):
+        raw = stream(dict(INIT, tools=[])) + 'not JSON\n' + stream(result(cost=0.1))
+        with self.assertRaises(A.AbortRun):
+            A.ClaudeAdapter('m', runner=FakeRunner([raw]), schema_mode='json-schema-1').complete('S', [], schema=self.SCHEMA)

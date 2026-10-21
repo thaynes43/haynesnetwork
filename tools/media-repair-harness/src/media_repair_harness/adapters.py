@@ -457,8 +457,10 @@ class ClaudeAdapter(Adapter):
         started = time.monotonic()
         try:
             r = self.runner(cmd, input=prompt.encode(), capture_output=True, timeout=self.timeout, cwd=self.workdir)
-        except subprocess.TimeoutExpired:
-            raise AdapterError('claude CLI timed out after %d s' % self.timeout)
+        except subprocess.TimeoutExpired as te:
+            if not schema_mode:
+                raise AdapterError('claude CLI timed out after %d s' % self.timeout)
+            raise self._timeout_error(te, cmd, system, prompt, schema, time.monotonic() - started)
         wall = time.monotonic() - started
         raw = r.stdout.decode(errors='replace')
         req = {'argv': cmd[:cmd.index('--system-prompt')] + ['--system-prompt', '<system>'] + cmd[cmd.index('--system-prompt') + 2:],
@@ -467,6 +469,22 @@ class ClaudeAdapter(Adapter):
             req['json_schema_sha256'] = _sha256_text(json.dumps(schema, separators=(',', ':'), sort_keys=True))
             return parse_claude_stream(raw, r.stderr.decode(errors='replace'), r.returncode, req, wall, self.schema_mode)
         return parse_claude(raw, r.stderr.decode(errors='replace'), r.returncode, req, wall)
+
+    def _timeout_error(self, te, cmd, system, prompt, schema, wall):
+        """claude-schema-1: a timed-out call keeps what its partial stream shows (raw output, attempts, delivery record, a receipt if one arrived); a
+        missing-tool init still stops the run.  The legacy adapter keeps its plain timeout error."""
+        out = te.output if te.output is not None else te.stdout if hasattr(te, 'stdout') else None
+        raw = out.decode(errors='replace') if isinstance(out, bytes) else (out or '')
+        req = {'argv': cmd[:cmd.index('--system-prompt')] + ['--system-prompt', '<system>'] + cmd[cmd.index('--system-prompt') + 2:],
+               'system_prompt': system, 'prompt': prompt, 'json_schema_sha256': _sha256_text(json.dumps(schema, separators=(',', ':'), sort_keys=True))}
+        msg = 'claude CLI timed out after %d s' % self.timeout
+        try:
+            comp = parse_claude_stream(raw, '', None, req, wall, self.schema_mode)
+        except AdapterError as e:
+            ev = dict(e.evidence or {'raw_request': req, 'raw_response': raw})
+            return AdapterError(msg + ' (partial stream: %s)' % str(e)[:200], usage=e.usage, evidence=ev)
+        return AdapterError(msg + ' (a result event had arrived)', usage=comp.usage,
+                            evidence={'raw_request': req, 'raw_response': raw, 'meta': comp.meta})
 
     def finish(self):
         shutil.rmtree(self.workdir, ignore_errors=True)
@@ -525,17 +543,28 @@ def parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode='json-sc
     init = next((e for e in events if e.get('type') == 'system' and e.get('subtype') == 'init'), None)
     tools = (init or {}).get('tools')
     registered = (STRUCTURED_OUTPUT_TOOL in tools) if isinstance(tools, list) else None
-    responses, checks, corrections, prev = [], [], [], None
+    # Response identity (review round 2): assistant events with the same message id are ONE response wherever they appear (a rate-limit or other system
+    # event between them does not split it); an event without an id joins the open response unless a user event (a CLI correction or a tool result)
+    # came after it.  Every response counts, an explicitly completed empty, whitespace-only or thinking-only one included: it is a first try that
+    # carries no answer, never skipped.
+    responses, checks, corrections, by_id, open_resp = [], [], [], {}, None
     for e in events:
         msg = e.get('message') if isinstance(e.get('message'), dict) else {}
         content = msg.get('content')
         blocks = content if isinstance(content, list) else ([{'type': 'text', 'text': content}] if isinstance(content, str) else [])
         if e.get('type') == 'assistant':
             mid = msg.get('id')
-            same = responses and prev == 'assistant' and responses[-1]['id'] == mid
-            if not same:
-                responses.append({'id': mid, 'texts': [], 'structured': [], 'other_tools': []})
-            r = responses[-1]
+            if mid is not None and mid in by_id:
+                r = by_id[mid]
+            elif mid is None and open_resp is not None:
+                r = open_resp
+            else:
+                r = {'id': mid, 'texts': [], 'structured': [], 'other_tools': [], 'blocks': 0}
+                responses.append(r)
+                if mid is not None:
+                    by_id[mid] = r
+            open_resp = r
+            r['blocks'] += len(blocks)
             for b in blocks:
                 if not isinstance(b, dict):
                     continue
@@ -546,6 +575,7 @@ def parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode='json-sc
                 elif b.get('type') == 'text' and isinstance(b.get('text'), str) and b['text'].strip():
                     r['texts'].append(b['text'])
         elif e.get('type') == 'user':
+            open_resp = None
             ids = {a['id'] for r in responses for a in r['structured']}
             for b in blocks:
                 if not isinstance(b, dict):
@@ -556,8 +586,6 @@ def parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode='json-sc
                                    'text': body if isinstance(body, str) else json.dumps(body, ensure_ascii=False)})
                 elif b.get('type') == 'text' and isinstance(b.get('text'), str):
                     corrections.append({'after_response': len(responses), 'text': b['text']})
-        prev = e.get('type')
-    responses = [r for r in responses if r['texts'] or r['structured'] or r['other_tools']]       # a response is complete when it carries something
     result = next((e for e in reversed(events) if e.get('type') == 'result'), None)
     u = (result or {}).get('usage') or {}
     receipt = {'input_tokens': u.get('input_tokens'), 'output_tokens': u.get('output_tokens'), 'cost_usd': (result or {}).get('total_cost_usd')} if result else None
@@ -567,6 +595,8 @@ def parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode='json-sc
         text, source = json.dumps(first['structured'][0]['input'], ensure_ascii=False), 'first_structured_output_attempt'
     elif first is not None and first['texts']:
         text, source = '\n'.join(first['texts']), 'first_assistant_text'
+    elif first is not None:
+        text, source = '', 'first_assistant_empty'          # a completed response with no text and no tool call: an empty first try
     elif result is not None and not responses:
         text = result.get('result') or ''
         source = 'result_text' if text else 'none'
@@ -575,7 +605,8 @@ def parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode='json-sc
     attempts = [a for r in responses for a in r['structured']]
     schema_meta = {'mode': schema_mode, 'adapter_version': CLAUDE_SCHEMA_ADAPTER_VERSION, 'flag_sent': True, 'json_schema_sha256': req.get('json_schema_sha256'),
                    'tool_registered': registered, 'init_seen': init is not None, 'cli_version_reported': (init or {}).get('claude_code_version'),
-                   'responses': len(responses), 'first_response_kind': ('structured' if first['structured'] else 'text' if first['texts'] else 'other') if first else None,
+                   'responses': len(responses), 'first_response_kind': ('structured' if first['structured'] else 'text' if first['texts'] else
+                                                                        'other_tool' if first['other_tools'] else 'empty') if first else None,
                    'attempts': len(attempts), 'attempt_inputs': [a['input'] for a in attempts], 'response_texts': [r['texts'] for r in responses],
                    'cli_corrections': corrections, 'cli_validation': checks, 'cli_internal_retries': max(0, len(responses) - 1),
                    'result_subtype': subtype, 'stream_error': bad,
@@ -583,15 +614,15 @@ def parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode='json-sc
                    'result_text': (result or {}).get('result'), 'reply_source': source,
                    'note': 'the reply is the first completed assistant response; later CLI-internal responses are recorded only and grant no repair'}
     evidence = {'raw_request': req, 'raw_response': raw, 'meta': {'model_usage': (result or {}).get('modelUsage'), 'schema': schema_meta}}
-    if bad is not None:
-        raise AdapterError(bad, usage=receipt, budget_exceeded=subtype == 'error_max_budget_usd', evidence=evidence)
-    if not events:
-        raise AdapterError('claude CLI returned no stream events (exit %s): %s' % (returncode, (stderr or '')[:300]), evidence=evidence)
-    if registered is False:
+    if registered is False:      # checked first: a stream that shows the tool was not registered stops the run, malformed or not (review round 2)
         ab = AbortRun('claude-schema-1: the CLI init event does not list the %s tool, so --json-schema was not delivered with these flags; stopping the run '
                       'instead of recording a schema that was not sent' % STRUCTURED_OUTPUT_TOOL)
         ab.failed_call = dict({'error': 'schema not registered by the CLI', 'usage': receipt, 'failure_modes': ['adapter_error', 'schema_not_registered']}, **evidence)
         raise ab
+    if bad is not None:
+        raise AdapterError(bad, usage=receipt, budget_exceeded=subtype == 'error_max_budget_usd', evidence=evidence)
+    if not events:
+        raise AdapterError('claude CLI returned no stream events (exit %s): %s' % (returncode, (stderr or '')[:300]), evidence=evidence)
     if result is None:
         raise AdapterError('claude CLI stream has no result event (exit %s)' % returncode, evidence=evidence)
     cli_error = bool(result.get('is_error')) or subtype != 'success'

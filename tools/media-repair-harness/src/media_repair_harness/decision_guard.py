@@ -215,26 +215,56 @@ def v4_context(context, media_type, capabilities, messages, tool_calls, evidence
             'undelivered': sorted(gone)}
 
 
-PAGE_KEY_RX = re.compile(r'"page"\s*:\s*\{')
+LABEL_RX = re.compile(r'^\[(?:CASE|HARNESS)\]\n')
+
+
+def _envelope(text):
+    """The harness envelope a sent text starts with (a rendered transcript block's label line removed), else None.  Only the envelope's own keys are read:
+    nothing nested inside evidence content is ever taken for page metadata (post-freeze correction 3)."""
+    if not isinstance(text, str):
+        return None
+    body = LABEL_RX.sub('', text, count=1).lstrip()
+    if not body.startswith('{'):
+        return None
+    try:
+        obj, _end = json.JSONDecoder().raw_decode(body)
+    except ValueError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def _valid_page(page, allowed):
+    if not isinstance(page, dict) or page.get('contract') != 'pages-v1' or page.get('source') not in allowed:
+        return None
+    n, of = page.get('n'), page.get('of')
+    if not (isinstance(n, int) and isinstance(of, int)) or isinstance(n, bool) or isinstance(of, bool) or not 1 <= n <= of:
+        return None
+    return page['source'], n, of
 
 
 def wire_pages(texts):
-    """{message id: {'of': N, 'seen': {page numbers}}} from the page objects (`page.source`, `page.n`, `page.of`) in the texts sent to the model."""
-    dec = json.JSONDecoder()
-    out = {}
+    """{message id: {'of': N, 'seen': {page numbers}}} from the pagination of the texts sent to the model, read ONLY from trusted envelope locations: the
+    first message's `evidence.page` (source `evidence`) and a tool result's `output.page` (source: its own id, or for a page fetch the id of an earlier
+    message).  Source ids and page bounds are validated; a page object anywhere else (inside a catalog record, a tag, a body text) is content and ignored."""
+    out, known = {}, set()
     for text in texts or []:
-        if not isinstance(text, str):
+        obj = _envelope(text)
+        if obj is None:
             continue
-        for m in PAGE_KEY_RX.finditer(text):
-            try:
-                obj, _end = dec.raw_decode(text, m.end() - 1)
-            except ValueError:
-                continue
-            src, n, of = obj.get('source'), obj.get('n'), obj.get('of')
-            if isinstance(src, str) and isinstance(n, int) and isinstance(of, int) and not isinstance(n, bool) and of >= 1:
-                rec = out.setdefault(src, {'of': of, 'seen': set()})
-                rec['of'] = max(rec['of'], of)
-                rec['seen'].add(n)
+        if 'case_id' in obj and isinstance(obj.get('evidence'), dict) and obj.get('type') is None:
+            got, own = _valid_page(obj['evidence'].get('page'), {'evidence'}), 'evidence'
+        elif obj.get('type') == 'tool_result' and isinstance(obj.get('output'), dict) and isinstance(obj.get('id'), str):
+            own = obj['id']
+            got = _valid_page(obj['output'].get('page'), known | {own})
+        else:
+            continue
+        known.add(own)
+        if got is None:
+            continue
+        src, n, of = got
+        rec = out.setdefault(src, {'of': of, 'seen': set()})
+        rec['of'] = max(rec['of'], of)
+        rec['seen'].add(n)
     return out
 
 
@@ -315,13 +345,19 @@ def _ref_obs(ref):
     return ref.split(':')[0].split('.')[0]
 
 
-def _deciding(check, v, rows, source_ref):
-    """The observation ids a role check reads: identity reads every identity-bearing statement; the source checks read every catalog record and the cited
-    source; a managing app reads the context only."""
+# Tools whose results never carry an identity, naming or catalog statement (the checker reads statements only from the others).  Decided by the tool KIND of
+# a shown result, never by what its (possibly unread) values contain (post-freeze correction 3).
+NO_IDENTITY_TOOLS = ('decode_sample', 'audio_sample', 'frame_sample')
+
+
+def _deciding(check, obs, source_ref):
+    """The observation ids a role check may read, from the ids and tool kinds of the shown results only (never from their values): identity reads every result
+    that can carry an identity, naming or catalog statement, the catalog records included; the source checks read every catalog record and the cited source;
+    a managing app reads the context only."""
     if check == 'identity_level':
-        return {_ref_obs(r['ref']) for r in rows} - {None}
+        return {o['id'] for o in obs if o.get('tool') not in NO_IDENTITY_TOOLS}
     if check in ('source_bound', 'source_ref_qualifies'):
-        return ({o['id'] for o in v.of_tool('arr_lookup')} | {_ref_obs(source_ref)}) - {None}
+        return ({o['id'] for o in obs if o.get('tool') == 'arr_lookup'} | {_ref_obs(source_ref)}) - {None}
     return set()
 
 
@@ -353,7 +389,7 @@ def check_role_v4(decision, ctx, evidence_shown, tool_calls):
             continue
         state, check, refs = pre['state'], pre['check'], list(pre.get('refs') or [])
         status, why = None, ''
-        deciding = _deciding(check, v, rows, resolved)
+        deciding = _deciding(check, obs, resolved)
         if deciding & undelivered:     # post-freeze correction 2: unread content decides nothing, and the state computed from it is not recorded either
             state, refs = None, sorted(deciding & undelivered)
             status, why = 'undelivered', 'a deciding result was not fully delivered: %s' % ', '.join(refs)

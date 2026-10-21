@@ -30,6 +30,10 @@ other config field is compared equal). No model was called. Details: `docs/dev-c
   error, keeps stream evidence and receipts on failures, checks registration before the error subtype, and judges `schema_sent` over every attempted
   call; a v8 config records `turn-v3.1`; `mrh-guard` no longer offers v4 (`GUARD_VERSIONS` back to v1-v3, `ALL_GUARD_VERSIONS` for the runner); v8 M4
   names the catalog runtime only and the source lines say "evidence id"; shadow records `guards-v4-whatif-2` add the cited source form (counts unchanged).
+* **Review round 2 (AUDIT-ASTRA-54, Opus nits):** guards v4 fixes role-check dependencies from result ids and tool kinds (catalog records included),
+  never from unread values, and reads pagination only from validated envelope locations (dated post-freeze correction 3; count-neutral); claude-schema-1
+  keeps an empty, whitespace or thinking-only completed first response as the first try, groups one message id across intervening events, keeps a timed-out
+  call's partial stream, forwards the failed call's evidence through the cost-cap abort, and lets a missing tool win over a malformed line.
 
 ## W25b (OpenProject #156): review fixes for PR #1031, offline
 

@@ -82,15 +82,18 @@ envelope shows only the final, CLI-repaired object. Help and docs do not establi
   `--output-format stream-json --verbose`, so every StructuredOutput attempt and every CLI validation result is visible;
 * the reply is the model's **first completed assistant response**, whatever its form (review round 1, A50-2 / O1): its StructuredOutput input when that
   response called the tool, else its text (a text-only answer that the CLI then corrected, for example with "You MUST call the StructuredOutput tool",
-  is still the first try). Assistant events are grouped by message id. Later responses (`cli_internal_retries`), the CLI's injected corrections
+  is still the first try). An explicitly completed empty, whitespace-only or thinking-only response is also a first try, with an empty reply (review
+  round 2). Assistant events with one message id are one response wherever they appear (a rate-limit or other system event between them does not split
+  it); an event without an id joins the open response unless a user event (a CLI correction or a tool result) came after it. Later responses (`cli_internal_retries`), the CLI's injected corrections
   (`cli_corrections`), its validation results, the final `structured_output` and the result text are recorded in `turns[].meta.schema` and never used:
   no extra repair, first-try failures stay first-try failures;
 * a CLI error after the first response (`error_max_structured_output_retries`, `error_max_budget_usd`, ...) still yields that first response, with the
   error recorded (`cli_error_after_first_response`, `result_subtype`); the run's cost cap is still checked before the next call. No response at all: the
   result text is the reply (empty when none), recorded as `reply_source`;
-* failures keep their evidence (A50-3): a non-JSON line rejects the stream but keeps the receipt of a valid result event; every adapter error and abort of
-  this mode carries the untruncated raw request and stream, the attempts and the delivery record, which the runner keeps on the failed turn (other
-  adapters' failed turns keep their earlier shape);
+* failures keep their evidence (A50-3, round 2): a non-JSON line rejects the stream but keeps the receipt of a valid result event; a timed-out call keeps
+  its partial stream (attempts, delivery record, a receipt if one arrived); every adapter error and abort of this mode, including the run cost cap's abort
+  of a call stopped at its budget, carries the untruncated raw request and stream, the attempts and the delivery record, which the runner keeps on the
+  failed turn (other adapters' failed turns and timeouts keep their earlier shape). A missing tool stops the run even when the stream is malformed;
 * `schema_sent` is true only when **every attempted call**, a failed one included (A50-4), carried the flag **and** its own init event listed
   `StructuredOutput`. An init event without it stops the run (`AbortRun`), checked before any error subtype (O2), instead of recording a schema that was
   not sent; an init event without a tool list, or a call that left no stream, records `schema_sent: false`;
@@ -154,8 +157,17 @@ Each corrects how the frozen predicates are implemented, not what they are; each
   identity-bearing statement; source: every catalog record and the cited source) were not fully delivered is `undelivered` whatever the audit computed,
   and the state computed from unread content is not recorded (`audit_state: null`). Count-neutral: of the 224 inputs, 1 record has unread content and it
   is not a write; every decision, role status and count is unchanged (`tests/test_devc8.py`: `ReviewFrozenCounts`, the byte reproduction).
-* Implementation digest of G-role (`v4_context`, `_page_key`, `undelivered_ids`, `wire_pages`, `wire_undelivered`, `record_wire_texts`, `_deciding`,
-  `check_role_v4`, `record_v4_context`): `b51e0705ee19547a1a9ada0100c5417a43b31f66454f8a026b23fce9c375dd9f` (pinned in `tests/test_devc8.py`).
+* **2026-10-21, correction 3 (review round 2, AUDIT-ASTRA-54 items 1 and 2):** (a) what a role check depends on was derived from the identity rows,
+  which are computed from the raw values, so a title present only on an unread page changed the dependency set, and catalog records were missing from
+  identity's dependencies. Dependencies now come from the ids and tool kinds of the shown results only: identity reads every result that can carry an
+  identity, naming or catalog statement (every tool except `decode_sample`, `audio_sample`, `frame_sample`), catalog records included; the source checks
+  read every catalog record and the cited source. (b) Pagination was read from any `"page"` object in the sent text, so evidence content could impersonate
+  it. It is now read only from the envelope (the first message's `evidence.page`, a tool result's `output.page`), with the source id (`evidence`, the
+  message's own id, or an earlier message's id for a page fetch), the contract and the page bounds validated. Count-neutral: the trusted reading finds the
+  same single input record with unread content (a non-write); the 224 shadow records reproduce byte for byte and every count is unchanged.
+* Implementation digest of G-role (`v4_context`, `_page_key`, `undelivered_ids`, `_envelope`, `_valid_page`, `wire_pages`, `wire_undelivered`,
+  `record_wire_texts`, `_deciding`, `check_role_v4`, `record_v4_context`, `NO_IDENTITY_TOOLS`): `6da4d2e3e8088d2bae0411b41f74880f7d0ff46e04ec485c773581214e376d2e`
+  (pinned in `tests/test_devc8.py`; after correction 2 it was `b51e0705ee19547a1a9ada0100c5417a43b31f66454f8a026b23fce9c375dd9f`).
 
 ## 5. Guards v4 what-if on the recorded dev-c7 runs (offline shadow records)
 
