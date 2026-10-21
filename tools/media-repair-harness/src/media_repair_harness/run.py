@@ -169,7 +169,12 @@ CONTRACT_V3_GUARDS = (None, 'v3')
 # dev-c7: evidence format v3.1-format (named so it cannot be confused with rubric v3.1) is contract v3 with tools behaviour v3 (EPUB body excerpts), the v3.1
 # presentation (statement kinds, prior-record typing) and the rubric v3.2 clarification, selected together and valid only with prompt v7 (and guards off or v3).
 CONTRACT_V31_FORMAT = 'v3.1-format'
-CONTRACT_V31_PROMPTS = ('v7',)
+CONTRACT_V31_PROMPTS = ('v7', 'v8')    # dev-c8: prompt v8 (turn-v3.1: turn-v3 plus the length-specific repair hint) on the same format
+# dev-c8: guards v4 (v3 plus the role checks on contract-v3 writes, decision_guard.check_role_v4) is accepted with format v3.1-format only; format v3 and every
+# earlier format keep their guard sets.
+CONTRACT_V31_GUARDS = (None, 'v3', 'v4')
+# dev-c8: Claude reply-schema delivery (adapter version claude-schema-1, opt-in).  Unset = the legacy Claude adapter, byte for byte.
+CLAUDE_SCHEMA_MODES = ('json-schema-1',)
 
 
 def _ev3():
@@ -195,12 +200,15 @@ def check_option_combination(prompt_version, evidence_format=None, guards=None, 
         if prompt_version not in CONTRACT_V31_PROMPTS:
             raise ValueError('--evidence-format %s (tools behaviour v3, the v3.1 presentation, turn-v3, decision-v3 and audit v3 are one version) is accepted with prompt %s only (got %s)' % (
                 CONTRACT_V31_FORMAT, ' or '.join(CONTRACT_V31_PROMPTS), prompt_version))
-        if guards not in CONTRACT_V3_GUARDS:
-            raise ValueError('--evidence-format %s is accepted with guards off or --guards v3 only (got --guards %s)' % (CONTRACT_V31_FORMAT, guards))
+        if guards not in CONTRACT_V31_GUARDS:
+            raise ValueError('--evidence-format %s is accepted with guards off, --guards v3 or --guards v4 only (got --guards %s)' % (CONTRACT_V31_FORMAT, guards))
         if tool_output_bytes is not None and not EV2.MIN_WIRE_BYTES <= tool_output_bytes <= EV2.WIRE_BYTES:     # the same page contract (pages-v1)
             raise ValueError('--evidence-format %s uses --tool-output-bytes as the page budget (a message is paginated to fit it): it must be between %d and %d, got %s' % (
                 CONTRACT_V31_FORMAT, EV2.MIN_WIRE_BYTES, EV2.WIRE_BYTES, tool_output_bytes))
         return
+    if guards == 'v4':
+        raise ValueError('--guards v4 checks the source binding and identity roles of a decision-v3 write and is accepted with --evidence-format %s only (got %s)' % (
+            CONTRACT_V31_FORMAT, evidence_format or 'the legacy format'))
     if prompt_version in CONTRACT_V3_PROMPTS and evidence_format != 'v3':
         raise ValueError('--prompt %s declares contract v3 (decision-v3 targets, the v3 presentation) and is valid only with --evidence-format v3 (got %s)' % (
             prompt_version, evidence_format or 'the legacy format'))
@@ -292,6 +300,11 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     # Hash of the schema the model actually got: only the Ollama adapter sends one (v1: its own anyOf / flat schema; v2: the per-case
     # schema).  Claude, Codex and scripted adapters send none, so nothing is recorded as sent.
     sent_schema = (schema if schema is not None else getattr(adapter, 'schema', None)) if getattr(adapter, 'name', None) == 'ollama' else None
+    # dev-c8: the Claude adapter forwards the schema only in its opt-in schema mode (claude-schema-1); whether the CLI registered it is read per turn from its
+    # own init event (turns[].meta.schema), so `schema_sent` is true only when every model call confirmed delivery (set after the loop).  Legacy: unchanged.
+    claude_schema = getattr(adapter, 'name', None) == 'claude' and getattr(adapter, 'schema_mode', None) is not None and schema is not None
+    if claude_schema:
+        sent_schema = schema
     sent_schema_sha = sha256_bytes(canonical(sent_schema).encode()) if sent_schema is not None else None
     messages = [{'role': 'user', 'content': (json.dumps(view, ensure_ascii=False, separators=(',', ':')) if v2fmt else json.dumps(view, ensure_ascii=False, sort_keys=True))}]
     # format v3.1-format: the leak guard is leakguard-media-2: the legacy check on each message's harness-only shadow, the media check on the media strings delivered
@@ -345,7 +358,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
             obj, perr, diag = P.parse_reply(comp.text)
             kind, verrs = (None, [perr]) if perr else P.validate_turn(obj, case.get('tools_available'), prompt_version)
             offered_bad = P.tool_not_offered(obj, case.get('tools_available')) if (v2 and kind == 'tool_call') else None
-            modes = P.failure_modes_for(prompt_version, comp.text, obj, verrs, diag) if kind is None else (['tool_not_offered'] if offered_bad is not None else [])
+            fm = P.failure_modes_v31 if prompt_version in P.LENGTH_REPAIR_PROMPTS else P.failure_modes_for     # turn-v3.1 (v8) adds the length_limit mode
+            modes = fm(prompt_version, comp.text, obj, verrs, diag) if kind is None else (['tool_not_offered'] if offered_bad is not None else [])
             turn = dict(comp.to_dict(), n=len(turns) + 1, raw_request=comp.raw_request, raw_response=comp.raw_response,
                         parsed_type=kind, validation_errors=[e for e in verrs if e], **({'diagnostics': diag} if diag else {}),
                         attempt='repair' if repairs else 'first', reply_valid=(kind is not None and offered_bad is None), failure_modes=modes)
@@ -355,9 +369,13 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                     rejected_writes.append({'turn': turn['n'], 'action': obj.get('action'), 'errors': [str(e)[:160] for e in verrs if e][:4]})
                 if not repairs:
                     err = '; '.join(e for e in verrs if e)[:300]
-                    repair_text = P.repair_prompt(err, modes) if v2 else P.REPAIR_PROMPT.format(error=err)
-                    repairs.append({'after_turn': turn['n'], 'error': err, 'prompt': repair_text, 'failure_modes': modes,
-                                    'salvageable_by': diag.get('salvageable_by', [])})
+                    rinfo = {}
+                    if prompt_version in P.LENGTH_REPAIR_PROMPTS:     # turn-v3.1: a length-only failure gets the length-specific form; the allowance is unchanged
+                        repair_text, rinfo = P.repair_prompt_v31(err, modes, obj, prompt_version, case.get('tools_available'))
+                    else:
+                        repair_text = P.repair_prompt(err, modes) if v2 else P.REPAIR_PROMPT.format(error=err)
+                    repairs.append(dict({'after_turn': turn['n'], 'error': err, 'prompt': repair_text, 'failure_modes': modes,
+                                         'salvageable_by': diag.get('salvageable_by', [])}, **rinfo))
                     messages += [{'role': 'assistant', 'content': comp.text}, {'role': 'user', 'content': repair_text}]
                     continue
                 force('invalid output after the one repair prompt: ' + '; '.join(e for e in verrs if e)[:200])
@@ -433,7 +451,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     resolve = make_resolver(case, tool_calls, session)
     if guards:
         # the guards read references through the same resolver as the record: they see the decision with its references normalised, the record keeps the original
-        final, guard_rec = DG.apply(case, decision, tool_calls, evidence, prompt_version, forced=forced, version=guards, resolve=resolve if v2fmt else None)
+        v4ctx = DG.v4_context(view['context'], view['media_type'], caps, list(session.log), tool_calls, evidence_format) if (guards == 'v4' and v3fmt) else None
+        final, guard_rec = DG.apply(case, decision, tool_calls, evidence, prompt_version, forced=forced, version=guards, resolve=resolve if v2fmt else None, v4ctx=v4ctx)
         decision = final
 
     # First-try validity is strict and never repaired after the fact: every model reply up to the first repair prompt must have
@@ -477,8 +496,10 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     record = {
         'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
         'split': case.get('split'), 'started_at': started_at,
-        'prompt': {'version': prompt['version'], 'sha256': prompt['sha256'], 'protocol': _turn_protocol(prompt['version']),
-                   'turn_schema_sha256': sent_schema_sha, 'schema_sent': sent_schema_sha is not None},
+        'prompt': dict({'version': prompt['version'], 'sha256': prompt['sha256'], 'protocol': _turn_protocol(prompt['version']),
+                        'turn_schema_sha256': sent_schema_sha, 'schema_sent': sent_schema_sha is not None},
+                       **({'repair_allowance': P.REPAIR_ALLOWANCE} if prompt['version'] in P.LENGTH_REPAIR_PROMPTS else {}),
+                       **(claude_schema_record(turns, sent_schema_sha, adapter) if claude_schema else {})),
         'model_case_alias': model_alias, 'requested_model': adapter.requested_model, 'response_model_ids': response_models,
         'runtime_version': adapter.runtime_version, 'model_digest': adapter.model_digest,
         'model_digest_na_reason': adapter.digest_na_reason if not adapter.model_digest else None,
@@ -512,6 +533,18 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     return record
 
 
+def claude_schema_record(turns, sent_schema_sha, adapter):
+    """dev-c8, Claude schema mode only: what was forwarded and what the CLI confirmed.  `schema_sent` is true only when every model call carried the flag AND the
+    CLI's init event listed the StructuredOutput tool (A36 item 4: help text and docs show an advertised capability; the record shows what happened)."""
+    replied = [t for t in turns if 'text' in t]          # every model call that returned a reply (an adapter failure returned none)
+    per = [((t.get('meta') or {}).get('schema') or {}) for t in replied]
+    confirmed = bool(per) and all(s.get('flag_sent') is True and s.get('tool_registered') is True for s in per)
+    return {'schema_sent': confirmed, 'schema_mode': adapter.schema_mode, 'schema_flag_sha256': sent_schema_sha,
+            'schema_delivery_per_turn': [{'n': t.get('n'), 'tool_registered': ((t.get('meta') or {}).get('schema') or {}).get('tool_registered'),
+                                          'attempts': ((t.get('meta') or {}).get('schema') or {}).get('attempts'),
+                                          'reply_source': ((t.get('meta') or {}).get('schema') or {}).get('reply_source')} for t in turns]}
+
+
 def evidence_format_record(session, caps, version):
     """Record field of a format-v2 run (absent in a legacy run): the versions, the capability advertisement, the pages and sizes actually sent, and the
     final coverage matrix and client comparison over everything shown.  The typed objects themselves are in turns[].raw_request (what was sent) and the
@@ -531,6 +564,8 @@ FORCED_AFTER_REPAIR = 'invalid output after the one repair prompt'
 
 def _turn_protocol(prompt_version):
     """'turn-v1' / 'turn-v2' for the record and the config.  Never raises (the crash paths call it): an unknown version is shown as given."""
+    if prompt_version in P.TURN_PROTOCOL_NAME:
+        return P.TURN_PROTOCOL_NAME[prompt_version]
     try:
         return 'turn-' + P.protocol_of(prompt_version)
     except ValueError:
@@ -842,7 +877,7 @@ def build_adapter(args):
                                context_policy=getattr(args, 'context_policy', None), gpu_fit_check=getattr(args, 'gpu_fit_check', None))
     if args.adapter == 'claude':
         budget = None if getattr(args, 'no_spend_limit', False) else (args.max_budget_usd if args.max_budget_usd is not None else 2.0)
-        return A.ClaudeAdapter(model, effort=args.effort, max_budget_usd=budget)
+        return A.ClaudeAdapter(model, effort=args.effort, max_budget_usd=budget, schema_mode=getattr(args, 'claude_schema', None))
     if args.adapter == 'codex':
         return A.CodexAdapter(model, effort=args.effort, record_session=not args.codex_ephemeral)
     if args.adapter == 'scripted':
@@ -863,6 +898,8 @@ def run_config(args, adapter, evidence_bounds, evcol_clamped):
               'adapter_config': adapter.config()}
     if args.guards:
         config['guards'] = args.guards   # only when on: a run without guards has the same config (and config_hash) shape as before
+    if args.prompt in P.LENGTH_REPAIR_PROMPTS:     # dev-c8: only for turn-v3.1 (v8); earlier prompts keep their config shape
+        config['repair_allowance'] = P.REPAIR_ALLOWANCE
     if args.no_spend_limit:
         config['spend_limit'] = 'uncapped'     # only when set (dev-c6): an explicitly uncapped run; the claude adapter config also shows max_budget_usd None
     limits = RunLimits(args.max_total_cost_usd, args.max_wall_s)
@@ -904,7 +941,7 @@ def build_parser():
                          'adapter config; unset = exactly as before')
     ap.add_argument('--tool-output-bytes', type=int, default=P.TOOL_OUTPUT_BYTES, help='cap on one tool result shown to the model (lower it for small local contexts)')
     ap.add_argument('--num-predict', type=int, help='ollama output cap; default 384 for prompt v1, 640 for v2 (a write decision carries an audit object)')
-    ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c); v5 (dev-c5) is valid only with --evidence-format v2; v6 (dev-c6, contract v3) only with --evidence-format v3; v7 (dev-c7) only with --evidence-format v3.1-format')
+    ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c); v5 (dev-c5) is valid only with --evidence-format v2; v6 (dev-c6, contract v3) only with --evidence-format v3; v7 (dev-c7) and v8 (dev-c8, turn-v3.1) only with --evidence-format v3.1-format')
     ap.add_argument('--guards', choices=list(DG.GUARD_VERSIONS), default=None, help='opt-in deterministic decision guards (dev-c4); default off; v2 only relaxes two G-write checks (see CONTRACT-v2-proposal section 9); v3 (W18) also lets a known integrity defect in the shown evidence contradict a healthy decision (any prompt). A guard can only turn a decision into insufficient_evidence/escalate and keeps the original in the record field `guard`')
     ap.add_argument('--evidence-format', choices=list(EVIDENCE_FORMATS), default=None, help='W18, opt-in: v2 shows the model typed evidence (execution, findings, scope, unresolved per result, a coverage matrix, a client comparison, tool capabilities, compact paginated structure) derived from the same results; also selects tools behaviour v2 and audit v2. Accepted with --prompt v4 or v5 (v5 requires it) and --guards off or v3. v3 (dev-c6) is contract v3 as one version: the v3 presentation (explicit empty values with a presence map, one deduplicated open list with available_check links), turn protocol turn-v3, decision schema decision-v3 and audit v3; only with --prompt v6 and --guards off or v3. v3.1-format (dev-c7) is contract v3 with tools behaviour v3 (bounded, offset-addressed EPUB body excerpts), statement kinds and prior-record typing, and the rubric v3.2 clarification; only with --prompt v7 and --guards off or v3. Unset keeps the legacy format byte for byte')
     ap.add_argument('--max-total-cost-usd', type=float, default=None, help='dev-c5: stop the run cleanly before the cumulative REPORTED cost would reach this cap (cases not run stay listed in the manifest); unset = no cap')
@@ -920,6 +957,10 @@ def build_parser():
     ap.add_argument('--ocr-model', help='vision model on Prime for the ocr tool')
     ap.add_argument('--codex-ephemeral', action='store_true', help='codex: do not keep the rollout (then no response model id can be recorded and G10 fails)')
     ap.add_argument('--script', help='scripted adapter: JSON list of replies')
+    ap.add_argument('--claude-schema', choices=list(CLAUDE_SCHEMA_MODES), default=None,
+                    help='dev-c8, claude adapter only, opt-in: json-schema-1 forwards the per-case flat turn schema with the CLI\'s --json-schema (stream-json output); the '
+                         'model\'s FIRST StructuredOutput attempt is its reply, so CLI-internal retries grant no extra repair; schema_sent is recorded from the CLI\'s own '
+                         'init event.  Not exercised against a live model (docs and offline fixtures only).  Unset = the legacy adapter, byte for byte')
     return ap
 
 
@@ -938,6 +979,8 @@ def main(argv=None):
         raise SystemExit('--num-ctx %d needs a context policy (--context-policy); without one the allowed values are %s' % (args.num_ctx, list(A.ALLOWED_NUM_CTX)))
     if args.context_policy is not None and args.num_ctx != A.CONTEXT_POLICIES[args.context_policy]['num_ctx']:
         raise SystemExit('--context-policy %s requires --num-ctx %d' % (args.context_policy, A.CONTEXT_POLICIES[args.context_policy]['num_ctx']))
+    if getattr(args, 'claude_schema', None) and (args.adapter != 'claude' or args.prompt == 'v1'):
+        raise SystemExit('--claude-schema applies to the claude adapter with a prompt that has a per-case turn schema (v2 or later)')
     if args.gpu_fit_check and args.no_warmup:
         raise SystemExit('--gpu-fit-check reads /api/ps after the warm-up load: it cannot be combined with --no-warmup')
     out = Path(args.out)

@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 import th
+from media_repair_harness import protocol as P
 from media_repair_harness import adapters as A
 from media_repair_harness import run as R
 
@@ -92,7 +93,7 @@ class LegacyByteIdentity(unittest.TestCase):
             want = dict(man['config'])
             # the only recorded difference is the harness version string (dev-c6 then, dev-c7 on this tree); every other key and value is equal
             self.assertEqual(want.pop('harness_version'), 'dev-c6')
-            self.assertEqual(got.pop('harness_version'), 'dev-c7')
+            self.assertEqual(got.pop('harness_version'), 'dev-c8')
             if run.startswith('devc6-qwen'):
                 self.assertEqual(got['adapter_config'], want['adapter_config'])
             else:   # hosted adapters: the CLI version is read at preflight, not in the config
@@ -439,9 +440,26 @@ class RegisteredCommands(unittest.TestCase):
         tpl = json.loads((RUNS / 'dev-c7' / 'manifest-template.json').read_text())
         for name, run in tpl['runs'].items():
             args = R.build_parser().parse_args(run['argv'])
-            cfg = R.run_config(args, R.build_adapter(args), {}, None)
+            with registered_harness_version('dev-c7'):          # dev-c8: the commands were registered under dev-c7; only that label moved
+                cfg = R.run_config(args, R.build_adapter(args), {}, None)
             self.assertEqual(R.sha256_bytes(R.canonical(cfg).encode()), run['expected_config_hash'], name)
+            now = R.run_config(args, R.build_adapter(args), {}, None)
+            self.assertEqual(now.pop('harness_version'), P.HARNESS_VERSION)
+            self.assertEqual(now, {k: v for k, v in cfg.items() if k != 'harness_version'}, name)     # nothing else the config records changed
         self.assertEqual(tpl['order'], ['qwen', 'haiku', 'astra'])
+
+
+class registered_harness_version:
+    """Rebuild a registered command's config under the harness version it was registered with (the version label is the one field a later bump moves)."""
+
+    def __init__(self, version):
+        self.version = version
+
+    def __enter__(self):
+        self.saved, P.HARNESS_VERSION = P.HARNESS_VERSION, self.version
+
+    def __exit__(self, *exc):
+        P.HARNESS_VERSION = self.saved
 
 if __name__ == '__main__':
     unittest.main()

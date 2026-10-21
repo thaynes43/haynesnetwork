@@ -40,6 +40,16 @@ the shown observations; G-write reads the class, the action, evidence_refs and t
 the validator requires, and the audit-object checks belong to turn protocol v2 only), so contract v3 needs no new guard version.  The only difference is the
 shape of the escalate a guard writes: under turn protocol v3 it carries no target (none and escalate have neither source nor target in decision-v3).  A v3
 record's derived fields use audit v3 (evidence_v3.action_audit).
+
+Guards v4 (dev-c8, `--guards v4`, evidence format v3.1-format only; offline on contract-v3 records through apply_to_record, driven by
+  scripts/guards_v4_whatif.py: `mrh-guard` is a pinned input of the dev-c7 qwen-r2 registration and stays unchanged, so it refuses v4)
+  Guards v3 run first and UNCHANGED.  When neither fires, G-role checks the role prerequisites of a decision-v3 write on audit v3 (the same
+  `targets.audit_v3` as the record's audit), recomputed over the observations delivered to the model, with source.ref resolved through page origins.
+  The prerequisite ids, the failure predicates and the unknown/unmet mapping are FROZEN in V4_SPEC below (fixed before any outcome count was looked at,
+  AUDIT-ASTRA-36 item 1).  Only an audit state `unmet` can fire, and only when its predicate is enforceable: `unknown` never fires (the exemption is for these
+  v4 checks only), and an `unmet` that rests on content the comparator could not recognise, or on a result whose pages were not all delivered, is recorded as
+  `unrecognized` / `undelivered` and does not fire.  Declarations and prior-record claims are never promoted to content (the checker's statement kinds decide).
+  Every role check is recorded in `guard.role_checks`, fired or not.
 """
 import copy
 
@@ -50,9 +60,45 @@ from . import protocol as P
 from . import tools as T
 
 GUARD_VERSION = 'v1'          # the version a bare `--guards v1` means and the one measured in runs/dev-c4; v1 behaviour never changes
-GUARD_VERSIONS = ('v1', 'v2', 'v3')
+GUARD_VERSIONS = ('v1', 'v2', 'v3', 'v4')
 RULE_HEALTHY = 'G-healthy'
 RULE_WRITE = 'G-write'
+RULE_ROLE = 'G-role'
+
+# ---- guards v4 (dev-c8): FROZEN specification -------------------------------------------------------------------------------------------------------
+V4_SPEC = {
+    'version': 'v4',
+    'frozen': '2026-10-21, before any dev-c7 outcome count was computed (AUDIT-ASTRA-36 item 1)',
+    'inherits': 'guards v3 (G-healthy v3, G-write v3) unchanged and evaluated first',
+    'scope': 'a write decision of decision-v3 (it carries source and target) on a contract-v3 record (evidence format v3 or v3.1-format)',
+    'audit': 'targets.audit_v3 (the rubric v3.1 checker of the record audit) over the shown observations; source.ref resolved through page origins first',
+    'prerequisites': {
+        'A-REN-1': 'identity_level == content_verified (rename)',
+        'A-REN-0': 'source_bound (rename)', 'A-BLK-2': 'source_bound (blocklist_and_search)', 'A-MAP-2': 'source_bound (remap)', 'A-CNV-0': 'source_bound (convert)',
+        'A-BLK-1': 'managed_app (blocklist_and_search)', 'A-MAP-1': 'managed_app (remap)',
+        'R-SRC': 'source_ref_qualifies (every write)',
+    },
+    'states': {
+        'met': 'pass',
+        'unknown': 'unknown: never fires',
+        'unmet': 'fires (enforced) unless one of the non-enforcement predicates below holds',
+    },
+    'predicates': {
+        'managed_app unmet': 'enforced: context.arr.app is not a managing app (the context is part of the first message, always delivered)',
+        'source_bound unmet': 'enforced: a complete managed record of this item links a different file; undelivered if any such record was not fully delivered',
+        'source_ref_qualifies unmet, unmanaged item': 'enforced: with context.arr.app null the source is case_item and the cited source is not',
+        'source_ref_qualifies unmet, managed item': 'enforced: the cited source (after page-origin resolution) is not a shown record that binds the source; '
+                                                    'undelivered if a deciding record was not fully delivered',
+        'identity_level unmet, contradicted_by_content': 'enforced: a recognised content observation disagrees with the catalog on an identity attribute',
+        'identity_level unmet, any content row the comparator did not recognise': 'unrecognized: a content observation that matched no catalog value at all may '
+                                                                                  'carry the identity the comparator cannot read; not enforced',
+        'identity_level unmet, contested': 'enforced: a declaration disagrees on an identity or edition attribute and no recognised content settles it',
+        'identity_level unmet, uncontradicted': 'enforced (missing): no content observation agrees with the catalog on an identity attribute',
+        'any role check, a result with undelivered pages': 'undelivered: not enforced (only delivered evidence is evaluated)',
+    },
+    'not_enforced': ('unknown', 'unrecognized', 'undelivered'),
+}
+V4_PREREQUISITES = tuple(V4_SPEC['prerequisites'])
 # computed audit checks the guard does not act on: `target_in_context` matches the model's free-text target against the case's identifiers and calls a
 # target "broad" when it also names a series or an id of a wider scope, so a correct, specific target written in another form fails it (seen in the
 # offline what-if).  It stays in the record's action_audit; it just is not a reason to overrule a decision.
@@ -154,20 +200,142 @@ def record_resolver(record, evidence_shown):
     return EV2.reference_resolver(known, EV2.emitted_ids(EV2.analyze(obs, {})), EV2.page_origin_map((record or {}).get('tool_calls')))
 
 
-def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=False, version=GUARD_VERSION, resolve=None):
+def v4_context(context, media_type, capabilities, messages, tool_calls, evidence_format):
+    """What G-role needs beyond the decision: the model-visible context, media type and capability advertisement (audit v3's inputs), the evidence format (which
+    typed layer built the observations) and the ids whose pages were not all delivered."""
+    return {'context': context or {}, 'media_type': media_type, 'capabilities': list(capabilities or []), 'format': evidence_format,
+            'undelivered': sorted(undelivered_ids(messages, tool_calls))}
+
+
+def undelivered_ids(messages, tool_calls, evidence_ids=None):
+    """Ids of results the model did not receive in full: a message of n pages of which fewer than n were delivered (the first page plus one per distinct page
+    cursor fetched).  The first message (`evidence`) stands for every case evidence id; when they are not given, the marker `evidence` is returned."""
+    fetched = {}
+    for c in tool_calls or []:
+        po = c.get('pages_of')
+        if not (c.get('continuation') and po):
+            continue
+        key = po if isinstance(po, str) else 'evidence'
+        fetched.setdefault(key, set()).add(str((c.get('args') or {}).get('cursor')))
+    out = set()
+    for m in messages or []:
+        if m.get('kind') not in ('initial', 'result'):
+            continue
+        pages = m.get('pages') or 1
+        key = 'evidence' if m.get('kind') == 'initial' else m.get('id')
+        if pages > 1 + len(fetched.get(key, ())):
+            out |= set(evidence_ids or ['evidence']) if key == 'evidence' else {key}
+    return out
+
+
+def _v4_obs(ctx, evidence_shown, tool_calls):
+    if ctx.get('format') == 'v3.1-format':
+        from . import evidence_v31 as EVX
+    else:
+        from . import evidence_v3 as EVX
+    return EVX.shown_observations(evidence_shown, tool_calls)
+
+
+def _ref_obs(ref):
+    """The observation id a checker reference names (`e1:files[0]` -> e1, `t2:tags_empty` -> t2, `context.filename` -> None)."""
+    if not isinstance(ref, str) or ref.startswith(('context.', 'client_comparison', 'coverage')) or ref == 'case_item':
+        return None
+    return ref.split(':')[0].split('.')[0]
+
+
+def check_role_v4(decision, ctx, evidence_shown, tool_calls):
+    """Guards v4 G-role (V4_SPEC, frozen).  -> (reason or None, role_checks).  Never fires on a non-write, on a decision without a source (not decision-v3) or
+    on a decision the decision-v3 validator refuses."""
+    if not isinstance(decision, dict) or decision.get('action') not in P.WRITE_ACTIONS or not isinstance(decision.get('source'), dict):
+        return None, []
+    from .experimental.contract_v3 import prereq as PQ
+    from .experimental.contract_v3 import targets as TG
+    obs = _v4_obs(ctx, evidence_shown, tool_calls)
+    origins = EV2.page_origin_map(tool_calls)
+    src = decision['source'].get('ref')
+    resolved = origins[src][0] if (src in origins and len(origins[src]) == 1) else src
+    dec = dict(decision, source=dict(decision['source'], ref=resolved))
+    audit = TG.audit_v3(dec, obs, ctx.get('context') or {}, ctx.get('media_type'), ctx.get('capabilities') or [])
+    if audit.get('schema_errors'):
+        return None, []
+    v = PQ.View(obs, ctx.get('context') or {}, ctx.get('media_type'), ctx.get('capabilities') or [])
+    level, rows, _per = v.identity()
+    shown_ids = {o['id'] for o in obs}
+    undelivered = set(ctx.get('undelivered') or [])
+    if 'evidence' in undelivered:
+        undelivered |= {e.get('id') for e in evidence_shown or []}
+    managed = ((ctx.get('context') or {}).get('arr') or {}).get('app') in PQ.ARR_APPS
+    checks = []
+    for pre in audit.get('prerequisites') or []:
+        if pre['id'] not in V4_PREREQUISITES:
+            continue
+        state, check, refs = pre['state'], pre['check'], list(pre.get('refs') or [])
+        status, why = None, ''
+        if state == PQ.MET:
+            status = 'met'
+        elif state != PQ.UNMET:
+            status, why = 'unknown', pre.get('detail') or ''
+        elif check == 'managed_app':
+            status, why = 'enforced', 'no managing app in the context'
+        elif check == 'source_bound':
+            deciding = {_ref_obs(r) for r in refs} - {None}
+            status, why = ('undelivered', 'a deciding record was not fully delivered') if deciding & undelivered else ('enforced', pre.get('detail') or '')
+        elif check == 'source_ref_qualifies':
+            if not managed:
+                status, why = 'enforced', 'an item without a managing app has the source case_item; the cited source is %s' % resolved
+            else:
+                _st, brefs, _d = PQ.check_named(v, 'source_bound')
+                deciding = ({_ref_obs(r) for r in brefs} | {_ref_obs(resolved)}) - {None}
+                status, why = (('undelivered', 'a deciding record was not fully delivered') if deciding & undelivered else
+                               ('enforced', 'the cited source %s is not a shown record that binds this file%s' % (
+                                   resolved, '' if resolved in shown_ids or resolved == 'case_item' else ' (no result with that id was shown)')))
+        elif check == 'identity_level':
+            content = [r for r in rows if r['kind'] in PQ.CONTENT_KINDS]
+            unrecognized = [r['ref'] for r in content if not r['attributes']]
+            row_obs = {_ref_obs(r['ref']) for r in rows} - {None}
+            if row_obs & undelivered:
+                status, why = 'undelivered', 'an identity-bearing result was not fully delivered'
+            elif level == 'contradicted_by_content':
+                refs = [r['ref'] for r in content if 'disagree' in r['attributes'].values()]
+                status, why = 'enforced', 'content disagrees with the catalog on an identity attribute'
+            elif unrecognized:
+                status, why = 'unrecognized', 'content the comparator could not match to any catalog value: %s' % ', '.join(unrecognized[:4])
+            elif level == 'contested':
+                refs = [r['ref'] for r in rows if 'disagree' in r['attributes'].values()]
+                status, why = 'enforced', 'a declaration disagrees on an identity or edition attribute and no content settles it'
+            else:
+                status, why = 'enforced', 'missing: no content observation agrees with the catalog on an identity attribute (identity %s)' % level
+        else:
+            status, why = 'unknown', 'no v4 predicate for check %s' % check
+        checks.append({'id': pre['id'], 'check': check, 'audit_state': state, 'v4_status': status, 'refs': refs, 'detail': why})
+    fired = [c for c in checks if c['v4_status'] == 'enforced']
+    if not fired:
+        return None, checks
+    return ('%s with unmet role prerequisite(s): %s' % (decision.get('action'), '; '.join('%s (%s)' % (c['id'], c['detail']) for c in fired)))[:360], checks
+
+
+def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=False, version=GUARD_VERSION, resolve=None, v4ctx=None):
     """-> (final_decision, guard_record).  The input decision is never modified.  `resolve` (the one reference resolver) normalises the references the checks read;
-    the original decision, with its references as written, is what the record keeps."""
+    the original decision, with its references as written, is what the record keeps.  v4: the v3 checks first, unchanged; then G-role when `v4ctx` (a
+    contract-v3 run's context, see v4_context) is given."""
     if version not in GUARD_VERSIONS:
         raise ValueError('unknown guard version %r (known: %s)' % (version, ', '.join(GUARD_VERSIONS)))
     original = decision
     if resolve is not None and decision:
         decision = dict(decision, evidence_refs=resolve(decision.get('evidence_refs')))
     applied = []
-    reason = check_healthy_v3(decision, evidence_shown, tool_calls) if version == 'v3' else check_healthy(decision, evidence_shown, tool_calls)
+    base = 'v3' if version == 'v4' else version          # v4 inherits v3 exactly
+    reason = check_healthy_v3(decision, evidence_shown, tool_calls) if base == 'v3' else check_healthy(decision, evidence_shown, tool_calls)
     rule = RULE_HEALTHY
     if reason is None:
-        reason = check_write(case, decision, tool_calls, prompt_version, forced, version, evidence_shown)
+        reason = check_write(case, decision, tool_calls, prompt_version, forced, base, evidence_shown)
         rule = RULE_WRITE
+    role_checks = None
+    if version == 'v4':
+        role_checks = []
+        if reason is None and v4ctx is not None and decision:
+            reason, role_checks = check_role_v4(decision, v4ctx, evidence_shown, tool_calls)
+            rule = RULE_ROLE
     if reason is not None:
         applied.append({'rule': rule, 'original': copy.deepcopy(original), 'reason': reason})
         final = guard_escalation(rule, reason)
@@ -175,7 +343,12 @@ def apply(case, decision, tool_calls, evidence_shown, prompt_version, forced=Fal
             final.pop('target', None)        # decision-v3: an escalate has no target
     else:
         final = original
-    return final, {'version': version, 'applied': applied, 'final_changed': bool(applied)}
+    rec = {'version': version, 'applied': applied, 'final_changed': bool(applied)}
+    if role_checks is not None:          # v4 only: every role check, fired or not (a v1 to v3 guard record keeps its shape)
+        rec['role_checks'] = role_checks
+        if v4ctx is None:
+            rec['role_note'] = 'G-role not evaluated: not a contract-v3 run'
+    return final, rec
 
 
 def _protocol(prompt_version):
@@ -231,13 +404,16 @@ def apply_to_record(record, case, evidence_shown, version=GUARD_VERSION):
     """Offline: a COPY of a run record with the guards applied.  Always carries `guard`; when a guard fires, the decision and the fields
     derived from it are replaced and the model's original stays in `guard.applied[].original`.  A record that was already guarded is first
     returned to the model's own decision, so guarding never stacks and another guard version can be applied to a guarded run."""
+    if version == 'v4' and _v3_format(record) not in V3_FORMATS:
+        raise ValueError('guards v4 checks decision-v3 roles and applies to contract-v3 records only (record %s)' % (record or {}).get('case_id'))
     rec = copy.deepcopy(record)
     if rec.get('guard'):
         rec = restore_original(rec, case, evidence_shown)
         rec.pop('guard')
     pv = (rec.get('prompt') or {}).get('version') or P.DEFAULT_PROMPT
     resolve = record_resolver(rec, evidence_shown)
-    final, guard = apply(case, rec['decision'], rec.get('tool_calls') or [], evidence_shown, pv, bool(rec.get('forced')), version, resolve=resolve)
+    v4ctx = record_v4_context(rec, case, evidence_shown) if version == 'v4' else None
+    final, guard = apply(case, rec['decision'], rec.get('tool_calls') or [], evidence_shown, pv, bool(rec.get('forced')), version, resolve=resolve, v4ctx=v4ctx)
     rec['guard'] = guard
     if guard['final_changed']:
         rec['decision'] = final
@@ -245,6 +421,19 @@ def apply_to_record(record, case, evidence_shown, version=GUARD_VERSION):
         rec.update(derived_fields(case, final, rec.get('tool_calls') or [], evidence_shown, rec.get('evidence_mode', 'replay'), pv,
                                   bool(rec.get('forced')), outcome_step, resolve, bool(rec.get('evidence_format')), _v3_caps(rec), _v3_format(rec)))
     return rec
+
+
+def record_v4_context(record, case, evidence_shown):
+    """G-role's inputs for an existing contract-v3 record (None for any other record): the context and media type as the model saw them, the recorded capability
+    advertisement and the recorded messages (pages sent)."""
+    fmt = _v3_format(record)
+    if fmt not in V3_FORMATS:
+        return None
+    view = P.case_view(case, [])
+    ctx = v4_context(view['context'], view['media_type'], _v3_caps(record), (record.get('evidence_format') or {}).get('messages'), record.get('tool_calls'), fmt)
+    ctx['undelivered'] = sorted(undelivered_ids((record.get('evidence_format') or {}).get('messages'), record.get('tool_calls'),
+                                                [e.get('id') for e in evidence_shown or []]))
+    return ctx
 
 
 def restore_original(record, case, evidence_shown):

@@ -392,18 +392,37 @@ CLAUDE_FLAGS = ['--tools', '', '--strict-mcp-config', '--mcp-config', '{"mcpServ
                 '--setting-sources', '', '--no-session-persistence']
 
 
+# dev-c8: reply-schema delivery for the Claude CLI (opt-in adapter version claude-schema-1; `schema_mode=None` is the legacy adapter, byte for byte).
+# Advertised by the pinned CLI's `--help` (`--json-schema <schema>`, print mode) and documented (headless mode, Agent SDK structured outputs): the CLI adds a
+# `StructuredOutput` tool whose input is the reply, validates it client-side and RE-PROMPTS on a mismatch until it is valid or the run ends with
+# `error_max_structured_output_retries`; the `json` envelope then carries only the final `structured_output`.  To keep the model's first try and grant no extra
+# repair, this mode reads the `stream-json` event stream and takes the FIRST StructuredOutput attempt as the reply; later CLI-internal attempts and the CLI's own
+# validation results are recorded (turns[].meta.schema) and never used.  Whether the CLI registered the tool is read from its init event, not assumed.
+CLAUDE_SCHEMA_ADAPTER_VERSION = 'claude-schema-1'
+STRUCTURED_OUTPUT_TOOL = 'StructuredOutput'
+
+
 class ClaudeAdapter(Adapter):
     name = 'claude'
     digest_na_reason = 'hosted API model: no weights digest; the response model id is recorded instead'
 
-    def __init__(self, model, effort=None, max_budget_usd=2.0, timeout=240, runner=subprocess.run):
+    def __init__(self, model, effort=None, max_budget_usd=2.0, timeout=240, runner=subprocess.run, schema_mode=None):
         super().__init__(model)
         self.effort, self.max_budget_usd, self.timeout, self.runner = effort, max_budget_usd, timeout, runner
         self.workdir = tempfile.mkdtemp(prefix='mrh-claude-')
+        if schema_mode is not None and schema_mode != 'json-schema-1':
+            raise ValueError('unknown claude schema mode %r (known: json-schema-1)' % (schema_mode,))
+        self.schema_mode = schema_mode
+        if schema_mode is not None:
+            self.schema_name = 'flat'      # the runner builds the flat per-case turn schema (one object type at the top level) for this mode
 
     def config(self):
-        return {'adapter': self.name, 'model': self.requested_model, 'effort': self.effort, 'flags': CLAUDE_FLAGS,
-                'output_format': 'json', 'max_budget_usd': self.max_budget_usd, 'timeout_s': self.timeout}
+        c = {'adapter': self.name, 'model': self.requested_model, 'effort': self.effort, 'flags': CLAUDE_FLAGS,
+             'output_format': 'json', 'max_budget_usd': self.max_budget_usd, 'timeout_s': self.timeout}
+        if self.schema_mode is not None:      # only in schema mode: the legacy config (and config hash) keeps its shape
+            c.update(adapter_version=CLAUDE_SCHEMA_ADAPTER_VERSION, schema_mode=self.schema_mode, output_format='stream-json', schema_variant='flat',
+                     reply_from='first StructuredOutput attempt (CLI-internal retries recorded, never used)')
+        return c
 
     def preflight(self):
         if not shutil.which('claude'):
@@ -420,9 +439,18 @@ class ClaudeAdapter(Adapter):
             cmd += ['--effort', self.effort]
         return cmd
 
+    def argv_schema(self, system, schema):
+        """claude-schema-1: the legacy argv with `--output-format stream-json --verbose` (the event stream shows every StructuredOutput attempt) and
+        `--json-schema <the per-case flat turn schema>`."""
+        cmd = self.argv(system)
+        i = cmd.index('--output-format')
+        cmd[i + 1] = 'stream-json'
+        return cmd[:i + 2] + ['--verbose', '--json-schema', json.dumps(schema, separators=(',', ':'), sort_keys=True)] + cmd[i + 2:]
+
     def complete(self, system, messages, schema=None):
         prompt = render_transcript(messages)
-        cmd = self.argv(system)
+        schema_mode = self.schema_mode is not None and schema is not None
+        cmd = self.argv_schema(system, schema) if schema_mode else self.argv(system)
         started = time.monotonic()
         try:
             r = self.runner(cmd, input=prompt.encode(), capture_output=True, timeout=self.timeout, cwd=self.workdir)
@@ -432,6 +460,9 @@ class ClaudeAdapter(Adapter):
         raw = r.stdout.decode(errors='replace')
         req = {'argv': cmd[:cmd.index('--system-prompt')] + ['--system-prompt', '<system>'] + cmd[cmd.index('--system-prompt') + 2:],
                'system_prompt': system, 'prompt': prompt}
+        if schema_mode:
+            req['json_schema_sha256'] = _sha256_text(json.dumps(schema, separators=(',', ':'), sort_keys=True))
+            return parse_claude_stream(raw, r.stderr.decode(errors='replace'), r.returncode, req, wall, self.schema_mode)
         return parse_claude(raw, r.stderr.decode(errors='replace'), r.returncode, req, wall)
 
     def finish(self):
@@ -458,6 +489,84 @@ def parse_claude(raw, stderr, returncode, req, wall):
                                                         'num_turns': d.get('num_turns'), 'stop_reason': d.get('stop_reason'),
                                                         'permission_denials': d.get('permission_denials')},
                       meta={'model_usage': d.get('modelUsage')})
+
+
+def _sha256_text(s):
+    import hashlib
+    return hashlib.sha256(s.encode()).hexdigest()
+
+
+def parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode='json-schema-1'):
+    """claude-schema-1: parse the `stream-json` event stream of one `claude -p --json-schema` call.  The reply is the model's FIRST StructuredOutput attempt
+    (serialised as JSON text for the harness's strict parser and validator); the CLI's later attempts, its own validation results, the final
+    `structured_output` and the result text are recorded in meta.schema, never used.  Every event stays in raw_response, untruncated.
+    No attempt: the result text is the reply (empty when there is none), and the record says so.  A malformed stream, a stream without a result event, or a
+    CLI error other than exhausted structured-output retries is an AdapterError with the call's receipt.  An init event that does not list the
+    StructuredOutput tool means the schema was NOT delivered: the run stops (AbortRun) rather than run a configuration that is not what it claims."""
+    events = []
+    for n, line in enumerate(raw.splitlines()):
+        if not line.strip():
+            continue
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            raise AdapterError('claude CLI stream line %d is not JSON (exit %s): %s' % (n + 1, returncode, line[:200]))
+        if not isinstance(ev, dict):
+            raise AdapterError('claude CLI stream line %d is not a JSON object (exit %s)' % (n + 1, returncode))
+        events.append(ev)
+    if not events:
+        raise AdapterError('claude CLI returned no stream events (exit %s): %s' % (returncode, (stderr or '')[:300]))
+    init = next((e for e in events if e.get('type') == 'system' and e.get('subtype') == 'init'), None)
+    tools = (init or {}).get('tools')
+    registered = (STRUCTURED_OUTPUT_TOOL in tools) if isinstance(tools, list) else None
+    attempts, checks = [], []
+    for e in events:
+        content = ((e.get('message') or {}).get('content')) if isinstance(e.get('message'), dict) else None
+        for b in content if isinstance(content, list) else []:
+            if not isinstance(b, dict):
+                continue
+            if e.get('type') == 'assistant' and b.get('type') == 'tool_use' and b.get('name') == STRUCTURED_OUTPUT_TOOL:
+                attempts.append({'id': b.get('id'), 'input': b.get('input')})
+            elif e.get('type') == 'user' and b.get('type') == 'tool_result' and b.get('tool_use_id') in {a['id'] for a in attempts}:
+                body = b.get('content')
+                checks.append({'tool_use_id': b.get('tool_use_id'), 'is_error': bool(b.get('is_error')),
+                               'text': body if isinstance(body, str) else json.dumps(body, ensure_ascii=False)})
+    result = next((e for e in reversed(events) if e.get('type') == 'result'), None)
+    if result is None:
+        raise AdapterError('claude CLI stream has no result event (exit %s)' % returncode)
+    u = result.get('usage') or {}
+    receipt = {'input_tokens': u.get('input_tokens'), 'output_tokens': u.get('output_tokens'), 'cost_usd': result.get('total_cost_usd')}
+    subtype = result.get('subtype', 'success')
+    retries_exhausted = subtype == 'error_max_structured_output_retries'
+    if (result.get('is_error') or subtype != 'success') and not (retries_exhausted and attempts):
+        raise AdapterError('claude CLI error: %s' % json.dumps({k: result.get(k) for k in ('subtype', 'api_error_status', 'result', 'terminal_reason')})[:400],
+                           usage=receipt, budget_exceeded=subtype == 'error_max_budget_usd')
+    if registered is False:
+        ab = AbortRun('claude-schema-1: the CLI init event does not list the %s tool, so --json-schema was not delivered with these flags; stopping the run '
+                      'instead of recording a schema that was not sent' % STRUCTURED_OUTPUT_TOOL)
+        ab.failed_call = {'error': 'schema not registered by the CLI', 'usage': receipt, 'failure_modes': ['adapter_error', 'schema_not_registered']}
+        raise ab
+    if attempts:
+        text, source = json.dumps(attempts[0]['input'], ensure_ascii=False), 'first_structured_output_attempt'
+    else:
+        text = result.get('result') or ''
+        source = 'result_text' if text else 'none'
+    models = list((result.get('modelUsage') or {}).keys())
+    usage = {'input_tokens': u.get('input_tokens'), 'output_tokens': u.get('output_tokens'),
+             'cache_creation_input_tokens': u.get('cache_creation_input_tokens'), 'cache_read_input_tokens': u.get('cache_read_input_tokens'),
+             'cost_usd': result.get('total_cost_usd')}
+    schema_meta = {'mode': schema_mode, 'adapter_version': CLAUDE_SCHEMA_ADAPTER_VERSION, 'flag_sent': True, 'json_schema_sha256': req.get('json_schema_sha256'),
+                   'tool_registered': registered, 'cli_version_reported': (init or {}).get('claude_code_version'),
+                   'attempts': len(attempts), 'attempt_inputs': [a['input'] for a in attempts], 'cli_validation': checks,
+                   'cli_internal_retries': max(0, len(attempts) - 1), 'result_subtype': subtype,
+                   'structured_output_present': 'structured_output' in result, 'structured_output': result.get('structured_output'),
+                   'result_text': result.get('result'), 'reply_source': source,
+                   'note': 'the reply is the first attempt; later CLI-internal attempts are recorded only and grant no repair'}
+    return Completion(text, req, raw, response_model=models[0] if len(models) == 1 else (models or None),
+                      usage=usage, wall_s=wall, native={'duration_ms': result.get('duration_ms'), 'duration_api_ms': result.get('duration_api_ms'),
+                                                        'num_turns': result.get('num_turns'), 'stop_reason': result.get('stop_reason'),
+                                                        'permission_denials': result.get('permission_denials'), 'subtype': subtype},
+                      meta={'model_usage': result.get('modelUsage'), 'schema': schema_meta})
 
 
 CODEX_FLAGS = ['--json', '-s', 'read-only', '--skip-git-repo-check', '--ignore-user-config', '--ignore-rules']

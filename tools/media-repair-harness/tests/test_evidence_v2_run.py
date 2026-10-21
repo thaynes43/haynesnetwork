@@ -82,7 +82,7 @@ class LegacyCompatibility(unittest.TestCase):
     def test_version_flags_are_unset_by_default(self):
         ctx = T.Context(th.make_case(), T.Fixture('none'), tempfile.mkdtemp())
         self.assertEqual((ctx.tools_behavior, ctx.keep_raw), ('v1', False))
-        self.assertEqual(DGv(), ('v1', 'v2', 'v3'))
+        self.assertEqual(DGv()[:3], ('v1', 'v2', 'v3'))     # dev-c8 appended v4 (tests/test_devc8.py)
 
     def test_legacy_prompts_and_schemas_are_byte_identical(self):
         """The sha256 of each prompt text and of the per-case turn schemas, as they were on origin/main 7abf11fb (protocol.py and prompts/ are untouched by W18)."""
