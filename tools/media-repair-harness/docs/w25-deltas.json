@@ -1,0 +1,289 @@
+{
+ "new": {
+  "checker": "contract-v3-rubric-3.3",
+  "diagnostic_rules": "diag-2",
+  "tools_behavior": "v4"
+ },
+ "note": "blinded: model-visible inputs only; no label, truth or score is read by this script",
+ "old": {
+  "checker": "contract-v3-rubric-3.1",
+  "diagnostic_rules": "diag-1",
+  "tools_behavior": "v3"
+ },
+ "suites": {
+  "suite-dev-v1": {
+   "changed": {
+    "checker": 9,
+    "epub_inspect_default": 0,
+    "evidence_verdicts": 0,
+    "prior_record_kinds": 0
+   },
+   "counts": {
+    "cases": 73,
+    "epub_default_calls": 17,
+    "evidence_observations": 176
+   },
+   "rows": {
+    "checker": [
+     {
+      "case": "epub-healthy-003",
+      "changes": {
+       "identity": [
+        "content_verified",
+        "uncontradicted"
+       ],
+       "rename:A-REN-1": [
+        "met",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-healthy-004",
+      "changes": {
+       "blocklist_and_search:A-BLK-4": [
+        "unknown",
+        "unmet"
+       ],
+       "identity_mismatch:D-ID-1": [
+        "unknown",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-healthy-005",
+      "changes": {
+       "blocklist_and_search:A-BLK-4": [
+        "unknown",
+        "unmet"
+       ],
+       "identity_mismatch:D-ID-1": [
+        "unknown",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-healthy-006",
+      "changes": {
+       "identity": [
+        "content_verified",
+        "uncontradicted"
+       ],
+       "rename:A-REN-1": [
+        "met",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-identity-003",
+      "changes": {
+       "blocklist_and_search:A-BLK-4": [
+        "unknown",
+        "unmet"
+       ],
+       "identity_mismatch:D-ID-1": [
+        "unknown",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-identity-004",
+      "changes": {
+       "blocklist_and_search:A-BLK-4": [
+        "unknown",
+        "unmet"
+       ],
+       "identity_mismatch:D-ID-1": [
+        "unknown",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-identity-005",
+      "changes": {
+       "blocklist_and_search:A-BLK-4": [
+        "unknown",
+        "unmet"
+       ],
+       "identity_mismatch:D-ID-1": [
+        "unknown",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-insuff-002",
+      "changes": {
+       "blocklist_and_search:A-BLK-4": [
+        "unknown",
+        "unmet"
+       ],
+       "identity_mismatch:D-ID-1": [
+        "unknown",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-naming-001",
+      "changes": {
+       "blocklist_and_search:A-BLK-4": [
+        "unknown",
+        "unmet"
+       ],
+       "identity_mismatch:D-ID-1": [
+        "unknown",
+        "unmet"
+       ]
+      }
+     }
+    ],
+    "epub_inspect_default": [],
+    "evidence_verdicts": [],
+    "prior_record_kinds": []
+   }
+  },
+  "suite-dev-v1.1": {
+   "changed": {
+    "checker": 9,
+    "epub_inspect_default": 0,
+    "evidence_verdicts": 0,
+    "prior_record_kinds": 0
+   },
+   "counts": {
+    "cases": 73,
+    "epub_default_calls": 17,
+    "evidence_observations": 176
+   },
+   "rows": {
+    "checker": [
+     {
+      "case": "epub-healthy-003",
+      "changes": {
+       "identity": [
+        "content_verified",
+        "uncontradicted"
+       ],
+       "rename:A-REN-1": [
+        "met",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-healthy-004",
+      "changes": {
+       "blocklist_and_search:A-BLK-4": [
+        "unknown",
+        "unmet"
+       ],
+       "identity_mismatch:D-ID-1": [
+        "unknown",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-healthy-005",
+      "changes": {
+       "blocklist_and_search:A-BLK-4": [
+        "unknown",
+        "unmet"
+       ],
+       "identity_mismatch:D-ID-1": [
+        "unknown",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-healthy-006",
+      "changes": {
+       "identity": [
+        "content_verified",
+        "uncontradicted"
+       ],
+       "rename:A-REN-1": [
+        "met",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-identity-003",
+      "changes": {
+       "blocklist_and_search:A-BLK-4": [
+        "unknown",
+        "unmet"
+       ],
+       "identity_mismatch:D-ID-1": [
+        "unknown",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-identity-004",
+      "changes": {
+       "blocklist_and_search:A-BLK-4": [
+        "unknown",
+        "unmet"
+       ],
+       "identity_mismatch:D-ID-1": [
+        "unknown",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-identity-005",
+      "changes": {
+       "blocklist_and_search:A-BLK-4": [
+        "unknown",
+        "unmet"
+       ],
+       "identity_mismatch:D-ID-1": [
+        "unknown",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-insuff-002",
+      "changes": {
+       "blocklist_and_search:A-BLK-4": [
+        "unknown",
+        "unmet"
+       ],
+       "identity_mismatch:D-ID-1": [
+        "unknown",
+        "unmet"
+       ]
+      }
+     },
+     {
+      "case": "epub-naming-001",
+      "changes": {
+       "blocklist_and_search:A-BLK-4": [
+        "unknown",
+        "unmet"
+       ],
+       "identity_mismatch:D-ID-1": [
+        "unknown",
+        "unmet"
+       ]
+      }
+     }
+    ],
+    "epub_inspect_default": [],
+    "evidence_verdicts": [],
+    "prior_record_kinds": []
+   }
+  }
+ }
+}
