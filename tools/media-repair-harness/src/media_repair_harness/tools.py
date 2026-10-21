@@ -122,7 +122,12 @@ class Fixture:
 # media, case-provided records, and the local ffprobe/ffmpeg route when those binaries exist.  `live` runs the bounded read-only collectors
 # of `evidence/` on the case's own local media file; a case without a local media path that exists gets `unavailable` with the reason.
 EVIDENCE_MODES = ('replay', 'live')
-TOOLS_BEHAVIORS = ('v1', 'v2')
+TOOLS_BEHAVIORS = ('v1', 'v2', 'v3')
+
+
+def _v2plus(ctx):
+    """Tools behaviour v2 or v3: v3 (dev-c7, evidence format v3.1-format) is v2 plus the EPUB body excerpts (epub_text.py), every v2 rule unchanged."""
+    return ctx.tools_behavior in ('v2', 'v3')
 # harness tool -> collector kind of `evidence/` (frame_sample and ocr share the `frames` collector; the model never sees a picture either way)
 LIVE_KINDS = {'ffprobe': 'probe', 'decode_sample': 'decode', 'frame_sample': 'frames', 'ocr': 'frames', 'audio_sample': 'audio',
               'epub_inspect': 'epub', 'audiobook_inspect': 'audiobook'}
@@ -491,7 +496,7 @@ def tool_decode_sample(args, ctx):
     be = _backend(ctx, 'ffmpeg')
     if isinstance(be, ToolResult):
         return be
-    v2 = ctx.tools_behavior == 'v2'
+    v2 = _v2plus(ctx)
     if be == 'replay':
         rec = ctx.replay_rec['decode_sample']
         if _is_full(args):
@@ -762,6 +767,11 @@ def _epub_assertion_wording(e):
 
 
 def tool_epub_inspect(args, ctx):
+    # tools behaviour v3 (dev-c7): {} is the package check plus the fixed default body view; {"spine", "offset", "length"} is one explicit excerpt (epub_text.py).
+    # The arguments are checked before anything runs; every v1 / v2 call ignores its arguments exactly as before.
+    v3 = ctx.tools_behavior == 'v3'
+    req = _epub_text().check_excerpt_args(args) if (v3 and args) else None
+    mode = {'mode': 'local'} if v3 else {}       # v3 reads the case's local EPUB now: its results are observations of this run
     if ctx.fixture.kind != 'local':
         return ToolResult('unavailable', 'no media fixture behind this case; the tool cannot run' if ctx.fixture.kind == 'none' else 'epub_inspect needs a local fixture; none is reachable for this case')
     path = ctx.fixture.path
@@ -776,17 +786,33 @@ def tool_epub_inspect(args, ctx):
             d = _epub_module().inspect(path)
         except Exception as e:  # noqa: BLE001 - epub.py asserts on structural problems it checks itself
             staged = ('spine', '%s: %s' % (type(e).__name__, str(e)[:200]))
-            if ctx.tools_behavior == 'v2' and isinstance(e, AssertionError):
+            if _v2plus(ctx) and isinstance(e, AssertionError):
                 staged = ('spine', 'AssertionError: ' + _epub_assertion_wording(e))
     if staged:
-        # damage is a finding about the file, in the suite's recorded shape (status error)
-        return ToolResult('error', dict(base, status='error', stage=staged[0], error=staged[1]))
+        # damage is a finding about the file, in the suite's recorded shape (status error); an excerpt request on a damaged package fails the same way
+        return ToolResult('error', dict(base, status='error', stage=staged[0], error=staged[1]), **mode)
+    if req is not None:
+        # an explicit excerpt: no package-check field (no status, no spine_items), so the typed layer never reads it as a package result
+        return ToolResult('ok', _epub_text().explicit_excerpt(path, d, *req), **mode)
     fields = _opf_fields(path, d['opf'])
     heads = [' '.join(s['text'].split()[:6]) for s in d['spine'][:3]]
-    return ToolResult('ok', dict(base, status='ok', opf=d['opf'], dc_title=d['titles'], dc_creator=fields.get('creators', []),
-                                 dc_language=fields.get('languages', []), dc_identifier=fields.get('identifiers', []),
-                                 entries=_entry_count(path), spine_items=d['spine_items'], spine_characters=sum(s['characters'] for s in d['spine']),
-                                 spine_heads=heads))
+    out = dict(base, status='ok', opf=d['opf'], dc_title=d['titles'], dc_creator=fields.get('creators', []),
+               dc_language=fields.get('languages', []), dc_identifier=fields.get('identifiers', []),
+               entries=_entry_count(path), spine_items=d['spine_items'], spine_characters=sum(s['characters'] for s in d['spine']),
+               spine_heads=heads)
+    if v3:
+        body, toc = None, None
+        try:
+            body, toc = _epub_text().default_body(path, d)
+        except Exception as e:  # noqa: BLE001 - the package passed; a body that cannot be read is reported as unreadable, never reconstructed
+            body = {'extraction': _epub_text().RULE_ID, 'error': 'the body text could not be read: %s' % type(e).__name__}
+        out.update(body=body, declared_toc=toc)
+    return ToolResult('ok', out, **mode)
+
+
+def _epub_text():
+    from . import epub_text
+    return epub_text
 
 
 def _entry_count(path):
@@ -976,7 +1002,7 @@ def live_tool(tool, args, ctx):
     ctx.name_map = _live_name_map(ctx.fixture.path)
     ctx.live_thread = threading.get_ident()
     collect = ctx.collect or evcol.collect
-    kw = {'coverage_union': True} if ctx.tools_behavior == 'v2' else {}
+    kw = {'coverage_union': True} if _v2plus(ctx) else {}
     recs = collect(ctx.fixture.path, [LIVE_KINDS[tool]], bounds, runner=ctx.evidence_runner, which=ctx.evidence_which, scratch_dir=ctx.scratch, cancel=ctx.cancel, **kw)
     rec = dict(recs[0])
     if cut:
@@ -990,9 +1016,9 @@ def live_tool(tool, args, ctx):
     if unmet:
         rec['request_note'] = _request_note(unmet)
     # tools behaviour v2 (format v2 pages its own output): the collector is cut at the raw cap, not at the 8 KiB legacy tool limit or the page budget
-    tr = evcol.to_tool_result(rec, cap=RAW_OUTPUT_CAP if ctx.tools_behavior == 'v2' else (ctx.output_cap or TOOL_OUTPUT_BYTES))
+    tr = evcol.to_tool_result(rec, cap=RAW_OUTPUT_CAP if _v2plus(ctx) else (ctx.output_cap or TOOL_OUTPUT_BYTES))
     extra = _live_extra(rec, ignored, unmet, cut)
-    if ctx.tools_behavior == 'v2' and tr.get('truncated'):
+    if _v2plus(ctx) and tr.get('truncated'):
         extra['collector_truncated'] = True   # the collector cut its own output; bounded() keeps that fact instead of recomputing it from the length
     return ToolResult(tr['status'], tr['output'], mode=tr['mode'], live_ran=rec['mode'] == 'live', **extra)
 
@@ -1018,6 +1044,8 @@ def capability(ctx, name):
             cap['offsets_s'] = 'chosen by the collector; a requested offset is checked and not used'
         if name == 'decode_sample':
             cap['full_decode'] = 'on request, capped by size and time'
+        if name == 'epub_inspect' and ctx.tools_behavior == 'v3':
+            cap['excerpts'] = 'not_available (live collection does not serve excerpts)'
         return cap
     if ctx.fixture.kind == 'pinned':
         cap['backend'] = 'pinned_replay'
@@ -1035,6 +1063,8 @@ def capability(ctx, name):
                 cap['full_decode'] = 'recorded' if any(_is_full(e.get('args') or {}) for _, e in recs) else 'not_recorded'
         else:
             cap['available'] = bool(recs)
+        if name == 'epub_inspect' and ctx.tools_behavior == 'v3':
+            cap['excerpts'] = 'not_available (only a recorded observation of this item exists)'
         return cap
     bad = _need_media(ctx)
     if bad is not None:
@@ -1042,17 +1072,19 @@ def capability(ctx, name):
         return cap
     if name == 'epub_inspect':
         cap.update(backend='local', available=ctx.fixture.kind == 'local')
+        if ctx.tools_behavior == 'v3' and ctx.fixture.kind == 'local':
+            cap['excerpts'] = EXCERPT_CAPABILITY
         return cap
     binary = 'ffprobe' if name in ('ffprobe', 'audiobook_inspect') else 'ffmpeg'
     if ctx.fixture.kind == 'remote':
         cap.update(backend='remote', available=True)
         if name == 'decode_sample':
-            cap.update(window_s=4, full_decode='not_possible (the remote sampler reads at most 8 MiB and runs 25 s)' if ctx.tools_behavior == 'v2' else 'requested as a 4 s window')
+            cap.update(window_s=4, full_decode='not_possible (the remote sampler reads at most 8 MiB and runs 25 s)' if _v2plus(ctx) else 'requested as a 4 s window')
         return cap
     if ctx.replay != 'force' and ctx.which(binary):
         cap.update(backend='local', available=True)
         if name == 'decode_sample':
-            cap.update(window_s=4, full_decode='bounded run (%d s limit)' % LOCAL_FULL_TIMEOUT_S if ctx.tools_behavior == 'v2' else 'requested as a 4 s window')
+            cap.update(window_s=4, full_decode='bounded run (%d s limit)' % LOCAL_FULL_TIMEOUT_S if _v2plus(ctx) else 'requested as a 4 s window')
         return cap
     cap['backend'] = 'replay'
     if ctx.replay == 'off':
@@ -1081,6 +1113,12 @@ def capability(ctx, name):
         # the time ranges that have a recorded reading (metadata of the recording), never the text; an offset outside them returns an empty reading
         cap.update(available='frame_text' in rec, offsets_s='any', recorded_reading_ranges_s=ranges)
     return cap
+
+
+# tools behaviour v3: the static description of the excerpt arguments (no file, result or label is read to write it)
+EXCERPT_CAPABILITY = {'args': '{} = the package check with the body index and the default excerpts; {"spine": n, "offset": n, "length": n} = one excerpt',
+                      'spine': 'spine position from 0, in reading order', 'offset': 'Unicode code points into that spine item\'s body text, from 0',
+                      'length': 'code points, 1 to 1200, default 600', 'continuation': 'call again with offset = next_offset'}
 
 
 def capabilities(ctx):
@@ -1133,6 +1171,13 @@ def call_tool(ctx, name, args):
         res = _failure(inject['mode'], name, None)  # nothing is run: the failure is the whole result
     else:
         def work():
+            if ctx.tools_behavior == 'v3' and name == 'epub_inspect' and args:
+                _epub_text().check_excerpt_args(args)       # a bad request is a bad-arguments error wherever the item lives
+                if ctx.evidence_mode == 'live' or ctx.fixture.kind == 'pinned':
+                    # an excerpt is read from the case's local EPUB in replay mode only; nothing recorded or collected stands in for its text
+                    return ToolResult('unavailable', 'no excerpt can be read for this item: %s; no body text was read and none is reconstructed' % (
+                        'live collection does not serve excerpts' if ctx.evidence_mode == 'live' else 'only a recorded observation of the real media exists'),
+                        mode='live' if ctx.evidence_mode == 'live' else 'pinned_replay')
             if ctx.evidence_mode == 'live' and name in LIVE_KINDS:
                 return live_tool(name, args, ctx)
             if ctx.fixture.kind == 'pinned' and name != 'arr_lookup':
