@@ -841,6 +841,14 @@ class RunLimits:
             self.before_call(adapter)
             try:
                 comp = orig_complete(system, messages, schema=schema) if schema is not None else orig_complete(system, messages)
+            except A.AbortRun as ab:
+                fc = getattr(ab, 'failed_call', None)
+                if getattr(adapter, 'schema_mode', None) is not None and fc:
+                    # dev-c8 claude-schema-1 (review round 4): an abort the call itself raised (the CLI did not register the schema tool) still spent what its
+                    # receipt says: account it exactly once, and keep the abort's own reason as the stop reason.  Other adapters' aborts are unchanged.
+                    self.account((fc.get('usage') or {}).get('cost_usd'))
+                    self.stopped = self.stopped or str(ab)
+                raise
             except A.AdapterError as e:
                 self.account(getattr(e, 'cost_usd', None))
                 if self.max_cost_usd is not None and getattr(e, 'budget_exceeded', False):

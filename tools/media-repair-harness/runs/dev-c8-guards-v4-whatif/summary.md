@@ -16,6 +16,13 @@ Cited source form of the newly intercepted proposals (kind, binding prerequisite
 - `devc7-qwen3.8-27b`: none
 - `devc7r2-qwen3.8-27b`: case_item, binding met: 4; case_item, binding unknown: 2; context_arr_id, binding met: 2
 
+Delivered messages read back per run (`ok`: exact message boundaries; `unreadable`: every result counted as unread; `no_request`: no request recorded):
+
+- `devc7-gpt-6-astra`: ok 73
+- `devc7-haiku-5-5`: ok 73
+- `devc7-qwen3.8-27b`: no_request 1; ok 4
+- `devc7r2-qwen3.8-27b`: ok 73
+
 Role-check statuses per run (prerequisite id: status counts over the original write proposals):
 
 - `devc7-gpt-6-astra`: A-BLK-1 met 11; A-BLK-2 met 11; A-CNV-0 met 4; A-REN-0 met 1; A-REN-1 met 1; R-SRC met 16

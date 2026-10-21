@@ -7,7 +7,69 @@ import json
 from .adapters import CLAUDE_SCHEMA_ADAPTER_VERSION, STRUCTURED_OUTPUT_TOOL, AbortRun, AdapterError, Completion, _sha256_text
 
 
+def _id_ok(x):
+    return x is None or isinstance(x, str)
+
+
+def _num(x):
+    return x is None or (isinstance(x, (int, float)) and not isinstance(x, bool))
+
+
+def _checked_result(result):
+    """-> (result with every field the parser keys on or adds up made safe, problems).  A wrong-typed field is a malformed stream; what can be kept is kept
+    (a numeric cost next to a wrong-typed token count still counts)."""
+    if result is None:
+        return None, []
+    out, problems = dict(result), []
+    if not isinstance(out.get('subtype', 'success'), str):
+        problems.append('subtype is not a string')
+        out['subtype'] = 'malformed_subtype'
+    u = out.get('usage')
+    if u is not None and not isinstance(u, dict):
+        problems.append('usage is not an object')
+        out['usage'] = {}
+    u = out.get('usage') or {}
+    for k in ('input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens'):
+        if not _num(u.get(k)):
+            problems.append('usage.%s is not a number' % k)
+            out['usage'] = dict(out.get('usage') or {}, **{k: None})
+    if not _num(out.get('total_cost_usd')):
+        problems.append('total_cost_usd is not a number')
+        out['total_cost_usd'] = None
+    if out.get('modelUsage') is not None and not isinstance(out.get('modelUsage'), dict):
+        problems.append('modelUsage is not an object')
+        out['modelUsage'] = None
+    return out, problems
+
+
+def _safe_receipt(raw):
+    """The last result event's receipt and budget classification, read defensively (any field of any type); used only when the stream cannot be parsed at all."""
+    for line in reversed((raw or '').splitlines()):
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(ev, dict) and ev.get('type') == 'result':
+            r, _p = _checked_result(ev)
+            u = r.get('usage') or {}
+            return {'input_tokens': u.get('input_tokens'), 'output_tokens': u.get('output_tokens'), 'cost_usd': r.get('total_cost_usd')}, r.get('subtype') == 'error_max_budget_usd'
+    return None, False
+
+
 def parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode='json-schema-1'):
+    """The parser below, with a safety net (review round 4): any other wrong-typed field it meets ends in an evidence-carrying AdapterError that keeps the
+    receipt and the budget classification, never in a harness crash."""
+    try:
+        return _parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode)
+    except (AdapterError, AbortRun):
+        raise
+    except Exception as e:  # noqa: BLE001 - a malformed stream must not lose its evidence
+        receipt, budget = _safe_receipt(raw)
+        raise AdapterError('claude CLI stream could not be read (%s: %s)' % (type(e).__name__, str(e)[:120]), usage=receipt, budget_exceeded=budget,
+                           evidence={'raw_request': req, 'raw_response': raw})
+
+
+def _parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode='json-schema-1'):
     """claude-schema-1: parse the `stream-json` event stream of one `claude -p --json-schema` call.
 
     The reply is the model's FIRST completed assistant response, whatever its form: its StructuredOutput input when that response called the tool,
@@ -61,6 +123,9 @@ def parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode='json-sc
             for b in blocks:
                 if not isinstance(b, dict):
                     continue
+                if b.get('type') == 'tool_use' and not _id_ok(b.get('id')):      # review round 4: every id the parser keys on is checked
+                    bad = bad or 'claude CLI stream has a tool_use block whose id is not a string (%s)' % type(b.get('id')).__name__
+                    continue
                 if b.get('type') == 'tool_use' and b.get('name') == STRUCTURED_OUTPUT_TOOL:
                     r['structured'].append({'id': b.get('id'), 'input': b.get('input')})
                 elif b.get('type') == 'tool_use':
@@ -69,9 +134,12 @@ def parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode='json-sc
                     r['texts'].append(b['text'])
         elif e.get('type') == 'user':
             open_resp = None
-            ids = {a['id'] for r in responses for a in r['structured']}
+            ids = {a['id'] for r in responses for a in r['structured'] if isinstance(a['id'], str)}
             for b in blocks:
                 if not isinstance(b, dict):
+                    continue
+                if b.get('type') == 'tool_result' and not _id_ok(b.get('tool_use_id')):
+                    bad = bad or 'claude CLI stream has a tool_result block whose tool_use_id is not a string (%s)' % type(b.get('tool_use_id')).__name__
                     continue
                 if b.get('type') == 'tool_result' and b.get('tool_use_id') in ids:
                     body = b.get('content')
@@ -80,6 +148,9 @@ def parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode='json-sc
                 elif b.get('type') == 'text' and isinstance(b.get('text'), str):
                     corrections.append({'after_response': len(responses), 'text': b['text']})
     result = next((e for e in reversed(events) if e.get('type') == 'result'), None)
+    result, problems = _checked_result(result)
+    if problems:
+        bad = bad or 'claude CLI result event is malformed: %s' % ', '.join(problems)
     u = (result or {}).get('usage') or {}
     receipt = {'input_tokens': u.get('input_tokens'), 'output_tokens': u.get('output_tokens'), 'cost_usd': (result or {}).get('total_cost_usd')} if result else None
     subtype = (result or {}).get('subtype', 'success') if result else None

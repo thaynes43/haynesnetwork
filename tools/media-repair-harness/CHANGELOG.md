@@ -39,6 +39,11 @@ other config field is compared equal). No model was called. Details: `docs/dev-c
   claude-schema-1 keeps the budget-stop classification through every wrapping (the same receipt stops the run on the normal, timeout and malformed
   paths) and rejects a non-string message id as a malformed event with its evidence. G-role moved verbatim to `guard_v4.py` and the schema parser to
   `claude_schema.py` (lazy imports; `V4_SPEC` unchanged) to keep the wiring-smoke Job bundle under its ceiling after merging main.
+* **Review round 4 (AUDIT-ASTRA-57):** claude-schema-1 checks every id and receipt field it keys on (a malformed one keeps the receipt and the budget
+  stop, so a two-case run stops after the first case on the normal and the timeout path), with a safety net that turns any other wrong-typed field into
+  an evidence-carrying error; a missing-tool abort is accounted against the run limits exactly once; offline replay accepts a rendered transcript only as
+  an exact decomposition into recorded harness messages and replies (dated post-freeze correction 5; count-neutral), and the what-if summary counts how
+  each record was read back.
 
 ## W27 (OpenProject #145 remainder, the PR #1031 nits): evidence follow-ups, offline
 

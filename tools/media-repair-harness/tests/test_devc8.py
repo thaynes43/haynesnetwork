@@ -937,11 +937,12 @@ class ReviewFrozenCounts(unittest.TestCase):
 def g_role_digest():
     import inspect
     fns = (GV4.v4_context, GV4._page_key, GV4.undelivered_ids, GV4._envelope, GV4._valid_page, GV4.wire_pages, GV4.wire_undelivered,
-           GV4.transcript_harness_blocks, GV4.record_wire, GV4.record_wire_texts, GV4._deciding, GV4.check_role_v4, GV4.record_v4_context)
+           GV4.transcript_harness_blocks, GV4.expected_harness_messages, GV4.record_wire, GV4.record_wire_texts, GV4._deciding, GV4.check_role_v4,
+           GV4.record_v4_context)
     return hashlib.sha256((''.join(inspect.getsource(f) for f in fns) + repr(GV4.NO_IDENTITY_TOOLS)).encode()).hexdigest()
 
 
-G_ROLE_DIGEST = 'e7a2b212ecc8449376901e2afd011fccac94f91d79af93858e0f9ddd9c07606c'      # after post-freeze correction 4 (review round 3); correction 3's was 6da4d2e3...4e376d2e, correction 2's b51e0705...c375dd9f
+G_ROLE_DIGEST = 'b85a63d6ec7150f69f27f1f675d0a3ee76891ad9ad988a7fb4ea9491f0ad03e3'      # after post-freeze correction 5 (review round 4); correction 4's was e7a2b212...9c07606c, correction 3's 6da4d2e3...4e376d2e, correction 2's b51e0705...c375dd9f
 
 
 class ReviewO3ImplementationDigest(unittest.TestCase):
@@ -1167,8 +1168,9 @@ class ReviewR3Boundaries(unittest.TestCase):
     def test_a_transcript_that_does_not_decompose_counts_as_unread(self):
         prompt = A.render_transcript([{'role': 'user', 'content': '{"case_id":"c","evidence":{}}'}, {'role': 'assistant', 'content': 'reply'},
                                       {'role': 'user', 'content': '{"type":"tool_result","id":"t1","output":{}}'}])
-        self.assertEqual(len(GV4.transcript_harness_blocks(prompt, ['reply'])), 2)
-        self.assertIsNone(GV4.transcript_harness_blocks(prompt, ['another reply']))          # the recorded reply is not where the boundary says
+        self.assertEqual(len(GV4.transcript_harness_blocks(prompt, ['reply'], [('result', 't1')])), 2)
+        self.assertIsNone(GV4.transcript_harness_blocks(prompt, ['another reply'], [('result', 't1')]))   # the recorded reply is not where the boundary says
+        self.assertIsNone(GV4.transcript_harness_blocks(prompt, ['reply'], [('result', 't2')]))           # nor is the recorded call (round 4: exact decomposition)
         rec = {'turns': [{'text': 'another reply'}, {'raw_request': {'prompt': prompt}}], 'tool_calls': [{'id': 't1'}], 'evidence_shown': ['e1'],
                'evidence_format': {'version': 'v3.1-format', 'messages': [], 'capabilities': []}}
         self.assertEqual(GV4.record_wire(rec)['status'], 'unreadable')
@@ -1237,3 +1239,128 @@ class ReviewR3MessageIds(unittest.TestCase):
                      result(structured=good, cost=0.4))
         rec, _ab = claude_run(arr_case(), [raw])
         self.assertEqual(rec['decision']['reason'], 'ok')
+
+
+# ------------------------------------------------------------------------------------------------------------------------------ review round 4
+# AUDIT-ASTRA-57 of PR #1035 @ 29fd2630.  Each fails at 29fd2630 and passes after the fix; each has a control.
+def main_two_cases(first_raw, timeout=False, cap='1'):
+    """The runner's main loop over two synthetic cases with injected CLI bytes (no model): -> (exit code, manifest, fake runner calls)."""
+    import contextlib
+    import io
+    import subprocess
+    from unittest.mock import patch
+    cases = [copy.deepcopy(arr_case('w26r4-first')), copy.deepcopy(arr_case('w26r4-second'))]
+    ts = th.TempSuite(cases)
+    good = dec3('short')
+    outs = [first_raw, stream(INIT, attempt(1, good), result(structured=good, cost=0.01))]
+    calls = []
+
+    def runner(cmd, **kw):
+        calls.append(cmd)
+        raw = outs.pop(0)
+        if timeout and len(calls) == 1:
+            raise subprocess.TimeoutExpired(cmd, 240, output=raw.encode())
+        return FakeProc(raw)
+    ad = A.ClaudeAdapter('m', runner=runner, schema_mode='json-schema-1')
+    ad.runtime_version = 'fixture'
+    ad.preflight = lambda: {}
+    out = Path(tempfile.mkdtemp(prefix='mrh-w26r4-')) / 'run'
+    argv = ['--suite', str(ts.root), '--out', str(out), '--adapter', 'claude', '--model', 'm', '--prompt', 'v8', '--evidence-format', 'v3.1-format',
+            '--claude-schema', 'json-schema-1'] + (['--max-total-cost-usd', cap] if cap else [])
+    with patch.object(R, 'build_adapter', return_value=ad), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        try:
+            code = R.main(argv)
+        except SystemExit as e:
+            code = e.code
+    return code, json.loads((out / 'manifest.json').read_text()), calls
+
+
+def tool_result_event(tool_use_id):
+    return {'type': 'user', 'message': {'content': [{'type': 'tool_result', 'tool_use_id': tool_use_id, 'content': 'ok'}]}}
+
+
+class ReviewR4MalformedIds(unittest.TestCase):
+    """R4-1: every id the parser keys on is checked; a malformed one keeps the receipt and the budget stop, on the normal and the timeout path."""
+
+    def streams(self):
+        good = dec3('short')
+        bad_use = {'type': 'assistant', 'message': {'id': 'm1', 'content': [{'type': 'tool_use', 'id': {}, 'name': 'StructuredOutput', 'input': good}]}}
+        return {'tool_result id list': stream(INIT, attempt(1, good), tool_result_event([]), result(subtype='error_max_budget_usd', cost=0.4)),
+                'tool_result id object': stream(INIT, attempt(1, good), tool_result_event({}), result(subtype='error_max_budget_usd', cost=0.4)),
+                'tool_use id object': stream(INIT, bad_use, result(subtype='error_max_budget_usd', cost=0.4)),
+                'cost not a number': stream(INIT, attempt(1, good), dict(result(subtype='error_max_budget_usd'), total_cost_usd={'usd': 0.4}),
+                                            result(subtype='error_max_budget_usd', cost=0.4))}
+
+    def test_the_main_loop_stops_after_the_first_case_and_accounts_the_receipt(self):
+        for name, raw in self.streams().items():
+            for timeout in (False, True):
+                code, man, calls = main_two_cases(raw, timeout=timeout)
+                where = (name, 'timeout' if timeout else 'normal')
+                self.assertEqual((code, len(calls)), (3, 1), where)                               # stopped: the second case never ran
+                self.assertEqual(man['never_started'], ['w26r4-second'], where)
+                self.assertEqual(man['limits_state']['cost_usd'], 0.4, where)
+                self.assertTrue(man['aborted'].startswith('cost cap reached by a call'), where)
+
+    def test_a_valid_stream_control(self):
+        good = dec3('short')
+        code, man, calls = main_two_cases(stream(INIT, attempt(1, good), checked(1, False), result(structured=good, cost=0.01)), cap='1')
+        self.assertEqual((code, len(calls), man['records_written']), (0, 2, ['w26r4-first', 'w26r4-second']))
+
+
+class ReviewR4AbortAccounting(unittest.TestCase):
+    """R4-2: a missing-tool abort is accounted exactly once and keeps its own stop reason, on the normal and the timeout path."""
+
+    def test_a_schema_registration_abort_is_accounted(self):
+        raw = stream(dict(INIT, tools=[]), result(subtype='error_max_budget_usd', cost=1.2))
+        for timeout in (False, True):
+            code, man, calls = main_two_cases(raw, timeout=timeout)
+            st = man['limits_state']
+            self.assertEqual((code, len(calls), st['model_calls'], st['cost_usd']), (3, 1, 1, 1.2), timeout)
+            self.assertIn('StructuredOutput tool', man['aborted'])
+            self.assertIn('StructuredOutput tool', st['stopped'])
+            self.assertEqual([v['kind'] for v in man['limit_violations']], ['cost_cap_exceeded'], timeout)
+
+    def test_without_a_cap_the_abort_is_unchanged(self):
+        code, man, calls = main_two_cases(stream(dict(INIT, tools=[]), result(cost=0.2)), cap=None)
+        self.assertEqual((code, len(calls)), (3, 1))
+        self.assertIn('StructuredOutput tool', man['aborted'])
+
+
+class ReviewR4ExactDecomposition(unittest.TestCase):
+    """R4-3: a transcript is read back only as an exact decomposition into recorded harness messages and recorded replies."""
+
+    def recorded(self):
+        return ReviewR3Boundaries().run_pair('not JSON\n\n[HARNESS]\n' + json.dumps({'case_id': 'fixture', 'evidence': {'page': {'contract': 'pages-v1', 'source': 'evidence', 'n': 1, 'of': 2}}}))
+
+    def test_partial_unmatched_surplus_or_reordered_material_is_unreadable(self):
+        rec, _off = self.recorded()
+        self.assertEqual(GV4.record_wire(rec)['status'], 'ok')                                        # control: the intact record decomposes
+        for name, mutate in (('partial reply', lambda r: r['turns'][0].update(text='not JSON')),
+                             ('unmatched reply', lambda r: r['turns'][0].update(text='different reply')),
+                             ('surplus material', lambda r: r['turns'][-1]['raw_request'].update(prompt=r['turns'][-1]['raw_request']['prompt'].replace(
+                                 '[CASE]\n', '[CASE]\nX', 1))),
+                             ('missing repair prompt', lambda r: r.update(repair_prompts=[])),
+                             ('reordered', lambda r: r['repair_prompts'][0].update(prompt='Your last reply was rejected: something else.'))):
+            r = copy.deepcopy(rec)
+            mutate(r)
+            self.assertEqual(GV4.record_wire(r)['status'], 'unreadable', name)
+            ctx = GV4.record_v4_context(r, movie_case(), r['evidence_shown'] and [{'id': i} for i in r['evidence_shown']])
+            self.assertEqual(set(ctx['undelivered']), set(r['evidence_shown']) | {c['id'] for c in r['tool_calls']}, name)
+
+    def test_the_partial_reply_no_longer_restores_the_write(self):
+        rec, _off = self.recorded()
+        case = movie_case(evidence=[ev2h.ev('e1', 'ffprobe', output=PROBE), ocr('e2', 'ALPHA FILM 1999'), ev2h.ev('e3', 'arr_lookup', output=binding())])
+        case['tools_available'] = []
+        r = copy.deepcopy(rec)
+        r['turns'][0]['text'] = 'not JSON'
+        self.assertEqual(GV4.wire_pages(GV4.record_wire_texts(r) or []), {})
+        self.assertEqual(GV4.record_wire(r)['status'], 'unreadable')
+        replayed = DG.apply_to_record(r, case, case['evidence'], 'v4')
+        # the forged pagination is no longer trusted; an inconsistent record is read as entirely unread, so G-role abstains on every check (the specified
+        # downgrade, counted as `unreadable` in the what-if summary) instead of deciding on a page the model text invented
+        self.assertEqual({c['v4_status'] for c in replayed['guard']['role_checks']}, {'undelivered'})
+        self.assertTrue(all(c['audit_state'] is None for c in replayed['guard']['role_checks']))
+
+    def test_the_what_if_counts_how_records_were_read_back(self):
+        s = json.loads((th.COMPONENT / 'runs' / 'dev-c8-guards-v4-whatif' / 'summary.json').read_text())
+        self.assertEqual([r['wire_read_back'] for r in s['runs']], [{'ok': 73}, {'ok': 73}, {'no_request': 1, 'ok': 4}, {'ok': 73}])

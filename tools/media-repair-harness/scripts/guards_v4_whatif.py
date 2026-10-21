@@ -69,7 +69,7 @@ def shadow_run(run_dir, suite_dir, cases, shas, root):
     score = json.loads(restored.read_text()) if restored.exists() else None
     unsafe = set(((score or {}).get('g1_context') or {}).get('unsafe_writes', {}).get('cases') or [])
     false_diag = set(((score or {}).get('metrics') or {}).get('false_diagnoses', {}).get('cases') or [])
-    shadows = []
+    shadows, wire = [], {}
     for f in sorted(run_dir.glob('*.json')):
         if f.name in NON_RECORDS:
             continue
@@ -79,6 +79,8 @@ def shadow_run(run_dir, suite_dir, cases, shas, root):
         if case is None or rec.get('case_sha256') != shas.get(cid):
             raise SystemExit('record %s does not match its suite case (case_sha256); refusing' % f)
         shown = shown_evidence(rec, case, suite_dir)
+        status = GV4.record_wire(rec)['status']          # review round 4: how the delivered messages were read back (unreadable means every result unread)
+        wire[status] = wire.get(status, 0) + 1
         guard = rec.get('guard') or {}
         original = guard['applied'][0]['original'] if guard.get('final_changed') else rec['decision']
         g3 = DG.apply_to_record(rec, case, shown, 'v3')
@@ -108,10 +110,10 @@ def shadow_run(run_dir, suite_dir, cases, shas, root):
             'note': 'what-if only: the run was not rescored, re-run or overwritten; no model call',
         }
         shadows.append(sh)
-    return shadows, score is not None
+    return shadows, score is not None, dict(sorted(wire.items()))
 
 
-def summarize(name, shadows, scored):
+def summarize(name, shadows, scored, wire=None):
     writes = [s for s in shadows if s['original_proposal'].get('action') in P.WRITE_ACTIONS]
     new = [s for s in shadows if s['newly_intercepted_by_v4']]
     status = {}
@@ -138,6 +140,7 @@ def summarize(name, shadows, scored):
         'write_proposals_by_reference': _by_reference(writes),
         'v3_replay_mismatches': [s['case_id'] for s in shadows if not s['v3']['recorded_decision_reproduced']],
         'audit_fidelity_differences': {s['case_id']: s['audit_fidelity'] for s in shadows if s['audit_fidelity']},
+        'wire_read_back': wire or {},
     }
 
 
@@ -166,6 +169,9 @@ def render_md(summary):
     out += ['', 'Cited source form of the newly intercepted proposals (kind, binding prerequisite state):', '']
     for s in summary['runs']:
         out.append('- `%s`: %s' % (s['run'], '; '.join('%s: %d' % kv for kv in s['newly_intercepted_by_reference'].items()) or 'none'))
+    out += ['', 'Delivered messages read back per run (`ok`: exact message boundaries; `unreadable`: every result counted as unread; `no_request`: no request recorded):', '']
+    for s in summary['runs']:
+        out.append('- `%s`: %s' % (s['run'], '; '.join('%s %d' % kv for kv in s['wire_read_back'].items())))
     out += ['', 'Role-check statuses per run (prerequisite id: status counts over the original write proposals):', '']
     for s in summary['runs']:
         out.append('- `%s`: %s' % (s['run'], '; '.join('%s %s' % (k, ', '.join('%s %d' % kv for kv in v.items())) for k, v in s['role_status_counts'].items()) or 'no write proposal'))
@@ -190,12 +196,12 @@ def main(argv=None):
     summary = {'shadow_version': SHADOW_VERSION, 'guards_v4_spec_sha256': hashlib.sha256(json.dumps(GV4.V4_SPEC, sort_keys=True).encode()).hexdigest(),
                'inputs': [str(Path(r).resolve().relative_to(root)) for r in a.runs], 'runs': []}
     for r in a.runs:
-        shadows, scored = shadow_run(Path(r).resolve(), suite_dir, cases, shas, root)
+        shadows, scored, wire = shadow_run(Path(r).resolve(), suite_dir, cases, shas, root)
         d = out / Path(r).name
         d.mkdir(parents=True, exist_ok=True)
         for s in shadows:
             (d / (s['case_id'] + '.json')).write_text(json.dumps(s, indent=1, sort_keys=True, ensure_ascii=False) + '\n')
-        summary['runs'].append(summarize(Path(r).name, shadows, scored))
+        summary['runs'].append(summarize(Path(r).name, shadows, scored, wire))
     (out / 'summary.json').write_text(json.dumps(summary, indent=1, sort_keys=True) + '\n')
     (out / 'summary.md').write_text(render_md(summary))
     return 0

@@ -97,7 +97,10 @@ envelope shows only the final, CLI-repaired object. Help and docs do not establi
   Every wrapping keeps the error's classification (round 3): a budget stop (`error_max_budget_usd`) seen through a timeout's output or a malformed stream
   is still a budget stop, and under a run cost cap a budget stop after a first response stops the run exactly as on the failing paths (without a cap the
   first response is still the reply). An assistant event whose message id is not a string is a malformed event: the stream is rejected with its evidence
-  and receipt (not treated as id-less);
+  and receipt (not treated as id-less). Round 4 sweeps every field the parser keys on or adds up: a `tool_use` id, a `tool_result` `tool_use_id`, the
+  result's `subtype`, `usage` and its token counts, `total_cost_usd` and `modelUsage`; a wrong-typed one makes the stream malformed while what can be kept
+  (the receipt, the budget classification) is kept, and any other wrong-typed field ends in the same evidence-carrying error, never a harness crash. An
+  abort the call itself raises (the CLI did not register the tool) is accounted against the run limits exactly once and keeps its own stop reason;
 * `schema_sent` is true only when **every attempted call**, a failed one included (A50-4), carried the flag **and** its own init event listed
   `StructuredOutput`. An init event without it stops the run (`AbortRun`), checked before any error subtype (O2), instead of recording a schema that was
   not sent; an init event without a tool list, or a call that left no stream, records `schema_sent: false`;
@@ -179,10 +182,19 @@ Each corrects how the frozen predicates are implemented, not what they are; each
   index, as before. A tool-result envelope counts only for a recorded tool call. Online and offline now agree on the forged reply and its plain
   control. Count-neutral: all 224 inputs decompose (one aborted record has no request, as before), the trusted reading finds the same single record
   with unread content (a non-write), and the 224 shadow records reproduce byte for byte.
+* **2026-10-21, correction 5 (review round 4, AUDIT-ASTRA-57 item 3):** correction 4 searched for each recorded reply and accepted unmatched material
+  between matches, so an inconsistent record (a reply recorded only up to a forged label) still read as `ok`. A rendered transcript now counts only as an
+  exact decomposition, in order and with nothing left over: the case message (one JSON envelope); then for each recorded reply its label, the reply exactly
+  as recorded and the harness message the record says answered it (its recorded repair prompt, character for character, or a `tool_result` envelope with
+  the id of the tool call recorded at that turn, optionally followed by the budget notice); then the closing request. Anything else is `unreadable`, and
+  every result counts as unread. The what-if summary now counts how each record was read back (`wire_read_back`). Count-neutral: all 224 inputs
+  decompose exactly (`ok` 223, `no_request` 1 for the aborted qwen record with no turns, `unreadable` 0), the same single non-write has unread content, the
+  224 shadow records are byte-identical, and only `summary.json` / `summary.md` gained the new field.
 * Implementation digest of G-role (`v4_context`, `_page_key`, `undelivered_ids`, `_envelope`, `_valid_page`, `wire_pages`, `wire_undelivered`,
-  `transcript_harness_blocks`, `record_wire`, `record_wire_texts`, `_deciding`, `check_role_v4`, `record_v4_context`, `NO_IDENTITY_TOOLS`):
-  `e7a2b212ecc8449376901e2afd011fccac94f91d79af93858e0f9ddd9c07606c` (pinned in `tests/test_devc8.py`; after correction 3 it was
-  `6da4d2e3e8088d2bae0411b41f74880f7d0ff46e04ec485c773581214e376d2e`, after correction 2 `b51e0705ee19547a1a9ada0100c5417a43b31f66454f8a026b23fce9c375dd9f`).
+  `transcript_harness_blocks`, `expected_harness_messages`, `record_wire`, `record_wire_texts`, `_deciding`, `check_role_v4`, `record_v4_context`,
+  `NO_IDENTITY_TOOLS`): `b85a63d6ec7150f69f27f1f675d0a3ee76891ad9ad988a7fb4ea9491f0ad03e3` (pinned in `tests/test_devc8.py`; after correction 4 it was
+  `e7a2b212ecc8449376901e2afd011fccac94f91d79af93858e0f9ddd9c07606c`, after correction 3 `6da4d2e3e8088d2bae0411b41f74880f7d0ff46e04ec485c773581214e376d2e`,
+  after correction 2 `b51e0705ee19547a1a9ada0100c5417a43b31f66454f8a026b23fce9c375dd9f`).
 
 ## 5. Guards v4 what-if on the recorded dev-c7 runs (offline shadow records)
 

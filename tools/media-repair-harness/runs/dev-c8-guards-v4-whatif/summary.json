@@ -60,6 +60,9 @@
    },
    "run": "devc7-gpt-6-astra",
    "v3_replay_mismatches": [],
+   "wire_read_back": {
+    "ok": 73
+   },
    "write_proposals_by_reference": {
     "evidence_id, binding met": 16
    }
@@ -227,6 +230,9 @@
    },
    "run": "devc7-haiku-5-5",
    "v3_replay_mismatches": [],
+   "wire_read_back": {
+    "ok": 73
+   },
    "write_proposals_by_reference": {
     "context_arr_id, binding met": 12,
     "evidence_id, binding met": 1
@@ -263,6 +269,10 @@
    },
    "run": "devc7-qwen3.8-27b",
    "v3_replay_mismatches": [],
+   "wire_read_back": {
+    "no_request": 1,
+    "ok": 4
+   },
    "write_proposals_by_reference": {
     "case_item, binding unknown": 3
    }
@@ -429,6 +439,9 @@
    },
    "run": "devc7r2-qwen3.8-27b",
    "v3_replay_mismatches": [],
+   "wire_read_back": {
+    "ok": 73
+   },
    "write_proposals_by_reference": {
     "case_item, binding met": 4,
     "case_item, binding unknown": 15,

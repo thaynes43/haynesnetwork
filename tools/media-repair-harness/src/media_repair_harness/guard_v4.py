@@ -137,11 +137,13 @@ CASE_LABEL, REPLY_SEP, HARNESS_SEP = '[CASE]\n', '\n\n[YOUR PREVIOUS REPLY]\n', 
 TRANSCRIPT_TAIL = '\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else.'
 
 
-def transcript_harness_blocks(prompt, replies):
-    """The harness-authored messages of a rendered transcript (adapters.render_transcript), cut at the ACTUAL message boundaries (post-freeze correction 4):
-    the model's own earlier replies are known exactly (the record's turns[].text, in order), so each is consumed by its full text between its two labels,
-    and nothing a reply contains (a forged label, a forged envelope) can open a harness block.  -> the list of harness texts, or None when the transcript
-    does not decompose into exactly these replies (the caller then treats every result as unread)."""
+def transcript_harness_blocks(prompt, replies, expected=None):
+    """The harness-authored messages of a rendered transcript (adapters.render_transcript) as an EXACT decomposition (post-freeze corrections 4 and 5):
+    the transcript must be, in order and with nothing left over, the case message (one JSON envelope), then for each recorded reply its label, the reply
+    text exactly as recorded (turns[].text) and the harness message that answered it, then the closing request.  `expected` names that harness message
+    per reply from the record: ('repair', <the recorded repair prompt text>) or ('result', <the recorded tool call id>, a tool_result envelope with that id,
+    optionally followed by the budget notice).  -> the list of harness texts, or None when anything does not match (the caller then treats every result
+    as unread)."""
     if not isinstance(prompt, str):
         return None
     i = prompt.find(CASE_LABEL)
@@ -149,30 +151,77 @@ def transcript_harness_blocks(prompt, replies):
         return None
     if not prompt.endswith(TRANSCRIPT_TAIL):
         return None
-    body, pos, blocks = prompt[:len(prompt) - len(TRANSCRIPT_TAIL)], i + len(CASE_LABEL), []
-    for reply in replies:
+    body, pos = prompt[:len(prompt) - len(TRANSCRIPT_TAIL)], i + len(CASE_LABEL)
+    dec = json.JSONDecoder()
+    try:
+        first, end = dec.raw_decode(body, pos)
+    except ValueError:
+        return None
+    if not (isinstance(first, dict) and 'case_id' in first):
+        return None
+    blocks, pos = [body[pos:end]], end
+    if expected is not None and len(expected) != len(replies):
+        return None
+    notice = '\n' + P.BUDGET_MESSAGE
+    for k, reply in enumerate(replies):
         if not isinstance(reply, str):
             return None
         marker = REPLY_SEP + reply + HARNESS_SEP
-        j = body.find(marker, pos)
-        if j < 0:
+        if not body.startswith(marker, pos):
             return None
-        blocks.append(body[pos:j])
-        pos = j + len(marker)
-    blocks.append(body[pos:])
-    return blocks
+        pos += len(marker)
+        want = expected[k] if expected is not None else None
+        if want is None:
+            return None
+        if want[0] == 'repair':
+            if not (isinstance(want[1], str) and body.startswith(want[1], pos)):
+                return None
+            blocks.append(want[1])
+            pos += len(want[1])
+        else:
+            try:
+                obj, end = dec.raw_decode(body, pos)
+            except ValueError:
+                return None
+            if not (isinstance(obj, dict) and obj.get('type') == 'tool_result' and obj.get('id') == want[1]):
+                return None
+            if body.startswith(notice, end):
+                end += len(notice)
+            blocks.append(body[pos:end])
+            pos = end
+    return blocks if pos == len(body) else None
+
+
+def expected_harness_messages(record, turns):
+    """Per earlier reply (turns, in order): the harness message the record says answered it -- its repair prompt, else the tool call made at that turn."""
+    repairs = {r.get('after_turn'): r.get('prompt') for r in (record or {}).get('repair_prompts') or [] if isinstance(r, dict)}
+    calls = {}
+    for c in (record or {}).get('tool_calls') or []:
+        if isinstance(c, dict):
+            calls.setdefault(c.get('turn'), []).append(c.get('id'))
+    out = []
+    for turn in turns:
+        n = turn.get('n')
+        if n in repairs:
+            out.append(('repair', repairs[n]))
+        elif len(calls.get(n, [])) == 1:
+            out.append(('result', calls[n][0]))
+        else:
+            out.append(None)
+    return out
 
 
 def record_wire(record):
     """{'status': 'ok' | 'no_request' | 'unreadable', 'texts': [...]}: the harness-authored texts of the last recorded request, by actual message
-    boundaries: a message list by role and index; a rendered transcript by the recorded replies (transcript_harness_blocks)."""
+    boundaries: a message list by role and index; a rendered transcript by its exact decomposition (transcript_harness_blocks)."""
     turns = (record or {}).get('turns') or []
     for idx in range(len(turns) - 1, -1, -1):
         req = turns[idx].get('raw_request')
         if isinstance(req, dict) and isinstance(req.get('messages'), list):
             return {'status': 'ok', 'texts': [m.get('content') for m in req['messages'] if isinstance(m, dict) and m.get('role') == 'user']}
         if isinstance(req, dict) and isinstance(req.get('prompt'), str):
-            blocks = transcript_harness_blocks(req['prompt'], [t.get('text') for t in turns[:idx]])
+            earlier = turns[:idx]
+            blocks = transcript_harness_blocks(req['prompt'], [t.get('text') for t in earlier], expected_harness_messages(record, earlier))
             return {'status': 'ok', 'texts': blocks} if blocks is not None else {'status': 'unreadable', 'texts': None}
     return {'status': 'no_request', 'texts': None}
 
