@@ -9,6 +9,13 @@ Frozen specification: `src/media_repair_harness/decision_guard.py` `V4_SPEC` (co
 | `devc7-qwen3.8-27b` | 5 | 3 | none | none | none | none | none | none | 0 |
 | `devc7r2-qwen3.8-27b` | 73 | 33 | audiobook-insuff-001 | audiobook-insuff-001 | none | tv-healthy-001 | audiobook-insuff-001 (metadata_naming/rename -> insufficient_evidence/escalate; A-REN-1), epub-naming-001 (metadata_naming/rename -> insufficient_evidence/escalate; A-REN-1), movie-corrupt-001 (corrupt_file/blocklist_and_search -> insufficient_evidence/escalate; R-SRC), movie-corrupt-003 (corrupt_file/blocklist_and_search -> insufficient_evidence/escalate; R-SRC), movie-decoder-002 (decoder_incompatible/convert -> insufficient_evidence/escalate; R-SRC), movie-naming-001 (metadata_naming/rename -> insufficient_evidence/escalate; A-REN-1, R-SRC), movie-outcome-001 (decoder_incompatible/convert -> insufficient_evidence/escalate; R-SRC), movie-outcome-002 (decoder_incompatible/convert -> insufficient_evidence/escalate; R-SRC) | epub-naming-001, movie-corrupt-001, movie-corrupt-003, movie-decoder-002, movie-naming-001, movie-outcome-001, movie-outcome-002 | 0 |
 
+Cited source form of the newly intercepted proposals (kind, binding prerequisite state):
+
+- `devc7-gpt-6-astra`: none
+- `devc7-haiku-5-5`: context_arr_id, binding met: 12
+- `devc7-qwen3.8-27b`: none
+- `devc7r2-qwen3.8-27b`: case_item, binding met: 4; case_item, binding unknown: 2; context_arr_id, binding met: 2
+
 Role-check statuses per run (prerequisite id: status counts over the original write proposals):
 
 - `devc7-gpt-6-astra`: A-BLK-1 met 11; A-BLK-2 met 11; A-CNV-0 met 4; A-REN-0 met 1; A-REN-1 met 1; R-SRC met 16

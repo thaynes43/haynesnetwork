@@ -23,8 +23,8 @@ from media_repair_harness.experimental.contract_v3 import prereq as PQ
 from media_repair_harness.experimental.contract_v3 import rubric as RB
 from test_v3 import need_both_suites, suite_cases, word
 
-V8_FILE_SHA256 = 'd1b921b6661c44ad9433c33d2455cba13c78988ecc7d9a5652047217a7e987a4'
-V8_ASSEMBLED_SHA256 = '213c9d7d2b396d349b50ceb2ea377ad9385f06dd3ff4dbcc4e1bbe63ed4d8a5e'
+V8_FILE_SHA256 = 'f488bcf36bc7500d96089d457e7b0b2c3b2af2e7bfa7a25d64016396bbb1922c'
+V8_ASSEMBLED_SHA256 = '5c7d8dc712e2c0e95c4d2be2604a3c2b194890e79c4dabd209932238a5686159'
 V7_ASSEMBLED_SHA256 = P.get_prompt('v7')['sha256']      # pinned in test_devc7.py; repeated here only to show v8 left it alone
 
 
@@ -48,13 +48,15 @@ class PromptV8(unittest.TestCase):
         new = v8().split('\n')
         added = [ln for ln in new if ln not in v7]
         removed = [ln for ln in v7 if ln not in new]
-        # removed: the old M4, M7 and steps 3 to 6 (renumbered, one reworded for brevity); nothing else
-        self.assertEqual(len(removed), 6, removed)
-        self.assertTrue(all(ln.startswith(('M4 ', 'M7 ', '3. ', '4. ', '5. ', '6. ')) for ln in removed), removed)
+        # removed: the old M4, M7 and steps 3 to 6 (renumbered, one reworded for brevity), and (review round 1, O7) the two lines that name the source id
+        self.assertEqual(len(removed), 8, removed)
+        self.assertTrue(all(ln.startswith(('M4 ', 'M7 ', '3. ', '4. ', '5. ', '6. ', '{"type":"decision","class":"<class>","action":"<write>"', 'source.ref binds'))
+                            for ln in removed), removed)
         for ln in added:
             self.assertTrue(ln == '' or ln.startswith(('BREVITY', 'Lengths are counted', '- reason:', '- why:', 'Generic examples', 'healthy: "reason"',
                                                      'escalation: "reason"', 'permitted write: "reason"', 'why: "why"', 'M4 ', 'M7 ',
-                                                     '3. ', '4. ', '5. ', '6. ', '7. ', '8. ')), ln)
+                                                     '3. ', '4. ', '5. ', '6. ', '7. ', '8. ', '{"type":"decision","class":"<class>","action":"<write>"',
+                                                     'source.ref binds')), ln)
 
     def test_brevity_is_operational_and_neutral(self):
         t = v8()
@@ -92,6 +94,10 @@ class PromptV8(unittest.TestCase):
                   'A complete decode, or a runtime that fits several candidates, selects none of them', 'Resolving one never resolves another'):
             self.assertIn(s, t)
         self.assertIn('A successfully completed bounded window leaves an ordinary unchecked remainder, which alone is not material.', t)
+        m4 = next(ln for ln in t.split('\n') if ln.startswith('M4 '))
+        self.assertNotIn('edition', m4)            # O6: M4 compares the container with the catalog runtime only, as the frozen checker does
+        self.assertIn('"source":{"ref":"<evidence id>"}', t)                                  # O7: the reply format and the source paragraph name the evidence id
+        self.assertIn('the evidence id (an e or t id as shown) of a complete catalog record (arr_lookup)', t)
 
     def test_action_roles_at_the_moment_of_response_and_q01_left_open(self):
         t = v8()
@@ -461,7 +467,7 @@ def ocr(i, text):
 
 class GuardV4Spec(unittest.TestCase):
     def test_the_frozen_specification(self):
-        self.assertEqual(DG.GUARD_VERSIONS, ('v1', 'v2', 'v3', 'v4'))
+        self.assertEqual((DG.GUARD_VERSIONS, DG.ALL_GUARD_VERSIONS), (('v1', 'v2', 'v3'), ('v1', 'v2', 'v3', 'v4')))
         self.assertEqual(set(DG.V4_PREREQUISITES), {'A-REN-1', 'A-REN-0', 'A-BLK-2', 'A-MAP-2', 'A-CNV-0', 'A-BLK-1', 'A-MAP-1', 'R-SRC'})
         self.assertEqual(DG.V4_SPEC['not_enforced'], ('unknown', 'unrecognized', 'undelivered'))
         self.assertEqual(hashlib.sha256(json.dumps(DG.V4_SPEC, sort_keys=True).encode()).hexdigest(), V4_SPEC_SHA256)
@@ -720,3 +726,218 @@ V4_SPEC_SHA256 = '13652ea81fe43b2658a26e791df8b0ded33d5c4e69b48e7d7de68a9a4a22c8
 
 if __name__ == '__main__':
     unittest.main()
+
+
+# ------------------------------------------------------------------------------------------------------------------------------ review round 1
+# AUDIT-ASTRA-50 (A1 to A4) and the Opus review (O1 to O8) of PR #1035 @ 76ffe641.  Each fails at 76ffe641 and passes after the fix.
+NUDGE = 'You MUST call the StructuredOutput tool to complete this request. Call this tool now.'
+
+
+def text_response(mid, payload):
+    return {'type': 'assistant', 'message': {'id': mid, 'content': [{'type': 'text', 'text': json.dumps(payload)}], 'stop_reason': 'end_turn'}}
+
+
+def nudge():
+    return {'type': 'user', 'message': {'role': 'user', 'content': [{'type': 'text', 'text': NUDGE}]}}
+
+
+def schema_run(outs, case=None):
+    return ClaudeSchema().run_claude(outs, case)
+
+
+class ReviewA1UnreadContent(unittest.TestCase):
+    """A1: with no tool offered the first message says "1 of 4" and the other pages cannot be fetched; content on them must not decide a role check."""
+
+    def paged(self, tail, tools=()):
+        case = movie_case(app=None, evidence=[ev2h.ev('e1', 'ffprobe', output=PROBE), ocr('e2', 'ALPHA FILM 1999 ' + 'EXIT ' * 5000 + tail)])
+        case['tools_available'] = list(tools)
+        ts = th.TempSuite([case])
+        ad = A.ScriptedAdapter('scripted', [json.dumps(rename('case_item'))])
+        rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='w26r1', prompt_version='v8', evidence_format='v3.1-format', guards='v4',
+                         which=th.NO_BINARIES)
+        return rec, ad
+
+    def test_unread_content_cannot_change_the_decision(self):
+        (a, ada), (b, adb) = self.paged('2001'), self.paged('1988')
+        self.assertEqual(ada.calls, adb.calls)                                     # byte-identical delivered messages
+        page = json.loads(ada.calls[0][0]['content'])['evidence']['page']
+        self.assertEqual((page['n'], page['of'] > 1), (1, True))
+        self.assertEqual(a['decision'], b['decision'])
+        self.assertEqual(a['guard']['role_checks'], b['guard']['role_checks'])
+        self.assertEqual(next(c for c in a['guard']['role_checks'] if c['id'] == 'A-REN-1')['v4_status'], 'undelivered')
+        self.assertIn('e2', DG.wire_undelivered([m['content'] for m in ada.calls[0] if m['role'] == 'user'], ['e1', 'e2']))
+
+    def test_the_offline_record_reads_the_same_wire(self):
+        rec, _ad = self.paged('2001')
+        texts = DG.record_wire_texts(rec)
+        self.assertEqual(DG.wire_undelivered(texts, ['e1', 'e2']), {'e1', 'e2'})
+        transcript = A.render_transcript([{'role': 'user', 'content': t} for t in texts])     # the CLI adapters' request shape
+        self.assertEqual(DG.wire_undelivered(DG.record_wire_texts({'turns': [{'raw_request': {'prompt': transcript}}]}), ['e1', 'e2']), {'e1', 'e2'})
+
+    def test_fully_delivered_content_still_decides(self):
+        case = movie_case(app=None, evidence=[ev2h.ev('e1', 'ffprobe', output=PROBE), ocr('e2', 'ALPHA FILM')])
+        case['tools_available'] = []
+        ts = th.TempSuite([case])
+        rec = R.run_case(case, 'sha', A.ScriptedAdapter('s', [json.dumps(rename('case_item'))]), ts.root, tempfile.mkdtemp(), run_id='w26r1', prompt_version='v8',
+                         evidence_format='v3.1-format', guards='v4', which=th.NO_BINARIES)
+        self.assertEqual(next(c for c in rec['guard']['role_checks'] if c['id'] == 'A-REN-1')['v4_status'], 'met')
+
+
+class ReviewO5UncalledSwap(unittest.TestCase):
+    """O5: swap a recorded result the model never called (the fixture's OCR recording); the role checks and the decision must not move."""
+
+    def run_with(self, frame_text):
+        import test_evidence_v2_run as E2
+        context = {'title': 'Alpha Show S01E02', 'filename': 'alpha show 1x2.mkv', 'notes_for_model': 'n',
+                   'expected': {'series': 'Alpha Show', 'season': 1, 'episode': 2, 'episode_title': 'Lamp', 'runtime_s': 8}, 'arr': {'app': 'sonarr', 'ids': {'episodeFileId': 7}}}
+        case, ts = E2.replay_case('qxw-001', lambda r: r.update(frame_text=frame_text), evidence=[ev2h.ev('e1', 'ffprobe', output=PROBE)], context=context)
+        d = rename('case_item', old='alpha show 1x2.mkv', new='Alpha Show - S01E02 - Lamp.mkv')
+        rec, ad = ev2h.scripted_run(case, ts, [json.dumps(d)], prompt='v8', evidence_format='v3.1-format', guards='v4', which=th.NO_BINARIES)
+        ts.cleanup()
+        return rec, ad
+
+    def test_role_checks_do_not_depend_on_an_uncalled_recording(self):
+        base, ad0 = self.run_with([{'t0': 0, 't1': 2, 'text': 'ALPHA SHOW / S01E02 / LAMP'}])          # would verify identity if it had been read
+        # the same recorded offsets (the capability advertisement lists which exist, never what they hold); only the uncalled text changes
+        for ft in ([{'t0': 0, 't1': 2, 'text': 'ALPHA SHOW / S01E03 / SALT'}], [{'t0': 0, 't1': 2, 'text': 'x' * 3000}], [{'t0': 0, 't1': 2, 'text': ['GAMMA', {'a': 1}]}]):
+            rec, ad = self.run_with(ft)
+            self.assertEqual(ad.sent_text(), ad0.sent_text())
+            self.assertEqual((rec['decision'], rec['guard']['role_checks']), (base['decision'], base['guard']['role_checks']))
+        self.assertEqual(next(c for c in base['guard']['role_checks'] if c['id'] == 'A-REN-1')['v4_status'], 'enforced')     # missing: nothing it was shown verifies identity
+
+
+class ReviewA2FirstResponse(unittest.TestCase):
+    SCHEMA = ClaudeSchema.SCHEMA
+    run_claude = ClaudeSchema.run_claude          # the helper only; ClaudeSchema's own tests are not re-run here
+
+    """A2 / O1: the first completed assistant response is the reply even when it is text only and the CLI then nudged the model to the tool."""
+
+    def test_text_then_nudge_then_attempt(self):
+        bad, good = dec3('t' * 450), dec3('short')
+        stream1 = stream(INIT, text_response('m1', bad), nudge(), attempt(2, good), checked(2, False), result(structured=good))
+        rec, _fr = self.run_claude([stream1, stream(INIT, attempt(1, good), checked(1, False), result(structured=good))])
+        self.assertFalse(rec['first_try_valid'])
+        self.assertEqual(json.loads(rec['turns'][0]['text']), bad)
+        s = rec['turns'][0]['meta']['schema']
+        self.assertEqual((s['reply_source'], s['first_response_kind'], s['responses'], s['cli_internal_retries']), ('first_assistant_text', 'text', 2, 1))
+        self.assertEqual([c['text'] for c in s['cli_corrections']], [NUDGE])
+        self.assertTrue(rec['repair_prompts'][0]['length_only'])
+
+    def test_one_message_split_over_several_events_is_one_response(self):
+        good = dec3('ok')
+        split = [{'type': 'assistant', 'message': {'id': 'm1', 'content': [{'type': 'text', 'text': 'Calling the tool.'}]}},
+                 {'type': 'assistant', 'message': {'id': 'm1', 'content': [{'type': 'tool_use', 'id': 'tu1', 'name': 'StructuredOutput', 'input': good}]}}]
+        comp = A.ClaudeAdapter('m', runner=FakeRunner([stream(INIT, *split, checked(1, False), result(structured=good))]), schema_mode='json-schema-1').complete(
+            'S', [], schema=self.SCHEMA)
+        self.assertEqual((json.loads(comp.text), comp.meta['schema']['responses'], comp.meta['schema']['cli_internal_retries']), (good, 1, 0))
+
+
+class ReviewA3ErrorEvidence(unittest.TestCase):
+    SCHEMA = ClaudeSchema.SCHEMA
+    run_claude = ClaudeSchema.run_claude          # the helper only; ClaudeSchema's own tests are not re-run here
+
+    """A3 / O2: a CLI error after the first response keeps that response; failures keep the stream, the attempts, the delivery record and the receipt."""
+
+    def test_budget_stop_after_an_overlong_first_attempt_keeps_the_attempt(self):
+        bad, good = dec3('u' * 450), dec3('short')
+        rec, _fr = self.run_claude([stream(INIT, attempt(1, bad), checked(1, True), result(subtype='error_max_budget_usd', cost=0.5)),
+                                    stream(INIT, attempt(1, good), checked(1, False), result(structured=good))])
+        t0 = rec['turns'][0]
+        self.assertEqual(json.loads(t0['text']), bad)
+        self.assertIn('length_limit', t0['failure_modes'])
+        self.assertTrue(t0['meta']['schema']['cli_error_after_first_response'])
+        self.assertEqual((t0['meta']['schema']['result_subtype'], t0['usage']['cost_usd']), ('error_max_budget_usd', 0.5))
+        self.assertIn('error_max_budget_usd', t0['raw_response'])
+
+    def test_a_malformed_stream_is_rejected_but_keeps_its_receipt_and_stream(self):
+        raw = stream(INIT, attempt(1, dec3('v' * 450))) + 'not JSON\n' + stream(result(cost=0.5))
+        with self.assertRaises(A.AdapterError) as cm:
+            A.parse_claude_stream(raw, '', 0, {}, 0)
+        e = cm.exception
+        self.assertEqual((e.cost_usd, e.usage['output_tokens'], e.evidence['raw_response']), (0.5, 20, raw))
+        self.assertEqual(e.evidence['meta']['schema']['attempts'], 1)
+        rec, _fr = self.run_claude([raw])
+        t0 = rec['turns'][0]
+        self.assertEqual((t0['failure_modes'], t0['usage']['cost_usd'], t0['raw_response']), (['adapter_error'], 0.5, raw))
+
+    def test_a_terminal_error_without_a_response_keeps_its_evidence(self):
+        rec, _fr = self.run_claude([stream(INIT, result(subtype='error_during_execution', cost=0.2))])
+        t0 = rec['turns'][0]
+        self.assertEqual((t0['failure_modes'], t0['meta']['schema']['tool_registered'], t0['usage']['cost_usd']), (['adapter_error'], True, 0.2))
+        self.assertTrue(rec['forced'])
+
+    def test_registration_is_checked_before_the_error_subtype(self):
+        with self.assertRaises(A.AbortRun) as cm:
+            A.ClaudeAdapter('m', runner=FakeRunner([stream(dict(INIT, tools=[]), result(subtype='error_during_execution'))]), schema_mode='json-schema-1').complete(
+                'S', [], schema=self.SCHEMA)
+        self.assertEqual(cm.exception.failed_call['meta']['schema']['tool_registered'], False)
+
+    def test_legacy_adapter_failures_keep_their_shape(self):
+        case = arr_case()
+        ts = th.TempSuite([case])
+        ad = A.ScriptedAdapter('s', [A.AdapterError('boom', usage={'input_tokens': 1, 'output_tokens': 1, 'cost_usd': 0.1})])
+        rec = R.run_case(case, 'sha', ad, ts.root, tempfile.mkdtemp(), run_id='w26r1', prompt_version='v7', evidence_format='v3.1-format', which=th.NO_BINARIES)
+        self.assertEqual(set(rec['turns'][0]), {'n', 'error', 'attempt', 'reply_valid', 'failure_modes', 'usage'})
+
+
+class ReviewA4SchemaSent(unittest.TestCase):
+    SCHEMA = ClaudeSchema.SCHEMA
+    run_claude = ClaudeSchema.run_claude          # the helper only; ClaudeSchema's own tests are not re-run here
+
+    """A4: delivery is judged over every attempted call, a failed one included."""
+
+    def test_a_failed_call_without_a_confirmed_tool_makes_the_claim_false(self):
+        call = tcall()
+        first = stream(INIT, attempt(1, call), checked(1, False), result(structured=call))
+        second = stream(dict(INIT, tools=None), result(subtype='error_during_execution', cost=0.5))
+        rec, _fr = self.run_claude([first, second])
+        self.assertFalse(rec['prompt']['schema_sent'])
+        self.assertEqual([d['tool_registered'] for d in rec['prompt']['schema_delivery_per_turn']], [True, None])
+
+    def test_an_unregistered_tool_on_a_failing_later_call_stops_the_run(self):
+        call = tcall()
+        first = stream(INIT, attempt(1, call), checked(1, False), result(structured=call))
+        second = stream(dict(INIT, tools=[]), result(subtype='error_during_execution', cost=0.5))
+        with self.assertRaises(A.AbortRun) as cm:
+            self.run_claude([first, second])
+        part = cm.exception.partial
+        self.assertEqual(part['turns'][-1]['meta']['schema']['tool_registered'], False)
+
+
+class ReviewO4O8Config(unittest.TestCase):
+    def test_a_v8_config_records_turn_v31_and_v7_keeps_turn_v3(self):
+        for prompt, want in (('v8', 'turn-v3.1'), ('v7', 'turn-v3')):
+            args = R.build_parser().parse_args(['--suite', 's', '--adapter', 'scripted', '--model', 'm', '--out', 'o', '--prompt', prompt, '--evidence-format', 'v3.1-format'])
+            self.assertEqual(R.run_config(args, A.ScriptedAdapter('m', []), {}, None)['protocol'], want, prompt)
+
+    def test_mrh_guard_does_not_offer_v4(self):
+        import contextlib
+        import io
+        from media_repair_harness import guard_cli
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as cm:
+            guard_cli.main(['some-run', '--out', 'x', '--guards', 'v4'])
+        self.assertEqual(cm.exception.code, 2)            # an argparse refusal, before anything is read
+        self.assertIn('v4', R.build_parser().parse_args(['--suite', 's', '--adapter', 'scripted', '--model', 'm', '--out', 'o', '--guards', 'v4']).guards)
+
+
+class ReviewFrozenCounts(unittest.TestCase):
+    """The shadow records gained the cited source form; every decision and count of the frozen what-if is unchanged."""
+
+    def test_counts_and_reference_forms(self):
+        s = json.loads((th.COMPONENT / 'runs' / 'dev-c8-guards-v4-whatif' / 'summary.json').read_text())
+        self.assertEqual(s['shadow_version'], 'guards-v4-whatif-2')
+        got = [(len(r['original_write_proposals']), len(r['original_unsafe_proposals_unchanged']), len(r['original_unsafe_left_by_v4']), len(r['newly_intercepted_by_v4']),
+                len(r['newly_intercepted_score_correct_writes'])) for r in s['runs']]
+        self.assertEqual(got, [(16, 0, 0, 0, 0), (13, 0, 0, 12, 12), (3, 0, 0, 0, 0), (33, 1, 0, 8, 7)])
+        self.assertEqual([r['newly_intercepted_by_reference'] for r in s['runs']],
+                         [{}, {'context_arr_id, binding met': 12}, {}, {'case_item, binding met': 4, 'case_item, binding unknown': 2, 'context_arr_id, binding met': 2}])
+
+
+class ReviewO3ImplementationDigest(unittest.TestCase):
+    def test_the_g_role_implementation_is_the_documented_one(self):
+        import inspect
+        fns = (DG.v4_context, DG._page_key, DG.undelivered_ids, DG.wire_pages, DG.wire_undelivered, DG.record_wire_texts, DG._deciding, DG.check_role_v4,
+               DG.record_v4_context)
+        got = hashlib.sha256(''.join(inspect.getsource(f) for f in fns).encode()).hexdigest()
+        self.assertEqual(got, 'b51e0705ee19547a1a9ada0100c5417a43b31f66454f8a026b23fce9c375dd9f')      # a change here is a dated post-freeze correction (docs/dev-c8.md)
+        self.assertIn(got, (th.COMPONENT / 'docs' / 'dev-c8.md').read_text(encoding='utf-8'))

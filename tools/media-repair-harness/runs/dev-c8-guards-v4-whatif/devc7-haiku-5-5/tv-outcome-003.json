@@ -32,7 +32,12 @@
   "original_unsafe_write": false,
   "source": "runs/dev-c7/devc7-haiku-5-5-restored/score.json"
  },
- "shadow_version": "guards-v4-whatif-1",
+ "shadow_version": "guards-v4-whatif-2",
+ "source_reference": {
+  "binding": "met",
+  "cited": "990102",
+  "kind": "context_arr_id"
+ },
  "v3": {
   "changed": false,
   "decision": {

@@ -29,7 +29,9 @@ v8 is v7 with three changes and nothing else (`tests/test_devc8.py` checks the l
   that both remap classes are accepted is kept verbatim; no mapping example). **Disclosed amendment (after the frozen v4 what-if, section 5):** the source
   sentence also says the record is cited by its evidence id, never by an id copied from a field of a record or of the context. v7's wording "the id of a
   complete catalog record" can be read as the managing app's own id, and the recorded runs did read it so (section 5). The sentence is general (no case
-  content); it changes no guard, test predicate or count.
+  content); it changes no guard, test predicate or count. **Review round 1 (O6, O7):** M4 now names only the catalog runtime, as the frozen checker's M4
+  does (edition runtimes enter M7 as the fit of each candidate), and the reply-format line and the SOURCE AND TARGET paragraph say "evidence id", as step 8
+  does.
 * **(c) Independent comparisons.** M4 is rewritten: the container duration against the catalog (or wanted edition) runtime is a separate check from
   decode completion (M3); a full decode that completes shows only that the file decodes to the duration it states and never resolves a
   container-catalog disagreement. M7 says edition uncertainty means several fitting candidates with no evidenced selection (an absent edition field alone
@@ -37,8 +39,8 @@ v8 is v7 with three changes and nothing else (`tests/test_devc8.py` checks the l
   This is the validity evidence's top target (#159: a full decode treated as resolving the runtime conflict); the frozen checker already keeps M4
   independent of decode completion (`prereq.material`), and `tests/test_devc8.py` has generic regressions for it.
 
-Hashes: file `d1b921b6661c44ad9433c33d2455cba13c78988ecc7d9a5652047217a7e987a4`, assembled (sent) `213c9d7d2b396d349b50ceb2ea377ad9385f06dd3ff4dbcc4e1bbe63ed4d8a5e`,
-22,842 characters (v7: 19,500). Generality: no case id, title, file name or dev number; checked against both public suites (146 cases) and the leak guard.
+Hashes: file `f488bcf36bc7500d96089d457e7b0b2c3b2af2e7bfa7a25d64016396bbb1922c`, assembled (sent) `5c7d8dc712e2c0e95c4d2be2604a3c2b194890e79c4dabd209932238a5686159`,
+22,860 characters (v7: 19,500). Generality: no case id, title, file name or dev number; checked against both public suites (146 cases) and the leak guard.
 
 ## 2. turn-v3.1: the length-specific repair hint
 
@@ -78,13 +80,20 @@ envelope shows only the final, CLI-repaired object. Help and docs do not establi
 
 * sends the per-case **flat** turn schema (one object type at the top level; the harness's strict validator still decides) with `--json-schema`, and
   `--output-format stream-json --verbose`, so every StructuredOutput attempt and every CLI validation result is visible;
-* the reply is the model's **first** StructuredOutput attempt. Later CLI-internal attempts, the CLI's own validation messages, the final
-  `structured_output` and the result text are recorded in `turns[].meta.schema` and never used: no extra repair, first-try failures stay first-try
-  failures. `error_max_structured_output_retries` with an attempt still yields the first attempt;
-* no attempt: the result text is the reply (empty when none), recorded as `reply_source`; a non-JSON stream line, a stream without a result event, or any
-  other CLI error is an adapter error with the call's receipt (tokens, cost);
-* `schema_sent` is true only when every model call carried the flag **and** the CLI's own init event listed `StructuredOutput`. An init event without it
-  stops the run (`AbortRun`) instead of recording a schema that was not sent; an init event without a tool list records `schema_sent: false`;
+* the reply is the model's **first completed assistant response**, whatever its form (review round 1, A50-2 / O1): its StructuredOutput input when that
+  response called the tool, else its text (a text-only answer that the CLI then corrected, for example with "You MUST call the StructuredOutput tool",
+  is still the first try). Assistant events are grouped by message id. Later responses (`cli_internal_retries`), the CLI's injected corrections
+  (`cli_corrections`), its validation results, the final `structured_output` and the result text are recorded in `turns[].meta.schema` and never used:
+  no extra repair, first-try failures stay first-try failures;
+* a CLI error after the first response (`error_max_structured_output_retries`, `error_max_budget_usd`, ...) still yields that first response, with the
+  error recorded (`cli_error_after_first_response`, `result_subtype`); the run's cost cap is still checked before the next call. No response at all: the
+  result text is the reply (empty when none), recorded as `reply_source`;
+* failures keep their evidence (A50-3): a non-JSON line rejects the stream but keeps the receipt of a valid result event; every adapter error and abort of
+  this mode carries the untruncated raw request and stream, the attempts and the delivery record, which the runner keeps on the failed turn (other
+  adapters' failed turns keep their earlier shape);
+* `schema_sent` is true only when **every attempted call**, a failed one included (A50-4), carried the flag **and** its own init event listed
+  `StructuredOutput`. An init event without it stops the run (`AbortRun`), checked before any error subtype (O2), instead of recording a schema that was
+  not sent; an init event without a tool list, or a call that left no stream, records `schema_sent: false`;
 * usage and cost come from the result event (they cover the CLI's internal attempts too); the CLI version is recorded from `claude --version` (and the
   init event's `claude_code_version` when present).
 
@@ -127,8 +136,26 @@ only content agrees on the title while a declared year disagrees), score-correct
 writes, a recognition false negative, content-versus-declaration controls, contradictory evidence, source-role substitutions, page-origin and
 uncalled-result swaps, undelivered pages, and the inherited v3 behaviour.
 
-`mrh-guard` is a pinned input of the dev-c7 qwen-r2 registration and stays unchanged, so it refuses v4; `apply_to_record(..., 'v4')` refuses a record
-that is not contract v3.
+`mrh-guard` is a pinned input of the dev-c7 qwen-r2 registration and stays unchanged. `decision_guard.GUARD_VERSIONS` stays `v1`-`v3` (what `mrh-guard`
+offers, so it refuses `--guards v4` as an argparse error, O8); `ALL_GUARD_VERSIONS` adds `v4` for the runner. `apply_to_record(..., 'v4')` refuses a
+record that is not contract v3.
+
+### Post-freeze implementation corrections (the specification `V4_SPEC` is unchanged)
+
+Each corrects how the frozen predicates are implemented, not what they are; each was checked to leave every what-if decision and count unchanged.
+
+* **2026-10-21, correction 1 (`19a2eb73`, advisory review):** the runner records `pages_of` as a list (`session.page_origin`), so every page fetch had been
+  keyed to the first message. A page now belongs to the first message when all its origins are case evidence ids, else to its one origin.
+  Count-neutral: the 224 input records hold 0 page fetches; the shadow records reproduced byte for byte.
+* **2026-10-21, correction 2 (review round 1, A50-1):** delivery was read from the page log alone, which counts the pages a message was cut into for
+  retrieval; a first message whose other pages cannot be fetched (no tool offered) is logged as one page while the wire says "1 of N". Delivery is now
+  also read from the page objects of the messages actually sent (online: the runner's messages; offline: the last recorded request, a message list or the
+  CASE / HARNESS blocks of a rendered transcript), retrieval-unavailable pages included. A role check whose deciding results (identity: every
+  identity-bearing statement; source: every catalog record and the cited source) were not fully delivered is `undelivered` whatever the audit computed,
+  and the state computed from unread content is not recorded (`audit_state: null`). Count-neutral: of the 224 inputs, 1 record has unread content and it
+  is not a write; every decision, role status and count is unchanged (`tests/test_devc8.py`: `ReviewFrozenCounts`, the byte reproduction).
+* Implementation digest of G-role (`v4_context`, `_page_key`, `undelivered_ids`, `wire_pages`, `wire_undelivered`, `record_wire_texts`, `_deciding`,
+  `check_role_v4`, `record_v4_context`): `b51e0705ee19547a1a9ada0100c5417a43b31f66454f8a026b23fce9c375dd9f` (pinned in `tests/test_devc8.py`).
 
 ## 5. Guards v4 what-if on the recorded dev-c7 runs (offline shadow records)
 
@@ -161,6 +188,13 @@ Every change is a write turned into the guard escalation (`insufficient_evidence
 * **2 score-correct renames on contested identity** (qwen-r2 epub-naming-001; movie-naming-001, which is also a `case_item` substitution): a declaration
   disagrees on an identity or edition attribute and no content settles it (A-REN-1 unmet; the second positive control's shape). These are evaluator
   tensions: the labels accept a rename that contract v3 says lacks content-verified identity. The scorer and labels are not changed here.
+
+**Countable from data (review round 1).** Each shadow record (`guards-v4-whatif-2`) now carries `source_reference`: the cited source, its form
+(`evidence_id`, `case_item`, `context_arr_id` for a value of `context.arr.ids`, `other`) and the state of the source-binding prerequisite. Every decision
+and count of `guards-v4-whatif-1` is unchanged. Newly intercepted by form: Haiku 12 `context_arr_id` with binding met; qwen-r2 2 `context_arr_id` with
+binding met, 4 `case_item` with binding met, 2 `case_item` with binding unknown (A-REN-1 decided those). Both reviewers classify the `context_arr_id`
+cases as reference-form contract violations under literal R-SRC (contract-v3.md requires an evidence id); app ids are not whitelisted, and any acceptance
+would be a separately versioned, general resolution rule frozen before new counts.
 
 Not intercepted by design: every `unknown` (for example qwen-r2 has 16 R-SRC and 13 A-BLK-2 unknown role checks); no `unrecognized` or `undelivered`
 status occurred in these runs. As frozen, v4 would catch the one unsafe proposal that v3 leaves and turn 19 score-correct writes into escalations

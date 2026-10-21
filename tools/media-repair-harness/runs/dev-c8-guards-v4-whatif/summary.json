@@ -11,6 +11,7 @@
    "archived_score_facts": true,
    "audit_fidelity_differences": {},
    "intercepted_by_v3": [],
+   "newly_intercepted_by_reference": {},
    "newly_intercepted_by_v4": [],
    "newly_intercepted_false_diagnoses": [],
    "newly_intercepted_score_correct_writes": [],
@@ -58,12 +59,18 @@
     }
    },
    "run": "devc7-gpt-6-astra",
-   "v3_replay_mismatches": []
+   "v3_replay_mismatches": [],
+   "write_proposals_by_reference": {
+    "evidence_id, binding met": 16
+   }
   },
   {
    "archived_score_facts": true,
    "audit_fidelity_differences": {},
    "intercepted_by_v3": [],
+   "newly_intercepted_by_reference": {
+    "context_arr_id, binding met": 12
+   },
    "newly_intercepted_by_v4": [
     {
      "case_id": "movie-corrupt-001",
@@ -219,12 +226,17 @@
     }
    },
    "run": "devc7-haiku-5-5",
-   "v3_replay_mismatches": []
+   "v3_replay_mismatches": [],
+   "write_proposals_by_reference": {
+    "context_arr_id, binding met": 12,
+    "evidence_id, binding met": 1
+   }
   },
   {
    "archived_score_facts": true,
    "audit_fidelity_differences": {},
    "intercepted_by_v3": [],
+   "newly_intercepted_by_reference": {},
    "newly_intercepted_by_v4": [],
    "newly_intercepted_false_diagnoses": [],
    "newly_intercepted_score_correct_writes": [],
@@ -250,7 +262,10 @@
     }
    },
    "run": "devc7-qwen3.8-27b",
-   "v3_replay_mismatches": []
+   "v3_replay_mismatches": [],
+   "write_proposals_by_reference": {
+    "case_item, binding unknown": 3
+   }
   },
   {
    "archived_score_facts": true,
@@ -258,6 +273,11 @@
    "intercepted_by_v3": [
     "tv-healthy-001"
    ],
+   "newly_intercepted_by_reference": {
+    "case_item, binding met": 4,
+    "case_item, binding unknown": 2,
+    "context_arr_id, binding met": 2
+   },
    "newly_intercepted_by_v4": [
     {
      "case_id": "audiobook-insuff-001",
@@ -408,8 +428,15 @@
     }
    },
    "run": "devc7r2-qwen3.8-27b",
-   "v3_replay_mismatches": []
+   "v3_replay_mismatches": [],
+   "write_proposals_by_reference": {
+    "case_item, binding met": 4,
+    "case_item, binding unknown": 15,
+    "context_arr_id, binding met": 2,
+    "context_arr_id, binding unknown": 1,
+    "evidence_id, binding met": 11
+   }
   }
  ],
- "shadow_version": "guards-v4-whatif-1"
+ "shadow_version": "guards-v4-whatif-2"
 }

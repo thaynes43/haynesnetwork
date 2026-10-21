@@ -351,7 +351,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
                 error = {'kind': 'adapter_error', 'message': str(e)[:500]}
                 turns.append({'n': len(turns) + 1, 'error': str(e)[:500], 'attempt': 'repair' if repairs else 'first', 'reply_valid': False,
                               'failure_modes': ['adapter_error'],
-                              **({'usage': e.usage or {'cost_usd': e.cost_usd}} if (getattr(e, 'usage', None) or getattr(e, 'cost_usd', None) is not None) else {})})   # the failed call's own receipt (tokens, cost) is kept
+                              **({'usage': e.usage or {'cost_usd': e.cost_usd}} if (getattr(e, 'usage', None) or getattr(e, 'cost_usd', None) is not None) else {}),   # the failed call's own receipt (tokens, cost) is kept
+                              **(getattr(e, 'evidence', None) or {})})   # dev-c8 claude-schema-1 only: raw request/response and delivery metadata of the failed call
                 force('model call failed: ' + str(e)[:200])
                 break
             load_s += comp.load_s
@@ -436,7 +437,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
         if fc:
             turns.append({'n': len(turns) + 1, 'error': fc['error'], 'attempt': 'repair' if repairs else 'first', 'reply_valid': False,
                           'failure_modes': fc.get('failure_modes', ['adapter_error', 'cost_cap_budget_exceeded']), **({'usage': fc['usage']} if fc.get('usage') else {}),
-                          **{k: fc[k] for k in ('native', 'gpu_refit') if fc.get(k)}})     # (dev-c7 full-gpu-v2 only: the reload's receipt and /api/ps reading)
+                          **{k: fc[k] for k in ('native', 'gpu_refit', 'raw_request', 'raw_response', 'meta') if fc.get(k)}})     # (dev-c7 full-gpu-v2: the reload's receipt and /api/ps reading; dev-c8 claude-schema-1: the call's evidence)
         # a STARTED case that the run's abort cut short is never lost: turns, tool calls, usage and the reason travel with the exception (main writes them to started-aborted/)
         e.partial = started_aborted_record(case, case_sha, adapter, prompt, run_id, started_at, time.monotonic() - started_wall, turns, tool_calls, repairs, str(e),
                                            evidence_mode, evidence_format)
@@ -451,7 +452,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
     resolve = make_resolver(case, tool_calls, session)
     if guards:
         # the guards read references through the same resolver as the record: they see the decision with its references normalised, the record keeps the original
-        v4ctx = DG.v4_context(view['context'], view['media_type'], caps, list(session.log), tool_calls, evidence_format, [e['id'] for e in evidence]) if (guards == 'v4' and v3fmt) else None
+        v4ctx = DG.v4_context(view['context'], view['media_type'], caps, list(session.log), tool_calls, evidence_format, [e['id'] for e in evidence],
+                              wire_texts=[m['content'] for m in messages if m['role'] == 'user']) if (guards == 'v4' and v3fmt) else None
         final, guard_rec = DG.apply(case, decision, tool_calls, evidence, prompt_version, forced=forced, version=guards, resolve=resolve if v2fmt else None, v4ctx=v4ctx)
         decision = final
 
@@ -536,8 +538,9 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
 def claude_schema_record(turns, sent_schema_sha, adapter):
     """dev-c8, Claude schema mode only: what was forwarded and what the CLI confirmed.  `schema_sent` is true only when every model call carried the flag AND the
     CLI's init event listed the StructuredOutput tool (A36 item 4: help text and docs show an advertised capability; the record shows what happened)."""
-    replied = [t for t in turns if 'text' in t]          # every model call that returned a reply (an adapter failure returned none)
-    per = [((t.get('meta') or {}).get('schema') or {}) for t in replied]
+    # every ATTEMPTED call counts, a failed one included (A50-4): a call whose own init event did not confirm the tool, or that left no delivery record at all
+    # (a timeout, a stream without events), makes the claim unconfirmed
+    per = [((t.get('meta') or {}).get('schema') or {}) for t in turns]
     confirmed = bool(per) and all(s.get('flag_sent') is True and s.get('tool_registered') is True for s in per)
     return {'schema_sent': confirmed, 'schema_mode': adapter.schema_mode, 'schema_flag_sha256': sent_schema_sha,
             'schema_delivery_per_turn': [{'n': t.get('n'), 'tool_registered': ((t.get('meta') or {}).get('schema') or {}).get('tool_registered'),
@@ -908,6 +911,8 @@ def run_config(args, adapter, evidence_bounds, evcol_clamped):
     if args.evidence_format == CONTRACT_V31_FORMAT:   # dev-c7: every version it selects is recorded (tools v3, rubric v3.2, the excerpt rule), so the config hash tells it apart
         config.update(_ev31().CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes), decision_schema_sha256=sha256_bytes(canonical(P.turn_schema_v3(['ffprobe'])).encode()),
                       excerpt_rules_sha256=_ev31().ET.rules_digest())
+        if args.prompt in P.TURN_PROTOCOL_NAME:       # dev-c8: the contract's turn-v3 must not hide v8's turn-v3.1 (v7 keeps turn-v3 from the contract, unchanged)
+            config['protocol'] = _turn_protocol(args.prompt)
     elif args.evidence_format == 'v3':   # contract v3: every version it selects is recorded, so the config hash tells it apart from format v2
         config.update(_ev3().CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes), decision_schema_sha256=sha256_bytes(canonical(P.turn_schema_v3(['ffprobe'])).encode()))
     elif args.evidence_format:   # likewise only when on; the three versions it selects are recorded so the config hash tells the formats apart
@@ -942,7 +947,7 @@ def build_parser():
     ap.add_argument('--tool-output-bytes', type=int, default=P.TOOL_OUTPUT_BYTES, help='cap on one tool result shown to the model (lower it for small local contexts)')
     ap.add_argument('--num-predict', type=int, help='ollama output cap; default 384 for prompt v1, 640 for v2 (a write decision carries an audit object)')
     ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c); v5 (dev-c5) is valid only with --evidence-format v2; v6 (dev-c6, contract v3) only with --evidence-format v3; v7 (dev-c7) and v8 (dev-c8, turn-v3.1) only with --evidence-format v3.1-format')
-    ap.add_argument('--guards', choices=list(DG.GUARD_VERSIONS), default=None, help='opt-in deterministic decision guards (dev-c4); default off; v2 only relaxes two G-write checks (see CONTRACT-v2-proposal section 9); v3 (W18) also lets a known integrity defect in the shown evidence contradict a healthy decision (any prompt). v4 (dev-c8) is v3 plus G-role, the frozen role checks on a decision-v3 write, accepted with --evidence-format v3.1-format only. A guard can only turn a decision into insufficient_evidence/escalate and keeps the original in the record field `guard`')
+    ap.add_argument('--guards', choices=list(DG.ALL_GUARD_VERSIONS), default=None, help='opt-in deterministic decision guards (dev-c4); default off; v2 only relaxes two G-write checks (see CONTRACT-v2-proposal section 9); v3 (W18) also lets a known integrity defect in the shown evidence contradict a healthy decision (any prompt). v4 (dev-c8) is v3 plus G-role, the frozen role checks on a decision-v3 write, accepted with --evidence-format v3.1-format only. A guard can only turn a decision into insufficient_evidence/escalate and keeps the original in the record field `guard`')
     ap.add_argument('--evidence-format', choices=list(EVIDENCE_FORMATS), default=None, help='W18, opt-in: v2 shows the model typed evidence (execution, findings, scope, unresolved per result, a coverage matrix, a client comparison, tool capabilities, compact paginated structure) derived from the same results; also selects tools behaviour v2 and audit v2. Accepted with --prompt v4 or v5 (v5 requires it) and --guards off or v3. v3 (dev-c6) is contract v3 as one version: the v3 presentation (explicit empty values with a presence map, one deduplicated open list with available_check links), turn protocol turn-v3, decision schema decision-v3 and audit v3; only with --prompt v6 and --guards off or v3. v3.1-format (dev-c7) is contract v3 with tools behaviour v3 (bounded, offset-addressed EPUB body excerpts), statement kinds and prior-record typing, and the rubric v3.2 clarification; only with --prompt v7 or v8 (dev-c8) and --guards off, v3 or v4 (dev-c8). Unset keeps the legacy format byte for byte')
     ap.add_argument('--max-total-cost-usd', type=float, default=None, help='dev-c5: stop the run cleanly before the cumulative REPORTED cost would reach this cap (cases not run stay listed in the manifest); unset = no cap')
     ap.add_argument('--max-wall-s', type=float, default=None, help='dev-c5: stop the run cleanly before this many wall-clock seconds (counted from just before the adapter preflight, a model load included) are used; unset = no cap')

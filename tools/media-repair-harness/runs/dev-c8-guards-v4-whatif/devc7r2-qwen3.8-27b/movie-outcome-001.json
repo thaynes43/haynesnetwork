@@ -32,7 +32,12 @@
   "original_unsafe_write": false,
   "source": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b-restored/score.json"
  },
- "shadow_version": "guards-v4-whatif-1",
+ "shadow_version": "guards-v4-whatif-2",
+ "source_reference": {
+  "binding": "met",
+  "cited": "990401",
+  "kind": "context_arr_id"
+ },
  "v3": {
   "changed": false,
   "decision": {

@@ -23,11 +23,14 @@ class AdapterError(Exception):
     `usage` is the receipt the failed call itself reported (a CLI error payload carries tokens and a cost), `cost_usd` its cost, else None;
     `budget_exceeded` marks a CLI that stopped because the call's own `--max-budget-usd` was reached."""
 
-    def __init__(self, message='', cost_usd=None, usage=None, budget_exceeded=False):
+    def __init__(self, message='', cost_usd=None, usage=None, budget_exceeded=False, evidence=None):
         super().__init__(message)
         self.usage = usage
         self.cost_usd = cost_usd if cost_usd is not None else ((usage or {}).get('cost_usd'))
         self.budget_exceeded = budget_exceeded
+        # dev-c8 (claude-schema-1 only): what the failed call still showed -- raw_request, raw_response (untruncated) and meta (schema delivery, attempts);
+        # the runner keeps it on the failed turn.  None for every other adapter, whose failed turns keep their earlier shape.
+        self.evidence = evidence
 
 
 class AbortRun(Exception):
@@ -497,76 +500,114 @@ def _sha256_text(s):
 
 
 def parse_claude_stream(raw, stderr, returncode, req, wall, schema_mode='json-schema-1'):
-    """claude-schema-1: parse the `stream-json` event stream of one `claude -p --json-schema` call.  The reply is the model's FIRST StructuredOutput attempt
-    (serialised as JSON text for the harness's strict parser and validator); the CLI's later attempts, its own validation results, the final
-    `structured_output` and the result text are recorded in meta.schema, never used.  Every event stays in raw_response, untruncated.
-    No attempt: the result text is the reply (empty when there is none), and the record says so.  A malformed stream, a stream without a result event, or a
-    CLI error other than exhausted structured-output retries is an AdapterError with the call's receipt.  An init event that does not list the
-    StructuredOutput tool means the schema was NOT delivered: the run stops (AbortRun) rather than run a configuration that is not what it claims."""
-    events = []
+    """claude-schema-1: parse the `stream-json` event stream of one `claude -p --json-schema` call.
+
+    The reply is the model's FIRST completed assistant response, whatever its form: its StructuredOutput input when that response called the tool,
+    else its text (a text-only answer the CLI then corrected is still the first try).  Assistant events are grouped by message id into responses; the
+    CLI's own corrections (user text it injects, such as a request to call the tool) and its validation results are recorded, and every later response
+    counts as a CLI-internal retry: recorded in meta.schema, never used.  Every event stays in raw_response, untruncated.
+    Order of checks: a non-JSON line rejects the stream (AdapterError, keeping the receipt of a valid result event if one is there); an init event that does
+    not list StructuredOutput stops the run (AbortRun), even when the call also ended in an error; a call that ended in a CLI error still yields its first
+    completed response when there is one (the error is recorded); otherwise an AdapterError.  Every failure carries the call's evidence (`evidence`)."""
+    events, bad = [], None
     for n, line in enumerate(raw.splitlines()):
         if not line.strip():
             continue
         try:
             ev = json.loads(line)
         except ValueError:
-            raise AdapterError('claude CLI stream line %d is not JSON (exit %s): %s' % (n + 1, returncode, line[:200]))
+            bad = bad or 'claude CLI stream line %d is not JSON (exit %s): %s' % (n + 1, returncode, line[:200])
+            continue
         if not isinstance(ev, dict):
-            raise AdapterError('claude CLI stream line %d is not a JSON object (exit %s)' % (n + 1, returncode))
+            bad = bad or 'claude CLI stream line %d is not a JSON object (exit %s)' % (n + 1, returncode)
+            continue
         events.append(ev)
-    if not events:
-        raise AdapterError('claude CLI returned no stream events (exit %s): %s' % (returncode, (stderr or '')[:300]))
     init = next((e for e in events if e.get('type') == 'system' and e.get('subtype') == 'init'), None)
     tools = (init or {}).get('tools')
     registered = (STRUCTURED_OUTPUT_TOOL in tools) if isinstance(tools, list) else None
-    attempts, checks = [], []
+    responses, checks, corrections, prev = [], [], [], None
     for e in events:
-        content = ((e.get('message') or {}).get('content')) if isinstance(e.get('message'), dict) else None
-        for b in content if isinstance(content, list) else []:
-            if not isinstance(b, dict):
-                continue
-            if e.get('type') == 'assistant' and b.get('type') == 'tool_use' and b.get('name') == STRUCTURED_OUTPUT_TOOL:
-                attempts.append({'id': b.get('id'), 'input': b.get('input')})
-            elif e.get('type') == 'user' and b.get('type') == 'tool_result' and b.get('tool_use_id') in {a['id'] for a in attempts}:
-                body = b.get('content')
-                checks.append({'tool_use_id': b.get('tool_use_id'), 'is_error': bool(b.get('is_error')),
-                               'text': body if isinstance(body, str) else json.dumps(body, ensure_ascii=False)})
+        msg = e.get('message') if isinstance(e.get('message'), dict) else {}
+        content = msg.get('content')
+        blocks = content if isinstance(content, list) else ([{'type': 'text', 'text': content}] if isinstance(content, str) else [])
+        if e.get('type') == 'assistant':
+            mid = msg.get('id')
+            same = responses and prev == 'assistant' and responses[-1]['id'] == mid
+            if not same:
+                responses.append({'id': mid, 'texts': [], 'structured': [], 'other_tools': []})
+            r = responses[-1]
+            for b in blocks:
+                if not isinstance(b, dict):
+                    continue
+                if b.get('type') == 'tool_use' and b.get('name') == STRUCTURED_OUTPUT_TOOL:
+                    r['structured'].append({'id': b.get('id'), 'input': b.get('input')})
+                elif b.get('type') == 'tool_use':
+                    r['other_tools'].append(b.get('name'))
+                elif b.get('type') == 'text' and isinstance(b.get('text'), str) and b['text'].strip():
+                    r['texts'].append(b['text'])
+        elif e.get('type') == 'user':
+            ids = {a['id'] for r in responses for a in r['structured']}
+            for b in blocks:
+                if not isinstance(b, dict):
+                    continue
+                if b.get('type') == 'tool_result' and b.get('tool_use_id') in ids:
+                    body = b.get('content')
+                    checks.append({'tool_use_id': b.get('tool_use_id'), 'is_error': bool(b.get('is_error')),
+                                   'text': body if isinstance(body, str) else json.dumps(body, ensure_ascii=False)})
+                elif b.get('type') == 'text' and isinstance(b.get('text'), str):
+                    corrections.append({'after_response': len(responses), 'text': b['text']})
+        prev = e.get('type')
+    responses = [r for r in responses if r['texts'] or r['structured'] or r['other_tools']]       # a response is complete when it carries something
     result = next((e for e in reversed(events) if e.get('type') == 'result'), None)
-    if result is None:
-        raise AdapterError('claude CLI stream has no result event (exit %s)' % returncode)
-    u = result.get('usage') or {}
-    receipt = {'input_tokens': u.get('input_tokens'), 'output_tokens': u.get('output_tokens'), 'cost_usd': result.get('total_cost_usd')}
-    subtype = result.get('subtype', 'success')
-    retries_exhausted = subtype == 'error_max_structured_output_retries'
-    if (result.get('is_error') or subtype != 'success') and not (retries_exhausted and attempts):
-        raise AdapterError('claude CLI error: %s' % json.dumps({k: result.get(k) for k in ('subtype', 'api_error_status', 'result', 'terminal_reason')})[:400],
-                           usage=receipt, budget_exceeded=subtype == 'error_max_budget_usd')
+    u = (result or {}).get('usage') or {}
+    receipt = {'input_tokens': u.get('input_tokens'), 'output_tokens': u.get('output_tokens'), 'cost_usd': (result or {}).get('total_cost_usd')} if result else None
+    subtype = (result or {}).get('subtype', 'success') if result else None
+    first = responses[0] if responses else None
+    if first is not None and first['structured']:
+        text, source = json.dumps(first['structured'][0]['input'], ensure_ascii=False), 'first_structured_output_attempt'
+    elif first is not None and first['texts']:
+        text, source = '\n'.join(first['texts']), 'first_assistant_text'
+    elif result is not None and not responses:
+        text = result.get('result') or ''
+        source = 'result_text' if text else 'none'
+    else:
+        text, source = '', 'none'
+    attempts = [a for r in responses for a in r['structured']]
+    schema_meta = {'mode': schema_mode, 'adapter_version': CLAUDE_SCHEMA_ADAPTER_VERSION, 'flag_sent': True, 'json_schema_sha256': req.get('json_schema_sha256'),
+                   'tool_registered': registered, 'init_seen': init is not None, 'cli_version_reported': (init or {}).get('claude_code_version'),
+                   'responses': len(responses), 'first_response_kind': ('structured' if first['structured'] else 'text' if first['texts'] else 'other') if first else None,
+                   'attempts': len(attempts), 'attempt_inputs': [a['input'] for a in attempts], 'response_texts': [r['texts'] for r in responses],
+                   'cli_corrections': corrections, 'cli_validation': checks, 'cli_internal_retries': max(0, len(responses) - 1),
+                   'result_subtype': subtype, 'stream_error': bad,
+                   'structured_output_present': bool(result) and 'structured_output' in result, 'structured_output': (result or {}).get('structured_output'),
+                   'result_text': (result or {}).get('result'), 'reply_source': source,
+                   'note': 'the reply is the first completed assistant response; later CLI-internal responses are recorded only and grant no repair'}
+    evidence = {'raw_request': req, 'raw_response': raw, 'meta': {'model_usage': (result or {}).get('modelUsage'), 'schema': schema_meta}}
+    if bad is not None:
+        raise AdapterError(bad, usage=receipt, budget_exceeded=subtype == 'error_max_budget_usd', evidence=evidence)
+    if not events:
+        raise AdapterError('claude CLI returned no stream events (exit %s): %s' % (returncode, (stderr or '')[:300]), evidence=evidence)
     if registered is False:
         ab = AbortRun('claude-schema-1: the CLI init event does not list the %s tool, so --json-schema was not delivered with these flags; stopping the run '
                       'instead of recording a schema that was not sent' % STRUCTURED_OUTPUT_TOOL)
-        ab.failed_call = {'error': 'schema not registered by the CLI', 'usage': receipt, 'failure_modes': ['adapter_error', 'schema_not_registered']}
+        ab.failed_call = dict({'error': 'schema not registered by the CLI', 'usage': receipt, 'failure_modes': ['adapter_error', 'schema_not_registered']}, **evidence)
         raise ab
-    if attempts:
-        text, source = json.dumps(attempts[0]['input'], ensure_ascii=False), 'first_structured_output_attempt'
-    else:
-        text = result.get('result') or ''
-        source = 'result_text' if text else 'none'
+    if result is None:
+        raise AdapterError('claude CLI stream has no result event (exit %s)' % returncode, evidence=evidence)
+    cli_error = bool(result.get('is_error')) or subtype != 'success'
+    if cli_error and first is None:
+        raise AdapterError('claude CLI error: %s' % json.dumps({k: result.get(k) for k in ('subtype', 'api_error_status', 'result', 'terminal_reason')})[:400],
+                           usage=receipt, budget_exceeded=subtype == 'error_max_budget_usd', evidence=evidence)
+    schema_meta['cli_error_after_first_response'] = cli_error
     models = list((result.get('modelUsage') or {}).keys())
     usage = {'input_tokens': u.get('input_tokens'), 'output_tokens': u.get('output_tokens'),
              'cache_creation_input_tokens': u.get('cache_creation_input_tokens'), 'cache_read_input_tokens': u.get('cache_read_input_tokens'),
              'cost_usd': result.get('total_cost_usd')}
-    schema_meta = {'mode': schema_mode, 'adapter_version': CLAUDE_SCHEMA_ADAPTER_VERSION, 'flag_sent': True, 'json_schema_sha256': req.get('json_schema_sha256'),
-                   'tool_registered': registered, 'cli_version_reported': (init or {}).get('claude_code_version'),
-                   'attempts': len(attempts), 'attempt_inputs': [a['input'] for a in attempts], 'cli_validation': checks,
-                   'cli_internal_retries': max(0, len(attempts) - 1), 'result_subtype': subtype,
-                   'structured_output_present': 'structured_output' in result, 'structured_output': result.get('structured_output'),
-                   'result_text': result.get('result'), 'reply_source': source,
-                   'note': 'the reply is the first attempt; later CLI-internal attempts are recorded only and grant no repair'}
     return Completion(text, req, raw, response_model=models[0] if len(models) == 1 else (models or None),
                       usage=usage, wall_s=wall, native={'duration_ms': result.get('duration_ms'), 'duration_api_ms': result.get('duration_api_ms'),
                                                         'num_turns': result.get('num_turns'), 'stop_reason': result.get('stop_reason'),
                                                         'permission_denials': result.get('permission_denials'), 'subtype': subtype},
-                      meta={'model_usage': result.get('modelUsage'), 'schema': schema_meta})
+                      meta=evidence['meta'])
 
 
 CODEX_FLAGS = ['--json', '-s', 'read-only', '--skip-git-repo-check', '--ignore-user-config', '--ignore-rules']

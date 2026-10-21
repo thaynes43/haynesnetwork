@@ -11,7 +11,7 @@ other config field is compared equal). No model was called. Details: `docs/dev-c
   permitted-write examples), (b) action-role checks at the moment of response (uncontradicted versus content-verified identity; managed versus unmanaged
   source; Q-01 left open) and (c) independent comparisons (decode completion, container against catalog/edition runtime, and an unselected edition are
   separate; M4 rewritten, M7 qualified). One disclosed sentence added after the guards what-if: the source record is cited by its evidence id, never by
-  an id copied from a record or the context. File sha256 `d1b921b6...e987a4`, sent sha256 `213c9d7d...4d8a5e`.
+  an id copied from a record or the context. File sha256 `f488bcf3...b1922c`, sent sha256 `5c7d8dc7...686159` (after review round 1).
 * **turn-v3.1** (prompt v8): a reply that fails only on a length limit gets a repair prompt naming the field, its decoded length, the hard limit and the
   soft budget, asking for a summary of the decisive evidence; mixed errors keep the turn-v3 prompt plus a length hint. Failure mode `length_limit`.
   The per-case repair allowance is unchanged and recorded (`prompt.repair_allowance`, config `repair_allowance`).
@@ -24,6 +24,12 @@ other config field is compared equal). No model was called. Details: `docs/dev-c
 * **What-if** (`scripts/guards_v4_whatif.py`, `runs/dev-c8-guards-v4-whatif/`): shadow records for the four dev-c7 runs. v4 catches the one unsafe
   proposal v3 leaves (qwen-r2) and would turn 19 score-correct writes into escalations (Haiku 12, qwen-r2 7); 14 of those cite a `context.arr.ids` value
   as `source.ref` while a binding record was shown.
+* **Review round 1 (AUDIT-ASTRA-50, Opus review of PR #1035):** guards v4 reads delivery from the page objects actually sent (a first message whose other
+  pages cannot be fetched no longer counts as delivered) and unread content decides no role check (dated post-freeze correction 2; count-neutral);
+  claude-schema-1 takes the first completed assistant response, text-only included, records CLI corrections, keeps the first response after a CLI
+  error, keeps stream evidence and receipts on failures, checks registration before the error subtype, and judges `schema_sent` over every attempted
+  call; a v8 config records `turn-v3.1`; `mrh-guard` no longer offers v4 (`GUARD_VERSIONS` back to v1-v3, `ALL_GUARD_VERSIONS` for the runner); v8 M4
+  names the catalog runtime only and the source lines say "evidence id"; shadow records `guards-v4-whatif-2` add the cited source form (counts unchanged).
 
 ## W25b (OpenProject #156): review fixes for PR #1031, offline
 
