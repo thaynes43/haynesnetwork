@@ -1,0 +1,3192 @@
+{
+ "policy": {
+  "version": "passability-3",
+  "advertised_operations": "for every offered tool whose capability is not available:false, in tools_available order: ffprobe, epub_inspect, audiobook_inspect, arr_lookup {}; decode_sample {\"at\": o} for every advertised offset, then {\"full\": true} when the full decode is advertised as recorded, on request or a bounded run; audio_sample {\"at\": o, \"stream\": 0} for every advertised offset; frame_sample and ocr {\"at\": o} for every advertised offset, or, when the offsets are \"any\", the start of every recorded reading range and 0; a tool with no advertisement {} (windowed tools {\"at\": 0})",
+  "revealed_candidates": "every `available` link of the v3 open list over the case evidence plus all results served so far, and over the case evidence plus each single served result; ocr {\"frame\": name} for every frame a served frame_sample returned; up to 3 rounds",
+  "excluded": "a candidate equivalent to case evidence (it is already shown); candidates whose served result is unavailable",
+  "witness": "iterative deepening over sets of distinct served candidates, smallest first, in pool order; cost = calls + every extra page of the first message and of each witness result (pages counted by the real v3 session); a witness costs at most 6; at most 5000 checker evaluations per row",
+  "satisfied": "every diagnosis prerequisite of an accepted class and every action prerequisite of a supported action that class can take is met (insufficient_evidence: no other class and not healthy established); reference roles depend on the decision written and are assessed for written decisions only",
+  "limits": "replay only (no live collector); offsets outside the advertisement and frames other than those returned are not explored; stream arguments other than 0 are not explored; sets larger than six calls are not searched; free-text identity and M9 stay `unknown` to the checker; explicit EPUB excerpts are not explored (the v3.1 checker reads no excerpt, C32-4); body and excerpt identity is judged by hand, never computed",
+  "base_policy": "passability-1",
+  "supersedes": "passability-2",
+  "evidence_format": "v3.1-format",
+  "tools_behavior": "v3",
+  "changes": "passability-1 applied to format v3.1-format: (1) the case evidence resolved as the v3.1 run resolved it; (2) the checker reads the observations typed as the v3.1 audit types them (an explicit excerpt is a reading; the legacy spine heads are withheld); (3) candidates served by tools behaviour v3; an epub_inspect candidate is already shown only when a case-evidence result of the same call carries the same body view; links over the v3.1 analysis; page cost by the v3.1-format session at the run's wire budget; (4) fidelity reads the v3.1-format source rendering with the same parser as the delivered transcript and also requires every deciding observation's statement kinds, provenance and report metadata to arrive as the source states them (missing or changed: presentation problem; on an unfetched page: not obtained); (5) once body evidence (delivered nonempty text or positively evidenced excerpt availability) is among the observations, an identity_disagreement row the checker reports unmet is reported unknown; (6) a row of an identity-sensitive label whose case shows or serves body evidence, computed as model error, not obtained, presentation problem, obtainable not obtained or evidence gap, is undetermined (hand judgement), the computed category kept beside it",
+  "body_evidence": "text: nonempty delivered excerpt or heading text; available: an indexed non-navigation spine item with characters > 0; none: absent, null, empty or zero; key presence alone is never body evidence"
+ },
+ "rows": [
+  {
+   "case": "audiobook-corrupt-001",
+   "label": {
+    "class": "corrupt_file",
+    "accepted_classes": [
+     "corrupt_file"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "corrupt_file",
+     "action": "blocklist_and_search",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-COR-1",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-3",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "audiobook_inspect",
+      "args": {},
+      "id": "x1",
+      "status": "error"
+     }
+    ],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 2,
+    "pool": 1,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "audiobook-corrupt-002",
+   "label": {
+    "class": "corrupt_file",
+    "accepted_classes": [
+     "corrupt_file"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "corrupt_file",
+     "action": "blocklist_and_search",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-COR-1",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-3",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "audiobook_inspect",
+      "args": {},
+      "id": "x1",
+      "status": "error"
+     }
+    ],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 2,
+    "pool": 1,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "audiobook-identity-001",
+   "label": {
+    "class": "identity_mismatch",
+    "accepted_classes": [
+     "identity_mismatch"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "insufficient_evidence",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "insufficient_evidence",
+    "action": "escalate"
+   },
+   "calls": [],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": true,
+    "reason": "label class identity_mismatch: D-ID-1 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it | supported blocklist_and_search only: A-BLK-2 (source_bound): needs catalog evidence; none is in the case and no offered tool yields it; A-BLK-4 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it"
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "identity_mismatch",
+     "action": "blocklist_and_search",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-ID-1",
+       "state": "unmet",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-4",
+       "state": "unmet",
+       "refs": []
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 1,
+    "pool": 0,
+    "saw_unknown": false
+   },
+   "category": "evidence gap",
+   "basis": "no accepted pair is met on what was shown, and the complete search under passability-3 (1 evaluations) found no witness of at most 6 calls",
+   "body_evidence": {
+    "shown": null,
+    "served_by_epub_inspect": null
+   }
+  },
+  {
+   "case": "audiobook-identity-002",
+   "label": {
+    "class": "identity_mismatch",
+    "accepted_classes": [
+     "identity_mismatch"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "insufficient_evidence",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "insufficient_evidence",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "audiobook_inspect",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": true,
+    "reason": "label class identity_mismatch: D-ID-1 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it | supported blocklist_and_search only: A-BLK-4 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it"
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "identity_mismatch",
+     "action": "blocklist_and_search",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-ID-1",
+       "state": "unmet",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-4",
+       "state": "unmet",
+       "refs": []
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "audiobook_inspect",
+      "args": {},
+      "id": "x1",
+      "status": "ok"
+     }
+    ],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 2,
+    "pool": 1,
+    "saw_unknown": false
+   },
+   "category": "evidence gap",
+   "basis": "no accepted pair is met on what was shown, and the complete search under passability-3 (2 evaluations) found no witness of at most 6 calls",
+   "body_evidence": {
+    "shown": null,
+    "served_by_epub_inspect": null
+   }
+  },
+  {
+   "case": "audiobook-naming-001",
+   "label": {
+    "class": "metadata_naming",
+    "accepted_classes": [
+     "metadata_naming"
+    ],
+    "supported_actions": [
+     "rename"
+    ]
+   },
+   "decision": {
+    "class": "metadata_naming",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "metadata_naming",
+    "action": "escalate"
+   },
+   "calls": [],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": true,
+    "reason": "supported rename only: A-REN-1 (identity_level): needs content or report_content evidence; none is in the case and no offered tool yields it"
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "metadata_naming",
+     "action": "rename",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-NAME-1",
+       "state": "met",
+       "refs": [
+        "e1:tags_empty"
+       ]
+      },
+      {
+       "id": "D-NAME-2",
+       "state": "met",
+       "refs": [
+        "e1"
+       ]
+      },
+      {
+       "id": "D-NAME-3",
+       "state": "met",
+       "refs": []
+      },
+      {
+       "id": "A-REN-0",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-REN-1",
+       "state": "unmet",
+       "refs": []
+      },
+      {
+       "id": "A-REN-2",
+       "state": "met",
+       "refs": [
+        "context.filename"
+       ]
+      },
+      {
+       "id": "A-REN-3",
+       "state": "met",
+       "refs": [
+        "context.expected",
+        "e1:tags_empty"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "audiobook_inspect",
+      "args": {},
+      "id": "x1",
+      "status": "ok"
+     }
+    ],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 2,
+    "pool": 1,
+    "saw_unknown": false
+   },
+   "category": "evidence gap",
+   "basis": "no accepted pair is met on what was shown, and the complete search under passability-3 (2 evaluations) found no witness of at most 6 calls",
+   "body_evidence": {
+    "shown": null,
+    "served_by_epub_inspect": null
+   }
+  },
+  {
+   "case": "audiobook-outcome-001",
+   "label": {
+    "class": "corrupt_file",
+    "accepted_classes": [
+     "corrupt_file"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "corrupt_file",
+     "action": "blocklist_and_search",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-COR-1",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-3",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "audiobook_inspect",
+      "args": {},
+      "id": "x1",
+      "status": "error"
+     }
+    ],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 2,
+    "pool": 1,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "audiobook-outcome-002",
+   "label": {
+    "class": "corrupt_file",
+    "accepted_classes": [
+     "corrupt_file"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "corrupt_file",
+     "action": "blocklist_and_search",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-COR-1",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-3",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "audiobook_inspect",
+      "args": {},
+      "id": "x1",
+      "status": "error"
+     }
+    ],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 2,
+    "pool": 1,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "epub-corrupt-001",
+   "label": {
+    "class": "corrupt_file",
+    "accepted_classes": [
+     "corrupt_file"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "corrupt_file",
+     "action": "blocklist_and_search",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-COR-1",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-3",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 1,
+    "pool": 0,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "epub-corrupt-002",
+   "label": {
+    "class": "corrupt_file",
+    "accepted_classes": [
+     "corrupt_file"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "corrupt_file",
+     "action": "blocklist_and_search",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-COR-1",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-3",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 1,
+    "pool": 0,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "epub-corrupt-003",
+   "label": {
+    "class": "corrupt_file",
+    "accepted_classes": [
+     "corrupt_file"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "corrupt_file",
+     "action": "blocklist_and_search",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-COR-1",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-3",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 1,
+    "pool": 0,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "epub-corrupt-004",
+   "label": {
+    "class": "corrupt_file",
+    "accepted_classes": [
+     "corrupt_file"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "corrupt_file",
+     "action": "blocklist_and_search",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-COR-1",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-3",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 1,
+    "pool": 0,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "epub-corrupt-005",
+   "label": {
+    "class": "corrupt_file",
+    "accepted_classes": [
+     "corrupt_file"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "corrupt_file",
+     "action": "blocklist_and_search",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-COR-1",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-3",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 1,
+    "pool": 0,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "epub-identity-001",
+   "label": {
+    "class": "identity_mismatch",
+    "accepted_classes": [
+     "identity_mismatch"
+    ],
+    "supported_actions": [
+     "blocklist_and_search",
+     "escalate"
+    ]
+   },
+   "decision": {
+    "class": "insufficient_evidence",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "insufficient_evidence",
+    "action": "escalate"
+   },
+   "calls": [],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": true,
+    "reason": "label class identity_mismatch: D-ID-1 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it"
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "identity_mismatch",
+     "action": "blocklist_and_search",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-ID-1",
+       "state": "unmet",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-4",
+       "state": "unmet",
+       "refs": []
+      }
+     ]
+    },
+    {
+     "class": "identity_mismatch",
+     "action": "escalate",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-ID-1",
+       "state": "unmet",
+       "refs": []
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 1,
+    "pool": 0,
+    "saw_unknown": false
+   },
+   "category": "evidence gap",
+   "basis": "no accepted pair is met on what was shown, and the complete search under passability-3 (1 evaluations) found no witness of at most 6 calls",
+   "body_evidence": {
+    "shown": null,
+    "served_by_epub_inspect": null
+   }
+  },
+  {
+   "case": "epub-identity-002",
+   "label": {
+    "class": "identity_mismatch",
+    "accepted_classes": [
+     "identity_mismatch"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "insufficient_evidence",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "insufficient_evidence",
+    "action": "escalate"
+   },
+   "calls": [],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": true,
+    "reason": "label class identity_mismatch: D-ID-1 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it | supported blocklist_and_search only: A-BLK-2 (source_bound): needs catalog evidence; none is in the case and no offered tool yields it; A-BLK-4 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it"
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "identity_mismatch",
+     "action": "blocklist_and_search",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-ID-1",
+       "state": "unmet",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-4",
+       "state": "unmet",
+       "refs": []
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 1,
+    "pool": 0,
+    "saw_unknown": false
+   },
+   "category": "evidence gap",
+   "basis": "no accepted pair is met on what was shown, and the complete search under passability-3 (1 evaluations) found no witness of at most 6 calls",
+   "body_evidence": {
+    "shown": null,
+    "served_by_epub_inspect": null
+   }
+  },
+  {
+   "case": "epub-identity-003",
+   "label": {
+    "class": "identity_mismatch",
+    "accepted_classes": [
+     "identity_mismatch"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "identity_mismatch",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "identity_mismatch",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "epub_inspect",
+     "args": {}
+    },
+    {
+     "tool": "epub_inspect",
+     "args": {
+      "length": 1200,
+      "offset": 0,
+      "spine": 5
+     }
+    },
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "identity_mismatch",
+     "action": "blocklist_and_search",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-ID-1",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-4",
+       "state": "unknown",
+       "refs": []
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "epub_inspect",
+      "args": {},
+      "id": "x1",
+      "status": "ok"
+     }
+    ],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 2,
+    "pool": 1,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "epub-identity-004",
+   "label": {
+    "class": "identity_mismatch",
+    "accepted_classes": [
+     "identity_mismatch"
+    ],
+    "supported_actions": [
+     "blocklist_and_search",
+     "escalate"
+    ]
+   },
+   "decision": {
+    "class": "healthy",
+    "action": "none"
+   },
+   "decision_restored": {
+    "class": "healthy",
+    "action": "none"
+   },
+   "calls": [],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "identity_mismatch",
+     "action": "blocklist_and_search",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-ID-1",
+       "state": "unmet",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-4",
+       "state": "unmet",
+       "refs": []
+      }
+     ]
+    },
+    {
+     "class": "identity_mismatch",
+     "action": "escalate",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-ID-1",
+       "state": "unmet",
+       "refs": []
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "epub_inspect",
+      "args": {},
+      "id": "x1",
+      "status": "ok"
+     }
+    ],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 2,
+    "pool": 1,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "epub-identity-005",
+   "label": {
+    "class": "identity_mismatch",
+    "accepted_classes": [
+     "identity_mismatch"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "insufficient_evidence",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "insufficient_evidence",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "epub_inspect",
+     "args": {}
+    },
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    },
+    {
+     "tool": "epub_inspect",
+     "args": {
+      "length": 1200,
+      "offset": 280,
+      "spine": 0
+     }
+    },
+    {
+     "tool": "epub_inspect",
+     "args": {
+      "length": 1200,
+      "offset": 280,
+      "spine": 1
+     }
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "identity_mismatch",
+     "action": "blocklist_and_search",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-ID-1",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-4",
+       "state": "unknown",
+       "refs": []
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "epub_inspect",
+      "args": {},
+      "id": "x1",
+      "status": "ok"
+     }
+    ],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 2,
+    "pool": 1,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "epub-naming-001",
+   "label": {
+    "class": "metadata_naming",
+    "accepted_classes": [
+     "metadata_naming"
+    ],
+    "supported_actions": [
+     "rename"
+    ]
+   },
+   "decision": {
+    "class": "metadata_naming",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "metadata_naming",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "epub_inspect",
+     "args": {}
+    },
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "metadata_naming",
+     "action": "rename",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-NAME-1",
+       "state": "met",
+       "refs": [
+        "e1:dc_creator",
+        "e1:dc_title",
+        "t1:dc_creator",
+        "t1:dc_title"
+       ]
+      },
+      {
+       "id": "D-NAME-2",
+       "state": "met",
+       "refs": [
+        "e1",
+        "t1"
+       ]
+      },
+      {
+       "id": "D-NAME-3",
+       "state": "unmet",
+       "refs": []
+      },
+      {
+       "id": "A-REN-0",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-REN-1",
+       "state": "unmet",
+       "refs": []
+      },
+      {
+       "id": "A-REN-2",
+       "state": "met",
+       "refs": [
+        "context.filename"
+       ]
+      },
+      {
+       "id": "A-REN-3",
+       "state": "met",
+       "refs": [
+        "context.expected",
+        "e1:dc_creator",
+        "e1:dc_title",
+        "t1:dc_creator",
+        "t1:dc_title"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "epub_inspect",
+      "args": {},
+      "id": "x1",
+      "status": "ok"
+     }
+    ],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 2,
+    "pool": 1,
+    "saw_unknown": false
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "depends on body or excerpt identity outside checker coverage (label class metadata_naming; body evidence shown: text, served: text); computed: evidence gap (no accepted pair is met on what was shown, and the complete search under passability-3 (2 evaluations) found no witness of at most 6 calls)",
+   "body_evidence": {
+    "shown": "text",
+    "served_by_epub_inspect": "text"
+   },
+   "computed_category": "evidence gap"
+  },
+  {
+   "case": "epub-outcome-001",
+   "label": {
+    "class": "corrupt_file",
+    "accepted_classes": [
+     "corrupt_file"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "corrupt_file",
+     "action": "blocklist_and_search",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-COR-1",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-3",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 1,
+    "pool": 0,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "epub-outcome-002",
+   "label": {
+    "class": "corrupt_file",
+    "accepted_classes": [
+     "corrupt_file"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "corrupt_file",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "corrupt_file",
+     "action": "blocklist_and_search",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-COR-1",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-3",
+       "state": "met",
+       "refs": [
+        "e1.f1"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 1,
+    "pool": 0,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "movie-decoder-001",
+   "label": {
+    "class": "decoder_incompatible",
+    "accepted_classes": [
+     "decoder_incompatible"
+    ],
+    "supported_actions": [
+     "convert"
+    ]
+   },
+   "decision": {
+    "class": "decoder_incompatible",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "decoder_incompatible",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "decoder_incompatible",
+     "action": "convert",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-DEC-1",
+       "state": "met",
+       "refs": [
+        "context.client_profile"
+       ]
+      },
+      {
+       "id": "D-DEC-2",
+       "state": "met",
+       "refs": [
+        "client_comparison.audio_codec",
+        "client_comparison.audio_channels"
+       ]
+      },
+      {
+       "id": "A-CNV-0",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-CNV-1",
+       "state": "met",
+       "refs": [
+        "context.client_profile"
+       ]
+      },
+      {
+       "id": "A-CNV-2",
+       "state": "met",
+       "refs": [
+        "client_comparison.audio_codec",
+        "client_comparison.audio_channels"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "arr_lookup",
+      "args": {},
+      "id": "x1",
+      "status": "ok"
+     }
+    ],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 2,
+    "pool": 1,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "movie-identity-001",
+   "label": {
+    "class": "identity_mismatch",
+    "accepted_classes": [
+     "identity_mismatch"
+    ],
+    "supported_actions": [
+     "blocklist_and_search",
+     "escalate"
+    ]
+   },
+   "decision": {
+    "class": "insufficient_evidence",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "insufficient_evidence",
+    "action": "escalate"
+   },
+   "calls": [],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": true,
+    "reason": "label class identity_mismatch: D-ID-1 (identity_disagreement): needs content or report_content evidence; none is in the case and no offered tool yields it"
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "identity_mismatch",
+     "action": "blocklist_and_search",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-ID-1",
+       "state": "unmet",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-4",
+       "state": "unmet",
+       "refs": []
+      }
+     ]
+    },
+    {
+     "class": "identity_mismatch",
+     "action": "escalate",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-ID-1",
+       "state": "unmet",
+       "refs": []
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 1,
+    "pool": 0,
+    "saw_unknown": false
+   },
+   "category": "evidence gap",
+   "basis": "no accepted pair is met on what was shown, and the complete search under passability-3 (1 evaluations) found no witness of at most 6 calls",
+   "body_evidence": {
+    "shown": null,
+    "served_by_epub_inspect": null
+   }
+  },
+  {
+   "case": "movie-identity-002",
+   "label": {
+    "class": "identity_mismatch",
+    "accepted_classes": [
+     "identity_mismatch"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "identity_mismatch",
+    "action": "blocklist_and_search",
+    "source": {
+     "ref": "e4"
+    },
+    "target": {
+     "kind": "release_of_source",
+     "source_ref": "e4"
+    }
+   },
+   "decision_restored": {
+    "class": "identity_mismatch",
+    "action": "blocklist_and_search",
+    "source": {
+     "ref": "e4"
+    },
+    "target": {
+     "kind": "release_of_source",
+     "source_ref": "e4"
+    }
+   },
+   "calls": [],
+   "scorer": {
+    "guarded": {
+     "correct": true,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": true,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [
+     {
+      "id": "D-ID-1",
+      "check": "identity_disagreement",
+      "state": "unknown",
+      "refs": [],
+      "detail": "content text mentions no catalog value; the generic comparator cannot tell another work from unrelated text"
+     },
+     {
+      "id": "A-BLK-4",
+      "check": "identity_disagreement",
+      "state": "unknown",
+      "refs": [],
+      "detail": "content text mentions no catalog value; the generic comparator cannot tell another work from unrelated text"
+     }
+    ],
+    "restored": [
+     {
+      "id": "D-ID-1",
+      "check": "identity_disagreement",
+      "state": "unknown",
+      "refs": [],
+      "detail": "content text mentions no catalog value; the generic comparator cannot tell another work from unrelated text"
+     },
+     {
+      "id": "A-BLK-4",
+      "check": "identity_disagreement",
+      "state": "unknown",
+      "refs": [],
+      "detail": "content text mentions no catalog value; the generic comparator cannot tell another work from unrelated text"
+     }
+    ]
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "category": "score-correct write with unmet or unknown prerequisites",
+   "basis": "score.py marks the decision correct; audit v3 does not"
+  },
+  {
+   "case": "movie-insuff-001",
+   "label": {
+    "class": "insufficient_evidence",
+    "accepted_classes": [
+     "insufficient_evidence",
+     "order_edition_ambiguity"
+    ],
+    "supported_actions": [
+     "escalate"
+    ]
+   },
+   "decision": {
+    "class": "healthy",
+    "action": "none"
+   },
+   "decision_restored": {
+    "class": "healthy",
+    "action": "none"
+   },
+   "calls": [
+    {
+     "tool": "decode_sample",
+     "args": {
+      "full": true
+     }
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "insufficient_evidence",
+     "action": "escalate",
+     "state": "met",
+     "prerequisites": [
+      {
+       "id": "D-INS-1",
+       "state": "met",
+       "refs": []
+      }
+     ]
+    },
+    {
+     "class": "order_edition_ambiguity",
+     "action": "escalate",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-ORD-1",
+       "state": "unmet",
+       "refs": [
+        "e4"
+       ]
+      },
+      {
+       "id": "D-ORD-2",
+       "state": "met",
+       "refs": [
+        "e4"
+       ]
+      }
+     ]
+    }
+   ],
+   "fidelity": {
+    "ok": true,
+    "issues": [],
+    "checked": [],
+    "unfetched": false,
+    "sources_delivered": {
+     "evidence": {
+      "pages_sent": [
+       1
+      ],
+      "of": 1
+     },
+     "t1": {
+      "pages_sent": [
+       1
+      ],
+      "of": 1
+     }
+    },
+    "metadata_checked": []
+   },
+   "category": "model error",
+   "basis": "the label insufficient_evidence/escalate is met on what was shown and every deciding fact was delivered as its source states it",
+   "body_evidence": {
+    "shown": null,
+    "served_by_epub_inspect": null
+   }
+  },
+  {
+   "case": "movie-naming-001",
+   "label": {
+    "class": "metadata_naming",
+    "accepted_classes": [
+     "metadata_naming"
+    ],
+    "supported_actions": [
+     "rename"
+    ]
+   },
+   "decision": {
+    "class": "insufficient_evidence",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "insufficient_evidence",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "ocr",
+     "args": {
+      "at": 0
+     }
+    },
+    {
+     "tool": "frame_sample",
+     "args": {
+      "at": 1
+     }
+    },
+    {
+     "tool": "ocr",
+     "args": {
+      "at": 2
+     }
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "metadata_naming",
+     "action": "rename",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-NAME-1",
+       "state": "met",
+       "refs": [
+        "context.filename:file_name"
+       ]
+      },
+      {
+       "id": "D-NAME-2",
+       "state": "met",
+       "refs": [
+        "e1"
+       ]
+      },
+      {
+       "id": "D-NAME-3",
+       "state": "unmet",
+       "refs": []
+      },
+      {
+       "id": "A-REN-0",
+       "state": "met",
+       "refs": [
+        "e4"
+       ]
+      },
+      {
+       "id": "A-REN-1",
+       "state": "unmet",
+       "refs": [
+        "e3",
+        "t1"
+       ]
+      },
+      {
+       "id": "A-REN-2",
+       "state": "met",
+       "refs": [
+        "context.filename"
+       ]
+      },
+      {
+       "id": "A-REN-3",
+       "state": "met",
+       "refs": [
+        "context.expected",
+        "context.filename:file_name"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "decode_sample",
+      "args": {
+       "at": 4
+      },
+      "id": "x1",
+      "status": "ok"
+     },
+     {
+      "tool": "decode_sample",
+      "args": {
+       "at": 8
+      },
+      "id": "x2",
+      "status": "ok"
+     },
+     {
+      "tool": "decode_sample",
+      "args": {
+       "at": 12
+      },
+      "id": "x3",
+      "status": "ok"
+     },
+     {
+      "tool": "decode_sample",
+      "args": {
+       "full": true
+      },
+      "id": "x4",
+      "status": "ok"
+     },
+     {
+      "tool": "frame_sample",
+      "args": {
+       "at": 0.0
+      },
+      "id": "x5",
+      "status": "ok"
+     }
+    ],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 32,
+    "pool": 5,
+    "saw_unknown": false
+   },
+   "category": "evidence gap",
+   "basis": "no accepted pair is met on what was shown, and the complete search under passability-3 (32 evaluations) found no witness of at most 6 calls",
+   "body_evidence": {
+    "shown": null,
+    "served_by_epub_inspect": null
+   }
+  },
+  {
+   "case": "tv-corrupt-003",
+   "label": {
+    "class": "corrupt_file",
+    "accepted_classes": [
+     "corrupt_file"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "healthy",
+    "action": "none"
+   },
+   "decision_restored": {
+    "class": "healthy",
+    "action": "none"
+   },
+   "calls": [],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "corrupt_file",
+     "action": "blocklist_and_search",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-COR-1",
+       "state": "unmet",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "met",
+       "refs": [
+        "e3"
+       ]
+      },
+      {
+       "id": "A-BLK-3",
+       "state": "unmet",
+       "refs": []
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "decode_sample",
+      "args": {
+       "at": 4
+      },
+      "id": "x1",
+      "status": "ok"
+     },
+     {
+      "tool": "decode_sample",
+      "args": {
+       "at": 8
+      },
+      "id": "x2",
+      "status": "ok"
+     },
+     {
+      "tool": "decode_sample",
+      "args": {
+       "at": 12
+      },
+      "id": "x3",
+      "status": "ok"
+     },
+     {
+      "tool": "decode_sample",
+      "args": {
+       "full": true
+      },
+      "id": "x4",
+      "status": "ok"
+     },
+     {
+      "tool": "frame_sample",
+      "args": {
+       "at": 0.0
+      },
+      "id": "x5",
+      "status": "ok"
+     },
+     {
+      "tool": "ocr",
+      "args": {
+       "at": 0.0
+      },
+      "id": "x6",
+      "status": "ok"
+     },
+     {
+      "tool": "ocr",
+      "args": {
+       "frame": "frame@0"
+      },
+      "id": "x7",
+      "status": "ok"
+     }
+    ],
+    "unserved": [],
+    "rounds": 2,
+    "complete": true
+   },
+   "witness": {
+    "found": true,
+    "calls": [
+     {
+      "tool": "decode_sample",
+      "args": {
+       "at": 4
+      }
+     }
+    ],
+    "cost": 1,
+    "pair": [
+     "corrupt_file",
+     "blocklist_and_search"
+    ],
+    "evaluations": 2,
+    "pool": 7,
+    "truncated": false,
+    "saw_unknown": false
+   },
+   "category": "obtainable, not obtained",
+   "basis": "a witness of 1 calls (cost 1 with pages) meets corrupt_file/blocklist_and_search",
+   "body_evidence": {
+    "shown": null,
+    "served_by_epub_inspect": null
+   }
+  },
+  {
+   "case": "tv-identity-002",
+   "label": {
+    "class": "identity_mismatch",
+    "accepted_classes": [
+     "identity_mismatch"
+    ],
+    "supported_actions": [
+     "blocklist_and_search"
+    ]
+   },
+   "decision": {
+    "class": "identity_mismatch",
+    "action": "escalate"
+   },
+   "decision_restored": {
+    "class": "identity_mismatch",
+    "action": "escalate"
+   },
+   "calls": [
+    {
+     "tool": "arr_lookup",
+     "args": {}
+    }
+   ],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "identity_mismatch",
+     "action": "blocklist_and_search",
+     "state": "unknown",
+     "prerequisites": [
+      {
+       "id": "D-ID-1",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-1",
+       "state": "met",
+       "refs": [
+        "context.arr.app"
+       ]
+      },
+      {
+       "id": "A-BLK-2",
+       "state": "unknown",
+       "refs": []
+      },
+      {
+       "id": "A-BLK-4",
+       "state": "unknown",
+       "refs": []
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "frame_sample",
+      "args": {
+       "at": 62.0
+      },
+      "id": "x1",
+      "status": "ok"
+     },
+     {
+      "tool": "ocr",
+      "args": {
+       "at": 62.0
+      },
+      "id": "x2",
+      "status": "ok"
+     },
+     {
+      "tool": "arr_lookup",
+      "args": {},
+      "id": "x3",
+      "status": "ok"
+     }
+    ],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 8,
+    "pool": 3,
+    "saw_unknown": true
+   },
+   "category": "undetermined (hand judgement)",
+   "basis": "no witness; a relevant prerequisite is unknown to the checker"
+  },
+  {
+   "case": "tv-insuff-001",
+   "label": {
+    "class": "insufficient_evidence",
+    "accepted_classes": [
+     "insufficient_evidence"
+    ],
+    "supported_actions": [
+     "escalate"
+    ]
+   },
+   "decision": {
+    "class": "healthy",
+    "action": "none"
+   },
+   "decision_restored": {
+    "class": "healthy",
+    "action": "none"
+   },
+   "calls": [],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "insufficient_evidence",
+     "action": "escalate",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-INS-1",
+       "state": "unmet",
+       "refs": [
+        "healthy"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "arr_lookup",
+      "args": {},
+      "id": "x1",
+      "status": "ok"
+     }
+    ],
+    "unserved": [],
+    "rounds": 1,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 2,
+    "pool": 1,
+    "saw_unknown": false
+   },
+   "category": "evidence gap",
+   "basis": "no accepted pair is met on what was shown, and the complete search under passability-3 (2 evaluations) found no witness of at most 6 calls",
+   "body_evidence": {
+    "shown": null,
+    "served_by_epub_inspect": null
+   }
+  },
+  {
+   "case": "tv-insuff-002",
+   "label": {
+    "class": "insufficient_evidence",
+    "accepted_classes": [
+     "insufficient_evidence"
+    ],
+    "supported_actions": [
+     "escalate"
+    ]
+   },
+   "decision": {
+    "class": "healthy",
+    "action": "none"
+   },
+   "decision_restored": {
+    "class": "healthy",
+    "action": "none"
+   },
+   "calls": [],
+   "scorer": {
+    "guarded": {
+     "correct": false,
+     "unsafe_write": false
+    },
+    "restored": {
+     "correct": false,
+     "unsafe_write": false
+    }
+   },
+   "audit_v3_not_met": {
+    "guarded": [],
+    "restored": []
+   },
+   "label_tension_list": {
+    "member": false,
+    "reason": null
+   },
+   "guard_changed": false,
+   "forced": false,
+   "S": [
+    {
+     "class": "insufficient_evidence",
+     "action": "escalate",
+     "state": "unmet",
+     "prerequisites": [
+      {
+       "id": "D-INS-1",
+       "state": "unmet",
+       "refs": [
+        "healthy"
+       ]
+      }
+     ]
+    }
+   ],
+   "exploration": {
+    "served": [
+     {
+      "tool": "decode_sample",
+      "args": {
+       "at": 4
+      },
+      "id": "x1",
+      "status": "error"
+     },
+     {
+      "tool": "decode_sample",
+      "args": {
+       "at": 8
+      },
+      "id": "x2",
+      "status": "error"
+     },
+     {
+      "tool": "decode_sample",
+      "args": {
+       "at": 12
+      },
+      "id": "x3",
+      "status": "error"
+     },
+     {
+      "tool": "decode_sample",
+      "args": {
+       "full": true
+      },
+      "id": "x4",
+      "status": "error"
+     },
+     {
+      "tool": "frame_sample",
+      "args": {
+       "at": 0.0
+      },
+      "id": "x5",
+      "status": "ok"
+     },
+     {
+      "tool": "ocr",
+      "args": {
+       "at": 0.0
+      },
+      "id": "x6",
+      "status": "ok"
+     },
+     {
+      "tool": "ocr",
+      "args": {
+       "frame": "frame@0"
+      },
+      "id": "x7",
+      "status": "ok"
+     }
+    ],
+    "unserved": [],
+    "rounds": 2,
+    "complete": true
+   },
+   "witness": {
+    "found": false,
+    "truncated": false,
+    "evaluations": 127,
+    "pool": 7,
+    "saw_unknown": false
+   },
+   "category": "evidence gap",
+   "basis": "no accepted pair is met on what was shown, and the complete search under passability-3 (127 evaluations) found no witness of at most 6 calls",
+   "body_evidence": {
+    "shown": null,
+    "served_by_epub_inspect": null
+   }
+  }
+ ],
+ "counts": {
+  "undetermined (hand judgement)": 17,
+  "evidence gap": 9,
+  "score-correct write with unmet or unknown prerequisites": 1,
+  "model error": 1,
+  "obtainable, not obtained": 1
+ },
+ "tension_cross_reference": {
+  "right": [],
+  "wrong": [
+   "audiobook-identity-001",
+   "audiobook-identity-002",
+   "audiobook-naming-001",
+   "epub-identity-001",
+   "epub-identity-002",
+   "movie-identity-001"
+  ]
+ },
+ "note": "neutral evidence for the evaluator; no label change is proposed; score.py verdicts are kept beside every row",
+ "wire_bytes": 8192
+}

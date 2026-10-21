@@ -1,0 +1,348 @@
+{
+  "action_audit": {
+    "audit_implementation": "v3-prototype",
+    "audit_version": "v3",
+    "checker_rubric": "contract-v3-rubric-3.1",
+    "contract": "contract-v3",
+    "executed": false,
+    "execution_status": "no_write_proposed",
+    "intent": {
+      "action": "escalate",
+      "class": "insufficient_evidence",
+      "source": null,
+      "target": null
+    },
+    "note": "recorded proposal only; this harness never executes a write, and nothing was changed; forced decision",
+    "outcome_step": null,
+    "rubric": "contract-v3-rubric-3.1",
+    "schema_errors": [],
+    "write_intent": false
+  },
+  "bad_evidence_refs": [],
+  "case_id": "audiobook-healthy-002",
+  "case_sha256": "8d3d09003f1f97e13a92e22aa1d2ea3a6c0ae8f49f96d1a7207575ff53f83ed7",
+  "config_hash": "612a2325ee32f06e5cf44afa896047485cbf450b7d712b629ddbabebddbb34de",
+  "decision": {
+    "action": "escalate",
+    "class": "insufficient_evidence",
+    "confidence": 0.0,
+    "evidence_refs": [],
+    "reason": "forced: model call failed: ollama transport failure: {\"exit_code\": 0, \"http_status\": null, \"stderr\": \"\"}",
+    "type": "decision"
+  },
+  "decision_flags": [],
+  "error": {
+    "kind": "adapter_error",
+    "message": "ollama transport failure: {\"exit_code\": 0, \"http_status\": null, \"stderr\": \"\"}"
+  },
+  "evidence": {
+    "capabilities": [
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "ffprobe"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "decode_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "frame_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "audio_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "ocr"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "epub_inspect"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "audiobook_inspect"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "arr_lookup"
+      }
+    ],
+    "gaps": [],
+    "gaps_cited": [],
+    "mode": "replay",
+    "note": "record only: not shown to the model, not scored. A gap is something the run did not verify; a damage finding is evidence, not a gap."
+  },
+  "evidence_format": {
+    "audit_version": "v3",
+    "capabilities": [
+      {
+        "available": true,
+        "backend": "replay",
+        "tool": "ffprobe"
+      },
+      {
+        "available": true,
+        "backend": "replay",
+        "tool": "audiobook_inspect"
+      },
+      {
+        "available": true,
+        "backend": "stub",
+        "note": "case-provided records only",
+        "tool": "arr_lookup"
+      }
+    ],
+    "checker_rubric": "contract-v3-rubric-3.1",
+    "contract": "contract-v3",
+    "decision_schema": "decision-v3",
+    "evidence_format": "v3.1-format",
+    "excerpt_rule": "xhtml-body-text-3",
+    "excerpt_rules_sha256": "f7bc75e2330ab888b9d3e48fd37860bd410e41b218ef345547da3d0f64b7b7d1",
+    "final_summary": {
+      "client_comparison": null,
+      "coverage": {
+        "chapters": [
+          {
+            "by_stream": {
+              "0:a:0": "not_checked"
+            },
+            "end_s": 5.0,
+            "n": 1,
+            "start_s": 0.0,
+            "title": "Opening Credits"
+          },
+          {
+            "by_stream": {
+              "0:a:0": "not_checked"
+            },
+            "end_s": 10.0,
+            "n": 2,
+            "start_s": 5.0,
+            "title": "Chapter 1 Rain"
+          },
+          {
+            "by_stream": {
+              "0:a:0": "not_checked"
+            },
+            "end_s": 15.0,
+            "n": 3,
+            "start_s": 10.0,
+            "title": "Chapter 2 Salt"
+          },
+          {
+            "by_stream": {
+              "0:a:0": "not_checked"
+            },
+            "end_s": 20.0,
+            "n": 4,
+            "start_s": 15.0,
+            "title": "Chapter 3 Lanterns"
+          }
+        ],
+        "container": {
+          "by": [
+            "e1"
+          ],
+          "state": "clean"
+        },
+        "duration_s": 20.0,
+        "streams": [
+          {
+            "codec": "aac",
+            "decode": "not_checked",
+            "index": 0,
+            "type": "audio"
+          }
+        ],
+        "time": {
+          "state": "not_checked"
+        }
+      },
+      "open": [
+        {
+          "available_check": [],
+          "id": "u1",
+          "origin": "unresolved",
+          "scope": {
+            "intervals": [
+              [
+                0.0,
+                20.0
+              ]
+            ],
+            "type": "decode_interval"
+          },
+          "sources": [
+            "e1"
+          ],
+          "text": "nothing was decoded: stream contents are unchecked by this result"
+        },
+        {
+          "available_check": [],
+          "id": "u2",
+          "origin": "unresolved",
+          "scope": {
+            "type": "statement_kind"
+          },
+          "sources": [
+            "e2"
+          ],
+          "text": "this result is a record or reading, not an integrity check"
+        }
+      ]
+    },
+    "format_contract": "v3.1-format",
+    "messages": [
+      {
+        "bytes": [
+          3315
+        ],
+        "id": "evidence",
+        "kind": "initial",
+        "open_total": 2,
+        "pages": 1
+      }
+    ],
+    "note": "derived only from the observations shown to the model; no truth, label, provenance or hidden injection field is an input",
+    "page_contract": "pages-v1",
+    "protocol": "turn-v3",
+    "rubric": "contract-v3-rubric-3.2",
+    "tools_behavior": "v3",
+    "version": "v3.1-format",
+    "wire_bytes": 8192
+  },
+  "evidence_mode": "replay",
+  "evidence_shown": [
+    "e1",
+    "e2"
+  ],
+  "final_decision_valid": false,
+  "first_try": {
+    "failure_modes": [
+      "adapter_error"
+    ],
+    "first_reply_valid": false,
+    "note": "any repair, forced decision or protocol violation means the first try was not valid; later attempts are recorded separately in turns[].attempt",
+    "protocol_violations": 0,
+    "repair_prompts": 0,
+    "valid": false,
+    "valid_after_repair": false
+  },
+  "first_try_valid": false,
+  "fixture": {
+    "actual_sha256": "a230ec54b2c5d5974d5cca2884a3202cc4a0df18e1766645f0cbac274773dd3e",
+    "bytes": 63930,
+    "declared_sha256": "a230ec54b2c5d5974d5cca2884a3202cc4a0df18e1766645f0cbac274773dd3e",
+    "kind": "local",
+    "verified": true
+  },
+  "fixture_hashes": {
+    "evidence_shown_sha256": {
+      "e1": "8e8e5231a51a80d40bec5eb344b97a93a64074f186a3062bc49a2809929bc392",
+      "e2": "faffe71a9e012e167d1cbc93577053891ae55b9d675b4df6df17a675ca57e709"
+    },
+    "fixture": {
+      "actual_sha256": "a230ec54b2c5d5974d5cca2884a3202cc4a0df18e1766645f0cbac274773dd3e",
+      "declared_sha256": "a230ec54b2c5d5974d5cca2884a3202cc4a0df18e1766645f0cbac274773dd3e",
+      "kind": "local",
+      "verified": true
+    }
+  },
+  "forced": true,
+  "forced_reason": "model call failed: ollama transport failure: {\"exit_code\": 0, \"http_status\": null, \"stderr\": \"\"}",
+  "guard": {
+    "applied": [],
+    "final_changed": false,
+    "restored": true,
+    "version": "v3"
+  },
+  "harness_git_sha": "5c156965f21af28f17d04a5c18127d89c8a25a88",
+  "harness_version": "dev-c7",
+  "injected_failure": null,
+  "model_case_alias": "case-7f1678bd",
+  "model_digest": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+  "model_digest_na_reason": null,
+  "outcome": null,
+  "prompt": {
+    "protocol": "turn-v3",
+    "schema_sent": true,
+    "sha256": "79a7fc73b855ccee6964c4752249477b070b79acebc3daf5c9c17a8a6b3eafb5",
+    "turn_schema_sha256": "b44bf74a458ba48e8761f494e267516c9c49f406c0db2f7716cf4b5aa0c60699",
+    "version": "v7"
+  },
+  "protocol_violations": [],
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "refs_to_non_ok_tools": [],
+  "repair_prompts": [],
+  "requested_model": "qwen3.8:27b",
+  "response_model_ids": [],
+  "run_id": "devc7-qwen3.8-27b",
+  "runtime_version": "0.40.6",
+  "split": "dev",
+  "started_at": "2026-10-21T04:39:13.144308+00:00",
+  "suite_version": "dev-v1.1",
+  "tool_calls": [],
+  "tool_modes": [],
+  "turns": [
+    {
+      "attempt": "first",
+      "error": "ollama transport failure: {\"exit_code\": 0, \"http_status\": null, \"stderr\": \"\"}",
+      "failure_modes": [
+        "adapter_error"
+      ],
+      "n": 1,
+      "reply_valid": false
+    }
+  ],
+  "unverified_parts": [],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 0,
+    "output_tokens": 0
+  },
+  "wall": {
+    "case_excl_load_s": 0.675,
+    "load_s": 0.0,
+    "tool_s": [],
+    "total_s": 0.675,
+    "turn_s": [
+      null
+    ]
+  },
+  "write_rejection": {
+    "attempts": [],
+    "forced_after_rejected_write": false,
+    "note": "record only: a rejected write decision never became the decision; forced_after_rejected_write means the repair also failed and the harness forced insufficient_evidence/escalate",
+    "rejected_write_attempts": 0,
+    "repaired_to_valid_decision": false
+  }
+}

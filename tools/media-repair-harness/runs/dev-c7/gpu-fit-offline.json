@@ -1,0 +1,86 @@
+{
+  "architecture": {
+    "attention_blocks": 16,
+    "blocks": 64,
+    "conv_kernel": 4,
+    "head_dim": 256,
+    "kv_bytes": 2,
+    "kv_heads": 4,
+    "linear_blocks": 48,
+    "linear_head_dim": 128,
+    "linear_k_heads": 16,
+    "linear_v_heads": 48,
+    "source": "assumption: the published Qwen3.5 (GGUF family qwen35) hybrid layout; not in the recorded /api/tags metadata",
+    "state_bytes": 4
+  },
+  "components_mib": {
+    "compute_graph_allowance": 1536,
+    "cuda_context_allowance": 512,
+    "kv_cache_assumed_layout": 1024,
+    "kv_cache_bound_every_block_attention": 4096,
+    "linear_attention_state": 149.6,
+    "weights_blob": 16920
+  },
+  "estimate": {
+    "assumed_layout": {
+      "fits": true,
+      "headroom_mib": 3982,
+      "total_mib": 20142
+    },
+    "conservative_bound": {
+      "fits": true,
+      "headroom_mib": 910,
+      "total_mib": 23214
+    }
+  },
+  "increment_over_devc6_8192_mib": {
+    "kv_assumed_layout": 512,
+    "kv_bound": 2048
+  },
+  "limits": [
+    "block, head and head-size counts are assumed (not recorded); a different layout changes the KV cache",
+    "compute-graph and CUDA-context sizes are allowances, not derived; flash attention and the server's own memory estimate are not known offline",
+    "Ollama decides the GPU/CPU split itself at load time; only /api/ps after the warm-up shows it"
+  ],
+  "note": "OFFLINE ESTIMATE from recorded metadata only; no Ollama call; the runtime check full-gpu-v1 (size_vram == size at warm-up) is decisive",
+  "num_ctx": 16384,
+  "reading": "the dev-c6 qwen run at num_ctx 8192 generated at 65.3 tokens/s median (min 50.9) over 107 turns, a rate that reads every weight from VRAM for each token; a split with CPU layers would be bounded by host-memory bandwidth for its share. An inference that 8192 ran fully on the GPU, not a measurement (dev-c6 recorded no /api/ps after its load).",
+  "recorded": {
+    "details": {
+      "context_length": 262144,
+      "embedding_length": 5120,
+      "families": [
+        "qwen35"
+      ],
+      "family": "qwen35",
+      "format": "gguf",
+      "parameter_size": "27.3B",
+      "parent_model": "qwen3.8:27b-q4_K_M",
+      "quantization_level": "Q4_K_M",
+      "runner": "llamacpp"
+    },
+    "devc6_generation_tokens_per_s": {
+      "median": 65.3,
+      "min": 50.9,
+      "n": 107
+    },
+    "devc6_num_ctx": 8192,
+    "devc6_prompt_eval_tokens_per_s": {
+      "median": 5626,
+      "min": 1353
+    },
+    "digest": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+    "gpu_memory_free_mib_before_load": 24124,
+    "gpu_memory_used_mib_before_load": 1,
+    "model": "qwen3.8:27b",
+    "runtime_version": "0.40.6",
+    "size_bytes": 17741872154,
+    "size_mib": 16920.0,
+    "source": "runs/dev-c6/devc6-qwen3.8-27b/manifest.json (preflight) and its 107 turn records"
+  },
+  "server": {
+    "kv_cache_type": "f16 (OLLAMA_KV_CACHE_TYPE unset in the ollama-prime HelmRelease)",
+    "parallel_note": "OLLAMA_NUM_PARALLEL unset in the HelmRelease; one slot assumed (a second slot would double the KV cache)",
+    "parallel_slots": 1
+  }
+}

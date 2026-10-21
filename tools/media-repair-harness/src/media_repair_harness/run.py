@@ -417,7 +417,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
         fc = getattr(e, 'failed_call', None)    # the call that triggered the abort (a CLI stopped at its lowered budget) keeps its receipt
         if fc:
             turns.append({'n': len(turns) + 1, 'error': fc['error'], 'attempt': 'repair' if repairs else 'first', 'reply_valid': False,
-                          'failure_modes': ['adapter_error', 'cost_cap_budget_exceeded'], **({'usage': fc['usage']} if fc.get('usage') else {})})
+                          'failure_modes': fc.get('failure_modes', ['adapter_error', 'cost_cap_budget_exceeded']), **({'usage': fc['usage']} if fc.get('usage') else {}),
+                          **{k: fc[k] for k in ('native', 'gpu_refit') if fc.get(k)}})     # (dev-c7 full-gpu-v2 only: the reload's receipt and /api/ps reading)
         # a STARTED case that the run's abort cut short is never lost: turns, tool calls, usage and the reason travel with the exception (main writes them to started-aborted/)
         e.partial = started_aborted_record(case, case_sha, adapter, prompt, run_id, started_at, time.monotonic() - started_wall, turns, tool_calls, repairs, str(e),
                                            evidence_mode, evidence_format)
@@ -505,11 +506,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runn
         record['evidence_format'] = evidence_format_record(session, caps, evidence_format)
     ctxs = [t['meta']['context'] for t in turns if (t.get('meta') or {}).get('context')]
     if ctxs:
-        record['context_check'] = {'num_ctx': ctxs[0]['num_ctx'], 'turns_checked': len(ctxs),
-                                   'max_prompt_tokens_reported': max((c['prompt_tokens_reported'] or 0) for c in ctxs),
-                                   'max_prompt_tokens_estimated': max(c['prompt_tokens_estimated'] for c in ctxs),
-                                   'truncated_suspected': any(c['truncated_suspected'] for c in ctxs),
-                                   'flags': sorted({f for c in ctxs for f in c['flags']})}
+        record['context_check'] = A.context_summary(ctxs)     # without a context policy: the same summary as always (dev-c7 adds one only under a policy)
     if error:
         record['error'] = error
     return record
@@ -841,7 +838,8 @@ def build_adapter(args):
         return A.OllamaAdapter(model, options={'num_ctx': args.num_ctx, 'num_predict': num_predict}, keep_alive=args.keep_alive,
                                guard=G.PsiGuard(), required_digest=getattr(args, 'require_digest', None),
                                stop=(args.stop.split(',') if args.stop is not None else None), do_warmup=not args.no_warmup,
-                               schema=(P.FLAT_TURN_SCHEMA if args.ollama_schema == 'flat' else P.TURN_SCHEMA), schema_name=args.ollama_schema)
+                               schema=(P.FLAT_TURN_SCHEMA if args.ollama_schema == 'flat' else P.TURN_SCHEMA), schema_name=args.ollama_schema,
+                               context_policy=getattr(args, 'context_policy', None), gpu_fit_check=getattr(args, 'gpu_fit_check', None))
     if args.adapter == 'claude':
         budget = None if getattr(args, 'no_spend_limit', False) else (args.max_budget_usd if args.max_budget_usd is not None else 2.0)
         return A.ClaudeAdapter(model, effort=args.effort, max_budget_usd=budget)
@@ -852,7 +850,36 @@ def build_adapter(args):
     raise SystemExit('unknown adapter')
 
 
-def main(argv=None):
+def run_config(args, adapter, evidence_bounds, evcol_clamped):
+    """The run's `config` (and so its config_hash) from the parsed arguments and the adapter (dev-c7: factored out of main unchanged, so a registered
+    command's config can be rebuilt offline and compared with a recorded manifest)."""
+    prompt = P.get_prompt(args.prompt)
+    config = {'harness_version': P.HARNESS_VERSION, 'protocol': P.PROTOCOL_VERSION if args.prompt == 'v1' else _turn_protocol(args.prompt), 'prompt_version': args.prompt, 'system_prompt_sha256': prompt['sha256'],
+              'turn_schema_sha256': sha256_bytes(canonical(P.TURN_SCHEMA).encode()), 'flat_schema_sha256': sha256_bytes(canonical(P.FLAT_TURN_SCHEMA).encode()),
+              'turn_schema_v2_sha256': sha256_bytes(canonical(P.turn_schema('v2')).encode()), 'max_tool_calls': P.MAX_TOOL_CALLS,
+              'tool_output_bytes': args.tool_output_bytes, 'tool_timeout_s': P.TOOL_TIMEOUT_S, 'ocr_model': args.ocr_model, 'replay': args.replay,
+              'evidence_mode': args.evidence, 'evidence_bounds': evidence_bounds if args.evidence == 'live' else None,
+              'evidence_bounds_clamped': evcol_clamped if args.evidence == 'live' else None,
+              'adapter_config': adapter.config()}
+    if args.guards:
+        config['guards'] = args.guards   # only when on: a run without guards has the same config (and config_hash) shape as before
+    if args.no_spend_limit:
+        config['spend_limit'] = 'uncapped'     # only when set (dev-c6): an explicitly uncapped run; the claude adapter config also shows max_budget_usd None
+    limits = RunLimits(args.max_total_cost_usd, args.max_wall_s)
+    if limits.enabled:   # likewise only when set: a run without caps keeps its earlier config shape
+        config['limits'] = limits.config()
+    if args.evidence_format == CONTRACT_V31_FORMAT:   # dev-c7: every version it selects is recorded (tools v3, rubric v3.2, the excerpt rule), so the config hash tells it apart
+        config.update(_ev31().CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes), decision_schema_sha256=sha256_bytes(canonical(P.turn_schema_v3(['ffprobe'])).encode()),
+                      excerpt_rules_sha256=_ev31().ET.rules_digest())
+    elif args.evidence_format == 'v3':   # contract v3: every version it selects is recorded, so the config hash tells it apart from format v2
+        config.update(_ev3().CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes), decision_schema_sha256=sha256_bytes(canonical(P.turn_schema_v3(['ffprobe'])).encode()))
+    elif args.evidence_format:   # likewise only when on; the three versions it selects are recorded so the config hash tells the formats apart
+        config.update(evidence_format=args.evidence_format, tools_behavior='v2', audit_version='v2', page_contract=EV2.PAGE_CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes))
+    return config
+
+
+def build_parser():
+    """The runner's command line (dev-c7: factored out of main unchanged, so a registered command can be parsed offline)."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--suite', required=True, help='suite directory (with cases/) or a directory of case JSON files')
     ap.add_argument('--adapter', required=True, choices=['ollama', 'claude', 'codex', 'scripted'])
@@ -865,7 +892,16 @@ def main(argv=None):
     ap.add_argument('--max-budget-usd', type=float, default=None, help='claude: per-call spend cap (default 2.0)')
     ap.add_argument('--no-spend-limit', action='store_true', help='dev-c6: an explicitly uncapped run: no spend-limit flag of any kind (no claude --max-budget-usd); '
                                                                      'refused with --max-budget-usd or --max-total-cost-usd; usage accounting and timeouts stay')
-    ap.add_argument('--num-ctx', type=int, default=A.DEFAULT_NUM_CTX, choices=list(A.ALLOWED_NUM_CTX), help='ollama context window; 4096 is the proven-safe value, 8192 the only other one allowed')
+    ap.add_argument('--num-ctx', type=int, default=A.DEFAULT_NUM_CTX, choices=sorted(set(A.ALLOWED_NUM_CTX) | {p['num_ctx'] for p in A.CONTEXT_POLICIES.values()}),
+                    help='ollama context window; 4096 is the proven-safe value, 8192 the only other one allowed without a context policy; 16384 only with --context-policy ctx16k-v1')
+    ap.add_argument('--context-policy', choices=sorted(A.CONTEXT_POLICIES), default=None,
+                    help='dev-c7 measurement, ollama only, opt-in: ctx16k-v1 fixes --num-ctx 16384 and adds the reported-count flags prompt_reaches_input_budget '
+                         '(prompt_eval_count >= num_ctx - num_predict) and reported_prompt_did_not_grow; recorded in the adapter config; unset = exactly as before')
+    ap.add_argument('--gpu-fit-check', choices=list(A.GPU_FIT_CHECKS), default=None,
+                    help='dev-c7 measurement, ollama only, opt-in: full-gpu-v1 reads /api/ps after the warm-up and, unless the model this run loaded is entirely in '
+                         'VRAM, unloads it and stops before any case (exit 3, reason gpu_fit_skip); full-gpu-v2 also treats a case call with load_duration '
+                         'above 1 s as a reload, reads /api/ps again and, unless it is 100%% GPU, aborts (exit 3, gpu_fit_abort) and unloads; recorded in the '
+                         'adapter config; unset = exactly as before')
     ap.add_argument('--tool-output-bytes', type=int, default=P.TOOL_OUTPUT_BYTES, help='cap on one tool result shown to the model (lower it for small local contexts)')
     ap.add_argument('--num-predict', type=int, help='ollama output cap; default 384 for prompt v1, 640 for v2 (a write decision carries an audit object)')
     ap.add_argument('--prompt', choices=list(P.PROMPT_VERSIONS), default=P.DEFAULT_PROMPT, help='system prompt and turn protocol version (default v1 until checkpoint 2c); v5 (dev-c5) is valid only with --evidence-format v2; v6 (dev-c6, contract v3) only with --evidence-format v3; v7 (dev-c7) only with --evidence-format v3.1-format')
@@ -884,7 +920,11 @@ def main(argv=None):
     ap.add_argument('--ocr-model', help='vision model on Prime for the ocr tool')
     ap.add_argument('--codex-ephemeral', action='store_true', help='codex: do not keep the rollout (then no response model id can be recorded and G10 fails)')
     ap.add_argument('--script', help='scripted adapter: JSON list of replies')
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
 
     try:
         check_option_combination(args.prompt, args.evidence_format, args.guards, args.tool_output_bytes)
@@ -892,6 +932,14 @@ def main(argv=None):
         raise SystemExit(str(e))
     if args.no_spend_limit and (args.max_budget_usd is not None or args.max_total_cost_usd is not None):
         raise SystemExit('--no-spend-limit is an explicitly uncapped run: it cannot be combined with --max-budget-usd or --max-total-cost-usd')
+    if (args.context_policy or args.gpu_fit_check) and args.adapter != 'ollama':
+        raise SystemExit('--context-policy and --gpu-fit-check apply to the ollama adapter only')
+    if args.context_policy is None and args.num_ctx not in A.ALLOWED_NUM_CTX:
+        raise SystemExit('--num-ctx %d needs a context policy (--context-policy); without one the allowed values are %s' % (args.num_ctx, list(A.ALLOWED_NUM_CTX)))
+    if args.context_policy is not None and args.num_ctx != A.CONTEXT_POLICIES[args.context_policy]['num_ctx']:
+        raise SystemExit('--context-policy %s requires --num-ctx %d' % (args.context_policy, A.CONTEXT_POLICIES[args.context_policy]['num_ctx']))
+    if args.gpu_fit_check and args.no_warmup:
+        raise SystemExit('--gpu-fit-check reads /api/ps after the warm-up load: it cannot be combined with --no-warmup')
     out = Path(args.out)
     if out.exists() and any(out.iterdir()):
         raise SystemExit('refusing to reuse a non-empty run directory (failed runs are kept, never overwritten): %s' % out)
@@ -917,28 +965,8 @@ def main(argv=None):
         evcol_resolved, evcol_clamped = evcol.resolve_bounds(evidence_bounds)
     except ValueError as e:
         raise SystemExit('--evidence-bounds: %s' % e)
-    prompt = P.get_prompt(args.prompt)
-    config = {'harness_version': P.HARNESS_VERSION, 'protocol': P.PROTOCOL_VERSION if args.prompt == 'v1' else _turn_protocol(args.prompt), 'prompt_version': args.prompt, 'system_prompt_sha256': prompt['sha256'],
-              'turn_schema_sha256': sha256_bytes(canonical(P.TURN_SCHEMA).encode()), 'flat_schema_sha256': sha256_bytes(canonical(P.FLAT_TURN_SCHEMA).encode()),
-              'turn_schema_v2_sha256': sha256_bytes(canonical(P.turn_schema('v2')).encode()), 'max_tool_calls': P.MAX_TOOL_CALLS,
-              'tool_output_bytes': args.tool_output_bytes, 'tool_timeout_s': P.TOOL_TIMEOUT_S, 'ocr_model': args.ocr_model, 'replay': args.replay,
-              'evidence_mode': args.evidence, 'evidence_bounds': evidence_bounds if args.evidence == 'live' else None,
-              'evidence_bounds_clamped': evcol_clamped if args.evidence == 'live' else None,
-              'adapter_config': adapter.config()}
-    if args.guards:
-        config['guards'] = args.guards   # only when on: a run without guards has the same config (and config_hash) shape as before
-    if args.no_spend_limit:
-        config['spend_limit'] = 'uncapped'     # only when set (dev-c6): an explicitly uncapped run; the claude adapter config also shows max_budget_usd None
+    config = run_config(args, adapter, evidence_bounds, evcol_clamped)
     limits = RunLimits(args.max_total_cost_usd, args.max_wall_s)
-    if limits.enabled:   # likewise only when set: a run without caps keeps its earlier config shape
-        config['limits'] = limits.config()
-    if args.evidence_format == CONTRACT_V31_FORMAT:   # dev-c7: every version it selects is recorded (tools v3, rubric v3.2, the excerpt rule), so the config hash tells it apart
-        config.update(_ev31().CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes), decision_schema_sha256=sha256_bytes(canonical(P.turn_schema_v3(['ffprobe'])).encode()),
-                      excerpt_rules_sha256=_ev31().ET.rules_digest())
-    elif args.evidence_format == 'v3':   # contract v3: every version it selects is recorded, so the config hash tells it apart from format v2
-        config.update(_ev3().CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes), decision_schema_sha256=sha256_bytes(canonical(P.turn_schema_v3(['ffprobe'])).encode()))
-    elif args.evidence_format:   # likewise only when on; the three versions it selects are recorded so the config hash tells the formats apart
-        config.update(evidence_format=args.evidence_format, tools_behavior='v2', audit_version='v2', page_contract=EV2.PAGE_CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes))
     manifest = {'harness_version': P.HARNESS_VERSION, 'run_id': run_id, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'argv': sys.argv[1:] if argv is None else argv,
                 'harness_git': git_info(), 'config': config, 'config_hash': sha256_bytes(canonical(config).encode()),
                 'python': platform.python_version(), 'suite_dir': str(suite_dir),

@@ -96,27 +96,56 @@ def default_stop(model):
     return []
 
 
-ALLOWED_NUM_CTX = (4096, 8192)  # 4096 is the proven-safe value (2026-10-19 retry); 8192 ran on Oct 18; nothing larger
+ALLOWED_NUM_CTX = (4096, 8192)  # 4096 is the proven-safe value (2026-10-19 retry); 8192 ran on Oct 18; nothing larger without a context policy
 DEFAULT_NUM_CTX = 4096
 WARMUP_TIMEOUT_S = 900          # a cold NFS load of a 17 GB model took 336 s on 2026-10-19; never time one out at 60 s
 WARMUP_PROMPT = 'Reply with OK'
+# dev-c7 measurement (WO-W23; Tom 2026-10-21: "raise qwen's context to num_ctx 16384" for that run only).  A context policy is versioned and opt-in
+# (`--context-policy`): it is the ONLY way to send a num_ctx outside ALLOWED_NUM_CTX, it fixes that one value, and it adds two reported-count flags.
+# Without it every option, flag, record field and config key is byte-identical to before.
+CONTEXT_POLICIES = {
+    'ctx16k-v1': {
+        'num_ctx': 16384,
+        'input_budget': 'num_ctx - num_predict (the output reserve)',
+        'turn_flag': 'prompt_reaches_input_budget: reported prompt_eval_count >= num_ctx - num_predict',
+        'case_flag': 'reported_prompt_did_not_grow: a later turn whose reported prompt_eval_count is not above the previous turn\'s reported '
+                     'prompt_eval_count + eval_count (a later request carries the whole earlier one, its reply and a new message; Ollama drops '
+                     'whole old messages when a chat prompt exceeds num_ctx, which can leave the count below the limit)',
+    },
+}
+# dev-c7 measurement (WO-W23, GPU safety): versioned, opt-in (`--gpu-fit-check`).  After the warm-up, /api/ps must show the model this run loaded
+# entirely in VRAM (size_vram == size); anything else unloads it and skips the run.  Without it the preflight makes exactly the calls it made before.
+# full-gpu-v2 (dev-c7 Amendment 1, Opus P2): full-gpu-v1, and Prime is shared, so the model can be evicted between calls and reloaded partly onto the CPU.
+# Every case call whose reported load_duration exceeds RELOAD_LOAD_S (or does not report one) counts as a reload and repeats the same /api/ps reading; a reload
+# that is not 100% GPU aborts the run (the case is started-aborted, unscored), unloads what this run loaded and exits 3.  The largest per-call load_duration
+# recorded by the dev-c6 and dev-c5 qwen runs is 3.3 ms.  full-gpu-v1 is unchanged (one reading after the warm-up).
+GPU_FIT_CHECKS = ('full-gpu-v1', 'full-gpu-v2')
+RELOAD_LOAD_S = 1.0
 
 
-def ollama_options(overrides=None):
+def ollama_options(overrides=None, context_policy=None):
     """The only request options this harness sends to Ollama Prime.  num_ctx is validated; use_mmap, temperature and seed
-    cannot be overridden (the 2026-10-19 21:04 kill followed a request with the server default -c 32768 and mmap)."""
+    cannot be overridden (the 2026-10-19 21:04 kill followed a request with the server default -c 32768 and mmap).
+    A context policy (dev-c7) fixes num_ctx to its one value; without one, ALLOWED_NUM_CTX applies exactly as before."""
     o = dict({'num_predict': 384}, **(overrides or {}))
     num_ctx = o.get('num_ctx', DEFAULT_NUM_CTX)
-    if num_ctx not in ALLOWED_NUM_CTX:
+    if context_policy is not None:
+        if context_policy not in CONTEXT_POLICIES:
+            raise ValueError('unknown context policy %r (known: %s)' % (context_policy, sorted(CONTEXT_POLICIES)))
+        if num_ctx != CONTEXT_POLICIES[context_policy]['num_ctx']:
+            raise ValueError('context policy %s requires num_ctx %d, got %r' % (context_policy, CONTEXT_POLICIES[context_policy]['num_ctx'], num_ctx))
+    elif num_ctx not in ALLOWED_NUM_CTX:
         raise ValueError('num_ctx %r is not allowed on Ollama Prime (allowed: %s)' % (num_ctx, ALLOWED_NUM_CTX))
     o.update(num_ctx=num_ctx, use_mmap=False, temperature=0, seed=42)
     return o
 
 
-def context_check(options, native, chars):
+def context_check(options, native, chars, context_policy=None):
     """Per-turn truncation record.  Ollama truncates an over-long prompt silently, so the turn is flagged here and the
     flags are summarised per case.  prompt_eval_count excludes tokens served from the prompt cache, so a character-based
-    estimate (3 chars per token, deliberately pessimistic) is kept next to it."""
+    estimate (3 chars per token, deliberately pessimistic) is kept next to it.
+    Under a context policy (dev-c7) the turn also carries the policy, its input budget (num_ctx - num_predict) and the flag
+    `prompt_reaches_input_budget`; without one the record is byte-identical to before."""
     n = options['num_ctx']
     prompt, out = native.get('prompt_eval_count'), native.get('eval_count')
     est = int(chars / 3.0)
@@ -129,8 +158,39 @@ def context_check(options, native, chars):
         flags.append('estimated_prompt_exceeds_context')
     if native.get('done_reason') == 'length':
         flags.append('output_hit_num_predict')
-    return {'num_ctx': n, 'prompt_tokens_reported': prompt, 'output_tokens': out, 'prompt_chars': chars,
-            'prompt_tokens_estimated': est, 'flags': flags, 'truncated_suspected': any(f != 'output_hit_num_predict' for f in flags)}
+    extra = {}
+    if context_policy is not None:
+        budget = n - options['num_predict']
+        if prompt is not None and prompt >= budget:
+            flags.append('prompt_reaches_input_budget')
+        extra = {'context_policy': context_policy, 'input_budget_tokens': budget}
+    return dict({'num_ctx': n, 'prompt_tokens_reported': prompt, 'output_tokens': out, 'prompt_chars': chars,
+                 'prompt_tokens_estimated': est, 'flags': flags, 'truncated_suspected': any(f != 'output_hit_num_predict' for f in flags)}, **extra)
+
+
+def context_summary(ctxs):
+    """The per-case `context_check` of a record from its turns' context records (in order).  Without a context policy it is exactly the summary the
+    runner always wrote.  Under a policy (dev-c7) it adds the policy, the input budget, the turns whose reported prompt did not grow and the case flag
+    `reported_prompt_did_not_grow`, which also marks the case truncated_suspected."""
+    out = {'num_ctx': ctxs[0]['num_ctx'], 'turns_checked': len(ctxs),
+           'max_prompt_tokens_reported': max((c['prompt_tokens_reported'] or 0) for c in ctxs),
+           'max_prompt_tokens_estimated': max(c['prompt_tokens_estimated'] for c in ctxs),
+           'truncated_suspected': any(c['truncated_suspected'] for c in ctxs),
+           'flags': sorted({f for c in ctxs for f in c['flags']})}
+    policy = ctxs[0].get('context_policy')
+    if policy is None:
+        return out
+    shrunk, prev = [], None
+    for i, c in enumerate(ctxs):
+        p, o = c.get('prompt_tokens_reported'), c.get('output_tokens')
+        if prev is not None and p is not None and p <= prev[0] + (prev[1] or 0):
+            shrunk.append(i)
+        prev = (p, o) if p is not None else None
+    out.update(context_policy=policy, input_budget_tokens=ctxs[0]['input_budget_tokens'], prompt_did_not_grow_turns=shrunk)
+    if shrunk:
+        out['flags'] = sorted(set(out['flags']) | {'reported_prompt_did_not_grow'})
+        out['truncated_suspected'] = True
+    return out
 
 
 class OllamaAdapter(Adapter):
@@ -140,11 +200,17 @@ class OllamaAdapter(Adapter):
 
     def __init__(self, model, api=ot.api, snapshot=ot.snapshot, options=None, keep_alive='2m', stop=None,
                  schema=TURN_SCHEMA, schema_name='anyof', load_timeout=WARMUP_TIMEOUT_S, call_timeout=120, do_warmup=True,
-                 guard=None, required_digest=None):
+                 guard=None, required_digest=None, context_policy=None, gpu_fit_check=None):
         super().__init__(model)
         self.required_digest = required_digest   # dev-c5: abort the run before any load when the installed digest differs
+        if gpu_fit_check is not None and gpu_fit_check not in GPU_FIT_CHECKS:
+            raise ValueError('unknown GPU fit check %r (known: %s)' % (gpu_fit_check, list(GPU_FIT_CHECKS)))
+        if gpu_fit_check is not None and not do_warmup:
+            raise ValueError('the GPU fit check reads /api/ps after the warm-up load; it cannot run without the warm-up')
+        self.context_policy, self.gpu_fit_check = context_policy, gpu_fit_check    # dev-c7, both opt-in (None: everything as before)
+        self.gpu_refits = []     # full-gpu-v2: every reload detected at a case call, with its /api/ps reading
         self.api, self.snapshot = api, snapshot
-        self.options = ollama_options(options)
+        self.options = ollama_options(options, context_policy)
         self.keep_alive, self.stop = keep_alive, default_stop(model) if stop is None else stop
         self.schema_name = schema_name
         self.schema, self.load_timeout, self.call_timeout, self.do_warmup = schema, load_timeout, call_timeout, do_warmup
@@ -158,6 +224,8 @@ class OllamaAdapter(Adapter):
                 'think': False, 'keep_alive': self.keep_alive, 'stream': False, 'format': 'TURN_SCHEMA:' + self.schema_name,
                 'warmup_timeout_s': self.load_timeout, 'call_timeout_s': self.call_timeout,
                 **({'required_digest': self.required_digest} if self.required_digest else {}),
+                **({'context_policy': self.context_policy} if self.context_policy else {}),      # dev-c7: only when set (so in the config hash)
+                **({'gpu_fit_check': self.gpu_fit_check} if self.gpu_fit_check else {}),
                 'psi_guard': ({'threshold': self.guard.threshold, 'interval_s': self.guard.interval, 'consecutive': self.guard.consecutive}
                               if self.guard else None)}
 
@@ -219,7 +287,37 @@ class OllamaAdapter(Adapter):
                 # a half-finished load may still be running: do not unload, do not replay
                 self.loaded_by_us = False
                 raise AbortRun('model load failed or timed out (%s); not retrying, not unloading' % (report['warmup']['error'] or rc.get('exit_code')))
+            if self.gpu_fit_check:
+                fit = report['gpu_fit'] = self._gpu_fit()
+                if not fit['full_gpu']:
+                    # loaded_by_us stays True: finish() unloads exactly the model this run loaded; nothing is retried or run partly on the CPU
+                    raise AbortRun('gpu_fit_skip (%s): %s; unloading, not running any case' % (self.gpu_fit_check, fit['reason']))
         return report
+
+    def _gpu_fit(self):
+        """full-gpu-v1: one /api/ps read after the warm-up.  Full GPU means the model this run loaded is the only resident and its size_vram equals its
+        size (Ollama's own '100% GPU'), with a reported context length (when the server reports one) not below the requested num_ctx.  Every other
+        reading, an unreadable /api/ps or a missing field included, is NOT full GPU (fail closed)."""
+        ps, rc = self.api('/api/ps')
+        out = {'check': self.gpu_fit_check, 'requested_num_ctx': self.options['num_ctx'], 'full_gpu': False}
+        if ps is None:
+            return dict(out, reason='cannot read /api/ps (%s)' % rc.get('exit_code'))
+        models = ps.get('models') or []
+        out['residents'] = [m.get('name') or m.get('model') for m in models]
+        ours = [m for m in models if (m.get('name') or m.get('model')) == self.requested_model]
+        if len(ours) != 1 or len(models) != 1:
+            return dict(out, reason='expected exactly this run\'s model resident, found %s' % out['residents'])
+        m = ours[0]
+        size, vram, ctx = m.get('size'), m.get('size_vram'), m.get('context_length')
+        out.update(size=size, size_vram=vram, context_length=ctx)
+        if not isinstance(size, int) or not isinstance(vram, int) or size <= 0:
+            return dict(out, reason='/api/ps does not report size and size_vram for the model (size %r, size_vram %r)' % (size, vram))
+        out['gpu_fraction'] = round(vram / size, 6)
+        if vram != size:
+            return dict(out, reason='%d of %d bytes in VRAM (%.2f%% GPU): part of the model is on the CPU' % (vram, size, 100.0 * vram / size))
+        if ctx is not None and (not isinstance(ctx, int) or ctx < self.options['num_ctx']):
+            return dict(out, reason='the loaded context length %r is below the requested num_ctx %d' % (ctx, self.options['num_ctx']))
+        return dict(out, full_gpu=True, reason='100% GPU')
 
     def before_case(self):
         trip = self._guard_trip() or (self.guard.check() if self.guard else None)
@@ -236,6 +334,7 @@ class OllamaAdapter(Adapter):
         started = time.monotonic()
         resp, receipt = self._call('/api/chat', body, timeout=self.call_timeout)
         wall = time.monotonic() - started
+        refit = None
         if self._guard_trip():
             # recorded as a failed case (forced escalate); the next before_case() aborts the batch
             raise AdapterError('request cancelled, PSI/restart guard tripped: %s' % self._guard_trip())
@@ -247,9 +346,26 @@ class OllamaAdapter(Adapter):
                                            'eval_count', 'eval_duration', 'done_reason', 'created_at')}
         usage = {'input_tokens': resp.get('prompt_eval_count'), 'output_tokens': resp.get('eval_count'), 'cost_usd': None}
         chars = len(system) + sum(len(m['content']) for m in messages)
+        if self.gpu_fit_check == 'full-gpu-v2':
+            refit = self._reload_check(native)
+            if refit is not None and not refit['gpu_fit']['full_gpu']:
+                ab = AbortRun('gpu_fit_abort (full-gpu-v2): the model was reloaded at a case call (load_duration %s ns) and is not 100%% GPU: %s; '
+                              'unloading, not running further cases' % (native.get('load_duration'), refit['gpu_fit']['reason']))
+                ab.failed_call = {'error': 'reloaded partly onto the CPU: %s' % refit['gpu_fit']['reason'], 'usage': usage, 'native': native, 'gpu_refit': refit,
+                                  'failure_modes': ['gpu_reload_not_full_gpu']}
+                raise ab
         return Completion((resp.get('message') or {}).get('content', ''), body, receipt, response_model=resp.get('model'),
                           usage=usage, wall_s=wall, load_s=(resp.get('load_duration') or 0) / 1e9, native=native,
-                          meta={'context': context_check(self.options, native, chars)})
+                          meta=dict({'context': context_check(self.options, native, chars, self.context_policy)}, **({'gpu_refit': refit} if refit else {})))
+
+    def _reload_check(self, native):
+        """full-gpu-v2: a case call with load_duration above RELOAD_LOAD_S, or none reported, is a reload: read /api/ps again (the full-gpu-v1 rule)."""
+        ld = native.get('load_duration')
+        if isinstance(ld, (int, float)) and ld <= RELOAD_LOAD_S * 1e9:
+            return None
+        refit = {'load_duration_ns': ld, 'gpu_fit': self._gpu_fit()}
+        self.gpu_refits.append(refit)
+        return refit
 
     def finish(self):
         report = {'unloaded': False}
@@ -259,6 +375,8 @@ class OllamaAdapter(Adapter):
             if self.loaded_by_us:
                 resp, rc = self.api('/api/generate', {'model': self.requested_model, 'keep_alive': 0, 'stream': False}, timeout=60)
                 report.update(unloaded=resp is not None and not resp.get('error'), unload_response=resp)
+            if self.gpu_fit_check == 'full-gpu-v2':
+                report['gpu_refits'] = list(self.gpu_refits)
             ps, _ = self.api('/api/ps')
             report['residents_after'] = None if ps is None else [m.get('name') for m in ps.get('models', [])]
             report['resources_after'] = self.snapshot()

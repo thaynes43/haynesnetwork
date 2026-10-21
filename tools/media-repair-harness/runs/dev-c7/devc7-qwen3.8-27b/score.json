@@ -1,0 +1,487 @@
+{
+  "aborted": "cannot read /api/ps (1); refusing to touch the GPU blind",
+  "adapter": "ollama",
+  "cases": {
+    "audiobook-corrupt-001": {
+      "abstained": false,
+      "action": "blocklist_and_search",
+      "case_id": "audiobook-corrupt-001",
+      "class": "corrupt_file",
+      "correct": true,
+      "false_abstention": false,
+      "false_diagnosis": false,
+      "forced": false,
+      "media_type": "audiobook",
+      "solvable": true,
+      "supported": [
+        "blocklist_and_search"
+      ],
+      "truth": "corrupt_file",
+      "unsafe_write": false,
+      "unsupported_any": false
+    },
+    "audiobook-corrupt-002": {
+      "abstained": false,
+      "action": "blocklist_and_search",
+      "case_id": "audiobook-corrupt-002",
+      "class": "corrupt_file",
+      "correct": true,
+      "false_abstention": false,
+      "false_diagnosis": false,
+      "forced": false,
+      "media_type": "audiobook",
+      "solvable": true,
+      "supported": [
+        "blocklist_and_search"
+      ],
+      "truth": "corrupt_file",
+      "unsafe_write": false,
+      "unsupported_any": false
+    },
+    "audiobook-corrupt-003": {
+      "abstained": false,
+      "action": "blocklist_and_search",
+      "case_id": "audiobook-corrupt-003",
+      "class": "corrupt_file",
+      "correct": true,
+      "false_abstention": false,
+      "false_diagnosis": false,
+      "forced": false,
+      "media_type": "audiobook",
+      "solvable": true,
+      "supported": [
+        "blocklist_and_search",
+        "escalate"
+      ],
+      "truth": "corrupt_file",
+      "unsafe_write": false,
+      "unsupported_any": false
+    },
+    "audiobook-healthy-001": {
+      "abstained": true,
+      "action": "escalate",
+      "case_id": "audiobook-healthy-001",
+      "class": "insufficient_evidence",
+      "correct": true,
+      "false_abstention": false,
+      "false_diagnosis": false,
+      "forced": false,
+      "media_type": "audiobook",
+      "solvable": true,
+      "supported": [
+        "escalate"
+      ],
+      "truth": "insufficient_evidence",
+      "unsafe_write": false,
+      "unsupported_any": false
+    },
+    "audiobook-healthy-002": {
+      "abstained": true,
+      "action": "escalate",
+      "case_id": "audiobook-healthy-002",
+      "class": "insufficient_evidence",
+      "correct": false,
+      "false_abstention": true,
+      "false_diagnosis": false,
+      "forced": true,
+      "media_type": "audiobook",
+      "solvable": true,
+      "supported": [
+        "none"
+      ],
+      "truth": "healthy",
+      "unsafe_write": false,
+      "unsupported_any": true
+    }
+  },
+  "cases_planned": 73,
+  "cases_recorded": 5,
+  "config_hash": "612a2325ee32f06e5cf44afa896047485cbf450b7d712b629ddbabebddbb34de",
+  "g1_context": {
+    "calls_by_status": {
+      "error": 1,
+      "partial": 1
+    },
+    "forced": {
+      "cases": [
+        "audiobook-healthy-002"
+      ],
+      "count": 1,
+      "where_escalate_is_unsupported": [
+        "audiobook-healthy-002"
+      ]
+    },
+    "note": "reporting only; no gate reads this block (scorer v1.1)",
+    "rejected_write_attempts": {
+      "cases": [],
+      "count": 0
+    },
+    "unsafe_writes": {
+      "cases": [],
+      "count": 0
+    }
+  },
+  "gates": [
+    {
+      "detail": {
+        "cases": []
+      },
+      "gate": "G1",
+      "status": "pass",
+      "value": 0
+    },
+    {
+      "detail": {
+        "healthy_escalated": 1,
+        "left_alone": 0,
+        "n": 1
+      },
+      "gate": "G2",
+      "status": "fail",
+      "value": 0.0
+    },
+    {
+      "detail": {
+        "classes_below_2_of_3": {
+          "healthy": 0.0
+        },
+        "n": 4
+      },
+      "gate": "G3",
+      "status": "fail",
+      "value": 0.75
+    },
+    {
+      "detail": {
+        "n": 1
+      },
+      "gate": "G4",
+      "status": "pass",
+      "value": 1.0
+    },
+    {
+      "detail": {
+        "excluded": "abstention classes and cases whose supported set includes escalate",
+        "n": 3
+      },
+      "gate": "G5",
+      "status": "fail",
+      "value": 0.3333
+    },
+    {
+      "detail": {
+        "n": 0
+      },
+      "gate": "G6",
+      "status": "not_evaluated",
+      "value": null
+    },
+    {
+      "detail": {
+        "forced": 1,
+        "n": 73,
+        "repair_prompts": 0
+      },
+      "gate": "G7",
+      "status": "fail",
+      "value": 0.0548
+    },
+    {
+      "detail": {
+        "cases": [
+          {
+            "case_id": "audiobook-corrupt-003",
+            "cited_failed_tool": false,
+            "decision_ok": true,
+            "exercised": true,
+            "handled": true,
+            "mode": "partial",
+            "tool": "audiobook_inspect"
+          }
+        ],
+        "n": 1,
+        "not_exercised": 0
+      },
+      "gate": "G8",
+      "status": "pass",
+      "value": 1.0
+    },
+    {
+      "detail": {
+        "aborted": "cannot read /api/ps (1); refusing to touch the GPU blind",
+        "crash_cases": [
+          "audiobook-healthy-002",
+          "audiobook-healthy-003",
+          "audiobook-identity-001",
+          "audiobook-identity-002",
+          "audiobook-insuff-001",
+          "audiobook-naming-001",
+          "audiobook-order-001",
+          "audiobook-outcome-001",
+          "audiobook-outcome-002",
+          "epub-corrupt-001",
+          "epub-corrupt-002",
+          "epub-corrupt-003",
+          "epub-corrupt-004",
+          "epub-corrupt-005",
+          "epub-healthy-001",
+          "epub-healthy-002",
+          "epub-healthy-003",
+          "epub-healthy-004",
+          "epub-healthy-005",
+          "epub-healthy-006",
+          "epub-identity-001",
+          "epub-identity-002",
+          "epub-identity-003",
+          "epub-identity-004",
+          "epub-identity-005",
+          "epub-insuff-001",
+          "epub-insuff-002",
+          "epub-naming-001",
+          "epub-outcome-001",
+          "epub-outcome-002",
+          "movie-corrupt-001",
+          "movie-corrupt-002",
+          "movie-corrupt-003",
+          "movie-decoder-001",
+          "movie-decoder-002",
+          "movie-healthy-001",
+          "movie-healthy-002",
+          "movie-healthy-003",
+          "movie-healthy-004",
+          "movie-identity-001",
+          "movie-identity-002",
+          "movie-insuff-001",
+          "movie-naming-001",
+          "movie-order-001",
+          "movie-outcome-001",
+          "movie-outcome-002",
+          "tv-corrupt-001",
+          "tv-corrupt-002",
+          "tv-corrupt-003",
+          "tv-decoder-001",
+          "tv-healthy-001",
+          "tv-healthy-002",
+          "tv-healthy-003",
+          "tv-healthy-004",
+          "tv-healthy-005",
+          "tv-healthy-006",
+          "tv-healthy-007",
+          "tv-identity-001",
+          "tv-identity-002",
+          "tv-identity-003",
+          "tv-identity-004",
+          "tv-insuff-001",
+          "tv-insuff-002",
+          "tv-insuff-003",
+          "tv-naming-001",
+          "tv-order-001",
+          "tv-outcome-001",
+          "tv-outcome-002",
+          "tv-outcome-003"
+        ]
+      },
+      "gate": "G9",
+      "status": "fail",
+      "value": {
+        "crashes": 69,
+        "p95_s": 7.357
+      }
+    },
+    {
+      "detail": {
+        "incomplete": [
+          {
+            "case_id": "audiobook-healthy-002",
+            "missing": [
+              "response_model_id"
+            ]
+          }
+        ]
+      },
+      "gate": "G10",
+      "status": "fail",
+      "value": 0.8
+    }
+  ],
+  "harness_git": {
+    "branch": "agent/mrh-devc7m-1021",
+    "dirty": false,
+    "sha": "5c156965f21af28f17d04a5c18127d89c8a25a88"
+  },
+  "metrics": {
+    "abstention": {
+      "appropriate_on_insufficient": 1.0,
+      "false_on_solvable": 0.3333,
+      "forced": 1,
+      "overall": 0.4
+    },
+    "false_diagnoses": {
+      "cases": [],
+      "count": 0
+    },
+    "false_repairs_unsupported_writes": {
+      "cases": [],
+      "count": 0
+    },
+    "latency_s": {
+      "case_max": 7.357,
+      "case_p50": 5.998,
+      "case_p95": 7.357,
+      "load_total": 0.01,
+      "turn_p95": 5.989
+    },
+    "per_class_accuracy": {
+      "corrupt_file": {
+        "accuracy": 1.0,
+        "correct": 3,
+        "n": 3
+      },
+      "healthy": {
+        "accuracy": 0.0,
+        "correct": 0,
+        "n": 1
+      }
+    },
+    "per_media_accuracy": {
+      "audiobook": {
+        "accuracy": 0.75,
+        "correct": 3,
+        "n": 4
+      }
+    },
+    "schema": {
+      "bad_evidence_refs": 0,
+      "fence_wrapped_replies": 0,
+      "first_try_valid": 0.0548,
+      "repair_prompts": 0
+    },
+    "tools": {
+      "calls_by_mode": {
+        "injected": 1,
+        "replay": 1
+      },
+      "calls_by_status": {
+        "error": 1,
+        "partial": 1
+      },
+      "injected_cases": 1,
+      "native_tool_use_items": 0,
+      "organic_failures": 1
+    },
+    "unsupported_any_action_contract_definition": 1,
+    "usage": {
+      "cost_usd_total": null,
+      "input_tokens": 30585,
+      "output_tokens": 610,
+      "records_with_cost": 0
+    }
+  },
+  "missing": [
+    "audiobook-healthy-003",
+    "audiobook-identity-001",
+    "audiobook-identity-002",
+    "audiobook-insuff-001",
+    "audiobook-naming-001",
+    "audiobook-order-001",
+    "audiobook-outcome-001",
+    "audiobook-outcome-002",
+    "epub-corrupt-001",
+    "epub-corrupt-002",
+    "epub-corrupt-003",
+    "epub-corrupt-004",
+    "epub-corrupt-005",
+    "epub-healthy-001",
+    "epub-healthy-002",
+    "epub-healthy-003",
+    "epub-healthy-004",
+    "epub-healthy-005",
+    "epub-healthy-006",
+    "epub-identity-001",
+    "epub-identity-002",
+    "epub-identity-003",
+    "epub-identity-004",
+    "epub-identity-005",
+    "epub-insuff-001",
+    "epub-insuff-002",
+    "epub-naming-001",
+    "epub-outcome-001",
+    "epub-outcome-002",
+    "movie-corrupt-001",
+    "movie-corrupt-002",
+    "movie-corrupt-003",
+    "movie-decoder-001",
+    "movie-decoder-002",
+    "movie-healthy-001",
+    "movie-healthy-002",
+    "movie-healthy-003",
+    "movie-healthy-004",
+    "movie-identity-001",
+    "movie-identity-002",
+    "movie-insuff-001",
+    "movie-naming-001",
+    "movie-order-001",
+    "movie-outcome-001",
+    "movie-outcome-002",
+    "tv-corrupt-001",
+    "tv-corrupt-002",
+    "tv-corrupt-003",
+    "tv-decoder-001",
+    "tv-healthy-001",
+    "tv-healthy-002",
+    "tv-healthy-003",
+    "tv-healthy-004",
+    "tv-healthy-005",
+    "tv-healthy-006",
+    "tv-healthy-007",
+    "tv-identity-001",
+    "tv-identity-002",
+    "tv-identity-003",
+    "tv-identity-004",
+    "tv-insuff-001",
+    "tv-insuff-002",
+    "tv-insuff-003",
+    "tv-naming-001",
+    "tv-order-001",
+    "tv-outcome-001",
+    "tv-outcome-002",
+    "tv-outcome-003"
+  ],
+  "model_digest": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+  "overall": "fail",
+  "requested_model": "qwen3.8:27b",
+  "response_model_ids": [
+    "qwen3.8:27b"
+  ],
+  "run_id": "devc7-qwen3.8-27b",
+  "runtime_version": "0.40.6",
+  "suite_shape": {
+    "checks": {
+      "every_other_class>=2": true,
+      "healthy>=8": true,
+      "held_out_cases>=30": false,
+      "insufficient_evidence_or_ambiguous>=4": true,
+      "media_types_all_four": true,
+      "tool_failure_cases>=3": true
+    },
+    "classes": {
+      "corrupt_file": 21,
+      "decoder_incompatible": 5,
+      "healthy": 13,
+      "identity_mismatch": 14,
+      "insufficient_evidence": 12,
+      "metadata_naming": 5,
+      "order_edition_ambiguity": 3
+    },
+    "media_types": [
+      "audiobook",
+      "epub",
+      "movie",
+      "tv"
+    ],
+    "meets_all_minimums": false,
+    "n": 73,
+    "note": "offender-family rows (#992) are not checked here; the readiness run is held-out only"
+  },
+  "unknown_case_ids": []
+}

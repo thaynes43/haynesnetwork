@@ -1,0 +1,646 @@
+{
+  "action_audit": {
+    "audit_implementation": "v3-prototype",
+    "audit_version": "v3",
+    "checker_rubric": "contract-v3-rubric-3.1",
+    "contract": "contract-v3",
+    "executed": false,
+    "execution_prerequisites": [
+      {
+        "checked_by": "executor",
+        "text": "the release record still links the bound source"
+      },
+      {
+        "checked_by": "executor",
+        "text": "the blocklist entry is recorded so it can be removed"
+      }
+    ],
+    "execution_status": "proposed_not_executed",
+    "intent": {
+      "action": "blocklist_and_search",
+      "class": "corrupt_file",
+      "source": {
+        "ref": "e3"
+      },
+      "target": {
+        "kind": "release_of_source",
+        "source_ref": "e3"
+      }
+    },
+    "note": "recorded proposal only; this harness never executes a write, and nothing was changed",
+    "outcome_step": {
+      "check": "post_replace_verify",
+      "correct": true,
+      "detail": "card='HARBOR LIGHTS / S01E02 / LAMP OIL' decode_clean=False",
+      "expected": "not_repaired",
+      "observed": "not_repaired"
+    },
+    "prerequisites": [
+      {
+        "check": "class_for_action",
+        "detail": "classes for blocklist_and_search: identity_mismatch, corrupt_file",
+        "id": "A-CLASS",
+        "refs": [],
+        "state": "met"
+      },
+      {
+        "check": "located_defect",
+        "detail": "",
+        "id": "D-COR-1",
+        "refs": [
+          "e2.f1"
+        ],
+        "state": "met"
+      },
+      {
+        "check": "managed_app",
+        "detail": "",
+        "id": "A-BLK-1",
+        "refs": [
+          "context.arr.app"
+        ],
+        "state": "met"
+      },
+      {
+        "check": "source_bound",
+        "detail": "the managed record of this item links this file",
+        "id": "A-BLK-2",
+        "refs": [
+          "e3"
+        ],
+        "state": "met"
+      },
+      {
+        "check": "support_grade_defect",
+        "detail": "",
+        "id": "A-BLK-3",
+        "refs": [
+          "e2.f1"
+        ],
+        "state": "met"
+      },
+      {
+        "check": "source_ref_qualifies",
+        "detail": "the cited source record binds the source",
+        "id": "R-SRC",
+        "refs": [
+          "e3"
+        ],
+        "state": "met"
+      },
+      {
+        "check": "release_ref_is_source",
+        "detail": "the release target is the bound source",
+        "id": "R-TGT",
+        "refs": [
+          "e3"
+        ],
+        "state": "met"
+      }
+    ],
+    "references": {
+      "source.ref": "resolved",
+      "target.source_ref": "resolved"
+    },
+    "rubric": "contract-v3-rubric-3.1",
+    "schema_errors": [],
+    "unmet": [],
+    "write_intent": true
+  },
+  "bad_evidence_refs": [],
+  "case_id": "tv-outcome-002",
+  "case_sha256": "cc7a85f28190b1e9b0eedce9749f9bdf3e565ec79067986d114a0cc07d48dace",
+  "config_hash": "be2e0e59d08141c754bca0712f61527a321528b5014d310f776820177b03328e",
+  "decision": {
+    "action": "blocklist_and_search",
+    "class": "corrupt_file",
+    "confidence": 0.99,
+    "evidence_refs": [
+      "e2",
+      "e2.f1",
+      "e3"
+    ],
+    "reason": "The completed decode found H.264 corruption at 0–4 seconds despite exit code 0. The Sonarr record binds this file to the source. The remaining 4–8.046 seconds were not decoded; the located damage supports replacement.",
+    "source": {
+      "ref": "e3"
+    },
+    "target": {
+      "kind": "release_of_source",
+      "source_ref": "e3"
+    },
+    "type": "decision"
+  },
+  "decision_flags": [],
+  "evidence": {
+    "capabilities": [
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "ffprobe"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "decode_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "frame_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "audio_sample"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "ocr"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "epub_inspect"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": false,
+        "statuses": {},
+        "tool": "audiobook_inspect"
+      },
+      {
+        "calls": 0,
+        "live_kind": null,
+        "offered": true,
+        "statuses": {},
+        "tool": "arr_lookup"
+      }
+    ],
+    "gaps": [],
+    "gaps_cited": [],
+    "mode": "replay",
+    "note": "record only: not shown to the model, not scored. A gap is something the run did not verify; a damage finding is evidence, not a gap."
+  },
+  "evidence_format": {
+    "audit_version": "v3",
+    "capabilities": [
+      {
+        "available": true,
+        "backend": "replay",
+        "tool": "ffprobe"
+      },
+      {
+        "available": true,
+        "backend": "replay",
+        "full_decode": "recorded",
+        "offsets_s": [
+          0,
+          4,
+          8,
+          12
+        ],
+        "tool": "decode_sample",
+        "window_s": 4
+      },
+      {
+        "available": true,
+        "backend": "replay",
+        "note": "a frame exists only if the file has a video stream; that is known when the tool is called",
+        "offsets_s": "any",
+        "tool": "frame_sample"
+      },
+      {
+        "available": true,
+        "backend": "replay",
+        "offsets_s": "any",
+        "recorded_reading_ranges_s": [
+          [
+            0,
+            2
+          ]
+        ],
+        "tool": "ocr"
+      },
+      {
+        "available": true,
+        "backend": "stub",
+        "note": "case-provided records only",
+        "tool": "arr_lookup"
+      }
+    ],
+    "checker_rubric": "contract-v3-rubric-3.1",
+    "contract": "contract-v3",
+    "decision_schema": "decision-v3",
+    "evidence_format": "v3.1-format",
+    "excerpt_rule": "xhtml-body-text-3",
+    "excerpt_rules_sha256": "f7bc75e2330ab888b9d3e48fd37860bd410e41b218ef345547da3d0f64b7b7d1",
+    "final_summary": {
+      "client_comparison": null,
+      "coverage": {
+        "chapters": [
+          {
+            "by_stream": {
+              "0:a:0": "unknown",
+              "0:v:0": "unknown",
+              "unrecorded": "damaged"
+            },
+            "end_s": 2.0,
+            "n": 1,
+            "start_s": 0.0,
+            "title": "Cold open"
+          },
+          {
+            "by_stream": {
+              "0:a:0": "unknown",
+              "0:v:0": "unknown",
+              "unrecorded": "damaged"
+            },
+            "end_s": 8.0,
+            "n": 2,
+            "start_s": 2.0,
+            "title": "Lamp Oil"
+          }
+        ],
+        "container": {
+          "by": [
+            "e1"
+          ],
+          "state": "clean"
+        },
+        "duration_s": 8.046,
+        "streams": [
+          {
+            "codec": "h264",
+            "decode": "unknown",
+            "index": 0,
+            "type": "video",
+            "why": "which streams the decode windows covered is not recorded"
+          },
+          {
+            "codec": "aac",
+            "decode": "unknown",
+            "index": 1,
+            "type": "audio",
+            "why": "which streams the decode windows covered is not recorded"
+          }
+        ],
+        "time": {
+          "unrecorded": {
+            "by": [
+              "e2"
+            ],
+            "checked_fraction": 0.497,
+            "clean": [],
+            "damaged": [
+              [
+                0.0,
+                4.0
+              ]
+            ],
+            "not_checked": [
+              [
+                4.0,
+                8.046
+              ]
+            ],
+            "selection": "unknown"
+          }
+        }
+      },
+      "open": [
+        {
+          "available_check": [
+            {
+              "args": {
+                "at": 4
+              },
+              "availability": "available",
+              "scope": "decode_interval",
+              "tool": "decode_sample"
+            },
+            {
+              "args": {
+                "at": 8
+              },
+              "availability": "available",
+              "scope": "decode_interval",
+              "tool": "decode_sample"
+            },
+            {
+              "args": {
+                "full": true
+              },
+              "availability": "available",
+              "scope": "decode_interval",
+              "tool": "decode_sample"
+            }
+          ],
+          "id": "u1",
+          "origin": "unresolved",
+          "scope": {
+            "intervals": [
+              [
+                4.0,
+                8.046
+              ]
+            ],
+            "type": "decode_interval"
+          },
+          "sources": [
+            "e1"
+          ],
+          "text": "nothing was decoded: stream contents are unchecked by this result"
+        },
+        {
+          "available_check": [],
+          "id": "u2",
+          "origin": "unresolved",
+          "scope": {
+            "type": "stream_selection_of_window"
+          },
+          "sources": [
+            "e2"
+          ],
+          "text": "which streams were decoded is not recorded"
+        },
+        {
+          "available_check": [],
+          "id": "u3",
+          "origin": "unresolved",
+          "scope": {
+            "type": "statement_kind"
+          },
+          "sources": [
+            "e3"
+          ],
+          "text": "this result is a record or reading, not an integrity check"
+        },
+        {
+          "available_check": [
+            {
+              "args": {
+                "at": 4
+              },
+              "availability": "available",
+              "scope": "decode_interval",
+              "tool": "decode_sample"
+            },
+            {
+              "args": {
+                "at": 8
+              },
+              "availability": "available",
+              "scope": "decode_interval",
+              "tool": "decode_sample"
+            },
+            {
+              "args": {
+                "full": true
+              },
+              "availability": "available",
+              "scope": "decode_interval",
+              "tool": "decode_sample"
+            }
+          ],
+          "id": "u4",
+          "origin": "coverage.time",
+          "scope": {
+            "intervals": [
+              [
+                4.0,
+                8.046
+              ]
+            ],
+            "stream": "unrecorded",
+            "type": "decode_interval"
+          },
+          "sources": [
+            "e2"
+          ],
+          "text": "not checked: unrecorded, 4-8.046 s"
+        }
+      ]
+    },
+    "format_contract": "v3.1-format",
+    "messages": [
+      {
+        "bytes": [
+          6578
+        ],
+        "id": "evidence",
+        "kind": "initial",
+        "open_total": 4,
+        "pages": 1
+      }
+    ],
+    "note": "derived only from the observations shown to the model; no truth, label, provenance or hidden injection field is an input",
+    "page_contract": "pages-v1",
+    "protocol": "turn-v3",
+    "rubric": "contract-v3-rubric-3.2",
+    "tools_behavior": "v3",
+    "version": "v3.1-format",
+    "wire_bytes": 8192
+  },
+  "evidence_mode": "replay",
+  "evidence_shown": [
+    "e1",
+    "e2",
+    "e3"
+  ],
+  "final_decision_valid": true,
+  "first_try": {
+    "failure_modes": [],
+    "first_reply_valid": true,
+    "note": "any repair, forced decision or protocol violation means the first try was not valid; later attempts are recorded separately in turns[].attempt",
+    "protocol_violations": 0,
+    "repair_prompts": 0,
+    "valid": true,
+    "valid_after_repair": false
+  },
+  "first_try_valid": true,
+  "fixture": {
+    "actual_sha256": "300cd24cf8b78dfbeb305aced3e71f2d4682992eb3b9295b6d98a9e38790c97a",
+    "bytes": 90286,
+    "declared_sha256": "300cd24cf8b78dfbeb305aced3e71f2d4682992eb3b9295b6d98a9e38790c97a",
+    "kind": "local",
+    "verified": true
+  },
+  "fixture_hashes": {
+    "evidence_shown_sha256": {
+      "e1": "ea1d7181603f00f77eff7aa945f041b260628ecbca13d8298083ddc9653b86f9",
+      "e2": "5ee3574ccf2047a1b3fe1fdd8dd72e9d111c0343ff0a1765799ea21b84c32bde",
+      "e3": "b5cbf0a12048d0b08e703e961d3b70a1228d2d84cb80d29c3e564ba5367aa3a5"
+    },
+    "fixture": {
+      "actual_sha256": "300cd24cf8b78dfbeb305aced3e71f2d4682992eb3b9295b6d98a9e38790c97a",
+      "declared_sha256": "300cd24cf8b78dfbeb305aced3e71f2d4682992eb3b9295b6d98a9e38790c97a",
+      "kind": "local",
+      "verified": true
+    }
+  },
+  "forced": false,
+  "forced_reason": null,
+  "guard": {
+    "applied": [],
+    "final_changed": false,
+    "restored": true,
+    "version": "v3"
+  },
+  "harness_git_sha": "5c156965f21af28f17d04a5c18127d89c8a25a88",
+  "harness_version": "dev-c7",
+  "injected_failure": null,
+  "model_case_alias": "case-311680ce",
+  "model_digest": null,
+  "model_digest_na_reason": "hosted API model: no weights digest; usage is taken from the event stream",
+  "outcome": {
+    "check": "post_replace_verify",
+    "correct": true,
+    "detail": "card='HARBOR LIGHTS / S01E02 / LAMP OIL' decode_clean=False",
+    "expected": "not_repaired",
+    "observed": "not_repaired"
+  },
+  "prompt": {
+    "protocol": "turn-v3",
+    "schema_sent": false,
+    "sha256": "79a7fc73b855ccee6964c4752249477b070b79acebc3daf5c9c17a8a6b3eafb5",
+    "turn_schema_sha256": null,
+    "version": "v7"
+  },
+  "protocol_violations": [],
+  "record_version": 1,
+  "refs_to_failed_tools": [],
+  "refs_to_non_ok_tools": [],
+  "repair_prompts": [],
+  "requested_model": "gpt-6-astra",
+  "response_model_ids": [
+    "gpt-6-astra"
+  ],
+  "run_id": "devc7-gpt-6-astra",
+  "runtime_version": "codex-cli 0.162.1",
+  "split": "dev",
+  "started_at": "2026-10-21T05:09:34.438414+00:00",
+  "suite_version": "dev-v1.1",
+  "tool_calls": [],
+  "tool_modes": [],
+  "turns": [
+    {
+      "attempt": "first",
+      "failure_modes": [],
+      "load_s": 0.0,
+      "meta": {
+        "native_tool_items": [],
+        "response_model_source": "rollout",
+        "thread_id": "01a15cdd-60ae-7a33-9908-3f7977c37bc2"
+      },
+      "n": 1,
+      "native": {},
+      "parsed_type": "decision",
+      "raw_request": {
+        "argv": [
+          "codex",
+          "exec",
+          "--json",
+          "-s",
+          "read-only",
+          "--skip-git-repo-check",
+          "--ignore-user-config",
+          "--ignore-rules",
+          "-c",
+          "web_search=\"disabled\"",
+          "-c",
+          "features.multi_agent=false",
+          "-c",
+          "features.image_generation=false",
+          "-c",
+          "features.plugins=false",
+          "-c",
+          "features.skill_search=false",
+          "-c",
+          "features.goals=false",
+          "-c",
+          "features.hooks=false",
+          "-c",
+          "features.sleep_tool=false",
+          "-c",
+          "features.view_image=false",
+          "-c",
+          "features.unified_exec=false",
+          "-c",
+          "features.shell_tool=false",
+          "-c",
+          "features.write_stdin_approval=false",
+          "-c",
+          "features.tool_suggest=false",
+          "-c",
+          "features.worktrees=false",
+          "-c",
+          "features.remote_plugin=false",
+          "-c",
+          "features.apps=false",
+          "-c",
+          "features.browser_use=false",
+          "-c",
+          "features.computer_use=false",
+          "-m",
+          "gpt-6-astra",
+          "-C",
+          "/tmp/mrh-codex-k_ekr6_o",
+          "-c",
+          "model_reasoning_effort=\"high\"",
+          "-"
+        ],
+        "prompt": "You are a media repair triage agent. A media item (movie, TV episode, EPUB book or audiobook) was reported or flagged. Decide what is wrong with it, if anything, using ONLY the evidence you are given and the read-only tools you call. You never change anything, and neither does this system: your action is recorded as a proposal for a human-supervised system. These instructions follow evidence-to-action contract v3 with its rubric v3.2 clarification, and evidence format v3.1-format.\n\nREPLY FORMAT\nEvery reply is exactly ONE JSON object and nothing else: no prose, no markdown fence, nothing after the closing brace. The first key is \"type\". Use only the keys shown, in the order shown; never copy fields of a tool result. Double-quoted keys and strings, no trailing commas.\n1. Tool call (at most 6 per case, counting a rejected call and a page fetch):\n{\"type\":\"tool_call\",\"tool\":\"<a name from tools_available>\",\"why\":\"<=200 chars\",\"args\":{}}\nThe harness runs the tool and sends the result in its next message. Call only a tool named in tools_available: any other call does nothing, uses one of the 6 calls and is recorded as a protocol violation. Tools act on this case's file only. Arguments: ffprobe {}; decode_sample {\"at\":seconds} or {\"full\":true}; frame_sample {\"at\":seconds}; audio_sample {\"at\":seconds,\"stream\":0}; ocr {\"frame\":\"<name from frame_sample>\"} or {\"at\":seconds}; epub_inspect {} or {\"spine\":n,\"offset\":n,\"length\":n}; audiobook_inspect {}; arr_lookup {}; the next page of a result {\"cursor\":\"<its page.next>\"}. If tools_available is empty, decide on the case evidence. Do not repeat a call that failed, timed out or was unavailable.\n2. Decision with action none or escalate:\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<none or escalate>\",\"reason\":\"<=400 chars\",\"confidence\":0.0,\"evidence_refs\":[\"e1\",\"t2\"]}\n3. Decision with a write: the same keys, with \"source\" and \"target\" after \"action\":\n{\"type\":\"decision\",\"class\":\"<class>\",\"action\":\"<write>\",\"source\":{\"ref\":\"<id>\"},\"target\":{\"kind\":\"<kind>\",...},\"reason\":\"<=400 chars\",\"confidence\":0.0,\"evidence_refs\":[\"e1\"]}\nThe target of each write, with exactly these keys:\n- blocklist_and_search: {\"kind\":\"release_of_source\",\"source_ref\":\"<the same id as source.ref>\"}\n- remap: {\"kind\":\"destination_slot\",\"slot_ref\":\"<id of the catalog record of the destination>\",\"slot_free_ref\":\"<id of the record showing the destination has no linked file>\"}\n- rename: {\"kind\":\"rename_of_source\",\"old_value\":\"<the current name, copied exactly>\",\"new_value\":\"<the new name>\"}\n- convert: {\"kind\":\"isolated_copy\",\"allocated_by\":\"executor\"}\nclass is exactly one of: identity_mismatch, corrupt_file, decoder_incompatible, metadata_naming, order_edition_ambiguity, insufficient_evidence, healthy. action is exactly ONE of: none, escalate, blocklist_and_search, remap, rename, convert; never combine two. none and escalate carry no source and no target. Limits are enforced: reason 1 to 400 characters, ids at most 16 characters, at most 12 evidence_refs, names at most 200 characters.\n\nSOURCE AND TARGET\nsource.ref binds the proposal to the item under triage: with a managing app (context.arr.app), the id of a complete catalog record (arr_lookup) whose linked file (relativePath or file id) is this case's file; without one (context.arr.app null), \"case_item\". When no shown record binds the source, an offered arr_lookup may show the managing app's record. Source binding only says which file the proposal is about; it is not evidence of what the file contains or that it is healthy. The target depends on the action. blocklist_and_search: the release of the bound source. remap: the destination slot, cited by a catalog record of that slot plus a record that shows it free (a file explicitly null or empty, or hasFile false; a missing field shows nothing). rename: the bound source; old_value is the literal current name as shown (context.filename, or a shown tag or title); new_value a bare name (no directory, same extension) made only of words shown in the catalog and the current name, agreeing with the catalog. Every asserted episode marker must match the target; an erroneous current marker cannot be reused. convert: an isolated copy that the executor allocates and names. You do not name it: a missing destination name is not a missing prerequisite, and never invent a path. Collision, overwrite and allocation checks are made by the executor at execution time, not by you.\n\nTHE EVIDENCE (format v3.1-format)\nCase evidence is e1, e2, ...; your tool results t1, t2, .... A finding has an id like t2.f1, a conflict t2.c1, a collector veto t2.veto. Cite only ids you were shown.\n- Each result (an entry of items, or a tool result itself) has execution, findings, scope, conflicts, a veto if any, and the ids of the open items it is a source of (open in an item, open_ids in a tool result).\n- execution (did the tool run) is separate from what it found: state (ran, failed, timed_out, unavailable), raw status (ok, partial, error, timeout, unavailable), a failure's cause (input, tool or unknown: the collector's claim, not proof of damage), completion, output_truncated. ok means the tool ran, never that the file is clean; a failure to run proves nothing about the media.\n- findings: kind, location, detail, known_defect. known_defect true is positive damage at that location; known_defect false (decoder_warning, probe_messages, kinds ending _unclassified) is neither damage nor clean.\n- scope: requested against completed; a result is clean only inside its completed scope. conflicts mark a result that contradicts itself (ok with a defect, exit 0 with decoder errors): an ok status does not cancel damage.\n- facts: the parsed values. A field is in one of six presence states: absent (not there), null, empty (an explicitly empty string, list or object), false, zero, populated; they never stand for each other. presence names the state of a value that is null, empty, false or zero, and marks a field not_checked (nothing that would carry it ran) or unknown (it ran and the field cannot be read). An explicitly empty value is an observation; an absent one is not evidence of anything.\n- open: every statement still unresolved over everything shown, once, with all its source ids (sources), its scope and available_check. Its wording is neutral: it says what was or was not checked, never that a check is needed or that the item is or is not healthy. A tool result lists only open items that are new or changed, the ids no longer open in open_removed, and coverage and client_comparison when they changed; open_total counts every open item. An item keeps its id while its text and scope are unchanged.\n- available_check: zero or more offered tools that may inspect that scope, with args and availability: available, unavailable, unknown, called (an equivalent call is already shown, see already_shown_as) or called_failed. A link means \"this tool may inspect this scope\", never \"it will resolve it\", and says nothing about what the tool would find. No candidate means no offered tool can inspect that scope, except EPUB body text: epub_inspect reads it with excerpt arguments when its capability lists excerpts.\n- alerts (conflicts, known defects, vetoes, execution failures) and open_total repeat on every page. A collector veto blocks healthy and names no location; do not invent one.\n- coverage records what was checked clean, found damaged or not checked. client_comparison (only with a stated client) gives supported, unsupported or unknown per field of the selected streams and how they were selected; unsupported is not damage. capabilities say per offered tool whether it is available, which offsets are recorded and whether a full decode exists.\n- kinds: an item's provenance (observed: read by a tool of this run; recorded: case evidence or a replayed recording; reported: a prior record's claim) and the statement kind of each of its declaration, content and report fields.\n- EPUB body text: epub_inspect {} also shows facts.body (the index: each spine item's position, archive member, characters and observed headings with their offsets; and excerpts: the first 280 code points of the first 3 spine items) and facts.declared_toc (the package's declared table of contents, null when none is declared). Body text excludes a document's head and its navigation regions (a table of contents inside a spine document stays a declaration); an index item's navigation_characters says how much was set apart. epub_inspect {\"spine\":n,\"offset\":n,\"length\":n} reads one excerpt: code points offset to end of that spine item's body text (length 1 to 1200, default 600); next_offset continues it and is null at the end. Text you were not shown is unread: an unavailable or failed excerpt shows nothing, and nothing stands in for it.\n- The catalog says what the item should be (the context, arr_lookup). Declarations are what the file says about itself (file name, tags, chapter titles, package metadata, a declared table of contents, stream languages, container duration). Content is what was observed in the media (on-screen text, EPUB body excerpts and observed body headings). An observed heading is an observation, not by itself a verdict on identity. spine_heads (kind legacy_mixed) are the first six words of ALL character data of a spine document, its head title, styles and navigation included: they are not body text and establish no content identity. A prior record carries report: the kind derived only from its stated evidence_method (hash words: report_hash; declaration words such as OPF, metadata, tags or file names: report_declaration, also beside content words; content words alone: report_content; a negated, missing or unrecognised method: report_unknown), the method as stated and the words it matched. Its observed fields, content_titles included, are that report's claim, never an observation of this run, and content only when its kind is report_content. Integrity results (probe, decode, package checks) never establish identity.\n\nPAGES\nEvery message is at most 8192 bytes. One that does not fit carries a page object (n, of, next, elsewhere); a list says \"<field>_shown\":\"n of N\"; a long text ends \"...[+N chars...]\". What you have not seen is unseen, neither clean nor damaged. next is an opaque cursor: copy it exactly. Reading a page is a tool call (any offered tool) and uses one of the 6 calls; it reruns nothing. Cite the ids of the results it came from.\n\nDIAGNOSIS PREREQUISITES (what establishes each class)\nEach is checked against the actual value, its scope, its status and its kind. Only results that ran to completion (state ran, status ok) and the case context support one, unless stated otherwise.\n- corrupt_file: a located known_defect finding from a tool that ran (a partial or timed-out result keeps its positive findings for the diagnosis).\n- decoder_incompatible: a stated client, and an unsupported verdict on a selected stream whose selection is recorded or the only stream of its type.\n- identity_mismatch: a content observation (or a report whose method is content) disagreeing with the catalog on an identity or edition attribute (title, episode number, episode title, author, language, year), after the case's aliases, alternate titles, editions and orderings. Declarations, tags, reported hashes, a duration, a clean decode or a catalog record never establish it: when only declarations disagree and no content settles it, identity is contested, not contradicted.\n- metadata_naming: a naming-surface value that is explicitly empty or differs from the catalog (movie and tv: the file name; epub: the file name, dc:title, dc:creator; audiobook: the file name and the title, album and artist tags), AND a good copy (a positively clean container or package result), AND identity neither contested nor contradicted. Compare each part's album and artist with the catalog. A part's title is a chapter name and is exempt from that comparison. Explicit emptiness still matters for all naming fields, including empty lists and empty string elements.\n- order_edition_ambiguity: two or more legitimate candidates listed by the case (orderings, editions) that the observations fit, and no case-supplied choice (series_order, library_episode_order, a wanted or expected edition) naming one of them.\n- healthy: H1 to H5 all hold. H1: an integrity result at the container or package level ran with status ok and is positively clean inside its scope (a parsed container with streams, a package with every stage clean); a clean decode window adds scope but does not stand alone, and audio levels are not an integrity result. H2: no known_defect finding and no collector veto in any shown result, whatever its execution state. H3: no material uncertainty (M1 to M9). H4: identity uncontradicted; positive content confirmation of identity is not required. H5: no other class is established. healthy means no material problem in the checks performed, with the unchecked scope stated; it never certifies the whole file, and needs no full decode.\n- insufficient_evidence: no other class is established and healthy is not established.\n\nMATERIAL UNCERTAINTY\nWith no specific complaint (notes_for_model only) the question is whether anything is wrong that one of the actions addresses, on five axes: integrity, identity, naming, ordering and, with a stated client, client. A context.question adds its subject. A point is material when resolving it could change the class or the action. With no specific complaint, these are material and nothing else is:\nM1 integrity: no positively clean integrity result at the container or package level (each failed, timed out, was unavailable or unknown, or none was made).\nM2 integrity: an unclassified diagnostic inside a checked scope (kinds ending _unclassified, probe_messages, input_failure); a decoder_warning alone is not material.\nM3 integrity: a conflict shown in conflicts (ok with a defect, exit 0 with decoder errors, decoded_span_shorter_than_duration, a duration mismatch). A full decode is complete only when it ran to completion (status ok) with exit 0 and its decoded span reaches the shown container duration within 1 s (container rounding and unequal stream lengths): a shortfall up to and including 1 s is not a conflict, and a shortfall above 1 s is the conflict decoded_span_shorter_than_duration. With the duration or the span not shown, completion is unknown, not a conflict. A failed, timed-out or partial result never shows a completed full decode, whatever its fields say, and a bounded window answering a full request (request_not_honored) only limits the completed scope. The tolerance never adds the remainder to what was checked (coverage keeps it not checked) and never certifies the whole file.\nM4 integrity: a signal pointing into the unchecked remainder: a container duration differing from the catalog runtime by more than the larger of 1 s and 5 %, or a complaint naming an unchecked part. A successfully completed bounded window leaves an ordinary unchecked remainder, which alone is not material.\nM5 identity: a declaration, content or report disagreeing with the catalog on an identity or edition attribute that no content observation settles (a part's title is a chapter name and is exempt from the comparison); an incomplete result that disagrees counts too.\nM6 naming: a naming-surface value that is explicitly empty or differs from the catalog (absent is not evidence). For an audiobook, a complete ffprobe or audiobook_inspect result whose container-level tag map (format.tags or tags) is explicitly empty ({}) is an explicitly empty naming surface: cite that result. Its title, album and artist are absent, not each empty. A tag map that is absent, null, false or zero, or that comes from an incomplete result, shows nothing; inside a populated map an absent field is not evidence, and a null, false or zero field is not empty.\nM7 ordering: two legitimate candidates listed by the case that the observations fit, with no case-supplied choice settling them.\nM8 client: a stated client with an unknown verdict, an unread field, or an ambiguous or unrecorded stream selection.\nM9 any: a complaint whose subject no shown observation reaches.\nAn unchecked remainder alone is not material, and it is never clean.\n\nACTION PREREQUISITES (what a write needs besides its class)\nA write needs the diagnosis prerequisites of its class AND its action prerequisites, and each id you cite must fill its role. Execution checks belong to the executor.\n- none: only for healthy.\n- escalate: any class, no prerequisite: the item goes to a human with your reason.\n- blocklist_and_search (identity_mismatch or corrupt_file): a managing app; the source bound; for corrupt_file a located known_defect from a result that ran to completion or from an error result whose cause is not tool; for identity_mismatch the content disagreement from a completed result. The current file is later replaced; only the blocklist entry can be undone.\n- remap (identity_mismatch or metadata_naming): a managing app; the source bound; content naming the item the file really is, which the catalog lists; an evidenced free destination slot (every complete record of it shows no linked file). The contract leaves open which of the two classes a remap belongs to; both are accepted.\n- rename (metadata_naming): the source bound; identity content-verified (a content observation agrees with the catalog on an identity attribute and nothing contradicts it); the current naming-surface value shown; the catalog value shown and different.\n- convert (decoder_incompatible): the source bound; a stated client; an unsupported selected stream with a recorded or only-stream selection. Neither a clean full decode of the source nor a destination name is a prerequisite.\n\nDECIDING\n1. Establish the class from its diagnosis prerequisites, then the action from its action prerequisites, and keep the two apart: when the class is established but a write's action prerequisites are not, keep the class and choose escalate; insufficient_evidence is for a diagnosis that is itself unresolved.\n2. Positive damage supports corrupt_file where it was found; clean results elsewhere do not cancel it. A clean integrity result does not settle identity, naming or the client: compare those separately.\n3. Before you decide healthy or escalate over an open item, check whether it is material (M1 to M9) and look at its available_check. A candidate that is available and not yet called, including an offered check whose result is recorded (see capabilities), is one to consider while calls remain: it may inspect that scope, and it may or may not settle it. Do not spend calls on open items that are not material, and do not repeat a called or called_failed check.\n4. Escalate when the evidence leaves the class or the action open, and say in the reason what was and was not verified. Escalating, leaving the item alone and proposing a write are all decisions; choose the one the evidence supports.\n5. Citing: list in evidence_refs the results that support your claim: results that ran to completion, or an error result with a known_defect finding whose cause is not tool. A partial or timed-out result keeps its positive observations for your reason but does not support a write on its own; never list an unavailable result. Your class, action, source and target must agree with your reason.\n6. If a tool failed but other verified evidence settles the question, decide on that and say the tool failed.\n\n---\n\n[CASE]\n{\"case_id\":\"case-311680ce\",\"media_type\":\"tv\",\"context\":{\"title\":\"Harbor Lights S01E02\",\"filename\":\"hl.s01e02.1080p.web.h264-grp.mkv\",\"expected\":{\"series\":\"Harbor Lights\",\"season\":1,\"episode\":2,\"episode_title\":\"Lamp Oil\",\"runtime_s\":8,\"language\":\"en\"},\"arr\":{\"app\":\"sonarr\",\"ids\":{\"seriesId\":990001,\"episodeId\":990102,\"episodeFileId\":990202,\"note\":\"fictional ids\"}},\"notes_for_model\":\"A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the evidence supports.\"},\"tools_available\":[\"ffprobe\",\"decode_sample\",\"frame_sample\",\"ocr\",\"arr_lookup\"],\"tool_call_budget\":6,\"capabilities\":[{\"tool\":\"ffprobe\",\"backend\":\"replay\",\"available\":true},{\"tool\":\"decode_sample\",\"backend\":\"replay\",\"available\":true,\"offsets_s\":[0,4,8,12],\"window_s\":4,\"full_decode\":\"recorded\"},{\"tool\":\"frame_sample\",\"backend\":\"replay\",\"available\":true,\"offsets_s\":\"any\",\"note\":\"a frame exists only if the file has a video stream; that is known when the tool is called\"},{\"tool\":\"ocr\",\"backend\":\"replay\",\"available\":true,\"offsets_s\":\"any\",\"recorded_reading_ranges_s\":[[0,2]]},{\"tool\":\"arr_lookup\",\"backend\":\"stub\",\"available\":true,\"note\":\"case-provided records only\"}],\"evidence_format\":\"v3.1-format\",\"evidence\":{\"alerts\":[{\"type\":\"conflict\",\"id\":\"e2.c1\",\"kind\":\"exit_zero_with_decoder_errors\",\"src\":\"e2\"},{\"type\":\"conflict\",\"id\":\"e2.c2\",\"kind\":\"status_ok_with_defect\",\"src\":\"e2\"},{\"type\":\"defect\",\"id\":\"e2.f1\",\"kind\":\"decoder_errors\",\"src\":\"e2\"}],\"open_total\":4,\"items\":[{\"id\":\"e1\",\"tool\":\"ffprobe\",\"args\":{\"fixture\":\"file\"},\"execution\":{\"state\":\"ran\",\"status\":\"ok\",\"completion\":\"complete\",\"output_truncated\":false},\"findings\":[],\"scope\":{\"requested\":{\"what\":\"container, stream and chapter metadata\"},\"completed\":{\"streams\":2,\"chapters\":2}},\"open\":[\"u1\"]},{\"id\":\"e2\",\"tool\":\"decode_sample\",\"args\":{\"ss\":0,\"t\":4},\"execution\":{\"state\":\"ran\",\"status\":\"ok\",\"completion\":\"complete\",\"output_truncated\":false},\"findings\":[{\"id\":\"e2.f1\",\"kind\":\"decoder_errors\",\"known_defect\":true,\"location\":{\"part\":\"decode\",\"start_s\":0.0,\"end_s\":4.0},\"detail\":\"[h264 @ 0x0] cabac decode of qscale diff failed at 13 11 [h264 @ 0x0] error while decoding MB 13 11, bytestream -5\",\"src\":\"e2\"}],\"scope\":{\"requested\":{\"at_s\":0.0},\"completed\":{\"streams\":\"unknown\",\"start_s\":0.0,\"end_s\":4.0},\"intervals\":[{\"streams\":[\"unrecorded\"],\"start_s\":0.0,\"end_s\":4.0,\"state\":\"damaged\",\"basis\":\"observed\"}]},\"conflicts\":[{\"id\":\"e2.c1\",\"kind\":\"exit_zero_with_decoder_errors\",\"detail\":\"the decoder exited 0 but printed errors: an exit code of zero does not mean the data decoded cleanly\",\"src\":\"e2\",\"refs\":[\"e2.f1\"]},{\"id\":\"e2.c2\",\"kind\":\"status_ok_with_defect\",\"detail\":\"the tool reported status ok and also reported a defect: ok means the tool ran, not that the file has no defect\",\"src\":\"e2\",\"refs\":[\"e2.f1\"]}],\"open\":[\"u2\",\"u4\"]},{\"id\":\"e3\",\"tool\":\"arr_lookup\",\"args\":{\"app\":\"sonarr\",\"series\":\"Harbor Lights\",\"season\":1,\"episode\":2},\"execution\":{\"state\":\"ran\",\"status\":\"ok\",\"completion\":\"complete\",\"output_truncated\":false},\"findings\":[],\"scope\":{},\"open\":[\"u3\"]}],\"facts\":{\"e1\":{\"container\":\"matroska,webm\",\"duration_s\":8.046,\"size_bytes\":90286,\"bit_rate_bps\":89769,\"tags\":{\"episode_sort\":\"2\",\"season_number\":\"1\",\"show\":\"Harbor Lights\",\"title\":\"Lamp Oil\"},\"streams\":[{\"index\":0,\"type\":\"video\",\"codec\":\"h264\",\"profile\":\"High\",\"pix_fmt\":\"yuv420p\",\"bit_depth\":8,\"width\":256,\"height\":192},{\"index\":1,\"type\":\"audio\",\"codec\":\"aac\",\"profile\":\"LC\",\"channels\":1,\"sample_rate_hz\":22050}],\"chapters\":[{\"start_s\":0.0,\"end_s\":2.0,\"title\":\"Cold open\"},{\"start_s\":2.0,\"end_s\":8.0,\"title\":\"Lamp Oil\"}],\"stderr_lines\":[]},\"e2\":{\"exit_code\":0,\"frames\":40,\"decoded_s\":4.0,\"error_lines\":[\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\",\"[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\",\"[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\"],\"diagnostics\":[{\"part\":\"decode\",\"text\":\"[in#0/matroska,webm @ 0x0] Unknown-sized element at 0x0 inside parent with finite size\",\"class\":\"unclassified\"},{\"part\":\"decode\",\"text\":\"[h264 @ 0x0] cabac decode of qscale diff failed at 13 11\",\"class\":\"damage\"},{\"part\":\"decode\",\"text\":\"[h264 @ 0x0] error while decoding MB 13 11, bytestream -5\",\"class\":\"damage\"}]},\"e3\":{\"app\":\"sonarr\",\"episode\":{\"episode\":2,\"runtime_s\":8,\"season\":1,\"title\":\"Lamp Oil\"},\"file\":{\"relativePath\":\"hl.s01e02.1080p.web.h264-grp.mkv\",\"size\":90286},\"series\":\"Harbor Lights\",\"series_order\":\"aired\"}},\"presence\":{\"e1\":{\"stderr_lines\":\"empty\"}},\"open\":[{\"text\":\"nothing was decoded: stream contents are unchecked by this result\",\"scope\":{\"type\":\"decode_interval\",\"intervals\":[[4.0,8.046]]},\"sources\":[\"e1\"],\"origin\":\"unresolved\",\"id\":\"u1\",\"available_check\":[{\"tool\":\"decode_sample\",\"args\":{\"at\":4},\"scope\":\"decode_interval\",\"availability\":\"available\"},{\"tool\":\"decode_sample\",\"args\":{\"at\":8},\"scope\":\"decode_interval\",\"availability\":\"available\"},{\"tool\":\"decode_sample\",\"args\":{\"full\":true},\"scope\":\"decode_interval\",\"availability\":\"available\"}]},{\"text\":\"which streams were decoded is not recorded\",\"scope\":{\"type\":\"stream_selection_of_window\"},\"sources\":[\"e2\"],\"origin\":\"unresolved\",\"id\":\"u2\",\"available_check\":[]},{\"text\":\"this result is a record or reading, not an integrity check\",\"scope\":{\"type\":\"statement_kind\"},\"sources\":[\"e3\"],\"origin\":\"unresolved\",\"id\":\"u3\",\"available_check\":[]},{\"text\":\"not checked: unrecorded, 4-8.046 s\",\"scope\":{\"type\":\"decode_interval\",\"stream\":\"unrecorded\",\"intervals\":[[4.0,8.046]]},\"sources\":[\"e2\"],\"origin\":\"coverage.time\",\"id\":\"u4\",\"available_check\":[{\"tool\":\"decode_sample\",\"args\":{\"at\":4},\"scope\":\"decode_interval\",\"availability\":\"available\"},{\"tool\":\"decode_sample\",\"args\":{\"at\":8},\"scope\":\"decode_interval\",\"availability\":\"available\"},{\"tool\":\"decode_sample\",\"args\":{\"full\":true},\"scope\":\"decode_interval\",\"availability\":\"available\"}]}],\"coverage\":{\"duration_s\":8.046,\"container\":{\"state\":\"clean\",\"by\":[\"e1\"]},\"time\":{\"unrecorded\":{\"clean\":[],\"damaged\":[[0.0,4.0]],\"by\":[\"e2\"],\"not_checked\":[[4.0,8.046]],\"checked_fraction\":0.497,\"selection\":\"unknown\"}},\"streams\":[{\"index\":0,\"type\":\"video\",\"codec\":\"h264\",\"decode\":\"unknown\",\"why\":\"which streams the decode windows covered is not recorded\"},{\"index\":1,\"type\":\"audio\",\"codec\":\"aac\",\"decode\":\"unknown\",\"why\":\"which streams the decode windows covered is not recorded\"}],\"chapters\":[{\"n\":1,\"title\":\"Cold open\",\"start_s\":0.0,\"end_s\":2.0,\"by_stream\":{\"0:a:0\":\"unknown\",\"0:v:0\":\"unknown\",\"unrecorded\":\"damaged\"}},{\"n\":2,\"title\":\"Lamp Oil\",\"start_s\":2.0,\"end_s\":8.0,\"by_stream\":{\"0:a:0\":\"unknown\",\"0:v:0\":\"unknown\",\"unrecorded\":\"damaged\"}}]}}}\n\n[HARNESS]\nGive your next reply now: exactly one JSON object, nothing else."
+      },
+      "raw_response": "{\"type\":\"thread.started\",\"thread_id\":\"01a15cdd-60ae-7a33-9908-3f7977c37bc2\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"type\\\":\\\"decision\\\",\\\"class\\\":\\\"corrupt_file\\\",\\\"action\\\":\\\"blocklist_and_search\\\",\\\"source\\\":{\\\"ref\\\":\\\"e3\\\"},\\\"target\\\":{\\\"kind\\\":\\\"release_of_source\\\",\\\"source_ref\\\":\\\"e3\\\"},\\\"reason\\\":\\\"The completed decode found H.264 corruption at 0–4 seconds despite exit code 0. The Sonarr record binds this file to the source. The remaining 4–8.046 seconds were not decoded; the located damage supports replacement.\\\",\\\"confidence\\\":0.99,\\\"evidence_refs\\\":[\\\"e2\\\",\\\"e2.f1\\\",\\\"e3\\\"]}\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":28845,\"cached_input_tokens\":7552,\"cache_write_input_tokens\":0,\"output_tokens\":156,\"reasoning_output_tokens\":35}}\n",
+      "reply_valid": true,
+      "response_model": "gpt-6-astra",
+      "text": "{\"type\":\"decision\",\"class\":\"corrupt_file\",\"action\":\"blocklist_and_search\",\"source\":{\"ref\":\"e3\"},\"target\":{\"kind\":\"release_of_source\",\"source_ref\":\"e3\"},\"reason\":\"The completed decode found H.264 corruption at 0–4 seconds despite exit code 0. The Sonarr record binds this file to the source. The remaining 4–8.046 seconds were not decoded; the located damage supports replacement.\",\"confidence\":0.99,\"evidence_refs\":[\"e2\",\"e2.f1\",\"e3\"]}",
+      "usage": {
+        "cached_input_tokens": 7552,
+        "cost_usd": null,
+        "input_tokens": 28845,
+        "output_tokens": 156,
+        "reasoning_output_tokens": 35
+      },
+      "validation_errors": [],
+      "wall_s": 6.75
+    }
+  ],
+  "unverified_parts": [],
+  "usage": {
+    "cost_reported": false,
+    "cost_usd": null,
+    "input_tokens": 28845,
+    "output_tokens": 156
+  },
+  "wall": {
+    "case_excl_load_s": 6.764,
+    "load_s": 0.0,
+    "tool_s": [],
+    "total_s": 6.764,
+    "turn_s": [
+      6.75
+    ]
+  },
+  "write_rejection": {
+    "attempts": [],
+    "forced_after_rejected_write": false,
+    "note": "record only: a rejected write decision never became the decision; forced_after_rejected_write means the repair also failed and the harness forced insufficient_evidence/escalate",
+    "rejected_write_attempts": 0,
+    "repaired_to_valid_decision": false
+  }
+}
