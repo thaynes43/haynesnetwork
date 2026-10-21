@@ -566,3 +566,19 @@ This amendment applies exactly the fixes both verdicts asked for. **Still no mod
 | 2 | Astra 2, Opus must-fix | **`predictions-a5.json`** (sha256 `eb0890f968fc4865cfb709a6619e6714c37996ac08517bc9291441379496b6ae`) applies one rule (its `_about`). A check is warranted at the **initial** prefix when it inspects a material item **and** its result could change the class or the action, given the other prerequisites. **W1:** integrity, when M1 is open. **W2:** content, when the shown declarations contest identity and an offered tool can deliver content not already delivered. **W3:** `arr_lookup`, when a write class is established initially, the item is unbound and **no lookup result is already shown**. Checks that become warranted only after another read are not initial obligations. Result: 7 cases (epub-insuff-001 W1; epub-insuff-002, epub-identity-003, epub-naming-001 and tv-identity-004 W2; movie-decoder-001 and tv-identity-002 W3). The book cases, the two audiobook rename cases and epub-healthy-005 carry none, because each already shows its LazyLibrarian lookup result. `ceiling-a5.json` gives the same views as a3 and a4. a4 and every earlier file stay unchanged |
 | 3 | Opus minor | A final row is added to the §13 table: **14, anything else → D** |
 | 4 | Process | The go is given on these exact fixes. **Astra, the independent results reviewer, arbitrates every category after the run.** Any residual disagreement about an obligation or a judgement is D, never credit |
+
+## 15. GO
+
+**2026-10-21T14:14:48Z: GO.** Written by the coordinator after the following:
+- **Opus:** go on Amendment 5.
+- **Astra:** `AUDIT-ASTRA-42`, go-with-amendments, with no remaining blocker to the measurement. Its fixes are applied
+  exactly in Amendment 5.
+- **Pre-run checks 1–6 at `42291dcc`** all pass. They are recorded in the journal as `prerun-checks-a5.md`.
+
+**The run.** One attempt, run id `devval-opus-5-5`, using:
+- the registered §3 command, with `--out /home/dev/work/mrh-val-runs/devval-opus-5-5`;
+- the §10 environment and shim launch;
+- the tripwire watcher.
+
+**No model call was made before this commit.** The results reviewer applies the §13 table as amended in §14. The
+reviewer reads row 4 as "a warranted check never attempted → D, whatever budget remains".
