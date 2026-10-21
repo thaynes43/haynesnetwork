@@ -3,6 +3,7 @@
 Stages follow the suite's recorded evidence: zip_open, zip_crc, opf_parse, manifest.  A failure in one of these is
 status `error` with cause `input` (the file is damaged; same convention as a failing ffprobe), or cause `tool` when the collector's own limit or the environment (a size cap, a permission error) stopped it.  Later problems
 (spine, XHTML, mimetype) are findings inside an `ok` record with `valid: false`."""
+import json
 import posixpath
 import sys
 import xml.etree.ElementTree as ET
@@ -50,14 +51,40 @@ def _err(e):
     return '%s: %s' % (type(e).__name__, str(e)[:200])
 
 
-NAME_CHARS_LIVE2 = 200
+NAME_BYTES_LIVE2 = 200       # live-2: a reported member name takes at most 200 bytes in a tool result (UTF-8, JSON-escaped), plus the cut marker
+LIST_BYTES_LIVE2 = 600       # live-2: a reported list of names takes at most 600 bytes; the names left out are counted ('+N more')
+PARSE_FAILED_BYTES_LIVE2 = 1200      # live-2: the parse_failed entries ({member, error}) take at most 1200 bytes; parse_failed_count counts them all
+
+
+def _jlen(value):
+    """The bytes `value` takes in a tool result (json.dumps, ensure_ascii=False, UTF-8, what evidence.to_tool_result writes)."""
+    return len(json.dumps(value, ensure_ascii=False).encode('utf-8'))
 
 
 def _name_live2(name):
-    """live-2: a member name as the record reports it, cut at 200 characters like `_err` cuts a message (the cut says how much is left out), so a long href or
-    member name cannot push the record past a tool-result cap and take the failed stage with it.  The harness's cut marker is read as no text by the typed
-    layer's classifier (evidence_v2.HARNESS_MARKER_RX)."""
-    return name if len(name) <= NAME_CHARS_LIVE2 else '%s...[+%d chars]' % (name[:NAME_CHARS_LIVE2], len(name) - NAME_CHARS_LIVE2)
+    """live-2: a member name as the record reports it, at most NAME_BYTES_LIVE2 bytes in a tool result (a multibyte or escaped character counts what it
+    takes), cut with `...[+N chars]`, a harness cut marker the typed layer's classifier reads as no text (evidence_v2.HARNESS_MARKER_RX)."""
+    if _jlen(name) - 2 <= NAME_BYTES_LIVE2:
+        return name
+    out, size = [], 0
+    for ch in name:
+        b = _jlen(ch) - 2
+        if size + b > NAME_BYTES_LIVE2:
+            break
+        out.append(ch)
+        size += b
+    return '%s...[+%d chars]' % (''.join(out), len(name) - len(out))
+
+
+def _names_live2(names, budget=LIST_BYTES_LIVE2):
+    """live-2: -> (the cut names that fit `budget` bytes as a list, the number left out).  At least one name is listed."""
+    shown = []
+    for n in names:
+        cut = _name_live2(n)
+        if shown and _jlen(shown + [cut]) > budget:
+            break
+        shown.append(cut)
+    return shown, len(names) - len(shown)
 
 
 def _resolve(base, href):
@@ -88,7 +115,7 @@ def collect_epub(ctx, started):
     b = used_bounds(ctx, EPUB_BOUNDS)
     live2 = getattr(ctx, 'live_behavior', 'live-1') == 'live-2'
     resolve = _resolve_live2 if live2 else _resolve
-    name = _name_live2 if live2 else (lambda n: n)       # live-2: every member name the record reports is cut at 200 characters
+    name = _name_live2 if live2 else (lambda n: n)       # live-2: the member names the failure messages and lists report are cut at 200 bytes
     path = Path(ctx.path)
     out = {'valid': None, 'stages_passed': [], 'findings': []}
     cov_ok = []
@@ -137,7 +164,14 @@ def collect_epub(ctx, started):
                 read_total += n
                 checked += 1
             except Exception as e:  # noqa: BLE001 - Bad CRC-32, truncated member, unsupported compression
-                crc_fail = '%s in member %s' % (_err(e), i.filename)
+                if not live2:
+                    crc_fail = '%s in member %s' % (_err(e), i.filename)
+                elif name(i.filename) != i.filename and isinstance(e, zipfile.BadZipFile) and str(e).startswith('Bad CRC-32 for file '):
+                    # live-2: zipfile's message quotes the whole name, which _err cuts; with the suffix cut as well the CRC failure could not be told from
+                    # the cut text, so it is written in the harness's own allow-listed wording, with the exception type kept
+                    crc_fail = 'BadZipFile: CRC mismatch in member %s' % name(i.filename)
+                else:
+                    crc_fail = '%s in member %s' % (_err(e), name(i.filename))
                 crc_cause = _cause(e)
                 break
         out['crc_members_checked'] = checked
@@ -211,8 +245,14 @@ def collect_epub(ctx, started):
                 missing.append(target)
         out['manifest_items'] = len(manifest)
         if missing:
-            out['manifest_missing'] = [name(m) for m in missing[:10]]
-            return fail('manifest', 'manifest names %d member(s) that are not in the archive: %s' % (len(missing), [name(m) for m in missing[:5]]), cov_ok)
+            if not live2:
+                out['manifest_missing'] = missing[:10]
+                return fail('manifest', 'manifest names %d member(s) that are not in the archive: %s' % (len(missing), missing[:5]), cov_ok)
+            shown, more = _names_live2(missing[:10])          # live-2: one byte-budgeted list, in the message (and so the reason) and in manifest_missing
+            out['manifest_missing'] = shown
+            if more:
+                out['manifest_missing_omitted'] = len(missing) - len(shown)
+            return fail('manifest', 'manifest names %d member(s) that are not in the archive: %s%s' % (len(missing), shown, ' (+%d more)' % (len(missing) - len(shown)) if len(missing) > len(shown) else ''), cov_ok)
         out['stages_passed'].append('manifest')
         cov_ok.append('all %d manifest item(s) exist in the archive' % len(manifest))
         # --- spine
@@ -255,7 +295,10 @@ def collect_epub(ctx, started):
                 chars += sum(len((t or '').strip()) for t in tree.itertext())
             except ET.ParseError as e:
                 failed.append({'member': name(target), 'error': _err(e)})
-        out['xhtml'] = {'spine_documents': len(docs), 'parsed_ok': parsed, 'parse_failed': failed[:10], 'parse_failed_count': len(failed),
+        shown_failed = failed[:10]
+        if live2:       # live-2: the listed entries take at most PARSE_FAILED_BYTES_LIVE2 bytes (at least one); parse_failed_count counts every one
+            shown_failed = failed[:1] + [f for k, f in enumerate(failed[1:10], 2) if _jlen(failed[:k]) <= PARSE_FAILED_BYTES_LIVE2]
+        out['xhtml'] = {'spine_documents': len(docs), 'parsed_ok': parsed, 'parse_failed': shown_failed, 'parse_failed_count': len(failed),
                         'skipped_over_size_cap': skipped_big, 'skipped_entity_declarations': skipped_entity,
                         'skipped_over_doc_cap': max(0, len(docs) - len(todo))}
         out['spine_characters'] = chars

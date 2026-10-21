@@ -20,6 +20,9 @@ item with an href, one without an id included, as tools v4 does.
 Review round of f399cda0 (the coordinator's Opus review, AUDIT-ASTRA-48): live-2 keeps live-1's 3-line, 163-character window budget, classifies lines whole
 before the cut and shows a hidden damage message in an elided form; the live-2 EPUB record cuts reported member names at 200 characters; present
 `data:` / `urn:` / `mailto:` members are clean on both paths; only the kinds live-2 changes are stamped.  Each new `*_live2` test fails at f399cda0.
+Review round of 8162e028 (AUDIT-ASTRA-52): the window budget is the BYTES live-1's own list takes in a tool result (CJK tails), a recognised reading is shown
+behind '[...] ' when no fixed cut keeps it, and the EPUB names are cut and listed within byte budgets, the CRC branch included.  Each new or rewritten
+`*_live2` test of that round fails at 8162e028.
 
 Synthetic, generic fixtures only (no dev-suite case content).  No model call, no ffmpeg (fake runners), no network."""
 import contextlib
@@ -206,11 +209,15 @@ class DamageAfterWarningsLive2(TE.Base):
         with rules('diag-3'):
             return EV2.derive(obs('t1', 'decode_sample', rec['status'], EVC.to_tool_result(rec, cap=cap)['output'], backend='live'))
 
-    def test_damage_after_startup_warnings_takes_the_third_place_live2(self):
+    def jb(self, value):
+        return len(json.dumps(value, ensure_ascii=False).encode('utf-8'))
+
+    def test_damage_after_startup_warnings_is_kept_within_live1s_bytes_live2(self):
         stderr = ('\n'.join([WARN] * 5 + ['[h264 @ 0x55d5c0a1b2c0] missing picture in access unit with size 12', DAMAGE[0], WARN, DAMAGE[1]]) + '\n').encode()
         rec = self.decode(stderr, 'live-2')
         seg = rec['output']['segments'][0]
-        self.assertEqual(seg['errors'], [WARN, WARN, DAMAGE[0]])          # live-1's budget: at most 3 lines; the first later damage line takes the third place
+        self.assertEqual(seg['errors'], [WARN, DAMAGE[0]])                 # the whole damage line beside the first line: what fits live-1's 3 warnings' bytes
+        self.assertLessEqual(self.jb(seg['errors']), self.jb([WARN] * 3))
         self.assertEqual(seg['error_lines'], 9)                            # the count of every line is unchanged, so the record says what was not kept
         self.assertEqual(rec['collector_behavior'], 'live-2')
         d = self.typed(rec)
@@ -219,7 +226,7 @@ class DamageAfterWarningsLive2(TE.Base):
 
     def test_a_window_keeps_live1s_budget_live2(self):
         rec = self.decode(('\n'.join([WARN] * 3 + DAMAGE) + '\n').encode(), 'live-2')
-        self.assertEqual(rec['output']['segments'][0]['errors'], [WARN, WARN, DAMAGE[0]])
+        self.assertEqual(rec['output']['segments'][0]['errors'], [WARN, DAMAGE[0]])
         rec = self.decode(('\n'.join(DAMAGE) + '\n').encode(), 'live-2')
         self.assertEqual(rec['output']['segments'][0]['errors'], DAMAGE[:3])      # damage among the first 3: exactly live-1's lines, nothing added
         for line in ('x' * 400, '[h264 @ 0x1] ' + 'y' * 300 + ' error while decoding MB 3 7, bytestream -5', 'short line'):
@@ -236,10 +243,27 @@ class DamageAfterWarningsLive2(TE.Base):
         self.assertEqual(two['output'], one['output'])
         for rec in (one, two):
             self.assertEqual((self.typed_at(rec, 8192).integrity, self.typed_at(rec, 1 << 20).integrity), ('damaged', 'damaged'))
-        mixed = ('\n'.join([WARN] * 4 + many) + '\n').encode()            # warnings first: the third line is replaced, the window stays within the budget
-        rec = self.decode_at(mixed, 'live-2', 8, 600.0)
-        self.assertTrue(all(len(s['errors']) <= 3 and all(len(x) <= 163 for x in s['errors']) for s in rec['output']['segments']))
+        mixed = ('\n'.join([WARN] * 4 + many) + '\n').encode()            # warnings first: a damage line is shown within the same bytes
+        rec, ref = self.decode_at(mixed, 'live-2', 8, 600.0), self.decode_at(mixed, 'live-1', 8, 600.0)
+        self.assertLessEqual(len(EVC.to_tool_result(rec, cap=1 << 20)['output'].encode()), len(EVC.to_tool_result(ref, cap=1 << 20)['output'].encode()))
         self.assertEqual(self.typed_at(rec, 8192).integrity, 'damaged')
+
+    def test_multibyte_tails_never_grow_the_record_live2(self):
+        """AUDIT-ASTRA-52 item 1: the 163-character forms did not bound bytes; an elided form ending in a CJK path took up to three times live-1's ASCII cut,
+        and ten such windows pushed a record that fits 8 KiB under live-1 past the cap (unknown).  live-2 now keeps each window within the bytes live-1's own
+        list takes in a tool result, so the whole record never takes more bytes than live-1's, and the damage stays readable."""
+        cjk = '[h264 @ 0x55d5c0a1b2c0] /media/library/' + 'a' * 100 + '/' + '\u5f71\u7247' * 30 + '.mkv: error while decoding MB 3 7, bytestream -5'
+        with rules('diag-1'):
+            self.assertEqual(EV2.classify_line(cjk), 'damage')
+        for head in ([cjk, WARN, DAMAGE[0]], [cjk, WARN, WARN]):              # damage visible among live-1's lines, and damage only in the long line
+            stderr = ('\n'.join(head) + '\n').encode()
+            one, two = self.decode_at(stderr, 'live-1', 8, 600.0), self.decode_at(stderr, 'live-2', 8, 600.0)
+            for a, b in zip(one['output']['segments'], two['output']['segments']):
+                self.assertLessEqual(self.jb(b['errors']), self.jb(a['errors']))
+            t1, t2 = (EVC.to_tool_result(r, cap=1 << 20)['output'] for r in (one, two))
+            self.assertLessEqual(len(t2.encode()), len(t1.encode()))
+            self.assertEqual(two['stderr'], one['stderr'])                       # the stderr excerpt is live-1's, byte for byte
+            self.assertEqual(self.typed_at(two, 8192).integrity, 'damaged', head[2][:20])
 
     def test_a_long_decorated_damage_line_is_recognised_live2(self):
         """AUDIT-ASTRA-48: a damage line longer than the 160-character cut (here a long path in its decoration) is classified whole, before the cut, and shown in
@@ -248,21 +272,38 @@ class DamageAfterWarningsLive2(TE.Base):
         for lines in ([WARN] * 3 + [long_line], [long_line, WARN]):
             rec = self.decode(('\n'.join(lines) + '\n').encode(), 'live-2')
             errors = rec['output']['segments'][0]['errors']
-            self.assertLessEqual(len(errors), 3)
-            self.assertTrue(all(len(x) <= 163 for x in errors))
-            self.assertTrue(any(' ... ' in x or x.startswith('... ') for x in errors), errors)        # shown elided, the cut said
+            self.assertLessEqual(self.jb(errors), self.jb([EVC.avtools._clip(l, 160) for l in lines[:3]]))
+            self.assertTrue(any(' ... ' in x or x.startswith(('... ', '[...] ')) for x in errors), errors)        # shown elided, the cut said
             self.assertEqual(self.typed(rec).integrity, 'damaged', lines[0][:20])
+
+    def test_a_recognised_reading_survives_any_cut_position_live2(self):
+        """AUDIT-ASTRA-52 item 3: a line that is damage whole only through a reading no fixed cut keeps ('[h264 @ 0x1] ' + 'Error opening input: ' * 7 +
+        'moov atom not found') is shown as that reading behind the elision mark '[...] ', in decode and audio windows."""
+        line = '[h264 @ 0x1] ' + 'Error opening input: ' * 7 + 'moov atom not found'
+        with rules('diag-1'):
+            self.assertEqual(EV2.classify_line(line), 'damage')
+            self.assertFalse(any(EV2.classify_line(f) == 'damage' for f in EVC.avtools._shown_forms(line)))     # no fixed cut keeps it
+        rec = self.decode(('\n'.join([WARN] * 3 + [line]) + '\n').encode(), 'live-2')
+        self.assertIn('[...] moov atom not found', rec['output']['segments'][0]['errors'])
+        self.assertEqual(self.typed(rec).integrity, 'damaged')
+        warn = b'[warning] [aac @ 0x3] channel element 0.1 is not allocated\n'
+        rec, _ = self.run_kind('audio', [(TE.prog('ffprobe', '-show_format'), RunResult(0, TE.probe_json(20.0), b'')),
+                                         (TE.prog('ffmpeg', '-af'), RunResult(0, b'', TE.LEVELS + warn * 3 + b'[error] ' + line.encode() + b'\n'))], clock=TE.Clock(), live_behavior='live-2')
+        self.assertIn('[...] moov atom not found', rec['output']['streams'][0]['segments'][0]['problems'])
+        with rules('diag-3'):
+            d = EV2.derive(obs('t1', 'audio_sample', rec['status'], EVC.to_tool_result(rec, cap=1 << 20)['output'], backend='live'))
+        self.assertEqual(d.integrity, 'damaged')
 
     def test_the_audio_level_window_keeps_its_damage_live2(self):
         warn = b'[warning] [aac @ 0x3] channel element 0.1 is not allocated\n'
-        for dmg, shown_end in ((b'[error] [mp3float @ 0x3] Invalid data found when processing input\n', '[mp3float @ 0x3] Invalid data found when processing input'),
-                               (b'[error] [mp3float @ 0x3] /long/' + b'x' * 130 + b'.mp3: Invalid data found when processing input\n', '.mp3: Invalid data found when processing input')):
+        for dmg in (b'[error] [mp3float @ 0x3] Invalid data found when processing input\n', b'[error] [mp3float @ 0x3] /long/' + b'x' * 130 + b'.mp3: Invalid data found when processing input\n'):
             rec, _ = self.run_kind('audio', [(TE.prog('ffprobe', '-show_format'), RunResult(0, TE.probe_json(20.0), b'')), (TE.prog('ffmpeg', '-af'), RunResult(0, b'', TE.LEVELS + warn * 4 + dmg))],
                                    clock=TE.Clock(), live_behavior='live-2')
             seg = rec['output']['streams'][0]['segments'][0]
             self.assertEqual(seg['problem_lines'], 5)
-            self.assertEqual(len(seg['problems']), 3)
-            self.assertTrue(seg['problems'][-1].endswith(shown_end), seg['problems'][-1])
+            self.assertLessEqual(len(seg['problems']), 3)
+            self.assertTrue(seg['problems'][-1].endswith('Invalid data found when processing input'), seg['problems'][-1])
+            self.assertLessEqual(self.jb(seg['problems']), self.jb(['[aac @ 0x3] channel element 0.1 is not allocated'] * 3))
             with rules('diag-3'):
                 d = EV2.derive(obs('t1', 'audio_sample', rec['status'], EVC.to_tool_result(rec, cap=1 << 20)['output'], backend='live'))
             self.assertEqual(d.integrity, 'damaged')
@@ -438,6 +479,44 @@ class LiveResolverParityLive2(unittest.TestCase):
             with rules('diag-3'):
                 live = EV2.derive(obs('t1', 'epub_inspect', rec['status'], tr['output'], backend='live'))
             self.assertEqual((live.integrity, live.package['manifest'], self.replay_v4(path).integrity), ('damaged', 'damaged', 'damaged'), n)
+
+    def test_many_long_multibyte_names_keep_the_failed_stage_at_8kib_live2(self):
+        """AUDIT-ASTRA-52 item 2: five absent `data:` hrefs of 250 CJK characters each took 10,088 bytes although each name was cut at 200 characters, and the
+        8 KiB cap lost the manifest stage.  live-2 cuts each name at 200 BYTES and lists the names within a byte budget, with the number left out."""
+        extra = ''.join('<item id="x%d" href="data:text/plain,%s%d" media-type="text/plain"/>' % (k, '\u5f71' * 250, k) for k in range(5))
+        path = _epub(self.dir / 'cjk.epub', [('ch1.xhtml', 'ch1.xhtml', CHAPTER)], extra_manifest=extra)
+        rec = EVC.collect(str(path), ['epub'], live_behavior='live-2')[0]
+        tr = EVC.to_tool_result(rec, cap=8192)
+        self.assertFalse(tr['truncated'])
+        out = rec['output']
+        self.assertLess(len(json.dumps(out['manifest_missing'], ensure_ascii=False).encode()), 700)
+        self.assertEqual(out['manifest_missing_omitted'] + len(out['manifest_missing']), 5)
+        self.assertIn('more)', out['error'])
+        with rules('diag-3'):
+            live = EV2.derive(obs('t1', 'epub_inspect', rec['status'], tr['output'], backend='live'))
+        self.assertEqual((live.integrity, live.package['manifest']), ('damaged', 'damaged'))
+
+    def test_a_crc_failure_in_a_long_member_name_keeps_its_stage_live2(self):
+        """AUDIT-ASTRA-52 item 2: the zip_crc branch reported the whole member name (a 10,000-character name: 10,854 bytes even at cap=8192, unknown).
+        live-2 cuts it like every reported name; zipfile's `Bad CRC-32 for file '<name>'` is then written in the harness's allow-listed CRC wording."""
+        name = 'OEBPS/' + 'n' * 10000 + '.xhtml'
+        path = _epub(self.dir / 'crc.epub', [('ch1.xhtml', 'ch1.xhtml', CHAPTER)])
+        with zipfile.ZipFile(path, 'a') as z:
+            z.writestr(zipfile.ZipInfo(name), b'MARKER-CONTENT-0123456789')
+        raw = path.read_bytes()
+        path.write_bytes(raw.replace(b'MARKER-CONTENT-0123456789', b'MARKER-CONTENT-9876543210'))      # same size, wrong CRC
+        rec = EVC.collect(str(path), ['epub'], live_behavior='live-2')[0]
+        self.assertEqual(rec['output']['stage'], 'zip_crc')
+        self.assertTrue(rec['output']['error'].startswith('BadZipFile: CRC mismatch in member OEBPS/nnn'), rec['output']['error'][:80])
+        tr = EVC.to_tool_result(rec, cap=8192)
+        self.assertLessEqual(len(tr['output'].encode()), 8192)
+        for version in ('diag-1', 'diag-2', 'diag-3'):
+            with rules(version):
+                live = EV2.derive(obs('t1', 'epub_inspect', rec['status'], tr['output'], backend='live'))
+            self.assertEqual((live.integrity, live.package['zip_crc']), ('damaged', 'damaged'), version)
+        one = EVC.collect(str(path), ['epub'])[0]                                     # live-1, unchanged: zipfile's own message and the whole name
+        self.assertTrue(one['output']['error'].startswith("BadZipFile: Bad CRC-32 for file 'OEBPS/nnn"))
+        self.assertTrue(one['output']['error'].endswith(name))
 
     def test_present_non_web_scheme_members_are_clean_on_both_paths_live2(self):
         """AUDIT-ASTRA-48 item 2: a `data:`, `urn:` or `mailto:` href is damage only when the member it resolves to is absent; an archive may hold that literal

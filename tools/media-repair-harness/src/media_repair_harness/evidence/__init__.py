@@ -13,7 +13,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from .core import (BOUND_SPEC, DEFAULT_LIVE_BEHAVIOR, HARNESS_TOOL, KINDS, LIVE2_KINDS, LIVE_BEHAVIORS, STATUSES, Ctx, RunResult, as_replay, fingerprint, make_record,
+from .core import (BOUND_SPEC, DEFAULT_LIVE_BEHAVIOR, HARNESS_TOOL, KINDS, LIVE2_KINDS, LIVE_BEHAVIORS, STATUSES, Ctx, RunResult, apply_live2_views, as_replay, fingerprint, make_record,
                    resolve_bounds, subprocess_runner, to_tool_result, kill_active)
 from . import avtools, epubtool
 
@@ -95,6 +95,8 @@ def collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=No
             rec['input'] = fp
             if clamped:
                 rec['bounds_clamped'] = clamped
+            if live_behavior != DEFAULT_LIVE_BEHAVIOR and rec.get('mode') == 'live':
+                apply_live2_views(rec.get('output'))             # the decode windows' live-2 lines, once the record (and its stderr excerpt) is built
             if live_behavior != DEFAULT_LIVE_BEHAVIOR and rec.get('mode') == 'live' and kind in LIVE2_KINDS:
                 rec['collector_behavior'] = live_behavior       # (only the kinds live-2 changes; a live-1 record is unchanged; a replayed record keeps what it recorded)
             out.append(rec)

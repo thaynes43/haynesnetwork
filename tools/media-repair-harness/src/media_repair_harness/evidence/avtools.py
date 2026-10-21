@@ -52,56 +52,79 @@ def _lines(b):
 
 
 LIVE1_ERROR_LINES = 3        # every behaviour keeps at most 3 diagnostic lines per window ...
-LIVE_LINE_CHARS = 160        # ... each shown in at most 160 characters plus a 3-character cut marker (_clip): 163 characters
-# live-2 keeps that budget exactly (at most 3 lines of at most 163 characters per window), so a live-2 window never holds more text than live-1's largest
+LIVE_LINE_CHARS = 160        # ... live-1 shows each cut to 160 characters plus '...' (_clip): at most 163 characters
 _ELIDE_HEADS = (24, 48, 80)
+LIVE2_ERRORS_KEY = '_errors_live2'      # decode_window: the live-2 lines, swapped into `errors` by collect() (core.apply_live2_views) once the record is built
 
 
-def _shown_forms(line):
-    """The ways a window may show one diagnostic line within the 163-character budget, live-1's own clip first (`_clip(line, 160)`, exactly): then the start
-    and the end of the line with ' ... ' between them (the decoration a classifier strips stands at the start, the message at the end), then the end alone
-    after '... '.  Every form is at most 163 characters."""
+def _jbytes(value):
+    """The bytes `value` takes in a tool result (json.dumps, ensure_ascii=False, UTF-8: what evidence.to_tool_result writes)."""
+    return len(json.dumps(value, ensure_ascii=False).encode('utf-8'))
+
+
+def _shown_forms(line, readings=()):
+    """The ways a window may show one diagnostic line, live-1's own clip first (`_clip(line, 160)`, exactly): then, for a long line, its start and its end
+    with ' ... ' between them, its end alone after '... ', and, for each reading the classifier recognised as damage (`readings`), that reading behind the
+    elision mark '[...] ' (a bracket run the classifier strips as decoration), so a recognised message is never lost to a fixed cut position."""
     t = ' '.join(line.split())
-    if len(t) <= LIVE_LINE_CHARS:
-        return [t]
-    budget = LIVE_LINE_CHARS + 3
-    return [t[:LIVE_LINE_CHARS] + '...'] + [t[:h] + ' ... ' + t[-(budget - h - 5):] for h in _ELIDE_HEADS] + ['... ' + t[-(budget - 4):]]
+    forms = [t if len(t) <= LIVE_LINE_CHARS else t[:LIVE_LINE_CHARS] + '...']
+    if len(t) > LIVE_LINE_CHARS:
+        budget = LIVE_LINE_CHARS + 3
+        forms += [t[:h] + ' ... ' + t[-(budget - h - 5):] for h in _ELIDE_HEADS] + ['... ' + t[-(budget - 4):]]
+    return forms + ['[...] ' + r for r in readings]
 
 
 def kept_error_lines(lines):
-    """Live collector behaviour live-2: -> the diagnostic lines a window keeps, from its COMPLETE (scrubbed, uncut) lines, within live-1's budget of 3 lines of
-    at most 163 characters.  Each line is classified whole, before it is cut, by the diagnostic allow-list (evidence_v2.classify_line under `diag-1`, whose
-    damage set contains every later rule set's; the typed layer classifies the kept text again under its own rules):
+    """Live collector behaviour live-2: -> the diagnostic lines a window keeps, from its COMPLETE (scrubbed, uncut) lines.
 
-    * the first 3 lines are kept, as under live-1, each shown as live-1 shows it (`_clip(line, 160)`) unless the line is damage whole and that cut hides it:
-      then it is shown in the first other form (_shown_forms) that still reads as damage;
-    * only when none of those 3 shows damage, the first later line that is damage (and has such a form) takes the place of the third line.
+    The budget is live-1's own list for the same window (`[_clip(l, 160) for l in lines[:3]]`) measured in the bytes it takes in a tool result
+    (_jbytes: UTF-8 with JSON escaping): the live-2 list never takes more, so a record that fits a tool-result cap under live-1 fits it under live-2.  Each
+    line is classified WHOLE, before any cut (evidence_v2 under `diag-1`, whose damage set contains every later rule set's; the typed layer classifies the
+    kept text again under its own rules):
 
-    So located damage printed after start-up warnings, or behind a long decoration, stays recognisable, and a window holds no more text than live-1 allows.
+    * when one of live-1's 3 lines already shows damage, the window keeps exactly live-1's lines;
+    * otherwise a line that is damage whole (among the first 3, else the first later one) is shown in the most faithful form that still reads as damage
+      (_shown_forms: the whole line or live-1's cut, start ... end, ... end, then the recognised reading behind '[...] ') and fits the budget, in its own
+      place (a later line: in the place of the third) with as many of live-1's other lines as fit (the lines after it, then all but the first are left
+      out); only when no form fits beside the first line is it shown alone;
+    * when nothing fits, live-1's lines are kept.
+
     The count of every line (`error_lines`, `problem_lines`) is unchanged, so the record still says how many lines were not kept."""
     from .. import evidence_v2 as EV2       # (lazy: the typed layer's allow-lists; it imports nothing from the collectors)
+    live1 = [_clip(l, LIVE_LINE_CHARS) for l in lines[:LIVE1_ERROR_LINES]]
+    budget = _jbytes(live1)
     with EV2.diagnostic_rules('diag-1'):
-        def show(line):
-            forms = _shown_forms(line)
-            if len(forms) > 1 and EV2.classify_line(line) == 'damage':
-                for f in forms:
-                    if EV2.classify_line(f) == 'damage':
-                        return f, True
-            return forms[0], EV2.classify_line(forms[0]) == 'damage'
+        damage = lambda text: EV2.classify_line(text) == 'damage'
+        if any(damage(f) for f in live1):
+            return live1
 
-        head = [show(l) for l in lines[:LIVE1_ERROR_LINES]]
-        if len(lines) <= LIVE1_ERROR_LINES or any(d for _f, d in head):
-            return [f for f, _d in head]
+        def place(line, at):
+            forms = [f for f in _shown_forms(line, EV2.damage_readings(line)) if damage(f)]
+            keeps = ((live1[:at], live1[at + 1:]), (live1[:at], []), (live1[:min(1, at)], []))
+            for f in forms:                 # the most faithful form first, with as many of live-1's other lines as fit ...
+                for before, after in keeps:
+                    if _jbytes(before + [f] + after) <= budget:
+                        return before + [f] + after
+            for f in forms:                 # ... and only then a form alone
+                if _jbytes([f]) <= budget:
+                    return [f]
+            return None
+
+        for i, line in enumerate(lines[:LIVE1_ERROR_LINES]):
+            if damage(line):
+                got = place(line, i)
+                if got:
+                    return got
         seen = set(lines[:LIVE1_ERROR_LINES])
         for line in lines[LIVE1_ERROR_LINES:]:
             if line in seen:
                 continue
             seen.add(line)
-            if EV2.classify_line(line) == 'damage':
-                shown, visible = show(line)
-                if visible:
-                    return [f for f, _d in head[:LIVE1_ERROR_LINES - 1]] + [shown]
-        return [f for f, _d in head]
+            if damage(line):
+                got = place(line, LIVE1_ERROR_LINES - 1)
+                if got:
+                    return got
+        return live1
 
 
 # ------------------------------------------------------------------ probe core (shared)
@@ -257,8 +280,11 @@ def decode_window(ctx, path, at, window, deadline, audio_only=False, timeout_s=N
         return seg
     errs = [_clip(ctx.scrub(l), 160) for l in _lines(r.stderr)]
     frames, decoded = _progress(r.stdout)
-    seg.update(exit_code=r.returncode, frames=frames, decoded_s=_f(decoded), error_lines=len(errs),
-               errors=kept_error_lines([ctx.scrub(l) for l in _lines(r.stderr)]) if getattr(ctx, 'live_behavior', 'live-1') == 'live-2' else errs[:3])
+    seg.update(exit_code=r.returncode, frames=frames, decoded_s=_f(decoded), error_lines=len(errs), errors=errs[:3])
+    if getattr(ctx, 'live_behavior', 'live-1') == 'live-2':
+        # live-2: the window's own lines; `errors` keeps live-1's lines until the record is built (its stderr excerpt is built from them, byte for byte as
+        # under live-1), then collect() puts these in their place (core.apply_live2_views)
+        seg[LIVE2_ERRORS_KEY] = kept_error_lines([ctx.scrub(l) for l in _lines(r.stderr)])
     if r.file_size_limit:
         seg['state'] = 'output_cap'  # the collector's own output cap killed ffmpeg: says nothing about the file
     elif r.timed_out:

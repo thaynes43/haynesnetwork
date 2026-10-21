@@ -309,6 +309,17 @@ def classify_line(line):
     return None
 
 
+def damage_readings(line):
+    """The decoration-stripped readings of ONE line that make classify_line call it damage under the active rules, shortest first; [] when the line is not
+    damage.  A read-only helper (live collector behaviour live-2 shows such a reading when a cut would hide the damage); it changes no classification."""
+    if classify_line(line) != 'damage':
+        return []
+    cands = _candidates(line)
+    rxs = _DAMAGE_RXS_DIAG2 if _ACTIVE_RULES.get() in _DIAG2_PLUS else _DAMAGE_RXS
+    found = {c for c, _d in cands if any(rx.match(c) for rx in rxs)} | {c for c, dec in cands if not dec and _INVALID_DATA.match(c)}
+    return sorted(found, key=lambda c: (len(c), c))
+
+
 def _lines(text):
     """Lines of a diagnostic: `text` is a string, or a LIST of strings (the elements a collector reported) -- every element is split into lines on its own and no element is
     ever joined to another before classification."""

@@ -180,16 +180,31 @@ class Deadline:
 
 # Live collector behaviours (W27).  `live-1` is every collector as it was, byte for byte (the default; every recorded live run).  `live-2` (opt-in, no runner
 # flag selects it yet) corrects two things and nothing else:
-#   * a decode window (and an audio level window) classifies its diagnostic lines whole, before they are cut, and keeps at most 3 lines of at most 163
-#     characters, as live-1 does: the first 3, a damage line shown in a form that still reads as damage, and, only when none of them shows damage, the first
-#     later damage line in place of the third (avtools.kept_error_lines), so located damage after start-up warnings or behind a long decoration survives;
+#   * a decode window (and an audio level window) classifies its diagnostic lines whole, before they are cut, and, when none of live-1's 3 lines shows
+#     damage, shows the first damage line in a form that still reads as damage, within the bytes live-1's own list takes in a tool result
+#     (avtools.kept_error_lines), so located damage after start-up warnings or behind a long decoration survives and the record never grows;
 #   * the EPUB collector resolves manifest hrefs exactly as tools behaviour v4 does (epubtool._resolve_live2): only `http`/`https` URLs and references with
 #     a network location are remote; every other href, a colon-named member (`Part1:Intro.xhtml`) and `data:`, `urn:` or `mailto:` included, names a
 #     LOCAL archive member, which is parsed when present and reported missing when absent; as v4's package check, every manifest item with an href is
-#     checked for a missing member (live-1 checks only items that have an id, once per id); every member name the record reports is cut at 200 characters.
+#     checked for a missing member (live-1 checks only items that have an id, once per id); the member names its failure messages and lists report
+#     (missing members, the OPF name, a CRC failure, spine documents that fail to parse) are cut at 200 bytes and listed within a byte budget.
 LIVE_BEHAVIORS = ('live-1', 'live-2')
 DEFAULT_LIVE_BEHAVIOR = 'live-1'
 LIVE2_KINDS = ('decode', 'audio', 'audiobook', 'epub')       # the collectors live-2 changes; only their records say `collector_behavior: live-2`
+
+
+def apply_live2_views(obj, key='_errors_live2'):
+    """live-2: put every decode window's live-2 lines (avtools.LIVE2_ERRORS_KEY) in the place of its `errors`, in place, once the record is built.  The
+    window keeps its key order, so the record differs from live-1's only in those lists, each of which takes no more bytes than live-1's (avtools.kept_error_lines)."""
+    if isinstance(obj, dict):
+        if key in obj:
+            obj['errors'] = obj.pop(key)
+        for v in obj.values():
+            apply_live2_views(v, key)
+    elif isinstance(obj, list):
+        for v in obj:
+            apply_live2_views(v, key)
+    return obj
 
 
 class Ctx:
