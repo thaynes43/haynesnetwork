@@ -51,6 +51,82 @@ def _lines(b):
     return [l for l in (b.decode('utf-8', 'replace') if isinstance(b, bytes) else b).splitlines() if l.strip()]
 
 
+LIVE1_ERROR_LINES = 3        # every behaviour keeps at most 3 diagnostic lines per window ...
+LIVE_LINE_CHARS = 160        # ... live-1 shows each cut to 160 characters plus '...' (_clip): at most 163 characters
+_ELIDE_HEADS = (24, 48, 80)
+LIVE2_ERRORS_KEY = '_errors_live2'      # decode_window: the live-2 lines, swapped into `errors` by collect() (core.apply_live2_views) once the record is built
+
+
+def _jbytes(value):
+    """The bytes `value` takes in a tool result (json.dumps, ensure_ascii=False, UTF-8: what evidence.to_tool_result writes)."""
+    return len(json.dumps(value, ensure_ascii=False).encode('utf-8'))
+
+
+def _shown_forms(line, readings=()):
+    """The ways a window may show one diagnostic line, live-1's own clip first (`_clip(line, 160)`, exactly): then, for a long line, its start and its end
+    with ' ... ' between them, its end alone after '... ', and, for each reading the classifier recognised as damage (`readings`), that reading behind the
+    elision mark '[...] ' (a bracket run the classifier strips as decoration), so a recognised message is never lost to a fixed cut position."""
+    t = ' '.join(line.split())
+    forms = [t if len(t) <= LIVE_LINE_CHARS else t[:LIVE_LINE_CHARS] + '...']
+    if len(t) > LIVE_LINE_CHARS:
+        budget = LIVE_LINE_CHARS + 3
+        forms += [t[:h] + ' ... ' + t[-(budget - h - 5):] for h in _ELIDE_HEADS] + ['... ' + t[-(budget - 4):]]
+    return forms + ['[...] ' + r for r in readings]
+
+
+def kept_error_lines(lines):
+    """Live collector behaviour live-2: -> the diagnostic lines a window keeps, from its COMPLETE (scrubbed, uncut) lines.
+
+    The budget is live-1's own list for the same window (`[_clip(l, 160) for l in lines[:3]]`) measured in the bytes it takes in a tool result
+    (_jbytes: UTF-8 with JSON escaping): the live-2 list never takes more, so a record that fits a tool-result cap under live-1 fits it under live-2.  Each
+    line is classified WHOLE, before any cut (evidence_v2 under `diag-1`, whose damage set contains every later rule set's; the typed layer classifies the
+    kept text again under its own rules):
+
+    * when one of live-1's 3 lines already shows damage, the window keeps exactly live-1's lines;
+    * otherwise a line that is damage whole (among the first 3, else the first later one) is shown in the most faithful form that still reads as damage
+      (_shown_forms: the whole line or live-1's cut, start ... end, ... end, then the recognised reading behind '[...] ') and fits the budget, in its own
+      place (a later line: in the place of the third) with as many of live-1's other lines as fit (the lines after it, then all but the first are left
+      out); only when no form fits beside the first line is it shown alone;
+    * when nothing fits, live-1's lines are kept.
+
+    The count of every line (`error_lines`, `problem_lines`) is unchanged, so the record still says how many lines were not kept."""
+    from .. import evidence_v2 as EV2       # (lazy: the typed layer's allow-lists; it imports nothing from the collectors)
+    live1 = [_clip(l, LIVE_LINE_CHARS) for l in lines[:LIVE1_ERROR_LINES]]
+    budget = _jbytes(live1)
+    with EV2.diagnostic_rules('diag-1'):
+        damage = lambda text: EV2.classify_line(text) == 'damage'
+        if any(damage(f) for f in live1):
+            return live1
+
+        def place(line, at):
+            forms = [f for f in _shown_forms(line, EV2.damage_readings(line)) if damage(f)]
+            keeps = ((live1[:at], live1[at + 1:]), (live1[:at], []), (live1[:min(1, at)], []))
+            for f in forms:                 # the most faithful form first, with as many of live-1's other lines as fit ...
+                for before, after in keeps:
+                    if _jbytes(before + [f] + after) <= budget:
+                        return before + [f] + after
+            for f in forms:                 # ... and only then a form alone
+                if _jbytes([f]) <= budget:
+                    return [f]
+            return None
+
+        for i, line in enumerate(lines[:LIVE1_ERROR_LINES]):
+            if damage(line):
+                got = place(line, i)
+                if got:
+                    return got
+        seen = set(lines[:LIVE1_ERROR_LINES])
+        for line in lines[LIVE1_ERROR_LINES:]:
+            if line in seen:
+                continue
+            seen.add(line)
+            if damage(line):
+                got = place(line, LIVE1_ERROR_LINES - 1)
+                if got:
+                    return got
+        return live1
+
+
 # ------------------------------------------------------------------ probe core (shared)
 
 def probe_file(ctx, path, deadline):
@@ -205,6 +281,10 @@ def decode_window(ctx, path, at, window, deadline, audio_only=False, timeout_s=N
     errs = [_clip(ctx.scrub(l), 160) for l in _lines(r.stderr)]
     frames, decoded = _progress(r.stdout)
     seg.update(exit_code=r.returncode, frames=frames, decoded_s=_f(decoded), error_lines=len(errs), errors=errs[:3])
+    if getattr(ctx, 'live_behavior', 'live-1') == 'live-2':
+        # live-2: the window's own lines; `errors` keeps live-1's lines until the record is built (its stderr excerpt is built from them, byte for byte as
+        # under live-1), then collect() puts these in their place (core.apply_live2_views)
+        seg[LIVE2_ERRORS_KEY] = kept_error_lines([ctx.scrub(l) for l in _lines(r.stderr)])
     if r.file_size_limit:
         seg['state'] = 'output_cap'  # the collector's own output cap killed ffmpeg: says nothing about the file
     elif r.timed_out:
@@ -547,7 +627,8 @@ def collect_audio(ctx, started):
                 seg['exit_code'] = r.returncode
                 seg['problem_lines'] = len(problems)
                 if problems:
-                    seg['problems'] = [_clip(ctx.scrub(x), 160) for x in problems[:3]]
+                    seg['problems'] = (kept_error_lines([ctx.scrub(x) for x in problems]) if getattr(ctx, 'live_behavior', 'live-1') == 'live-2'
+                                       else [_clip(ctx.scrub(x), 160) for x in problems[:3]])
                     errs.extend(problems[:3])
                 if r.returncode != 0 or problems:
                     seg['state'] = 'errors'
@@ -720,7 +801,8 @@ def collect_audiobook(ctx, started, inputs):
             ds = _decode_summary(segs, skipped, dur, ctx.coverage_union)
             entry['decode'] = {k: ds[k] for k in ('segments_run', 'segments_clean', 'segments_with_errors', 'segments_short', 'segments_timeout', 'segments_output_cap',
                                                   'decoder_error_lines', 'decoded_s', 'clean')}
-            entry['decode']['segments'] = [{k: s.get(k) for k in ('at_s', 'state', 'decoded_s', 'error_lines', 'errors') if s.get(k) is not None} for s in segs]
+            entry['decode']['segments'] = [{k: s.get(k) for k in ('at_s', 'state', 'decoded_s', 'error_lines', 'errors', LIVE2_ERRORS_KEY) if s.get(k) is not None}
+                                          for s in segs]       # (live-2: the deferred lines travel along; collect() swaps them in)
             if skipped:
                 partial_reasons.append('%s: %d decode segments skipped (deadline)' % (part.name, skipped))
             if ds['segments_timeout']:

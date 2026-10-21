@@ -140,16 +140,28 @@ _OTHER_WRAPPER_RX = re.compile(r'^(?:(?:Error opening input(?: files?)?|Error du
 #   * `AssertionError: a spine document has no text` (tools behaviour v2 / v3: ONE spine document without text, which an image-only cover page also is) is no
 #     longer damage: it is unclassified (the text does not say whether every document was empty).  Tools behaviour v4's `the spine documents contain no
 #     text` (every spine document empty, the live collector's finding) is damage.
-DIAGNOSTIC_RULES = ('diag-1', 'diag-2')
+# `diag-3` (W27, opt-in) is diag-2 plus three corrections; every diag-2 rule applies unchanged, and diag-1 and diag-2 stay byte-identical:
+#   * the one cross-line rule (an `error reading header` warning directly followed by an execution-error line is that execution failure) recognises the
+#     header line in every decorated form the line classifier strips (_candidates: `pipe:N: `, `in#N: `, a file name or path, `Error opening input: `, a
+#     bracket run ...), not only behind brackets (_header_line);
+#   * an `OSError` (or a subclass, OSERROR_TYPES) raised at stage `zip_open` is an execution failure: the inspector could not open the file.  A positive damage
+#     diagnostic in the same text still wins (damage is read first), EINVAL keeps its reading (zipfile raises it on a damaged archive on some Pythons), and
+#     every other exception type at zip_open keeps its reading;
+#   * the zip_crc execution check starts at the FIRST ` in member ` separator anywhere in the text (one linear `str.find`), not only within the first
+#     _READING_HEAD_MAX characters; the damage readings stay bounded exactly as under diag-2.
+# and one determinism fix: a line with SEVERAL `error reading header` readings (`a.mkv: error reading header: b.mkv: error reading header: Permission denied`)
+# took the first one met in a set (diag-1 and diag-2: the answer depended on PYTHONHASHSEED); diag-3 weighs them all, execution first.
+DIAGNOSTIC_RULES = ('diag-1', 'diag-2', 'diag-3')
 DEFAULT_DIAGNOSTIC_RULES = 'diag-1'
+_DIAG2_PLUS = ('diag-2', 'diag-3')      # the rule sets that carry every diag-2 correction
 _ACTIVE_RULES = contextvars.ContextVar('media_repair_harness_diagnostic_rules', default=DEFAULT_DIAGNOSTIC_RULES)
 
 
 @contextlib.contextmanager
 def diagnostic_rules(version):
-    """Classify under `version` ('diag-1' or 'diag-2') inside the block; the earlier version is restored after it.  Unset, every function here reads diag-1.
-    It is a context variable: it holds for the calling thread or task (the typed layer runs there; tool workers never classify) and is not inherited by a
-    thread started inside the block."""
+    """Classify under `version` ('diag-1', 'diag-2' or 'diag-3') inside the block; the earlier version is restored after it.  Unset, every function here reads diag-1.
+    It is a context variable: it holds for the calling thread or task (the typed layer runs there; tool workers classify only in live collector behaviour
+    live-2's line selection, which sets diag-1 itself) and is not inherited by a thread started inside the block."""
     if version not in DIAGNOSTIC_RULES:
         raise ValueError('unknown diagnostic rules %r (known: %s)' % (version, ', '.join(DIAGNOSTIC_RULES)))
     token = _ACTIVE_RULES.set(version)
@@ -272,7 +284,7 @@ def _candidates(line):
 def classify_line(line):
     """'damage' | 'warning' | 'execution' | None for ONE diagnostic line (None: unclassified).  A line is judged on its own, so nothing elsewhere can change it."""
     cands = _candidates(line)
-    diag2 = _ACTIVE_RULES.get() == 'diag-2'
+    diag2 = _ACTIVE_RULES.get() in _DIAG2_PLUS
     if diag2 and any(OPEN_TAIL_RX.match(c) for c, _d in cands) and _ends_in_exec(line):
         return 'execution'          # diag-2: an open-tail message whose COMPLETE line (not the 1,000-character clip) ends in an execution error is that error
     damage_rxs = _DAMAGE_RXS_DIAG2 if diag2 else _DAMAGE_RXS
@@ -282,6 +294,10 @@ def classify_line(line):
         return 'damage'
     if any(_INVALID_DATA.match(c) and dec for c, dec in cands):
         return 'warning'
+    if _ACTIVE_RULES.get() == 'diag-3':
+        heads = [m for m in (_HEADER_RX.match(c) for c, _d in cands) if m]
+        if heads:       # diag-3: every reading is weighed (execution first), so the answer never depends on the set's iteration order (PYTHONHASHSEED)
+            return 'execution' if any(m.group(1) and _EXEC_RX.match(m.group(1)) for m in heads) else 'warning'
     for c, _d in cands:
         m = _HEADER_RX.match(c)
         if m:
@@ -291,6 +307,17 @@ def classify_line(line):
     if any(_EXEC_RX.match(c) for c, _d in cands):
         return 'execution'
     return None
+
+
+def damage_readings(line):
+    """The decoration-stripped readings of ONE line that make classify_line call it damage under the active rules, shortest first; [] when the line is not
+    damage.  A read-only helper (live collector behaviour live-2 shows such a reading when a cut would hide the damage); it changes no classification."""
+    if classify_line(line) != 'damage':
+        return []
+    cands = _candidates(line)
+    rxs = _DAMAGE_RXS_DIAG2 if _ACTIVE_RULES.get() in _DIAG2_PLUS else _DAMAGE_RXS
+    found = {c for c, _d in cands if any(rx.match(c) for rx in rxs)} | {c for c, dec in cands if not dec and _INVALID_DATA.match(c)}
+    return sorted(found, key=lambda c: (len(c), c))
 
 
 def _lines(text):
@@ -312,10 +339,18 @@ def classify_text(text):
     pairs = []
     for item in items:
         pairs += [(l, classify_line(l)) for l in _lines(str(item if item is not None else ''))]
+    diag3 = _ACTIVE_RULES.get() == 'diag-3'
     for i, (l, c) in enumerate(pairs):
-        if c == 'warning' and _HEADER_RX.match(l.strip().split('] ')[-1].strip()) and i + 1 < len(pairs) and pairs[i + 1][1] == 'execution':
+        if c == 'warning' and (_HEADER_RX.match(l.strip().split('] ')[-1].strip()) or (diag3 and _header_line(l))) and i + 1 < len(pairs) and pairs[i + 1][1] == 'execution':
             pairs[i] = (l, 'execution')
     return pairs
+
+
+def _header_line(line):
+    """diag-3: True when the line's message, in any reading the line classifier strips its decoration to (_candidates: brackets, `pipe:N: `, `in#N: `, a file
+    name or path, `Error opening input: ` ...), is `error reading header` (the line is then classified by that message: classify_line reads it first).  It is
+    read IN ADDITION to the earlier bracket split, so diag-3 recognises every header line diag-1 and diag-2 recognise."""
+    return any(_HEADER_RX.match(c) for c, _d in _candidates(line))
 
 
 def strongest(pairs):
@@ -385,6 +420,28 @@ def _zip_crc_readings(text):
     return out
 
 
+def _first_member_name(text):
+    """diag-3: the index where the member name starts after the FIRST ' in member ' separator ANYWHERE in `text` (one linear str.find), when a non-blank
+    message precedes it and a non-blank name follows; else None.  When that separator starts within the first _READING_HEAD_MAX characters it is the index
+    of diag-2's first reading, so diag-3 differs from diag-2 only for a separator further in (which diag-2 does not read at all)."""
+    i = text.find(_MEMBER_SEP)
+    if i < 0:
+        return None
+    j = i + len(_MEMBER_SEP)
+    return j if text[:i].strip() and j < len(text.rstrip()) else None
+
+
+# diag-3: the builtin OSError family (the exception an operating-system call raises: open, read, seek, stat ...), as both EPUB inspectors write it (`<Type>: <str(e)>`,
+# tools._epub_stage and evidence/epubtool._err).  A fixed list, so the reading does not depend on the Python that runs the classifier.  EINVAL (`[Errno 22]`) is
+# left out: depending on the Python version, zipfile's own seek can raise it on a DAMAGED archive (a ZIP64 end-of-central-directory locator that points before
+# the start of the file; other versions say `BadZipFile: Corrupt zip64 end of central directory locator`), so it does not show a failure to open and keeps its
+# earlier reading (unclassified, cause unknown).
+OSERROR_TYPES = ('OSError', 'IOError', 'EnvironmentError', 'BlockingIOError', 'ChildProcessError', 'ConnectionError', 'BrokenPipeError', 'ConnectionAbortedError',
+                 'ConnectionRefusedError', 'ConnectionResetError', 'FileExistsError', 'FileNotFoundError', 'InterruptedError', 'IsADirectoryError', 'NotADirectoryError',
+                 'PermissionError', 'ProcessLookupError', 'TimeoutError', 'UnsupportedOperation')
+OSERROR_AT_OPEN_RX = re.compile(r'(?:%s):(?!\s*\[Errno 22\])(?:\s|$)' % '|'.join(OSERROR_TYPES))
+
+
 def _live_bad_crc(head, text, j):
     """diag-2: True when `head` is exactly the live collector's message for zipfile's CRC failure of the member named by text[j:] (`BadZipFile: ` +
     str(e)[:200], evidence/epubtool._err; zipfile raises `Bad CRC-32 for file %r` with the member's own name), so a name whose quoted form was cut at
@@ -401,14 +458,20 @@ def epub_failure(stage, error):
     """-> 'damage' | 'execution' | None for the error text of a failed EPUB stage, from the allow-lists and the stage-scoped shapes ONLY (never from the collector's own `cause`).
     The same function reads the recorded (replay) and the live collector's text, so both paths agree.  Under diag-2 the zip_crc member suffix is read on
     the whole text (_zip_crc_readings: colons, line breaks, a leading space or ' in member ' in the name; a name ending in an execution error is an execution
-    failure) and the spine shapes are _EPUB_STAGE_SHAPES_DIAG2."""
+    failure) and the spine shapes are _EPUB_STAGE_SHAPES_DIAG2.  Under diag-3 the name after the first separator is checked wherever it starts
+    (_first_member_name), and an OSError at zip_open that no damage diagnostic contradicts is an execution failure (OSERROR_AT_OPEN_RX)."""
     text = (str(error or '') if not isinstance(error, (list, tuple)) else '\n'.join(str(x) for x in error)).strip()
     if not text:
         return None
-    diag2 = _ACTIVE_RULES.get() == 'diag-2'
+    rules = _ACTIVE_RULES.get()
+    diag2, diag3 = rules in _DIAG2_PLUS, rules == 'diag-3'
     texts = [text]
     if diag2 and _open_tail_execution(text):
         return 'execution'          # the complete diagnostic, before it is split or clipped: an open-tail message ending in an execution error
+    if stage == 'zip_crc' and diag3:
+        j = _first_member_name(text)
+        if j is not None and _ends_in_exec(text, j):
+            return 'execution'          # diag-3: the name after the FIRST separator, wherever it starts, ends in an execution error
     if stage == 'zip_crc' and diag2:
         readings = _zip_crc_readings(text)
         if readings:
@@ -426,6 +489,8 @@ def epub_failure(stage, error):
         return 'execution'
     if any(damage_wording(t) for t in texts):
         return 'damage'
+    if diag3 and stage == 'zip_open' and OSERROR_AT_OPEN_RX.match(text):
+        return 'execution'          # diag-3: the file could not be opened (an OSError); only a positive damage diagnostic, read above, says otherwise
     for cls, rx in (_EPUB_STAGE_SHAPES_DIAG2 if diag2 else _EPUB_STAGE_SHAPES).get(stage, ()):
         if any(rx.fullmatch(t) for t in texts):
             return cls
@@ -2047,12 +2112,13 @@ def _sname(path):
 
 
 def _descend(body, path):
-    """The container that `path` (without its last component) leads to: dicts by key, list elements by their `_i` index (created when absent)."""
+    """The container that `path` (without its last component) leads to: dicts by key, list elements by their `_i` index (created when absent).  Only dict
+    elements carry an index: a plain element of the same list (a string or number placed whole, `split`) is never one, so the lookup passes over it."""
     cur = body
     for idx, p in enumerate(path[:-1]):
         nxt = path[idx + 1]
         if isinstance(p, tuple):
-            el = next((e for e in cur if e.get('_i') == p[1]), None)
+            el = next((e for e in cur if isinstance(e, dict) and e.get('_i') == p[1]), None)
             if el is None:
                 el = {'_i': p[1]}
                 cur.append(el)
@@ -2066,7 +2132,7 @@ def _put(body, path, mode, value):
     cur = _descend(body, path)
     last = path[-1]
     if isinstance(last, tuple):                      # a whole (small) element, or the remaining pieces of one, goes into the list element with that index
-        el = next((e for e in cur if e.get('_i') == last[1]), None)
+        el = next((e for e in cur if isinstance(e, dict) and e.get('_i') == last[1]), None)
         if el is None:
             el = {'_i': last[1]}
             cur.append(el)

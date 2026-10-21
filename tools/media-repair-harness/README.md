@@ -101,6 +101,10 @@ json-schema-1` forwards the per-case flat turn schema with `--json-schema` and k
 fixtures only). The guards v4 what-if on the dev-c7 runs is `runs/dev-c8-guards-v4-whatif/` (`scripts/guards_v4_whatif.py`). No model has run v8; there
 is no pre-registration. Details: `docs/dev-c8.md`, `CHANGELOG.md`.
 
+## W27 versioned fixes (offline, not selectable in the runner)
+
+WO-W27 (OpenProject #145 remainder and the PR #1031 nits) adds diagnostic rules `diag-3` (the cross-line `error reading header` rule reads every decorated form, an OSError at `zip_open` is an execution failure, the `zip_crc` execution check starts at the first separator anywhere) and live collector behaviour `live-2` (damage lines classified whole and shown within the bytes live-1's lines take; the live EPUB resolver agrees with tools behaviour v4, including `data:`, `urn:` and `mailto:` hrefs as local member names, damage when absent), and fixes a pagination crash on lists that mix strings and dicts without changing any page that was produced before. Tools behaviour v4 pairs with `diag-2` or `diag-3`. No public result changes. Offline: `scripts/w27_deltas.py` (`docs/w27-deltas.json`). Details: `CHANGELOG.md`, `docs/evidence-format-v2.md` (last section).
+
 ## Layout
 
 | File (under `src/media_repair_harness/` unless noted) | Role |

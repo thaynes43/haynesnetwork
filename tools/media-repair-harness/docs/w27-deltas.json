@@ -1,0 +1,97 @@
+{
+ "configs": {
+  "recorded": {
+   "checker": "contract-v3-rubric-3.1",
+   "diagnostic_rules": "diag-1",
+   "tools_behavior": "v3"
+  },
+  "w25": {
+   "checker": "contract-v3-rubric-3.3",
+   "diagnostic_rules": "diag-2",
+   "tools_behavior": "v4"
+  },
+  "w27": {
+   "checker": "contract-v3-rubric-3.3",
+   "diagnostic_rules": "diag-3",
+   "live_behavior": "live-2",
+   "tools_behavior": "v4"
+  }
+ },
+ "note": "blinded: sections suites (1 to 4) read model-visible inputs only; the tension list joins labels afterwards, as its committed tool does",
+ "suites": {
+  "suite-dev-v1": {
+   "changed": {
+    "checker_w25_to_w27": 0,
+    "epub_inspect_default_w25_to_w27": 0,
+    "evidence_verdicts_recorded_to_w27": 0,
+    "evidence_verdicts_w25_to_w27": 0,
+    "live_epub_live1_to_live2": 0
+   },
+   "counts": {
+    "cases": 73,
+    "epub_default_calls": 17,
+    "evidence_observations": 176,
+    "live_epub_calls": 17
+   },
+   "rows": {
+    "checker_w25_to_w27": [],
+    "epub_inspect_default_w25_to_w27": [],
+    "evidence_verdicts_recorded_to_w27": [],
+    "evidence_verdicts_w25_to_w27": [],
+    "live_epub_live1_to_live2": []
+   }
+  },
+  "suite-dev-v1.1": {
+   "changed": {
+    "checker_w25_to_w27": 0,
+    "epub_inspect_default_w25_to_w27": 0,
+    "evidence_verdicts_recorded_to_w27": 0,
+    "evidence_verdicts_w25_to_w27": 0,
+    "live_epub_live1_to_live2": 0
+   },
+   "counts": {
+    "cases": 73,
+    "epub_default_calls": 17,
+    "evidence_observations": 176,
+    "live_epub_calls": 17
+   },
+   "rows": {
+    "checker_w25_to_w27": [],
+    "epub_inspect_default_w25_to_w27": [],
+    "evidence_verdicts_recorded_to_w27": [],
+    "evidence_verdicts_w25_to_w27": [],
+    "live_epub_live1_to_live2": []
+   }
+  }
+ },
+ "tension_v33": {
+  "added": [],
+  "against": "docs/contract-v3-label-tension-v3.3.json (checker prereq-v3.3, diag-2)",
+  "listed_diag2": 6,
+  "listed_diag3": 6,
+  "reason_changed": [],
+  "removed": []
+ },
+ "uncalled_v2": {
+  "against": "docs/contract-v3-uncalled-v2.json (default rules diag-1)",
+  "counter": "uncalled-2",
+  "runs": {
+   "claude-haiku-5-5": {
+    "diag-2": {},
+    "diag-3": {}
+   },
+   "gpt-6-astra": {
+    "diag-2": {},
+    "diag-3": {}
+   },
+   "qwen3.8:27b (aborted first pass, 5 cases)": {
+    "diag-2": {},
+    "diag-3": {}
+   },
+   "qwen3.8:27b (re-registered pass)": {
+    "diag-2": {},
+    "diag-3": {}
+   }
+  }
+ }
+}

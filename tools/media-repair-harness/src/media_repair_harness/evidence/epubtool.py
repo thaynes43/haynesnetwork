@@ -3,6 +3,7 @@
 Stages follow the suite's recorded evidence: zip_open, zip_crc, opf_parse, manifest.  A failure in one of these is
 status `error` with cause `input` (the file is damaged; same convention as a failing ffprobe), or cause `tool` when the collector's own limit or the environment (a size cap, a permission error) stopped it.  Later problems
 (spine, XHTML, mimetype) are findings inside an `ok` record with `valid: false`."""
+import json
 import posixpath
 import sys
 import xml.etree.ElementTree as ET
@@ -50,6 +51,66 @@ def _err(e):
     return '%s: %s' % (type(e).__name__, str(e)[:200])
 
 
+NAME_BYTES_LIVE2 = 200       # live-2: a reported member name takes at most 200 bytes in a tool result (UTF-8, JSON-escaped), plus the cut marker
+FAILURE_FIELDS_BYTES_LIVE2 = 2400    # live-2: a manifest failure's error, reason and manifest_missing TOGETHER take at most this many bytes in a tool result
+PARSE_FAILED_BYTES_LIVE2 = 1200      # live-2: the parse_failed entries ({member, error}) take at most 1200 bytes; parse_failed_count counts them all
+
+
+def _jlen(value):
+    """The bytes `value` takes in a tool result (json.dumps, ensure_ascii=False, UTF-8, what evidence.to_tool_result writes)."""
+    return len(json.dumps(value, ensure_ascii=False).encode('utf-8'))
+
+
+def _name_live2(name):
+    """live-2: a member name as the record reports it, at most NAME_BYTES_LIVE2 bytes in a tool result (a multibyte or escaped character counts what it
+    takes), cut with `...[+N chars]`, a harness cut marker the typed layer's classifier reads as no text (evidence_v2.HARNESS_MARKER_RX)."""
+    if _jlen(name) - 2 <= NAME_BYTES_LIVE2:
+        return name
+    out, size = [], 0
+    for ch in name:
+        b = _jlen(ch) - 2
+        if size + b > NAME_BYTES_LIVE2:
+            break
+        out.append(ch)
+        size += b
+    return '%s...[+%d chars]' % (''.join(out), len(name) - len(out))
+
+
+def _manifest_failure_live2(missing):
+    """live-2: -> (message, listed names) of a manifest failure.  The names are cut (_name_live2), at most 10, and as many are listed as keep the FINAL fields
+    within FAILURE_FIELDS_BYTES_LIVE2 bytes as a tool result writes them: the message twice (`error`, and `reason` = 'manifest: ' + message), with the
+    names in Python's list form (whose escapes JSON escapes again), and the list once (`manifest_missing`).  Names left out are counted in the message
+    ('(+N more)'); with none listed the message still names the failure and the count."""
+    cut = [_name_live2(m) for m in missing[:10]]
+    for k in range(len(cut), -1, -1):
+        shown, more = cut[:k], len(missing) - k
+        msg = 'manifest names %d member(s) that are not in the archive%s%s' % (len(missing), (': %s' % shown) if shown else '', (' (+%d more)' % more) if more else '')
+        if 2 * _jlen(msg) + len('manifest: ') + _jlen(shown) <= FAILURE_FIELDS_BYTES_LIVE2:
+            return msg, shown
+    return msg, []
+
+
+# live-2: the characters a quoted member name never shows as themselves: the quote and the backslash (so the end quote is the name's end), ':' and every
+# line break or control character (so no text inside the quotes can read as `<separator> <execution error>` or start a line of its own)
+_QUOTE_UNSAFE = frozenset('\\":') | frozenset(chr(c) for c in range(0x20)) | frozenset('\x7f\x85\u2028\u2029')
+
+
+def _quoted_name_live2(name):
+    """live-2: a member name as CRC evidence: in double quotes, every _QUOTE_UNSAFE character written `\\uXXXX`, cut at NAME_BYTES_LIVE2 bytes as a tool
+    result writes it (never inside an escape), the cut marked inside the quotes.  Nothing a name holds can then end the quotes, start a line or put a
+    separator in front of an execution message, so the evidence classifies the same whatever the name says."""
+    out, size = [], 0
+    for ch in name:
+        tok = '\\u%04x' % ord(ch) if ch in _QUOTE_UNSAFE else ch
+        b = _jlen(tok) - 2
+        if size + b > NAME_BYTES_LIVE2:
+            break
+        out.append(tok)
+        size += b
+    left = len(name) - len(out)
+    return '"%s%s"' % (''.join(out), ('...[+%d chars]' % left) if left else '')
+
+
 def _resolve(base, href):
     parts = urlsplit(href)
     if parts.scheme or parts.netloc:
@@ -57,8 +118,28 @@ def _resolve(base, href):
     return posixpath.normpath(posixpath.join(posixpath.dirname(base), unquote(parts.path)))
 
 
+REMOTE_SCHEMES_LIVE2 = ('http', 'https')
+
+
+def _resolve_live2(base, href):
+    """Live collector behaviour live-2: resolve a manifest href exactly as tools behaviour v4 does (tools.remote_href_v4 / tools.local_href_v4, kept equal by
+    tests), so live and v4 replay read every href alike.  -> None for a REMOTE resource (an `http` or `https` URL, or any reference with a network location); otherwise the
+    LOCAL archive member it names (relative to the OPF, query and fragment dropped, percent-escapes decoded).  A colon-named href (`Part1:Intro.xhtml`, which
+    urlsplit reads as the scheme `part1`) is read as a relative path.  So are `data:`, `urn:`, `mailto:` and every other non-web scheme: EPUB publication
+    resources are archive members or remote web resources (EPUB 3 does not allow a `data:` URL in the manifest), so such an href names a member that is not
+    in the archive, reported missing as on v4 replay."""
+    u = urlsplit(href)
+    if u.netloc or u.scheme.lower() in REMOTE_SCHEMES_LIVE2:
+        return None
+    path = urlsplit('./' + href).path if u.scheme else u.path
+    return posixpath.normpath(posixpath.join(posixpath.dirname(base), unquote(path)))
+
+
 def collect_epub(ctx, started):
     b = used_bounds(ctx, EPUB_BOUNDS)
+    live2 = getattr(ctx, 'live_behavior', 'live-1') == 'live-2'
+    resolve = _resolve_live2 if live2 else _resolve
+    name = _name_live2 if live2 else (lambda n: n)       # live-2: the member names the failure messages and lists report are cut at 200 bytes
     path = Path(ctx.path)
     out = {'valid': None, 'stages_passed': [], 'findings': []}
     cov_ok = []
@@ -103,11 +184,18 @@ def collect_epub(ctx, started):
                             break
                         n += len(chunk)
                         if n > i.file_size + 1024:  # lying header: more data than declared
-                            raise zipfile.BadZipFile('member %s inflates past its declared size' % i.filename)
+                            raise zipfile.BadZipFile('member inflates past its declared size' if live2 else 'member %s inflates past its declared size' % i.filename)
                 read_total += n
                 checked += 1
             except Exception as e:  # noqa: BLE001 - Bad CRC-32, truncated member, unsupported compression
-                crc_fail = '%s in member %s' % (_err(e), i.filename)
+                if not live2:
+                    crc_fail = '%s in member %s' % (_err(e), i.filename)
+                elif isinstance(e, zipfile.BadZipFile) and str(e).startswith('Bad CRC-32 for file '):
+                    # live-2: zipfile's message holds the member name (`%r`), so text inside a name could change how it reads; the CRC failure is written in
+                    # the harness's allow-listed wording, the exception type kept, with the name quoted (damage under every rule set, whatever the name says)
+                    crc_fail = 'BadZipFile: CRC mismatch in member %s' % _quoted_name_live2(i.filename)
+                else:
+                    crc_fail = '%s in member %s' % (_err(e), _quoted_name_live2(i.filename))      # live-2: the exception's own message decides
                 crc_cause = _cause(e)
                 break
         out['crc_members_checked'] = checked
@@ -147,9 +235,9 @@ def collect_epub(ctx, started):
             opf = rootfiles[0].attrib['full-path']
         except Exception as e:  # noqa: BLE001
             return fail('opf_parse', 'container.xml: %s' % _err(e), cov_ok, cause=_cause(e))
-        out['opf'] = opf
+        out['opf'] = name(opf)
         if opf not in names:
-            return fail('opf_parse', 'container.xml names %s, which is not in the archive' % opf, cov_ok)
+            return fail('opf_parse', 'container.xml names %s, which is not in the archive' % name(opf), cov_ok)
         try:
             raw_o = _read(z, opf, b['epub_max_opf_bytes'])
             if b'<!ENTITY' in raw_o:
@@ -172,14 +260,23 @@ def collect_epub(ctx, started):
                 manifest[x.attrib['id']] = (x.attrib['href'], x.attrib.get('media-type', ''))
         nameset = set(names)
         missing = []
-        for href, _t in manifest.values():
-            target = _resolve(opf, href)
+        hrefs = [h for h, _t in manifest.values()]
+        if live2:       # live-2: every manifest item with an href is checked (one without an id, or with a repeated id, too), as tools v4's package check does
+            hrefs = [x.attrib['href'] for x in pkg.iter() if _local(x.tag) == 'item' and 'href' in x.attrib]
+        for href in hrefs:
+            target = resolve(opf, href)
             if target is not None and target not in nameset:
                 missing.append(target)
         out['manifest_items'] = len(manifest)
         if missing:
-            out['manifest_missing'] = missing[:10]
-            return fail('manifest', 'manifest names %d member(s) that are not in the archive: %s' % (len(missing), missing[:5]), cov_ok)
+            if not live2:
+                out['manifest_missing'] = missing[:10]
+                return fail('manifest', 'manifest names %d member(s) that are not in the archive: %s' % (len(missing), missing[:5]), cov_ok)
+            msg, shown = _manifest_failure_live2(missing)      # live-2: error, reason and manifest_missing within one byte budget
+            out['manifest_missing'] = shown
+            if len(missing) > len(shown):
+                out['manifest_missing_omitted'] = len(missing) - len(shown)
+            return fail('manifest', msg, cov_ok)
         out['stages_passed'].append('manifest')
         cov_ok.append('all %d manifest item(s) exist in the archive' % len(manifest))
         # --- spine
@@ -194,7 +291,7 @@ def collect_epub(ctx, started):
         for r in itemrefs:
             if r in manifest:
                 href, mtype = manifest[r]
-                target = _resolve(opf, href)
+                target = resolve(opf, href)
                 if target:
                     docs.append((target, mtype))
         # --- XHTML parse of spine documents, within the caps
@@ -211,7 +308,7 @@ def collect_epub(ctx, started):
                 skipped_big += 1
                 continue
             except Exception as e:  # noqa: BLE001 - e.g. a member the zip layer cannot inflate
-                failed.append({'member': target, 'error': _err(e)})
+                failed.append({'member': name(target), 'error': _err(e)})
                 continue
             if b'<!ENTITY' in raw:
                 skipped_entity += 1  # internal entity declarations are not expanded here
@@ -221,8 +318,11 @@ def collect_epub(ctx, started):
                 parsed += 1
                 chars += sum(len((t or '').strip()) for t in tree.itertext())
             except ET.ParseError as e:
-                failed.append({'member': target, 'error': _err(e)})
-        out['xhtml'] = {'spine_documents': len(docs), 'parsed_ok': parsed, 'parse_failed': failed[:10], 'parse_failed_count': len(failed),
+                failed.append({'member': name(target), 'error': _err(e)})
+        shown_failed = failed[:10]
+        if live2:       # live-2: the listed entries take at most PARSE_FAILED_BYTES_LIVE2 bytes (at least one); parse_failed_count counts every one
+            shown_failed = failed[:1] + [f for k, f in enumerate(failed[1:10], 2) if _jlen(failed[:k]) <= PARSE_FAILED_BYTES_LIVE2]
+        out['xhtml'] = {'spine_documents': len(docs), 'parsed_ok': parsed, 'parse_failed': shown_failed, 'parse_failed_count': len(failed),
                         'skipped_over_size_cap': skipped_big, 'skipped_entity_declarations': skipped_entity,
                         'skipped_over_doc_cap': max(0, len(docs) - len(todo))}
         out['spine_characters'] = chars
