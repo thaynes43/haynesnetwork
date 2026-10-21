@@ -283,13 +283,20 @@ def result_message(call_id, tool, res, remaining):
                        'output': res['output'], 'tool_calls_remaining': remaining}, ensure_ascii=False)
 
 
+REMOTE_KWARGS = ('tools_behavior', 'stop_on_receipt_failure', 'remote_state', 'remote_time_left')
+
+
 def run_case(case, case_sha, adapter, suite_dir, scratch, *args, **kw):
     """Run one case through the turn protocol (`_run_case`).  #161: a case of tools behaviour v3-remote-1 runs inside `remote_evidence.enabled()`, the only
-    place the typed layer reads a subtitle_sample observation as cues and the leak guard treats cue text as media text; every other case runs as before."""
-    if kw.get('tools_behavior') in REMOTE_TOOLS_BEHAVIORS:
-        if getattr(adapter, 'schema_mode', None) is not None:
-            raise ValueError('--tools-behavior %s is refused with the experimental Claude schema mode (its guard re-runs the case without the remote options)'
-                             % kw['tools_behavior'])
+    place the typed layer reads a subtitle_sample observation as cues and the leak guard treats cue text as media text; every other case runs as before.
+    The #161 options are keyword-only, and the call is bound to `_run_case`'s signature BEFORE anything is decided (a bad call raises TypeError), so no
+    positional form can carry them past the schema-mode refusal."""
+    bound = _RUN_CASE_SIGNATURE.bind(case, case_sha, adapter, suite_dir, scratch, *args, **kw)
+    remote = {k: bound.arguments.get(k) for k in REMOTE_KWARGS}
+    if any(v not in (None, False) for v in remote.values()) and getattr(adapter, 'schema_mode', None) is not None:
+        raise ValueError('the #161 options (%s) are refused with the experimental Claude schema mode (its guard re-runs the case without them)'
+                         % ', '.join(k for k, v in remote.items() if v not in (None, False)))
+    if remote['tools_behavior'] in REMOTE_TOOLS_BEHAVIORS:
         with _remote_evidence().enabled():
             return _run_case(case, case_sha, adapter, suite_dir, scratch, *args, **kw)
     return _run_case(case, case_sha, adapter, suite_dir, scratch, *args, **kw)
@@ -297,7 +304,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, *args, **kw):
 
 def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto', run_id='', tool_output_bytes=None,
               prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None, evidence_bounds=None, guards=None,
-              evidence_format=None, tools_behavior=None, stop_on_receipt_failure=False, remote_state=None, remote_time_left=None, _inner=False):
+              evidence_format=None, *, tools_behavior=None, stop_on_receipt_failure=False, remote_state=None, remote_time_left=None, _inner=False):
     """Run one case through the turn protocol.  Returns the run record (never raises for model/tool trouble)."""
     import shutil
     sm_case = getattr(adapter, 'schema_mode', None) is not None      # dev-c8 claude-schema-1: the run-level guard of schema_run.py (round 6)
@@ -634,6 +641,9 @@ def claude_schema_record(turns, sent_schema_sha, adapter):
             'schema_delivery_per_turn': [{'n': t.get('n'), 'tool_registered': ((t.get('meta') or {}).get('schema') or {}).get('tool_registered'),
                                           'attempts': ((t.get('meta') or {}).get('schema') or {}).get('attempts'),
                                           'reply_source': ((t.get('meta') or {}).get('schema') or {}).get('reply_source')} for t in turns]}
+
+
+_RUN_CASE_SIGNATURE = __import__('inspect').signature(_run_case)
 
 
 def remote_record(ctx, binding, stop_on_receipt_failure, sent_messages=(), tool_calls=(), turns=(), auditor=None):

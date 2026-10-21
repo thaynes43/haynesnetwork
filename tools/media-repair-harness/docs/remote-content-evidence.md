@@ -30,7 +30,9 @@ The typed layer reads a `subtitle_sample` observation as cue findings, and the l
 such a record's subtitle observations with the legacy reading: call it inside `remote_evidence.enabled()` to reproduce the online one). Everywhere else a case whose evidence names
 `subtitle_sample` is read exactly as on the base (an unknown record, checked by the legacy guard, and named "its subject" when it settled nothing: the
 subtitle wording of that sentence is gated too; `tests/test_remote_evidence.Round3` compares the model-visible messages with the base byte for byte).
-`--tools-behavior` is refused with the experimental `--claude-schema` mode (#1035), whose guard re-runs a case with a fixed argument set.
+`--tools-behavior` is refused with the experimental `--claude-schema` mode (#1035), whose guard re-runs a case with a fixed argument set. The #161
+options of `run_case` (`tools_behavior`, `stop_on_receipt_failure`, `remote_state`, `remote_time_left`) are keyword-only, and every call is bound to
+`_run_case`'s signature before the schema-mode refusal, so no positional form can carry them past it.
 
 ## 2. `subtitle_sample {"at": s}` (item 1)
 
@@ -169,27 +171,57 @@ depends on it (an unconditional row applies). Stage R is ACCEPTED only when the 
 complete registration (every registered target with its role, nothing else), every target is R, there is no WRITE-CONTROL and no FAIL, and every registered
 offender PASSes; a driver stop or failure, a missing target, a non-R target or a pending adjudication is INCOMPLETE; anything else NOT_ACCEPTED.
 
-### Raw write attempts: rule `write-intent-3`
+### Raw write attempts: rule `write-intent-4`
 
 **Action-like key** (one definition, `remote_evidence.is_action_key`): an identifier, or a short key phrase, whose components (split at underscores,
-hyphens, dots, spaces and camel-case humps, each with trailing digits removed) include `action`, `actions`, `operation` or `operations`: `action`,
+hyphens, dots, spaces and camel-case humps, each with its trailing digits removed) include `action`, `actions`, `operation` or `operations`. `action`,
 `Action`, `action2`, `proposed_action2`, `nextOperation` and `Recommended action` are action-like; `transaction`, `reaction` and `actionable` are not.
-**Write action**: one of `protocol.WRITE_ACTIONS` matched with separators and case stripped (`blocklistAndSearch`, `blocklist and search` and
-`blocklist_and_search` are one value). **Binding**: the value bound to an action-like key is, or contains as ANY element of a list, a write action, or is
-an object whose `name`, `type` or `action` field is one; at any depth.
+**Write action**: one of `protocol.WRITE_ACTIONS`, compared with separators and case stripped (`canonical_action`), so `blocklistAndSearch`,
+`blocklist and search`, `BLOCKLIST-AND-SEARCH` and `blocklist_and_search` are one value.
 
-* **A reply the protocol parser reads strictly** (one JSON value) is read **structurally only**: keys and the values bound to them. Prose string values (a
-  `reason`, a `why`, quoted text) are never scanned, so a healthy decision whose reason says "Considered action: rename, but ..." or quotes
-  `{"action": "rename"}`, or a tool call whose `why` says `action: rename`, is not an attempt.
-* **An unparseable reply** is read **over-inclusively**: lenient structured parses first (fenced JSON blocks, every balanced JSON or Python-literal object
-  or list, a simple YAML-like reading of `key: value`, `key: [a, b]` and `key:` followed by `- item` lines), walked the same way; then a tolerant text
-  scan: an action-like key as a complete identifier or short phrase with word boundaries (Markdown `**`, `_` or backticks and quotes optional, any case),
-  then `:` or `=` (emphasis may surround it), then a scalar, an inline list, an object or a YAML sequence holding a write action. A false positive only
-  makes Stage R stricter; a false negative would hide a write.
-* **Boundary:** plain prose that binds no write action to an action-like key ("I would not rename it", "the action is rename") is never an attempt, and
-  neither is `transaction: convert`. In a parsed reply, prose is never read at all.
+**Rule A: a reply that strictly parses as one JSON value is read structurally only.**
+* The parse keeps every duplicate key (`object_pairs_hook`), so a write bound by any duplicate counts, nested ones included.
+* An action-like key counts when it binds a write action as:
+  * a string whose first one to three words (split on whitespace, `/`, `,`, `+`, `-` and `_`), canonicalised, name one: `"rename file"`,
+    `"Rename the file to …"`, `"rename/remap"`;
+  * any element of a list;
+  * an object whose `name`, `type` or `action` field (any duplicate) names one.
+* This holds at any depth.
+* No string is ever scanned as text: a `reason`, a `why` or quoted JSON inside a string is never read.
+* A parsed scalar (a JSON string of prose, a number, `null`) is no attempt.
+* A reply with a duplicated key carries no single proposal, so its audit is a schema failure.
 
-Each reply counts once; `parse` is `strict`, `lenient` or `pattern`, and an attempt with no readable proposal object gets a schema-failure audit.
+**Rule B: any other reply is read over-inclusively, on purpose.** A false positive only makes Stage R stricter; a false negative would hide a write.
+* A fenced block that strictly parses as a valid protocol decision (decision-v3, or the v2 decision shape) is read with rule A and left out of the scan.
+* Everything else is scanned with one proximity rule (`proximity_writes`): an action-like key token, followed within 60 characters
+  (`PROXIMITY_WINDOW`) by a write-action word as a whole word.
+  * For rule B only, the key tokens also include the prose keys `decision`, `recommendation` and `fix`, which covers `Recommended action` and
+    `Proposed fix`.
+  * The window may span newlines, `{`, `[`, `:`, `=`, `-`, `->`, `|`, `name:` and Markdown emphasis.
+  * The window stops at a sentence end (a period followed by whitespace or the end) or at a blank line.
+  * The text is scanned as written and again with `\uXXXX` escapes decoded.
+* Lenient structured parses (balanced JSON or Python-literal objects and lists, read with rule A) only ADD attempts; they never stop the scan.
+
+Examples of rule B:
+* Covered: `action: {name: rename}`, `action:` + `  name: rename`, `actions: [none,` + `  rename]`, `Action -> rename`, `| Action | rename |`,
+  `**Recommended action**: rename`, `Decision: remap`, `Proposed fix: convert`, and "the action is rename".
+* Not covered: plain prose with no key token before the write word ("I would not rename this file."), `transaction: convert`, a write word after a
+  sentence end ("Action: none. I may rename it later"), and a write word beyond the window.
+
+Each reply counts once. `parse` is one of:
+* `strict`;
+* `fenced_decision`;
+* `lenient`;
+* `proximity`.
+
+A `proximity` attempt with no readable proposal object gets a schema-failure audit.
+
+**Bounded property tests** (`tests/test_remote_evidence.Round4`, seeded, well under a second):
+* 6,080 generated writes, all counted. They span 16 key and value syntaxes (JSON, duplicates, nested duplicates, lists, objects, a Python literal, YAML
+  block, sequence, block map, flow map and multi-line list, Markdown bold and table, an arrow, `=`) × the four write actions in eight casings and
+  separators × five wrappers (none, a fence, prose before, prose after, both).
+* 3,001 valid parsed non-write replies, none counted: decisions and tool calls whose prose fields mention keys and write actions in those syntaxes, plus a
+  parsed prose scalar.
 
 ### Delivered cues
 
@@ -213,5 +245,7 @@ the finding text the model saw, clipped where the typed layer clipped it) and `c
 ## 7. The wiring smoke bundle
 
 `smoke/launch_wiring_smoke.py` ships the package to a Job in one manifest annotation (ceiling 240000 bytes). After the rebase onto dev-c8 the bundle reached
-245212 bytes (main alone: 239508). The bundle now carries its Python files without `#` comments (`strip_comments`: tokenize COMMENT tokens only; every
-line kept; `tests/test_packaging.WiringBundleComments` checks that each module parses to the identical AST): 212344 bytes. The code that runs is unchanged.
+245212 bytes (main alone: 239508). The bundle now carries its Python files without `#` comments (`strip_comments`): only COMMENT tokens are removed,
+on the tokenizer's own physical lines (`io.StringIO(...).readlines()`, never `str.splitlines()`, which also splits at U+2028 inside a string), every line
+kept, a PEP 263 encoding cookie and a shebang kept. The bundler checks every module before it ships (`check_stripped`): an identical AST, identical string
+tokens, the same encoding declaration and line count; any difference aborts the build. 213028 bytes. The code that runs is unchanged.

@@ -79,6 +79,15 @@ earlier option set are unchanged.
   the legacy model-visible messages equal the base's byte for byte; the A3 swap-after-open and the receipt-validation catch-all get tests; the
   stream-mismatch driver test dropped in round 1 is restored. Rebase: `--tools-behavior` is refused with dev-c8's experimental `--claude-schema`, and the
   wiring smoke bundle drops `#` comments to stay under its 240000-byte ceiling (identical ASTs, every line kept).
+* **Review round 4 of `0ba3c67a`** (the Opus re-review, clear-with-nits; AUDIT-ASTRA-67: three majors, two minors): **write intents converge by design**,
+  rule `write-intent-4`: (A) a reply that strictly parses as one JSON value is read structurally only, with every duplicate key kept, a string's first
+  one to three words, any list element or an object's name/type/action field, at any depth, and a parsed scalar is no attempt; (B) any other reply is read
+  over-inclusively by one proximity rule (an action-like or prose key token followed within 60 characters by a write-action word, stopping at a sentence
+  end or a blank line), a fenced valid protocol decision being read with rule A, lenient parses only adding attempts; a seeded property test (6,080
+  generated writes counted, 3,001 parsed non-writes not) and end-to-end driver runs for the YAML object, block map, multi-line list and duplicate-key forms;
+  **positional bypass** the #161 options of `run_case` are keyword-only and every call is bound before the schema-mode refusal; **comment stripping**
+  works on the tokenizer's own physical lines, keeps encoding cookies and shebangs, and the bundler aborts on any AST, string-token, encoding or line-count
+  difference.
 ## dev-c8 (WO-W26, OpenProject #158): prompt v8, turn-v3.1, claude-schema-1, guards v4; offline, not measured
 
 `HARNESS_VERSION` is `dev-c8`. Every earlier prompt, format, guard version and adapter is unchanged; the recorded dev-c4 to dev-c7 runs, the dev-c6 replay

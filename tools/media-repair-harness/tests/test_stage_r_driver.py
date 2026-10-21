@@ -505,6 +505,23 @@ class Round3(unittest.TestCase):
         self.assertEqual(D.validate_registration(good)[0], [])        # control
 
 
+class Round4(unittest.TestCase):
+    """Review round 4 of #1036 at the driver (AUDIT-ASTRA-67 items 1 and 2)."""
+
+    def test_yaml_object_list_and_duplicate_key_writes_stop_stage_r(self):
+        """A67-1/2 end to end: a YAML flow object, a YAML block object, a multi-line list and a duplicate-key decision on a verified target: WRITE-CONTROL
+        when the case returns, no invocation after it, no later target, and the report is not ACCEPTED."""
+        for reply in ('action: {name: rename}', 'type: decision\naction:\n  name: rename', 'actions: [none,\n  rename]',
+                      '{"type": "decision", "class": "healthy", "action": "rename", "action": "none", "reason": "r", "confidence": 0.5, "evidence_refs": []}'):
+            lib = Library()
+            code, st, pod = lib.drive(replies={'v1': [reply, H.dec('healthy', 'none')]})
+            self.assertEqual((code, st['stop']['kind'], st['stop']['target']), (D.EXIT_STOP, 'write_control', 'v1'), reply)
+            self.assertEqual((lib.harness_calls, pod.execs), (['o1', 'v1'], G1_END + 2), reply)
+            rep = lib.report(st, ACCEPT[:1])
+            self.assertEqual(rep['stage_r']['write_control'], ['v1'])
+            self.assertNotEqual(rep['stage_r']['result'], 'ACCEPTED')
+
+
 class _NoDeploy:
     """A runner whose `kubectl get deploy` fails."""
 

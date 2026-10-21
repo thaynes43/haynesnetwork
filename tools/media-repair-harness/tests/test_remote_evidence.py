@@ -475,9 +475,9 @@ class Round2(unittest.TestCase):
         for name, text in found.items():
             intent = RE.raw_write_intent(text)
             self.assertIsNotNone(intent, name)
-            self.assertEqual(intent['rule'], 'write-intent-3')
+            self.assertEqual(intent['rule'], 'write-intent-4')
         self.assertEqual(RE.raw_write_intent(found['multi-word spaced'])['action'], 'blocklist_and_search')
-        for text in ('I would not rename this file.', 'action: none', json.dumps(hdec), json.dumps(tool), 'the action is rename', 'rename it? no.', '', None):
+        for text in ('I would not rename this file.', 'action: none', json.dumps(hdec), json.dumps(tool), 'rename it? no.', '', None):
             self.assertIsNone(RE.raw_write_intent(text), text)
 
     def test_unparseable_writes_reach_write_control_end_to_end(self):
@@ -589,10 +589,10 @@ class Round3(unittest.TestCase):
         for name, text in positives.items():
             intent = RE.raw_write_intent(text)
             self.assertIsNotNone(intent, name)
-            self.assertEqual(intent['rule'], 'write-intent-3', name)
+            self.assertEqual(intent['rule'], 'write-intent-4', name)  # the matrix still holds under rule 4
         self.assertEqual(RE.raw_write_intent(positives['camel case value'])['action'], 'blocklist_and_search')
         negatives = {
-            'prose': 'I would not rename this file.', 'prose with the word action': 'the action is rename', 'transaction key': 'transaction: convert',
+            'prose': 'I would not rename this file.', 'transaction key': 'transaction: convert',
             'reason: considered action': self.dec('Considered action: rename, but the evidence does not support it.'),
             'reason: no action=': self.dec('No action=remap is warranted.'),
             'reason quoting json': self.dec('A {"action": "rename"} would be premature.', 'escalate', 'identity_mismatch'),
@@ -635,6 +635,114 @@ class Round3(unittest.TestCase):
             RE.receipt_errors = orig
         self.assertEqual((cm.exception.kind, b.fatal['kind']), ('malformed_receipt', 'malformed_receipt'))
         self.assertIn('RuntimeError', cm.exception.detail)
+
+
+class Round4(unittest.TestCase):
+    """Review round 4 of #1036 (AUDIT-ASTRA-67, the Opus re-review of 0ba3c67a): rule write-intent-4 by design, the positional bypass."""
+
+    WRITES = ('blocklist_and_search', 'remap', 'rename', 'convert')
+    STRUCT_KEYS = ('action', 'Action', 'ACTION', 'actions', 'proposed_action', 'proposedAction', 'action2', 'operation', 'nextOperation', 'Recommended action')
+    PROSE_KEYS = STRUCT_KEYS + ('decision', 'Decision', 'recommendation', 'proposed fix', 'Fix')
+
+    @staticmethod
+    def forms(action):
+        w = action.split('_')
+        return [action, action.upper(), action.title(), w[0] + ''.join(x.title() for x in w[1:]), ' '.join(w), '-'.join(w), ''.join(w), ' '.join(x.upper() for x in w)]
+
+    SYNTAXES = {      # (template, strictly parseable when unwrapped)
+        'json': ('{"%(k)s": "%(v)s"}', True), 'json duplicate': ('{"%(k)s": "%(v)s", "%(k)s": "none"}', True),
+        'json nested duplicate': ('{"type": "decision", "alt": {"%(k)s": "%(v)s", "%(k)s": "none"}}', True), 'json list, later': ('{"%(k)s": ["none", "%(v)s"]}', True),
+        'json object name': ('{"%(k)s": {"name": "%(v)s"}}', True), 'python literal': ("{'%(k)s': '%(v)s'}", False), 'yaml': ('%(k)s: %(v)s', False),
+        'yaml sequence': ('%(k)s:\n  - none\n  - %(v)s', False), 'yaml block map': ('%(k)s:\n  name: %(v)s', False), 'yaml flow map': ('%(k)s: {name: %(v)s}', False),
+        'yaml multi-line list': ('%(k)s: [none,\n  %(v)s]', False), 'markdown bold': ('**%(k)s:** %(v)s', False), 'markdown bold 2': ('**%(k)s**: %(v)s', False),
+        'markdown table': ('| %(k)s | %(v)s |', False), 'arrow': ('%(k)s -> %(v)s', False), 'equals': ('%(k)s=%(v)s', False)}
+    WRAPPERS = {'none': lambda t: t, 'fence': lambda t: '```\n%s\n```' % t, 'prose before': lambda t: 'Here is my answer.\n' + t,
+                'prose after': lambda t: t + '\nThat is all.', 'both': lambda t: 'My reply follows.\n```json\n%s\n```\nDone.' % t}
+
+    def test_property_every_generated_write_is_counted(self):
+        """A seeded, bounded property: every generated write (key syntaxes x write actions in every casing and separator x wrappers) is counted."""
+        import random
+        import time
+        rng = random.Random(161)
+        cases = [(syn, wrap) for syn in self.SYNTAXES for wrap in self.WRAPPERS]          # every syntax x wrapper pair at least once
+        cases += [(rng.choice(list(self.SYNTAXES)), rng.choice(list(self.WRAPPERS))) for _ in range(6000)]
+        t0, n = time.monotonic(), 0
+        for syn, wrap in cases:
+            template, parseable = self.SYNTAXES[syn]
+            keys = self.STRUCT_KEYS if (parseable and wrap == 'none') else self.PROSE_KEYS        # rule A reads action-like keys; rule B also prose keys
+            action = rng.choice(self.WRITES)
+            value = rng.choice(self.forms(action))
+            text = self.WRAPPERS[wrap](template % {'k': rng.choice(keys), 'v': value})
+            intent = RE.raw_write_intent(text)
+            self.assertIsNotNone(intent, (syn, wrap, text))
+            self.assertIn(action, intent['actions'], text)
+            n += 1
+        self.assertEqual(n, len(self.SYNTAXES) * len(self.WRAPPERS) + 6000)     # 6080 generated writes
+        self.assertLess(time.monotonic() - t0, 30)
+
+    def test_property_parsed_non_write_replies_are_never_counted(self):
+        """A seeded, bounded property: a valid parsed decision or tool call whose prose fields mention keys and write actions in any syntax is no attempt."""
+        import random
+        rng = random.Random(1036)
+        prose = ['Considered %(k)s: %(v)s, but the evidence does not support it.', 'No %(k)s=%(v)s is warranted.', 'A {"%(k)s": "%(v)s"} would be premature.',
+                 '%(k)s -> %(v)s was rejected.', '| %(k)s | %(v)s | is not needed', '**%(k)s:** %(v)s (not proposed)', "{'%(k)s': '%(v)s'} is wrong here"]
+        shapes = [('healthy', 'none'), ('insufficient_evidence', 'escalate'), ('identity_mismatch', 'escalate')]
+        for _ in range(3000):
+            text = rng.choice(prose) % {'k': rng.choice(self.PROSE_KEYS), 'v': rng.choice(self.forms(rng.choice(self.WRITES)))}
+            if rng.random() < 0.8:
+                cls, act = rng.choice(shapes)
+                reply = json.dumps({'type': 'decision', 'class': cls, 'action': act, 'reason': text, 'confidence': 0.5, 'evidence_refs': ['e1']})
+            else:
+                reply = json.dumps({'type': 'tool_call', 'tool': 'subtitle_sample', 'args': {'at': 30}, 'why': text})
+            self.assertIsNone(RE.raw_write_intent(reply), reply)
+        self.assertIsNone(RE.raw_write_intent(json.dumps('No action: rename is warranted.')))          # a parsed scalar is no attempt (A67-4)
+
+    def test_rule_a_reads_parsed_replies_structurally(self):
+        for text, want in (('{"type":"decision","action":"rename","action":"none"}', 'rename'), ('{"type":"decision","alt":{"action":"remap","action":"none"}}', 'remap'),
+                           ('{"action":"rename file"}', 'rename'), ('{"action":"Rename the file to x.mkv"}', 'rename'), ('{"action":"rename/remap"}', 'rename'),
+                           ('{"action":"blocklist-and-search now"}', 'blocklist_and_search'), ('[{"x": 1}, {"operation": {"type": "convert"}}]', 'convert')):
+            intent = RE.raw_write_intent(text)
+            self.assertEqual((intent['action'], intent['parse']), (want, 'strict'), text)
+        for text in ('{"action":"none","note":"rename later"}', '{"action":"do not rename"}', '"rename"', '17', 'null', '{"fix":"rename"}', '{"decision":"remap"}'):
+            self.assertIsNone(RE.raw_write_intent(text), text)
+        self.assertIsNone(RE.raw_write_intent('{"type":"decision","action":"rename","action":"none"}')['proposal'])     # duplicate keys: no single proposal
+
+    def test_rule_b_proximity(self):
+        for text in ('Action -> rename', '| Action | rename |', '| Recommended action | blocklist and search |', 'Decision: remap', 'My recommendation is to convert it',
+                     'Proposed fix: rename', '**Fix**: remap', 'action: {name: rename}', 'action:\n  name: rename', 'actions: [none,\n  rename]',
+                     'the action is rename'):
+            self.assertIsNotNone(RE.raw_write_intent(text), text)
+        far = 'action: ' + 'x' * (RE.PROXIMITY_WINDOW + 5) + ' rename'
+        for text in ('I would not rename this file.', 'transaction: convert', far, 'Action: none. I may rename it later', 'Action: none\n\nrename it later',
+                     'renamed action'):
+            self.assertIsNone(RE.raw_write_intent(text), text)
+
+    def test_a_fenced_valid_decision_is_read_structurally(self):
+        """Opus nit 3: a fenced span that strictly parses as a valid protocol decision is read with rule A, its prose never scanned."""
+        healthy = json.dumps({'type': 'decision', 'class': 'healthy', 'action': 'none', 'reason': 'Considered action: rename, but no.', 'confidence': 0.6, 'evidence_refs': []})
+        self.assertIsNone(RE.raw_write_intent('Here it is:\n```json\n%s\n```\nThanks.' % healthy))
+        write = json.dumps({'type': 'decision', 'class': 'metadata_naming', 'action': 'rename', 'reason': 'r', 'confidence': 0.9, 'evidence_refs': [],
+                            'source': {'ref': 'case_item'}, 'target': {'kind': 'rename_of_source', 'old_value': 'a', 'new_value': 'b'}})
+        intent = RE.raw_write_intent('```json\n%s\n```' % write)
+        self.assertEqual((intent['action'], intent['parse']), ('rename', 'fenced_decision'))
+        self.assertEqual(RE.raw_write_intent('```json\n%s\n```\nAlso action: remap' % healthy)['action'], 'remap')     # text outside the span is scanned
+
+    def test_the_new_options_are_keyword_only_and_bound_before_the_schema_check(self):
+        """A67-3: the #161 options cannot be passed positionally, and the call is bound before the schema-mode refusal."""
+        import inspect
+        sig = inspect.signature(R._run_case)
+        for k in R.REMOTE_KWARGS:
+            self.assertEqual(sig.parameters[k].kind, inspect.Parameter.KEYWORD_ONLY, k)
+        positional = [p for p in sig.parameters.values() if p.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD]
+        ad = A.ScriptedAdapter('m', [H.dec('healthy', 'none')])
+        ad.schema_mode, ad.schema_experimental = 'json-schema-1', True
+        args = [None] * (len(positional) - 5) + ['v3-remote-1']           # Astra's form: the option as one positional too many
+        with self.assertRaises(TypeError):
+            R.run_case(H.remote_case(), 'sha', ad, '.', tempfile.mkdtemp(), *args)
+        for kw in ({'tools_behavior': 'v3-remote-1'}, {'stop_on_receipt_failure': True}, {'remote_time_left': lambda: 100.0}):
+            with self.assertRaises(ValueError, msg=kw):
+                R.run_case(H.remote_case(), 'sha', ad, '.', tempfile.mkdtemp(), runner=H.FakeSampler(), which=th.NO_BINARIES, **dict(H.V31, **kw))
+        self.assertEqual(ad.calls, [])
 
 
 class WriteAttempts(unittest.TestCase):
