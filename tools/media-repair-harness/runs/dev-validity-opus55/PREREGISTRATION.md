@@ -374,3 +374,29 @@ with the characters sent (system prompt plus message):
 6. No other `claude -p` run of this story is active.
 
 **Hold.** The hold of §9 continues. The go needs a delta re-review of this amendment by both reviewers.
+
+## 11. Amendment 2 (committed before any model call; earlier text stays as committed, and its history is the git log)
+
+**Why.**
+- The Opus delta re-review of `b88e4329` returned go-with-amendments: must-fix items 1–3, and minor items 4–9.
+- Astra's delta re-review of Amendment 1 (attempt 1) failed at 13:27Z with `Selected model is at capacity`, before it
+  gave any verdict. That is a provider failure, not a review result. Its log is kept as
+  `AUDIT-ASTRA-39-attempt1-capacity-failed.log`.
+- Astra re-reviews Amendments 1 and 2 together before the go.
+- **Still no model call has been made.**
+
+| # | Finding | Change |
+|---|---|---|
+| 1 | Opus 1: contract-consistent matches of a rule-(i) alternative that score.py rejects, where the reference passes, had no category. tv-identity-004's U alternative broke rule (ii) | New category **A3, reading tension.** The decision is contract-consistent and matches a rule-(i) alternative, score.py rejects it, and the reference decision passes. It is not a credited pass and not a model failure. It is listed per case. **`predictions-a2.json`** (sha256 `dce1bfd962cde8622722dd35b2d30450b86271f87bc5748b0da9f67e53b967d5`) drops tv-identity-004's alternative. `predictions-a1.json` and `predictions.json` stay unchanged. **`ceiling-a2.json`** (sha256 `b7c4057cd260175921821cccaf15c3ecf0f448b88591df3730ee1b130f44cbdf`): reference decisions G3 35/61, G4 13/15, G5 20/49; best among listed options G3 37/61, G5 19/49; 26 unreachable cases (24 in the G3 population, plus tv-insuff-001/002 in G4) |
+| 2 | Opus 2: F covered only a failed repair | **F = the record's `forced` is true and the case is not H.** That covers a failed repair, the 18-model-call limit, a call past the 6-call budget, and any other forced path |
+| 3 | Opus 3: the shim was not transparent on a timeout kill | The shim now **`exec`s the real CLI** (sha256 `8b54299d0005b981ce4cf4578f22511712b6af3f7ed392cdcfde856f3c414b59`), so the killed process is the CLI. Its stdout is copied through a process-substituted `tee`, and the journal logs `start` and `stdout-closed`. The exit status is the CLI's own. `tests/test_validity_opus55.py` adds a timeout test: the killed slow fake never finishes |
+| 4 | Opus 4: the guarded view can credit a guard-made pair | **"Opus reaches the reference" is stated on the restored view.** In the guarded view, a decision that a guard changed is category **G, guard-made**, and is never credited |
+| 5 | Opus 5 | Contract-consistency condition 3 now reads: for a write, audit v3 shows **no unmet or unknown** prerequisite |
+| 6 | Opus 6: `requires` was too narrow or too vague | `requires` now names the **content** that must be delivered before the decision, plus one witness call sequence. Condition 1 now reads: the named content was delivered in the transcript before the decision, by **any** call that delivers it |
+| 7 | Opus 7: the walkthrough §1 | Corrected in version A2. The 26 cases are 24 in G3 plus 2 in G4. Astra's dev-c7 movie-order-001 O/escalate is a contract inconsistency under the reference, which explains 36 against 35 |
+| 8 | Opus 8: pre-run checks | **Check 1:** the src fingerprint is computed as `git ls-tree -r <commit> tools/media-repair-harness/src \| sha1sum` = `36a08be3…` (git tree id `f5cf693e`). **Check 3:** run with `MRH_VALIDITY_REQUIRE_ALL=1`, which makes the render-equivalence test require **73/73** in this pod. **Environment names:** recorded as `env -i <the registered variables> python3 -c 'import os,json; print(json.dumps(sorted(os.environ)))' > $J/env-names.json` |
+| 9 | Opus 9 | movie-decoder-001's exclusion of D/convert is recorded as an explicit **exception to rule (i)** (source shape unsettled; conservative) |
+
+**Summary of the final category set.** The precedence is **H > F > G** (guarded view only), then the evaluated
+categories **P, P!, A1, A2, A3, B (B1, B2, B4, B5) and D**. The registered reference set is `predictions-a2.json` with
+`ceiling-a2.json`.

@@ -1,10 +1,11 @@
 # Can dev-v1.1 be passed legitimately? A developer walkthrough of all 73 cases (story #159, deliverable 1)
 
-**Version and authorship.** This is version A1 (Amendment 1), written on 2026-10-21 **before any Opus 5.5 benchmark
-response**. The author is the development coordinator (`claude-opus-5-5`). It folds in two independent pre-measurement
-reviews: Opus, and Astra (AUDIT-ASTRA-38).
+**Version and authorship.** This is version A2 (Amendments 1 and 2), written on 2026-10-21 **before any Opus 5.5
+benchmark response**. The author is the development coordinator (`claude-opus-5-5`). It folds in two independent pre-measurement
+reviews: Opus (two rounds), and Astra (AUDIT-ASTRA-38).
 - The first version is kept in git history.
-- Its reference decisions are kept unchanged in `runs/dev-validity-opus55/predictions.json`.
+- Its reference decisions are kept unchanged in `runs/dev-validity-opus55/predictions.json`, and Amendment 1's in
+  `predictions-a1.json`.
 
 **What it is.** An answerbook-assisted analysis. It draws on:
 - the public dev-v1.1 labels;
@@ -39,8 +40,8 @@ This bound is AUDIT-ASTRA-38's.
 
 **The reference decisions.**
 - Every case has one reference decision under the literal contract, plus the listed alternatives that other contract
-  readings or optional calls admit. They are in `runs/dev-validity-opus55/predictions-a1.json`.
-- They were scored by the evaluator's unchanged `score.py` (`scripts/validity_ceiling.py` → `ceiling-a1.json`).
+  readings or optional calls admit. They are in `runs/dev-validity-opus55/predictions-a2.json`.
+- They were scored by the evaluator's unchanged `score.py` (`scripts/validity_ceiling.py` → `ceiling-a2.json`).
 - These are reference points, not a proven ceiling.
 
 | Gate | Reference decisions | Best among listed options | Threshold |
@@ -51,12 +52,17 @@ This bound is AUDIT-ASTRA-38's.
 | G4 | **13/15 (86.7%)** | 13/15 | ≥90% |
 | G5 | **20/49 (40.8%)** | 19/49 | ≤15% |
 
-- **26 of the 61 G3 cases have no listed contract-consistent decision that `score.py` accepts.**
+- **26 cases have no listed contract-consistent decision that `score.py` accepts:** 24 in the G3 population, plus
+  tv-insuff-001 and tv-insuff-002 in G4.
 - The archived frontier control `gpt-6-astra` scored G3 36/61 and G5 21/49 on dev-c7, which is about this reference
   point.
 - Its stops at a clean prefix (tv-corrupt-003, epub-identity-004) are **permitted by the literal contract**, not
   contract errors.
-- Its one clear contract error was movie-insuff-001: H/none despite the M4 runtime conflict.
+- Under these reference decisions it has two contract errors:
+  - movie-insuff-001: H/none despite the M4 runtime conflict;
+  - movie-order-001: O/escalate, where only one edition fits.
+
+  Its O/escalate on movie-order-001 scored correct, and it is why its G3 of 36 is one above the reference's 35.
 
 ## 2. Why 26 cases are out of reach (six mechanisms)
 1. **Book corruption without a linked file: 11 cases.**
@@ -123,7 +129,7 @@ source-shape. **Tom has put that docket on hold.** Nothing here rules on it.
 O order_edition_ambiguity, U insufficient_evidence.
 
 **Columns:**
-- **Reference decision:** the literal-contract decision in `predictions-a1.json`. "After" names calls whose delivered
+- **Reference decision:** the literal-contract decision in `predictions-a2.json`. "After" names calls whose delivered
   results it needs. Alternatives are listed options, each admissible only after its own `requires` calls.
 - **Reachable:** applies the unchanged `score.py` rules.
 - **Bracketed tags** name the #137 docket topic (DEVELOPMENT-KNOWLEDGE-20261021 §C).
@@ -163,12 +169,12 @@ O order_edition_ambiguity, U insufficient_evidence.
 | epub-healthy-006 | H; none | H/none | Valid short package, metadata matches; null series is not an empty naming field; length is not a defect. | Yes | Passes on the evidence shown. |
 | epub-identity-001 | I; block, escalate | U/escalate | Only an OPF report disagrees; no body, no tools: identity contested (M5), not contradicted. | **No** | Class I needs content; only an OPF report disagrees. Legitimate only with body content, or a ruling accepting U/escalate. [declarations] |
 | epub-identity-002 | I; block | U/escalate | Different OPF title plus a reported hash equality: report_declaration/report_hash, not content; no tools. | **No** | Reported OPF title and hash equality are declarations/report_hash; needs body content and a bound source, or U/escalate accepted. [declarations, binding] |
-| epub-identity-003 | I; block | I/escalate (U/escalate) after `epub_inspect {} and the body excerpts it needs` | Declarations disagree; body excerpts can show content of a different book (D-ID-1). Even then no linked-file record binds the source: I/escalate. Without reading body: U/escalate. | **No** | Body excerpts can establish I; block still needs a bound source. Legitimate only with binding, or a ruling accepting I/escalate. [body, binding] |
+| epub-identity-003 | I; block | I/escalate (U/escalate) after `observed body text (default or explicit excerpt) showing content of a work other than the catalog's; witness: epub_inspect {} then an explicit excerpt of a body spine item` | Declarations disagree; body excerpts can show content of a different book (D-ID-1). Even then no linked-file record binds the source: I/escalate. Without reading body: U/escalate. | **No** | Body excerpts can establish I; block still needs a bound source. Legitimate only with binding, or a ruling accepting I/escalate. [body, binding] |
 | epub-identity-004 | I; block, escalate | H/none (I/escalate) | Package clean, OPF title/creator/language match; spine_heads are legacy_mixed (no content identity, not a declaration), so nothing material is open: H/none. Alt I/escalate is admissible ONLY after a successful explicit excerpt (epub_inspect {} returns three EMPTY default excerpts; {"spine":5,"offset":0,"length":1200} returns body text about another book) and a stated identity comparison; no binding. [body, stopping] | Only via a listed option (needs its `requires` calls) | Literal contract: H/none (rejected). The label is reached only after `epub_inspect {}` (empty default excerpts) and `{"spine":5,"offset":0,"length":1200}` deliver another book, plus a stated identity comparison. [body, stopping] |
 | epub-identity-005 | I; block | H/none (I/escalate, U/escalate) | Initially only legacy_mixed spine_heads (no content) differ; OPF matches; nothing material is open: H/none. Alt (admissible only after epub_inspect {} delivers the observed body headings, which differ from the catalog's expected TOC): I/escalate if those headings are judged an identity contradiction (hand judgement; chapter names are not a listed identity attribute), else U/escalate; no binding. [body] | **No** | Literal contract: H/none. After `epub_inspect {}` the observed headings differ from the expected TOC; I/escalate only by hand judgement (chapter names are not a listed identity attribute), and block needs binding: unreachable. [body, binding] |
 | epub-insuff-001 | U; escalate | U/escalate | Size versus a grab record is not damage; epub_inspect fails to run (execution failure proves nothing): M1, U/escalate. | Yes | Passes on the evidence shown. |
-| epub-insuff-002 | I; block, escalate | I/escalate after `epub_inspect {}` | French body text versus a required English catalog language is a content disagreement (D-ID-1); no binding: I/escalate. | Yes | Passes only if the listed call is made: it is available within the 6-call budget. |
-| epub-naming-001 | N; rename | N/escalate (U/escalate) after `epub_inspect {} (body title page)` | Untitled/Unknown declarations on a valid package; body title page can verify identity, but rename also needs a bound source, absent: N/escalate. | **No** | Rename needs a bound source (absent) and body-verified identity (reachable by epub_inspect). Legitimate only with binding, or N/escalate accepted. [rename, body, binding] |
+| epub-insuff-002 | I; block, escalate | I/escalate after `observed body text in a language other than the catalog's required language; witness: epub_inspect {}` | French body text versus a required English catalog language is a content disagreement (D-ID-1); no binding: I/escalate. | Yes | Passes only if the listed call is made: it is available within the 6-call budget. |
+| epub-naming-001 | N; rename | N/escalate (U/escalate) after `observed body/title-page text agreeing with the catalog title and author; witness: epub_inspect {}` | Untitled/Unknown declarations on a valid package; body title page can verify identity, but rename also needs a bound source, absent: N/escalate. | **No** | Rename needs a bound source (absent) and body-verified identity (reachable by epub_inspect). Legitimate only with binding, or N/escalate accepted. [rename, body, binding] |
 | epub-outcome-001 | C; block | C/escalate | BadZipFile; no binding: C/escalate. | **No** | Legitimate only with a LazyLibrarian record whose linked file is this file (A-BLK source binding), or a ruling that accepts C/escalate. [binding] |
 | epub-outcome-002 | C; block | C/escalate | BadZipFile; no binding: C/escalate. | **No** | Legitimate only with a LazyLibrarian record whose linked file is this file (A-BLK source binding), or a ruling that accepts C/escalate. [binding] |
 
@@ -179,7 +185,7 @@ O order_edition_ambiguity, U insufficient_evidence.
 | movie-corrupt-001 | C; block | C/block | Missing moov is located damage; the Radarr record's file.relativePath equals the filename (bound): C/block. | Yes | Passes on the evidence shown. |
 | movie-corrupt-002 | C; block | C/block | EBML header failure; bound Radarr record: C/block. | Yes | Passes on the evidence shown. |
 | movie-corrupt-003 | C; block, escalate | C/block | Missing moov; bound record; a later decode timeout does not erase it: C/block. | Yes | Passes on the evidence shown. |
-| movie-decoder-001 | D; convert | D/escalate | EAC3 5.1 selected versus a stated AAC stereo client (D-DEC). arr_lookup echoes movieId/movieFileId without a linked-file record; whether that echo binds the source is the unsettled source-shape question, so D/convert is NOT counted as a reachable contract decision: D/escalate. [source-shape] | **No** | Convert needs a bound source; the lookup echoes movieId/movieFileId without a linked-file record, and whether that echo binds the source is unsettled, so D/convert is not counted. Legitimate with a record whose file links this file, or D/escalate accepted. [source-shape] |
+| movie-decoder-001 | D; convert | D/escalate | EAC3 5.1 selected versus a stated AAC stereo client (D-DEC). arr_lookup echoes movieId/movieFileId without a linked-file record; whether that echo binds the source is the unsettled source-shape question, so D/convert is NOT counted as a reachable contract decision: D/escalate. [source-shape] (Explicit exception to alternative rule (i): the source-shape reading D/convert is excluded, conservatively, until the echo-as-binding question is settled.) | **No** | Convert needs a bound source; the lookup echoes movieId/movieFileId without a linked-file record, and whether that echo binds the source is unsettled, so D/convert is not counted. Legitimate with a record whose file links this file, or D/escalate accepted. [source-shape] |
 | movie-decoder-002 | D; convert | D/convert | HEVC Main10 and AC3 5.1 versus a stated H264 8-bit/AAC stereo client; bound Radarr record: D/convert to an executor-allocated copy. | Yes | Passes on the evidence shown. |
 | movie-healthy-001 | U; escalate | U/escalate | Reported release title/duration only; no integrity result, no tools (M1). | Yes | Passes on the evidence shown. |
 | movie-healthy-002 | U; escalate | U/escalate | Reported title is an allowed alias; no integrity result, no tools (M1). | Yes | Passes on the evidence shown. |
@@ -211,7 +217,7 @@ O order_edition_ambiguity, U insufficient_evidence.
 | tv-identity-001 | I; block, escalate | I/escalate | Reported content (subtitle cards, method content) disagrees with the expected segments (D-ID-1 via report_content); no tools and no bound record: I/escalate. | Yes | Passes on the evidence shown. |
 | tv-identity-002 | I; block | I/escalate (U/escalate, H/none) | OCR text names a different episode than the catalog (content); no catalog record links the file, so block lacks binding: I/escalate. Alt H/none: if OCR free text naming no catalog value is read as not comparable (section 8), nothing material is open. | **No** | OCR content contradicts the catalog, but no catalog record links the file, so block lacks binding. Legitimate only with a bound Sonarr record, or I/escalate accepted. [body, binding] |
 | tv-identity-003 | I; block | I/block | Completed OCR shows S01E03 while the slot is E04 (content); the Sonarr record binds the file: I/block; no free slot evidenced for remap. | Yes | Passes on the evidence shown. |
-| tv-identity-004 | I; block, escalate | I/block (U/escalate) after `ocr {"at":1}` | Tags name E03 against an E04 slot: a declaration disagreement (M5, material), so Deciding 3 warrants the available OCR; recorded OCR at 1 s shows E03 (content) and the record binds the file: I/block. Alt: without the OCR, identity stays contested: U/escalate. | Yes | Passes after the OCR at 1 s, which the material declaration conflict (M5) warrants. |
+| tv-identity-004 | I; block, escalate | I/block after `an OCR or frame reading naming the episode shown (E03) against the E04 slot; witness: ocr {"at":1}` | Tags name E03 against an E04 slot: a declaration disagreement (M5, material), so Deciding 3 warrants the available OCR; recorded OCR at 1 s shows E03 (content) and the Sonarr record binds the file: I/block. | Yes | Passes after the OCR at 1 s, which the material declaration conflict (M5) warrants. |
 | tv-insuff-001 | U; escalate | H/none | Clean container and window, no contradiction; H4 needs no positive identity and nothing material is open, so literal v7 gives scoped H/none, against the U label. [stopping] | **No** | The literal contract gives scoped healthy (H4 needs no positive identity) where the label wants U/escalate. Needs a general policy that generic triage must positively identify the item, or a label accepting H/none. [stopping] |
 | tv-insuff-002 | U; escalate | H/none | First message identical to tv-corrupt-003 apart from the file name; clean container and window, 8.046 s fits the expected 8 s: H1-H5 hold. An optional decode of the remainder fails to run, which adds no defect and no material conflict: still H/none with the tool failure stated. The U label is unreachable under the literal contract. [stopping] | **No** | Not reachable under the literal contract: scoped healthy holds before and after the optional decode (which fails to run). Needs a policy that generic triage must decode the remainder, or a label accepting H/none. [stopping] |
 | tv-insuff-003 | U; escalate | U/escalate | Container 8.046 s versus catalog 6 s exceeds max(1 s, 5%) (M4); a full decode would not resolve the catalog conflict. | Yes | Passes if the 8 s vs 6 s catalog conflict (M4) is kept separate from decode completion. [duration] |
@@ -228,7 +234,8 @@ O order_edition_ambiguity, U insufficient_evidence.
 - **epub-identity-003 and epub-naming-001:** a material identity conflict warrants body reads. Both labels are
   unreachable anyway.
 
-Missing such a call is a model or tool-use failure.
+Missing such a call is a model or tool-use failure. Any call that delivers the named content qualifies; the listed call
+is one witness.
 
 **Calls the contract does not warrant.** These calls are optional, because nothing material is open:
 - tv-corrupt-003, epub-identity-004 and epub-identity-005;

@@ -80,11 +80,30 @@ class FrozenCeiling(unittest.TestCase):
     def test_frozen_original_predictions_unchanged(self):
         self.assertEqual(hashlib.sha256((VAL / 'predictions.json').read_bytes()).hexdigest(),
                          '86b4424a47bd1df658ff90d620ec6738bfd61cebb8a9de7a135eef3a37b67668')
+        self.assertEqual(hashlib.sha256((VAL / 'predictions-a1.json').read_bytes()).hexdigest(),
+                         '0cfb5d74b52da6eb69abd4793feb439cd414c1c2b9adfc9f7984a8adb74ef260')
+
+    def test_amendment2_ceiling_reproduces(self):
+        suite = th.require_suite().parent / 'suite-dev-v1.1'
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('validity_ceiling', SCRIPTS / 'validity_ceiling.py')
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / 'ceiling-a2.json'
+            mod.main(['--suite', str(suite), '--predictions', str(VAL / 'predictions-a2.json'), '--out-json', str(out)])
+            got = json.loads(out.read_text())
+        want = json.loads((VAL / 'ceiling-a2.json').read_text())
+        got.pop('score_py'), want.pop('score_py')
+        self.assertEqual(got, want)
+        never = want['never_correct_under_contract']
+        self.assertEqual((len(never), sum(want['per_case'][c]['truth'] != 'insufficient_evidence' for c in never)), (26, 24))
+        self.assertEqual(json.loads((VAL / 'predictions-a2.json').read_text())['cases']['tv-identity-004']['alt'], [])
 
     def test_predictions_cover_every_case_once(self):
         suite = th.require_suite().parent / 'suite-dev-v1.1'
         ids = sorted(c['id'] for c, _ in R.load_cases(str(suite)))
-        for name in ('predictions.json', 'predictions-a1.json'):
+        for name in ('predictions.json', 'predictions-a1.json', 'predictions-a2.json'):
             pred = json.loads((VAL / name).read_text())['cases']
             self.assertEqual(sorted(pred), ids, name)
             for cid, p in pred.items():
@@ -130,7 +149,8 @@ class RenderEquivalence(unittest.TestCase):
                 self.assertEqual(rec['turns'][0]['raw_request']['system_prompt'], h['turns'][0]['raw_request']['system_prompt'], case['id'])
                 same += 1
         ad.finish()
-        self.assertGreaterEqual(same, 69)
+        import os
+        self.assertGreaterEqual(same, 73 if os.environ.get('MRH_VALIDITY_REQUIRE_ALL') == '1' else 69)   # Amendment 2: 73/73 in the run pod
         self.assertEqual(same + len(skipped), 73)
         cmd = list(seen['cmd'])
         hargv = h['turns'][0]['raw_request']['argv']
@@ -140,7 +160,7 @@ class RenderEquivalence(unittest.TestCase):
 
 class CallJournalShim(unittest.TestCase):
     """Amendment 1: the pass-through claude shim leaves stdin bytes, stdout, stderr and the exit status unchanged and journals start/end."""
-    SHA = '2edceb579b447a45eaabfa2682630fbfb6d8ad7941d9c5ec0be4619092b4636f'
+    SHA = '8b54299d0005b981ce4cf4578f22511712b6af3f7ed392cdcfde856f3c414b59'   # Amendment 2: exec, so a timeout kill reaches the CLI
 
     def test_pinned_and_transparent(self):
         import os
@@ -154,12 +174,33 @@ class CallJournalShim(unittest.TestCase):
             env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'MRH_CLAUDE_REAL': str(fake), 'MRH_CALL_JOURNAL': str(Path(d) / 'j')}
             r = subprocess.run(['bash', str(shim), '-p', '--model', 'x'], input=b'a\x00b\nc', capture_output=True, env=env)
             self.assertEqual((r.returncode, r.stdout, r.stderr), (7, b'a\x00b\nc', b'args:3\n'))
-            log = (Path(d) / 'j' / 'calls.log').read_text().splitlines()
-            self.assertEqual([x.split()[1] for x in log], ['start', 'end'])
-            self.assertIn('rc=7', log[1])
+            import time
+            for _ in range(50):          # the journal's close line is written by the tee side after stdout closes
+                log = (Path(d) / 'j' / 'calls.log').read_text().splitlines()
+                if len(log) == 2:
+                    break
+                time.sleep(0.05)
+            self.assertEqual([x.split()[1] for x in log], ['start', 'stdout-closed'])
             outs = list((Path(d) / 'j').glob('out-*.json'))
             self.assertEqual(len(outs), 1)
             self.assertEqual(outs[0].read_bytes(), b'a\x00b\nc')
+
+    def test_timeout_kill_reaches_the_cli(self):
+        """The runner kills the process it started on timeout; with exec that process IS the CLI, so no orphaned call keeps running."""
+        import os
+        import subprocess
+        import time
+        shim = SCRIPTS / 'claude_call_journal.sh'
+        with tempfile.TemporaryDirectory() as d:
+            marker = Path(d) / 'marker'
+            slow = Path(d) / 'slow'
+            slow.write_text('#!/usr/bin/env python3\nimport time, pathlib\ntime.sleep(2)\npathlib.Path(%r).write_text("late")\n' % str(marker))
+            slow.chmod(0o755)
+            env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'MRH_CLAUDE_REAL': str(slow), 'MRH_CALL_JOURNAL': str(Path(d) / 'j')}
+            with self.assertRaises(subprocess.TimeoutExpired):
+                subprocess.run(['bash', str(shim)], input=b'', capture_output=True, env=env, timeout=0.5)
+            time.sleep(2.5)
+            self.assertFalse(marker.exists())
 
 
 class Blinding(unittest.TestCase):
