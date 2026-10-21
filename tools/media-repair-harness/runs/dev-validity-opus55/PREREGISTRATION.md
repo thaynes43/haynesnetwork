@@ -54,6 +54,9 @@ are in `predictions.json` (`cf`, `alt`, `status`, `explore`, `why`).
 - **24 cases** are incorrect under `cf`.
 - The cases are listed in `ceiling.json` (`never_correct_under_contract`, `contract_label_fails`).
 
+*Superseded by Amendment 1:* the reviewed reference decisions are in `predictions-a1.json` → `ceiling-a1.json`, and the
+headline is the robust 11-case bound. This table is kept as originally frozen.
+
 What is behind it:
 - **11 book corruption cases.** Each label accepts only a blocklist, but the lazylibrarian catalog record has no linked
   file. Contract A-BLK requires a bound source.
@@ -99,14 +102,18 @@ is `/tmp/claude-1000/mrh-val-runs`, outside the worktree:
 PYTHONPATH=$C/src python3 -m media_repair_harness.run --adapter claude --model claude-opus-5-5 --suite $SUITE --split dev --prompt v7 --evidence-format v3.1-format --guards v3 --evidence replay --tool-output-bytes 8192 --no-spend-limit --out $OUT/devval-opus-5-5 --scratch /tmp/claude-1000/mrh-val-scratch/opus
 ```
 
-**Blinding.** Each turn is one `claude -p` invocation set up as follows:
-- no tools, no MCP servers and no setting sources (so no project or user CLAUDE.md and no memory);
-- its own empty temporary working directory, and no session persistence;
-- the transcript re-rendered by the harness.
+**Blinding.** Each turn is one fresh `claude -p` process (Amendment 1 corrects the original wording):
+- no tools, no MCP servers and no setting sources;
+- no session persistence;
+- the transcript re-rendered by the harness;
+- run in **one** empty temporary working directory that the adapter allocates per run, not per turn;
+- under the **scrubbed environment** of Amendment 1, item 5.
 
 Consequences:
-- The model cannot read the repository, the suite JSON, `predictions.json` or anything on disk.
-- No state crosses cases. Each case starts from a fresh context.
+- The model cannot read the repository, the suite JSON, the predictions or anything on disk.
+- No conversation state crosses turns or cases.
+- Ordinary user and project memory is gated off by `--setting-sources ""`.
+- The CLI's own startup context outside the rendered prompt is attested, not proven absent (Amendment 1, item 5).
 
 The dev-c7 Haiku records support this. Their reported input (cache creation + cache read + input, for example 9,433
 tokens for a 25,011-character system prompt plus first message) is consistent with the system prompt, the case and the
@@ -234,3 +241,136 @@ only after an independent pre-measurement review by both:
 - Astra (`gpt-6-astra`, a fresh read-only `codex exec` in the V2 pod).
 
 Any fix after that review is a numbered amendment, made before any response.
+
+## 10. Amendment 1 (committed before any model call; the original commit `4c03e789` is not rewritten, and its history is the git log)
+
+**Why.** These are the independent pre-measurement reviews of `4c03e789`:
+- **Opus:** go with amendments (M1 to M3 and the minors).
+- **Astra:** `AUDIT-ASTRA-38`, no-go as frozen (blocker 1, majors 2 to 4, minors 5 and 6).
+
+Both confirmed:
+- `src/` is unchanged.
+- The config hash `dac813af…` holds, differing from Haiku's only in `adapter_config.model`.
+- All 73 first messages and system prompts equal Haiku's turn 0 after alias substitution.
+- No harness path delivers labels, predictions or the walkthrough.
+- The no-pass conclusion survives.
+
+**Still no model call has been made.**
+
+| # | Finding | Change |
+|---|---|---|
+| 1 | Astra 2 and the per-case table; Opus M2 and the per-case disputes: some reference decisions contradicted prompt v7 read literally, and some alternatives broke diagnosis rules | `predictions.json` stays unchanged (sha256 `86b4424a…7668`). The registered reference set is now **`predictions-a1.json`** (sha256 `0cfb5d74b52da6eb69abd4793feb439cd414c1c2b9adfc9f7984a8adb74ef260`). It has one rule for alternatives and a `requires` field: the calls whose delivered results an option needs. Literal-v7 references (Deciding 3 spends calls only on material items): tv-corrupt-003, tv-insuff-002, epub-identity-004 and epub-identity-005 become H/none, and movie-order-001 becomes U/escalate. Alternatives removed: audiobook-insuff-001 U, movie-insuff-001 O, movie-naming-001 N, tv-insuff-001 U, tv-insuff-002 U, movie-decoder-001 D/convert (source shape unsettled, not counted), epub-healthy-005 H, and escalate-instead-of-a-met-write (movie-corrupt-003, tv-identity-003, tv-identity-004). Alternatives added: epub-healthy-005 U, movie-identity-002 U, epub-identity-005 I or U after `epub_inspect {}`, tv-identity-002 H. epub-identity-004's recipe is corrected: `{}` returns empty default excerpts, so `{"spine":5,"offset":0,"length":1200}` is needed |
+| 2 | Astra 2: "ceiling" overclaimed | `ceiling-a1.json` (sha256 `17b8ce0c9f1e02d0f65b5555110c35105cdfce4a796cf56ea56177d018627401`) gives the **reference decisions** G3 35/61 (C 9/21, I 5/14, N 2/5, O 2/3), G4 13/15 and G5 20/49, and the **best among listed options** G3 37/61, G4 13/15 and G5 19/49. 26 cases have no listed contract-consistent decision that `score.py` accepts. These are reference points, not a proven ceiling. **The headline is the robust bound:** the 11 book-corruption cases alone force G3 ≤ 50/61 and G5 ≥ 11/49, and corrupt_file < 2/3 |
+| 3 | Astra 1 (blocker), Opus M3 and the minors: the attribution could credit failures | Tables 4 and 5 are replaced by the **attribution rules** below |
+| 4 | Astra 4: interruptions could mislabel a started case | The call journal and categories below |
+| 5 | Opus M1, Astra 5: environment and CLI context | The scrubbed environment, the attestation and the tripwire below |
+| 6 | Astra 6: model check per record | The served-model check per turn below |
+| 7 | Opus minor: missing dev-c7 §5 rules | A leak-guard refusal is a harness error of that case, kept in every denominator and never retried. Started-aborted and unrecorded cases are not scored, and G7 is measured over the 73 planned cases |
+| 8 | Opus minors: fixtures, rebase, render check | The pre-run checks below. **No rebase onto #1031.** The `src/` tree sha1 is `36a08be3d70027533f56d41250edc940053e31df`, the dev-c7 measurement's frozen `src/`, which the Haiku run used |
+| 9 | Opus nit: report kind | The movie-identity-001 basis now says `report_unknown` |
+| 10 | Text corrections | §3 Blinding is corrected in place (one temp directory per run; scrubbed environment). §2's original table is kept and marked superseded. The walkthrough is regenerated from `predictions-a1.json` (version A1) |
+
+### Attribution rules (replacing §7 tables 4 and 5)
+Every case gets exactly one category. The rules are applied **separately to the guarded decision and to the restored
+original decision**, and both are reported.
+
+**Precedence (the first rule that applies decides):**
+- **H, harness or tool.** An adapter error, a crash, a leak-guard refusal, or a started-but-unrecorded case. It is not
+  a model result and is never credited.
+- **F, forced.** The one repair failed and the decision was forced. This is a protocol failure on the model side,
+  never credited, even when the forced pair equals a reference.
+- **Otherwise,** the decision is evaluated:
+  - **Descriptive only:** whether it matches `cf`, matches an `alt` (with its index), or matches none. A match is a
+    statistic, **never** a certificate of contract compliance.
+  - **Contract-consistent** means all of the following hold:
+    1. every call in the matched option's `requires` was made before the decision and returned `ok`, with the needed
+       content in the transcript;
+    2. the record has no `bad_evidence_refs`, no `protocol_violations`, no `write_rejection` and, for a write, no
+       references to failed or non-ok tools;
+    3. for a write, audit v3 shows no unmet prerequisite, and the source and target agree with the bound record;
+    4. the reason names the decisive observation and asserts no observation that was not delivered. The results
+       reviewer checks this on every case below where credit depends on it.
+
+**Categories once the decision has been evaluated:**
+- **P, credited pass.** `score.py` accepts the decision, and it is contract-consistent.
+- **P!, score-correct but contract-inconsistent.** `score.py` accepts it but it fails a check, for example a block
+  without binding. It goes to table 6. It is not a credited pass.
+- **A1, label tension.** The decision is contract-consistent, `score.py` rejects it, and the case is in `ceiling-a1.json`
+  `never_correct_under_contract`.
+- **A2, stopping tension.** The decision is contract-consistent (the literal reference), `score.py` rejects it, and a
+  listed option passes only through optional calls (tv-corrupt-003, epub-identity-004).
+- **B, model failure.** The decision is not contract-consistent. Sub-types:
+  - **B1:** a call that a material item warrants was not made;
+  - **B2:** evidence was misread, conflated or invalidly referenced;
+  - **B4:** an unsafe or contract-violating write;
+  - **B5:** escalate or none where the literal reference decision is a write or class whose prerequisites were met.
+- **D, unresolved** (B5 and the other B sub-types take precedence when they apply). The decision matches no listed option, but it may be contract-consistent, or the reference itself
+  may be wrong. **The independent results reviewer decides each D,** with a contract citation, as either a prediction
+  error (counted against the coordinator) or a B. The D count appears in the headline. The predictions files are never
+  edited after this amendment.
+
+**"Opus reaches the reference"** is stated only over P, A1 and A2 cases. H, F and P! are never counted toward it.
+
+### Interruptions (call journal)
+- **The shim.** The harness reaches the CLI through `scripts/claude_call_journal.sh` (sha256
+  `2edceb579b447a45eaabfa2682630fbfb6d8ad7941d9c5ec0be4619092b4636f`), installed first on `PATH` as `claude`.
+  - It is a pass-through. It never reads stdin or logs arguments. Bytes, stderr and the exit status are unchanged;
+    `tests/test_validity_opus55.py` checks this with a fake binary.
+  - It appends the start, end and exit status of every call to `calls.log`.
+  - It keeps a durable copy of each call's stdout reply in the journal directory
+    `/home/dev/work/mrh-val-journal/devval-opus-5-5/`, on the persistent volume.
+- **The run log.** The runner's stdout and stderr are tee'd to `run.log` in the same directory. The runner prints one
+  line per completed case.
+- **Categories after an interruption.** The runner is serial, in a fixed order:
+  - **recorded:** the case has a record;
+  - **started-unrecorded:** the journal shows calls after the previous case's completion line;
+  - **never-started:** every case after that one;
+  - **start-unknown:** used only if the journal itself is lost.
+- **Never merged.** An interrupted attempt is kept and reported PARTIAL. Any further attempt needs a numbered amendment
+  first, and attempts are never merged.
+
+### Environment, attestation and tripwire
+**The registered launch.** It runs with no `cd`, and `$J` is the journal directory:
+
+```
+env -i HOME=$HOME PATH=/home/dev/work/mrh-val-shim:/usr/local/bin:/usr/bin:/bin CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR LANG=C.UTF-8 PYTHONPATH=$C/src MRH_CLAUDE_REAL=/usr/local/bin/claude MRH_CALL_JOURNAL=$J nice -n 10 python3 -m media_repair_harness.run <the §3 arguments> 2>&1 | tee $J/run.log
+```
+
+Here `/home/dev/work/mrh-val-shim/claude` is a symlink to the shim.
+
+**The environment.**
+- The variable names passed are recorded. Values are never recorded.
+- Session, messaging, agentd and effort variables are dropped (`CLAUDECODE`, `CLAUDE_CODE_*`, `CLAUDE_EFFORT`,
+  `AGENTD_*`).
+- Auth comes from the CLI's own config directory.
+- Disclosed difference: the Haiku run inherited its V1 session environment.
+
+**The attestation**, made before the go and without a model:
+- `claude --version` through the shim, in the scrubbed environment;
+- no `/etc/claude-code` managed settings;
+- no `~/.claude/projects/` memory directory for any `mrh-claude-*` working directory;
+- `CLAUDE_CODE_EFFORT_LEVEL` unset.
+
+**The tripwire.** When the first call completes, total input tokens (input + cache creation + cache read) are compared
+with the characters sent (system prompt plus message):
+- If the tokens exceed `chars / 2.0 + 5000`, the run is stopped at once and reported PARTIAL.
+  - That much extra startup context, about the size of a CLAUDE.md, would mean the blinding claim is false.
+  - The Haiku runs sent 2.62–2.79 characters per token, all in.
+- The run resumes only after an investigation and a numbered amendment.
+
+### Served model, per turn
+- Every **successful** completion, repairs and final answers included, must report exactly one `modelUsage` key,
+  `claude-opus-5-5`.
+- A missing identity is **unverified**, and an extra or different id is a **deviation**.
+- Both are reported per case and in table 1. Failed calls keep their own uncertainty.
+
+### Pre-run checks (no model; recorded before the go)
+1. The `src/` tree sha1 is `36a08be3…`.
+2. The config hash rebuilds as `dac813af…`.
+3. `tests/test_validity_opus55.py` passes. That includes render equivalence, 73/73 first messages identical to Haiku's
+   turn 0 after alias substitution.
+4. The four pod-local EPUB sha256 values match KNOWLEDGE-CHECKPOINT-RECEIPT.
+5. The shim sha256 matches, and the attestation above is recorded.
+6. No other `claude -p` run of this story is active.
+
+**Hold.** The hold of §9 continues. The go needs a delta re-review of this amendment by both reviewers.

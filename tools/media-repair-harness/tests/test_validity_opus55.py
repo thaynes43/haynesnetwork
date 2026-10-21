@@ -55,14 +55,111 @@ class FrozenCeiling(unittest.TestCase):
         self.assertTrue(all(v['pass'] for v in want['views']['label']['gates'].values()))
         self.assertEqual(len(want['never_correct_under_contract']), 22)
 
+    def test_amendment1_ceiling_reproduces(self):
+        suite = th.require_suite().parent / 'suite-dev-v1.1'
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('validity_ceiling', SCRIPTS / 'validity_ceiling.py')
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / 'ceiling-a1.json'
+            mod.main(['--suite', str(suite), '--predictions', str(VAL / 'predictions-a1.json'), '--out-json', str(out)])
+            got = json.loads(out.read_text())
+        want = json.loads((VAL / 'ceiling-a1.json').read_text())
+        got.pop('score_py'), want.pop('score_py')
+        self.assertEqual(got, want)
+        g = want['views']['contract']['gates']
+        self.assertEqual((g['G3']['value'], g['G4']['value'], g['G5']['value']), (round(35 / 61, 4), round(13 / 15, 4), round(20 / 49, 4)))
+        self.assertEqual(len(want['never_correct_under_contract']), 26)
+        # the robust bound: the 11 book-corruption cases alone, escalated with their class, keep G3 <= 50/61 and G5 >= 11/49
+        book_c = [c for c, x in want['per_case'].items() if x['truth'] == 'corrupt_file' and c.split('-')[0] in ('audiobook', 'epub')
+                  and 'escalate' not in x['supported']]
+        self.assertEqual(len(book_c), 11)
+        self.assertTrue(all(c in want['never_correct_under_contract'] for c in book_c))
+
+    def test_frozen_original_predictions_unchanged(self):
+        self.assertEqual(hashlib.sha256((VAL / 'predictions.json').read_bytes()).hexdigest(),
+                         '86b4424a47bd1df658ff90d620ec6738bfd61cebb8a9de7a135eef3a37b67668')
+
     def test_predictions_cover_every_case_once(self):
         suite = th.require_suite().parent / 'suite-dev-v1.1'
         ids = sorted(c['id'] for c, _ in R.load_cases(str(suite)))
-        pred = json.loads((VAL / 'predictions.json').read_text())['cases']
-        self.assertEqual(sorted(pred), ids)
-        for cid, p in pred.items():
-            self.assertIn(p['status'], ('established', 'ambiguous', 'exploration'), cid)
-            self.assertEqual(len(p['cf']), 2, cid)
+        for name in ('predictions.json', 'predictions-a1.json'):
+            pred = json.loads((VAL / name).read_text())['cases']
+            self.assertEqual(sorted(pred), ids, name)
+            for cid, p in pred.items():
+                self.assertIn(p['status'], ('established', 'ambiguous', 'exploration'), cid)
+                self.assertEqual(len(p['cf']), 2, cid)
+                keys = set(p.get('requires', {}))
+                self.assertTrue(keys <= {'cf'} | {'alt%d' % i for i in range(len(p['alt']))}, (name, cid, keys))
+
+
+class RenderEquivalence(unittest.TestCase):
+    """Pre-go check (Amendment 1, from the Opus pre-measurement review): the real ClaudeAdapter, driven offline by a fake runner (no CLI, no model),
+    sends every case's system prompt and first message byte-identical to the dev-c7 Haiku run's turn 0, apart from the run-derived case alias, and an
+    argv equal to Haiku's apart from the model id.  A case whose pod-local fixture is absent is skipped (CI runners lack the four EPUBs)."""
+
+    def test_first_messages_equal_haiku(self):
+        from media_repair_harness import adapters as A
+        suite = str(th.require_suite().parent / 'suite-dev-v1.1')
+        haiku = RUNS / 'dev-c7' / 'devc7-haiku-5-5'
+        seen = {}
+
+        class Proc:
+            def __init__(self, out):
+                self.stdout, self.stderr, self.returncode = out, b'', 0
+
+        def runner(cmd, input=None, **kw):
+            seen['cmd'] = cmd
+            dec = {'type': 'decision', 'class': 'insufficient_evidence', 'action': 'escalate', 'reason': 'offline render check', 'confidence': 0.5,
+                   'evidence_refs': ['e1']}
+            return Proc(json.dumps({'type': 'result', 'subtype': 'success', 'result': json.dumps(dec), 'usage': {}, 'modelUsage': {'fake': {}}}).encode())
+
+        ad = A.ClaudeAdapter('claude-opus-5-5', effort=None, max_budget_usd=None, timeout=240, runner=runner)
+        same, skipped = 0, []
+        with tempfile.TemporaryDirectory() as scratch:
+            for case, sha in R.load_cases(suite):
+                loc = str((case.get('fixture') or {}).get('path') or (case.get('fixture') or {}).get('locator') or '')
+                if loc.startswith('~/') and not Path(loc).expanduser().exists():
+                    skipped.append(case['id'])
+                    continue
+                h = json.loads((haiku / (case['id'] + '.json')).read_text())
+                rec = R.run_case(case, sha, ad, suite, scratch, run_id=h['run_id'], tool_output_bytes=8192, prompt_version='v7', evidence_mode='replay',
+                                 guards='v3', evidence_format='v3.1-format', replay='auto')
+                self.assertEqual(rec['turns'][0]['raw_request']['prompt'], h['turns'][0]['raw_request']['prompt'], case['id'])
+                self.assertEqual(rec['turns'][0]['raw_request']['system_prompt'], h['turns'][0]['raw_request']['system_prompt'], case['id'])
+                same += 1
+        ad.finish()
+        self.assertGreaterEqual(same, 69)
+        self.assertEqual(same + len(skipped), 73)
+        cmd = list(seen['cmd'])
+        hargv = h['turns'][0]['raw_request']['argv']
+        cmd[cmd.index('--system-prompt') + 1] = '<system>'
+        self.assertEqual([x if x != 'claude-opus-5-5' else 'claude-haiku-5-5' for x in cmd], hargv)
+
+
+class CallJournalShim(unittest.TestCase):
+    """Amendment 1: the pass-through claude shim leaves stdin bytes, stdout, stderr and the exit status unchanged and journals start/end."""
+    SHA = '2edceb579b447a45eaabfa2682630fbfb6d8ad7941d9c5ec0be4619092b4636f'
+
+    def test_pinned_and_transparent(self):
+        import os
+        import subprocess
+        shim = SCRIPTS / 'claude_call_journal.sh'
+        self.assertEqual(hashlib.sha256(shim.read_bytes()).hexdigest(), self.SHA)
+        with tempfile.TemporaryDirectory() as d:
+            fake = Path(d) / 'fake'
+            fake.write_text('#!/bin/bash\ncat; echo "args:$#" >&2; exit 7\n')
+            fake.chmod(0o755)
+            env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'MRH_CLAUDE_REAL': str(fake), 'MRH_CALL_JOURNAL': str(Path(d) / 'j')}
+            r = subprocess.run(['bash', str(shim), '-p', '--model', 'x'], input=b'a\x00b\nc', capture_output=True, env=env)
+            self.assertEqual((r.returncode, r.stdout, r.stderr), (7, b'a\x00b\nc', b'args:3\n'))
+            log = (Path(d) / 'j' / 'calls.log').read_text().splitlines()
+            self.assertEqual([x.split()[1] for x in log], ['start', 'end'])
+            self.assertIn('rc=7', log[1])
+            outs = list((Path(d) / 'j').glob('out-*.json'))
+            self.assertEqual(len(outs), 1)
+            self.assertEqual(outs[0].read_bytes(), b'a\x00b\nc')
 
 
 class Blinding(unittest.TestCase):

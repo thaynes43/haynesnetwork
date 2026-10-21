@@ -1,0 +1,915 @@
+{
+  "_about": "Amendment 1 (before any model response) of the frozen predictions.json, which is kept unchanged. Changes follow the independent pre-measurement reviews (Opus; Astra AUDIT-ASTRA-38) and are listed per case in PREREGISTRATION.md section 10. ONE rule for alternatives: alt lists (i) a decision reachable under another reading of a contract clause that leaves a choice (the clause is named in why), and (ii) the decision that follows an available call the literal decision does not make. Escalate in place of a write whose prerequisites are met is not an alternative (prompt v7 Deciding 1 and 4: escalate when the class or the action is open). cf is the LITERAL prompt-v7 reading: Deciding 3 spends calls only on material open items (M1-M9), so a call is in cf only when it inspects a material item. Never a model or harness input. Amendment 1 also folds AUDIT-ASTRA-38's per-case corrections and adds 'requires': the calls whose delivered results an option needs before it is admissible (keys cf, alt0, alt1, ...). cf and alt are REFERENCE decisions; the scores they give are 'reference' and 'best/worst among listed options', not a proven ceiling.",
+  "author": "claude-opus-5-5 successor coordinator, session_01Qfm9fTQbZ8Hv8FJAxJnkiR",
+  "sources": "DEVELOPMENT-KNOWLEDGE-20261021 parts 1-4 (ledger), contract-v3.md, prompts/v7.txt, rendered dev-c7 first messages",
+  "cases": {
+    "audiobook-corrupt-001": {
+      "cf": [
+        "corrupt_file",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "D-COR-1 from the located missing-moov finding; lazylibrarian catalog record has no linked file, so A-BLK source binding is unmet: keep C, escalate.",
+      "requires": {}
+    },
+    "audiobook-corrupt-002": {
+      "cf": [
+        "corrupt_file",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "D-COR-1 (no consecutive MPEG frames); no linked-file record binds the source: C/escalate.",
+      "requires": {}
+    },
+    "audiobook-corrupt-003": {
+      "cf": [
+        "corrupt_file",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "D-COR-1; no binding; a later audiobook_inspect may be partial and cannot add binding: C/escalate.",
+      "requires": {}
+    },
+    "audiobook-healthy-001": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "No tools and no integrity result (M1): healthy not established; matching album tags are report_declaration only.",
+      "requires": {}
+    },
+    "audiobook-healthy-002": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Parsed container clean (H1), tags and chapters match the catalog, language und is not a contradiction; unchecked audio is ordinary remainder.",
+      "requires": {}
+    },
+    "audiobook-healthy-003": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Parsed MP3 clean, title/album/artist match; chapter titles are exempt; no material uncertainty.",
+      "requires": {}
+    },
+    "audiobook-identity-001": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Only album tags (report_declaration) disagree; no content observation and no tools: identity contested (M5), not contradicted (D-ID-1 unmet).",
+      "requires": {}
+    },
+    "audiobook-identity-002": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Duration, artist and chapter declarations disagree but no content (speech) observation is offered: identity contested, not established.",
+      "requires": {}
+    },
+    "audiobook-insuff-001": {
+      "cf": [
+        "metadata_naming",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Complete container-level tags {} is an explicitly empty naming surface (C32-2/M6) on a clean container; rename needs binding and content-verified identity: N/escalate.",
+      "requires": {}
+    },
+    "audiobook-naming-001": {
+      "cf": [
+        "metadata_naming",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "tags {} on a clean container gives N; rename needs a bound source and content-verified identity (A-REN-0/1), neither offered: escalate.",
+      "requires": {}
+    },
+    "audiobook-order-001": {
+      "cf": [
+        "order_edition_ambiguity",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Two listed editions fit (same narrator and runtime) and wanted_edition is null: D-ORD-1/M7.",
+      "requires": {}
+    },
+    "audiobook-outcome-001": {
+      "cf": [
+        "corrupt_file",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "D-COR-1 (missing moov); no linked-file record: C/escalate.",
+      "requires": {}
+    },
+    "audiobook-outcome-002": {
+      "cf": [
+        "corrupt_file",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "D-COR-1 (missing moov); no linked-file record: C/escalate.",
+      "requires": {}
+    },
+    "epub-corrupt-001": {
+      "cf": [
+        "corrupt_file",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "BadZipFile at zip_open is located package damage; no linked-file record binds the source: C/escalate.",
+      "requires": {}
+    },
+    "epub-corrupt-002": {
+      "cf": [
+        "corrupt_file",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "BadZipFile at zip_open; no binding: C/escalate.",
+      "requires": {}
+    },
+    "epub-corrupt-003": {
+      "cf": [
+        "corrupt_file",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "OPF ParseError at a located line/column; no binding: C/escalate.",
+      "requires": {}
+    },
+    "epub-corrupt-004": {
+      "cf": [
+        "corrupt_file",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "CRC mismatch in a named member; no binding: C/escalate.",
+      "requires": {}
+    },
+    "epub-corrupt-005": {
+      "cf": [
+        "corrupt_file",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Manifest references a missing member; no binding: C/escalate.",
+      "requires": {}
+    },
+    "epub-healthy-001": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Only a reported EXTH title; no integrity result and no tools (M1).",
+      "requires": {}
+    },
+    "epub-healthy-002": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Only a prior-record OPF title; no package inspection and no tools (M1).",
+      "requires": {}
+    },
+    "epub-healthy-003": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Package stages clean, OPF title/creator/language match; body identity is not required for healthy.",
+      "requires": {}
+    },
+    "epub-healthy-004": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Valid package, metadata matches the catalog; no conflict.",
+      "requires": {}
+    },
+    "epub-healthy-005": {
+      "cf": [
+        "metadata_naming",
+        "escalate"
+      ],
+      "alt": [
+        [
+          "insufficient_evidence",
+          "escalate"
+        ]
+      ],
+      "status": "ambiguous",
+      "explore": [],
+      "why": "dc:title carries a series prefix and dc:creator is inverted ('Tolland, Mira') versus the catalog (M6 naming), on a clean package; rename lacks binding and content verification: N/escalate. Alt: the inverted creator compares literally as an author disagreement (M5), leaving identity contested: U/escalate. (Ruling C3's H/none is a label fact, not a contract-defensible reading: M6 leaves H3 unmet.)",
+      "requires": {}
+    },
+    "epub-healthy-006": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Valid short package, metadata matches; null series is not an empty naming field; length is not a defect.",
+      "requires": {}
+    },
+    "epub-identity-001": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Only an OPF report disagrees; no body, no tools: identity contested (M5), not contradicted.",
+      "requires": {}
+    },
+    "epub-identity-002": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Different OPF title plus a reported hash equality: report_declaration/report_hash, not content; no tools.",
+      "requires": {}
+    },
+    "epub-identity-003": {
+      "cf": [
+        "identity_mismatch",
+        "escalate"
+      ],
+      "alt": [
+        [
+          "insufficient_evidence",
+          "escalate"
+        ]
+      ],
+      "status": "exploration",
+      "explore": [
+        "epub_inspect {}",
+        "epub_inspect excerpt(s)"
+      ],
+      "why": "Declarations disagree; body excerpts can show content of a different book (D-ID-1). Even then no linked-file record binds the source: I/escalate. Without reading body: U/escalate.",
+      "requires": {
+        "cf": [
+          "epub_inspect {} and the body excerpts it needs"
+        ]
+      }
+    },
+    "epub-identity-004": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [
+        [
+          "identity_mismatch",
+          "escalate"
+        ]
+      ],
+      "status": "ambiguous",
+      "explore": [
+        "epub_inspect {}",
+        "epub_inspect {\"spine\":5,\"offset\":0,\"length\":1200}"
+      ],
+      "why": "Package clean, OPF title/creator/language match; spine_heads are legacy_mixed (no content identity, not a declaration), so nothing material is open: H/none. Alt I/escalate is admissible ONLY after a successful explicit excerpt (epub_inspect {} returns three EMPTY default excerpts; {\"spine\":5,\"offset\":0,\"length\":1200} returns body text about another book) and a stated identity comparison; no binding. [body, stopping]",
+      "requires": {
+        "alt0": [
+          "epub_inspect {}",
+          "epub_inspect {\"spine\":5,\"offset\":0,\"length\":1200}"
+        ]
+      }
+    },
+    "epub-identity-005": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [
+        [
+          "identity_mismatch",
+          "escalate"
+        ],
+        [
+          "insufficient_evidence",
+          "escalate"
+        ]
+      ],
+      "status": "ambiguous",
+      "explore": [
+        "epub_inspect {}"
+      ],
+      "why": "Initially only legacy_mixed spine_heads (no content) differ; OPF matches; nothing material is open: H/none. Alt (admissible only after epub_inspect {} delivers the observed body headings, which differ from the catalog's expected TOC): I/escalate if those headings are judged an identity contradiction (hand judgement; chapter names are not a listed identity attribute), else U/escalate; no binding. [body]",
+      "requires": {
+        "alt0": [
+          "epub_inspect {}"
+        ],
+        "alt1": [
+          "epub_inspect {}"
+        ]
+      }
+    },
+    "epub-insuff-001": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Size versus a grab record is not damage; epub_inspect fails to run (execution failure proves nothing): M1, U/escalate.",
+      "requires": {}
+    },
+    "epub-insuff-002": {
+      "cf": [
+        "identity_mismatch",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "exploration",
+      "explore": [
+        "epub_inspect {}"
+      ],
+      "why": "French body text versus a required English catalog language is a content disagreement (D-ID-1); no binding: I/escalate.",
+      "requires": {
+        "cf": [
+          "epub_inspect {}"
+        ]
+      }
+    },
+    "epub-naming-001": {
+      "cf": [
+        "metadata_naming",
+        "escalate"
+      ],
+      "alt": [
+        [
+          "insufficient_evidence",
+          "escalate"
+        ]
+      ],
+      "status": "exploration",
+      "explore": [
+        "epub_inspect {}"
+      ],
+      "why": "Untitled/Unknown declarations on a valid package; body title page can verify identity, but rename also needs a bound source, absent: N/escalate.",
+      "requires": {
+        "cf": [
+          "epub_inspect {} (body title page)"
+        ]
+      }
+    },
+    "epub-outcome-001": {
+      "cf": [
+        "corrupt_file",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "BadZipFile; no binding: C/escalate.",
+      "requires": {}
+    },
+    "epub-outcome-002": {
+      "cf": [
+        "corrupt_file",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "BadZipFile; no binding: C/escalate.",
+      "requires": {}
+    },
+    "movie-corrupt-001": {
+      "cf": [
+        "corrupt_file",
+        "blocklist_and_search"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Missing moov is located damage; the Radarr record's file.relativePath equals the filename (bound): C/block.",
+      "requires": {}
+    },
+    "movie-corrupt-002": {
+      "cf": [
+        "corrupt_file",
+        "blocklist_and_search"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "EBML header failure; bound Radarr record: C/block.",
+      "requires": {}
+    },
+    "movie-corrupt-003": {
+      "cf": [
+        "corrupt_file",
+        "blocklist_and_search"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Missing moov; bound record; a later decode timeout does not erase it: C/block.",
+      "requires": {}
+    },
+    "movie-decoder-001": {
+      "cf": [
+        "decoder_incompatible",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "ambiguous",
+      "explore": [
+        "arr_lookup {}"
+      ],
+      "why": "EAC3 5.1 selected versus a stated AAC stereo client (D-DEC). arr_lookup echoes movieId/movieFileId without a linked-file record; whether that echo binds the source is the unsettled source-shape question, so D/convert is NOT counted as a reachable contract decision: D/escalate. [source-shape]",
+      "requires": {}
+    },
+    "movie-decoder-002": {
+      "cf": [
+        "decoder_incompatible",
+        "convert"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "HEVC Main10 and AC3 5.1 versus a stated H264 8-bit/AAC stereo client; bound Radarr record: D/convert to an executor-allocated copy.",
+      "requires": {}
+    },
+    "movie-healthy-001": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Reported release title/duration only; no integrity result, no tools (M1).",
+      "requires": {}
+    },
+    "movie-healthy-002": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Reported title is an allowed alias; no integrity result, no tools (M1).",
+      "requires": {}
+    },
+    "movie-healthy-003": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Clean container and window, title card matches an allowed alias, runtime within tolerance.",
+      "requires": {}
+    },
+    "movie-healthy-004": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Extended Cut is the monitored/expected edition; clean container and window; runtime matches.",
+      "requires": {}
+    },
+    "movie-identity-001": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Only a prior record (report kind report_unknown) names a different release title; no content observation, no tools: identity contested, not contradicted.",
+      "requires": {}
+    },
+    "movie-identity-002": {
+      "cf": [
+        "identity_mismatch",
+        "blocklist_and_search"
+      ],
+      "alt": [
+        [
+          "insufficient_evidence",
+          "escalate"
+        ]
+      ],
+      "status": "established",
+      "explore": [],
+      "why": "Completed OCR shows a different title card than the catalog and its aliases (content, D-ID-1); the Radarr record binds the file: I/block. Alt: a strict reading of free-text OCR (contract section 8) as not comparable leaves identity contested: U/escalate.",
+      "requires": {}
+    },
+    "movie-insuff-001": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Container 16.046 s fits neither listed edition (8 s, 12 s), so D-ORD's two fitting candidates are absent (O not established); the runtime conflict exceeds max(1 s, 5%) (M4) and a clean decode does not resolve it: U/escalate.",
+      "requires": {}
+    },
+    "movie-naming-001": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "ambiguous",
+      "explore": [],
+      "why": "Filename year disagrees with the catalog year; OCR confirms the title only, so the year (an identity attribute) is contested: rename's content verification is unmet.",
+      "requires": {}
+    },
+    "movie-order-001": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "The 12.046 s file and the EXTENDED CUT card fit only the Extended candidate, so D-ORD-1's two fitting candidates are absent (O not established under the literal contract); 12 s against the 8 s expected runtime is M4: U/escalate. The O-only label is unreachable as supplied. [edition]",
+      "requires": {}
+    },
+    "movie-outcome-001": {
+      "cf": [
+        "decoder_incompatible",
+        "convert"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Same evidence as movie-decoder-002: D/convert.",
+      "requires": {}
+    },
+    "movie-outcome-002": {
+      "cf": [
+        "decoder_incompatible",
+        "convert"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Same evidence as movie-decoder-002: D/convert.",
+      "requires": {}
+    },
+    "tv-corrupt-001": {
+      "cf": [
+        "corrupt_file",
+        "blocklist_and_search"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Decode stderr 'File ended prematurely' despite exit 0 is located damage; Sonarr record binds the file: C/block.",
+      "requires": {}
+    },
+    "tv-corrupt-002": {
+      "cf": [
+        "corrupt_file",
+        "blocklist_and_search"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "H264 decode errors despite exit 0; bound Sonarr record: C/block.",
+      "requires": {}
+    },
+    "tv-corrupt-003": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [
+        [
+          "corrupt_file",
+          "blocklist_and_search"
+        ]
+      ],
+      "status": "ambiguous",
+      "explore": [
+        "decode_sample {\"at\":4}"
+      ],
+      "why": "Literal v7: clean container plus clean 0-4 s window gives H1-H5; the unchecked remainder alone is not material (M4), and Deciding 3 says not to spend calls on non-material items: H/none is contract-permitted. Alt C/block is admissible only after decode_sample {\"at\":4} (available) delivers the positive damage finding; the Sonarr record binds the file. Neither is a contract violation. [stopping]",
+      "requires": {
+        "alt0": [
+          "decode_sample {\"at\":4}"
+        ]
+      }
+    },
+    "tv-decoder-001": {
+      "cf": [
+        "decoder_incompatible",
+        "convert"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "H264 High10 versus an explicit 8-bit-only client; bound Sonarr record: D/convert.",
+      "requires": {}
+    },
+    "tv-healthy-001": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Reported subtitle cards only; no integrity result, no tools (M1).",
+      "requires": {}
+    },
+    "tv-healthy-002": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Pinned probe parses, bounded window clean, OCR names the requested story; scoped healthy.",
+      "requires": {}
+    },
+    "tv-healthy-003": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Tags and title card match S01E03; clean probe and window; runtime within tolerance.",
+      "requires": {}
+    },
+    "tv-healthy-004": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Clean probe and window, declarations match, bound record; scene-style filename carries the right marker.",
+      "requires": {}
+    },
+    "tv-healthy-005": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Extra commentary/subtitle streams are not defects; clean probe and window; catalog matches.",
+      "requires": {}
+    },
+    "tv-healthy-006": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "High10 H264, but the stated client supports 8/10-bit H264/HEVC; 46 ms shortfall is within the 1 s completion tolerance.",
+      "requires": {}
+    },
+    "tv-healthy-007": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "library_episode_order=dvd selects the ordering that matches the file; clean probe and window.",
+      "requires": {}
+    },
+    "tv-identity-001": {
+      "cf": [
+        "identity_mismatch",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Reported content (subtitle cards, method content) disagrees with the expected segments (D-ID-1 via report_content); no tools and no bound record: I/escalate.",
+      "requires": {}
+    },
+    "tv-identity-002": {
+      "cf": [
+        "identity_mismatch",
+        "escalate"
+      ],
+      "alt": [
+        [
+          "insufficient_evidence",
+          "escalate"
+        ],
+        [
+          "healthy",
+          "none"
+        ]
+      ],
+      "status": "ambiguous",
+      "explore": [
+        "arr_lookup {}"
+      ],
+      "why": "OCR text names a different episode than the catalog (content); no catalog record links the file, so block lacks binding: I/escalate. Alt H/none: if OCR free text naming no catalog value is read as not comparable (section 8), nothing material is open.",
+      "requires": {}
+    },
+    "tv-identity-003": {
+      "cf": [
+        "identity_mismatch",
+        "blocklist_and_search"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Completed OCR shows S01E03 while the slot is E04 (content); the Sonarr record binds the file: I/block; no free slot evidenced for remap.",
+      "requires": {}
+    },
+    "tv-identity-004": {
+      "cf": [
+        "identity_mismatch",
+        "blocklist_and_search"
+      ],
+      "alt": [
+        [
+          "insufficient_evidence",
+          "escalate"
+        ]
+      ],
+      "status": "exploration",
+      "explore": [
+        "ocr {\"at\":1}"
+      ],
+      "why": "Tags name E03 against an E04 slot: a declaration disagreement (M5, material), so Deciding 3 warrants the available OCR; recorded OCR at 1 s shows E03 (content) and the record binds the file: I/block. Alt: without the OCR, identity stays contested: U/escalate.",
+      "requires": {
+        "cf": [
+          "ocr {\"at\":1}"
+        ]
+      }
+    },
+    "tv-insuff-001": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Clean container and window, no contradiction; H4 needs no positive identity and nothing material is open, so literal v7 gives scoped H/none, against the U label. [stopping]",
+      "requires": {}
+    },
+    "tv-insuff-002": {
+      "cf": [
+        "healthy",
+        "none"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "First message identical to tv-corrupt-003 apart from the file name; clean container and window, 8.046 s fits the expected 8 s: H1-H5 hold. An optional decode of the remainder fails to run, which adds no defect and no material conflict: still H/none with the tool failure stated. The U label is unreachable under the literal contract. [stopping]",
+      "requires": {}
+    },
+    "tv-insuff-003": {
+      "cf": [
+        "insufficient_evidence",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Container 8.046 s versus catalog 6 s exceeds max(1 s, 5%) (M4); a full decode would not resolve the catalog conflict.",
+      "requires": {}
+    },
+    "tv-naming-001": {
+      "cf": [
+        "metadata_naming",
+        "rename"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Filename says E05; OCR and catalog say E03 (content-verified identity); bound record; literal old name, new name with E03 only: N/rename.",
+      "requires": {}
+    },
+    "tv-order-001": {
+      "cf": [
+        "order_edition_ambiguity",
+        "escalate"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "Aired and DVD maps place the observed episode in different slots; library_episode_order is null.",
+      "requires": {}
+    },
+    "tv-outcome-001": {
+      "cf": [
+        "corrupt_file",
+        "blocklist_and_search"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "H264 decode errors despite exit 0; bound record: C/block.",
+      "requires": {}
+    },
+    "tv-outcome-002": {
+      "cf": [
+        "corrupt_file",
+        "blocklist_and_search"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "H264 decode errors despite exit 0; bound record: C/block.",
+      "requires": {}
+    },
+    "tv-outcome-003": {
+      "cf": [
+        "corrupt_file",
+        "blocklist_and_search"
+      ],
+      "alt": [],
+      "status": "established",
+      "explore": [],
+      "why": "H264 decode errors despite exit 0; bound record: C/block.",
+      "requires": {}
+    }
+  }
+}
