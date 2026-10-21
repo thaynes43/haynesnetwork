@@ -13,6 +13,10 @@ there, or exists with the defect), and its paired control pins that the earlier 
   7  #1031      the tools v4 / diagnostic rules pairing: v4 also pairs with diag-3; why it is not checked again at classification time is documented
                 (tools.py), and the mismatch it would catch is pinned as conservative
 
+Review additions (the independent Opus review of 45d6ca9e): EINVAL at zip_open keeps its reading (zipfile raises it on a damaged ZIP64 locator on some
+Pythons); a line with several `error reading header` readings is classified the same under every PYTHONHASHSEED under diag-3; live-2 checks every manifest
+item with an href, one without an id included, as tools v4 does.
+
 Synthetic, generic fixtures only (no dev-suite case content).  No model call, no ffmpeg (fake runners), no network."""
 import contextlib
 import errno
@@ -71,6 +75,19 @@ class HeaderLineDecoratedForms(unittest.TestCase):
             self.assertNotIn('decoder_warning', [f['kind'] for f in d.findings])
             self.assertEqual([x['class'] for x in d.diagnostics], ['execution', 'execution'])
 
+    def test_several_header_readings_do_not_depend_on_the_hash_seed_diag3(self):
+        import os
+        import subprocess
+        import sys
+        code = ('from media_repair_harness import evidence_v2 as E\n'
+                'with E.diagnostic_rules("diag-3"):\n'
+                '    print(E.classify_line("a.mkv: error reading header: b.mkv: error reading header: Permission denied"))')
+        got = set()
+        for seed in ('0', '1', '2', '3', '4', '5'):
+            env = dict(os.environ, PYTHONHASHSEED=seed, PYTHONPATH=str(Path(EV2.__file__).resolve().parents[1]), PYTHONDONTWRITEBYTECODE='1')      # the src under test
+            got.add(subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, check=True).stdout.strip())
+        self.assertEqual(got, {'execution'})
+
     def test_other_neighbours_decide_nothing_diag3(self):
         with rules('diag-3'):
             self.assertEqual(classes(['pipe:0: error reading header', 'pipe:0: moov atom not found']), ['warning', 'damage'])   # a damage neighbour decides nothing
@@ -94,7 +111,7 @@ def _live_decode(segments, duration=20.0):
 
 # ------------------------------------------------------------------------------------------------------------- item 2
 class OsErrorAtZipOpen(unittest.TestCase):
-    ERRORS = ('OSError: [Errno 22] Invalid argument', "OSError: [Errno 40] Too many levels of symbolic links: '/media/book.epub'",
+    ERRORS = ('OSError: [Errno 6] No such device or address', "OSError: [Errno 40] Too many levels of symbolic links: '/media/book.epub'",
               'OSError: [Errno 23] Too many open files in system', 'TimeoutError: [Errno 110] Connection timed out after 30 s', 'OSError: ')
 
     def derive(self, err, stage='zip_open'):
@@ -113,9 +130,9 @@ class OsErrorAtZipOpen(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='mrh-w27-') as tmp:
             book = Path(tmp) / 'book.epub'
             book.write_bytes(b'PK')
-            with mock.patch('zipfile.ZipFile', side_effect=OSError(errno.EINVAL, 'Invalid argument')):
+            with mock.patch('zipfile.ZipFile', side_effect=OSError(errno.ENXIO, 'No such device or address')):
                 staged = T._epub_stage(str(book), remote_ok=True)
-            self.assertEqual(staged, ('zip_open', 'OSError: [Errno 22] Invalid argument'))
+            self.assertEqual(staged, ('zip_open', 'OSError: [Errno 6] No such device or address'))
             with rules('diag-3'):
                 self.assertEqual(self.derive(staged[1]).execution['cause'], 'tool')
 
@@ -127,6 +144,19 @@ class OsErrorAtZipOpen(unittest.TestCase):
                 self.assertIsNone(EV2.epub_failure('zip_open', err), err)                                       # not an OSError: reading unchanged
             self.assertIsNone(EV2.epub_failure('zip_crc', 'OSError: [Errno 22] Invalid argument'))               # another stage: reading unchanged
             self.assertEqual(EV2.epub_failure('zip_open', 'PermissionError: [Errno 13] Permission denied'), 'execution')
+            self.assertIsNone(EV2.epub_failure('zip_open', 'OSError: [Errno 22] Invalid argument'))           # EINVAL: zipfile's seek on a damaged archive
+
+    def test_a_damaged_zip64_locator_is_never_an_execution_failure_diag3(self):
+        """A 42-byte archive whose ZIP64 end-of-central-directory locator points before the start of the file: depending on the Python, zipfile says
+        `BadZipFile: Corrupt zip64 end of central directory locator` (damage) or its seek raises `OSError: [Errno 22] Invalid argument` (left unclassified)."""
+        import struct
+        with tempfile.TemporaryDirectory(prefix='mrh-w27-') as tmp:
+            book = Path(tmp) / 'book.epub'
+            book.write_bytes(struct.pack('<4sLQL', b'PK\x06\x07', 0, 0, 1) + struct.pack('<4s4H2LH', b'PK\x05\x06', 0, 0, 0, 0, 0, 0, 0))
+            stage, text = T._epub_stage(str(book), remote_ok=True)
+        self.assertEqual(stage, 'zip_open')
+        with rules('diag-3'):
+            self.assertIn(EV2.epub_failure(stage, text), ('damage', None), text)
 
     def test_control_earlier_rules_are_unchanged(self):
         for version in ('diag-1', 'diag-2'):
@@ -181,6 +211,10 @@ class DamageAfterWarningsLive2(TE.Base):
         self.assertEqual(seg['problem_lines'], 5)
         self.assertEqual(seg['problems'][-1], '[mp3float @ 0x3] Invalid data found when processing input')
         self.assertEqual(len(seg['problems']), 4)
+        with rules('diag-3'):
+            d = EV2.derive(obs('t1', 'audio_sample', rec['status'], EVC.to_tool_result(rec, cap=1 << 20)['output'], backend='live'))
+        self.assertEqual(d.integrity, 'damaged')
+        self.assertTrue(any(f['kind'] == 'audio_decode_errors' and f['known_defect'] for f in d.findings))
 
     def test_live1_is_the_default_and_unknown_names_are_refused_live2(self):
         stderr = ('\n'.join([WARN] * 5 + [DAMAGE[0]]) + '\n').encode()
@@ -327,6 +361,13 @@ class LiveResolverParityLive2(unittest.TestCase):
             self.assertTrue(any(f['known_defect'] for f in live.findings), name)
             if name in ('absent', 'data', 'urn', 'mailto'):
                 self.assertEqual((rec['output']['stage'], live.package['manifest'], replay.package['manifest']), ('manifest', 'damaged', 'damaged'), name)
+
+    def test_an_item_without_an_id_is_checked_as_on_v4_replay_live2(self):
+        path = _epub(self.dir / 'idless.epub', [('ch1.xhtml', 'ch1.xhtml', CHAPTER)], extra_manifest='<item href="Part1:gone.xhtml" media-type="application/xhtml+xml"/>')
+        rec, live = self.live(path, 'live-2')
+        self.assertEqual((rec['output']['stage'], live.integrity, self.replay_v4(path).integrity), ('manifest', 'damaged', 'damaged'))
+        rec1, live1 = self.live(path, version='diag-2')
+        self.assertEqual((rec1['status'], live1.integrity), ('ok', 'clean'))          # live-1 checks only items with an id, as before
 
     def test_the_resolver_is_tools_v4s_live2(self):
         for href in (COLON, 'ch1.xhtml', 'Text/ch%201.xhtml#p2', '../x.xhtml', 'data:text/plain,abc', 'urn:isbn:1', 'mailto:a@b.c', 'http://example.org/a.xhtml',

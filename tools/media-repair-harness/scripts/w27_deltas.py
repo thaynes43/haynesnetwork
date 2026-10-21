@@ -86,7 +86,7 @@ def typed_and_checker():
             for tag, cfg in CONFIGS.items():
                 with EV2.diagnostic_rules(cfg['diagnostic_rules']):
                     ctxs[tag] = T.Context(case, fixture, tempfile.mkdtemp(prefix='mrh-w27-'), suite_dir=sdir, which=lambda _n: None,
-                                          tools_behavior=cfg['tools_behavior'], keep_raw=True)
+                                          tools_behavior=cfg['tools_behavior'], keep_raw=True, live_behavior=cfg.get('live_behavior', 'live-1'))
             evidence = RUN.resolve_evidence_raw(case, sdir, ctxs['recorded'].redact, literal_epub=True)
             obs = [EV2.make_observation(e['id'], e['tool'], e['args'], e['status'], e['output'], None, 'case') for e in evidence]
             counts['evidence_observations'] += len(obs)

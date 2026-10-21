@@ -145,9 +145,12 @@ _OTHER_WRAPPER_RX = re.compile(r'^(?:(?:Error opening input(?: files?)?|Error du
 #     header line in every decorated form the line classifier strips (_candidates: `pipe:N: `, `in#N: `, a file name or path, `Error opening input: `, a
 #     bracket run ...), not only behind brackets (_header_line);
 #   * an `OSError` (or a subclass, OSERROR_TYPES) raised at stage `zip_open` is an execution failure: the inspector could not open the file.  A positive damage
-#     diagnostic in the same text still wins (damage is read first), and every other exception type at zip_open keeps its reading;
+#     diagnostic in the same text still wins (damage is read first), EINVAL keeps its reading (zipfile raises it on a damaged archive on some Pythons), and
+#     every other exception type at zip_open keeps its reading;
 #   * the zip_crc execution check starts at the FIRST ` in member ` separator anywhere in the text (one linear `str.find`), not only within the first
 #     _READING_HEAD_MAX characters; the damage readings stay bounded exactly as under diag-2.
+# and one determinism fix: a line with SEVERAL `error reading header` readings (`a.mkv: error reading header: b.mkv: error reading header: Permission denied`)
+# took the first one met in a set (diag-1 and diag-2: the answer depended on PYTHONHASHSEED); diag-3 weighs them all, execution first.
 DIAGNOSTIC_RULES = ('diag-1', 'diag-2', 'diag-3')
 DEFAULT_DIAGNOSTIC_RULES = 'diag-1'
 _DIAG2_PLUS = ('diag-2', 'diag-3')      # the rule sets that carry every diag-2 correction
@@ -291,6 +294,10 @@ def classify_line(line):
         return 'damage'
     if any(_INVALID_DATA.match(c) and dec for c, dec in cands):
         return 'warning'
+    if _ACTIVE_RULES.get() == 'diag-3':
+        heads = [m for m in (_HEADER_RX.match(c) for c, _d in cands) if m]
+        if heads:       # diag-3: every reading is weighed (execution first), so the answer never depends on the set's iteration order (PYTHONHASHSEED)
+            return 'execution' if any(m.group(1) and _EXEC_RX.match(m.group(1)) for m in heads) else 'warning'
     for c, _d in cands:
         m = _HEADER_RX.match(c)
         if m:
@@ -414,11 +421,14 @@ def _first_member_name(text):
 
 
 # diag-3: the builtin OSError family (the exception an operating-system call raises: open, read, seek, stat ...), as both EPUB inspectors write it (`<Type>: <str(e)>`,
-# tools._epub_stage and evidence/epubtool._err).  A fixed list, so the reading does not depend on the Python that runs the classifier.
+# tools._epub_stage and evidence/epubtool._err).  A fixed list, so the reading does not depend on the Python that runs the classifier.  EINVAL (`[Errno 22]`) is
+# left out: depending on the Python version, zipfile's own seek can raise it on a DAMAGED archive (a ZIP64 end-of-central-directory locator that points before
+# the start of the file; other versions say `BadZipFile: Corrupt zip64 end of central directory locator`), so it does not show a failure to open and keeps its
+# earlier reading (unclassified, cause unknown).
 OSERROR_TYPES = ('OSError', 'IOError', 'EnvironmentError', 'BlockingIOError', 'ChildProcessError', 'ConnectionError', 'BrokenPipeError', 'ConnectionAbortedError',
                  'ConnectionRefusedError', 'ConnectionResetError', 'FileExistsError', 'FileNotFoundError', 'InterruptedError', 'IsADirectoryError', 'NotADirectoryError',
                  'PermissionError', 'ProcessLookupError', 'TimeoutError', 'UnsupportedOperation')
-OSERROR_AT_OPEN_RX = re.compile(r'(?:%s):(?:\s|$)' % '|'.join(OSERROR_TYPES))
+OSERROR_AT_OPEN_RX = re.compile(r'(?:%s):(?!\s*\[Errno 22\])(?:\s|$)' % '|'.join(OSERROR_TYPES))
 
 
 def _live_bad_crc(head, text, j):

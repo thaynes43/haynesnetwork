@@ -184,7 +184,8 @@ class Deadline:
 #     the diagnostic allow-list reads as damage (avtools.kept_error_lines), so located damage printed after start-up warnings survives; the record stays bounded;
 #   * the EPUB collector resolves manifest hrefs exactly as tools behaviour v4 does (epubtool._resolve_live2): only `http`/`https` URLs and references with
 #     a network location are remote; every other href, a colon-named member (`Part1:Intro.xhtml`) and `data:`, `urn:` or `mailto:` included, names a
-#     LOCAL archive member, which is parsed when present and reported missing when absent.
+#     LOCAL archive member, which is parsed when present and reported missing when absent; and, as v4's package check, every manifest item with an href is
+#     checked for a missing member (live-1 checks only items that have an id, once per id).
 LIVE_BEHAVIORS = ('live-1', 'live-2')
 DEFAULT_LIVE_BEHAVIOR = 'live-1'
 

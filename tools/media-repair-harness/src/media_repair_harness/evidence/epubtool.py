@@ -62,7 +62,7 @@ REMOTE_SCHEMES_LIVE2 = ('http', 'https')
 
 def _resolve_live2(base, href):
     """Live collector behaviour live-2: resolve a manifest href exactly as tools behaviour v4 does (tools.remote_href_v4 / tools.local_href_v4, kept equal by
-    tests), so live and v4 replay agree.  -> None for a REMOTE resource (an `http` or `https` URL, or any reference with a network location); otherwise the
+    tests), so live and v4 replay read every href alike.  -> None for a REMOTE resource (an `http` or `https` URL, or any reference with a network location); otherwise the
     LOCAL archive member it names (relative to the OPF, query and fragment dropped, percent-escapes decoded).  A colon-named href (`Part1:Intro.xhtml`, which
     urlsplit reads as the scheme `part1`) is read as a relative path.  So are `data:`, `urn:`, `mailto:` and every other non-web scheme: EPUB publication
     resources are archive members or remote web resources (EPUB 3 does not allow a `data:` URL in the manifest), so such an href names a member that is not
@@ -76,7 +76,8 @@ def _resolve_live2(base, href):
 
 def collect_epub(ctx, started):
     b = used_bounds(ctx, EPUB_BOUNDS)
-    resolve = _resolve_live2 if getattr(ctx, 'live_behavior', 'live-1') == 'live-2' else _resolve
+    live2 = getattr(ctx, 'live_behavior', 'live-1') == 'live-2'
+    resolve = _resolve_live2 if live2 else _resolve
     path = Path(ctx.path)
     out = {'valid': None, 'stages_passed': [], 'findings': []}
     cov_ok = []
@@ -190,7 +191,10 @@ def collect_epub(ctx, started):
                 manifest[x.attrib['id']] = (x.attrib['href'], x.attrib.get('media-type', ''))
         nameset = set(names)
         missing = []
-        for href, _t in manifest.values():
+        hrefs = [h for h, _t in manifest.values()]
+        if live2:       # live-2: every manifest item with an href is checked (one without an id, or with a repeated id, too), as tools v4's package check does
+            hrefs = [x.attrib['href'] for x in pkg.iter() if _local(x.tag) == 'item' and 'href' in x.attrib]
+        for href in hrefs:
             target = resolve(opf, href)
             if target is not None and target not in nameset:
                 missing.append(target)

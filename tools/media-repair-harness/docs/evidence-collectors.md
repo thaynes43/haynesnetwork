@@ -69,7 +69,7 @@ Defaults and hard maxima are in `core.BOUND_SPEC` (a request above the hard maxi
 `collect(..., live_behavior=...)` (and `tools.Context(..., live_behavior=...)`) selects the collector behaviour; the default `live-1` is every collector as it was, byte for byte, and every recorded live run used it. `live-2` (W27, opt-in; no runner flag selects it) changes two things and says so in the record (`collector_behavior: live-2`):
 
 * a decode window (and an audio level window) keeps its first 3 diagnostic lines plus, in order, at most 8 later distinct lines that the diagnostic allow-list reads as damage (`avtools.kept_error_lines`), so located damage printed after start-up warnings survives; `error_lines` / `problem_lines` still count every line;
-* the EPUB collector resolves manifest hrefs exactly as tools behaviour v4 (`epubtool._resolve_live2`): only `http`/`https` URLs and references with a network location are remote; a colon-named member (`Part1:Intro.xhtml`) is read, and `data:`, `urn:` and `mailto:` hrefs name local members that are not in the archive (the `manifest` failure), as on v4 replay. `live-1` skips any href with a scheme.
+* the EPUB collector resolves manifest hrefs exactly as tools behaviour v4 (`epubtool._resolve_live2`): only `http`/`https` URLs and references with a network location are remote; a colon-named member (`Part1:Intro.xhtml`) is read, and `data:`, `urn:` and `mailto:` hrefs name local members that are not in the archive (the `manifest` failure), as on v4 replay; every manifest item with an href is checked, one without an id included. `live-1` skips any href with a scheme and checks only items with an id.
 
 Details: `docs/evidence-format-v2.md`, last section.
 
