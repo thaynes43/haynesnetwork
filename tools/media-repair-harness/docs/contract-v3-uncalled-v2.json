@@ -1,0 +1,2612 @@
+{
+ "counter": "uncalled-2",
+ "note": "neutral transcript observation: an available, offered, valid, not-yet-made check existed at the decision with budget left; not an error count",
+ "runs": {
+  "claude-haiku-5-5": {
+   "run": "runs/dev-c7/devc7-haiku-5-5",
+   "uncalled-1 (unchanged counter, same records)": {
+    "budget_exhausted_escalations": 0,
+    "by_scope": {
+     "decode_interval": 12
+    },
+    "by_tool": {
+     "decode_sample": 12
+    },
+    "decisions": 73,
+    "escalations": 43,
+    "escalations_with_uncalled_available_check": 4,
+    "non_escalations_with_uncalled_available_check": 19
+   },
+   "uncalled-2": {
+    "budget_exhausted_escalations": 0,
+    "by_family": {
+     "excerpt": 114,
+     "link": 12
+    },
+    "by_scope": {
+     "decode_interval": 12,
+     "epub_body": 49,
+     "epub_body_index": 7,
+     "epub_body_unindexed": 58
+    },
+    "by_tool": {
+     "decode_sample": 12,
+     "epub_inspect": 114
+    },
+    "counter": "uncalled-2",
+    "decisions": 73,
+    "escalations": 43,
+    "escalations_with_uncalled_available_check": 16,
+    "non_escalations_with_uncalled_available_check": 22,
+    "rows": [
+     {
+      "action": "escalate",
+      "alias": "case-364f0dda",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-071ec119",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-44a107d4",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-065aa420",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-0dd753af",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-091fd282",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-24d4d897",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-29593987",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-fbd1faf5",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-2364001b",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-d7d9efbf",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-e4ad4382",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-241bd3d5",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-19af9a0c",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-f4d1fa1d",
+      "calls_made": 0,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 6,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-af0c8aa8",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-a1376136",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-d5c9ad64",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-5dea0da7",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-9d9574b5",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-ba654bdd",
+      "calls_made": 2,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 4,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "none",
+      "alias": "case-bfcfd1e6",
+      "calls_made": 0,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 6,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-f512a663",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-b4665bdf",
+      "calls_made": 0,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 6,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-a87ba0a0",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-53593e48",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-b3a3ac23",
+      "calls_made": 3,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 3,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 49
+     },
+     {
+      "action": "escalate",
+      "alias": "case-f38a13c5",
+      "calls_made": 3,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 3,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 49
+     },
+     {
+      "action": "escalate",
+      "alias": "case-4f18d1e5",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "escalate",
+      "alias": "case-653c9453",
+      "calls_made": 2,
+      "families": [],
+      "remaining": 4,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-6b6bcd03",
+      "calls_made": 2,
+      "families": [],
+      "remaining": 4,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-1c99df24",
+      "calls_made": 2,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 4,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "escalate",
+      "alias": "case-60d3a9a5",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-039cafcb",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-ea08aa45",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-74706002",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-fc5f4184",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-3c38e13f",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-63acb770",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-c8ca084b",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-0ab1e906",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-0f696692",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-0573fa81",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 4
+     },
+     {
+      "action": "escalate",
+      "alias": "case-72d05fa9",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-aa76f09b",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "escalate",
+      "alias": "case-ccfe546c",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-6778655f",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-6a911860",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "convert",
+      "alias": "case-1a29870e",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "convert",
+      "alias": "case-6f795815",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-5f3db0a1",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-45203cd1",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-9694e0db",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "convert",
+      "alias": "case-d75f9a54",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-db8cd319",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-58442ecf",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-b531d3a0",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-8747ffa3",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-916f096c",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-f6d81dcd",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "none",
+      "alias": "case-e54409f9",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "escalate",
+      "alias": "case-2f7d6482",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-7fe918f4",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-a78f01cc",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-d9dcd7b6",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-80c28fed",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-333df6a9",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-ecdcc20d",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "rename",
+      "alias": "case-a50692e9",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "escalate",
+      "alias": "case-5657ea3a",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-a9bb3c0e",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-2ec72178",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-a402654d",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     }
+    ]
+   }
+  },
+  "gpt-6-astra": {
+   "run": "runs/dev-c7/devc7-gpt-6-astra",
+   "uncalled-1 (unchanged counter, same records)": {
+    "budget_exhausted_escalations": 0,
+    "by_scope": {
+     "decode_interval": 7
+    },
+    "by_tool": {
+     "decode_sample": 7
+    },
+    "decisions": 73,
+    "escalations": 39,
+    "escalations_with_uncalled_available_check": 3,
+    "non_escalations_with_uncalled_available_check": 19
+   },
+   "uncalled-2": {
+    "budget_exhausted_escalations": 0,
+    "by_family": {
+     "excerpt": 63,
+     "link": 7
+    },
+    "by_scope": {
+     "decode_interval": 7,
+     "epub_body": 27,
+     "epub_body_index": 7,
+     "epub_body_unindexed": 29
+    },
+    "by_tool": {
+     "decode_sample": 7,
+     "epub_inspect": 63
+    },
+    "counter": "uncalled-2",
+    "decisions": 73,
+    "escalations": 39,
+    "escalations_with_uncalled_available_check": 14,
+    "non_escalations_with_uncalled_available_check": 23,
+    "rows": [
+     {
+      "action": "escalate",
+      "alias": "case-d876a90d",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-2d7161d6",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-25006b35",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-ac31e63b",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-6bcab510",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-e3c91c8b",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-8a2cbe05",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-9fd4e8ce",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-30f6f363",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-24281eca",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-bad6482c",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-d8c68441",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-922a92a2",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-84ce0cdc",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-2ac6095a",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-624ec178",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-828eac14",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-2b5c9c15",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-bdc36a15",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-20516083",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-954985f0",
+      "calls_made": 0,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 6,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "none",
+      "alias": "case-72db7a0e",
+      "calls_made": 0,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 6,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-7d3475a6",
+      "calls_made": 2,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 4,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-5e77aa74",
+      "calls_made": 0,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 6,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-b8b7adc1",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-63a64a90",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-4c15e11a",
+      "calls_made": 3,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 3,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 49
+     },
+     {
+      "action": "none",
+      "alias": "case-644d5190",
+      "calls_made": 0,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 6,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-5f81a53b",
+      "calls_made": 4,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 2,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-c00eaf84",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-578089af",
+      "calls_made": 2,
+      "families": [],
+      "remaining": 4,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-2d2173cd",
+      "calls_made": 2,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 4,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "escalate",
+      "alias": "case-1ee1ad90",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-0f2f93e4",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-803c0a89",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-aa87ab56",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-e9fc7dae",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-f93343d9",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "convert",
+      "alias": "case-1f5a868d",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-52e4ee3a",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-0604a5a0",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-47af277c",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-adbc4e13",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 4
+     },
+     {
+      "action": "escalate",
+      "alias": "case-ad9c7084",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-da0d9680",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-7f1ed061",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-d8da1b87",
+      "calls_made": 3,
+      "families": [
+       "link"
+      ],
+      "remaining": 3,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "escalate",
+      "alias": "case-f0becf8f",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "convert",
+      "alias": "case-64a459d7",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "convert",
+      "alias": "case-dde49a7e",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-16935ed6",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-ecf88b60",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-dd2989a1",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "convert",
+      "alias": "case-840db956",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-8b88433d",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-4824ae00",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-ffe56429",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-4296ebfa",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-13044fba",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-54778976",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "none",
+      "alias": "case-bcc024fc",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "escalate",
+      "alias": "case-9a9077b3",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-6b633c71",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-6d3bb6aa",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-ff1c0f14",
+      "calls_made": 2,
+      "families": [
+       "link"
+      ],
+      "remaining": 4,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-b579e621",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-63e0b801",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "escalate",
+      "alias": "case-e15882b4",
+      "calls_made": 2,
+      "families": [],
+      "remaining": 4,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "rename",
+      "alias": "case-aa5b7d56",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "escalate",
+      "alias": "case-112b9dff",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-a60d131b",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-311680ce",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-b1cf1b6e",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     }
+    ]
+   }
+  },
+  "qwen3.8:27b (aborted first pass, 5 cases)": {
+   "run": "runs/dev-c7/devc7-qwen3.8-27b",
+   "uncalled-1 (unchanged counter, same records)": {
+    "budget_exhausted_escalations": 0,
+    "by_scope": {},
+    "by_tool": {},
+    "decisions": 5,
+    "escalations": 2,
+    "escalations_with_uncalled_available_check": 0,
+    "non_escalations_with_uncalled_available_check": 0
+   },
+   "uncalled-2": {
+    "budget_exhausted_escalations": 0,
+    "by_family": {},
+    "by_scope": {},
+    "by_tool": {},
+    "counter": "uncalled-2",
+    "decisions": 5,
+    "escalations": 2,
+    "escalations_with_uncalled_available_check": 0,
+    "non_escalations_with_uncalled_available_check": 0,
+    "rows": [
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-c9a004dc",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-460c2565",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-2d233a98",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-7ef6ee6d",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-7f1678bd",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     }
+    ]
+   }
+  },
+  "qwen3.8:27b (re-registered pass)": {
+   "run": "runs/dev-c7-qwen-r2/devc7r2-qwen3.8-27b",
+   "uncalled-1 (unchanged counter, same records)": {
+    "budget_exhausted_escalations": 0,
+    "by_scope": {
+     "decode_interval": 7
+    },
+    "by_tool": {
+     "decode_sample": 7
+    },
+    "decisions": 73,
+    "escalations": 19,
+    "escalations_with_uncalled_available_check": 3,
+    "non_escalations_with_uncalled_available_check": 19
+   },
+   "uncalled-2": {
+    "budget_exhausted_escalations": 0,
+    "by_family": {
+     "excerpt": 3,
+     "link": 7
+    },
+    "by_scope": {
+     "decode_interval": 7,
+     "epub_body": 3
+    },
+    "by_tool": {
+     "decode_sample": 7,
+     "epub_inspect": 3
+    },
+    "counter": "uncalled-2",
+    "decisions": 73,
+    "escalations": 19,
+    "escalations_with_uncalled_available_check": 4,
+    "non_escalations_with_uncalled_available_check": 32,
+    "rows": [
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-f47f9c7e",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-b57f08c9",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-eda66622",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-adaadb02",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-acf2e693",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-088a9c15",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-68046987",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-17ff065f",
+      "calls_made": 2,
+      "families": [],
+      "remaining": 4,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "rename",
+      "alias": "case-bfef5acc",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-100a6818",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-4d0d3e18",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-0f1817a9",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-fcda8fc8",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-58447e66",
+      "calls_made": 0,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 6,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-700dfb05",
+      "calls_made": 0,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 6,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-9e27a62f",
+      "calls_made": 0,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 6,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-33e97f89",
+      "calls_made": 0,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 6,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-2b2cc7a5",
+      "calls_made": 0,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 6,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-0ec774d5",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-9efff84c",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-d4472f1f",
+      "calls_made": 1,
+      "families": [
+       "excerpt",
+       "page"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect",
+       "page"
+      ],
+      "uncalled_available": 41
+     },
+     {
+      "action": "none",
+      "alias": "case-74b53b77",
+      "calls_made": 2,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 4,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-46ad4ccc",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-53311ee1",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-e8297fb8",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-6119419d",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-53213a35",
+      "calls_made": 2,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 4,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 49
+     },
+     {
+      "action": "none",
+      "alias": "case-38f4345e",
+      "calls_made": 2,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 4,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 49
+     },
+     {
+      "action": "escalate",
+      "alias": "case-67aaa081",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "escalate",
+      "alias": "case-823ab913",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-6956dd1a",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "rename",
+      "alias": "case-0cc01506",
+      "calls_made": 1,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 5,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-38ab73ed",
+      "calls_made": 0,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 6,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-1e3d81f7",
+      "calls_made": 0,
+      "families": [
+       "excerpt"
+      ],
+      "remaining": 6,
+      "tools": [
+       "epub_inspect"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-ab475b26",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-fd7f57bf",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-84892a87",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "convert",
+      "alias": "case-11e4148a",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "convert",
+      "alias": "case-6eb9cd6f",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-74419037",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-778b18b1",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-820110f2",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "none",
+      "alias": "case-265d0a27",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "escalate",
+      "alias": "case-a7ce4122",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-934f7972",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-864ee81a",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "rename",
+      "alias": "case-06e97584",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "escalate",
+      "alias": "case-babedd64",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "convert",
+      "alias": "case-f6ad3bed",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "convert",
+      "alias": "case-51b51e09",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-c2dde4b6",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 2
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-bda28e59",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-600529ab",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "convert",
+      "alias": "case-b7d0af36",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "none",
+      "alias": "case-6324f9b3",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-40ef51a6",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-4cc957e6",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "none",
+      "alias": "case-69a99b05",
+      "calls_made": 2,
+      "families": [
+       "link"
+      ],
+      "remaining": 4,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "none",
+      "alias": "case-79e08388",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "none",
+      "alias": "case-a6cbba18",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "none",
+      "alias": "case-61da080b",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "escalate",
+      "alias": "case-53513d3c",
+      "calls_made": 0,
+      "families": [],
+      "remaining": 6,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-f7b5c846",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-32d14765",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-b60de095",
+      "calls_made": 2,
+      "families": [
+       "link"
+      ],
+      "remaining": 4,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "none",
+      "alias": "case-a0b57e8b",
+      "calls_made": 1,
+      "families": [],
+      "remaining": 5,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "escalate",
+      "alias": "case-3f9f200f",
+      "calls_made": 4,
+      "families": [],
+      "remaining": 2,
+      "tools": [],
+      "uncalled_available": 0
+     },
+     {
+      "action": "none",
+      "alias": "case-208ad796",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 1
+     },
+     {
+      "action": "rename",
+      "alias": "case-ade6996c",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "escalate",
+      "alias": "case-f4602617",
+      "calls_made": 1,
+      "families": [
+       "link"
+      ],
+      "remaining": 5,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-953b07f0",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-37d6c27e",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     },
+     {
+      "action": "blocklist_and_search",
+      "alias": "case-cbf8b940",
+      "calls_made": 0,
+      "families": [
+       "link"
+      ],
+      "remaining": 6,
+      "tools": [
+       "decode_sample"
+      ],
+      "uncalled_available": 3
+     }
+    ]
+   }
+  }
+ },
+ "suite": "suite-dev-v1.1"
+}

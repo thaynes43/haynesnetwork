@@ -7,7 +7,11 @@ receives the case id, truth, supported actions, accepted classes, solvability, f
 Step 2, unblinded: the label's class (and accepted alternatives) and its supported actions are joined, and a case is listed only when a
 prerequisite the label needs is not met by the case evidence AND no evidence of an accepted kind is obtainable from an offered, advertised tool
 (or, for a context-only prerequisite, the context does not state it).  Output: id and reason only.  Labels are not changed and the contract is
-not weakened; this file is never an input of any renderer.  Usage: contract_v3_tension.py [--json FILE] [--md FILE]"""
+not weakened; this file is never an input of any renderer.  Usage: contract_v3_tension.py [--json FILE] [--md FILE] [--checker v3.1|v3.3] [--diagnostic-rules diag-1|diag-2]
+
+Defaults (checker v3.1, diagnostic rules diag-1) reproduce docs/contract-v3-label-tension.{json,md} byte for byte.  `--checker v3.3` (W25) runs the
+rubric v3.3 checker (prereq_v33.py, an amendment written AFTER labels had been read) and types prior records by its rule; `--diagnostic-rules diag-2`
+classifies diagnostics with the W25 corrections."""
 import argparse
 import json
 import sys
@@ -23,6 +27,7 @@ from media_repair_harness import run as RUN          # noqa: E402
 from media_repair_harness import tools as T          # noqa: E402
 from media_repair_harness.experimental.contract_v3 import facts as FX     # noqa: E402
 from media_repair_harness.experimental.contract_v3 import prereq as PQ    # noqa: E402
+from media_repair_harness.experimental.contract_v3 import prereq_v33 as PQ33    # noqa: E402
 from media_repair_harness.experimental.contract_v3 import rubric as RB    # noqa: E402
 
 REPO = COMPONENT.parents[1]
@@ -42,7 +47,7 @@ def blinded(case, n):
     return {'observations': obs, 'context': view['context'], 'media_type': view['media_type'], 'tools': view['tools_available'], 'capabilities': caps}
 
 
-def obtainable_kinds(b):
+def obtainable_kinds(b, report_kind=FX.report_kind):
     kinds = set()
     for o in b['observations']:
         d = EV2.derive(o)
@@ -50,7 +55,7 @@ def obtainable_kinds(b):
             if o['tool'] in RB.TOOL_SEMANTICS:
                 kinds.update(RB.TOOL_SEMANTICS[o['tool']]['kinds'])
             if o['tool'] == 'prior_record':
-                kinds.add(FX.report_kind((d.facts or {}).get('evidence_method') if isinstance(d.facts, dict) else None))
+                kinds.add(report_kind((d.facts or {}).get('evidence_method') if isinstance(d.facts, dict) else None))
     for c in b['capabilities']:
         if c.get('tool') in b['tools'] and c.get('available') is True and c['tool'] in RB.TOOL_SEMANTICS:
             k = set(RB.TOOL_SEMANTICS[c['tool']]['kinds'])
@@ -127,15 +132,25 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument('--json')
     ap.add_argument('--md')
+    ap.add_argument('--checker', choices=('v3.1', 'v3.3'), default='v3.1')
+    ap.add_argument('--diagnostic-rules', choices=EV2.DIAGNOSTIC_RULES, default=EV2.DEFAULT_DIAGNOSTIC_RULES)
     a = ap.parse_args(argv)
+    with EV2.diagnostic_rules(a.diagnostic_rules):
+        return _main(a)
+
+
+def _main(a):
+    checker = PQ33.check if a.checker == 'v3.3' else PQ.check
+    kind_of = PQ33.report_kind if a.checker == 'v3.3' else FX.report_kind
+    rubric = PQ33.RUBRIC_VERSION if a.checker == 'v3.3' else RB.RUBRIC_VERSION
     rows = []
     cases = [(p, json.loads(p.read_text())) for p in sorted((SUITE / 'cases').glob('*.json'))]
     # step 1, blinded: the checker sees aliases only
     results = []
     for n, (_p, case) in enumerate(cases):
         b = blinded(case, n)
-        res = PQ.check(b['observations'], b['context'], b['media_type'], b['capabilities'])
-        results.append((res, obtainable_kinds(b)))
+        res = checker(b['observations'], b['context'], b['media_type'], b['capabilities'])
+        results.append((res, obtainable_kinds(b, kind_of)))
     # step 2, unblinded
     for (_p, case), (res, kinds) in zip(cases, results):
         label = case['truth']['class']
@@ -147,12 +162,17 @@ def main(argv=None):
     for r in rows:
         print('-', r['id'], ':', r['reason'])
     if a.json:
-        Path(a.json).write_text(json.dumps({'rubric': RB.RUBRIC_VERSION, 'suite': 'suite-dev-v1.1', 'cases': len(cases), 'listed': rows}, indent=1) + '\n')
+        doc = {'rubric': rubric, 'suite': 'suite-dev-v1.1', 'cases': len(cases), 'listed': rows}
+        if a.checker != 'v3.1' or a.diagnostic_rules != EV2.DEFAULT_DIAGNOSTIC_RULES:
+            doc.update(checker=PQ33.CHECKER_VERSION if a.checker == 'v3.3' else 'prereq-v3.1', diagnostic_rules=a.diagnostic_rules,
+                       note='rubric v3.3 is an amendment written after the labels had been read (docs/contract-v3.md section 17)')
+        Path(a.json).write_text(json.dumps(doc, indent=1) + '\n')
     if a.md:
+        frozen = 'frozen before any label was read' if a.checker == 'v3.1' else 'an amendment written AFTER the labels had been read; diagnostic rules %s' % a.diagnostic_rules
         lines = ['# Contract v3: neutral label-tension observations (for the evaluator)', '',
-                 'Generated by `scripts/contract_v3_tension.py` with rubric `%s` (frozen before any label was read). The checker ran on blinded inputs; the labels were joined afterwards. '
+                 'Generated by `scripts/contract_v3_tension.py` with rubric `%s` (%s). The checker ran on blinded inputs; the labels were joined afterwards. '
                  'A case is listed only when a prerequisite its label needs is unmet on the case evidence and no evidence of an accepted kind is obtainable from an offered tool. '
-                 'These are observations, not proposed label changes, and the contract is not weakened to remove them. No renderer, prompt or model reads this file.' % RB.RUBRIC_VERSION, '',
+                 'These are observations, not proposed label changes, and the contract is not weakened to remove them. No renderer, prompt or model reads this file.' % (rubric, frozen), '',
                  '%d of %d public dev cases.' % (len(rows), len(cases)), '', '| Case | Reason |', '|---|---|']
         lines += ['| %s | %s |' % (r['id'], r['reason'].replace('|', '/')) for r in rows]
         Path(a.md).write_text('\n'.join(lines) + '\n')
