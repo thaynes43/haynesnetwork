@@ -255,8 +255,12 @@ def check_messages_media(case, messages, media_texts, visible='', extra_paths=()
 #     path piece containing `-`, `_`, a digit, `/`, `.` or another non-letter.  The truth reference is refused when it is not a short plain word (a sentence
 #     is refused whole).  A fixture stem is refused when it is not prose or is at least SYSTEM_MIN_LEN characters long.  Plain words (a family word such as
 #     a title word, `healthy`, `new`) are not refused in media text, and a plain word already visible in the case context is never refused there.
-#   * RECONSTRUCTION is checked: adjoining elements of one list field are checked joined, and every delivered excerpt range of one spine item is reassembled
-#     (overlapping or touching ranges join) so an identifier split across excerpts, or across the default view and an excerpt, is found.
+#   * RECONSTRUCTION is checked: EVERY contiguous run of elements of one ordered source group (a list field, or one kind of list-of-records field such as
+#     the declared TOC entries or one item's headings), joined directly and with a space, at any length (third review round, AUDIT-ASTRA-29: two-element
+#     pairs alone let a value split into three parts through); and every delivered excerpt range of one spine item is reassembled (overlapping or touching
+#     ranges join) so an identifier split across excerpts, or across the default view and an excerpt, is found.  The cost is bounded: each group is joined
+#     once, every match of a value in the joined text is mapped back to the smallest run of elements that covers it, and the value's word boundaries are
+#     checked at that run's own ends (a longer run cannot loosen them).
 # A refusal is a LeakError, recorded as a harness error and kept in every denominator; the legacy check (check_messages) is unchanged.
 MEDIA_RULE_2 = 'leakguard-media-2'
 _PROSE_RX = re.compile(r"^[^\W\d_]+(?:[ '’][^\W\d_]+)*$")
@@ -266,14 +270,55 @@ def is_prose(value):
     return bool(_PROSE_RX.match(' '.join(str(value or '').split())))
 
 
+def _core(value):
+    """The value without its word boundaries (whitespace-normalised for a multi-word value), for the group-run search."""
+    words = [re.escape(w) for w in str(value).split()]
+    return re.compile(r'\s+'.join(words) if len(words) > 1 else re.escape(str(value)), re.IGNORECASE)
+
+
+_WORDCH = re.compile(r'[A-Za-z0-9]')
+
+
+def _run_hit(elements, sep, core):
+    """Does `core` occur, with word boundaries at the ends of the smallest contiguous run of `elements` (joined by `sep`) that covers it?"""
+    joined, starts, ends, pos = [], [], [], 0
+    for i, e in enumerate(elements):
+        if i:
+            joined.append(sep)
+            pos += len(sep)
+        starts.append(pos)
+        joined.append(e)
+        pos += len(e)
+        ends.append(pos)
+    text = ''.join(joined)
+    for m in re.finditer(r'(?=(%s))' % core.pattern, text, core.flags):
+        a, b = m.start(1), m.end(1)
+        if b <= a:
+            continue
+        first = max(i for i, st in enumerate(starts) if st <= a)
+        last = min(i for i, en in enumerate(ends) if en >= b)
+        lo, hi = starts[first], ends[last]
+        if (a == lo or not _WORDCH.match(text[a - 1])) and (b == hi or not _WORDCH.match(text[b])):
+            return True
+    return False
+
+
+def group_runs(sources):
+    """-> {(source, group): [element texts in order]} for the run check."""
+    out = {}
+    for s in sources:
+        out.setdefault((s['source'], s['group']), []).append(s['text'])
+    return out
+
+
 def _phrase(text):
     """A case-insensitive matcher for a multi-word value, whitespace-normalised, bounded at word characters at its ends."""
     words = [re.escape(w) for w in str(text).split()]
     return re.compile(r'(?<![A-Za-z0-9])' + r'\s+'.join(words) + r'(?![A-Za-z0-9])', re.IGNORECASE)
 
 
-def media_tokens_2(case, extra_paths=()):
-    """-> [(kind, compiled regex, prose)] refused in media text under MEDIA_RULE_2."""
+def media_tokens_2(case, extra_paths=(), cores=False):
+    """-> [(kind, compiled regex, prose)] refused in media text under MEDIA_RULE_2 (cores=True: the regex without word boundaries, for the run check)."""
     cands = []
     cid = str(case.get('id') or '')
     if cid:
@@ -309,7 +354,7 @@ def media_tokens_2(case, extra_paths=()):
     for kind, value, refuse in cands:
         if refuse and (kind, value) not in seen:
             seen.add((kind, value))
-            out.append((kind, _phrase(value) if ' ' in value.strip() else _ci(value), is_prose(value)))
+            out.append((kind, _core(value) if cores else (_phrase(value) if ' ' in value.strip() else _ci(value)), is_prose(value)))
     return out
 
 
@@ -344,6 +389,20 @@ def reassembled(sources):
     return texts
 
 
+def media_hits_2(case, sources, visible='', extra_paths=()):
+    """-> the sorted kinds of hidden values found in the delivered media `sources` under MEDIA_RULE_2 (elements, excerpt runs and every contiguous group run)."""
+    mtoks = [(k, rx) for k, rx, prose in media_tokens_2(case, extra_paths) if not (prose and rx.search(visible or ''))]
+    sources = list(sources)
+    texts = reassembled(sources)
+    hits = {k for k, rx in mtoks for t in texts if rx.search(t)}
+    kinds = {k for k, _rx in mtoks}
+    groups = [els for els in group_runs(sources).values() if len(els) > 1]
+    for k, core, _prose in media_tokens_2(case, extra_paths, cores=True):
+        if k in kinds and k not in hits and any(_run_hit(els, '', core) or _run_hit(els, ' ', core) for els in groups):
+            hits.add(k)
+    return sorted(hits)
+
+
 def check_messages_media2(case, guard_messages, sources, visible='', extra_paths=()):
     """Guard for a format v3.1-format request under MEDIA_RULE_2.  `guard_messages` are the model-bound messages with each message that carries media text
     replaced by its harness-only shadow (legacy check, unchanged tokens and rules); `sources` are the media strings delivered so far (media check)."""
@@ -354,8 +413,6 @@ def check_messages_media2(case, guard_messages, sources, visible='', extra_paths
         hits = _legacy_hits(m.get('content', ''), toks)
         if hits:
             raise LeakError('forbidden token(s) %s in model-bound message %d' % (hits, i + 1))
-    mtoks = [(k, rx) for k, rx, prose in media_tokens_2(case, extra_paths) if not (prose and rx.search(visible or ''))]
-    texts = reassembled(list(sources))
-    hits = sorted({k for k, rx in mtoks for t in texts if rx.search(t)})
+    hits = media_hits_2(case, sources, visible, extra_paths)
     if hits:
         raise LeakError('forbidden value(s) %s in text read from the media (%s)' % (hits, MEDIA_RULE_2))

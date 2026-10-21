@@ -135,8 +135,7 @@ def refusal_scan(case, sdir):
     legacy = sorted({k for t in texts for k in leakguard.find_leaks(case, t, ctx.forbidden_extra)})
     sources = T.epub_v3_sources(json.loads(res['raw_output']), 'scan') + [{'source': 'scan', 'field': 'item', 'group': 'item[%d]' % i, 'text': t}
                                                                            for i, (_m, t, _h, _n) in enumerate(ET.read_items(fixture.path, d)) if t]
-    toks = [(k, rx) for k, rx, prose in leakguard.media_tokens_2(case, ctx.forbidden_extra) if not (prose and rx.search(visible))]
-    media = sorted({k for k, rx in toks for t in leakguard.reassembled(sources) if rx.search(t)})
+    media = leakguard.media_hits_2(case, sources, visible, ctx.forbidden_extra)        # the guard's own media check (elements, excerpt runs, group runs)
     return legacy, media
 
 

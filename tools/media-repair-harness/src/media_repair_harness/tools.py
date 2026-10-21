@@ -874,7 +874,7 @@ def epub_v3_sources(output, source_id):
     def walk(v, path, literal=False, section=None, top=True, parent=None):
         if isinstance(v, str):
             if literal and v:
-                rec = {'source': source_id, 'field': path, 'text': v, 'group': path.rsplit('[', 1)[0] if path.endswith(']') else path}
+                rec = {'source': source_id, 'field': path, 'text': v, 'group': re.sub(r'\[\d+\](?!.*\[\d+\])', '[]', path)}   # the last list index -> []
                 if isinstance(parent, dict) and path.endswith('.text') and isinstance(parent.get('offset'), int) and isinstance(parent.get('end'), int):
                     rec['range'] = {'spine': parent.get('spine'), 'member': parent.get('member'), 'offset': parent['offset'], 'end': parent['end']}
                 out.append(rec)
