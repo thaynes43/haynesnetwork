@@ -64,8 +64,18 @@ Defaults and hard maxima are in `core.BOUND_SPEC` (a request above the hard maxi
 * Serial only: no parallel subprocesses. Heavy runs (generation, decoding real media) belong in a CPU-limited Job, not the dev-env pod; this pod has no ffmpeg.
 * EPUB: the zip is streamed through CRC checking inside the byte cap, a member that inflates past its declared size is a `zip_crc` failure, `container.xml`, the OPF and spine documents with `<!ENTITY` declarations are not parsed (a spine document is skipped and reported; container.xml or the OPF stops the check at `opf_parse` with `cause: tool`, because the collector refused them, not because the file was shown to be damaged), nothing is extracted.
 
+## Behaviours (`live_behavior`)
+
+`collect(..., live_behavior=...)` (and `tools.Context(..., live_behavior=...)`) selects the collector behaviour; the default `live-1` is every collector as it was, byte for byte, and every recorded live run used it. `live-2` (W27, opt-in; no runner flag selects it) changes two things and says so in the record (`collector_behavior: live-2`):
+
+* a decode window (and an audio level window) keeps its first 3 diagnostic lines plus, in order, at most 8 later distinct lines that the diagnostic allow-list reads as damage (`avtools.kept_error_lines`), so located damage printed after start-up warnings survives; `error_lines` / `problem_lines` still count every line;
+* the EPUB collector resolves manifest hrefs exactly as tools behaviour v4 (`epubtool._resolve_live2`): only `http`/`https` URLs and references with a network location are remote; a colon-named member (`Part1:Intro.xhtml`) is read, and `data:`, `urn:` and `mailto:` hrefs name local members that are not in the archive (the `manifest` failure), as on v4 replay. `live-1` skips any href with a scheme.
+
+Details: `docs/evidence-format-v2.md`, last section.
+
 ## Limits (read before relying on a record)
 
+* A decode window keeps only its first 3 diagnostic lines under `live-1` (the default), so damage printed after start-up warnings is not in the record; `live-2` keeps it (above).
 * Sampling finds damage only where it samples. In the live smoke a byte-flipped clip was caught in 2 of 4 sampled windows while `ffprobe` of the same file was clean; a damaged region between samples would be missed.
   Full decode is capped, and covers the first video and first audio stream only.
 * `frames` OCR needs `tesseract`; it is **not installed** in the Bazarr image used for the smoke or in this pod, so the live records show `ocr: unavailable`. The OCR path is covered by fake-runner tests only.

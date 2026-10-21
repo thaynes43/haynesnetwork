@@ -13,11 +13,12 @@ import tempfile
 import time
 from pathlib import Path
 
-from .core import (BOUND_SPEC, HARNESS_TOOL, KINDS, STATUSES, Ctx, RunResult, as_replay, fingerprint, make_record, resolve_bounds,
-                   subprocess_runner, to_tool_result, kill_active)
+from .core import (BOUND_SPEC, DEFAULT_LIVE_BEHAVIOR, HARNESS_TOOL, KINDS, LIVE_BEHAVIORS, STATUSES, Ctx, RunResult, as_replay, fingerprint, make_record,
+                   resolve_bounds, subprocess_runner, to_tool_result, kill_active)
 from . import avtools, epubtool
 
-__all__ = ['collect', 'load_replay', 'to_tool_result', 'KINDS', 'STATUSES', 'BOUND_SPEC', 'RunResult', 'subprocess_runner', 'resolve_bounds', 'kill_active']
+__all__ = ['collect', 'load_replay', 'to_tool_result', 'KINDS', 'STATUSES', 'BOUND_SPEC', 'RunResult', 'subprocess_runner', 'resolve_bounds', 'kill_active',
+           'LIVE_BEHAVIORS', 'DEFAULT_LIVE_BEHAVIOR']
 
 
 def load_replay(source):
@@ -55,7 +56,8 @@ def _fingerprint(inputs, max_files):
     return {'kind': 'files', 'count': len(prints), 'files': prints, 'partial_fingerprint_only': True}
 
 
-def collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=None, scratch_dir=None, clock=time.monotonic, cancel=None, coverage_union=False):
+def collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=None, scratch_dir=None, clock=time.monotonic, cancel=None, coverage_union=False,
+            live_behavior=DEFAULT_LIVE_BEHAVIOR):
     """Collect evidence about `path` and return one record per kind (order kept); never raises for a bad input.
 
     path     a file; for 'audiobook' also a folder of parts or a list of part files
@@ -65,7 +67,11 @@ def collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=No
     replay   recorded records (see load_replay): kinds present there are served as mode `replay`, the rest run live
     cancel   a threading.Event; once set no further subprocess is started (the caller's own timeout fired)
     coverage_union   True (tools behaviour v2): `decoded_s` / `sampled_fraction` of a sampled decode are the union of the windows, so overlapping windows are not counted twice
+    live_behavior    'live-1' (default: every collector as it was) or 'live-2' (W27: damage lines kept past the first 3, EPUB hrefs resolved as tools behaviour v4;
+                     see core.LIVE_BEHAVIORS); an unknown name raises ValueError
     """
+    if live_behavior not in LIVE_BEHAVIORS:
+        raise ValueError('unknown live collector behaviour %r (known: %s)' % (live_behavior, ', '.join(LIVE_BEHAVIORS)))
     kinds = list(kinds) if kinds else list(KINDS)
     for k in kinds:
         if k not in KINDS:
@@ -76,7 +82,8 @@ def collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=No
     fp = _fingerprint(inputs, int(resolved['max_files']))
     out = []
     with tempfile.TemporaryDirectory(prefix='mrh-evidence-', dir=scratch_dir) as scratch:
-        ctx = Ctx(str(inputs[0]) if len(inputs) == 1 else str(inputs[0].parent), resolved, runner or subprocess_runner, which or shutil.which, scratch, clock, cancel, coverage_union)
+        ctx = Ctx(str(inputs[0]) if len(inputs) == 1 else str(inputs[0].parent), resolved, runner or subprocess_runner, which or shutil.which, scratch, clock, cancel, coverage_union,
+                  live_behavior)
         for p_ in inputs:
             ctx.add_name(str(p_))
         for kind in kinds:
@@ -88,6 +95,8 @@ def collect(path, kinds=None, bounds=None, *, runner=None, which=None, replay=No
             rec['input'] = fp
             if clamped:
                 rec['bounds_clamped'] = clamped
+            if live_behavior != DEFAULT_LIVE_BEHAVIOR and rec.get('mode') == 'live':
+                rec['collector_behavior'] = live_behavior       # (a live-1 record is unchanged; a replayed record keeps what it recorded)
             out.append(rec)
     return out
 

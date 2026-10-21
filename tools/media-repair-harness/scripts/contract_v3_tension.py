@@ -7,11 +7,11 @@ receives the case id, truth, supported actions, accepted classes, solvability, f
 Step 2, unblinded: the label's class (and accepted alternatives) and its supported actions are joined, and a case is listed only when a
 prerequisite the label needs is not met by the case evidence AND no evidence of an accepted kind is obtainable from an offered, advertised tool
 (or, for a context-only prerequisite, the context does not state it).  Output: id and reason only.  Labels are not changed and the contract is
-not weakened; this file is never an input of any renderer.  Usage: contract_v3_tension.py [--json FILE] [--md FILE] [--checker v3.1|v3.3] [--diagnostic-rules diag-1|diag-2]
+not weakened; this file is never an input of any renderer.  Usage: contract_v3_tension.py [--json FILE] [--md FILE] [--checker v3.1|v3.3] [--diagnostic-rules diag-1|diag-2|diag-3]
 
 Defaults (checker v3.1, diagnostic rules diag-1) reproduce docs/contract-v3-label-tension.{json,md} byte for byte, with their original wording.  `--checker
 v3.3` (W25) runs the rubric v3.3 checker (prereq_v33.py, an amendment written AFTER labels had been read) and types prior records by its rule;
-`--diagnostic-rules diag-2` classifies diagnostics with the W25 corrections.  Every non-default run states its checker, the rubric that checker applies
+`--diagnostic-rules diag-2` classifies diagnostics with the W25 corrections (`diag-3`: and the W27 ones).  Every non-default run states its checker, the rubric that checker applies
 (v3.1 or v3.3, both amendments made after labels had been read) and its diagnostic rules, in the JSON and the Markdown."""
 import argparse
 import json
@@ -143,7 +143,8 @@ def main(argv=None):
 # What a non-default run states about its versions (W25 review): the checker, the rubric it applies, when that rubric was written, and the diagnostic rules.
 CHECKERS = {'v3.1': ('prereq-v3.1', RB.RUBRIC_V31_VERSION, 'an amendment made after the labels had been read, docs/contract-v3.md section 14'),
             'v3.3': (PQ33.CHECKER_VERSION, PQ33.RUBRIC_VERSION, 'an amendment written AFTER the labels had been read, docs/contract-v3.md section 17')}
-DIAGNOSTICS = {'diag-1': 'the allow-lists of docs/evidence-format-v2.md', 'diag-2': 'with the W25 corrections, docs/evidence-format-v2.md, last section'}
+DIAGNOSTICS = {'diag-1': 'the allow-lists of docs/evidence-format-v2.md', 'diag-2': 'with the W25 corrections, docs/evidence-format-v2.md, last section',
+               'diag-3': 'with the W25 and W27 corrections, docs/evidence-format-v2.md, last two sections'}
 
 
 def _main(a):

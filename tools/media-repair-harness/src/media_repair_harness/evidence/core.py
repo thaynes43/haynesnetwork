@@ -178,12 +178,26 @@ class Deadline:
         return self.end - self.clock()
 
 
+# Live collector behaviours (W27).  `live-1` is every collector as it was, byte for byte (the default; every recorded live run).  `live-2` (opt-in, no runner
+# flag selects it yet) corrects two things and nothing else:
+#   * a decode window (and an audio level window) keeps its first 3 diagnostic lines as before PLUS, in order, up to LIVE2_DAMAGE_LINES later distinct lines that
+#     the diagnostic allow-list reads as damage (avtools.kept_error_lines), so located damage printed after start-up warnings survives; the record stays bounded;
+#   * the EPUB collector resolves manifest hrefs exactly as tools behaviour v4 does (epubtool._resolve_live2): only `http`/`https` URLs and references with
+#     a network location are remote; every other href, a colon-named member (`Part1:Intro.xhtml`) and `data:`, `urn:` or `mailto:` included, names a
+#     LOCAL archive member, which is parsed when present and reported missing when absent.
+LIVE_BEHAVIORS = ('live-1', 'live-2')
+DEFAULT_LIVE_BEHAVIOR = 'live-1'
+
+
 class Ctx:
     """Everything a collector needs for one collect() call.  Not shared between calls."""
 
-    def __init__(self, path, bounds, runner, which, scratch, clock=time.monotonic, cancel=None, coverage_union=False):
+    def __init__(self, path, bounds, runner, which, scratch, clock=time.monotonic, cancel=None, coverage_union=False, live_behavior=DEFAULT_LIVE_BEHAVIOR):
+        if live_behavior not in LIVE_BEHAVIORS:
+            raise ValueError('unknown live collector behaviour %r (known: %s)' % (live_behavior, ', '.join(LIVE_BEHAVIORS)))
         self.path, self.bounds, self.runner, self.which, self.scratch, self.clock = str(path), bounds, runner, which, Path(scratch), clock
         self.coverage_union = coverage_union   # W18 (tools behaviour v2): sampled coverage is the union of the windows, not their sum
+        self.live_behavior = live_behavior     # W27: live-1 (default) or live-2
         self.cancel = cancel   # threading.Event: once set, no further subprocess is started
         self.versions, self.cache = {}, {}
         self.names = {self.path, os.path.basename(self.path)}

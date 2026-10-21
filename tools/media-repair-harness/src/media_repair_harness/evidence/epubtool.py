@@ -57,8 +57,26 @@ def _resolve(base, href):
     return posixpath.normpath(posixpath.join(posixpath.dirname(base), unquote(parts.path)))
 
 
+REMOTE_SCHEMES_LIVE2 = ('http', 'https')
+
+
+def _resolve_live2(base, href):
+    """Live collector behaviour live-2: resolve a manifest href exactly as tools behaviour v4 does (tools.remote_href_v4 / tools.local_href_v4, kept equal by
+    tests), so live and v4 replay agree.  -> None for a REMOTE resource (an `http` or `https` URL, or any reference with a network location); otherwise the
+    LOCAL archive member it names (relative to the OPF, query and fragment dropped, percent-escapes decoded).  A colon-named href (`Part1:Intro.xhtml`, which
+    urlsplit reads as the scheme `part1`) is read as a relative path.  So are `data:`, `urn:`, `mailto:` and every other non-web scheme: EPUB publication
+    resources are archive members or remote web resources (EPUB 3 does not allow a `data:` URL in the manifest), so such an href names a member that is not
+    in the archive, reported missing as on v4 replay."""
+    u = urlsplit(href)
+    if u.netloc or u.scheme.lower() in REMOTE_SCHEMES_LIVE2:
+        return None
+    path = urlsplit('./' + href).path if u.scheme else u.path
+    return posixpath.normpath(posixpath.join(posixpath.dirname(base), unquote(path)))
+
+
 def collect_epub(ctx, started):
     b = used_bounds(ctx, EPUB_BOUNDS)
+    resolve = _resolve_live2 if getattr(ctx, 'live_behavior', 'live-1') == 'live-2' else _resolve
     path = Path(ctx.path)
     out = {'valid': None, 'stages_passed': [], 'findings': []}
     cov_ok = []
@@ -173,7 +191,7 @@ def collect_epub(ctx, started):
         nameset = set(names)
         missing = []
         for href, _t in manifest.values():
-            target = _resolve(opf, href)
+            target = resolve(opf, href)
             if target is not None and target not in nameset:
                 missing.append(target)
         out['manifest_items'] = len(manifest)
@@ -194,7 +212,7 @@ def collect_epub(ctx, started):
         for r in itemrefs:
             if r in manifest:
                 href, mtype = manifest[r]
-                target = _resolve(opf, href)
+                target = resolve(opf, href)
                 if target:
                     docs.append((target, mtype))
         # --- XHTML parse of spine documents, within the caps

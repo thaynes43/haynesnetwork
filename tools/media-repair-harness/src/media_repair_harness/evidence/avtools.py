@@ -51,6 +51,34 @@ def _lines(b):
     return [l for l in (b.decode('utf-8', 'replace') if isinstance(b, bytes) else b).splitlines() if l.strip()]
 
 
+LIVE1_ERROR_LINES = 3        # every behaviour keeps the first 3 diagnostic lines of a window
+LIVE2_DAMAGE_LINES = 8       # live-2: plus at most 8 later distinct lines that the allow-list reads as damage (each line is already clipped to 160 characters)
+
+
+def kept_error_lines(lines):
+    """Live collector behaviour live-2: the diagnostic lines a window keeps.  The first LIVE1_ERROR_LINES lines (exactly live-1's selection), then, in their
+    order, up to LIVE2_DAMAGE_LINES later DISTINCT lines that the diagnostic allow-list (evidence_v2.classify_line) reads as damage, so located damage
+    printed after start-up warnings is not lost and the record stays bounded.  The selection reads `diag-1`, whose damage set contains every later rule
+    set's (diag-2 and diag-3 only narrow the zip patterns, which no decoder prints); the typed layer classifies the kept lines again under its own rules.
+    The count of every line (`error_lines`, `problem_lines`) is unchanged, so the record still says how many lines were not kept."""
+    kept = list(lines[:LIVE1_ERROR_LINES])
+    if len(lines) <= LIVE1_ERROR_LINES:
+        return kept
+    from .. import evidence_v2 as EV2       # (lazy: the typed layer's allow-lists; it imports nothing from the collectors)
+    seen, extra = set(kept), 0
+    with EV2.diagnostic_rules('diag-1'):
+        for line in lines[LIVE1_ERROR_LINES:]:
+            if extra >= LIVE2_DAMAGE_LINES:
+                break
+            if line in seen:
+                continue
+            seen.add(line)
+            if EV2.classify_line(line) == 'damage':
+                kept.append(line)
+                extra += 1
+    return kept
+
+
 # ------------------------------------------------------------------ probe core (shared)
 
 def probe_file(ctx, path, deadline):
@@ -204,7 +232,8 @@ def decode_window(ctx, path, at, window, deadline, audio_only=False, timeout_s=N
         return seg
     errs = [_clip(ctx.scrub(l), 160) for l in _lines(r.stderr)]
     frames, decoded = _progress(r.stdout)
-    seg.update(exit_code=r.returncode, frames=frames, decoded_s=_f(decoded), error_lines=len(errs), errors=errs[:3])
+    seg.update(exit_code=r.returncode, frames=frames, decoded_s=_f(decoded), error_lines=len(errs),
+               errors=kept_error_lines(errs) if getattr(ctx, 'live_behavior', 'live-1') == 'live-2' else errs[:3])
     if r.file_size_limit:
         seg['state'] = 'output_cap'  # the collector's own output cap killed ffmpeg: says nothing about the file
     elif r.timed_out:
@@ -547,7 +576,8 @@ def collect_audio(ctx, started):
                 seg['exit_code'] = r.returncode
                 seg['problem_lines'] = len(problems)
                 if problems:
-                    seg['problems'] = [_clip(ctx.scrub(x), 160) for x in problems[:3]]
+                    seg['problems'] = (kept_error_lines([_clip(ctx.scrub(x), 160) for x in problems]) if getattr(ctx, 'live_behavior', 'live-1') == 'live-2'
+                                       else [_clip(ctx.scrub(x), 160) for x in problems[:3]])
                     errs.extend(problems[:3])
                 if r.returncode != 0 or problems:
                     seg['state'] = 'errors'
