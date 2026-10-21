@@ -62,7 +62,8 @@ Stage R approval request.
      - The current case is recorded `started_aborted`, with every receipt.
      - **No further sampler invocation is made.**
      - Later cases are never started.
-   - **Not a stop:** `quota_exhausted` or a timeout only limits that operation's completed scope.
+   - **Not a stop:** `quota_exhausted`, or a sampler-internal timeout that returns a valid terminal receipt, only limits
+     that operation's completed scope. An outer timeout, or a missing receipt, is fatal (§3.4).
 3. **Bounded read-only helpers**, as new sampler versions; the old ones stay byte-identical:
    - **`stat`:** a fingerprint (size, `mtime_ns`, sha256 of the first and last 1 MiB) under the same 25 s timeout. The
      current `stat` bypasses it.
