@@ -94,6 +94,9 @@ Stage R approval request.
      from that probe, and the filled case goes through the leak guard again before G2.
    - **Discovery** (§4.2, G0b) is done by the driver. A listing counts only if it reports `complete: true` (fewer than
      500 entries, no timeout). An incomplete listing stops discovery, and no media read follows.
+     - The scan covers the whole directory, and the 500-entry cap counts only entries matching the prefix.
+     - Mount selection must find exactly one TV mount, or stop.
+     - The G1 `stat` must match the listing's `mtime_ns` as well as the manifest bytes.
 6. **Acceptance:**
    - A **scripted, model-free end-to-end run** in which a cue reaches the final model-visible message with a citable id
      and content provenance.
@@ -226,6 +229,16 @@ No unique match drops the target. Nothing is inferred from episode titles.
 
 - **Detection boundary:** a fault in the middle of an operation is detected at that operation's end.
 - A new attempt after any stop needs a **new G0a and new approvals**.
+
+## 4.5 Ownership
+- **Plan, pre-registration (G0a/G0b), report:** the development coordinator (`claude-opus-5-5`, V2
+  session_01Qfm9fTQbZ8Hv8FJAxJnkiR).
+- **Execution and monitoring:** the same V2 session runs the Stage R driver and checks the Bazarr pod between targets.
+  It runs one target at a time, and nothing runs unattended.
+- **Cue adjudication:** Astra, the independent results reviewer.
+- **Results review:** Astra and an independent Opus reviewer, before the report is published.
+- **The benchmark evaluator lane (#137)** is unaffected: Stage R is not a benchmark measurement and changes no label or
+  score.
 
 ## 5. Stage W (one replacement): not proposed for approval
 Unchanged from v3. It needs all of the following before any request:
