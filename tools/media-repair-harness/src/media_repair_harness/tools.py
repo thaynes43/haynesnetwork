@@ -138,17 +138,26 @@ def _v3plus(ctx):
 
 # Tools behaviour v4 words two EPUB results that only diagnostic rules diag-2 recognise (`the spine documents contain no text` is damage there; under diag-1
 # it would be unclassified, and an all-empty book would read as an unclassified failure).  So the pairing is fixed at configuration time: a v4 Context is
-# refused unless it is built inside `evidence_v2.diagnostic_rules('diag-2')`, and the typed layer that reads its results runs under diag-2 as well.  diag-1
-# stays byte-identical (no v4 wording is added to it).
+# refused unless it is built inside `evidence_v2.diagnostic_rules('diag-2')` (or 'diag-3', W27: diag-2 plus three corrections, every diag-2 rule kept), and
+# the typed layer that reads its results runs under the same rules.  diag-1 stays byte-identical (no v4 wording is added to it).
+#
+# Why the pairing is not ALSO enforced when a result is classified (W27, #1031 nit; documented, not fixed): the typed layer reads only the observation (id,
+# tool, args, status, output, backend, collector_truncated: the narrow interface of evidence_v2.make_observation), never the tools behaviour or Context that
+# produced the text, so a check there needs a new observation field or a check of the text.  Checking the text would change diag-1, the default every recorded
+# run reads, which must stay byte-identical.  And the mismatch is conservative: the one v4 wording diag-1 lacks (`the spine documents contain no text`) reads
+# as an unclassified failure there (integrity unknown, no known defect, no write support, never clean); the v4 size-cap wording is an execution failure under
+# every rule set, and the all-remote spine note sits on an ok result that no rule set reads as a failure.  The scripts that classify v4 results do so inside
+# the block that built the Context (scripts/w25_deltas.py, scripts/w27_deltas.py).
 TOOLS_V4_DIAGNOSTIC_RULES = 'diag-2'
+TOOLS_V4_ACCEPTED_RULES = ('diag-2', 'diag-3')
 
 
 def _check_v4_pairing():
     from . import evidence_v2 as EV2
     active = EV2.active_diagnostic_rules()
-    if active != TOOLS_V4_DIAGNOSTIC_RULES:
+    if active not in TOOLS_V4_ACCEPTED_RULES:
         raise ValueError('tools behaviour v4 pairs with diagnostic rules %s only (active: %s); build the Context inside evidence_v2.diagnostic_rules(%r)'
-                         % (TOOLS_V4_DIAGNOSTIC_RULES, active, TOOLS_V4_DIAGNOSTIC_RULES))
+                         % (' or '.join(TOOLS_V4_ACCEPTED_RULES), active, TOOLS_V4_DIAGNOSTIC_RULES))
 # harness tool -> collector kind of `evidence/` (frame_sample and ocr share the `frames` collector; the model never sees a picture either way)
 LIVE_KINDS = {'ffprobe': 'probe', 'decode_sample': 'decode', 'frame_sample': 'frames', 'ocr': 'frames', 'audio_sample': 'audio',
               'epub_inspect': 'epub', 'audiobook_inspect': 'audiobook'}
@@ -159,13 +168,16 @@ LIVE_DEADLINE_S = TOOL_TIMEOUT_S - 15
 class Context:
     def __init__(self, case, fixture, scratch, runner=subprocess.run, which=shutil.which, ocr_backend=None,
                  suite_dir=None, replay='auto', evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None,
-                 evidence_bounds=None, tools_behavior='v1', keep_raw=False):
+                 evidence_bounds=None, tools_behavior='v1', keep_raw=False, live_behavior=evcol.DEFAULT_LIVE_BEHAVIOR):
         assert replay in ('auto', 'off', 'force')
         assert evidence_mode in EVIDENCE_MODES, evidence_mode
         assert tools_behavior in TOOLS_BEHAVIORS, tools_behavior
+        assert live_behavior in evcol.LIVE_BEHAVIORS, live_behavior
         if tools_behavior == 'v4':
             _check_v4_pairing()
         self.evidence_mode = evidence_mode
+        # live collector behaviour (W27, evidence/core.LIVE_BEHAVIORS): live-1 (default, every recorded live run) or live-2 (opt-in; no runner flag selects it)
+        self.live_behavior = live_behavior
         # tools behaviour (W18): v1 is every earlier harness version byte for byte; v2 (selected by `--evidence-format v2`) fixes the audit's tool bugs:
         # a full decode is a real full decode or says what window it actually ran (never a 4 s window reported as full), the collector's truncation
         # flag survives, and sampled coverage is the union of the windows.
@@ -1228,6 +1240,8 @@ def _live_extra(rec, ignored, unmet=(), cut=()):
     extra = {'evidence': {'kind': rec['tool'], 'status': rec['status'], 'coverage': rec['coverage'], 'reason': rec.get('reason'),
                           'cause': rec.get('cause'), 'tool_version': rec.get('tool_version'), 'bounds': rec.get('bounds'),
                           'bounds_clamped': rec.get('bounds_clamped'), 'input': fp, 'elapsed_s': rec.get('elapsed_s')}}
+    if rec.get('collector_behavior'):
+        extra['evidence']['collector_behavior'] = rec['collector_behavior']      # live-2 only (a live-1 record has no such key)
     if ignored:
         extra['args_ignored'] = ignored
     if unmet:
@@ -1245,6 +1259,8 @@ def live_tool(tool, args, ctx):
     ctx.live_thread = threading.get_ident()
     collect = ctx.collect or evcol.collect
     kw = {'coverage_union': True} if _v2plus(ctx) else {}
+    if getattr(ctx, 'live_behavior', evcol.DEFAULT_LIVE_BEHAVIOR) != evcol.DEFAULT_LIVE_BEHAVIOR:
+        kw['live_behavior'] = ctx.live_behavior     # (passed only when not the default, so a live-1 call is exactly the earlier call)
     recs = collect(ctx.fixture.path, [LIVE_KINDS[tool]], bounds, runner=ctx.evidence_runner, which=ctx.evidence_which, scratch_dir=ctx.scratch, cancel=ctx.cancel, **kw)
     rec = dict(recs[0])
     if cut:

@@ -92,6 +92,10 @@ dev-c4 measurements (dev split only, tuned, not a predictor of held-out; dev-v1.
 
 WO-W25 (OpenProject #156) fixes nine recorded defects, each as a new version beside the old one: tools behaviour v4 (EPUB image-only spine documents, remote manifest hrefs, the size-cap wording), diagnostic rules `diag-2` (anchored open-tail zip patterns, colons in `zip_crc` member names), the rubric v3.3 checker (`experimental/contract_v3/prereq_v33.py`; D32-1 to D32-3; written after labels had been read) and counter `uncalled-2` (format v3.1-format records, EPUB excerpts and unfetched pages). Every runner configuration still selects the earlier versions, and every earlier result reproduces. Tools behaviour v4 is built only under `diag-2` (W25b review fixes). Offline: `scripts/w25_deltas.py`, `scripts/contract_v3_tension.py --checker v3.3 --diagnostic-rules diag-2`, `scripts/contract_v3_uncalled_v2.py`. Details: `CHANGELOG.md`, `docs/contract-v3.md` section 17, `docs/evidence-format-v2.md` (last section).
 
+## W27 versioned fixes (offline, not selectable in the runner)
+
+WO-W27 (OpenProject #145 remainder and the PR #1031 nits) adds diagnostic rules `diag-3` (the cross-line `error reading header` rule reads every decorated form, an OSError at `zip_open` is an execution failure, the `zip_crc` execution check starts at the first separator anywhere) and live collector behaviour `live-2` (damage lines classified whole and shown within the bytes live-1's lines take; the live EPUB resolver agrees with tools behaviour v4, including `data:`, `urn:` and `mailto:` hrefs as local member names, damage when absent), and fixes a pagination crash on lists that mix strings and dicts without changing any page that was produced before. Tools behaviour v4 pairs with `diag-2` or `diag-3`. No public result changes. Offline: `scripts/w27_deltas.py` (`docs/w27-deltas.json`). Details: `CHANGELOG.md`, `docs/evidence-format-v2.md` (last section).
+
 ## Layout
 
 | File (under `src/media_repair_harness/` unless noted) | Role |
