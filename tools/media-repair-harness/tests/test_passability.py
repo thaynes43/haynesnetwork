@@ -46,9 +46,9 @@ def labelled(cid, truth, supported, evidence, tools=('ffprobe', 'decode_sample',
     return case
 
 
-def run_and_classify(case, replies, tension=None, tamper=None, restored=True):
+def run_and_classify(case, replies, tension=None, tamper=None, restored=True, **kw):
     ts = L.suite_with(case)
-    rec, _ad = ev2h.scripted_run(case, ts, replies, prompt='v6', evidence_format='v3', guards='v3', which=th.NO_BINARIES)
+    rec, _ad = ev2h.scripted_run(case, ts, replies, prompt='v6', evidence_format='v3', guards='v3', which=th.NO_BINARIES, **kw)
     if tamper:
         rec = tamper(copy.deepcopy(rec))
     shown = R.resolve_evidence_raw(case, ts.root)
@@ -84,16 +84,8 @@ class EveryCategoryIsReachable(unittest.TestCase):
         case = labelled('ps-002', 'corrupt_file', ['blocklist_and_search'], [PROBE, DAMAGE, BINDING])
         row, _ = run_and_classify(case, [d3('corrupt_file', 'escalate', ['e2'])], tamper=strip_ids('e2.f1', 'e2'))
         self.assertEqual(row['category'], 'presentation problem', row)
-        self.assertTrue(row['fidelity']['missing'])
-
-    def test_not_obtained_when_the_deciding_reference_was_on_an_unfetched_page(self):
-        def t(rec):
-            rec = strip_ids('e2.f1', 'e2')(rec)
-            rec['evidence_format']['messages'][0]['pages'] = 2
-            return rec
-        case = labelled('ps-003', 'corrupt_file', ['blocklist_and_search'], [PROBE, DAMAGE, BINDING])
-        row, _ = run_and_classify(case, [d3('corrupt_file', 'escalate', ['e2'])], tamper=t)
-        self.assertEqual(row['category'], 'not obtained (unfetched page)', row)
+        self.assertTrue(row['fidelity']['issues'])
+        self.assertFalse(row['fidelity']['unfetched'])
 
     def test_obtainable_not_obtained_needs_a_witness_within_six_calls_not_just_an_uncalled_link(self):
         case = labelled('ps-004', 'corrupt_file', ['blocklist_and_search'], [PROBE, BINDING])        # the damaged window at 4 s is recorded but not shown
@@ -184,6 +176,148 @@ class ThePolicy(unittest.TestCase):
 
     def test_the_policy_is_frozen(self):
         self.assertEqual((PS.POLICY_VERSION, PS.MAX_CALLS, PS.MAX_EVALUATIONS, PS.MAX_ROUNDS), ('passability-1', 6, 5000, 3))
+
+
+def tamper_first(fn):
+    """Change the FIRST message as it was sent (every turn's raw request holds it), the way a presentation bug would."""
+    def t(rec):
+        for turn in rec['turns']:
+            msgs = (turn.get('raw_request') or {}).get('messages')
+            if msgs:
+                body = json.loads(msgs[0]['content'])
+                fn(body['evidence'])
+                msgs[0] = dict(msgs[0], content=json.dumps(body, separators=(',', ':')))
+        return rec
+    return t
+
+
+CHAPTERS = [{'start': str(i * 2), 'end': str(i * 2 + 2), 'title': 'Chapter %03d %s' % (i, 'x' * 40)} for i in range(30)]
+PAGED_PROBE = dict(PROBE, output=json.dumps(dict(L.PROBE_REC, chapters=CHAPTERS)))
+
+
+class Amendment2Fidelity(unittest.TestCase):
+    """Amendment 2 (Opus item 1, Astra A23-1): fidelity checks the facts and values that DECIDE the case, as the model received them; each test fails at aafd5080."""
+
+    def test_a_naming_case_with_a_context_field_reference_is_a_model_error(self):
+        wrong_name = 'Harbor Lights - S01E05 - Lamp Oil.mkv'
+        ocr = {'id': 'e2', 'tool': 'ocr', 'args': {'at': 1}, 'status': 'ok', 'output': json.dumps({'text': 'HARBOR LIGHTS / S01E02 / LAMP OIL'})}
+        arr = {'id': 'e3', 'tool': 'arr_lookup', 'args': {}, 'status': 'ok', 'output': json.dumps(dict(ARR, file={'relativePath': wrong_name, 'id': 990202}))}
+        untagged = dict(PROBE, output=json.dumps(dict(L.PROBE_REC, format={k: v for k, v in L.PROBE_REC['format'].items() if k != 'tags'})))
+        case = labelled('ps-021', 'metadata_naming', ['rename'], [untagged, ocr, arr], filename=wrong_name)
+        row, _ = run_and_classify(case, [d3('metadata_naming', 'escalate', ['e1', 'e2'])])
+        self.assertEqual(row['S'][0]['state'], 'met', row['S'])
+        self.assertTrue(any(str(r).startswith('context.filename:') for p in row['S'][0]['prerequisites'] for r in p['refs'] or []))
+        self.assertEqual(row['category'], 'model error', row.get('fidelity'))
+
+    def test_ids_on_page_one_with_the_deciding_facts_unfetched_are_not_delivered(self):
+        case = labelled('ps-022', 'corrupt_file', ['blocklist_and_search'], [PAGED_PROBE, DAMAGE, BINDING])
+        row, rec = run_and_classify(case, [d3('corrupt_file', 'escalate', ['e2'])], tool_output_bytes=4096)
+        first = json.loads(rec['turns'][0]['raw_request']['messages'][0]['content'])['evidence']
+        self.assertEqual([it['id'] for it in first['items']], ['e1', 'e2', 'e3'])          # every id is on page 1 ...
+        self.assertNotIn('e3', first.get('facts') or {})                                    # ... but e3's binding facts are not
+        self.assertGreaterEqual(first['page']['of'], 5)
+        self.assertEqual(row['category'], 'not obtained (unfetched page)', row.get('fidelity'))
+        self.assertTrue(row['fidelity']['unfetched'])
+
+    def test_the_same_case_with_every_page_fetched_is_a_model_error(self):
+        case = labelled('ps-023', 'corrupt_file', ['blocklist_and_search'], [PAGED_PROBE, DAMAGE, BINDING])
+        ts = L.suite_with(case)
+        cursors = []
+        while True:            # a scripted model that follows every cursor, as a model would, then escalates
+            replies = [tc('ffprobe', {'cursor': c}) for c in cursors] + [d3('corrupt_file', 'escalate', ['e2'])]
+            rec, ad = ev2h.scripted_run(case, ts, replies, prompt='v6', evidence_format='v3', guards='v3', which=th.NO_BINARIES, tool_output_bytes=4096)
+            last = json.loads(ad.full[-1]['messages'][-1]['content'].split('\n')[0])
+            page = (last.get('output') or last.get('evidence') or {}).get('page') or {}
+            if not page.get('next') or len(cursors) >= 5:
+                break
+            cursors.append(page['next'])
+        self.assertTrue(cursors)
+        row = PS.classify(case, rec, rec, SCORE.case_facts(case, rec), SCORE.case_facts(case, rec), ts.root)
+        ts.cleanup()
+        self.assertEqual(row['category'], 'model error', row.get('fidelity'))
+
+    def test_deleting_the_deciding_facts_from_what_was_sent_is_not_delivered(self):
+        case = labelled('ps-024', 'corrupt_file', ['blocklist_and_search'], [PROBE, DAMAGE, BINDING])
+        row, _ = run_and_classify(case, [d3('corrupt_file', 'escalate', ['e2'])], tamper=tamper_first(lambda ev: ev['facts'].pop('e3')))
+        self.assertEqual(row['category'], 'presentation problem', row.get('fidelity'))
+
+    def test_a_changed_deciding_value_in_what_was_sent_is_not_delivered(self):
+        def corrupt(ev):
+            ev['facts']['e3']['file']['relativePath'] = 'Another Show - S09E09.mkv'
+        case = labelled('ps-025', 'corrupt_file', ['blocklist_and_search'], [PROBE, DAMAGE, BINDING])
+        row, _ = run_and_classify(case, [d3('corrupt_file', 'escalate', ['e2'])], tamper=tamper_first(corrupt))
+        self.assertEqual(row['category'], 'presentation problem', row.get('fidelity'))
+
+    def test_a_changed_id_in_what_was_sent_is_not_delivered(self):
+        def corrupt(ev):
+            ev['facts']['e9'] = ev['facts'].pop('e3')
+        case = labelled('ps-026', 'corrupt_file', ['blocklist_and_search'], [PROBE, DAMAGE, BINDING])
+        row, _ = run_and_classify(case, [d3('corrupt_file', 'escalate', ['e2'])], tamper=tamper_first(corrupt))
+        self.assertEqual(row['category'], 'presentation problem', row.get('fidelity'))
+
+    def test_a_changed_status_in_what_was_sent_is_not_delivered(self):
+        def corrupt(ev):
+            next(it for it in ev['items'] if it['id'] == 'e3')['execution']['status'] = 'partial'
+        case = labelled('ps-027', 'corrupt_file', ['blocklist_and_search'], [PROBE, DAMAGE, BINDING])
+        row, _ = run_and_classify(case, [d3('corrupt_file', 'escalate', ['e2'])], tamper=tamper_first(corrupt))
+        self.assertEqual(row['category'], 'presentation problem', row.get('fidelity'))
+
+    def test_a_flattened_cli_transcript_is_read_the_same_way(self):
+        from media_repair_harness import adapters as A
+
+        def flatten(rec):
+            for turn in rec['turns']:
+                raw = turn.get('raw_request') or {}
+                if 'messages' in raw:
+                    turn['raw_request'] = {'system_prompt': raw['system'], 'prompt': A.render_transcript(raw['messages'])}
+            return rec
+        case = labelled('ps-028', 'corrupt_file', ['blocklist_and_search'], [PROBE, DAMAGE, BINDING])
+        row, _ = run_and_classify(case, [d3('corrupt_file', 'escalate', ['e2'])], tamper=flatten)
+        self.assertEqual(row['category'], 'model error', row.get('fidelity'))
+
+
+class Amendment2SearchBudget(unittest.TestCase):
+    """Amendment 2 (Astra A23-2): a search cut short is undetermined, never an evidence gap; each test fails at aafd5080."""
+
+    def setUp(self):
+        self.saved = (PS.MAX_EVALUATIONS, PS.MAX_ROUNDS)
+
+    def tearDown(self):
+        PS.MAX_EVALUATIONS, PS.MAX_ROUNDS = self.saved
+
+    def gap_case(self, cid):
+        decl = {'id': 'e1', 'tool': 'prior_record', 'args': {}, 'status': 'ok',
+                'output': json.dumps({'evidence_method': 'container tags', 'observed': {'title': 'Another Show'}})}
+        return labelled(cid, 'identity_mismatch', ['blocklist_and_search'], [decl, BINDING])
+
+    def test_cut_short_at_one_evaluation_then_complete(self):
+        PS.MAX_EVALUATIONS = 1
+        cut, _ = run_and_classify(self.gap_case('ps-030'), [d3('insufficient_evidence', 'escalate', ['e1'])])
+        self.assertTrue(cut['witness']['truncated'])
+        self.assertEqual(cut['category'], 'undetermined (hand judgement)', cut['basis'])
+        PS.MAX_EVALUATIONS = self.saved[0]
+        done, _ = run_and_classify(self.gap_case('ps-031'), [d3('insufficient_evidence', 'escalate', ['e1'])])
+        self.assertFalse(done['witness']['truncated'])
+        self.assertEqual(done['category'], 'evidence gap', done['basis'])
+
+    def test_the_one_call_witness_is_still_found_and_cut_short_is_not_a_gap(self):
+        case = lambda cid: labelled(cid, 'corrupt_file', ['blocklist_and_search'], [PROBE, BINDING])
+        PS.MAX_EVALUATIONS = 1
+        cut, _ = run_and_classify(case('ps-032'), [d3('insufficient_evidence', 'escalate', ['e1'])])
+        self.assertEqual(cut['category'], 'undetermined (hand judgement)', cut['basis'])
+        PS.MAX_EVALUATIONS = self.saved[0]
+        found, _ = run_and_classify(case('ps-033'), [d3('insufficient_evidence', 'escalate', ['e1'])])
+        self.assertEqual(found['category'], 'obtainable, not obtained')
+        self.assertEqual(len(found['witness']['calls']), 1)
+
+    def test_an_exploration_cut_short_is_not_a_gap(self):
+        PS.MAX_ROUNDS = 0
+        row, _ = run_and_classify(self.gap_case('ps-034'), [d3('insufficient_evidence', 'escalate', ['e1'])])
+        self.assertFalse(row['exploration']['complete'])
+        self.assertEqual(row['category'], 'undetermined (hand judgement)', row['basis'])
+
+    def test_the_usage_line_advertises_only_what_exists(self):
+        self.assertNotIn('--out-md', PS.__doc__)
 
 
 if __name__ == '__main__':

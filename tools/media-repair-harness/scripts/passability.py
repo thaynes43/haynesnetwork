@@ -8,23 +8,28 @@ audit v3 reports a prerequisite that is not met, even when score.py marks it cor
 
 For each row it computes, with the frozen rubric v3.1 checker (`experimental/contract_v3/prereq.py`, unchanged):
 * S: the label's prerequisite states (every accepted class with every supported action it can take) on what the model was shown;
-* fidelity: whether every observation, finding, field and value that decides a met prerequisite on S is in the transcript actually sent;
+* fidelity (Amendment 2): the evidence the model actually RECEIVED is rebuilt from the transcript actually sent (the first message and every tool result and
+  fetched page in it, pages reassembled by their `page.source` and `n`); every observation that decides a met prerequisite on S must arrive with every
+  canonical fact of its source rendering (execution state and status, completed scope, findings, conflicts, veto, facts with their presence states), and a
+  deciding context value, client-comparison row or coverage value must arrive equal to its source.  Evidence on a page that was not fetched, or missing or
+  changed in what was sent, is NOT delivered;
 * a WITNESS search under the frozen exploration policy POLICY (below): the cheapest set of calls, at most 6 counting page fetches, whose results
   (with the case evidence) meet every prerequisite of some accepted pair;
 and a category, the first that applies:
   non-model failure   the recorded decision was forced (adapter error, invalid output after the one repair, harness error): not a model decision;
   guard change        the model's own (restored) decision is score-correct and not unsafe; the guard's escalation is what score.py marks wrong;
   score-correct write with unmet or unknown prerequisites   the row is here only because of its audit v3 states (item 6);
-  model error         the label is met on S and the fidelity check passes;
-  not obtained (unfetched page)   met on S, but a deciding observation is absent from the sent transcript and a message had pages that were not fetched;
-  presentation problem            met on S, but a deciding observation, field or value is absent from (or not as shown in) the sent transcript otherwise;
+  model error         the label is met on S and every deciding fact was delivered as its source states it;
+  not obtained (unfetched page)   met on S, but a deciding fact was not delivered and it sits on a page of its result that was not fetched;
+  presentation problem            met on S, but a deciding fact was not delivered (missing or changed in what was sent) for any other reason;
   obtainable, not obtained        not met on S; a witness of at most 6 calls (pagination included) exists under POLICY;
-  undetermined (hand judgement)   not met on S, no witness, and a relevant prerequisite is `unknown` to the checker (free-text identity, M9);
-  evidence gap                    not met on S and no witness under POLICY: the case does not offer what the contract requires for its label.
+  undetermined (hand judgement)   not met on S, no witness, and a relevant prerequisite is `unknown` to the checker (free-text identity, M9), or the search or the
+                                  exploration was cut short (the evaluation limit, the round limit), or no accepted pair is valid under the action table;
+  evidence gap                    not met on S and no witness under POLICY, with the search and the exploration COMPLETE within the disclosed coverage.
 An uncalled link alone never makes a model error.  Membership of the frozen 6-case label-tension list is an independent annotation on every row.
 Every hand judgement made afterwards is recorded in the report with its reason; this script makes none.
 
-Usage: passability.py --run DIR --restored DIR --suite DIR [--tension FILE] [--out-json FILE] [--out-md FILE]
+Usage: passability.py --run DIR --restored DIR --suite DIR [--tension FILE] [--out-json FILE]
 """
 import argparse
 import itertools
@@ -43,6 +48,7 @@ from media_repair_harness import protocol as P           # noqa: E402
 from media_repair_harness import run as RUN              # noqa: E402
 from media_repair_harness import score_compat            # noqa: E402
 from media_repair_harness import tools as T              # noqa: E402
+from media_repair_harness.experimental.contract_v3 import facts as FX       # noqa: E402
 from media_repair_harness.experimental.contract_v3 import links as LK       # noqa: E402
 from media_repair_harness.experimental.contract_v3 import prereq as PQ      # noqa: E402
 from media_repair_harness.experimental.contract_v3 import rubric as RB      # noqa: E402
@@ -148,7 +154,7 @@ class Explorer:
     def explore(self):
         for tool, args in advertised_operations(self.case, self.caps):
             self.serve(tool, args)
-        rounds = 0
+        rounds, complete = 0, False
         for rounds in range(1, MAX_ROUNDS + 1):
             before = len(self.order) + len(self.unserved)
             sets = [self.base + [self.served[k] for k in self.order]] + [self.base + [self.served[k]] for k in list(self.order)] + [self.base]
@@ -156,9 +162,11 @@ class Explorer:
                 for tool, args in self.revealed(obs):
                     self.serve(tool, args)
             if len(self.order) + len(self.unserved) == before:
+                complete = True          # a round revealed nothing new: the closure is reached
                 break
+        self.complete = complete
         return {'served': [{'tool': k[0], 'args': json.loads(k[1]), 'id': self.served[k]['id'], 'status': self.served[k]['status']} for k in self.order],
-                'unserved': [{'tool': k[0], 'args': json.loads(k[1]), 'why': why} for k, why in self.unserved], 'rounds': rounds}
+                'unserved': [{'tool': k[0], 'args': json.loads(k[1]), 'why': why} for k, why in self.unserved], 'rounds': rounds, 'complete': complete}
 
 
 # ---------------------------------------------------------------------------------------------------------------- the label's prerequisites
@@ -245,32 +253,136 @@ def witness(explorer, case):
 
 
 # ---------------------------------------------------------------------------------------------------------------- fidelity against the sent transcript
-def sent_text(record):
-    reqs = [t.get('raw_request') for t in record.get('turns') or [] if t.get('raw_request')]
-    if not reqs:
-        return ''
-    parts = []
-
-    def walk(x):
-        if isinstance(x, str):
-            parts.append(x)
-        elif isinstance(x, dict):
-            for v in x.values():
-                walk(v)
-        elif isinstance(x, list):
-            for v in x:
-                walk(v)
-    walk(reqs[-1])
-    return '\n'.join(parts)
-
-
+LABEL_RX = re.compile(r'(?:^|\n\n)\[(CASE|HARNESS|YOUR PREVIOUS REPLY)\]\n')
+SECTIONS = ('execution', 'findings', 'conflicts', 'veto', 'scope', 'facts')        # what an observation's delivery is checked on (not its open statements)
 OBS_REF = re.compile(r'^([et]\d+)(?:\.(f\d+|c\d+|veto))?(?::(.*))?$')
 
 
-def fidelity(record, rows, id_map=None):
-    """Every reference that decides a met prerequisite must be visible in the transcript actually sent (the last request holds the whole conversation)."""
-    text = sent_text(record)
-    missing = []
+def sent_user_messages(record):
+    """The user messages of the LAST request actually sent (it holds the whole conversation): a message list (Ollama, scripted) or the flattened transcript of
+    the single-prompt CLIs (Claude, Codex: `adapters.render_transcript`, the case and every harness message, in order)."""
+    reqs = [t.get('raw_request') for t in record.get('turns') or [] if t.get('raw_request')]
+    raw = reqs[-1] if reqs else None
+    if not isinstance(raw, dict):
+        return []
+    if isinstance(raw.get('messages'), list):
+        return [m.get('content') for m in raw['messages'] if isinstance(m, dict) and m.get('role') == 'user' and isinstance(m.get('content'), str)]
+    if isinstance(raw.get('prompt'), str):
+        parts = LABEL_RX.split(raw['prompt'])
+        return [c for lab, c in zip(parts[1::2], parts[2::2]) if lab in ('CASE', 'HARNESS')]
+    return []
+
+
+def _first_json(text):
+    try:
+        return json.loads(str(text).split('\n')[0])
+    except ValueError:
+        return None
+
+
+def delivered(record):
+    """-> (the first message's frame, {page source: {'of': pages, 'pages': {n: body}}}, [(source, reassembled body)] in message order).  Built from the
+    transcript actually sent: the first message, every tool result and every fetched page (a fetch echoes the stored page, whose `page.source` and `n` say
+    which result and page it is).  A page that was never sent is simply absent."""
+    frame, srcs, order = None, {}, []
+    for i, text in enumerate(sent_user_messages(record)):
+        obj = _first_json(text)
+        if not isinstance(obj, dict):
+            continue
+        if i == 0 and isinstance(obj.get('evidence'), dict):
+            frame = {k: v for k, v in obj.items() if k != 'evidence'}
+            body, source = obj['evidence'], 'evidence'
+        elif obj.get('type') == 'tool_result' and isinstance(obj.get('output'), dict):
+            body = obj['output']
+            source = (body.get('page') or {}).get('source') or obj.get('id')
+        else:
+            continue
+        pg = body.get('page') or {}
+        n, of = pg.get('n', 1), pg.get('of', 1)
+        s = srcs.setdefault(source, {'of': of, 'pages': {}})
+        s['of'] = max(s['of'], of if isinstance(of, int) else 1)
+        s['pages'].setdefault(n, body)
+        if source not in order:
+            order.append(source)
+    bodies = []
+    for source in order:
+        s = srcs[source]
+        bodies.append((source, FX.reassemble([s['pages'][n] for n in sorted(s['pages'], key=lambda x: x if isinstance(x, int) else 0)])))
+    return frame, srcs, bodies
+
+
+def _as_initial(source, body):
+    """A reassembled tool-result body in the shape of the first message's evidence body (one item), for `facts.facts_from_body`."""
+    if source == 'evidence':
+        return body
+    oid = body.get('id')
+    item = {k: body[k] for k in ('id', 'tool', 'args', 'backend', 'execution', 'findings', 'scope', 'conflicts', 'veto') if k in body}
+    return {'items': [item] if oid else [], 'facts': {oid: body.get('facts') or {}} if oid else {}, 'presence': {oid: body.get('presence') or {}} if oid else {},
+            'details': body.get('details') or {}}
+
+
+def delivered_facts(bodies):
+    """-> {observation id: set of canonical facts as delivered}, sections SECTIONS only."""
+    out = {}
+    for source, body in bodies:
+        try:
+            facts = FX.facts_from_body(_as_initial(source, body))
+        except Exception:  # noqa: BLE001 - a malformed delivery delivers nothing
+            continue
+        for t in facts:
+            if t[7] in SECTIONS and t[0]:
+                out.setdefault(t[0], set()).add(EV2.canon(list(t)))
+    return out
+
+
+def source_facts(record, case, suite_dir):
+    """-> ({observation id: set of canonical facts as its source rendering states them}, the analysis of everything shown).  Each observation is derived as the
+    session derived it when it was shown: the case evidence alone for the first message, the evidence plus the results up to and including it for a result."""
+    view = P.case_view(case, [])
+    obs = shown_observations(record, case, suite_dir)
+    base = [o for o in obs if o.get('source') == 'case']
+    out = {}
+    facts, _an = FX.canonical_facts(base, view['context'], view['media_type'], 'v3')
+    ids = {o['id'] for o in base}
+    for t in facts:
+        if t[0] in ids and t[7] in SECTIONS:
+            out.setdefault(t[0], set()).add(EV2.canon(list(t)))
+    prefix = list(base)
+    for o in obs:
+        if o.get('source') == 'case':
+            continue
+        prefix.append(o)
+        facts, _an = FX.canonical_facts(prefix, view['context'], view['media_type'], 'v3')
+        for t in facts:
+            if t[0] == o['id'] and t[7] in SECTIONS:
+                out.setdefault(t[0], set()).add(EV2.canon(list(t)))
+    return out, EV2.analyze(obs, view['context'], view['media_type']), {o['id'] for o in base}
+
+
+def _get_path(obj, path):
+    for k in path:
+        if not isinstance(obj, dict) or k not in obj:
+            return ('absent',)
+        obj = obj[k]
+    return obj
+
+
+def fidelity(record, rows, case, suite_dir):
+    """Every fact that decides a met prerequisite must have been DELIVERED as its source states it (Amendment 2)."""
+    frame, srcs, bodies = delivered(record)
+    got = delivered_facts(bodies)
+    src, an, base_ids = source_facts(record, case, suite_dir)
+    view = P.case_view(case, [])
+    last = {}
+    for _source, body in bodies:
+        for key in ('client_comparison', 'coverage'):
+            if key in body:
+                last[key] = body[key]
+
+    def unfetched(oid):
+        s = srcs.get('evidence' if oid in base_ids else oid)
+        return s is None or len(s['pages']) < s['of']
+    issues, checked = [], []
     for r in rows:
         if r['state'] != PQ.MET:
             continue
@@ -278,25 +390,34 @@ def fidelity(record, rows, id_map=None):
             ref = str(ref)
             m = OBS_REF.match(ref)
             if m:
-                oid = (id_map or {}).get(m.group(1), m.group(1))
-                need = ['"id":"%s"' % oid] + (['"id":"%s.%s"' % (oid, m.group(2))] if m.group(2) else [])
-                if m.group(3) and m.group(3).endswith('_empty'):
-                    need.append('"empty"')
-            elif ref.startswith('client_comparison.'):
-                need = ['"client_comparison"', '"field":"%s"' % ref.split('.', 1)[1].split(' ')[0]]
+                oid = m.group(1)
+                missing = sorted((src.get(oid) or set()) - (got.get(oid) or set()))
+                checked.append(ref)
+                if not src.get(oid):
+                    issues.append({'prerequisite': r['id'], 'ref': ref, 'why': 'no source rendering for this id', 'unfetched': False})
+                elif missing:
+                    issues.append({'prerequisite': r['id'], 'ref': ref, 'why': '%d of %d source facts of %s not delivered' % (len(missing), len(src[oid]), oid),
+                                   'example': json.loads(missing[0])[7:9], 'unfetched': unfetched(oid)})
             elif ref.startswith('context.'):
-                need = ['"%s"' % ref.split('.')[-1]]
+                path = ref[len('context.'):].split(':', 1)[0].split('.')      # `context.filename:file_name` names the field `filename` (Amendment 2, item 1)
+                want, have = _get_path(view['context'], path), _get_path((frame or {}).get('context') or {}, path)
+                checked.append(ref)
+                if want != have:
+                    issues.append({'prerequisite': r['id'], 'ref': ref, 'why': 'the context value sent differs from the case context', 'unfetched': False})
+            elif ref.startswith('client_comparison.'):
+                field = ref.split('.', 1)[1].split(' ')[0]
+                want = [x for x in (an.get('client') or {}).get('rows') or [] if x.get('field') == field]
+                have = [x for x in (last.get('client_comparison') or {}).get('rows') or [] if x.get('field') == field]
+                checked.append(ref)
+                if not want or EV2.canon(want) != EV2.canon(have):
+                    issues.append({'prerequisite': r['id'], 'ref': ref, 'why': 'the client-comparison row sent differs from its source', 'unfetched': False})
             elif ref.startswith('coverage.'):
-                need = ['"coverage"']
-            else:
-                need = []
-            lost = [n for n in need if n not in text]
-            if lost:
-                missing.append({'prerequisite': r['id'], 'ref': ref, 'not_in_transcript': lost})
-    log = (record.get('evidence_format') or {}).get('messages') or []
-    fetched = sum(1 for m in log if m.get('kind') == 'page')
-    unread = sum(max(0, (m.get('pages') or 1) - 1) for m in log if m.get('kind') in ('initial', 'result')) - fetched
-    return {'ok': not missing, 'missing': missing, 'unfetched_pages': max(0, unread), 'transcript_chars': len(text)}
+                path = ref[len('coverage.'):].split('.')
+                checked.append(ref)
+                if _get_path(an.get('coverage') or {}, path) != _get_path(last.get('coverage') or {}, path):
+                    issues.append({'prerequisite': r['id'], 'ref': ref, 'why': 'the coverage value sent differs from its source', 'unfetched': False})
+    return {'ok': not issues, 'issues': issues, 'checked': checked, 'unfetched': any(i['unfetched'] for i in issues),
+            'sources_delivered': {k: {'pages_sent': sorted(v['pages']), 'of': v['of']} for k, v in srcs.items()}}
 
 
 # ---------------------------------------------------------------------------------------------------------------- rows
@@ -346,25 +467,30 @@ def classify(case, rec, rec_restored, fact, fact_restored, suite_dir, tension=No
     row['S'] = [{'class': p['class'], 'action': p['action'], 'state': p['state'], 'prerequisites': [{k: r[k] for k in ('id', 'state', 'refs')} for r in p['prerequisites']]} for p in s_pairs]
     b = best(s_pairs)
     if b and b['state'] == 'met':
-        fid = fidelity(rec, b['prerequisites'])
+        fid = fidelity(rec, b['prerequisites'], case, suite_dir)
         row['fidelity'] = fid
         if fid['ok']:
-            row.update(category='model error', basis='the label %s/%s is met on what was shown and every deciding reference is in the sent transcript' % (b['class'], b['action']))
-        elif fid['unfetched_pages']:
-            row.update(category='not obtained (unfetched page)', basis='met on what was shown, but a deciding reference is not in the sent transcript and %d page(s) were not fetched' % fid['unfetched_pages'])
+            row.update(category='model error', basis='the label %s/%s is met on what was shown and every deciding fact was delivered as its source states it' % (b['class'], b['action']))
+        elif fid['unfetched']:
+            row.update(category='not obtained (unfetched page)', basis='met on what was shown, but a deciding fact sits on a page that was not fetched (not delivered)')
         else:
-            row.update(category='presentation problem', basis='met on what was shown, but a deciding reference is not in the sent transcript')
+            row.update(category='presentation problem', basis='met on what was shown, but a deciding fact is missing or changed in what was sent (not delivered)')
         return row
     row['exploration'] = ex.explore()
     w = witness(ex, case)
     row['witness'] = w
     if w['found']:
         row.update(category='obtainable, not obtained', basis='a witness of %d calls (cost %d with pages) meets %s/%s' % (len(w['calls']), w['cost'], w['pair'][0], w['pair'][1]))
+    elif w.get('truncated') or not row['exploration']['complete'] or w.get('no_pair'):
+        why = ('the witness search was cut short at %d evaluations' % w['evaluations'] if w.get('truncated') else
+               'the exploration was cut short at %d rounds' % row['exploration']['rounds'] if not row['exploration']['complete'] else
+               'no accepted (class, action) pair is valid under the action table')
+        row.update(category='undetermined (hand judgement)', basis='no witness found, but %s: an evidence gap is not claimed' % why)
     elif w.get('saw_unknown') or (b and b['state'] == 'unknown'):
         row.update(category='undetermined (hand judgement)', basis='no witness; a relevant prerequisite is unknown to the checker')
     else:
-        row.update(category='evidence gap', basis='no accepted pair is met on what was shown, and no witness of at most %d calls exists under %s%s' % (
-            MAX_CALLS, POLICY_VERSION, ' (search truncated at %d evaluations)' % w['evaluations'] if w.get('truncated') else ''))
+        row.update(category='evidence gap', basis='no accepted pair is met on what was shown, and the complete search under %s (%d evaluations) found no witness of at most %d calls' % (
+            POLICY_VERSION, w['evaluations'], MAX_CALLS))
     return row
 
 
