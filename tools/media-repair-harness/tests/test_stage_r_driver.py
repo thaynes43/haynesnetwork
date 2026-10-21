@@ -619,6 +619,40 @@ class Round6(unittest.TestCase):
         self.assertIn('no remote_evidence field', st['stop']['detail'])
 
 
+class Round7(unittest.TestCase):
+    """Review round 7 of #1036 at the driver (AUDIT-ASTRA-70): every reproduction, on a verified target and followed by a healthy correction, ends in
+    WRITE-CONTROL when its case returns -- before the final stat, with no later target -- and is never ACCEPTED."""
+
+    @staticmethod
+    def tc(tool, args, why='Check the file'):
+        return json.dumps({'type': 'tool_call', 'tool': tool, 'args': args, 'why': why})
+
+    def test_operational_arguments_escapes_and_tool_names_stop_stage_r(self):
+        """A70-1 (args and command payloads), A70-2 (escaped newline and tab) and A70-3 (a read-only sounding tool name, declared over-inclusive): at
+        3a9e0889 the first six ran all 24 invocations and ended ACCEPTED."""
+        for label, reply, action in (
+                ('action gerund', self.tc('arr_lookup', {'action': 'renaming', 'target': 'old.mkv'}), 'rename'),
+                ('action imperative', self.tc('arr_lookup', {'action': 'please rename the file', 'target': 'old.mkv'}), 'rename'),
+                ('block list action', self.tc('arr_lookup', {'action': 'block list and search', 'target': 'old.mkv'}), 'blocklist_and_search'),
+                ('shell rename', self.tc('shell', {'command': 'rename old.mkv corrected.mkv'}, 'Correct the filename'), 'rename'),
+                ('json newline', json.dumps({'recommendation': 'Next step:\nrename the file.'}), 'rename'),
+                ('json newline block', json.dumps({'recommendation': 'block\nlist the release, then search again'}), 'blocklist_and_search'),
+                ('json tab', json.dumps({'recommendation': 'Next step:\trename the file.'}), 'rename'),
+                ('read-only sounding tool', self.tc('get_rename_preview', {'file': 'old.mkv'}, 'Preview only; leave the file unchanged'), 'rename')):
+            lib, code, st, pod = Round6.drive_v1(self, reply)
+            Round6.assert_stopped_at_v1(self, lib, code, st, pod, 'write_control', label)
+            self.assertEqual(st['targets']['v1']['write_attempts'][0]['action'], action, label)
+
+    def test_a_valid_tool_call_whose_why_mentions_renaming_is_not_a_write(self):
+        """The exemption is kept for the reply's own `why`: a valid subtitle_sample call explaining it checks before any rename, then a healthy decision,
+        on a verified target: no attempt, the run goes on to the end."""
+        lib = Library()
+        reply = self.tc('subtitle_sample', {'at': 4}, 'Check the cues before any rename or remap.')
+        code, st, _pod = lib.drive(replies={'v1': [reply, H.dec('healthy', 'none')]})
+        self.assertEqual((code, st['stop']), (0, None))
+        self.assertEqual(st['targets']['v1']['write_attempts'], [])
+
+
 class _NoDeploy:
     """A runner whose `kubectl get deploy` fails."""
 

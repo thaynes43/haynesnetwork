@@ -111,6 +111,20 @@ earlier option set are unchanged.
   Tests: every Astra reproduction end to end (zero-width, entity, `\x6e`, nested duplicate, a write tool name: WRITE-CONTROL; 600-deep nesting, the
   257th span, the long span: unresolved), position mapping, budget controls, exceptions, and two seeded properties (3,342 normalised writes counted and
   mapped across 18 normalisations; 500 valid replies with hidden prose not counted).
+* **Review round 7 of `3a9e0889`** (the Opus re-review, clear-with-nits; AUDIT-ASTRA-70: two majors, one minor): **write intents** rule
+  `write-intent-7`. A schema-valid reply-level decision or tool call is exempt from the stem scan ONLY in its own designated free-text explanation field,
+  taken from the protocol's one table of them (`protocol.LENGTH_FIELDS`, read by `remote_evidence.prose_fields()`: the decision's `reason`, the tool
+  call's `why`). Every other key and string value is scanned with the full normalised matcher at any depth: tool `args` (an `action` value in any
+  wording, a command payload), targets, references, a nested object's `why`. The structural reading (action-like keys, the first 1-3 words, tool names)
+  is unchanged. The normalised view decodes JSON's single-character escapes (\n, \t, \r, \b, \f, \/, \", \\) and JSON surrogate pairs,
+  drops control characters other than whitespace, and runs a bounded second pass when the first left something to decode (an escape escaped once
+  more), with positions mapped through both passes. Tool names with a write stem are DECLARED over-inclusive (`get_rename_preview` counts; no read-only
+  exception), and a test asserts that no tool the harness offers under `v3-remote-1` has one. The bracket-depth pre-check skips JSON strings, so a valid
+  decision whose `reason` holds 101 brackets is not unresolved, while 101-deep nesting still is. Tests: every Astra reproduction end to end (args
+  action gerund, imperative and spaced block list, a shell command, an escaped newline before `rename` and before `list`, an escaped tab, a read-only
+  sounding tool name: WRITE-CONTROL before the final stat, no later target, not ACCEPTED), a valid tool call whose `why` mentions renaming (no attempt,
+  the run completes), and two seeded properties (2,114 writes in non-prose fields of valid tool calls counted and mapped; 600 valid replies with the
+  mention only in `reason` or `why` not counted).
 ## dev-c8 (WO-W26, OpenProject #158): prompt v8, turn-v3.1, claude-schema-1, guards v4; offline, not measured
 
 `HARNESS_VERSION` is `dev-c8`. Every earlier prompt, format, guard version and adapter is unchanged; the recorded dev-c4 to dev-c7 runs, the dev-c6 replay

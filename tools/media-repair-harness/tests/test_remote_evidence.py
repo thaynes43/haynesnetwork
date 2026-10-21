@@ -476,7 +476,7 @@ class Round2(unittest.TestCase):
         for name, text in found.items():
             intent = RE.raw_write_intent(text)
             self.assertIsNotNone(intent, name)
-            self.assertEqual(intent['rule'], 'write-intent-6')
+            self.assertEqual(intent['rule'], 'write-intent-7')
         self.assertEqual(RE.raw_write_intent(found['multi-word spaced'])['action'], 'blocklist_and_search')
         for text in ('action: none', json.dumps(hdec), json.dumps(tool), '', None):      # (round 5: a prose mention of a stem counts under rule B)
             self.assertIsNone(RE.raw_write_intent(text), text)
@@ -590,7 +590,7 @@ class Round3(unittest.TestCase):
         for name, text in positives.items():
             intent = RE.raw_write_intent(text)
             self.assertIsNotNone(intent, name)
-            self.assertEqual(intent['rule'], 'write-intent-6', name)  # the matrix still holds under rule 6
+            self.assertEqual(intent['rule'], 'write-intent-7', name)  # the matrix still holds under rule 7
         self.assertEqual(RE.raw_write_intent(positives['camel case value'])['action'], 'blocklist_and_search')
         negatives = {
             'no stem': 'I would not change this file.',
@@ -713,7 +713,8 @@ class Round4(unittest.TestCase):
         valid_write = json.dumps({'type': 'decision', 'class': 'metadata_naming', 'action': 'rename', 'reason': 'r', 'confidence': 0.9, 'evidence_refs': [],
                                   'source': {'ref': 'case_item'}, 'target': {'kind': 'rename_of_source', 'old_value': 'a', 'new_value': 'b'}})
         intent = RE.raw_write_intent(valid_write)
-        self.assertEqual((intent['action'], intent['parse'], intent['evidence']), ('rename', 'strict', [{'by': 'structure', 'action': 'rename'}]))
+        self.assertEqual((intent['action'], intent['parse'], intent['evidence'][0]), ('rename', 'strict', {'by': 'structure', 'action': 'rename', 'at': [0, len(valid_write)]}))
+        self.assertTrue(any(e['by'] == 'stem' for e in intent['evidence']))        # write-intent-7: its non-prose fields are stem-scanned as well
         for text, want in (('{"type":"decision","action":"rename","action":"none"}', 'rename'), ('{"type":"decision","alt":{"action":"remap","action":"none"}}', 'remap'),
                            ('{"action":"rename file"}', 'rename'), ('{"action":"Rename the file to x.mkv"}', 'rename'), ('{"action":"rename/remap"}', 'rename'),
                            ('[{"x": 1}, {"operation": {"type": "convert"}}]', 'convert')):
@@ -826,7 +827,7 @@ class Round6(unittest.TestCase):
             intent = RE.raw_write_intent(text)
             self.assertIsNotNone(intent, text)
             self.assertFalse(intent.get('unresolved'), text)
-            self.assertEqual(intent['rule'], 'write-intent-6')
+            self.assertEqual(intent['rule'], 'write-intent-7')
             found = self.assert_mapped(text, intent, intent['action'])
             self.assertTrue(any(how in e['normalisation'] for e in found), (text, found))
         self.assertEqual(RE.raw_write_intent('Next step: re--name the file.')['action'], 'rename')         # up to three separators between letters
@@ -853,7 +854,8 @@ class Round6(unittest.TestCase):
         top = self.HEALTHY[:-1] + ', "evidence_refs": []}'
         self.assertEqual(RE.raw_write_intent(top)['action'], 'rename')
         self.assertEqual(RE.raw_write_intent('Answer: ' + nested)['action'], 'rename')                    # as a span inside prose too
-        self.assertIsNone(RE.raw_write_intent(nested.replace('"note":"check"', '"other":"check"')))   # control: the same reply without the duplicate
+        self.assertIsNone(RE.raw_write_intent(nested.replace('"note":"rename the file","note":"check"', '"note":"check"').replace('"inspect"', '"rename the file"')))
+        # control: the same call without the duplicate and with the mention in its `why` (write-intent-7 scans args even without a duplicate)
         self.assertIsNone(RE.raw_write_intent(self.HEALTHY))
 
     def test_exhausted_budgets_are_unresolved(self):
@@ -866,7 +868,7 @@ class Round6(unittest.TestCase):
         for name, text in cases.items():
             intent = RE.raw_write_intent(text)
             self.assertTrue(intent and intent.get('unresolved'), name)
-            self.assertEqual((intent['action'], intent['actions'], intent['parse'], intent['rule']), (None, [], 'unresolved', 'write-intent-6'), name)
+            self.assertEqual((intent['action'], intent['actions'], intent['parse'], intent['rule']), (None, [], 'unresolved', 'write-intent-7'), name)
             ev = intent['evidence'][0]
             self.assertEqual((ev['by'], ev['excerpt'], ev['chars']), ('unresolved', text[:200], len(text)), name)
         self.assertIn('nests brackets deeper than 100', RE.raw_write_intent(cases['nesting'])['reason'])
@@ -955,7 +957,7 @@ class Round6(unittest.TestCase):
         rec, _ad = run(H.remote_case(), [deep, H.dec()], H.FakeSampler())
         self.assertNotIn('error', rec)
         wa = rec['remote_evidence']['write_analysis']
-        self.assertEqual((wa['rule'], wa['replies_analysed'], wa['attempts'], [u['turn'] for u in wa['unresolved']]), ('write-intent-6', 2, 0, [1]))
+        self.assertEqual((wa['rule'], wa['replies_analysed'], wa['attempts'], [u['turn'] for u in wa['unresolved']]), ('write-intent-7', 2, 0, [1]))
         self.assertEqual(wa['unresolved'][0]['evidence'][0]['excerpt'], deep[:200])
         self.assertEqual(rec['remote_evidence']['write_attempts'], [])
         from media_repair_harness import stage_r as SR
@@ -982,6 +984,168 @@ def _swap_one(word, rng, table, fmt=None):
     else:
         rep = fmt % ord(c)
     return word[:i] + rep + word[i + 1:]
+
+
+class Round7(unittest.TestCase):
+    """Review round 7 of #1036 (AUDIT-ASTRA-70, the Opus re-review of 3a9e0889): rule write-intent-7.  A schema-valid reply is exempt from the stem scan
+    ONLY in its designated free-text explanation field (protocol.LENGTH_FIELDS: the decision's `reason`, the tool call's `why`); every other key and
+    string value is scanned with the full normalised matcher, which now also decodes JSON's whitespace escapes."""
+
+    BS = chr(92)
+    WS_WRAPPERS = {'newline': lambda v: 'Next step:\n' + v, 'tab': lambda v: 'step\t' + v, 'crlf': lambda v: 'first check\r\n' + v,
+                   'form feed': lambda v: 'x\f' + v, 'newline after': lambda v: v + '\nthen verify', 'none': lambda v: v}
+
+    stem_of = staticmethod(Round6.stem_of)
+    assert_mapped = Round6.assert_mapped
+
+    @staticmethod
+    def tc(tool, args, why='Check the file'):
+        return json.dumps({'type': 'tool_call', 'tool': tool, 'args': args, 'why': why})
+
+    @staticmethod
+    def valid(reply):
+        return RE.schema_valid_reply(json.loads(reply, object_pairs_hook=RE._pairs_hook))
+
+    def test_the_exempt_prose_fields_come_from_the_protocol(self):
+        """The one list of exempt fields is the protocol's own table of free-text explanation fields (protocol.LENGTH_FIELDS)."""
+        self.assertEqual(RE.prose_fields(), {'decision': 'reason', 'tool_call': 'why'})
+        self.assertEqual(RE.prose_fields(), {spec['kind']: f for f, spec in P.LENGTH_FIELDS.items()})
+
+    def test_writes_in_operational_arguments_are_counted(self):
+        """A70-1: schema-valid tool calls whose args propose a write (an action value in any wording, a command payload) are write attempts, each matched
+        at its original span inside the args; the same words in the call's own `why` are not."""
+        cases = [(self.tc('arr_lookup', {'action': 'renaming', 'target': 'old.mkv'}), 'rename', 'renam'),
+                 (self.tc('arr_lookup', {'action': 'please rename the file', 'target': 'old.mkv'}), 'rename', 'renam'),
+                 (self.tc('arr_lookup', {'action': 'block list and search', 'target': 'old.mkv'}), 'blocklist_and_search', 'block list'),
+                 (self.tc('shell', {'command': 'rename old.mkv corrected.mkv'}, 'Correct the filename'), 'rename', 'renam'),
+                 (self.tc('ffprobe', {'steps': [{'then': {'do': 'convert to mkv'}}]}), 'convert', 'convert'),
+                 (self.tc('ffprobe', {'why': 'remap the episode'}), 'remap', 'remap'),                         # a nested `why` is not the reply's
+                 (self.tc('ffprobe', {'d': {'type': 'decision', 'class': 'healthy', 'action': 'none', 'reason': 'rename it', 'confidence': 0.5,
+                                            'evidence_refs': []}}), 'rename', 'renam'),                        # nor a nested decision's reason
+                 (json.dumps({'type': 'decision', 'class': 'healthy', 'action': 'none', 'reason': 'ok', 'confidence': 0.7, 'evidence_refs': ['rename']}),
+                  'rename', 'renam')]
+        for reply, action, stem in cases:
+            self.assertTrue(self.valid(reply), reply)
+            intent = RE.raw_write_intent(reply)
+            self.assertEqual((intent['action'], intent['parse']), (action, 'strict'), reply)
+            e = [e for e in intent['evidence'] if e.get('by') == 'stem'][0]
+            self.assertEqual((reply[e['at'][0]:e['at'][1]], e['stem']), (stem, stem), reply)
+            self.assertGreater(e['at'][0], reply.index('"args"' if '"args"' in reply else '"evidence_refs"'), reply)
+        for why in ('Check the cues before any rename.', 'No renaming is needed.', 'Not a block list case.', 'Look before we convert anything.',
+                    'Next step:\nrename nothing', 'rename check later'):
+            for tool in ('ffprobe', 'subtitle_sample', 'decode_sample', 'arr_lookup'):
+                reply = self.tc(tool, {'at': 30} if tool != 'ffprobe' else {}, why)
+                self.assertTrue(self.valid(reply), reply)
+                self.assertIsNone(RE.raw_write_intent(reply), reply)
+        healthy = json.dumps({'type': 'decision', 'class': 'healthy', 'action': 'none', 'reason': 'Considered action: rename, but no change is warranted.',
+                              'confidence': 0.7, 'evidence_refs': ['e1']})
+        self.assertIsNone(RE.raw_write_intent(healthy))
+        self.assertIsNone(RE.raw_write_intent('Here it is:\n```json\n%s\n```' % healthy))
+
+    def test_json_whitespace_escapes_are_decoded(self):
+        """A70-2: JSON's single-character escapes (\\n, \\t, \\r, \\b, \\f, \\/, \\", \\\\) are decoded in the normalised view, with position mapping, so an
+        escaped newline or tab before a write no longer hides it; an escape escaped once more is decoded by the second pass."""
+        BS = self.BS
+        for reply, action, how in ((json.dumps({'recommendation': 'Next step:\nrename the file.'}), 'rename', 'escape'),
+                                   (json.dumps({'recommendation': 'Next step:\trename the file.'}), 'rename', 'escape'),
+                                   (json.dumps({'recommendation': 'Next step:\r\nremap the season.'}), 'remap', 'escape'),
+                                   (json.dumps({'recommendation': 'x\fconvert it'}), 'convert', 'escape'),
+                                   (json.dumps({'recommendation': 'block\nlist the release, then search again'}), 'blocklist_and_search', 'escape'),
+                                   (json.dumps({'recommendation': 're\bname'}), 'rename', 'control_removed'),
+                                   (json.dumps({'recommendation': 'Next step:' + BS + 'nrename the file.'}), 'rename', 'escape'),
+                                   ('{"recommendation": "Next step:\\nrename the file."}', 'rename', 'escape')):
+            intent = RE.raw_write_intent(reply)
+            self.assertIsNotNone(intent, reply)
+            self.assertEqual(intent['action'], action, reply)
+            e = [e for e in intent['evidence'] if e.get('by') == 'stem'][0]
+            self.assertEqual(e['stem'], reply[e['at'][0]:e['at'][1]], reply)
+            if how:
+                self.assertIn(how, e['normalisation'], (reply, e))
+        reply = json.dumps({'recommendation': 'Next step:\nrename the file.'})
+        e = [e for e in RE.raw_write_intent(reply)['evidence'] if e.get('by') == 'stem'][0]
+        self.assertEqual((e['at'], e['normalisation']), ([reply.index('rename'), reply.index('rename') + 5], ['word_boundary', 'escape']))
+        view, origin, _steps, _removed = RE.normalised_view(reply)
+        k = view.index('\n')
+        self.assertEqual(reply[origin[k][0]:origin[k][1]], BS + 'n')                 # the newline maps back to its two-character escape
+        self.assertEqual(RE.raw_write_intent(r'Path: C:\new\rename.mkv')['action'], 'rename')     # a raw match survives a decoded \r
+
+    def test_write_tool_names_are_declared_over_inclusive(self):
+        """A70-3, declared fail-safe (no read-only exception): a tool name with a write stem counts, read-only sounding or not; no tool the harness
+        offers under v3-remote-1 has one, so a legitimate call never triggers it."""
+        for tool, action in (('get_rename_preview', 'rename'), ('list_converted_files', 'convert'), ('rename_file', 'rename'),
+                             ('blocklist_release', 'blocklist_and_search'), ('previewRemap', 'remap')):
+            reply = self.tc(tool, {'file': 'old.mkv'}, 'Preview only; leave the file unchanged')
+            self.assertTrue(self.valid(reply), tool)
+            self.assertEqual(RE.raw_write_intent(reply)['action'], action, tool)
+        ctx = ctx_for(H.remote_case(), H.FakeSampler())
+        offered = set(T.registry(ctx)) | set(P.TOOLS) | set(T.extra_tools(ctx)) | set(H.remote_case().get('tools_available') or ())
+        self.assertIn('subtitle_sample', offered)
+        for tool in sorted(offered):
+            self.assertEqual(RE.stem_matches(tool), [], tool)
+            self.assertIsNone(RE.raw_write_intent(self.tc(tool, {'at': 4}, 'Inspect before any rename.')), tool)
+
+    def test_bracket_depth_skips_json_strings(self):
+        """The Opus nit: brackets inside a JSON string are text, not structure -- a valid decision whose reason holds 101 brackets is not unresolved;
+        101-deep real nesting still is."""
+        for brackets in ('[' * 101, ']' * 101 + '[' * 101, '{' * 101, '"[' * 60):
+            reply = json.dumps({'type': 'decision', 'class': 'healthy', 'action': 'none', 'reason': brackets, 'confidence': 0.7, 'evidence_refs': []})
+            self.assertTrue(self.valid(reply))
+            self.assertIsNone(RE.raw_write_intent(reply), brackets[:8])
+        for deep in ('[' * 101 + ']' * 101, '{"a":' * 101 + '1' + '}' * 101, 'Answer: ' + '[' * 101 + '"x"' + ']' * 101):
+            self.assertTrue(RE.raw_write_intent(deep).get('unresolved'), deep[:12])
+            self.assertIn('nests brackets deeper than 100', RE.raw_write_intent(deep)['reason'])
+
+    def test_property_writes_in_non_prose_fields_are_counted(self):
+        """A seeded, bounded property (round 7): a write placed in a NON-prose field of a schema-valid tool call (an args key's value, a nested object or
+        list, any depth), in any casing, behind an escaped-whitespace wrapper and optionally one round-6 normalisation, is counted at a span that
+        normalises back to its stem; the reply stays schema-valid throughout."""
+        import random
+        import time
+        rng = random.Random(70)
+        keys = ('action', 'command', 'note', 'query', 'plan', 'next', 'path', 'mode', 'op')
+        obs = [None] + list(Round6.OBFUSCATIONS)
+        cases = [(w, ob) for w in self.WS_WRAPPERS for ob in obs]
+        cases += [(rng.choice(list(self.WS_WRAPPERS)), rng.choice(obs)) for _ in range(2000)]
+        t0, n = time.monotonic(), 0
+        for wrap, ob in cases:
+            action = rng.choice(Round4.WRITES)
+            value = rng.choice(Round4.forms(action))
+            if ob:
+                value = Round6.OBFUSCATIONS[ob](value, rng)
+            value = self.WS_WRAPPERS[wrap](value)
+            shape = rng.randrange(4)
+            k = rng.choice(keys)
+            args = ({k: value} if shape == 0 else {'at': 4, k: [1, value]} if shape == 1 else {'outer': {k: value}} if shape == 2
+                    else {'steps': [{'n': 1}, {k: {'v': value}}]})
+            reply = self.tc(rng.choice(('ffprobe', 'decode_sample', 'subtitle_sample', 'arr_lookup')), args, rng.choice(('Inspect the file', 'Check it')))
+            self.assertTrue(self.valid(reply), reply)
+            intent = RE.raw_write_intent(reply)
+            self.assertTrue(intent and not intent.get('unresolved'), (wrap, ob, reply))
+            self.assertIn(action, intent['actions'], (wrap, ob, reply))
+            self.assert_mapped(reply, intent, action)
+            n += 1
+        self.assertEqual(n, len(self.WS_WRAPPERS) * len(obs) + 2000)          # 2114 generated writes (6 wrappers x 19 forms, plus 2000 seeded)
+        self.assertLess(time.monotonic() - t0, 60)
+
+    def test_property_writes_only_in_the_prose_field_are_not_counted(self):
+        """The exemption is kept: schema-valid decisions and tool calls whose ONLY write mention is in their own reason or why, behind any
+        escaped-whitespace wrapper or normalisation, are no attempt; the same mention in an args value is."""
+        import random
+        rng = random.Random(7)
+        obs = [None] + list(Round6.OBFUSCATIONS)
+        for _ in range(600):
+            ob = rng.choice(obs)
+            value = rng.choice(Round4.forms(rng.choice(Round4.WRITES)))
+            text = self.WS_WRAPPERS[rng.choice(list(self.WS_WRAPPERS))]('Considered %s; not warranted.' % (Round6.OBFUSCATIONS[ob](value, rng) if ob else value))
+            tool = rng.choice(('ffprobe', 'decode_sample', 'subtitle_sample', 'arr_lookup'))
+            if rng.random() < 0.5:
+                reply = json.dumps({'type': 'decision', 'class': rng.choice(['healthy', 'insufficient_evidence']), 'action': rng.choice(['none', 'escalate']),
+                                    'reason': text, 'confidence': 0.5, 'evidence_refs': ['e1']})
+            else:
+                reply = self.tc(tool, {'at': 4}, text[:200])
+            self.assertTrue(self.valid(reply), reply)
+            self.assertIsNone(RE.raw_write_intent(reply), reply)
+            self.assertIsNotNone(RE.raw_write_intent(self.tc(tool, {'note': text[:200]})), text)
 
 
 class WriteAttempts(unittest.TestCase):

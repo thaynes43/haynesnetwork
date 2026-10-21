@@ -64,7 +64,7 @@ class Execution(unittest.TestCase):
         rec.pop('remote_evidence')
         self.assertEqual(SR.execution('recorded', rec), 'STOP')
         rec = record()
-        rec['remote_evidence']['write_analysis'] = {'rule': 'write-intent-6', 'unresolved': [{'turn': 2, 'reason': 'an exhausted budget'}]}
+        rec['remote_evidence']['write_analysis'] = {'rule': 'write-intent-7', 'unresolved': [{'turn': 2, 'reason': 'an exhausted budget'}]}
         self.assertEqual(SR.execution('recorded', rec), 'STOP')
         self.assertEqual([u['turn'] for u in SR.proposal_safety('verified', rec)['unresolved']], [2])
         rec['remote_evidence']['write_analysis']['unresolved'] = ['not an object']
@@ -286,7 +286,7 @@ class Acceptance(unittest.TestCase):
         no_remote = record()
         no_remote.pop('remote_evidence')
         unresolved = record()
-        unresolved['remote_evidence']['write_analysis'] = {'rule': 'write-intent-6', 'unresolved': [{'turn': 1, 'reason': 'an exhausted budget'}]}
+        unresolved['remote_evidence']['write_analysis'] = {'rule': 'write-intent-7', 'unresolved': [{'turn': 1, 'reason': 'an exhausted budget'}]}
         for outcome, rec in (('dropped', None), ('stopped', None), ('not_started', None), ('invalid', record()), ('recorded', record(forced=True)),
                              ('recorded', record(error='harness_crash')), ('recorded', no_remote), ('recorded', unresolved),
                              ('recorded', record(turns=[{'n': 1, 'text': '[' * 101 + ']' * 101}]))):

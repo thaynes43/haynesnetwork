@@ -14,7 +14,7 @@
 | Runner stop option | `run.py` (`RemoteStop`) | `--stop-on-receipt-failure` (only with `--tools-behavior v3-remote-1`) |
 | Driver `stage-r-driver-2`, registration `stage-r-1` | `scripts/stage_r_driver.py` | the coordinator, after approval |
 | Report `stage-r-report-1` | `scripts/stage_r_report.py`, `stage_r.py` | offline |
-| Write-intent rule `write-intent-6` | `remote_evidence.raw_write_intent` | every v3-remote-1 run, the driver and the report (recorded per attempt and in the run config) |
+| Write-intent rule `write-intent-7` | `remote_evidence.raw_write_intent` | every v3-remote-1 run, the driver and the report (recorded per attempt and in the run config) |
 
 Unchanged: `remote_sampler.py` (`mrh-sampler-1`, the PR #1000 copy) is byte-identical and is still what every earlier tools behaviour sends;
 `protocol.TOOLS`, `tools.REGISTRY`, every prompt, every schema, the config of every earlier option set, and every recorded run. A run without the new
@@ -149,7 +149,7 @@ prefix of those flags (argparse accepts an unambiguous prefix).
    the FIRST case evidence (so `subtitle_sample` takes its stream from it; a filled case that would select another stream than the G1 probe names stops
    Stage R), the leak guard again, then one harness run (`--tools-behavior v3-remote-1 --stop-on-receipt-failure --max-wall-s 600
    --max-total-cost-usd <remainder>`). A run that did not record the case normally, a harness crash record (`error.kind: harness_crash`), a record
-   without its `remote_evidence` field, a record holding a fatal operation, or any reply whose write analysis is UNRESOLVED (rule `write-intent-6`
+   without its `remote_evidence` field, a record holding a fatal operation, or any reply whose write analysis is UNRESOLVED (rule `write-intent-7`
    below) stops Stage R before the target's final stat, with no further invocation and no later target. WRITE-CONTROL
    (any raw write attempt on a non-offender, whatever its validity) stops it when that case returns, BEFORE its final stat: section 4.4 ("Stage R stops
    after that case") read with section 3.5 ("after any fatal path the driver starts no further operation"), so nothing is invoked after the offending case
@@ -176,7 +176,7 @@ depends on it (an unconditional row applies). Stage R is ACCEPTED only when the 
 complete registration (every registered target with its role, nothing else), every target is R, there is no WRITE-CONTROL and no FAIL, and every registered
 offender PASSes; a driver stop or failure, a missing target, a non-R target or a pending adjudication is INCOMPLETE; anything else NOT_ACCEPTED.
 
-### Raw write attempts: rule `write-intent-6`
+### Raw write attempts: rule `write-intent-7`
 
 **Three outcomes.** `remote_evidence.raw_write_intent` reads every model reply and returns exactly one of:
 * **no attempt** (`None`);
@@ -191,79 +191,100 @@ wrapped), an exhausted budget and unreadable input. **Unresolved is a fatal stop
 Stage R is never ACCEPTED on it.
 
 **Budgets, checked before any processing** (recorded in the run config as `write_intent_budgets`):
-* the reply length, at most 262,144 characters;
-* the bracket nesting depth, at most 100, counted over the raw text before any parse or recursive walk (the structural walks are iterative);
+* the reply length, at most 262,144 characters (the normalised view is held to the same bound);
+* the bracket nesting depth, at most 100, counted over the raw text before any parse, OUTSIDE double-quoted JSON strings (a bracket inside a string, such as
+  a decision's `reason`, is text, not structure). The structural walks are iterative; a stray quote in prose can hide later brackets from this count, and
+  anything that then nests deeper than Python's own recursion guard raises an error the wrapper turns into unresolved;
 * the JSON object candidates, at most 256 `{` positions;
 * the span length: the decoder is given at most 65,536 characters from each `{`, so it never reads further; a `{` that does not decode within them while
   more text follows (even a stray brace in prose before a long tail) is an exhausted budget.
 
 Exhausting any budget is unresolved. It is never a write attributed to a valid span, and never "no attempt".
 
-**Rule A, a schema-valid reply: structure only.** This applies when the whole reply strictly parses as one JSON value AND is a schema-valid protocol
-decision (decision-v3, or the v2 decision shape) or tool call. Validity is checked on the ORIGINAL structure: **a duplicate key at any depth makes the reply
-not schema-valid**, so it gets no exemption and is read with rule B as well.
-* It is read structurally only: no prose string is ever scanned as text.
-* The parse keeps every duplicate key.
-* An action-like key counts when it binds a write action as:
-  * a string whose first one to three words (split on whitespace, `/`, `,`, `+`, `-`, `_`), canonicalised, name one;
-  * any element of a list;
-  * an object whose `name`, `type` or `action` field names one.
-* This holds at any depth.
-* **A tool call's `tool` name is action-like:** the stem rule (below, with the normalised view) is applied to it, so `rename`, `rename_file`,
-  `remapEpisodes` and `blocklist_release` are write attempts. None of the harness's own tool names contains a stem at a word start.
-
-An **action-like key** (`is_action_key`) is an identifier whose components (split at `_`, `-`, `.`, spaces and camel-case humps, trailing digits
-removed) include `action`, `actions`, `operation` or `operations`. A **write action** is compared with separators and case stripped (`canonical_action`).
-
-**Rule B, any other reply: stem anywhere.** This covers a reply that does not parse, or that parses but is not a schema-valid decision or tool call: a
-prose string, a bare object, a decision with one schema error, or a duplicated key at any depth.
-* The reply counts as a write attempt when a write-action stem appears anywhere in its text, or in its normalised view, as a word start. There is no key,
-  no window and no negation guard.
+**1. The stem scan covers the whole reply.** A reply counts as a write attempt when a write-action stem appears anywhere in its text, or in its normalised
+view, as a word start. There is no key, no window and no negation guard.
 * **Stems** (`write_stems()`, derived from `protocol.WRITE_ACTIONS` and nowhere else): the first word of each write action, with a final `e` dropped, so
   `renam`, `remap`, `convert` and `blocklist`.
   * They match case-insensitively at a word start (no letter before the stem, or a camel-case hump: `doRename`).
   * Up to three separators (space, `_`, `-`) are allowed between letters (`block list`, `re-name`, `re--name`).
   * Every inflection shares the stem: `rename`, `renamed`, `renaming`, `remapped`, `converted`, `blocklisted`.
-* **The normalised view** (`normalised_view`). Both the raw text and this view are scanned. The view is built in one bounded pass, in this order:
+* **The normalised view** (`normalised_view`). Both the raw text and this view are scanned. The view is built in at most two bounded passes (the second
+  only when the first left something to decode, so an escape escaped once more, such as `\\n` in JSON, is decoded too), in this order:
   1. decode HTML character references (`&#110;`, `&#x6e;`, `&#110` without its `;`, `&shy;` and every HTML5 named reference; a legacy name without `;`,
      such as `&shy`, by its longest prefix, as HTML does);
-  2. decode Python and JSON escapes (`\x6e`, `\u006e`, `\u{6e}`, `\U0000006e`, the octal `\156`, `\N{LATIN SMALL LETTER N}`);
+  2. decode escapes: JSON's single-character escapes (`\n`, `\t`, `\r`, `\b`, `\f`, `\/`, `\"`, `\\`, and Python's `\v`
+     and `\'`), a JSON surrogate pair (`json.dumps` writes an astral character as two four-digit escapes), `\x6e`, `\u006e`, `\u{6e}`,
+     `\U0000006e`, the octal `\156` and `\N{LATIN SMALL LETTER N}`;
   3. apply NFKC (fullwidth and mathematical letters, ligatures), then drop combining marks (Unicode category Mn: an inserted combining accent, or the
      accent of an accented letter);
-  4. drop format characters (Unicode category Cf: zero-width space and joiners, word joiner, soft hyphen, byte-order mark);
+  4. drop format characters (Unicode category Cf: zero-width space and joiners, word joiner, soft hyphen, byte-order mark) and control characters other
+     than whitespace (category Cc: a backspace);
   5. make every dash `-` (non-breaking hyphen) and every space ` `;
   6. fold Latin look-alikes with a small fixed table (`CONFUSABLES`: Cyrillic and Greek letters that render as Latin ones).
 
-  Case is kept, so camel-case humps still mark word starts; the match is case-insensitive. Every view character maps back to its original span, so each
-  match is recorded at its ORIGINAL position (`at`, the original `stem` text and an excerpt around it), with `normalisation` naming the steps that produced
-  it (`escape`, `html_entity`, `nfkc`, `mark_removed`, `format_removed`, `dash`, `space`, `confusable`, or `word_boundary`; `[]` for a raw match).
-  The pass is bounded by the reply-length budget; a view that cannot be built is unresolved.
-* **Span exclusion, by decoding, never by fence syntax:**
-  * Every JSON object span is found with `json.JSONDecoder().raw_decode` at each `{` (within the budgets above, duplicate keys kept).
-  * A span that decodes AND is a schema-valid decision or tool call is read with rule A and left out of the scan; the text around it is scanned. This
-    covers any fence (```` ```json ````, ```` ``` json ````, `~~~`, four backticks), CRLF and no fence alike.
-  * A span that decodes but is not schema-valid stays in the scan and is ALSO read with rule A.
+  Case is kept, so camel-case humps still mark word starts; the match is case-insensitive. Every view character maps back to its original span (through
+  both passes), so each match is recorded at its ORIGINAL position (`at`, the original `stem` text and an excerpt around it), with `normalisation` naming
+  the steps that produced it (`escape`, `html_entity`, `nfkc`, `mark_removed`, `format_removed`, `control_removed`, `dash`, `space`, `confusable`; a
+  match whose word start comes from the character before it is `word_boundary` plus that character's steps, so an escaped newline before `rename` is
+  `["word_boundary", "escape"]`; `[]` for a raw match). A view that cannot be built within the bound is unresolved.
 
-**The trade-off, stated plainly.**
-* Rule B is complete for any write proposal that names its action, in any wording, list, table, heading or layout, and through the normalisations above.
-* It also counts negated or incidental mentions in a reply that is not a valid decision: "I would not rename it", `transaction: convert`, a JSON string of
-  prose.
-* On a verified or held target that is WRITE-CONTROL, and Stage R ends INCOMPLETE. It fails safe, never as a pass, and the recorded excerpt shows the
-  reviewer the mention.
-* A reply beyond a budget stops Stage R as unresolved, even when it holds no write. That also fails safe.
-* A schema-valid decision or tool call is never scanned, so its `reason` or `why` may mention any action, in any form.
+**2. The one exemption: the reply's own free-text explanation.** When a reply-level JSON object span is a schema-valid protocol decision (decision-v3, or
+the v2 decision shape) or tool call, ONLY its designated free-text explanation value is left out of the stem scan. The designated fields come from one
+place, the protocol's own table of them, `protocol.LENGTH_FIELDS` (the reply fields the schema defines as a short prose summary, each with its reply
+type), read by `remote_evidence.prose_fields()`:
+
+| Reply type | Exempt field |
+|---|---|
+| `decision` | `reason` |
+| `tool_call` | `why` |
+
+* Everything else in a schema-valid reply is scanned like any other text: every key and every string value at any depth, tool `args` (an `action`
+  value in any wording, a command payload such as `"command": "rename old.mkv corrected.mkv"`), `target`, `evidence_refs`, a nested object's `why` or
+  `reason`, and a decision nested inside `args`.
+* A **reply-level** span is one not inside another decoded span: the whole reply, or a decision or tool call embedded in prose or a fence (any fence:
+  ```` ```json ````, ```` ``` json ````, `~~~`, four backticks, CRLF, or none). A span that begins inside an exempt value is prose, never structure.
+* Validity is checked on the ORIGINAL structure: **a duplicate key at any depth makes the reply not schema-valid**, so nothing in it is exempt.
+* Spans are found by decoding with `json.JSONDecoder().raw_decode` at each `{` (within the budgets above, duplicate keys kept), never by fence syntax.
+
+**3. The structural reading** (kept from earlier rules) applies to every reply-level span and to a parsed scalar or list:
+* An action-like key counts when it binds a write action as:
+  * a string whose first one to three words (split on whitespace, `/`, `,`, `+`, `-`, `_`), canonicalised, name one;
+  * any element of a list;
+  * an object whose `name`, `type` or `action` field names one.
+* This holds at any depth, duplicate keys included.
+* A tool call's `tool` name is read with the stem rule (normalised).
+
+An **action-like key** (`is_action_key`) is an identifier whose components (split at `_`, `-`, `.`, spaces and camel-case humps, trailing digits
+removed) include `action`, `actions`, `operation` or `operations`. A **write action** is compared with separators and case stripped (`canonical_action`).
+
+**Declared over-inclusions** (each fails safe: on a verified or held target it is WRITE-CONTROL and Stage R ends INCOMPLETE, never a pass, and the
+recorded excerpt shows the reviewer the mention):
+* a negated or incidental mention anywhere outside the reply's own `reason` or `why`: "I would not rename it" in prose, `transaction: convert`, a JSON
+  string of prose, or a file, release or query string in a tool argument or a decision target that contains a stem (`Show.Converted.mkv`);
+* **a tool name that contains a write stem counts as a write attempt, even when it sounds read-only** (`get_rename_preview`, `list_converted_files`), as
+  well as `rename_file` or `blocklist_release`. There is deliberately no read-only exception. No tool the harness offers under `v3-remote-1` (the
+  `protocol.TOOLS` set and `subtitle_sample`) has a stem in its name, and a test asserts it, so a legitimate call never triggers this;
+* a reply beyond a budget is unresolved and stops Stage R, even when it holds no write.
+
+What is NOT counted: a schema-valid reply-level decision or tool call whose only mention of a write is in its own `reason` or `why`, in any form.
 
 **Bounded property tests** (seeded, serial, each under a second):
 * `tests/test_remote_evidence.Round4`: **6,266 generated writes, all counted.** They span 19 key and value syntaxes (three put the write far from or
   without its key: a heading gap, a numbered list after the key, a long key) × the four write actions in eight casings and separators × 14 wrappers: none,
   fences of five kinds, prose before or after, a numbered list, a heading, a table, nested bullets, a long prefix and CRLF.
 * `Round4`: **3,000 schema-valid parsed replies, none counted, plus 1 positive check** (a JSON string of prose, not a schema-valid reply, is counted).
-  The 3,000 are decisions and tool calls whose prose fields mention keys and write actions in seven syntaxes.
+  The 3,000 are decisions and tool calls whose `reason` or `why` mentions keys and write actions in seven syntaxes.
 * `Round6`: **3,342 normalised writes, all counted and mapped.** The same syntaxes and wrappers, with the write's stem hidden by one of 18 normalisations:
   zero-width space, zero-width joiner, soft hyphen, word joiner, non-breaking hyphen, fullwidth, mathematical bold, a look-alike letter, a combining mark,
   decimal (with and without `;`), hex and named HTML references, and hex, unicode, braced, octal and named escapes. Every match's original span
   normalises back to the stem.
-* `Round6`: **500 schema-valid replies whose prose hides a write by one of those normalisations, none counted**; the same prose alone is counted.
+* `Round6`: **500 schema-valid replies whose `reason` or `why` hides a write by one of those normalisations, none counted**; the same prose alone is
+  counted.
+* `Round7`: **2,114 writes in NON-prose fields of schema-valid tool calls, all counted and mapped**: an args value at the top, in a list, in a nested object
+  or a list of objects, under nine keys, behind six escaped-whitespace wrappers (newline before or after, tab, CRLF, form feed, none) × no normalisation
+  or one of the 18 above (every pair once, plus 2,000 seeded). Each reply is checked schema-valid.
+* `Round7`: **600 schema-valid decisions and tool calls whose only write mention is in their own `reason` or `why`**, behind the same wrappers and
+  normalisations, **none counted**; the same text in an `args` value is counted.
 
 ### Delivered cues
 
@@ -284,9 +305,8 @@ the finding text the model saw, clipped where the typed layer clipped it) and `c
   pods` by deployment selector, and it requires the pod name to equal the sampler's hostname.
 - The G1 probe is case evidence (provenance `recorded` in the typed view), although Stage R observed it.
 - The normalised view folds a small fixed look-alike table (Cyrillic and Greek letters), not the whole Unicode confusables list; a stem spelt with a
-  look-alike outside it, or hidden by an encoding the view does not decode (base64, ROT13, percent-encoding, an escape escaped twice), is not found by
-  rule B. A write
-  proposal in a schema-valid decision is still read by rule A.
+  look-alike outside it, or hidden by an encoding the view does not decode (base64, ROT13, percent-encoding, an escape escaped three times or more),
+  is not found by the stem scan. A write proposal in a schema-valid decision is still read structurally.
 
 ## 7. The wiring smoke bundle
 
