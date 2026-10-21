@@ -1,0 +1,14 @@
+{
+  "about": "Human-readable restatement of what PREREGISTRATION.md freezes for the blinded Opus 5.5 validity run (#159). Not the runner's manifest.json. Pinned by tests/test_validity_opus55.py.",
+  "run_id": "devval-opus-5-5",
+  "argv": ["--adapter", "claude", "--model", "claude-opus-5-5", "--suite", "$SUITE", "--split", "dev", "--prompt", "v7", "--evidence-format", "v3.1-format", "--guards", "v3", "--evidence", "replay", "--tool-output-bytes", "8192", "--no-spend-limit", "--out", "/home/dev/work/mrh-val-runs/devval-opus-5-5", "--scratch", "/tmp/claude-1000/mrh-val-scratch/opus"],
+  "expected_config_hash": "dac813affd7f316ac6f3f707d9a92750ed03924ea22d9ce8cfc523d5e5e686b1",
+  "haiku_reference": {"argv_from": "runs/dev-c7/manifest-template.json runs.haiku", "expected_config_hash": "b8e8f5174721266b99a51b04546d835cbb0f624c9a25c8351b55186e606b9e3f", "differs_only_in": ["adapter_config.model"]},
+  "harness_version": "dev-c7",
+  "system_prompt_sha256": "79a7fc73b855ccee6964c4752249477b070b79acebc3daf5c9c17a8a6b3eafb5",
+  "suite_manifest_sha256": "9607b7fdcaaa7c5c72530b68998d12554e9cb412398c2004e353e6d0783dd0dd",
+  "score_py_sha256": "5002f1d534535c2319602193a9fb561f0be914f29ea4bcc0fc840477d2eaa789",
+  "response_model_required": "claude-opus-5-5",
+  "caps": {"spend": "none (--no-spend-limit)", "wall": "none", "call_timeout_s": 240},
+  "ceiling": {"script": "scripts/validity_ceiling.py", "predictions": "runs/dev-validity-opus55/predictions.json", "output": "runs/dev-validity-opus55/ceiling.json"}
+}
