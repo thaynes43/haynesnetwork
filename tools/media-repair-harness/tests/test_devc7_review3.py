@@ -58,14 +58,13 @@ class ContiguousRunsAreChecked(unittest.TestCase):
         self.assertIsNone(rec.get('error'), rec.get('error'))                                      # ordinary prose passes
 
     def test_the_run_search_keeps_word_boundaries_at_the_run_ends(self):
-        core = leakguard._core('ab-12')
-        self.assertTrue(leakguard._run_hit(['a', 'b-1', '2'], '', core))
-        self.assertFalse(leakguard._run_hit(['xa', 'b-1', '2'], '', core))                          # 'x' joins the run's first element: not the value
-        self.assertFalse(leakguard._run_hit(['a', 'b-1', '23'], '', core))
-        self.assertTrue(leakguard._run_hit(['the planted', 'title'], ' ', leakguard._core('the planted title')))
+        # (round 4 replaced the uniform-separator run search by the separator-insensitive leakguard.reduced_hits; the same boundary cases hold)
+        self.assertTrue(leakguard.reduced_hits(['a', 'b-1', '2'], 'ab-12'))
+        self.assertFalse(leakguard.reduced_hits(['xa', 'b-1', '2'], 'ab-12'))                       # 'x' joins the run's first element: not the value
+        self.assertFalse(leakguard.reduced_hits(['a', 'b-1', '23'], 'ab-12'))
+        self.assertTrue(leakguard.reduced_hits(['the planted', 'title'], 'the planted title'))
         self.assertEqual(leakguard.group_runs([{'source': 't1', 'group': 'dc_title[]', 'text': 'x'}, {'source': 't1', 'group': 'dc_title[]', 'text': 'y'}]),
                          {('t1', 'dc_title[]'): ['x', 'y']})
-
 
 if __name__ == '__main__':
     unittest.main()

@@ -279,28 +279,72 @@ def _core(value):
 _WORDCH = re.compile(r'[A-Za-z0-9]')
 
 
-def _run_hit(elements, sep, core):
-    """Does `core` occur, with word boundaries at the ends of the smallest contiguous run of `elements` (joined by `sep`) that covers it?"""
-    joined, starts, ends, pos = [], [], [], 0
-    for i, e in enumerate(elements):
-        if i:
-            joined.append(sep)
-            pos += len(sep)
-        starts.append(pos)
-        joined.append(e)
-        pos += len(e)
-        ends.append(pos)
-    text = ''.join(joined)
-    for m in re.finditer(r'(?=(%s))' % core.pattern, text, core.flags):
-        a, b = m.start(1), m.end(1)
-        if b <= a:
-            continue
-        first = max(i for i, st in enumerate(starts) if st <= a)
-        last = min(i for i, en in enumerate(ends) if en >= b)
-        lo, hi = starts[first], ends[last]
-        if (a == lo or not _WORDCH.match(text[a - 1])) and (b == hi or not _WORDCH.match(text[b])):
-            return True
-    return False
+# Fourth review round (AUDIT-ASTRA-30): trying separators one at a time (none, a space) let MIXED separators through ("forbid" + "den" + " identity-42.epub").
+# The media check is SEPARATOR-INSENSITIVE: both the hidden value and the media text are reduced to their alphanumeric characters, case-folded (whitespace,
+# punctuation and joiners dropped), with a map from each reduced character back to its element and offset; a value matches where its reduced form occurs in
+# the reduced text of one contiguous source group or one reassembled excerpt run, and only when the ORIGINAL characters just outside the match are not
+# alphanumeric (an element edge counts as outside), so a value inside a longer word ("planted" in "transplanted") is not a match and ordinary prose passes.
+# THREAT MODEL: the guard targets ACCIDENTAL leakage of hidden case data through text read from the media.  Hand-built fixtures that split an identifier
+# across elements or separators are covered by this normalisation; the guard does not claim to resist arbitrary encodings (spelled-out digits, other
+# scripts, ciphers).
+def _reduce_value(value):
+    return ''.join(ch.casefold() for ch in str(value) if ch.isalnum())
+
+
+def _reduce(segments):
+    """-> (reduced text, [(segment index, offset)] for each reduced character)."""
+    chars, where = [], []
+    for si, seg in enumerate(segments):
+        for oi, ch in enumerate(seg):
+            if ch.isalnum():
+                for c in ch.casefold():
+                    chars.append(c)
+                    where.append((si, oi))
+    return ''.join(chars), where
+
+
+def _outside_ok(segments, si, oi, step):
+    j = oi + step
+    seg = segments[si]
+    return j < 0 or j >= len(seg) or not seg[j].isalnum()
+
+
+def reduced_hits(segments, value):
+    """-> [(first segment, last segment)] of every separator-insensitive, boundary-checked occurrence of `value` in the ordered `segments` (the smallest run)."""
+    target = _reduce_value(value)
+    if not target:
+        return []
+    text, where = _reduce(segments)
+    out, i = [], text.find(target)
+    while i >= 0:
+        (sa, oa), (sb, ob) = where[i], where[i + len(target) - 1]
+        if _outside_ok(segments, sa, oa, -1) and _outside_ok(segments, sb, ob, +1):
+            out.append((sa, sb))
+        i = text.find(target, i + 1)
+    return out
+
+
+def excerpt_runs(sources):
+    """-> [(run label, text)] of each spine item's delivered excerpt ranges, overlapping or touching ranges joined (the text they really form)."""
+    spans, out = {}, []
+    for s in sources:
+        r = s.get('range')
+        if r and r['end'] - r['offset'] == len(s['text']):
+            spans.setdefault((r.get('spine'), r.get('member')), []).append((r['offset'], r['end'], s['text']))
+    for key, parts in spans.items():
+        parts.sort()
+        run_start, run = None, ''
+        for off, end, text in parts:
+            if run_start is not None and off <= run_start + len(run):
+                keep = run_start + len(run) - off
+                run += text[keep:] if keep < len(text) else ''
+            else:
+                if run:
+                    out.append(('excerpts of spine %s from %d' % (key[0], run_start), run))
+                run_start, run = off, text
+        if run:
+            out.append(('excerpts of spine %s from %d' % (key[0], run_start), run))
+    return out
 
 
 def group_runs(sources):
@@ -317,8 +361,8 @@ def _phrase(text):
     return re.compile(r'(?<![A-Za-z0-9])' + r'\s+'.join(words) + r'(?![A-Za-z0-9])', re.IGNORECASE)
 
 
-def media_tokens_2(case, extra_paths=(), cores=False):
-    """-> [(kind, compiled regex, prose)] refused in media text under MEDIA_RULE_2 (cores=True: the regex without word boundaries, for the run check)."""
+def media_values_2(case, extra_paths=()):
+    """-> [(kind, value, prose)]: the hidden values refused in media text under MEDIA_RULE_2."""
     cands = []
     cid = str(case.get('id') or '')
     if cid:
@@ -354,8 +398,13 @@ def media_tokens_2(case, extra_paths=(), cores=False):
     for kind, value, refuse in cands:
         if refuse and (kind, value) not in seen:
             seen.add((kind, value))
-            out.append((kind, _core(value) if cores else (_phrase(value) if ' ' in value.strip() else _ci(value)), is_prose(value)))
+            out.append((kind, value, is_prose(value)))
     return out
+
+
+def media_tokens_2(case, extra_paths=(), cores=False):
+    """-> [(kind, compiled regex, prose)] for media_values_2 (cores=True: the regex without word boundaries)."""
+    return [(k, _core(v) if cores else (_phrase(v) if ' ' in v.strip() else _ci(v)), prose) for k, v, prose in media_values_2(case, extra_paths)]
 
 
 def reassembled(sources):
@@ -389,18 +438,32 @@ def reassembled(sources):
     return texts
 
 
-def media_hits_2(case, sources, visible='', extra_paths=()):
-    """-> the sorted kinds of hidden values found in the delivered media `sources` under MEDIA_RULE_2 (elements, excerpt runs and every contiguous group run)."""
-    mtoks = [(k, rx) for k, rx, prose in media_tokens_2(case, extra_paths) if not (prose and rx.search(visible or ''))]
+def media_findings_2(case, sources, visible='', extra_paths=()):
+    """-> {kind: where} of the hidden values found in the delivered media `sources` under MEDIA_RULE_2: separator-insensitive and boundary-checked over each
+    ordered source group (where = its source, field group and the smallest run of elements) and over each reassembled excerpt run, plus the word-bounded
+    match of the value as written in every text."""
     sources = list(sources)
+    units = [('%s %s' % key, els) for key, els in group_runs(sources).items()]
+    units += [(label, [text]) for label, text in excerpt_runs(sources)]
     texts = reassembled(sources)
-    hits = {k for k, rx in mtoks for t in texts if rx.search(t)}
-    kinds = {k for k, _rx in mtoks}
-    groups = [els for els in group_runs(sources).values() if len(els) > 1]
-    for k, core, _prose in media_tokens_2(case, extra_paths, cores=True):
-        if k in kinds and k not in hits and any(_run_hit(els, '', core) or _run_hit(els, ' ', core) for els in groups):
-            hits.add(k)
-    return sorted(hits)
+    found = {}
+    for (kind, value, prose), (_k, rx, _p) in zip(media_values_2(case, extra_paths), media_tokens_2(case, extra_paths)):
+        if kind in found or (prose and rx.search(visible or '')):
+            continue
+        for label, segments in units:
+            runs = reduced_hits(segments, value)
+            if runs:
+                found[kind] = '%s, elements %d-%d' % (label, runs[0][0], runs[0][1])
+                break
+        else:
+            if any(rx.search(t) for t in texts):
+                found[kind] = 'as written'
+    return found
+
+
+def media_hits_2(case, sources, visible='', extra_paths=()):
+    """-> the sorted kinds of hidden values found in the delivered media `sources` under MEDIA_RULE_2."""
+    return sorted(media_findings_2(case, sources, visible, extra_paths))
 
 
 def check_messages_media2(case, guard_messages, sources, visible='', extra_paths=()):
@@ -413,6 +476,7 @@ def check_messages_media2(case, guard_messages, sources, visible='', extra_paths
         hits = _legacy_hits(m.get('content', ''), toks)
         if hits:
             raise LeakError('forbidden token(s) %s in model-bound message %d' % (hits, i + 1))
-    hits = media_hits_2(case, sources, visible, extra_paths)
-    if hits:
-        raise LeakError('forbidden value(s) %s in text read from the media (%s)' % (hits, MEDIA_RULE_2))
+    found = media_findings_2(case, sources, visible, extra_paths)
+    if found:
+        raise LeakError('forbidden value(s) %s in text read from the media (%s; %s)' % (sorted(found), MEDIA_RULE_2,
+                                                                                          '; '.join('%s in %s' % (k, found[k]) for k in sorted(found))))
