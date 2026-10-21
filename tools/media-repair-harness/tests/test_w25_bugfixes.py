@@ -412,9 +412,7 @@ class EarlierVersionsUnchanged(unittest.TestCase):
                                             if not p.startswith('Invalid data found')])
 
     def test_the_v31_tension_list_reproduces(self):
-        B.need_v11()
-        if pod_local_fixtures_missing():
-            self.skipTest('a pod-local EPUB fixture is not in this checkout: the advertisements, and so the list, legitimately differ here')
+        B.need_v11()       # (the list does not depend on the pod-local fixtures: it reproduces without them too)
         import importlib.util
         spec = importlib.util.spec_from_file_location('tension_script', th.COMPONENT / 'scripts' / 'contract_v3_tension.py')
         mod = importlib.util.module_from_spec(spec)
@@ -496,6 +494,26 @@ class DevC7ReRendered(unittest.TestCase):
         self.assertEqual(n_rec + skipped, 219)
         self.assertGreaterEqual(n_rec, 207, (n_rec, skipped))
         print('\ndev-c7 replay: %d records re-rendered, %d requests equal, %d unavailable here (pod-local fixtures)' % (n_rec, n_req, skipped))
+
+
+class DeltasReproduce(unittest.TestCase):
+    """docs/w25-deltas.json (the public typed-verdict deltas reported in the PR and in docs/contract-v3.md section 17) is what the script writes now."""
+
+    def test_the_committed_deltas_reproduce(self):
+        B.need_v11()
+        if pod_local_fixtures_missing():
+            self.skipTest('a pod-local EPUB fixture is not in this checkout: the epub_inspect {} results legitimately differ here')
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('w25_deltas_script', th.COMPONENT / 'scripts' / 'w25_deltas.py')
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        out = Path(tempfile.mkdtemp(prefix='mrh-w25-')) / 'd.json'
+        with contextlib.redirect_stdout(io.StringIO()):
+            mod.main(['--out', str(out)])
+        self.assertEqual(out.read_text(), (DOCS / 'w25-deltas.json').read_text())
+        doc = json.loads(out.read_text())
+        for suite in doc['suites'].values():
+            self.assertEqual(suite['changed'], {'checker': 9, 'epub_inspect_default': 0, 'evidence_verdicts': 0, 'prior_record_kinds': 0})
 
 
 class PassabilityReproduces(unittest.TestCase):
