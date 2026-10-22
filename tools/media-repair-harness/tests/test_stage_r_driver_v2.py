@@ -7,10 +7,13 @@ import datetime
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import rem_h as H
 import th
@@ -307,7 +310,7 @@ class LibraryRoot(Base):
 
     def test_library_root_components_are_validated(self):
         lib = Library()
-        for bad in (['Media/TV Shows'], ['..'], ['Media', '.'], ['a\x00b'], ['a\nb'], 'Media/TV Shows', [''], [3], ['x'] * 9):
+        for bad in (['Media/TV Shows'], ['..'], ['Media', '.'], ['a\x00b'], ['a\nb'], 'Media/TV Shows', [''], [3], ['x'] * 9, []):
             reg = lib.registration()
             reg['discovery']['library_root'] = bad
             errs, _t = V2.validate_registration(reg)
@@ -464,6 +467,146 @@ class Binding(Base):
             self.assertTrue(V2.validate_registration(reg)[0], change)
 
 
+class CommitRepo(Base):
+    """Review round 1, finding 1: the G0b manifest commit must not move the harness commit the registration binds.  REAL temporary git repositories:
+    the harness tree is a repository of its own (`V2.COMPONENT` and the harness's own git_info point at it); the commit repository is the same one, a
+    worktree of it, or a separate clone."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.tree = self.tmp / 'harness-tree'
+        for d in ('src', 'scripts'):
+            (self.tree / d).mkdir(parents=True)
+            (self.tree / d / 'f.txt').write_text('x\n')
+        self.git('init', '-q', '-b', 'main', cwd=self.tree)
+        self.git('add', '.', cwd=self.tree)
+        self.commit_in(self.tree, 'first')
+        self.head = self.git('rev-parse', 'HEAD', cwd=self.tree)
+        for patch in (mock.patch.object(V2, 'COMPONENT', self.tree),
+                      mock.patch.object(R, 'git_info', lambda: {'sha': self.head, 'dirty': False, 'branch': 'main'})):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    @staticmethod
+    def git(*args, cwd):
+        return subprocess.run(['git', '-C', str(cwd)] + list(args), check=True, capture_output=True, text=True).stdout.strip()
+
+    def commit_in(self, repo, msg):
+        self.git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '--allow-empty', '-m', msg, cwd=repo)
+
+    def clone(self):
+        dest = self.tmp / 'clone'
+        subprocess.run(['git', 'clone', '-q', str(self.tree), str(dest)], check=True, capture_output=True)
+        return dest
+
+    def registration(self, lib):
+        reg = lib.registration()
+        reg['binding'] = dict(reg['binding'], harness_commit=self.head)
+        return reg
+
+    def test_the_same_repository_is_refused_before_any_operation(self):
+        """The harness tree itself, a worktree of it, and a directory that is no git repository: each a recorded stop at P0, with no operation."""
+        wt = self.tmp / 'worktree'
+        self.git('worktree', 'add', '-q', '-b', 'other', str(wt), cwd=self.tree)
+        notgit = self.tmp / 'not-a-repo'
+        notgit.mkdir()
+        for label, repo, needle in (('itself', self.tree, 'same git repository'), ('subdirectory', self.tree / 'src', 'same git repository'),
+                                    ('worktree', wt, 'same git repository'), ('not a repository', notgit, 'cannot be identified')):
+            lib = Library()
+            code, st, pod = lib.drive(reg=self.registration(lib), git=subprocess.run, commit_repo=repo)
+            self.assert_no_operation(code, st, pod, 'binding_mismatch')
+            self.assertIn(needle, st['stop']['detail'], label)
+
+    def test_a_separate_clone_proceeds(self):
+        lib = Library()
+        code, st, pod = lib.drive(reg=self.registration(lib), git=subprocess.run, commit_repo=self.clone())
+        self.assertEqual((code, st['stop']), (0, None))
+        self.assertEqual(st['binding']['checked']['harness_commit'], self.head)
+        self.assertEqual(st['commit_repo']['commit_repo']['toplevel'], str(self.tmp / 'clone'))
+
+    def test_a_harness_head_that_moves_stops_before_the_first_target(self):
+        """The manifest commit (here a hook that commits in the harness tree: the failure the P0 refusal prevents) moves HEAD: the first target stops
+        with binding_mismatch before its stat, so before any model call."""
+        lib = Library()
+
+        def moving_commit(path):
+            self.commit_in(self.tree, 'manifest')
+            return fake_commit(path)
+        code, st, pod = lib.drive(reg=self.registration(lib), git=subprocess.run, commit_repo=self.clone(), commit=moving_commit)
+        self.assertEqual((code, st['stop']['phase'], st['stop']['kind'], st['stop']['target']), (V2.EXIT_STOP, 'G1', 'binding_mismatch', 'o1'))
+        self.assertIn('moved', st['stop']['detail'])
+        self.assertEqual((pod.execs, lib.harness_calls), (4, []))              # the four G0b listings only: no stat, no harness run
+
+    def test_a_harness_head_that_moves_between_targets_stops_before_the_next_model_call(self):
+        lib = Library()
+
+        def move(argv, rc, key):
+            if key == 'o1':
+                self.commit_in(self.tree, 'moved during o1')
+            return rc
+        code, st, pod = lib.drive(reg=self.registration(lib), git=subprocess.run, commit_repo=self.clone(), after=move)
+        self.assertEqual((code, st['stop']['kind'], st['stop']['target']), (V2.EXIT_STOP, 'binding_mismatch', 'o2'))
+        self.assertEqual((lib.harness_calls, pod.execs), (['o1'], G1_END + 2))
+        self.assertEqual([st['targets'][k]['driver_outcome'] for k in ORDER[1:]], ['not_started'] * 5)
+
+
+class JournalDirectory(Base):
+    def test_a_journal_directory_that_is_missing_or_unusable_is_a_prerun_stop(self):
+        lib = Library()
+        afile = lib.tmp / 'a-file'
+        afile.write_text('x')
+        cases = [('missing', lib.tmp / 'no-such-dir'), ('a file', afile)]
+        if os.geteuid() != 0:
+            ro = lib.tmp / 'read-only'
+            ro.mkdir()
+            ro.chmod(0o500)
+            cases.append(('read-only', ro))
+        for label, path in cases:
+            lib = Library()
+            code, st, pod = lib.drive(environ={'MRH_CALL_JOURNAL': str(path)})
+            self.assert_no_operation(code, st, pod, 'model_tripwire')
+            self.assertIn('call-journal directory', st['stop']['detail'], label)
+
+
+class TemplateDigest(Base):
+    """Review round 1, finding 7: the digest bound at P0 is of the exact bytes the driver parsed, from one read."""
+
+    def registration(self, lib, registered):
+        reg = lib.registration()
+        o1 = next(t for t in reg['targets'] if t['key'] == 'o1')
+        o1['case_template'] = 'o1-case.json'
+        o1.pop('case')
+        reg['binding']['case_templates_sha256']['o1'] = hashlib.sha256(registered).hexdigest()
+        return reg
+
+    def bytes_of(self, case):
+        return json.dumps(case, sort_keys=True).encode()
+
+    def test_the_digest_is_of_the_bytes_parsed(self):
+        lib = Library()
+        case = th.make_case(id='sr-o1', media='tv', fixture={'kind': 'none'}, tools_available=list(H.TOOLS))
+        good = self.bytes_of(case)
+        (lib.tmp / 'o1-case.json').write_bytes(good)
+        code, st, _pod = lib.drive(reg=self.registration(lib, good), template_dir=lib.tmp)
+        self.assertEqual((code, st['stop']), (0, None))
+        self.assertEqual(st['case_templates_sha256']['o1'], hashlib.sha256(good).hexdigest())
+
+    def test_a_template_changed_and_restored_after_parsing_is_not_the_registered_one(self):
+        """The file holds other bytes when parsed (at construction) and the registered bytes again at P0: a second read at P0 would pass the digest
+        check on templates the driver never parsed.  With one read, the digest is of what was parsed: binding_mismatch, no operation."""
+        lib = Library()
+        case = th.make_case(id='sr-o1', media='tv', fixture={'kind': 'none'}, tools_available=list(H.TOOLS))
+        registered, other = self.bytes_of(case), self.bytes_of(dict(case, title='changed'))
+        path = lib.tmp / 'o1-case.json'
+        path.write_bytes(other)
+        d, pod = lib.driver(reg=self.registration(lib, registered), template_dir=lib.tmp)
+        path.write_bytes(registered)
+        code = d.run()
+        self.assert_no_operation(code, d.state, pod, 'binding_mismatch')
+        self.assertIn('case_templates_sha256', d.state['stop']['detail'])
+
+
 class Approval(Base):
     def test_a_missing_invalid_future_or_expired_approval_refuses_to_start(self):
         for label, approved, now, kind in (
@@ -474,6 +617,13 @@ class Approval(Base):
             lib = Library()
             code, st, pod = lib.drive(approved_at=approved, now=lambda now=now: now)
             self.assert_no_operation(code, st, pod, kind)
+
+    def test_an_approval_time_that_overflows_is_invalid_not_a_crash(self):
+        """`9999-12-31T23:59:59Z` plus the expiry is out of range: approval_invalid, recorded before any operation (not a driver_error)."""
+        lib = Library()
+        code, st, pod = lib.drive(approved_at='9999-12-31T23:59:59Z')
+        self.assert_no_operation(code, st, pod, 'approval_invalid')
+        self.assertIn('out of range', st['stop']['detail'])
 
     def test_the_expiry_stops_before_the_next_target(self):
         """G-5: the registered expiry (here 2 h) passes during v1: approval_expired before v2 starts, with no further operation."""
@@ -508,6 +658,10 @@ class Approval(Base):
 
 
 class Versions(unittest.TestCase):
+    def test_no_pilot_values_in_the_driver_source(self):
+        """Review round 1, finding 6: the driver (docstring included) names no real pilot path."""
+        self.assertNotIn('TV Shows', (HERE.parent / 'scripts' / 'stage_r_driver_v2.py').read_text())
+
     def test_the_161_driver_is_byte_identical(self):
         self.assertEqual(hashlib.sha256((HERE.parent / 'scripts' / 'stage_r_driver.py').read_bytes()).hexdigest(), DRIVER_V1_SHA256)
 

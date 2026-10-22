@@ -83,8 +83,9 @@ Stage R approval request.
      - 600 s harness wall per target (`--max-wall-s`);
      - 2 h for all of Stage R.
    - **Cost cap:** $10 total (`--max-total-cost-usd`).
-5. **The Stage R driver** (`scripts/stage_r_driver.py`): one process that runs G0b, G1, G2 and the final check
-   serially, and owns every stop.
+5. **The Stage R driver:** one process that runs G0b, G1, G2 and the final check serially, and owns every stop.
+   - **Which driver:** this §3.5 describes the #161 driver (`scripts/stage_r_driver.py`, `stage-r-driver-2`). Stage R under
+     v3.3 uses `stage-r-driver-3` (`scripts/stage_r_driver_v2.py`), which adds the `stage-r-2` checks of §4.2 and §4.4.
    - **The same receipt, hostname and identity rules apply to every operation,** including the out-of-harness ones:
      `list`, `stat`, `probe` and the final `stat`.
    - **Identity bootstrap:**
@@ -162,12 +163,14 @@ No unique match drops the target. Nothing is inferred from episode titles.
    - the predicates (§4.3), the stop rules (§4.4) and the adjudication rule (§4.3);
    - the #159 attribution procedure for reporting;
    - **the `stage-r-2` fields** (v3.3), which the driver `stage-r-driver-3` checks:
-     - `discovery.library_root`, the library root as path components below the mount (§4.1);
+     - `discovery.library_root`, the library root as path components below the mount, at least one (§4.1);
      - `model_journal`: the journal path rule (`{"env": "MRH_CALL_JOURNAL"}`), the served model, and the tripwire threshold (`chars_basis`, `divisor`,
        `slack_tokens`: the limit is `chars / divisor + slack_tokens` input tokens per call);
      - `binding`: the harness commit, the sampler sha256, the case-template digests, and the config-hash basis (the sha256 of the harness config with
        its one per-target field, `limits.max_total_cost_usd`, excluded);
-     - `approval.expiry_s`, the A0 expiry (at most 8 hours, §6).
+     - `approval.expiry_s`, the A0 expiry (at most 8 hours, §6);
+     - the G0b manifest commit repository (`--commit-repo`) must be a separate clone, never the harness tree's own repository, and the call-journal
+       directory must exist and be writable; the driver refuses to start otherwise.
 2. **Approval A0 + A1 (§6),** bound to the G0a commit.
 3. **G0b, locators.** The four `list` calls of §4.1. Commit the resolved six-file manifest (locator, basename and its
    source, id, bytes, provenance) **before any media byte is read**. Rerun the leak guard on the filled case files.

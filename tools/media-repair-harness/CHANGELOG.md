@@ -26,6 +26,10 @@ pins its sha256. Details: `docs/stage-r-driver-v2.md`.
   mount; component validation; a tripwire breach; a served-model deviation; seven unreadable-journal forms; a journal position unreadable before a target; an unset journal rule; an orphan before a
   target and at start; six pre-run binding mismatches; a rebuilt basis; three post-run drifts; and missing, invalid, future, non-UTC and expired
   approvals and an expiry during the run. Each stop is shown to start no further operation or target.
+* **Review round 1 (#1038):** `--commit-repo` must be a separate clone (a P0 refusal when it shares the harness tree's top level or git common dir),
+  and the harness HEAD is re-read before every target; `library_root` needs at least one component; the call-journal directory must exist and be
+  writable at P0; an overflowing `--approved-at` is `approval_invalid`; the template digest is of the bytes parsed, from one read; no pilot path in
+  the driver source.
 
 ## W28 (OpenProject #161): remote content evidence, fail-closed receipts and the Stage R driver, offline
 

@@ -3,7 +3,7 @@
 `stage-r-driver-2`, registration `stage-r-1`) is unchanged, byte for byte, and this one reuses its operations, listings, pod checks, leak guard, final
 check and stop bookkeeping.  It closes the five gaps the G0a pre-registration of Stage R pilot 1 found (#160):
 
-  G-1  the library root.  `discovery.library_root` registers the library as path components below the selected mount (`["Media", "TV Shows"]`; each
+  G-1  the library root.  `discovery.library_root` registers the library as path components below the selected mount (for example `["Library", "Shows"]`; at least one, each
        a safe component: no separator, traversal, NUL or control character).  G0b reads the mount from `get deploy` as before, builds
        `<mount>/<component>/...` and lists THAT directory directly with the series prefix: never the mount root or an intermediate folder.  Every
        listing stays descriptor-confined under the mount and must be complete with exactly one series match.  Four `list` calls in all, as before;
@@ -18,7 +18,9 @@ check and stop bookkeeping.  It closes the five gaps the G0a pre-registration of
   G-4  pre-run binding.  At start, before any operation: the harness commit (git HEAD of the tree this script runs from, with src/ and scripts/
        clean), the sampler sha256, the case-template digests and the config-hash basis (the harness config with its one per-target field,
        `limits.max_total_cost_usd`, excluded) must equal the registration; after each G2 run, the recorded config must differ from the registered
-       basis in exactly that field, set to the remainder the driver passed.  Any mismatch is the recorded stop `binding_mismatch`.
+       basis in exactly that field, set to the remainder the driver passed.  Any mismatch is the recorded stop `binding_mismatch`.  The harness
+       commit is also re-read before every target, and `--commit-repo` must be a git repository SEPARATE from the harness tree's (a clone): the G0b
+       manifest commit would otherwise move the very commit the registration binds.  The template digests are of the exact bytes parsed, read once.
   G-5  the A0 expiry.  `--approved-at <ISO-8601 UTC>` (Tom's approval) is required; the driver refuses to start once now is past approved-at plus the
        registered expiry (at most 8 h), and stops before any new target once it passes (`approval_expired`).
 
@@ -119,18 +121,51 @@ def parse_utc(text):
     return t
 
 
-def validate_registration(reg, template_dir=None):
-    """-> (errors, templates).  Every stage-r-1 rule (the #161 validator, run on the same registration), plus the stage-r-2 fields."""
+def read_templates(reg, template_dir=None):
+    """-> (errors, digests, resolved).  Every `case_template` file is read ONCE: its sha256 is of the exact bytes that are then parsed, and `resolved` is
+    the registration with each such target's parsed case inline, so the #161 validator and driver never read the file again.  digests: {target key:
+    sha256 hex, 'inline' (the case is in the registration), or None (unreadable; an error is given)}."""
+    errs, digests = [], {}
+    resolved = copy.deepcopy(reg)
+    base = Path(template_dir) if template_dir else Path('.')
+    for t in resolved.get('targets') or []:
+        if not isinstance(t, dict):
+            continue
+        key = t.get('key')
+        if not isinstance(t.get('case_template'), str):
+            digests[key] = 'inline'
+            continue
+        rel = Path(t['case_template'])
+        digests[key] = None
+        if rel.is_absolute() or '..' in rel.parts or not (base / rel).resolve().is_relative_to(base.resolve()):
+            errs.append('target %r: case_template must be a relative path that stays under the registration (no symlink out)' % (key,))
+            continue
+        try:
+            data = (base / rel).read_bytes()
+            case = json.loads(data.decode('utf-8'))
+        except (OSError, ValueError) as e:        # UnicodeDecodeError is a ValueError
+            errs.append('target %r: case_template unreadable (%s)' % (key, type(e).__name__))
+            continue
+        digests[key] = hashlib.sha256(data).hexdigest()
+        t.pop('case_template')
+        t['case'] = case
+    return errs, digests, resolved
+
+
+def _validate(reg, template_dir=None):
+    """-> (errors, templates, digests, resolved registration).  The one validation both `validate_registration` and the driver use."""
     if not isinstance(reg, dict):
-        return ['the registration is not a JSON object'], {}
-    errs, templates = D1.validate_registration(dict(reg, registration=D1.REGISTRATION_VERSION), template_dir)
+        return ['the registration is not a JSON object'], {}, {}, reg
+    terrs, digests, resolved = read_templates(reg, template_dir)
+    errs, templates = D1.validate_registration(dict(resolved, registration=D1.REGISTRATION_VERSION), template_dir)
+    errs = terrs + errs
     if reg.get('registration') != REGISTRATION_VERSION:
         errs.insert(0, 'registration must be %r' % REGISTRATION_VERSION)
     disc = reg.get('discovery') or {}
     root = disc.get('library_root')
-    if not (isinstance(root, list) and len(root) <= LIBRARY_ROOT_MAX and all(isinstance(c, str) and D1.safe_name(c) for c in root)):
-        errs.append('discovery.library_root must be a list of at most %d safe path components below the mount (no separator, traversal, NUL or control '
-                    'character)' % LIBRARY_ROOT_MAX)
+    if not (isinstance(root, list) and 1 <= len(root) <= LIBRARY_ROOT_MAX and all(isinstance(c, str) and D1.safe_name(c) for c in root)):
+        errs.append('discovery.library_root must be a list of 1 to %d safe path components below the mount (at least one; no separator, traversal, NUL or '
+                    'control character)' % LIBRARY_ROOT_MAX)
     mj = reg.get('model_journal')
     if not isinstance(mj, dict):
         errs.append('model_journal is required (the #159 call journal and tripwire)')
@@ -163,15 +198,21 @@ def validate_registration(reg, template_dir=None):
             errs.append('binding.%s must be sha256 hex' % k)
     if b.get('config_hash_excluded_field') != EXCLUDED_CONFIG_FIELD:
         errs.append('binding.config_hash_excluded_field must be %r (the one per-target config field)' % EXCLUDED_CONFIG_FIELD)
-    digests = b.get('case_templates_sha256')
+    registered = b.get('case_templates_sha256')
     keys = [t.get('key') for t in reg.get('targets') or [] if isinstance(t, dict)]
-    if not (isinstance(digests, dict) and sorted(digests) == sorted(keys)
-            and all(isinstance(v, str) and (v == 'inline' or HEX64.match(v)) for v in digests.values())):
+    if not (isinstance(registered, dict) and sorted(registered) == sorted(keys)
+            and all(isinstance(v, str) and (v == 'inline' or HEX64.match(v)) for v in registered.values())):
         errs.append('binding.case_templates_sha256 must give every target key its template sha256 (or "inline")')
     ap = reg.get('approval')
     if not (isinstance(ap, dict) and set(ap) == {'expiry_s'} and _num(ap.get('expiry_s')) and 0 < ap['expiry_s'] <= APPROVAL_MAX_S):
         errs.append('approval must be {expiry_s: a number above 0 and at most %d} (pilot plan section 6: A0 expires at most 8 hours after approval)'
                     % APPROVAL_MAX_S)
+    return errs, templates, digests, resolved
+
+
+def validate_registration(reg, template_dir=None):
+    """-> (errors, templates).  Every stage-r-1 rule (the #161 validator, run on the same registration), plus the stage-r-2 fields."""
+    errs, templates, _digests, _resolved = _validate(reg, template_dir)
     return errs, templates
 
 
@@ -203,13 +244,17 @@ class Driver(D1.Driver):
     approval and model-journal checks."""
 
     def __init__(self, registration, out, runner=subprocess.run, harness=None, clock=time.monotonic, commit=None, pod_health=True, template_dir=None,
-                 approved_at=None, now=None, getppid=os.getppid, git=subprocess.run, environ=None, sleep=time.sleep):
-        errs, _t = validate_registration(registration, template_dir)
+                 approved_at=None, now=None, getppid=os.getppid, git=subprocess.run, environ=None, sleep=time.sleep, commit_repo=None):
+        errs, _t, digests, resolved = _validate(registration, template_dir)
         if errs:
             raise ValueError('; '.join(errs))
-        super().__init__(dict(registration, registration=D1.REGISTRATION_VERSION), out, runner=runner, harness=harness, clock=clock, commit=commit,
+        # the #161 driver gets the registration with each template's parsed case inline: the file is read once (in `_validate`), and the digest
+        # bound at P0 is of those exact bytes
+        super().__init__(dict(resolved, registration=D1.REGISTRATION_VERSION), out, runner=runner, harness=harness, clock=clock, commit=commit,
                          pod_health=pod_health, template_dir=template_dir)
         self.reg = registration
+        self.template_digests = digests
+        self.commit_repo = commit_repo
         self.template_dir = template_dir
         self.approved_at_text = approved_at
         self.now = now or (lambda: datetime.datetime.now(datetime.timezone.utc))
@@ -220,6 +265,7 @@ class Driver(D1.Driver):
         mj = registration['model_journal']
         self.served_model, self.tripwire = mj['served_model'], dict(mj['tripwire'])
         self.state.update(driver=DRIVER_VERSION, registration=REGISTRATION_VERSION, registration_sha256=D1.canonical_sha256(registration),
+                          case_templates_sha256=dict(digests),
                           approval={'approved_at': approved_at, 'expiry_s': registration['approval']['expiry_s'], 'expires_at': None},
                           coordinator={'start_ppid': self.start_ppid, 'checks': 0},
                           model_journal={'path_rule': dict(mj['path_rule']), 'served_model': self.served_model, 'tripwire': self.tripwire,
@@ -266,6 +312,10 @@ class Driver(D1.Driver):
         if not (isinstance(jdir, str) and jdir.startswith('/') and os.path.normpath(jdir) == jdir and '\n' not in jdir):
             raise Stop('P0', 'model_tripwire', 'the journal path rule {"env": "%s"} gives no absolute directory (%r): the tripwire cannot be applied'
                        % (JOURNAL_ENV, jdir))
+        if not (os.path.isdir(jdir) and os.access(jdir, os.R_OK | os.W_OK | os.X_OK)):
+            raise Stop('P0', 'model_tripwire', 'the call-journal directory %s does not exist or is not readable and writable: the tripwire cannot be applied'
+                       % jdir)
+        self.check_commit_repo()
         self.journal = Path(jdir)
         self.state['model_journal']['directory'] = jdir
         self.state['binding']['checked'] = got = self.binding_now()
@@ -274,6 +324,42 @@ class Driver(D1.Driver):
         if bad:
             raise Stop('P0', 'binding_mismatch', 'the registration binds %s, the driver found %s' % (
                 {k: self.reg['binding'].get(k, True) for k in bad}, {k: got[k] for k in bad}))
+
+    def check_commit_repo(self):
+        """P0: the G0b manifest must be committed in a repository other than the harness tree.  A commit in the harness's own repository moves its HEAD,
+        and the first target would stop with `binding_mismatch` after its model call.  Same repository = the same top level or the same git common dir
+        (a worktree of the harness repository shares the latter); anything that cannot be read is refused too."""
+        if self.commit_repo is None:
+            return
+        try:
+            mine, theirs = self.repo_identity(COMPONENT), self.repo_identity(self.commit_repo)
+        except (OSError, ValueError, subprocess.SubprocessError) as e:
+            raise Stop('P0', 'binding_mismatch', 'the commit repository %s or the harness tree cannot be identified as git repositories (%s: %s)' % (
+                self.commit_repo, type(e).__name__, str(e)[:200]))
+        self.state['commit_repo'] = {'path': str(self.commit_repo), 'harness_tree': mine, 'commit_repo': theirs}
+        if mine['toplevel'] == theirs['toplevel'] or mine['common_dir'] == theirs['common_dir']:
+            raise Stop('P0', 'binding_mismatch', '--commit-repo %s is the same git repository as the harness tree %s: committing the G0b manifest would '
+                       'move the harness commit the registration binds; use a separate clone' % (self.commit_repo, mine['toplevel']))
+
+    def repo_identity(self, path):
+        """-> {toplevel, common_dir} of the git repository holding `path`, as resolved absolute paths.  Raises ValueError when git cannot say."""
+        out = {}
+        for key, flag in (('toplevel', '--show-toplevel'), ('common_dir', '--git-common-dir')):
+            argv = ['git', '-C', str(path), 'rev-parse', '--path-format=absolute', flag]
+            r = self.git(argv, capture_output=True, text=True)
+            text = (r.stdout or '').strip()
+            if r.returncode != 0 or not text or '\n' in text:
+                raise ValueError('git rev-parse %s failed in %s' % (flag, path))
+            out[key] = os.path.realpath(text)
+        return out
+
+    def harness_head(self):
+        """The harness tree's HEAD now (None when it cannot be read)."""
+        try:
+            r = self.git(['git', '-C', str(COMPONENT), 'rev-parse', 'HEAD'], capture_output=True, text=True)
+        except Exception:  # noqa: BLE001 - a HEAD that cannot be read is not the registered one
+            return None
+        return r.stdout.strip() if r.returncode == 0 else None
 
     def binding_now(self):
         """What the registration binds, read from the tree this driver runs from."""
@@ -286,7 +372,7 @@ class Driver(D1.Driver):
         except Exception as e:  # noqa: BLE001 - a commit that cannot be read is not the registered one
             out['harness_commit'], out['tree_clean'] = 'unreadable (%s)' % type(e).__name__, False
         out['sampler_sha256'] = RE.sampler_sha256()
-        out['case_templates_sha256'] = D1.template_digests(self.reg, self.template_dir)
+        out['case_templates_sha256'] = dict(self.template_digests)      # the digests of the bytes parsed at construction
         try:
             argv = harness_argv(self.reg, 'CASE', 'SUITE', 'OUT', 'SCRATCH', self.total_cost - self.cost, self.target_wall)
             out['config_hash_basis_sha256'] = config_basis(config_of(argv))[0]
@@ -302,7 +388,10 @@ class Driver(D1.Driver):
         except (TypeError, ValueError) as e:
             kind = 'approval_missing' if not self.approved_at_text else 'approval_invalid'
             raise Stop(phase, kind, 'stage-r-driver-3 needs --approved-at, the ISO-8601 UTC time of the A0 approval (%s)' % e, target)
-        deadline = at + datetime.timedelta(seconds=float(ap['expiry_s']))
+        try:
+            deadline = at + datetime.timedelta(seconds=float(ap['expiry_s']))
+        except OverflowError:
+            raise Stop(phase, 'approval_invalid', 'the approval time %s is too late to add the expiry to (date out of range)' % at.isoformat(), target)
         ap['expires_at'] = deadline.isoformat()
         now = self.now()
         ap['last_checked'] = now.isoformat()
@@ -323,6 +412,10 @@ class Driver(D1.Driver):
     def before_target(self, phase, key):
         self.check_coordinator(phase, key)
         self.check_approval(phase, key)
+        head = self.harness_head()          # G-4 again: the harness commit must not have moved (e.g. by the G0b commit) since P0
+        if head != self.reg['binding']['harness_commit']:
+            raise Stop(phase, 'binding_mismatch', 'the harness tree is at commit %r, not the registered %s: it moved after the pre-run check' % (
+                head, self.reg['binding']['harness_commit']), key)
 
     # ---------------------------------------------------------------------------------------------------------- G0b: the registered library root
     def library_root(self, mount):
@@ -677,7 +770,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('--registration', required=True)
     ap.add_argument('--out', required=True)
-    ap.add_argument('--commit-repo', required=True, help='the git checkout the G0b manifest is committed in before any media read (--out must be under it)')
+    ap.add_argument('--commit-repo', required=True, help='a SEPARATE git clone (never the harness tree\'s repository) the G0b manifest is committed in before any media read (--out must be under it)')
     ap.add_argument('--approved-at', required=True, help="Tom's A0 approval time, ISO-8601 UTC (2026-10-22T09:00:00Z); required: without it the driver refuses to start")
     args = ap.parse_args(argv)
     try:
@@ -689,7 +782,8 @@ def main(argv=None):
     if out.exists() and any(out.iterdir()):
         print('refusing a non-empty --out (a stopped run is never replaced): %s' % out, file=sys.stderr)
         return EXIT_BAD
-    d = Driver(reg, out, commit=D1.git_committer(args.commit_repo), template_dir=Path(args.registration).resolve().parent, approved_at=args.approved_at)
+    d = Driver(reg, out, commit=D1.git_committer(args.commit_repo), template_dir=Path(args.registration).resolve().parent, approved_at=args.approved_at,
+               commit_repo=args.commit_repo)
     code = d.run()
     if d.state['stop']:
         print('STOP: %(phase)s %(kind)s: %(detail)s' % d.state['stop'], file=sys.stderr)
