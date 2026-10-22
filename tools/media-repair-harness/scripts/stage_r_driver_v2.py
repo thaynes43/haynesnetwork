@@ -639,9 +639,20 @@ class Driver(D1.Driver):
             chars = _chars_sent(turn, tw['chars_basis'])
             item.update(served_models=served, tokens_in_total=tokens, chars=chars, ok=ok)
             if not ok:
+                # a failed call can still have been served and billed (error_max_budget_usd after the response): whatever it reports is checked
                 if isinstance(turn.get('raw_request'), dict):
                     out['unreadable'].append('call %s failed in the journal but the record holds its reply' % cid)
-                item['verdict'] = 'unverified (a failed call)'
+                bad = []
+                if served and served != [self.served_model]:
+                    bad.append('failed call %s (turn %s) served %s, not exactly %r' % (cid, item['turn'], served, self.served_model))
+                if tokens is not None and chars is not None:
+                    limit = chars / float(tw['divisor']) + float(tw['slack_tokens'])
+                    item['limit'] = round(limit, 1)
+                    if tokens > limit:
+                        bad.append('failed call %s (turn %s) took %d input tokens for %d characters, over the tripwire limit %.1f' % (
+                            cid, item['turn'], tokens, chars, limit))
+                item['verdict'] = 'violation' if bad else 'unverified (a failed call)'
+                out['violations'] += bad
                 out['calls'].append(item)
                 continue
             if chars is None or tokens is None:

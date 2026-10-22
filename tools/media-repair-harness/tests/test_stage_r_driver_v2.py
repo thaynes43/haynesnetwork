@@ -332,6 +332,19 @@ class ModelTripwire(Base):
             self.assert_stopped_at(lib, code, st, pod, 'model_tripwire', 'o2', ['o1', 'o2'], G1_END + 3)
             self.assertIn('not exactly', st['stop']['detail'])
 
+    def test_a_failed_call_is_checked_for_what_it_reports(self):
+        """The advisory review of fa8edc6d: a call the journal marks failed can still have been served (an error after the response): a served model
+        other than the registered one is model_tripwire, ahead of the harness's own stop; a failed call served by the registered model is recorded as
+        unverified, and the run stops for the harness's own reason (an unmetered failed call aborts it under the cost cap: harness_stop)."""
+        lib = Library()
+        code, st, pod = lib.drive(replies={'v1': []}, journal={'v1': {'served': ['other-model']}})
+        self.assert_stopped_at(lib, code, st, pod, 'model_tripwire', 'v1', ['o1', 'o2', 'v1'], G1_END + 4)
+        self.assertIn('failed call', st['stop']['detail'])
+        lib = Library()
+        code, st, pod = lib.drive(replies={'v1': []})
+        self.assert_stopped_at(lib, code, st, pod, 'harness_stop', 'v1', ['o1', 'o2', 'v1'], G1_END + 4)
+        self.assertEqual(st['targets']['v1']['model_journal']['calls'][0]['verdict'], 'unverified (a failed call)')
+
     def test_an_unreadable_journal_stops(self):
         """G-2: no stdout-closed, no reply copy, a reply copy that is not JSON, fewer or more calls than turns, a line that is no journal record, or
         bytes that are not UTF-8 -- each the recorded stop model_tripwire for that target, before its final stat."""
