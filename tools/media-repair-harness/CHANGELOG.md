@@ -1,5 +1,32 @@
 # Harness changelog
 
+## W30 (OpenProject #165): the Stage R driver v2 and pilot plan v3.3, offline
+
+`HARNESS_VERSION` stays `dev-c8`. **No model call, no cluster access.** A new opt-in driver closes the five gaps the G0a pre-registration of Stage R
+pilot 1 found (#160). The #161 driver (`scripts/stage_r_driver.py`, `stage-r-driver-2`, registration `stage-r-1`) is byte-identical, and a test
+pins its sha256. Details: `docs/stage-r-driver-v2.md`.
+
+* **Driver `stage-r-driver-3`, registration `stage-r-2`** (`scripts/stage_r_driver_v2.py`). It subclasses the #161 driver. It is named
+  `stage-r-driver-3` because `stage-r-driver-2` is already the #161 driver's label.
+  * **G-1:** `discovery.library_root` (safe components below the mount). The registered root is listed directly with the series prefix, never the mount
+    root. Four `list` calls; a missing root is a recorded stop.
+  * **G-2:** after each G2 target, the #159 call journal is read: paired calls, one per record turn, exactly the registered served model, within the
+    registered tripwire. Otherwise `model_tripwire`.
+  * **G-3:** the parent process is checked before each target (`coordinator_lost`).
+  * **G-4:** before any operation, the harness commit (with `src/` and `scripts/` clean), the sampler sha256, the template digests and the config-hash
+    basis (`limits.max_total_cost_usd` excluded) are checked. After each run, the recorded config may differ only in that field, which must be the
+    remainder passed. Otherwise `binding_mismatch`.
+  * **G-5:** `--approved-at` is required. The driver refuses past approval plus `approval.expiry_s` (at most 8 h) and stops before any new target after
+    it (`approval_expired`).
+* **`stage_r.py`:** the roster rule knows `stage-r-2`, with the same role counts. `stage-r-1` is unchanged.
+* **Pilot plan v3.3** (`docs/pilot-plan-v3.md`, in place, with a versioned header and a change-log line): §4.1 steps 1–2 use the registered library
+  root; §4.2 G0a adds the `stage-r-2` fields; §4.4 adds the three stops; §6 says A0's expiry is enforced by `--approved-at`.
+* **Tests:** `tests/test_stage_r_driver_v2.py`, with fake runners, a scripted adapter and a synthetic journal on the real layout shape. It covers a full
+  run with four `list` calls; per-target hashes that differ only by the cap; a missing root; the mount root never listed; a root symlinked out of the
+  mount; component validation; a tripwire breach; a served-model deviation; seven unreadable-journal forms; a journal position unreadable before a target; an unset journal rule; an orphan before a
+  target and at start; six pre-run binding mismatches; a rebuilt basis; three post-run drifts; and missing, invalid, future, non-UTC and expired
+  approvals and an expiry during the run. Each stop is shown to start no further operation or target.
+
 ## W28 (OpenProject #161): remote content evidence, fail-closed receipts and the Stage R driver, offline
 
 `HARNESS_VERSION` stays `dev-c8`. **No model call, no cluster access**: every behaviour change is a new opt-in version (`docs/remote-content-evidence.md`);

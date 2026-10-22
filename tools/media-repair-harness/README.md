@@ -122,6 +122,7 @@ WO-W27 (OpenProject #145 remainder and the PR #1031 nits) adds diagnostic rules 
 | `score_compat.py` (scorer: `.agents/context/media-repair-harness-2026-10-19/harness/score.py`, evaluator-owned, not moved) | loads score.py by explicit path and maps its flat `protocol` / `run` imports to this package; G1-G10, per-class accuracy, false diagnoses, false repairs, abstention, schema validity, tool failures, latency, cost; `score.json` + `score.md` |
 | `ollama_transport.py`, `remote_sampler.py` | Vendored transports (provenance below) |
 | `remote_evidence.py`, `remote_sampler_v2.py`, `stage_r.py`, `scripts/stage_r_driver.py`, `scripts/stage_r_report.py` | #161: tools behaviour v3-remote-1 (subtitle_sample, receipts, identity binding), sampler `mrh-sampler-2`, the Stage R driver and report (`docs/remote-content-evidence.md`) |
+| `scripts/stage_r_driver_v2.py` | #165: the Stage R driver v2, `stage-r-driver-3` with registration `stage-r-2` (library root, model tripwire, coordinator, pre-run binding, A0 expiry; `docs/stage-r-driver-v2.md`) |
 | `testdata/` | Synthetic cases, deterministic EPUB fixtures, recorded sample outputs of the CLIs (used by the parsing tests) |
 | `leakguard.py` | opaque case alias, fixture-name redaction and the pre-send leak guard |
 | `gaps.py` | dev-c2: capabilities and gaps (what a run could not verify, which call showed it, which harness tool would be needed); record only, never shown to the model |
