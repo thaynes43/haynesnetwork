@@ -9,8 +9,8 @@ from . import remote_evidence as RE
 ROLES = ('offender', 'verified', 'held')
 # Registration stage-r-1 fixes the roster by ROLE (pilot plan v3.2 section 4.1, the six files: two offenders, three verified files -- the correct copy and the
 # two verified replacements -- and one held file; section 4.3: acceptance needs all six to end R and both offenders to PASS).  Only role counts: no target
-# name, id, size, series or episode value is in code.
-REGISTRATION_ROLE_COUNTS = {'stage-r-1': {'offender': 2, 'verified': 3, 'held': 1}}
+# name, id, size, series or episode value is in code.  Registration stage-r-2 (#165, the driver stage-r-driver-3) keeps the same roster.
+REGISTRATION_ROLE_COUNTS = {'stage-r-1': {'offender': 2, 'verified': 3, 'held': 1}, 'stage-r-2': {'offender': 2, 'verified': 3, 'held': 1}}
 
 
 def roster_errors(registration):

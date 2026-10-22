@@ -1,10 +1,14 @@
-# Smallest safe real-world repair pilot: plan v3.2 (for Tom's approval; nothing here has been executed)
+# Smallest safe real-world repair pilot: plan v3.3 (for Tom's approval; nothing here has been executed)
 
 - **Story:** OpenProject #160, epic #48.
 - **Prerequisite story:** #161, remote content evidence, identity binding and stop propagation (offline engineering).
 - **Author:** the development coordinator (`claude-opus-5-5`, V2 session_01Qfm9fTQbZ8Hv8FJAxJnkiR).
-- **Version:** v3.2, 2026-10-21. It revises v3.1 (`3607597e`) after Opus (revise, small) and Astra `AUDIT-ASTRA-49`
-  (revise). v3 (`724b9ff6`), v1 and v2 stay in git history.
+- **Version:** v3.3, 2026-10-22. It amends v3.2 (`36ad136c`) for OpenProject #165. v3.2 revised v3.1 (`3607597e`) after Opus (revise,
+  small) and Astra `AUDIT-ASTRA-49` (revise). v3.2, v3 (`724b9ff6`), v1 and v2 stay in git history.
+- **Change log:** v3.3 (2026-10-22, #165): the G0a pre-registration (#160) found that Bazarr's TV library is not its own mount. §4.1 steps 1–2 now
+  use a registered library root below the mount (still four `list` calls). §4.2 G0a gains the `stage-r-2` registration fields. §4.4 gains the
+  `model_tripwire`, `coordinator_lost` and binding-mismatch stops. §6 states that the A0 expiry is enforced by `--approved-at`. The driver is
+  `stage-r-driver-3` (`scripts/stage_r_driver_v2.py`). Nothing else changed.
 - **Status:** plan only. **No production read or write has been made for it.**
 
 ## 0. Why there is a prerequisite
@@ -79,8 +83,9 @@ Stage R approval request.
      - 600 s harness wall per target (`--max-wall-s`);
      - 2 h for all of Stage R.
    - **Cost cap:** $10 total (`--max-total-cost-usd`).
-5. **The Stage R driver** (`scripts/stage_r_driver.py`): one process that runs G0b, G1, G2 and the final check
-   serially, and owns every stop.
+5. **The Stage R driver:** one process that runs G0b, G1, G2 and the final check serially, and owns every stop.
+   - **Which driver:** this §3.5 describes the #161 driver (`scripts/stage_r_driver.py`, `stage-r-driver-2`). Stage R under
+     v3.3 uses `stage-r-driver-3` (`scripts/stage_r_driver_v2.py`), which adds the `stage-r-2` checks of §4.2 and §4.4.
    - **The same receipt, hostname and identity rules apply to every operation,** including the out-of-harness ones:
      `list`, `stat`, `probe` and the final `stat`.
    - **Identity bootstrap:**
@@ -126,8 +131,12 @@ Stage R approval request.
 | Held | S03E08: 33063; 1,111,015,509; `Pokémon (1997) - S03E08 - Snubbull Snobbery [WEBDL-1080p][AAC 2.0][x264]-SHIRT.mkv` | mapping note (holds S20E97; no safe source proved) |
 
 **The exact locators are resolved at G0b (§4.2).** The driver uses this procedure, registered at G0a:
-1. Read the TV library mount path from Bazarr's deployment volume mounts. That is an A0 read-only `get deploy`.
-2. `list <tv root> --prefix "Pokémon (1997)"`. This must find exactly one directory.
+1. Read the library mount path from Bazarr's deployment volume mounts. That is an A0 read-only `get deploy`. The TV root is the **registered
+   library root**: path components below that mount, registered at G0a (`discovery.library_root`, here `["Media", "TV Shows"]`, so
+   `<mount>/Media/TV Shows`). Each component is a safe name: no `/`, `..`, NUL or newline.
+2. `list <tv root> --prefix "Pokémon (1997)"`, listing the registered library root directly. The mount root and the intermediate folders are never
+   listed. The listing stays confined under the mount, and it must be complete and find exactly one directory. A missing root is a stop, as any
+   failed listing is.
 3. `list <series dir>`. Season directories are matched exactly by `^Season 0?3$` and `^Season 20$`, and each must be
    unique.
 4. `list` each season directory.
@@ -152,7 +161,16 @@ No unique match drops the target. Nothing is inferred from episode titles.
    - the six case templates, without locators, run through the leak guard;
    - the sampler sha256;
    - the predicates (§4.3), the stop rules (§4.4) and the adjudication rule (§4.3);
-   - the #159 attribution procedure for reporting.
+   - the #159 attribution procedure for reporting;
+   - **the `stage-r-2` fields** (v3.3), which the driver `stage-r-driver-3` checks:
+     - `discovery.library_root`, the library root as path components below the mount, at least one (§4.1);
+     - `model_journal`: the journal path rule (`{"env": "MRH_CALL_JOURNAL"}`), the served model, and the tripwire threshold (`chars_basis`, `divisor`,
+       `slack_tokens`: the limit is `chars / divisor + slack_tokens` input tokens per call);
+     - `binding`: the harness commit, the sampler sha256, the case-template digests, and the config-hash basis (the sha256 of the harness config with
+       its one per-target field, `limits.max_total_cost_usd`, excluded);
+     - `approval.expiry_s`, the A0 expiry (at most 8 hours, §6);
+     - the G0b manifest commit repository (`--commit-repo`) must be a separate clone, never the harness tree's own repository, and the call-journal
+       directory must exist and be writable; the driver refuses to start otherwise.
 2. **Approval A0 + A1 (§6),** bound to the G0a commit.
 3. **G0b, locators.** The four `list` calls of §4.1. Commit the resolved six-file manifest (locator, basename and its
    source, id, bytes, provenance) **before any media byte is read**. Rerun the leak guard on the filled case files.
@@ -226,7 +244,10 @@ No unique match drops the target. Nothing is inferred from episode titles.
 | WRITE-CONTROL | At the decision | Stage R stops after that case |
 | Bazarr pod UID or container `restartCount` changes, or the pod is unready | Read-only `kubectl get pod` by the coordinator before and after each target | Stage R stops |
 | A failed health read | The same check | Treated as a stop |
-| Loss of the coordinator session | Between targets | No new target starts. A target already running ends by its own deadlines |
+| Loss of the coordinator session | The driver, before each target: its parent process must still be the one that started it (`coordinator_lost`). In V2 a lost session pod kills the driver with it; the check covers an orphaned driver | No new target starts. A target already running ends by its own deadlines |
+| A served model other than the registered one, a call over the registered tripwire, or a call journal that cannot be read (`model_tripwire`) | The driver, after each G2 target, from the #159 call journal | Stage R stops. No further target starts |
+| A binding mismatch (`binding_mismatch`): the harness commit, the sampler sha256, a case-template digest or the config-hash basis differs from G0a | The driver, before any operation; and after each G2 run, where the recorded config may differ from the basis only in the remaining cost cap | Stage R stops. Before any operation, nothing has run |
+| The A0 expiry passes (`approval_expired`) | The driver, at start and before each target | The driver refuses to start, or no new target starts |
 
 - **Detection boundary:** a fault in the middle of an operation is detected at that operation's end.
 - A new attempt after any stop needs a **new G0a and new approvals**.
@@ -255,6 +276,8 @@ Unchanged from v3. It needs all of the following before any request:
 ## 6. Approvals (requested only after #161 merges and G0a is committed; single-use)
 - **A0, runtime.** `kubectl exec` into `media/bazarr -c app`, and read-only `kubectl get pod` and `get deploy` on
   `media/bazarr`, for the coordinator's V2 session, until the expiry written in G0a (at most 8 hours).
+  - **The expiry is enforced by `--approved-at`** (v3.3): the driver is started with Tom's approval time (ISO-8601 UTC). Without it the driver
+    refuses to start. It also refuses once now is past approval plus the registered expiry, and it starts no new target after that.
   - **Disclosed risk:** exec can run arbitrary code inside Bazarr, which holds the *arr API keys, and RBAC cannot limit
     it to six files.
   - **Mitigations:**
