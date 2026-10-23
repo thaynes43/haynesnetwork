@@ -1,5 +1,25 @@
 # Remote content evidence, fail-closed receipts and the Stage R driver (#161)
 
+## #160 bounded input-quota remedy
+
+`mrh-sampler-3` and `remote_evidence_quota.py` are a separate, source-only
+opt-in path for a single operation whose caller has independently selected an
+input quota. They do not alter `mrh-sampler-2`, `remote_evidence.py`, existing
+tools behaviours, registered contracts, or historical receipts. Omitting the
+new selection keeps the new sampler at the legacy 8 MiB limit; the only larger
+selection is the explicit 16 MiB value. Other values, including values above
+16 MiB and non-integers, are refused before the sampler opens a source.
+
+The v3 receipt records `input_quota_bytes`. Its validator is given the
+trusted expected quota by its caller, validates that expectation before
+invoking the sampler, and then requires the receipt to equal it. A receipt
+cannot authorize its own larger quota. The range server retains one shared
+aggregate counter across every range, reread, and concurrent handler, and
+counts each descriptor read before writing to the socket. All existing source
+confinement, one-open identity checks, time reserve, decoder, and output
+limits are retained. This is implementation and synthetic-test support only:
+it neither accesses media nor authorizes collection.
+
 - **Story:** OpenProject #161 (epic #48), the prerequisite of the pilot plan (#160).
 - **Specification:** `docs/pilot-plan-v3.md` (v3.2) section 3, items 1 to 6, and sections 4.1 to 4.4 for how the driver is used.
 - **Status:** offline engineering only. No model call, no cluster access, no production read was made for it. Every test uses fake runners or the real
