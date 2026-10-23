@@ -39,9 +39,10 @@ class SamplerQuota(unittest.TestCase):
         lines = [line for line in done.stderr.decode().splitlines() if line.strip()]
         return done, json.loads(lines[-1])
 
-    def operation_argv(self, path=None):
+    def operation_argv(self, path=None, mode='subtitle'):
         path = path or self.file
-        return ['kubectl', '-n', 'ns', 'exec', '-i', 'deploy/x', '-c', 'app', '--', 'python3', '-', 'subtitle', str(path), '--at', '1', '--stream', '3']
+        argv = ['kubectl', '-n', 'ns', 'exec', '-i', 'deploy/x', '-c', 'app', '--', 'python3', '-', mode, str(path)]
+        return argv if mode == 'stat' else argv + ['--at', '1', '--stream', '3']
 
     def errors(self, receipt, quota=Q.DEFAULT_INPUT_QUOTA_BYTES, path=None):
         return Q.receipt_errors(receipt, 'subtitle', receipt['stdout_bytes'], quota, **self.binding(path))
@@ -79,11 +80,32 @@ class SamplerQuota(unittest.TestCase):
         bad_bindings = ({}, {'expected_identity': dict(valid['expected_identity'], size=True),
                              'expected_hostname': socket.gethostname(), 'allowed_root': str(self.root)},
                         {'expected_identity': valid['expected_identity'], 'expected_hostname': 'bad host!', 'allowed_root': str(self.root)},
-                        {'expected_identity': valid['expected_identity'], 'expected_hostname': socket.gethostname(), 'allowed_root': 'relative'})
+                        {'expected_identity': valid['expected_identity'], 'expected_hostname': socket.gethostname(), 'allowed_root': 'relative'},
+                        {'expected_identity': valid['expected_identity'], 'expected_hostname': socket.gethostname(), 'allowed_root': str(self.root) + '\n'},
+                        {'expected_identity': valid['expected_identity'], 'expected_hostname': socket.gethostname(), 'allowed_root': str(self.root) + '\0'})
         for binding in bad_bindings:
             with self.assertRaises(Q.InputQuotaError):
                 Q.run_operation(self.pod, self.operation_argv(), 'subtitle', **binding)
         self.assertEqual(len(self.pod.calls), calls)
+
+    def test_adapter_accepts_only_a_genuine_stat_null_argv_receipt(self):
+        receipt, stdout = Q.run_operation(self.pod, self.operation_argv(mode='stat'), 'stat', **self.binding())
+        self.assertIsNone(receipt['argv'])
+        self.assertTrue(stdout)
+        self.assertEqual(Q.receipt_errors(receipt, 'stat', len(stdout), **self.binding()), [])
+        malformed = copy.deepcopy(receipt)
+        malformed['argv'] = []
+        self.assertIn('argv must be null for stat', Q.receipt_errors(malformed, 'stat', len(stdout), **self.binding()))
+
+    def test_identity_mismatch_reads_zero_and_adapter_refuses(self):
+        mismatch = dict(identity(self.file), size=identity(self.file)['size'] + 1)
+        done, receipt = self.invoke_sampler(expected=mismatch)
+        self.assertEqual(done.returncode, 0)
+        self.assertEqual(receipt['bytes_read'], 0)
+        self.assertIs(receipt['identity']['start_ok'], False)
+        with self.assertRaisesRegex(Q.SamplerOperationError, 'terminal exit_code must be 0'):
+            Q.run_operation(self.pod, self.operation_argv(), 'subtitle', expected_identity=mismatch,
+                            expected_hostname=socket.gethostname(), allowed_root=str(self.root))
 
     def test_receipt_rejects_forgery_identity_terminal_and_malformed_forms(self):
         _done, receipt = self.invoke_sampler()
@@ -115,33 +137,74 @@ class SamplerQuota(unittest.TestCase):
         self.assertTrue(self.errors(missing))
         self.assertTrue(Q.receipt_errors('not-a-receipt', 'subtitle', 0, **self.binding()))
 
-    def test_runner_refuses_failure_and_non_json_terminal_receipts(self):
-        _done, receipt = self.invoke_sampler()
-        for mutation in (lambda r: r.update(exit_code='timeout', timed_out=True), lambda r: r.update(exit_code=1), lambda r: r.update(error='broken'),
-                         lambda r: r['identity'].update(start_ok=False), lambda r: r.update(confined=False)):
+    def test_runner_refuses_failure_with_a_real_receipt_line_and_stdout(self):
+        done, receipt = self.invoke_sampler()
+
+        def runner(changed):
+            def invoke(*_args, **_kwargs):
+                return subprocess.CompletedProcess([], 0, done.stdout, b'ffmpeg noise\n' + json.dumps(changed).encode() + b'\n')
+            return invoke
+
+        accepted, stdout = Q.run_operation(runner(receipt), self.operation_argv(), 'subtitle', **self.binding())
+        self.assertEqual((accepted, stdout), (receipt, done.stdout))
+        mutations = (
+            (lambda r: r.update(exit_code='timeout', timed_out=True), 'terminal exit_code must be 0'),
+            (lambda r: r.update(exit_code=1), 'terminal exit_code must be 0'),
+            (lambda r: r.update(error='broken'), 'successful terminal receipt must not carry an error'),
+            (lambda r: r['identity'].update(start_ok=False), 'identity.start_ok must be true'),
+            (lambda r: r.update(confined=False), 'confined must be true'),
+        )
+        for mutation, message in mutations:
             changed = copy.deepcopy(receipt)
             mutation(changed)
-            def runner(*_args, changed=changed, **_kwargs):
-                return subprocess.CompletedProcess([], 0, b'', (json.dumps(changed) + '\\n').encode())
-            with self.assertRaises(Q.SamplerOperationError):
-                Q.run_operation(runner, self.operation_argv(), 'subtitle', **self.binding())
+            with self.assertRaisesRegex(Q.SamplerOperationError, message):
+                Q.run_operation(runner(changed), self.operation_argv(), 'subtitle', **self.binding())
         def non_json(*_args, **_kwargs):
-            return subprocess.CompletedProcess([], 0, b'', b'not json\\n')
+            return subprocess.CompletedProcess([], 0, done.stdout, b'not json\n')
         with self.assertRaises(Q.SamplerOperationError):
             Q.run_operation(non_json, self.operation_argv(), 'subtitle', **self.binding())
+
+    def test_adapter_invalid_quota_refuses_before_runner(self):
+        calls = []
+
+        def runner(*_args, **_kwargs):
+            calls.append(True)
+            raise AssertionError('the runner must not be called')
+
+        for quota in (Q.MAX_INPUT_QUOTA_BYTES + 1, True, float(Q.DEFAULT_INPUT_QUOTA_BYTES), 12 * 1024 * 1024):
+            with self.assertRaises(Q.InputQuotaError):
+                Q.run_operation(runner, self.operation_argv(), 'subtitle', quota, **self.binding())
+        self.assertEqual(calls, [])
+
+    def test_identity_integer_bounds_are_exact(self):
+        _done, receipt = self.invoke_sampler()
+        boundary = {'size': Q.I64 - 1, 'mtime_ns': -Q.I64, 'dev': 2 * Q.I64 - 1, 'ino': 2 * Q.I64 - 1}
+        bounded = copy.deepcopy(receipt)
+        for name in ('expected', 'start', 'end'):
+            bounded['identity'][name] = boundary
+        self.assertEqual(Q.receipt_errors(bounded, 'subtitle', bounded['stdout_bytes'], expected_identity=boundary,
+                                          expected_hostname=socket.gethostname(), allowed_root=str(self.root)), [])
+        for field, value in (('size', Q.I64), ('mtime_ns', Q.I64), ('dev', 2 * Q.I64), ('ino', 2 * Q.I64)):
+            invalid = copy.deepcopy(bounded)
+            for name in ('expected', 'start', 'end'):
+                invalid['identity'][name] = dict(boundary, **{field: value})
+            expected = dict(boundary, **{field: value})
+            self.assertTrue(Q.receipt_errors(invalid, 'subtitle', invalid['stdout_bytes'], expected_identity=expected,
+                                             expected_hostname=socket.gethostname(), allowed_root=str(self.root)), field)
 
     def test_shared_aggregate_cap_covers_default_repeated_and_opted_overlapping_ranges(self):
         big = H.media_file(self.root / 'show' / 'large.mkv', size=Q.MAX_INPUT_QUOTA_BYTES + 4096)
         repeated = '''#!%s
 import sys, urllib.request
 url = sys.argv[sys.argv.index('-i') + 1]
-for _ in range(2):
-    urllib.request.urlopen(urllib.request.Request(url, headers={'Range': 'bytes=0-1048575'}), timeout=10).read()
+for _ in range(10):
+    try: urllib.request.urlopen(urllib.request.Request(url, headers={'Range': 'bytes=0-1048575'}), timeout=10).read()
+    except Exception: pass
 ''' % sys.executable
         (self.pod.bin / 'ffmpeg').write_text(repeated)
         (self.pod.bin / 'ffmpeg').chmod(0o755)
         _done, default = self.invoke_sampler(path=big)
-        self.assertEqual((default['bytes_read'], default['quota_exhausted']), (2 * 1024 * 1024, False))
+        self.assertEqual((default['bytes_read'], default['quota_exhausted']), (Q.DEFAULT_INPUT_QUOTA_BYTES, True))
         self.assertGreaterEqual(default['requests'], 2)
         overlapping = '''#!%s
 import sys, threading, urllib.request

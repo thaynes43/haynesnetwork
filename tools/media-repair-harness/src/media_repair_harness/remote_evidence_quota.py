@@ -51,8 +51,8 @@ def _num_in(value, lower, upper):
 def _identity_errors(value, name, expected=None):
     if not isinstance(value, dict) or set(value) != set(IDENTITY_FIELDS):
         return ['identity.%s must be exactly {%s}' % (name, ', '.join(IDENTITY_FIELDS))]
-    if not (_int_in(value['size'], 0, I64) and _int_in(value['mtime_ns'], -I64, I64)
-            and _int_in(value['dev'], 0, 2 * I64) and _int_in(value['ino'], 0, 2 * I64)):
+    if not (_int_in(value['size'], 0, I64 - 1) and _int_in(value['mtime_ns'], -I64, I64 - 1)
+            and _int_in(value['dev'], 0, 2 * I64 - 1) and _int_in(value['ino'], 0, 2 * I64 - 1)):
         return ['identity.%s values must be exact integers in range' % name]
     if expected is not None and value != expected:
         return ['identity.%s does not equal the trusted expected identity' % name]
@@ -74,7 +74,7 @@ def _binding_errors(mode, expected_identity, expected_hostname, allowed_root):
     if not (isinstance(expected_hostname, str) and _HOST_RX.fullmatch(expected_hostname)):
         errors.append('expected hostname is missing or malformed')
     if not (isinstance(allowed_root, str) and allowed_root.startswith('/') and allowed_root == os.path.normpath(allowed_root)
-            and '\\0' not in allowed_root and '\\n' not in allowed_root):
+            and '\0' not in allowed_root and '\n' not in allowed_root):
         errors.append('allowed root is missing or not an absolute normalised path')
     return errors
 
@@ -134,7 +134,10 @@ def receipt_errors(receipt, mode, stdout_len, expected_quota_bytes=DEFAULT_INPUT
         errors.append('timed_out must be false for a completed bounded collection')
     if not _num_in(receipt['wall_seconds'], 0, SAMPLER_WALL_MAX):
         errors.append('wall_seconds is malformed or out of range')
-    if not (isinstance(receipt['argv'], list) and all(isinstance(item, str) for item in receipt['argv'])):
+    if mode == 'stat':
+        if receipt['argv'] is not None:
+            errors.append('argv must be null for stat')
+    elif not (isinstance(receipt['argv'], list) and all(isinstance(item, str) for item in receipt['argv'])):
         errors.append('argv is malformed')
     if receipt['confined'] is not True:
         errors.append('confined must be true under the trusted allowed root')
