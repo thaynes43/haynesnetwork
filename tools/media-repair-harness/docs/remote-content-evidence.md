@@ -5,6 +5,32 @@
 - **Status:** offline engineering only. No model call, no cluster access, no production read was made for it. Every test uses fake runners or the real
   sampler run locally on synthetic files.
 
+## #160 bounded input-quota remedy
+
+`mrh-sampler-3` and `remote_evidence_quota.py` are a separate, source-only
+opt-in path for a single operation whose caller has independently selected an
+input quota. They do not alter `mrh-sampler-2`, `remote_evidence.py`, existing
+tools behaviours, registered contracts, or historical receipts. Omitting the
+new selection keeps the new sampler at the legacy 8 MiB limit; the only larger
+selection is the explicit 16 MiB value. Other values, including values above
+16 MiB and non-integers, are refused before the sampler opens a source.
+
+Before invocation the v3 adapter requires the trusted file identity, expected
+hostname, allowed root, file mode, and quota. It appends the identity/root and
+quota arguments itself; a caller-provided quota flag (including `=` and
+abbreviated forms) or option terminator is refused. Its terminal validation is
+complete for this v3 path: every required field and type, finite/ranged numeric
+value, expected host and all three identities must match; both identity verdicts,
+same-file, source-unchanged and confinement must be true; and only exit 0 with
+no error, timeout, or quota exhaustion is accepted. A failed sampler's wrapper
+may exit 0, so its receipt status is mandatory evidence, not a compatibility
+input for the old fixed-8-MiB validator. The range server retains one shared
+aggregate counter across every range, reread, and concurrent handler, and
+counts each descriptor read before writing to the socket. All existing source
+confinement, one-open identity checks, time reserve, decoder, and output limits
+are retained. This is implementation and synthetic-test support only: it
+neither accesses media nor authorizes collection.
+
 ## 1. Versions added (all opt-in; no default changes)
 
 | Version | Where | Selected by |
