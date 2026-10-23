@@ -1,5 +1,17 @@
 # Harness changelog
 
+## #160 P2: mrh-sampler-3 receipt correction (offline)
+
+The standalone opt-in quota adapter now owns a complete fail-closed v3 receipt
+contract: trusted identity/host/root/mode/quota are required before invocation;
+only a successful, bound, confined and unchanged terminal receipt is accepted.
+It rejects failed terminal states, malformed fields, quota exhaustion, caller
+quota flags and option terminators. `mrh-sampler-3` disables argparse
+abbreviation and rejects `--`. Focused synthetic tests cover 8/16 MiB success,
+forged quotas, malformed/failure receipts, binding preflight and aggregate
+ranges. No existing sampler, legacy validator, historical result, media source,
+model, cluster or production route is touched.
+
 ## W30 (OpenProject #165): the Stage R driver v2 and pilot plan v3.3, offline
 
 `HARNESS_VERSION` stays `dev-c8`. **No model call, no cluster access.** A new opt-in driver closes the five gaps the G0a pre-registration of Stage R

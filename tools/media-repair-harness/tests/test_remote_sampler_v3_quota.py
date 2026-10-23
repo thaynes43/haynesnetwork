@@ -1,6 +1,8 @@
-"""#160: synthetic-only quota contract tests for the separate mrh-sampler-3 path."""
+"""#160: synthetic-only tests for the separate, trusted mrh-sampler-3 path."""
+import copy
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -22,6 +24,9 @@ class SamplerQuota(unittest.TestCase):
         self.file = H.media_file(self.root / 'show' / 'item.mkv')
         self.pod = H.LocalPod()
 
+    def binding(self, path=None):
+        return {'expected_identity': identity(path or self.file), 'expected_hostname': socket.gethostname(), 'allowed_root': str(self.root)}
+
     def invoke_sampler(self, path=None, options=(), pod=None, expected=None):
         path, pod = path or self.file, pod or self.pod
         want = identity(path) if expected is None else expected
@@ -36,67 +41,123 @@ class SamplerQuota(unittest.TestCase):
 
     def operation_argv(self, path=None):
         path = path or self.file
-        want = identity(path)
-        return (['kubectl', '-n', 'ns', 'exec', '-i', 'deploy/x', '-c', 'app', '--', 'python3', '-', 'subtitle', str(path), '--at', '1', '--stream', '3',
-                 '--root', str(self.root)] +
-                [str(v) for key in ('size', 'mtime_ns', 'dev', 'ino') for v in ('--expect-' + key.replace('_', '-'), want[key])])
+        return ['kubectl', '-n', 'ns', 'exec', '-i', 'deploy/x', '-c', 'app', '--', 'python3', '-', 'subtitle', str(path), '--at', '1', '--stream', '3']
 
-    def test_default_is_8m_and_explicit_16m_is_recorded_and_trusted(self):
-        _done, legacy = self.invoke_sampler()
-        self.assertEqual(legacy['input_quota_bytes'], Q.DEFAULT_INPUT_QUOTA_BYTES)
-        self.assertEqual(Q.receipt_errors(legacy, 'subtitle', legacy['stdout_bytes']), [])
-        _done, opted = self.invoke_sampler(options=Q.sampler_options(Q.MAX_INPUT_QUOTA_BYTES))
+    def errors(self, receipt, quota=Q.DEFAULT_INPUT_QUOTA_BYTES, path=None):
+        return Q.receipt_errors(receipt, 'subtitle', receipt['stdout_bytes'], quota, **self.binding(path))
+
+    def test_valid_default_and_opt_in_16m_are_fully_bound(self):
+        _done, default = self.invoke_sampler()
+        self.assertEqual(default['input_quota_bytes'], Q.DEFAULT_INPUT_QUOTA_BYTES)
+        self.assertEqual(self.errors(default), [])
+        _done, opted = self.invoke_sampler(options=('--input-quota-bytes', Q.MAX_INPUT_QUOTA_BYTES))
         self.assertEqual(opted['input_quota_bytes'], Q.MAX_INPUT_QUOTA_BYTES)
-        self.assertEqual(Q.receipt_errors(opted, 'subtitle', opted['stdout_bytes'], Q.MAX_INPUT_QUOTA_BYTES), [])
-        self.assertTrue(Q.receipt_errors(opted, 'subtitle', opted['stdout_bytes'], Q.DEFAULT_INPUT_QUOTA_BYTES))
-        receipt, _out = Q.run_operation(self.pod, self.operation_argv(), 'subtitle', Q.MAX_INPUT_QUOTA_BYTES)
+        self.assertEqual(self.errors(opted, Q.MAX_INPUT_QUOTA_BYTES), [])
+        self.assertTrue(self.errors(opted))
+        receipt, _out = Q.run_operation(self.pod, self.operation_argv(), 'subtitle', Q.MAX_INPUT_QUOTA_BYTES, **self.binding())
         self.assertEqual(receipt['input_quota_bytes'], Q.MAX_INPUT_QUOTA_BYTES)
 
-    def test_invalid_quota_values_refuse_before_the_source_is_read(self):
+    def test_invalid_quota_and_parser_forms_refuse_before_source_open_or_runner(self):
         for value in ('not-an-int', 0, Q.MAX_INPUT_QUOTA_BYTES + 1, 12 * 1024 * 1024):
             _done, receipt = self.invoke_sampler(options=('--input-quota-bytes', value))
             self.assertEqual((receipt['exit_code'], receipt['bytes_read']), ('error', 0), value)
-            self.assertTrue(receipt['error'].startswith('bad arguments:'), value)
-        for value in (None, True, 12 * 1024 * 1024):
-            with self.assertRaises(Q.InputQuotaError):
-                Q.expected_input_quota_bytes(value)
+            self.assertIsNone(receipt['identity']['start'], value)
+            self.assertIsNone(receipt['confined'], value)
+        for options in (('--input', Q.DEFAULT_INPUT_QUOTA_BYTES), ('--', '--input-quota-bytes', Q.DEFAULT_INPUT_QUOTA_BYTES)):
+            _done, receipt = self.invoke_sampler(options=options)
+            self.assertEqual((receipt['exit_code'], receipt['bytes_read']), ('error', 0), options)
         calls = len(self.pod.calls)
-        with self.assertRaises(Q.InputQuotaError):
-            Q.run_operation(self.pod, self.operation_argv(), 'subtitle', 12 * 1024 * 1024)
-        self.assertEqual(len(self.pod.calls), calls)       # caller configuration is refused before any exec/source read
+        for argv in (self.operation_argv() + ['--input-quota-bytes'], self.operation_argv() + ['--input-quota-bytes=8388608'],
+                     self.operation_argv() + ['--input'], self.operation_argv() + ['--']):
+            with self.assertRaises(Q.InputQuotaError):
+                Q.run_operation(self.pod, argv, 'subtitle', **self.binding())
+        self.assertEqual(len(self.pod.calls), calls)
 
-    def test_start_identity_mismatch_reads_no_bytes(self):
-        wrong = dict(identity(self.file), size=self.file.stat().st_size + 1)
-        _done, receipt = self.invoke_sampler(expected=wrong)
-        self.assertEqual((receipt['identity']['start_ok'], receipt['bytes_read']), (False, 0))
+    def test_missing_or_invalid_binding_refuses_before_runner(self):
+        calls = len(self.pod.calls)
+        valid = self.binding()
+        bad_bindings = ({}, {'expected_identity': dict(valid['expected_identity'], size=True),
+                             'expected_hostname': socket.gethostname(), 'allowed_root': str(self.root)},
+                        {'expected_identity': valid['expected_identity'], 'expected_hostname': 'bad host!', 'allowed_root': str(self.root)},
+                        {'expected_identity': valid['expected_identity'], 'expected_hostname': socket.gethostname(), 'allowed_root': 'relative'})
+        for binding in bad_bindings:
+            with self.assertRaises(Q.InputQuotaError):
+                Q.run_operation(self.pod, self.operation_argv(), 'subtitle', **binding)
+        self.assertEqual(len(self.pod.calls), calls)
 
-    def test_shared_aggregate_cap_covers_overlapping_concurrent_ranges(self):
-        """Concurrent HTTP requests share one counter; neither request gets its own cap."""
+    def test_receipt_rejects_forgery_identity_terminal_and_malformed_forms(self):
+        _done, receipt = self.invoke_sampler()
+        forged = copy.deepcopy(receipt)
+        forged['input_quota_bytes'] = Q.MAX_INPUT_QUOTA_BYTES
+        self.assertTrue(self.errors(forged))
+        oversized = copy.deepcopy(receipt)
+        oversized['bytes_read'] = Q.DEFAULT_INPUT_QUOTA_BYTES + 1
+        self.assertTrue(self.errors(oversized))
+        mutations = (
+            ('receipt', 'mrh-sampler-2'), ('mode', 'frame'), ('hostname', 'other-host'), ('exit_code', 'error'), ('exit_code', 1), ('error', 'failed'),
+            ('timed_out', True), ('quota_exhausted', True), ('source_unchanged', False), ('confined', False),
+            ('wall_seconds', float('inf')), ('bytes_read', True), ('requests', True), ('stdout_bytes', True), ('argv', ['ok', 1]),
+        )
+        for key, value in mutations:
+            changed = copy.deepcopy(receipt)
+            changed[key] = value
+            self.assertTrue(self.errors(changed), key)
+        for key in ('start_ok', 'end_ok', 'same_file'):
+            changed = copy.deepcopy(receipt)
+            changed['identity'][key] = False
+            self.assertTrue(self.errors(changed), key)
+        for key in ('expected', 'start', 'end'):
+            changed = copy.deepcopy(receipt)
+            changed['identity'][key] = dict(changed['identity'][key], size=changed['identity'][key]['size'] + 1)
+            self.assertTrue(self.errors(changed), key)
+        missing = copy.deepcopy(receipt)
+        del missing['identity']
+        self.assertTrue(self.errors(missing))
+        self.assertTrue(Q.receipt_errors('not-a-receipt', 'subtitle', 0, **self.binding()))
+
+    def test_runner_refuses_failure_and_non_json_terminal_receipts(self):
+        _done, receipt = self.invoke_sampler()
+        for mutation in (lambda r: r.update(exit_code='timeout', timed_out=True), lambda r: r.update(exit_code=1), lambda r: r.update(error='broken'),
+                         lambda r: r['identity'].update(start_ok=False), lambda r: r.update(confined=False)):
+            changed = copy.deepcopy(receipt)
+            mutation(changed)
+            def runner(*_args, changed=changed, **_kwargs):
+                return subprocess.CompletedProcess([], 0, b'', (json.dumps(changed) + '\\n').encode())
+            with self.assertRaises(Q.SamplerOperationError):
+                Q.run_operation(runner, self.operation_argv(), 'subtitle', **self.binding())
+        def non_json(*_args, **_kwargs):
+            return subprocess.CompletedProcess([], 0, b'', b'not json\\n')
+        with self.assertRaises(Q.SamplerOperationError):
+            Q.run_operation(non_json, self.operation_argv(), 'subtitle', **self.binding())
+
+    def test_shared_aggregate_cap_covers_default_repeated_and_opted_overlapping_ranges(self):
         big = H.media_file(self.root / 'show' / 'large.mkv', size=Q.MAX_INPUT_QUOTA_BYTES + 4096)
-        program = '''#!%s
+        repeated = '''#!%s
+import sys, urllib.request
+url = sys.argv[sys.argv.index('-i') + 1]
+for _ in range(2):
+    urllib.request.urlopen(urllib.request.Request(url, headers={'Range': 'bytes=0-1048575'}), timeout=10).read()
+''' % sys.executable
+        (self.pod.bin / 'ffmpeg').write_text(repeated)
+        (self.pod.bin / 'ffmpeg').chmod(0o755)
+        _done, default = self.invoke_sampler(path=big)
+        self.assertEqual((default['bytes_read'], default['quota_exhausted']), (2 * 1024 * 1024, False))
+        self.assertGreaterEqual(default['requests'], 2)
+        overlapping = '''#!%s
 import sys, threading, urllib.request
 url = sys.argv[sys.argv.index('-i') + 1]
 def read(r):
-    try:
-        urllib.request.urlopen(urllib.request.Request(url, headers={'Range': r}), timeout=10).read()
-    except Exception:
-        pass
+    try: urllib.request.urlopen(urllib.request.Request(url, headers={'Range': r}), timeout=10).read()
+    except Exception: pass
 threads = [threading.Thread(target=read, args=(r,)) for r in ('bytes=0-12582911', 'bytes=4194304-16777215')]
 [t.start() for t in threads]
 [t.join() for t in threads]
 ''' % sys.executable
-        (self.pod.bin / 'ffmpeg').write_text(program)
-        (self.pod.bin / 'ffmpeg').chmod(0o755)
-        _done, receipt = self.invoke_sampler(path=big, options=Q.sampler_options(Q.MAX_INPUT_QUOTA_BYTES))
-        self.assertEqual((receipt['bytes_read'], receipt['input_quota_bytes'], receipt['quota_exhausted']),
+        (self.pod.bin / 'ffmpeg').write_text(overlapping)
+        _done, opted = self.invoke_sampler(path=big, options=('--input-quota-bytes', Q.MAX_INPUT_QUOTA_BYTES))
+        self.assertEqual((opted['bytes_read'], opted['input_quota_bytes'], opted['quota_exhausted']),
                          (Q.MAX_INPUT_QUOTA_BYTES, Q.MAX_INPUT_QUOTA_BYTES, True))
-        self.assertGreaterEqual(receipt['requests'], 2)
-
-    def test_forged_receipt_cannot_authorize_a_larger_budget(self):
-        _done, receipt = self.invoke_sampler(options=Q.sampler_options(Q.MAX_INPUT_QUOTA_BYTES))
-        self.assertEqual(Q.receipt_errors(receipt, 'subtitle', receipt['stdout_bytes'], Q.MAX_INPUT_QUOTA_BYTES), [])
-        receipt['input_quota_bytes'] = Q.MAX_INPUT_QUOTA_BYTES
-        self.assertIn('trusted expected quota', Q.receipt_errors(receipt, 'subtitle', receipt['stdout_bytes'], Q.DEFAULT_INPUT_QUOTA_BYTES)[0])
+        self.assertGreaterEqual(opted['requests'], 2)
 
 
 if __name__ == '__main__':

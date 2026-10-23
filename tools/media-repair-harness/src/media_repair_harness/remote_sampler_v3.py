@@ -137,7 +137,7 @@ class Parser(argparse.ArgumentParser):
         finish()
 
 
-p = Parser()
+p = Parser(allow_abbrev=False)
 p.add_argument('mode', choices=['stat', 'list', 'probe', 'chapters', 'decode', 'frame', 'audio', 'subtitle'])
 p.add_argument('path')
 p.add_argument('--at', type=float, default=0)
@@ -152,6 +152,9 @@ p.add_argument('--root')
 p.add_argument('--input-quota-bytes', type=int, default=DEFAULT_QUOTA)
 if len(sys.argv) > 1 and sys.argv[1] in ('stat', 'list', 'probe', 'chapters', 'decode', 'frame', 'audio', 'subtitle'):
     receipt['mode'] = sys.argv[1]
+if '--' in sys.argv[1:]:
+    receipt['error'] = 'bad arguments: option terminator is not supported'
+    finish()
 a = p.parse_args()
 receipt['mode'] = a.mode
 receipt['input_quota_bytes'] = a.input_quota_bytes
