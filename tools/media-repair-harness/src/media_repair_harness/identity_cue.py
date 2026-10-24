@@ -148,4 +148,24 @@ def title_relation(left, right):
         return 'same', left_steps, right_steps
     if left_key == right_key:
         return 'ambiguous', left_steps, right_steps
+    left_alnum, left_dropped = _alphanumeric_key(left_key)
+    right_alnum, right_dropped = _alphanumeric_key(right_key)
+    if left_dropped:
+        left_steps = list(left_steps) + ['drop-non-alphanumeric']
+    if right_dropped:
+        right_steps = list(right_steps) + ['drop-non-alphanumeric']
+    if left_alnum and left_alnum == right_alnum:
+        return 'ambiguous', left_steps, right_steps
     return 'different', left_steps, right_steps
+
+
+def _alphanumeric_key(text):
+    """Letters and digits only. A match is ambiguous, not proof of the same title."""
+    kept = []
+    dropped = False
+    for char in text:
+        if char.isalnum():
+            kept.append(char)
+        else:
+            dropped = True
+    return ''.join(kept), dropped

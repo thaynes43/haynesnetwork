@@ -11,8 +11,9 @@ PAGE_H = 792
 MARGIN = 48
 FONT = 10
 LEADING = 14
-# Helvetica's widest capitals are about one em. Wrapping at 1 em cannot cross the content box.
-EM = FONT
+# Helvetica '@' is 1.015 em in the standard AFM. 1.02 em is the worst cp1252 advance used for wrapping.
+GLYPH_EM = 1.02
+EM = FONT * GLYPH_EM
 PDF_NOTE = (
     'PDF encoding: WinAnsiEncoding (cp1252). Characters outside that set are written as '
     '<U+XXXX>. This is not the character itself. The HTML and the markdown keep the exact UTF-8 text.'
@@ -20,13 +21,19 @@ PDF_NOTE = (
 
 
 def png_header(data):
-    """IHDR fields for a PNG with a positive size. invalid or None otherwise."""
-    if not isinstance(data, (bytes, bytearray)) or not data.startswith(PNG_SIG) or len(data) < 24:
+    """IHDR fields for a PNG with a positive size. invalid, truncated, or None otherwise."""
+    if not isinstance(data, (bytes, bytearray)) or not data.startswith(PNG_SIG):
         return None
-    length = struct.unpack('>I', data[8:12])[0]
-    if data[12:16] != b'IHDR' or length != 13:
-        return None
-    width, height, bit, color, comp, filt, inter = struct.unpack('>IIBBBBB', data[16:29])
+    # Signature (8) + length (4) + 'IHDR' (4) + 13 data bytes. Shorter input is not unpacked.
+    if len(data) < 29:
+        return 'truncated'
+    try:
+        length = struct.unpack('>I', data[8:12])[0]
+        if data[12:16] != b'IHDR' or length != 13:
+            return None
+        width, height, bit, color, comp, filt, inter = struct.unpack('>IIBBBBB', data[16:29])
+    except struct.error:
+        return 'truncated'
     if width < 1 or height < 1:
         return 'invalid'
     return {
@@ -224,7 +231,7 @@ def _markdown_comparisons(findings):
             lines.append('- Probe: %s' % _md_escape(evidence.get('probe')))
             lines.append('- Receipt: %s' % _md_escape(evidence.get('receipt')))
         for cue in cues:
-            lines.append('- Additional cue %s: %s' % (_md_escape(cue.get('artifactId')), _md_escape(cue.get('text'))))
+            lines.append('- Cue %s: %s' % (_md_escape(cue.get('artifactId')), _md_escape(cue.get('text'))))
         for pair in pairs:
             lines.append('- Pair %s catalog %s versus cue %s (%s)' % (
                 _md_escape(pair.get('catalogAlias')),
@@ -409,13 +416,17 @@ def _html_front(findings):
     parts.append('<h2>Compared titles</h2><ul>')
     for item in findings.get('items') or []:
         claim = item.get('catalogClaim') or {}
-        parts.append('<li>%s file %s label %s episode %s season %s agreement %s</li>' % (
+        echo = item.get('catalog') if isinstance(item.get('catalog'), dict) else {}
+        reasons = item.get('catalogReasons') or []
+        parts.append('<li>%s file %s label %s episode %s season %s agreement %s path %s reasons %s</li>' % (
             html.escape(str(item.get('alias')), quote=True),
             html.escape(str(item.get('fileId')), quote=True),
             html.escape(str(claim.get('title')), quote=True),
             html.escape(str(claim.get('episodeCode')), quote=True),
             html.escape(str(claim.get('seasonNumber')), quote=True),
             html.escape(str(item.get('catalogAgreement')), quote=True),
+            html.escape(str(echo.get('relativePath')), quote=True),
+            html.escape('; '.join(str(reason) for reason in reasons) or 'none', quote=True),
         ))
     if not findings.get('items'):
         parts.append('<li>No catalog labels were available.</li>')
@@ -431,17 +442,22 @@ def _html_front(findings):
             html.escape(str(evidence.get('titleRelation') or evidence.get('ownCatalogRelation')), quote=True),
         ))
         if evidence.get('text'):
-            parts.append('<p>Cue %s from %s to %s. Probe %s. Receipt %s.</p>' % (
+            transforms = evidence.get('transformations') or {}
+            parts.append('<p>Cue on item %s: %s from %s to %s. Probe %s. Receipt %s. Catalog fold %s. Cue fold %s.</p>' % (
+                html.escape(str((claim.get('subjects') or [{}])[0].get('itemId')), quote=True),
                 html.escape(str(evidence.get('text')), quote=True),
                 html.escape(str(evidence.get('start')), quote=True),
                 html.escape(str(evidence.get('end')), quote=True),
                 html.escape(str(evidence.get('probe')), quote=True),
                 html.escape(str(evidence.get('receipt')), quote=True),
+                html.escape(', '.join(transforms.get('catalog') or []) or 'none', quote=True),
+                html.escape(', '.join(transforms.get('cue') or []) or 'none', quote=True),
             ))
         for pair in evidence.get('pairs') or []:
-            parts.append('<p>%s catalog “%s” versus cue “%s” (%s). Catalog fold %s. Cue fold %s. File %s.</p>' % (
+            parts.append('<p>%s catalog “%s” versus cue item %s “%s” (%s). Catalog fold %s. Cue fold %s. File %s.</p>' % (
                 html.escape(str(pair.get('catalogAlias')), quote=True),
                 html.escape(str(pair.get('catalogTitle')), quote=True),
+                html.escape(str(pair.get('cueItemId')), quote=True),
                 html.escape(str(pair.get('cueText')), quote=True),
                 html.escape(str(pair.get('titleRelation')), quote=True),
                 html.escape(', '.join(pair.get('catalogTransformations') or []) or 'none', quote=True),
@@ -458,6 +474,26 @@ def _html_front(findings):
             html.escape(str(human.get('quote') or 'not recorded'), quote=True),
             html.escape(str(human.get('citation') or 'not recorded'), quote=True),
         ))
+        for pin in human.get('pinCheck') or []:
+            parts.append('<li>Pin %s reviewed %s manifest %s match %s</li>' % (
+                html.escape(str(pin.get('id')), quote=True),
+                html.escape(str(pin.get('reviewed')), quote=True),
+                html.escape(str(pin.get('manifest')), quote=True),
+                _yn(pin.get('match')),
+            ))
+    parts.append('</ul><h2>Collections</h2><ul>')
+    collections = (findings.get('resources') or {}).get('collections') or []
+    if not collections:
+        parts.append('<li>No retained collection measurements.</li>')
+    for collection in collections:
+        parts.append('<li>%s outcome %s clean EOF %s exit %s stderr %s sourceBytes null</li>' % (
+            html.escape(str(collection.get('forArtifact')), quote=True),
+            html.escape(str(collection.get('outcome')), quote=True),
+            _yn(collection.get('cleanEof')),
+            html.escape(str(collection.get('exitCode')), quote=True),
+            html.escape(str(collection.get('stderr') or 'not recorded'), quote=True),
+        ))
+    parts.append('</ul><h2>Cited notes</h2><ul>')
     for note in findings.get('citedNotes') or []:
         if isinstance(note, dict):
             parts.append('<li>Note: %s (%s)</li>' % (
@@ -520,16 +556,24 @@ def _b64(data):
     return base64.standard_b64encode(data).decode('ascii')
 
 
-def _pdf_literal(text, replaced):
+def _pdf_expanded(text, replaced):
+    """Visible WinAnsi text. Characters outside cp1252 are already <U+XXXX> before wrapping."""
     pieces = []
     for char in str(text):
         try:
-            raw = char.encode('cp1252')
+            char.encode('cp1252')
         except UnicodeEncodeError:
-            raw = ('<U+%04X>' % ord(char)).encode('ascii')
+            pieces.append('<U+%04X>' % ord(char))
             replaced.append(char)
-        pieces.append(raw.replace(b'\\', b'\\\\').replace(b'(', b'\\(').replace(b')', b'\\)'))
-    return b'(' + b''.join(pieces) + b')'
+            continue
+        pieces.append(char)
+    return ''.join(pieces)
+
+
+def _pdf_literal(text, replaced):
+    expanded = _pdf_expanded(text, replaced)
+    raw = expanded.encode('cp1252').replace(b'\\', b'\\\\').replace(b'(', b'\\(').replace(b')', b'\\)')
+    return b'(' + raw + b')'
 
 
 def _wrap(text, width_pt):
@@ -580,7 +624,7 @@ def render_pdf(markdown, images):
     xobjects = []
 
     def add_text_pages(text):
-        lines = _wrap(text, content_width)
+        lines = _wrap(_pdf_expanded(text, replaced), content_width)
         for start in range(0, max(len(lines), 1), 46):
             chunk = lines[start:start + 46]
             commands = [b'BT /F1 10 Tf %d %d Td %d TL' % (MARGIN, PAGE_H - MARGIN - FONT, LEADING)]
@@ -603,7 +647,7 @@ def render_pdf(markdown, images):
                 label = 'Rendering unavailable: not a PNG. No pixels were invented.'
             add_text_pages(caption + '\n' + label)
             return
-        caption_lines = _wrap(caption, content_width)[:4]
+        caption_lines = _wrap(_pdf_expanded(caption, replaced), content_width)[:4]
         caption_block = max(LEADING, len(caption_lines) * LEADING)
         box_h = PAGE_H - 2 * MARGIN - caption_block - LEADING
         fitted = _fit_image(info['width'], info['height'], content_width, box_h)
@@ -613,7 +657,11 @@ def render_pdf(markdown, images):
         draw_w, draw_h = fitted
         stream = info['idat']
         if b'\nendstream' in stream or stream.endswith(b'endstream'):
-            stream = zlib.compress(zlib.decompress(stream))
+            try:
+                stream = zlib.compress(zlib.decompress(stream))
+            except zlib.error:
+                add_text_pages(caption + '\nRendering unavailable: the PNG image data could not be inflated.')
+                return
         xobjects.append({'width': info['width'], 'height': info['height'], 'stream': stream})
         image_bottom = MARGIN
         commands = [

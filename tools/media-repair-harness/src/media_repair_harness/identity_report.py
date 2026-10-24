@@ -9,7 +9,9 @@ import hashlib
 import json
 import os
 import shutil
+import struct
 import sys
+import zlib
 from pathlib import Path
 
 from media_repair_harness.identity_audit import png_header, png_info, render_html, render_markdown, render_pdf
@@ -198,9 +200,8 @@ def _catalog_claim(value, where, errors):
     series = _str(value.get('seriesTitle'), where + '.seriesTitle', errors)
     season = _int(value.get('seasonNumber'), where + '.seasonNumber', errors)
     episode = value.get('episodeCode')
-    if episode is not None and (type(episode) is not str or episode == ''):
-        errors.append('%s.episodeCode must be a nonempty string when present' % where)
-        episode = None
+    if episode is not None:
+        episode = _str(episode, where + '.episodeCode', errors)
     if title is None or series is None or season is None:
         return None
     return {'seriesTitle': series, 'seasonNumber': season, 'title': title, 'episodeCode': episode}
@@ -414,9 +415,10 @@ def _dispositions(value, items, comparisons, artifacts, errors):
         if sum(parsed.values()) != 1:
             errors.append('dispositions.%s must set exactly one of confirmed, contradicted, uncertain, notReviewed' % key)
         for field in ('reviewer', 'reviewedAt', 'citation', 'quote', 'inspect'):
-            if field in raw and raw[field] is not None and type(raw[field]) is not str:
-                errors.append('dispositions.%s.%s must be a string or null' % (key, field))
-            parsed[field] = raw.get(field)
+            if field not in raw or raw[field] is None:
+                parsed[field] = raw.get(field)
+                continue
+            parsed[field] = _str(raw.get(field), 'dispositions.%s.%s' % (key, field), errors)
         pins = raw.get('reviewedArtifacts')
         parsed['reviewedArtifacts'] = {}
         if pins is not None:
@@ -514,7 +516,7 @@ def _path_label(relative):
 def _load_json(data):
     try:
         document = json.loads(data.decode('utf-8'), parse_constant=_reject_constant)
-    except (UnicodeError, json.JSONDecodeError, ValueError):
+    except (UnicodeError, json.JSONDecodeError, ValueError, RecursionError):
         return None
     if _has_surrogate(document):
         return {'__lone_surrogate__': True}
@@ -722,6 +724,7 @@ def _item_echo(item, catalog):
         'binding': dict(item['binding']),
         'catalogClaim': dict(item['catalogClaim']),
         'catalogAgreement': None if catalog is None else catalog['agreement'],
+        'catalogReasons': [] if catalog is None else list(catalog.get('reasons') or []),
         'catalog': None if catalog is None else catalog['echo'],
     }
 
@@ -1020,9 +1023,9 @@ def _frame_state(artifact, blobs, artifacts, items, contradictions):
     if blob['status'] != 'match':
         return {'usable': False, 'reason': blob['status']}
     header = png_header(blob['data'])
-    if header == 'invalid':
-        contradictions.append('frame %s has invalid image dimensions' % artifact['id'])
-        return {'usable': False, 'reason': 'invalid-dimensions'}
+    if header in ('invalid', 'truncated'):
+        contradictions.append('frame %s PNG is %s' % (artifact['id'], header))
+        return {'usable': False, 'reason': header}
     receipt = _receipt_for(artifact, artifacts)
     if receipt is None:
         return {'usable': True, 'reason': 'hash-matched, no receipt'}
@@ -1086,6 +1089,12 @@ def _collections(artifact_list, blobs, artifacts, items, frame_state, cue_state)
         row['cleanEof'] = classified['cleanEof']
         row['toolFailed'] = classified['toolFailed']
         row['note'] = classified['note']
+        row['exitCode'] = document.get('exitCode') if type(document.get('exitCode')) is int else None
+        stderr = document.get('stderr')
+        if type(stderr) is str and '\x00' not in stderr and not _has_surrogate(stderr):
+            row['stderr'] = stderr
+        else:
+            row['stderr'] = None
         row['elapsedSeconds'] = _finite(document.get('elapsedSeconds'))
         row['cpuUserSeconds'] = _finite(document.get('cpuUserSeconds'))
         row['cpuSystemSeconds'] = _finite(document.get('cpuSystemSeconds'))
@@ -1211,7 +1220,7 @@ def _title_claims(parsed, items, artifacts, cue_state, catalog_state):
         }
         rationale = state['rationale']
         if relation == 'ambiguous':
-            rationale += ' The item catalog label and the cue are punctuation-ambiguous, which is not an automatic mismatch.'
+            rationale += ' The recorded fold erases the difference between the item catalog label and the cue. That is not proof of the same title and not an automatic mismatch.'
         elif relation == 'different':
             rationale += ' The item catalog label and the cue differ after conservative normalization.'
         rationale += ' The cue is title evidence for the sampled text, not a whole-episode identification.'
@@ -1259,7 +1268,7 @@ def _disagreement_claims(parsed, items, artifacts, frame_state, cue_state, catal
             unique, applied, confirmed, frames_ok, tool_failed, catalog_state, artifacts,
         )
         cue_ids = [cue_id for cue_id, _state in applied]
-        evidence_ok = frames_ok and not tool_failed and (issue == 'candidate' or observation == 'not-observed-in-sample')
+        evidence_ok = bool(frames_ok) and not tool_failed and observation not in ('unknown', 'tool-failed')
         human = _bound_human(parsed['dispositions'], claim_id, evidence_ok, required + cue_ids, artifacts)
         claims.append(_make_claim(
             claim_id, 'catalog-title-disagreement', issue, observation, grade, 'mixed',
@@ -1341,7 +1350,7 @@ def _disagreement_decision(unique, applied, confirmed, frames_ok, tool_failed, c
         evidence['titleRelation'] = 'ambiguous' if 'ambiguous' in kinds else 'same'
         evidence['pairs'] = [_pair(*row) for row in relations]
         if evidence['titleRelation'] == 'ambiguous':
-            why = 'After recorded punctuation and spacing normalization the titles are alternate forms, not an automatic mismatch.'
+            why = 'The recorded fold erases the difference. That is not proof of the same title or episode, and it is not an automatic mismatch.'
         else:
             why = 'The catalog label and the cue text agree. No title disagreement was observed in this comparison.'
         if len({item['catalogClaim']['seasonNumber'] for item in unique}) > 1:
@@ -1355,6 +1364,7 @@ def _pair(other, relation, left_steps, right_steps, catalog, cue_catalog, state)
     return {
         'catalogAlias': other['alias'],
         'catalogFileId': other['fileId'],
+        'cueItemId': state['artifact'].get('itemId'),
         'catalogTitle': other['catalogClaim']['title'],
         'catalogTransformations': left_steps,
         'cueText': state['text'],
@@ -1494,8 +1504,8 @@ def _images(parsed, usable_ids, blobs):
         if artifact['id'] not in usable:
             continue
         header = png_header(blob['data'])
-        if header == 'invalid':
-            status = 'invalid'
+        if header in ('invalid', 'truncated'):
+            status = header
         elif isinstance(header, dict) and png_info(blob['data']) is not None:
             status = 'rgb'
         elif isinstance(header, dict):
@@ -1519,10 +1529,11 @@ def _rendered(findings, images):
     try:
         pdf = render_pdf(markdown, images)
     except (UnicodeError, ValueError, ZeroDivisionError, OSError, zlib.error, struct.error):
-        findings = dict(findings)
         errors = list(findings.get('errors') or [])
         errors.append('PDF rendering failed closed; the HTML keeps the exact text')
         findings['errors'] = errors
+        markdown = render_markdown(findings)
+        html = render_html(findings, [])
         pdf = render_pdf('PDF rendering failed closed. The HTML keeps the exact text.\n', [])
     return markdown, html, pdf
 
@@ -1539,8 +1550,8 @@ def build_offline(manifest_bytes, evidence_root, read_error=None):
         if _has_surrogate(document):
             raise ManifestError(['manifest contains a lone surrogate'])
         parsed = parse_manifest(document)
-    except (UnicodeError, json.JSONDecodeError, ValueError) as exc:
-        findings = _shell_findings(['manifest is not UTF-8 JSON (%s)' % type(exc).__name__], input_sha)
+    except (UnicodeError, json.JSONDecodeError, ValueError, RecursionError) as exc:
+        findings = _shell_findings(['manifest JSON could not be read (%s)' % type(exc).__name__], input_sha)
         markdown, html, pdf = _rendered(findings, [])
         return findings, markdown, html, pdf, None
     except ManifestError as exc:
@@ -1578,19 +1589,27 @@ def _write_private(path, payload):
 def write_run(manifest_bytes, evidence_root, out_dir, read_error=None):
     """Write a new run directory. Refuses an existing path. Returns the process exit code."""
     out = Path(out_dir)
-    if out.exists() or out.is_symlink():
-        print('refusing existing output path', file=sys.stderr)
+    try:
+        if out.exists() or out.is_symlink():
+            print('refusing existing output path', file=sys.stderr)
+            return 2
+        if not out.parent.is_dir():
+            print('output parent does not exist', file=sys.stderr)
+            return 2
+        if not os.access(out.parent, os.W_OK | os.X_OK):
+            print('refusing output path', file=sys.stderr)
+            return 2
+        temporary = out.parent / ('.%s.partial' % out.name)
+        partial_exists = temporary.exists() or temporary.is_symlink()
+    except OSError:
+        print('refusing output path', file=sys.stderr)
         return 2
-    if not out.parent.is_dir():
-        print('output parent does not exist', file=sys.stderr)
-        return 2
-    temporary = out.parent / ('.%s.partial' % out.name)
-    if temporary.exists() or temporary.is_symlink():
+    if partial_exists:
         print('refusing leftover partial output', file=sys.stderr)
         return 2
     try:
         findings, markdown, html, pdf, normalized = build_offline(manifest_bytes, evidence_root, read_error=read_error)
-    except (OSError, UnicodeError, ValueError, ZeroDivisionError) as exc:
+    except (OSError, UnicodeError, ValueError, ZeroDivisionError, zlib.error, struct.error, RecursionError) as exc:
         print('report failed closed: %s' % type(exc).__name__, file=sys.stderr)
         return 2
     names = {
@@ -1602,8 +1621,8 @@ def write_run(manifest_bytes, evidence_root, out_dir, read_error=None):
     }
     try:
         temporary.mkdir(mode=0o700)
-    except FileExistsError:
-        print('refusing leftover partial output', file=sys.stderr)
+    except OSError:
+        print('refusing output path', file=sys.stderr)
         return 2
     os.chmod(temporary, 0o700)
     try:

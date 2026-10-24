@@ -1,8 +1,12 @@
 """Synthetic tests for the offline identity findings report. No retained media and no human labels."""
 
+import contextlib
 import hashlib
+import io
 import json
+import re
 import struct
+import tempfile
 import zlib
 from pathlib import Path
 from unittest import mock
@@ -11,7 +15,9 @@ import unittest
 import argparse
 import os
 
-from media_repair_harness.identity_audit import PDF_NOTE, markdown_has_unescaped_markup, png_info, render_pdf
+from media_repair_harness.identity_audit import (
+    FONT, GLYPH_EM, MARGIN, PAGE_W, PDF_NOTE, markdown_has_unescaped_markup, png_info, render_pdf,
+)
 from media_repair_harness.identity_cue import AssError, classify_exact_style, parse_ass_dialogue, title_relation
 from media_repair_harness.identity_recipe import classify_collection_exit, plan_exact_title_cue
 from media_repair_harness.identity_report import _cli_int, build_offline, main
@@ -723,7 +729,7 @@ class Report(unittest.TestCase):
         out = Path(handle.name) / 'out-zero'
         code = main(['offline', '--manifest', str(path), '--evidence-root', str(root), '--out', str(out)])
         self.assertEqual(code, 3)
-        self.assertIn('invalid image dimensions', (out / 'audit.html').read_text(encoding='utf-8'))
+        self.assertIn('PNG is invalid', (out / 'audit.html').read_text(encoding='utf-8'))
 
         hidden = Path(handle.name) / 'hidden.json'
         hidden.write_bytes(manifest_bytes)
@@ -751,6 +757,253 @@ class Report(unittest.TestCase):
         self.assertFalse(markdown_has_unescaped_markup(markdown))
         self.assertNotIn('src="http', html)
         self.assertIn('example.invalid', html)
+
+    def test_punctuation_elision_is_ambiguous_and_not_a_strong_mismatch(self):
+        pairs = (
+            ("Jack's", 'Jacks'),
+            ('Jacks', "Jack's"),
+            ('Spider-Man Returns', 'Spiderman Returns'),
+            ('M*A*S*H Night', 'MASH Night'),
+            ('North Pier', 'NorthPier'),
+            ("Don't", 'Dont'),
+        )
+        for left, right in pairs:
+            relation, left_steps, right_steps = title_relation(left, right)
+            self.assertEqual(relation, 'ambiguous', '%s / %s' % (left, right))
+            self.assertIn('drop-non-alphanumeric', left_steps + right_steps)
+        self.assertEqual(title_relation('North Pier', 'Zzyzx Plateau')[0], 'different')
+        self.assertEqual(title_relation('Part 1', 'Part 2')[0], 'different')
+        self.assertEqual(title_relation('Law & Order', 'Law and Order')[0], 'different')
+        self.assertEqual(title_relation('Caf\u00e9', 'Cafe')[0], 'different')
+
+        manifest_bytes, root, *_rest = self._case(
+            title_a="Jack's Return", title_b="Jack's Return", cue_text='Jacks Return',
+        )
+        findings, markdown, html, *_more = run(root, manifest_bytes)
+        disagreement = claim(findings, 'catalog-title-disagreement:ab')
+        pair = disagreement['evidence']['pairs'][0]
+        self.assertEqual(pair['titleRelation'], 'ambiguous')
+        self.assertNotEqual(disagreement['evidenceGrade'], 'strong-candidate')
+        self.assertEqual(claim(findings, 'embedded-title:b')['evidence']['ownCatalogRelation'], 'ambiguous')
+        self.assertIn("Jack's Return", pair['catalogTitle'])
+        self.assertIn('Jacks Return', pair['cueText'])
+        self.assertIn('drop-non-alphanumeric', pair['catalogTransformations'] + pair['cueTransformations'])
+        self.assertIn('cue item b', html)
+        self.assertNotIn('Additional cue', markdown)
+
+        manifest_bytes, root, *_rest = self._case(title_a='Part 1', title_b='Part 2', cue_text='Part 2')
+        findings, *_more = run(root, manifest_bytes)
+        disagreement = claim(findings, 'catalog-title-disagreement:ab')
+        self.assertEqual(disagreement['evidence']['titleRelation'], 'different')
+        self.assertEqual(disagreement['evidenceGrade'], 'strong-candidate')
+        self.assertEqual(claim(findings, 'health:a')['issueLikelihood'], 'unknown')
+        self.assertEqual(claim(findings, 'full-episode:b')['issueLikelihood'], 'unknown')
+
+    def test_ambiguous_comparison_can_apply_when_pins_match(self):
+        manifest_bytes, root, _manifest, written, _handle = self._case(title_a="Jack's", title_b="Jack's", cue_text='Jacks')
+        document = json.loads(manifest_bytes)
+        document['dispositions']['catalog-title-disagreement:ab'] = dict(
+            _flags(confirmed=True),
+            reviewer='Auditor', reviewedAt='2026-01-02T03:04:05Z', citation='synthetic-message', quote='folded words',
+            reviewedArtifacts={
+                'frame-a': written['frame-a.png'][1],
+                'frame-b': written['frame-b.png'][1],
+                'cue-b': written['cue.json'][1],
+            },
+        )
+        findings, _markdown, html, *_more = run(root, json.dumps(document).encode())
+        human = claim(findings, 'catalog-title-disagreement:ab')['humanDisposition']
+        self.assertEqual(claim(findings, 'catalog-title-disagreement:ab')['issueLikelihood'], 'not-observed-in-sample')
+        self.assertTrue(human['applies'])
+        self.assertEqual(human['appliesReason'], 'pinned-evidence-matches')
+        self.assertIn('Pin frame-a', html)
+        self.assertIn('deliberate-post-cue-stop', html)
+        self.assertIn('Broken pipe', html)
+        self.assertIn('exit 255', html)
+
+    def test_catalog_reasons_and_snapshot_path_are_in_the_audit(self):
+        manifest_bytes, root, *_rest = self._case()
+        document = json.loads(manifest_bytes)
+        catalog = json.loads((root / 'catalog.json').read_text())
+        catalog['files'][0]['relativePath'] = 'Season 1/Example - S01E01 - Other.mkv'
+        blob = json.dumps(catalog).encode()
+        (root / 'catalog.json').write_bytes(blob)
+        document['catalogSnapshot']['sha256'] = hashlib.sha256(blob).hexdigest()
+        findings, _markdown, html, *_more = run(root, json.dumps(document).encode())
+        self.assertEqual(findings['execution']['exitCode'], 3)
+        self.assertIn('catalog title is not in the snapshot relative path', html)
+        self.assertIn('Season 1/Example - S01E01 - Other.mkv', html)
+
+    def test_cjk_and_wide_glyphs_stay_inside_the_pdf_content_box(self):
+        def widest(pdf):
+            width = 0
+            for literal in re.findall(rb'\((?:\\.|[^\\)])*\)', pdf):
+                inner = literal[1:-1]
+                out = bytearray()
+                index = 0
+                while index < len(inner):
+                    if inner[index:index + 1] == b'\\' and index + 1 < len(inner):
+                        out.append(inner[index + 1])
+                        index += 2
+                    else:
+                        out.append(inner[index])
+                        index += 1
+                width = max(width, len(out))
+            return width
+
+        for text in ('\u5317' * 36, '@' * 51):
+            pdf = render_pdf(text, [])
+            self.assertEqual(pdf.splitlines()[-1], b'%%EOF')
+            self.assertLessEqual(MARGIN + widest(pdf) * FONT * GLYPH_EM, PAGE_W - MARGIN)
+        self.assertIn(b'<U+5317>', render_pdf('\u5317' * 36, []))
+
+    def test_pdf_fallback_runs_when_rendering_raises(self):
+        manifest_bytes, root, *_rest = self._case()
+        real = render_pdf
+        calls = {'n': 0}
+
+        def boom(markdown, images):
+            calls['n'] += 1
+            if calls['n'] == 1:
+                raise zlib.error('bad')
+            return real(markdown, images)
+
+        with mock.patch('media_repair_harness.identity_report.render_pdf', boom):
+            findings, _markdown, html, pdf, _normalized = run(root, manifest_bytes)
+        self.assertGreaterEqual(calls['n'], 2)
+        self.assertIn(b'PDF rendering failed closed', pdf)
+        self.assertIn('PDF rendering failed closed', html)
+        self.assertIn('PDF rendering failed closed', ' '.join(findings['errors']))
+
+    def test_cli_refuses_bad_output_and_reports_unusable_content(self):
+        manifest_bytes, root, *_rest = self._case()
+        source = (root / 'frame-a.png').read_bytes()
+
+        def invoke(payload, name, evidence=None):
+            handle = tempfile.TemporaryDirectory()
+            path = Path(handle.name) / 'manifest.json'
+            path.write_bytes(payload)
+            out = Path(handle.name) / name
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = main(['offline', '--manifest', str(path), '--evidence-root', str(evidence or root), '--out', str(out)])
+            text = stderr.getvalue()
+            self.assertNotIn('Traceback', text)
+            return code, out, text, handle
+
+        def chunk(kind, data):
+            return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+
+        bad = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0))
+        bad += chunk(b'IDAT', b'\nendstream') + chunk(b'IEND', b'')
+        (root / 'frame-a.png').write_bytes(bad)
+        document = json.loads(manifest_bytes)
+        digest = hashlib.sha256(bad).hexdigest()
+        for artifact in document['artifacts']:
+            if artifact['id'] == 'frame-a':
+                artifact['sha256'] = digest
+        document['dispositions']['scene:ab']['reviewedArtifacts']['frame-a'] = digest
+        code, out, _text, handle = invoke(json.dumps(document).encode(), 'bad-zlib')
+        self.assertEqual(code, 0)
+        self.assertIn(b'not be inflated', (out / 'audit.pdf').read_bytes())
+        self.assertTrue((out / 'audit.html').is_file())
+        handle.cleanup()
+        self.assertEqual((root / 'frame-a.png').read_bytes(), bad)
+
+        for length, label in ((24, 'png24'), (28, 'png28')):
+            short = b'\x89PNG\r\n\x1a\n' + b'\x00' * (length - 8)
+            (root / 'frame-a.png').write_bytes(short)
+            document = json.loads(manifest_bytes)
+            digest = hashlib.sha256(short).hexdigest()
+            for artifact in document['artifacts']:
+                if artifact['id'] == 'frame-a':
+                    artifact['sha256'] = digest
+            document['dispositions']['scene:ab']['reviewedArtifacts']['frame-a'] = digest
+            code, out, _text, handle = invoke(json.dumps(document).encode(), label)
+            self.assertEqual(code, 3)
+            report = (out / 'audit.html').read_text(encoding='utf-8')
+            self.assertIn('truncated', report)
+            handle.cleanup()
+            self.assertEqual((root / 'frame-a.png').read_bytes(), short)
+
+        (root / 'frame-a.png').write_bytes(source)
+        base = Path(tempfile.mkdtemp())
+        manifest_path = base / 'manifest.json'
+        manifest_path.write_bytes(manifest_bytes)
+        parent = base / 'ro'
+        parent.mkdir()
+        try:
+            os.chmod(parent, 0o500)
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = main([
+                    'offline', '--manifest', str(manifest_path), '--evidence-root', str(root),
+                    '--out', str(parent / 'run'),
+                ])
+            self.assertEqual(code, 2)
+            self.assertNotIn('Traceback', stderr.getvalue())
+            self.assertFalse((parent / 'run').exists())
+        finally:
+            os.chmod(parent, 0o700)
+            parent.rmdir()
+            manifest_path.unlink()
+            base.rmdir()
+
+        nested_root = tempfile.TemporaryDirectory()
+        real_manifest = Path(nested_root.name) / 'manifest.json'
+        real_manifest.write_bytes(manifest_bytes)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = main([
+                'offline', '--manifest', str(real_manifest), '--evidence-root', str(root),
+                '--out', str(Path(nested_root.name) / ('a' * 250)),
+            ])
+        self.assertEqual(code, 2)
+        self.assertNotIn('Traceback', stderr.getvalue())
+        nested_root.cleanup()
+
+        deep = ('[' * 2000) + '0' + (']' * 2000)
+        code, out, _text, handle = invoke(deep.encode(), 'nested-manifest')
+        self.assertEqual(code, 2)
+        self.assertIn('RecursionError', (out / 'audit.html').read_text(encoding='utf-8'))
+        handle.cleanup()
+
+        document = json.loads(manifest_bytes)
+        cue_blob = deep.encode()
+        (root / 'cue.json').write_bytes(cue_blob)
+        for artifact in document['artifacts']:
+            if artifact['id'] == 'cue-b':
+                artifact['sha256'] = hashlib.sha256(cue_blob).hexdigest()
+        code, out, _text, handle = invoke(json.dumps(document).encode(), 'nested-cue')
+        self.assertEqual(code, 3)
+        report = (out / 'findings.json').read_text(encoding='utf-8')
+        self.assertIn('not a JSON object', report)
+        self.assertLess(len(report), 200000)
+        handle.cleanup()
+
+        document = json.loads(manifest_bytes)
+        (root / 'catalog.json').write_bytes(cue_blob)
+        document['catalogSnapshot']['sha256'] = hashlib.sha256(cue_blob).hexdigest()
+        code, out, _text, handle = invoke(json.dumps(document).encode(), 'nested-catalog')
+        self.assertEqual(code, 3)
+        self.assertIn('malformed', (out / 'audit.html').read_text(encoding='utf-8'))
+        handle.cleanup()
+
+        document = json.loads(manifest_bytes)
+        document['items'][0]['catalogClaim']['episodeCode'] = 'S01E01\x00'
+        code, out, _text, handle = invoke(json.dumps(document).encode(), 'nul-episode')
+        self.assertEqual(code, 2)
+        self.assertIn('NUL', (out / 'audit.html').read_text(encoding='utf-8'))
+        self.assertNotIn('\x00', (out / 'audit.html').read_text(encoding='utf-8'))
+        handle.cleanup()
+
+        document = json.loads(manifest_bytes)
+        document['dispositions']['scene:ab']['quote'] = 'same\x00sample'
+        code, out, _text, handle = invoke(json.dumps(document).encode(), 'nul-quote')
+        self.assertEqual(code, 2)
+        self.assertIn('NUL', (out / 'audit.html').read_text(encoding='utf-8'))
+        handle.cleanup()
+        self.assertEqual((root / 'frame-a.png').read_bytes(), source)
 
 
 if __name__ == '__main__':
