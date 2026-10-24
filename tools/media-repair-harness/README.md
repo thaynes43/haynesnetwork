@@ -110,6 +110,10 @@ WO-W27 (OpenProject #145 remainder and the PR #1031 nits) adds diagnostic rules 
 
 `--tools-behavior v3-remote-1` (with `--evidence-format v3.1-format` and `--evidence replay` only) is tools behaviour v3 plus `subtitle_sample {"at": s}` (an 8 s window of the first text subtitle stream the case's probe result lists; each cue is a citable `subtitle_cue` finding with content provenance; nothing usable gives `unavailable` or an execution failure, never content; the leak guard checks cue text) and the `mrh-sampler-2` receipts (`remote_sampler_v2.py`) with expected-identity binding (`fixture.expected_identity`, `fixture.expected_hostname`) on every remote operation. A missing or malformed receipt, an identity mismatch, `source_unchanged: false`, a changed hostname or an outer timeout fails closed (cause tool). `--stop-on-receipt-failure` stops the run on the first one (started_aborted with every receipt; later cases never start). `scripts/stage_r_driver.py` runs G0b, G1, G2 and the final check of the pilot plan serially and owns every stop; `scripts/stage_r_report.py` evaluates the records (pilot plan section 4.3). `remote_sampler.py` and every earlier configuration are byte-identical. Details: `docs/remote-content-evidence.md`, `CHANGELOG.md`.
 
+## #160: offline identity findings report
+
+`python3 -m media_repair_harness.identity_report offline --manifest sample.json --evidence-root DIR --out RUN` reads a versioned manifest, checks artifact hashes, and writes `findings.json`, `report.md`, `audit.html`, and `audit.pdf`. It does not sample media, start a child process, or call a model. `plan-recipe` prints one allowlisted exact-style subtitle argv and does not open a source. This is not the runner and not the 8-second subtitle window. Details: `docs/identity-report.md`, `CHANGELOG.md`.
+
 ## Layout
 
 | File (under `src/media_repair_harness/` unless noted) | Role |
@@ -122,6 +126,7 @@ WO-W27 (OpenProject #145 remainder and the PR #1031 nits) adds diagnostic rules 
 | `score_compat.py` (scorer: `.agents/context/media-repair-harness-2026-10-19/harness/score.py`, evaluator-owned, not moved) | loads score.py by explicit path and maps its flat `protocol` / `run` imports to this package; G1-G10, per-class accuracy, false diagnoses, false repairs, abstention, schema validity, tool failures, latency, cost; `score.json` + `score.md` |
 | `ollama_transport.py`, `remote_sampler.py` | Vendored transports (provenance below) |
 | `remote_evidence.py`, `remote_sampler_v2.py`, `stage_r.py`, `scripts/stage_r_driver.py`, `scripts/stage_r_report.py` | #161: tools behaviour v3-remote-1 (subtitle_sample, receipts, identity binding), sampler `mrh-sampler-2`, the Stage R driver and report (`docs/remote-content-evidence.md`) |
+| `identity_report.py`, `identity_cue.py`, `identity_recipe.py`, `identity_audit.py` | #160: offline manifest → hash check → findings/report (`docs/identity-report.md`). Does not change the runner |
 | `scripts/stage_r_driver_v2.py` | #165: the Stage R driver v2, `stage-r-driver-3` with registration `stage-r-2` (library root, model tripwire, coordinator, pre-run binding, A0 expiry; `docs/stage-r-driver-v2.md`) |
 | `testdata/` | Synthetic cases, deterministic EPUB fixtures, recorded sample outputs of the CLIs (used by the parsing tests) |
 | `leakguard.py` | opaque case alias, fixture-name redaction and the pre-send leak guard |

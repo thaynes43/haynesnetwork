@@ -1,5 +1,13 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-24: #160 offline identity findings report
+
+- Owner for this slice: headless Grok, session `f488f78c-ca25-41c7-b343-cfa5f47869c0`, branch `feat/media-identity-dryrun-160`.
+- Command: `python3 -m media_repair_harness.identity_report offline`. Design: `tools/media-repair-harness/docs/identity-report.md`.
+- The command validates a manifest and retained hashes. It does not read library media, call a model, or execute the recipe plan.
+- Local-model interpretation stays staged until GPU repadding and a separate health check. Do not expand the sample in this command.
+- Private run outputs stay outside git (`.media160-runs/`, excluded). Do not commit retained frames, catalog paths, or the private report.
+
 ## 2026-10-19: media repair harness, authorized implementation (checkpoint 1 done)
 
 - Tom authorized implementation and a monitored rollout on 2026-10-19. This supersedes the 2026-10-18 spike-only hold for
