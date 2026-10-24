@@ -17,7 +17,7 @@ python3 -m media_repair_harness.identity_report plan-recipe \
 
 `offline` is the report. `plan-recipe` prints an allowlisted argv plan and does not open a source. There is no execute mode in `identity-report-1`.
 
-Exit `0` means the manifest schema was valid and every referenced artifact hashed. Exit `2` means the manifest was rejected. Exit `3` means the schema was valid, a report was written, and at least one artifact was missing, drifted, or contradictory. A drifted artifact is not used as evidence.
+Exit `0` means the manifest schema was valid and every referenced artifact hashed. Exit `2` means the manifest was rejected, or the output path was refused. Exit `3` means the schema was valid, a report was written, and at least one artifact was missing, drifted, unreadable, or contradictory. A drifted artifact is not used as evidence. NUL and lone surrogates in the manifest are exit 2. A lone surrogate inside a hash-matched artifact is exit 3 and its text is not copied. Those paths write a report when the output path can be created. They do not end in an uncaught traceback.
 
 The run directory is created only when `--out` does not already exist. Outputs are `manifest.json`, `findings.json`, `report.md`, `audit.html`, and `audit.pdf`. The HTML embeds retained frame bytes so one file is readable on a phone. Nothing in the renderer contacts the network.
 
@@ -36,7 +36,7 @@ The manifest names the sample. It does not discover files. Paths are relative to
 | `artifacts[]` role `probe-metadata` | Retained ffprobe-shaped JSON. The cue's `streamIndex` must name one subtitle stream |
 | `artifacts[]` role `collection-receipt` | Historical receipt for a frame or cue. Not re-executed |
 | `comparisons[]` | `same-scene` or `distinct-scene` over frame ids |
-| `dispositions{}` | Human `confirmed` / `contradicted` / `uncertain` / `notReviewed`, exactly one true |
+| `dispositions{}` | Human `confirmed` / `contradicted` / `uncertain` / `notReviewed`, exactly one true. Optional `reviewedArtifacts` maps an artifact id to the sha256 that review covered. The report does not copy the current manifest hash into that pin. A disposition applies only when every pin matches the manifest and the bytes are usable. Health and whole-episode claims never apply: those propositions are undefined |
 | `citedNotes[]` | Text copied through and not re-fetched |
 | `provenance.gitSha` | Optional. Omitted means null |
 
@@ -54,13 +54,13 @@ Each claim has a machine `issueLikelihood` of `candidate`, `not-observed-in-samp
 | `full-episode:<item>` | Unknown. A cue plus one scene does not identify the whole file. |
 | `health:<item>` | Unknown. A distinct sampled comparison is not a health determination. Missing evidence is not health. |
 
-Season numbers are recorded and are not mismatch evidence. Punctuation-ambiguous titles are not an automatic mismatch. An absent exact style, an empty cue, or a non-ASS codec is unavailable, not wrong content. Two disagreeing cues, or a raw line that disagrees with the structured text, stay unknown. An unexpected process exit marks the cue `tool-failed` and the text is not used. Exit 255 with a deliberate stop and the recorded `Broken pipe` stderr is `deliberate-post-cue-stop`, not a clean EOF, and the cue can still be used.
+Season numbers are recorded and are not mismatch evidence. A difference that the fold erases is `ambiguous`: not proof of the same title or episode, and not an automatic mismatch. An absent exact style, an empty cue, drawing-mode commands, or a non-ASS codec is unavailable, not wrong content. Every applied cue in a comparison is compared. Disagreeing cues, or a raw line that disagrees with the structured text, stay unknown. An unexpected process exit marks the cue `tool-failed` and the text is not used. A tool-failed frame is not described as missing or drifted. Exit 255 with a deliberate stop and the recorded `Broken pipe` stderr is `deliberate-post-cue-stop`, not a clean EOF, and the cue can still be used.
 
 `sourceBytes` stays null. A process counter, including zero, is not a source or NFS total.
 
 ## D-04 Title text
 
-Override blocks `{...}` are removed, `\N` and `\n` become spaces, and the ends are trimmed. That text is kept. A comparison fold then records its steps: strip, collapse whitespace, map dashes, colons, and semicolons to spaces (recorded as `dash-colon-or-semicolon-to-space`), casefold, and strip trailing `.!?`. The fold is not a rewrite of the evidence. Equal folded titles are `ambiguous`, not a mismatch. Filename words are not required and are not a filter.
+Override blocks are removed. `\h`, `\N`, and `\n` become spaces. Text inside ASS drawing mode (`{\pN}` until `{\p0}`) is dropped, so vector commands are not a title. The decoded text is what the cue must already say. A comparison fold then records its steps: strip, collapse whitespace, NFKC, map Unicode punctuation and symbols to spaces, drop format controls, and casefold. The raw cue is kept beside those steps. Equal folded keys are `ambiguous`, not a mismatch and not proof of the same title. Filename words are not required and are not a filter. Retained probe indexes, catalog season numbers, and receipt `outputBytes` have to be JSON integers; a boolean or a float does not match.
 
 ASS times must match `[0-9]+:[0-5][0-9]:[0-5][0-9].[0-9]{2}`. Commas in the text field survive the ten-field split. The style compare is exact and case-sensitive. Any nonempty title is accepted.
 
@@ -74,4 +74,4 @@ No library scan, no sample expansion, no ASR, no OCR, no model call, no repair, 
 
 ## Test strategy
 
-`tests/test_identity_report.py` uses synthetic files only. It covers full-width integers, malformed, drifted, missing, and unreadable artifacts, exact style versus suffix, generic, and empty text, ASS overrides, commas, Unicode, timings, an arbitrary title, contradictory and missing cues, distinct scene versus health, exit 255 versus an unexpected exit, escaping, provenance, and the absence of subprocess, socket, and URL calls. An unreadable artifact is a contradiction and exit 3, with a report and no traceback.
+`tests/test_identity_report.py` uses synthetic files only. The show, titles, times, and receipt counters in that file are invented. It covers full-width and non-ASCII CLI integers, malformed, drifted, missing, unreadable, NUL, lone-surrogate, and zero-dimension inputs, exact style versus suffix, generic, and empty text, ASS overrides, hard spaces, drawing mode, commas, Unicode forms, timings, an arbitrary title, contradictory and missing cues, review-pin mismatch, distinct scene versus health, exit 255 versus an unexpected exit, PDF `%%EOF` and WinAnsi, escaping, provenance, and the absence of subprocess, socket, and URL calls. An unreadable artifact is a contradiction and exit 3, with a report and no traceback.

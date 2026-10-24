@@ -7,11 +7,12 @@ findings. It does not start a child process, open a socket, or call a model.
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
 
-from media_repair_harness.identity_audit import png_info, render_html, render_markdown, render_pdf
+from media_repair_harness.identity_audit import png_header, png_info, render_html, render_markdown, render_pdf
 from media_repair_harness.identity_cue import AssError, classify_exact_style, parse_ass_dialogue, title_relation
 from media_repair_harness.identity_recipe import (
     RECIPE_VERSION,
@@ -59,9 +60,22 @@ def _int(value, name, errors, minimum=0):
     return value
 
 
+def _has_surrogate(value):
+    if type(value) is str:
+        return any(0xD800 <= ord(char) <= 0xDFFF for char in value)
+    if type(value) is dict:
+        return any(_has_surrogate(key) or _has_surrogate(item) for key, item in value.items())
+    if type(value) is list:
+        return any(_has_surrogate(item) for item in value)
+    return False
+
+
 def _str(value, name, errors):
     if type(value) is not str or value == '':
         errors.append('%s must be a nonempty string' % name)
+        return None
+    if '\x00' in value or _has_surrogate(value):
+        errors.append('%s must not contain NUL or a lone surrogate' % name)
         return None
     return value
 
@@ -109,15 +123,15 @@ def parse_manifest(document):
     if document.get('version') != MANIFEST_VERSION:
         errors.append('version must be %s' % MANIFEST_VERSION)
     sample_id = document.get('sampleId')
-    if type(sample_id) is not str or sample_id == '' or '\n' in sample_id:
-        errors.append('sampleId must be a single-line nonempty string')
+    if type(sample_id) is not str or sample_id == '' or '\n' in sample_id or '\x00' in sample_id or _has_surrogate(sample_id):
+        errors.append('sampleId must be a single-line nonempty string without NUL or a lone surrogate')
     items = _items(document.get('items'), errors)
     artifacts = _artifacts(document.get('artifacts'), errors)
     comparisons = _comparisons(document.get('comparisons'), errors)
     notes = _notes(document.get('citedNotes', []), errors)
     git_sha = _provenance(document.get('provenance', {}), errors)
     _link_artifacts(items, artifacts, comparisons, errors)
-    dispositions = _dispositions(document.get('dispositions'), items, comparisons, errors)
+    dispositions = _dispositions(document.get('dispositions'), items, comparisons, artifacts, errors)
     catalog = _catalog_ref(document.get('catalogSnapshot'), errors)
     if errors:
         raise ManifestError(errors)
@@ -378,18 +392,19 @@ def _expected_claim_ids(items, comparisons):
     return claim_ids
 
 
-def _dispositions(value, items, comparisons, errors):
+def _dispositions(value, items, comparisons, artifacts, errors):
     if type(value) is not dict:
         errors.append('dispositions must be an object')
         return {}
     allowed = _expected_claim_ids(items, comparisons)
+    known = {artifact['id']: artifact for artifact in artifacts if artifact.get('id')}
     cleaned = {}
     flags = ('confirmed', 'contradicted', 'uncertain', 'notReviewed')
     for key, raw in value.items():
         if key not in allowed:
             errors.append('disposition %s does not match a claim' % key)
             continue
-        if not _keys(raw, flags, ('reviewer', 'reviewedAt', 'citation', 'quote', 'inspect'), 'dispositions.%s' % key, errors):
+        if not _keys(raw, flags, ('reviewer', 'reviewedAt', 'citation', 'quote', 'inspect', 'reviewedArtifacts'), 'dispositions.%s' % key, errors):
             continue
         parsed = {}
         for flag in flags:
@@ -402,8 +417,21 @@ def _dispositions(value, items, comparisons, errors):
             if field in raw and raw[field] is not None and type(raw[field]) is not str:
                 errors.append('dispositions.%s.%s must be a string or null' % (key, field))
             parsed[field] = raw.get(field)
+        pins = raw.get('reviewedArtifacts')
+        parsed['reviewedArtifacts'] = {}
+        if pins is not None:
+            if type(pins) is not dict:
+                errors.append('dispositions.%s.reviewedArtifacts must be an object' % key)
+            else:
+                for pin_id, digest in pins.items():
+                    if type(pin_id) is not str or pin_id not in known:
+                        errors.append('dispositions.%s.reviewedArtifacts names an unknown artifact' % key)
+                        continue
+                    checked = _sha(digest, 'dispositions.%s.reviewedArtifacts.%s' % (key, pin_id), errors)
+                    if checked is not None:
+                        parsed['reviewedArtifacts'][pin_id] = checked
         parsed['conflict'] = False
-        parsed['applies'] = True
+        parsed['applies'] = False
         cleaned[key] = parsed
     return cleaned
 
@@ -436,12 +464,12 @@ def _relative(root, relative, errors):
     if any(part in ('', '.', '..') for part in parts):
         errors.append('path leaves the evidence root: %s' % relative)
         return None
-    candidate = root.joinpath(*parts)
     try:
+        candidate = root.joinpath(*parts)
         root_real = root.resolve()
         real = candidate.resolve()
-    except (OSError, RuntimeError):
-        errors.append('unreadable: %s' % relative)
+    except (OSError, RuntimeError, ValueError):
+        errors.append('unreadable: %s' % _path_label(relative))
         return None
     if real != root_real and root_real not in real.parents:
         errors.append('path leaves the evidence root: %s' % relative)
@@ -477,11 +505,20 @@ def _read_checked(root, relative, digest):
     return {'status': 'match', 'data': data, 'sha256': digest, 'path': relative, 'bytes': len(data)}
 
 
+def _path_label(relative):
+    if type(relative) is not str or '\x00' in relative or _has_surrogate(relative):
+        return 'unusable path'
+    return relative
+
+
 def _load_json(data):
     try:
-        return json.loads(data.decode('utf-8'), parse_constant=_reject_constant)
+        document = json.loads(data.decode('utf-8'), parse_constant=_reject_constant)
     except (UnicodeError, json.JSONDecodeError, ValueError):
         return None
+    if _has_surrogate(document):
+        return {'__lone_surrogate__': True}
+    return document
 
 
 def _finite(value):
@@ -503,17 +540,59 @@ def _identity_block(value, binding):
     )
 
 
-def _human(dispositions, claim_id, applies):
+def _human(dispositions, claim_id, applies, reason, pin_check):
     base = dispositions.get(claim_id)
     if base is None:
         base = {
             'confirmed': False, 'contradicted': False, 'uncertain': False, 'notReviewed': True,
             'conflict': False, 'reviewer': None, 'reviewedAt': None, 'citation': None, 'quote': None,
-            'inspect': None,
+            'inspect': None, 'reviewedArtifacts': {},
         }
     copied = dict(base)
     copied['applies'] = bool(applies) and not copied.get('conflict')
+    copied['appliesReason'] = reason
+    copied['pinCheck'] = pin_check
     return copied
+
+
+def _pin_check(dispositions, claim_id, required_ids, artifacts):
+    """Compare the disposition's original digests with the manifest. Never copy the manifest into the pin."""
+    base = dispositions.get(claim_id) or {}
+    pins = base.get('reviewedArtifacts') or {}
+    rows = []
+    ok = True
+    if type(pins) is not dict or not pins:
+        return False, []
+    needed = list(required_ids)
+    for artifact_id in needed:
+        reviewed = pins.get(artifact_id)
+        current = artifacts.get(artifact_id, {}).get('sha256')
+        match = type(reviewed) is str and reviewed == current
+        rows.append({'id': artifact_id, 'reviewed': reviewed, 'manifest': current, 'match': match})
+        if not match:
+            ok = False
+    for artifact_id, reviewed in pins.items():
+        if artifact_id in required_ids:
+            continue
+        current = artifacts.get(artifact_id, {}).get('sha256')
+        match = type(reviewed) is str and reviewed == current
+        rows.append({'id': artifact_id, 'reviewed': reviewed, 'manifest': current, 'match': match})
+        if not match:
+            ok = False
+    return ok, rows
+
+
+def _bound_human(dispositions, claim_id, evidence_ok, required_ids, artifacts, undefined=False):
+    pins_ok, rows = _pin_check(dispositions, claim_id, required_ids, artifacts)
+    if undefined:
+        return _human(dispositions, claim_id, False, 'undefined-proposition', rows)
+    if claim_id not in dispositions:
+        return _human(dispositions, claim_id, False, 'not-recorded', rows)
+    if not pins_ok:
+        return _human(dispositions, claim_id, False, 'unpinned-or-digest-mismatch', rows)
+    if not evidence_ok:
+        return _human(dispositions, claim_id, False, 'evidence-unusable', rows)
+    return _human(dispositions, claim_id, True, 'pinned-evidence-matches', rows)
 
 
 def _make_claim(claim_id, kind, issue, observation, grade, basis, rationale, human, evidence, alternatives, subjects):
@@ -532,9 +611,9 @@ def _make_claim(claim_id, kind, issue, observation, grade, basis, rationale, hum
         'rationale': rationale,
         'alternatives': list(alternatives),
         'inspect': inspect,
-        'humanDisposition': {key: human[key] for key in (
+        'humanDisposition': {key: human.get(key) for key in (
             'confirmed', 'contradicted', 'uncertain', 'notReviewed', 'conflict', 'applies',
-            'reviewer', 'reviewedAt', 'citation', 'quote',
+            'appliesReason', 'reviewer', 'reviewedAt', 'citation', 'quote', 'pinCheck',
         )},
         'evidence': evidence,
     }
@@ -574,7 +653,7 @@ def assess(parsed, evidence_root):
     claims.extend(_scene_claims(parsed, items, artifacts, frame_state, blobs))
     claims.extend(_title_claims(parsed, items, artifacts, cue_state, catalog_state))
     claims.extend(_disagreement_claims(parsed, items, artifacts, frame_state, cue_state, catalog_state))
-    claims.extend(_episode_claims(parsed, items))
+    claims.extend(_episode_claims(parsed, items, artifacts))
     claims.extend(_health_claims(parsed, items, artifacts, frame_state))
     plans = _plans(cue_state)
     incomplete = bool(contradictions)
@@ -621,6 +700,7 @@ def assess(parsed, evidence_root):
             'exitCode': 3 if incomplete else 0,
         },
         'errors': [],
+        '_blobs': blobs,
     }
 
 
@@ -702,8 +782,8 @@ def _agree(item, series_title, row):
     path = row.get('relativePath')
     if series_title != claim['seriesTitle']:
         reasons.append('series title differs from the snapshot')
-    if row.get('seasonNumber') != claim['seasonNumber']:
-        reasons.append('season number differs from the snapshot')
+    if type(row.get('seasonNumber')) is not int or row.get('seasonNumber') != claim['seasonNumber']:
+        reasons.append('snapshot season number is not the claimed integer')
     if type(path) is not str or claim['title'] not in path:
         reasons.append('catalog title is not in the snapshot relative path')
     if claim.get('episodeCode') and (type(path) is not str or claim['episodeCode'] not in path):
@@ -742,6 +822,10 @@ def _cue_state(artifact, blobs, artifacts, items, contradictions):
         result['rationale'] = 'The cue artifact is %s, so it was not read.' % blob['status']
         return result
     document = _load_json(blob['data'])
+    if type(document) is dict and document.get('__lone_surrogate__') is True:
+        contradictions.append('cue %s contains a lone surrogate' % artifact['id'])
+        result['rationale'] = 'The cue JSON contains a lone surrogate, so its text was not used.'
+        return result
     if type(document) is not dict:
         contradictions.append('cue %s is not a JSON object' % artifact['id'])
         result['rationale'] = 'The cue file is not a JSON object.'
@@ -845,10 +929,15 @@ def _probe_problem(artifact, document, blobs, artifacts):
     if blob is None or blob['status'] != 'match':
         return 'missing'
     probe = _load_json(blob['data'])
+    if type(probe) is dict and probe.get('__lone_surrogate__') is True:
+        return 'malformed'
     streams = probe.get('streams') if type(probe) is dict else None
     if type(streams) is not list:
         return 'malformed'
-    found = [stream for stream in streams if type(stream) is dict and stream.get('index') == document['streamIndex']]
+    found = [
+        stream for stream in streams
+        if type(stream) is dict and type(stream.get('index')) is int and stream.get('index') == document['streamIndex']
+    ]
     if len(found) != 1:
         return 'missing-stream'
     stream = found[0]
@@ -881,6 +970,8 @@ def _receipt_problem(artifact, blobs, artifacts, item, artifact_bytes):
     if blob is None or blob['status'] != 'match':
         return 'missing'
     document = _load_json(blob['data'])
+    if type(document) is dict and document.get('__lone_surrogate__') is True:
+        return 'malformed'
     if type(document) is not dict:
         return 'malformed'
     if not _identity_block(document.get('startIdentity'), item['binding']):
@@ -895,7 +986,7 @@ def _receipt_problem(artifact, blobs, artifacts, item, artifact_bytes):
         return 'source-changed'
     if 'sha256' in document and document.get('sha256') != artifact['sha256']:
         return 'output-hash'
-    if 'outputBytes' in document and document.get('outputBytes') != artifact_bytes:
+    if 'outputBytes' in document and (type(document.get('outputBytes')) is not int or document.get('outputBytes') != artifact_bytes):
         return 'output-size'
     classified = classify_collection_exit(*_exit_inputs(document))
     if classified['toolFailed']:
@@ -909,12 +1000,12 @@ def _collapse_item_cues(cue_state, artifacts, contradictions):
         by_item.setdefault(artifacts[cue_id]['itemId'], []).append(cue_id)
     for cue_ids in by_item.values():
         applied = [cue_id for cue_id in cue_ids if cue_state[cue_id]['applied']]
-        texts = {cue_state[cue_id]['text'] for cue_id in applied}
+        texts = [cue_state[cue_id]['text'] for cue_id in applied]
         if len(texts) > 1:
             relations = []
-            values = list(texts)
-            for left, right in zip(values, values[1:]):
-                relations.append(title_relation(left, right)[0])
+            for left_index, left in enumerate(texts):
+                for right in texts[left_index + 1:]:
+                    relations.append(title_relation(left, right)[0])
             if any(relation == 'different' for relation in relations):
                 contradictions.append('contradictory exact-style cues on one item')
                 for cue_id in applied:
@@ -928,6 +1019,10 @@ def _frame_state(artifact, blobs, artifacts, items, contradictions):
     blob = blobs[artifact['id']]
     if blob['status'] != 'match':
         return {'usable': False, 'reason': blob['status']}
+    header = png_header(blob['data'])
+    if header == 'invalid':
+        contradictions.append('frame %s has invalid image dimensions' % artifact['id'])
+        return {'usable': False, 'reason': 'invalid-dimensions'}
     receipt = _receipt_for(artifact, artifacts)
     if receipt is None:
         return {'usable': True, 'reason': 'hash-matched, no receipt'}
@@ -940,14 +1035,13 @@ def _frame_state(artifact, blobs, artifacts, items, contradictions):
         contradictions.append('frame %s receipt is %s' % (artifact['id'], problem))
         return {'usable': False, 'reason': problem}
     document = _load_json(blobs[receipt['id']]['data'])
-    if 'width' in document or 'height' in document:
-        info = png_info(blob['data'])
+    if type(document) is dict and ('width' in document or 'height' in document):
         if (
-            info is None
+            not isinstance(header, dict)
             or type(document.get('width')) is not int
             or type(document.get('height')) is not int
-            or info['width'] != document['width']
-            or info['height'] != document['height']
+            or header['width'] != document['width']
+            or header['height'] != document['height']
         ):
             contradictions.append('frame %s dimensions contradict the receipt' % artifact['id'])
             return {'usable': False, 'reason': 'dimensions'}
@@ -1037,7 +1131,8 @@ def _scene_claims(parsed, items, artifacts, frame_state, blobs):
             })
             subjects.append(_subject(item))
         claim_id = 'scene:' + comparison['id']
-        human = _human(parsed['dispositions'], claim_id, usable)
+        required = list(comparison['frameIds']) + list(comparison.get('distinctFrom') or [])
+        human = _bound_human(parsed['dispositions'], claim_id, usable, required, artifacts)
         if comparison['kind'] == 'distinct-scene':
             rationale = (
                 'The disposition cites a distinct sampled comparison. This report did not compare the images. '
@@ -1046,7 +1141,11 @@ def _scene_claims(parsed, items, artifacts, frame_state, blobs):
         else:
             rationale = 'The disposition is a cited input about the sampled frames. This report did not compare the images.'
         if not usable:
-            rationale = 'One or more frames were missing, drifted, or contradicted, so the disposition is not applied to these bytes. ' + rationale
+            reasons = [frame_state[frame_id]['reason'] for frame_id in comparison['frameIds']]
+            if any(reason == 'tool-failed' for reason in reasons):
+                rationale = 'One or more frames are tool-failed, so the disposition is not applied. Tool failure is not missing media and is not a health result. ' + rationale
+            else:
+                rationale = 'One or more frames were missing, drifted, unreadable, or contradicted, so the disposition is not applied to these bytes. ' + rationale
         grade = 'cited' if usable and human['applies'] and (human['confirmed'] or human['contradicted']) else 'unknown'
         claims.append(_make_claim(
             claim_id, 'sampled-scene-relationship', 'unknown',
@@ -1065,7 +1164,7 @@ def _title_claims(parsed, items, artifacts, cue_state, catalog_state):
         claim_id = 'embedded-title:' + item['id']
         catalog = catalog_state.get(item['id'])
         if not cues:
-            human = _human(parsed['dispositions'], claim_id, True)
+            human = _bound_human(parsed['dispositions'], claim_id, False, [], artifacts)
             claims.append(_make_claim(
                 claim_id, 'literal-embedded-title', 'unknown', 'not-observed-in-sample', 'unknown', 'observed',
                 'No exact-style cue artifact was named for this item. Absence is not wrong content and is not health.',
@@ -1074,9 +1173,9 @@ def _title_claims(parsed, items, artifacts, cue_state, catalog_state):
             continue
         state = next((item for item in cues if item['applied']), cues[0])
         applied = state['applied']
-        human = _human(parsed['dispositions'], claim_id, state['observation'] != 'unknown' or applied)
-        if not applied and state['observation'] == 'tool-failed':
-            human = _human(parsed['dispositions'], claim_id, False)
+        cue_ids = [item['artifact']['id'] for item in cues]
+        evidence_ok = applied or (state['observation'] not in ('unknown', 'tool-failed'))
+        human = _bound_human(parsed['dispositions'], claim_id, evidence_ok, cue_ids, artifacts)
         relation = 'unknown'
         steps = []
         if applied and catalog and catalog['agreement'] == 'consistent':
@@ -1147,7 +1246,8 @@ def _disagreement_claims(parsed, items, artifacts, frame_state, cue_state, catal
         for item in frame_items:
             if item['id'] not in {existing['id'] for existing in unique}:
                 unique.append(item)
-        scene_human = _human(parsed['dispositions'], 'scene:' + comparison['id'], frames_ok)
+        required = list(comparison['frameIds']) + list(comparison.get('distinctFrom') or [])
+        scene_human = _bound_human(parsed['dispositions'], 'scene:' + comparison['id'], frames_ok, required, artifacts)
         confirmed = bool(scene_human['applies'] and scene_human['confirmed'])
         item_ids = {item['id'] for item in unique}
         applied = _applied_cues_for(item_ids, cue_state, artifacts)
@@ -1158,9 +1258,9 @@ def _disagreement_claims(parsed, items, artifacts, frame_state, cue_state, catal
         issue, grade, observation, rationale, evidence = _disagreement_decision(
             unique, applied, confirmed, frames_ok, tool_failed, catalog_state, artifacts,
         )
-        human = _human(parsed['dispositions'], claim_id, issue == 'candidate' or observation == 'not-observed-in-sample')
-        if not frames_ok or tool_failed:
-            human = _human(parsed['dispositions'], claim_id, False)
+        cue_ids = [cue_id for cue_id, _state in applied]
+        evidence_ok = frames_ok and not tool_failed and (issue == 'candidate' or observation == 'not-observed-in-sample')
+        human = _bound_human(parsed['dispositions'], claim_id, evidence_ok, required + cue_ids, artifacts)
         claims.append(_make_claim(
             claim_id, 'catalog-title-disagreement', issue, observation, grade, 'mixed',
             rationale, human, evidence, OPEN_ALTERNATIVES, [_subject(item) for item in unique],
@@ -1180,33 +1280,44 @@ def _disagreement_decision(unique, applied, confirmed, frames_ok, tool_failed, c
         return 'tool-failed', 'tool-failed', 'tool-failed', 'A linked collection failed, so the title candidate is not drawn.', evidence
     if len({item['id'] for item in unique}) < 2:
         return 'unknown', 'unknown', 'unknown', 'The comparison does not link two items.', evidence
+    evidence['cues'] = [
+        {'artifactId': cue_id, 'text': state['text'], 'probe': state['probe'], 'receipt': state['receipt']}
+        for cue_id, state in applied
+    ]
     if len(applied) > 1:
         texts = [state['text'] for _, state in applied]
-        relation = title_relation(texts[0], texts[1])[0]
-        evidence['titleRelation'] = relation
-        if relation == 'different':
-            return 'unknown', 'unknown', 'unknown', 'Exact-style cues in the comparison contradict each other.', evidence
+        cue_relations = []
+        for left_index, left in enumerate(texts):
+            for right in texts[left_index + 1:]:
+                cue_relations.append(title_relation(left, right)[0])
+        evidence['cueRelations'] = cue_relations
+        if any(relation == 'different' for relation in cue_relations):
+            evidence['titleRelation'] = 'different'
+            return 'unknown', 'unknown', 'unknown', 'Exact-style cues in the comparison contradict each other, so none is used as a mismatch.', evidence
+        if any(relation == 'unknown' for relation in cue_relations):
+            return 'unknown', 'unknown', 'unknown', 'Exact-style cues in the comparison do not all compare, so none is used as a mismatch.', evidence
     if len(applied) == 0:
         return (
             'unknown', 'unknown', 'not-observed-in-sample',
             'No validated exact-style cue was in this comparison. Missing cue evidence is not wrong content.',
             evidence,
         )
-    cue_id, state = applied[0]
-    cue_item = artifacts[cue_id]['itemId']
-    others = [item for item in unique if item['id'] != cue_item]
     relations = []
-    for other in others:
-        catalog = catalog_state.get(other['id'])
-        cue_catalog = catalog_state.get(cue_item)
-        if catalog is None or catalog['agreement'] != 'consistent' or cue_catalog is None or cue_catalog['agreement'] != 'consistent':
-            evidence['titleRelation'] = 'unknown'
-            return 'unknown', 'unknown', 'unknown', 'A catalog claim in this comparison is not consistent with the snapshot.', evidence
-        relation, left_steps, right_steps = title_relation(other['catalogClaim']['title'], state['text'])
-        relations.append((other, relation, left_steps, right_steps, catalog, cue_catalog))
-    if any(relation == 'different' for _, relation, *_rest in relations):
+    for cue_id, state in applied:
+        cue_item = artifacts[cue_id]['itemId']
+        others = [item for item in unique if item['id'] != cue_item]
+        for other in others:
+            catalog = catalog_state.get(other['id'])
+            cue_catalog = catalog_state.get(cue_item)
+            if catalog is None or catalog['agreement'] != 'consistent' or cue_catalog is None or cue_catalog['agreement'] != 'consistent':
+                evidence['titleRelation'] = 'unknown'
+                return 'unknown', 'unknown', 'unknown', 'A catalog claim in this comparison is not consistent with the snapshot.', evidence
+            relation, left_steps, right_steps = title_relation(other['catalogClaim']['title'], state['text'])
+            relations.append((other, relation, left_steps, right_steps, catalog, cue_catalog, state))
+    kinds = {relation for _, relation, *_rest in relations}
+    if kinds == {'different'}:
         evidence['titleRelation'] = 'different'
-        evidence['pairs'] = [_pair(other, relation, left, right, catalog, cue_catalog, state) for other, relation, left, right, catalog, cue_catalog in relations]
+        evidence['pairs'] = [_pair(*row) for row in relations]
         seasons = {item['catalogClaim']['seasonNumber'] for item in unique}
         season_note = ''
         if len(seasons) > 1:
@@ -1217,19 +1328,19 @@ def _disagreement_decision(unique, applied, confirmed, frames_ok, tool_failed, c
                 'The catalog label and the cue differ, and the sampled-scene link is not a confirmed disposition, so this is not a mismatch candidate.' + season_note,
                 evidence,
             )
-        probe_ok = state['probe'] == 'consistent'
-        receipt_ok = state['receipt'] == 'consistent'
+        probe_ok = all(state['probe'] == 'consistent' for _, state in applied)
+        receipt_ok = all(state['receipt'] == 'consistent' for _, state in applied)
         if probe_ok and receipt_ok:
             grade = 'strong-candidate'
-            why = 'A confirmed sampled-scene link, one validated exact-style cue, a differing catalog label, and consistent retained probe and receipt support a candidate.'
+            why = 'A confirmed sampled-scene link, validated exact-style cue text, a differing catalog label, and consistent retained probe and receipt support a candidate.'
         else:
             grade = 'candidate'
             why = 'The linked catalog label differs from the validated cue. The candidate is not strong because probe or receipt confirmation is incomplete.'
         return 'candidate', grade, 'observed', why + season_note + ' This does not identify the whole episode.', evidence
-    if relations and all(relation in ('same', 'ambiguous') for _, relation, *_rest in relations):
-        evidence['titleRelation'] = relations[0][1]
-        evidence['pairs'] = [_pair(*row, state) for row in relations]
-        if relations[0][1] == 'ambiguous':
+    if relations and kinds <= {'same', 'ambiguous'}:
+        evidence['titleRelation'] = 'ambiguous' if 'ambiguous' in kinds else 'same'
+        evidence['pairs'] = [_pair(*row) for row in relations]
+        if evidence['titleRelation'] == 'ambiguous':
             why = 'After recorded punctuation and spacing normalization the titles are alternate forms, not an automatic mismatch.'
         else:
             why = 'The catalog label and the cue text agree. No title disagreement was observed in this comparison.'
@@ -1243,6 +1354,7 @@ def _disagreement_decision(unique, applied, confirmed, frames_ok, tool_failed, c
 def _pair(other, relation, left_steps, right_steps, catalog, cue_catalog, state):
     return {
         'catalogAlias': other['alias'],
+        'catalogFileId': other['fileId'],
         'catalogTitle': other['catalogClaim']['title'],
         'catalogTransformations': left_steps,
         'cueText': state['text'],
@@ -1254,15 +1366,17 @@ def _pair(other, relation, left_steps, right_steps, catalog, cue_catalog, state)
     }
 
 
-def _episode_claims(parsed, items):
+def _episode_claims(parsed, items, artifacts):
     claims = []
     for item in parsed['items']:
         claim_id = 'full-episode:' + item['id']
-        human = _human(parsed['dispositions'], claim_id, True)
+        human = _bound_human(parsed['dispositions'], claim_id, False, [], artifacts, undefined=True)
+        rationale = 'A sampled scene and an embedded cue do not identify the whole file. Whole-episode identity stays unresolved.'
+        if human['confirmed']:
+            rationale += ' The confirmed flag does not define this proposition and is not applied.'
         claims.append(_make_claim(
             claim_id, 'full-episode-identity', 'unknown', 'unknown', 'unknown', 'inferred',
-            'A sampled scene and an embedded cue do not identify the whole file. Whole-episode identity stays unresolved.',
-            human, {'resolved': False}, OPEN_ALTERNATIVES, [_subject(item)],
+            rationale, human, {'resolved': False}, OPEN_ALTERNATIVES, [_subject(item)],
         ))
     return claims
 
@@ -1286,7 +1400,9 @@ def _health_claims(parsed, items, artifacts, frame_state):
         else:
             rationale = 'Item health was not determined. Missing evidence is not a health determination.'
         claim_id = 'health:' + item['id']
-        human = _human(parsed['dispositions'], claim_id, True)
+        human = _bound_human(parsed['dispositions'], claim_id, False, [], artifacts, undefined=True)
+        if human['confirmed']:
+            rationale += ' The confirmed flag does not define this proposition and is not applied.'
         claims.append(_make_claim(
             claim_id, 'item-health', 'unknown', 'unknown', 'unknown', 'observed', rationale, human,
             {'healthDetermined': False, 'distinctSampledComparison': distinct},
@@ -1377,11 +1493,19 @@ def _images(parsed, usable_ids, blobs):
             continue
         if artifact['id'] not in usable:
             continue
-        if png_info(blob['data']) is None:
-            continue
+        header = png_header(blob['data'])
+        if header == 'invalid':
+            status = 'invalid'
+        elif isinstance(header, dict) and png_info(blob['data']) is not None:
+            status = 'rgb'
+        elif isinstance(header, dict):
+            status = 'other'
+        else:
+            status = 'absent'
         item = aliases[artifact['itemId']]
         images.append({
             'bytes': blob['data'],
+            'png': status,
             'caption': '%s file %s at %ss sha256 %s' % (
                 item['alias'], item['fileId'], artifact['atSeconds'], artifact['sha256'],
             ),
@@ -1389,30 +1513,69 @@ def _images(parsed, usable_ids, blobs):
     return images
 
 
-def build_offline(manifest_bytes, evidence_root):
+def _rendered(findings, images):
+    markdown = render_markdown(findings)
+    html = render_html(findings, images)
+    try:
+        pdf = render_pdf(markdown, images)
+    except (UnicodeError, ValueError, ZeroDivisionError, OSError, zlib.error, struct.error):
+        findings = dict(findings)
+        errors = list(findings.get('errors') or [])
+        errors.append('PDF rendering failed closed; the HTML keeps the exact text')
+        findings['errors'] = errors
+        pdf = render_pdf('PDF rendering failed closed. The HTML keeps the exact text.\n', [])
+    return markdown, html, pdf
+
+
+def build_offline(manifest_bytes, evidence_root, read_error=None):
     """Return findings, markdown, html, pdf, and the normalized manifest. Reads no media source."""
-    input_sha = hashlib.sha256(manifest_bytes).hexdigest()
+    input_sha = hashlib.sha256(manifest_bytes).hexdigest() if manifest_bytes else None
+    if read_error:
+        findings = _shell_findings([read_error], input_sha)
+        markdown, html, pdf = _rendered(findings, [])
+        return findings, markdown, html, pdf, None
     try:
         document = json.loads(manifest_bytes.decode('utf-8'), parse_constant=_reject_constant)
+        if _has_surrogate(document):
+            raise ManifestError(['manifest contains a lone surrogate'])
         parsed = parse_manifest(document)
     except (UnicodeError, json.JSONDecodeError, ValueError) as exc:
         findings = _shell_findings(['manifest is not UTF-8 JSON (%s)' % type(exc).__name__], input_sha)
-        return findings, render_markdown(findings), render_html(findings, []), render_pdf(render_markdown(findings), []), None
+        markdown, html, pdf = _rendered(findings, [])
+        return findings, markdown, html, pdf, None
     except ManifestError as exc:
         findings = _shell_findings(exc.errors, input_sha)
-        return findings, render_markdown(findings), render_html(findings, []), render_pdf(render_markdown(findings), []), None
-    root = Path(evidence_root)
-    blobs = {'catalog': _read_checked(root, parsed['catalog']['path'], parsed['catalog']['sha256'])}
-    for artifact in parsed['artifacts']:
-        blobs[artifact['id']] = _read_checked(root, artifact['path'], artifact['sha256'])
-    findings = assess(parsed, root)
+        markdown, html, pdf = _rendered(findings, [])
+        return findings, markdown, html, pdf, None
+    findings = assess(parsed, evidence_root)
     findings['inputManifestSha256'] = input_sha
-    markdown = render_markdown(findings)
-    images = _images(parsed, findings.get('usableFrameIds') or [], blobs)
-    return findings, markdown, render_html(findings, images), render_pdf(markdown, images), _dump(parsed)
+    images = _images(parsed, findings.get('usableFrameIds') or [], findings.pop('_blobs'))
+    markdown, html, pdf = _rendered(findings, images)
+    return findings, markdown, html, pdf, _dump(parsed)
 
 
-def write_run(manifest_bytes, evidence_root, out_dir):
+def _write_private(path, payload):
+    blob = payload.encode('utf-8') if isinstance(payload, str) else payload
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        offset = 0
+        while offset < len(blob):
+            wrote = os.write(fd, blob[offset:])
+            if wrote <= 0:
+                raise OSError('short write')
+            offset += wrote
+    except Exception:
+        os.close(fd)
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        raise
+    os.close(fd)
+    os.chmod(path, 0o600)
+
+
+def write_run(manifest_bytes, evidence_root, out_dir, read_error=None):
     """Write a new run directory. Refuses an existing path. Returns the process exit code."""
     out = Path(out_dir)
     if out.exists() or out.is_symlink():
@@ -1422,24 +1585,51 @@ def write_run(manifest_bytes, evidence_root, out_dir):
         print('output parent does not exist', file=sys.stderr)
         return 2
     temporary = out.parent / ('.%s.partial' % out.name)
-    if temporary.exists():
+    if temporary.exists() or temporary.is_symlink():
         print('refusing leftover partial output', file=sys.stderr)
         return 2
-    findings, markdown, html, pdf, normalized = build_offline(manifest_bytes, evidence_root)
-    temporary.mkdir()
     try:
-        (temporary / 'findings.json').write_text(_dump(findings), encoding='utf-8')
-        (temporary / 'report.md').write_text(markdown, encoding='utf-8')
-        (temporary / 'audit.html').write_text(html, encoding='utf-8')
-        (temporary / 'audit.pdf').write_bytes(pdf)
-        if normalized is not None:
-            (temporary / 'manifest.json').write_text(normalized, encoding='utf-8')
-        else:
-            (temporary / 'manifest.json').write_text(_dump({'version': MANIFEST_VERSION, 'rejected': True}), encoding='utf-8')
-        temporary.rename(out)
-    except Exception:
+        findings, markdown, html, pdf, normalized = build_offline(manifest_bytes, evidence_root, read_error=read_error)
+    except (OSError, UnicodeError, ValueError, ZeroDivisionError) as exc:
+        print('report failed closed: %s' % type(exc).__name__, file=sys.stderr)
+        return 2
+    names = {
+        'findings.json': _dump(findings),
+        'report.md': markdown,
+        'audit.html': html,
+        'audit.pdf': pdf,
+        'manifest.json': normalized if normalized is not None else _dump({'version': MANIFEST_VERSION, 'rejected': True}),
+    }
+    try:
+        temporary.mkdir(mode=0o700)
+    except FileExistsError:
+        print('refusing leftover partial output', file=sys.stderr)
+        return 2
+    os.chmod(temporary, 0o700)
+    try:
+        for name, payload in names.items():
+            _write_private(temporary / name, payload)
+        try:
+            out.mkdir(mode=0o700)
+        except FileExistsError:
+            shutil.rmtree(temporary, ignore_errors=True)
+            print('refusing existing output path', file=sys.stderr)
+            return 2
+        os.chmod(out, 0o700)
+        for name in names:
+            os.rename(temporary / name, out / name)
+            os.chmod(out / name, 0o600)
+        os.rmdir(temporary)
+        os.chmod(out, 0o700)
+    except (OSError, UnicodeError, ValueError):
         shutil.rmtree(temporary, ignore_errors=True)
-        raise
+        if out.exists() and not any(out.iterdir()):
+            try:
+                out.rmdir()
+            except OSError:
+                pass
+        print('report write failed closed', file=sys.stderr)
+        return 2
     return findings['execution']['exitCode']
 
 
@@ -1470,7 +1660,12 @@ def main(argv=None):
     if not manifest_path.is_file():
         print('manifest is not a file', file=sys.stderr)
         return 2
-    return write_run(manifest_path.read_bytes(), args.evidence_root, args.out)
+    try:
+        payload = manifest_path.read_bytes()
+    except OSError:
+        print('manifest is unreadable', file=sys.stderr)
+        return write_run(b'', args.evidence_root, args.out, read_error='manifest is unreadable')
+    return write_run(payload, args.evidence_root, args.out)
 
 
 def _cli_int(value):

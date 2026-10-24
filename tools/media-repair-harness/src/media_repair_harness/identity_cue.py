@@ -1,20 +1,52 @@
 """Exact-style ASS title cues. Pure text; no process, socket, or model."""
 
 import re
+import unicodedata
 
 TIME_RE = re.compile(r'[0-9]+:[0-5][0-9]:[0-5][0-9]\.[0-9]{2}')
-DASHES = set('-‐‑‒–—―−\u00ad')
+DRAWING_RE = re.compile(r'\\p(\d+)')
 
 
 class AssError(ValueError):
     """A line claimed to be Dialogue and was not a usable ASS event."""
 
 
+def _drawing_mode(block):
+    """The last \\pN in an override block. None when the block does not change mode."""
+    found = DRAWING_RE.findall(block)
+    if not found:
+        return None
+    return int(found[-1]) != 0
+
+
 def strip_overrides(text):
-    """Remove ASS override blocks and turn hard line breaks into spaces."""
-    stripped = re.sub(r'\{[^}]*\}', '', text)
-    stripped = stripped.replace('\\N', ' ').replace('\\n', ' ')
-    return stripped.strip()
+    """Decode ASS text. Drawing commands are not title text. \\h is a space."""
+    if not isinstance(text, str):
+        return ''
+    drawing = False
+    out = []
+    index = 0
+    while index < len(text):
+        if text[index] == '{':
+            end = text.find('}', index)
+            if end == -1:
+                if not drawing:
+                    out.append(text[index:])
+                break
+            mode = _drawing_mode(text[index + 1:end])
+            if mode is not None:
+                drawing = mode
+            index = end + 1
+            continue
+        if text.startswith('\\N', index) or text.startswith('\\n', index) or text.startswith('\\h', index):
+            if not drawing:
+                out.append(' ')
+            index += 2
+            continue
+        if not drawing:
+            out.append(text[index])
+        index += 1
+    return ''.join(out).strip()
 
 
 def parse_ass_dialogue(line):
@@ -48,7 +80,13 @@ def classify_exact_style(event, expected_style):
 
 
 def comparison_fold(text):
-    """Conservative comparison key. The raw text stays beside the recorded steps."""
+    """Conservative comparison key. The raw text stays beside the recorded steps.
+
+    A key match after any of these steps is ambiguous. It is not proof that the
+    titles or the episodes are the same, and it is not an automatic mismatch.
+    """
+    if not isinstance(text, str):
+        return '', []
     steps = []
     current = text.strip()
     if current != text:
@@ -56,34 +94,46 @@ def comparison_fold(text):
     collapsed = re.sub(r'\s+', ' ', current)
     if collapsed != current:
         steps.append('collapse-whitespace')
+    normalized = unicodedata.normalize('NFKC', collapsed)
+    if normalized != collapsed:
+        steps.append('nfkc')
     folded = []
-    changed = False
-    for char in collapsed:
-        if char in DASHES or char in ':;':
+    punctuation = False
+    controls = False
+    for char in normalized:
+        category = unicodedata.category(char)
+        if category.startswith('P') or category.startswith('S'):
             folded.append(' ')
-            changed = True
+            punctuation = True
+        elif category in ('Cf', 'Cc'):
+            controls = True
         else:
             folded.append(char)
-    punctuated = ''.join(folded)
-    if changed:
-        steps.append('dash-colon-or-semicolon-to-space')
-    collapsed_again = re.sub(r'\s+', ' ', punctuated).strip()
-    if collapsed_again != punctuated:
+    if punctuation:
+        steps.append('punctuation-and-symbols-to-space')
+    if controls:
+        steps.append('drop-format-controls')
+    joined = ''.join(folded)
+    collapsed_again = re.sub(r'\s+', ' ', joined).strip()
+    if collapsed_again != joined.strip():
         steps.append('collapse-whitespace-after-punctuation')
     cased = collapsed_again.casefold()
     if cased != collapsed_again:
         steps.append('casefold')
-    tailless = re.sub(r'[.!?]+$', '', cased).strip()
-    if tailless != cased:
-        steps.append('strip-trailing-punctuation')
-    final = re.sub(r'\s+', ' ', tailless).strip()
-    if final != tailless:
+    final = re.sub(r'\s+', ' ', cased).strip()
+    if final != cased:
         steps.append('collapse-whitespace-final')
     return final, steps
 
 
 def title_relation(left, right):
-    """same, ambiguous, different, or unknown. Ambiguous is not an automatic mismatch."""
+    """same, ambiguous, different, or unknown.
+
+    same means the strings already agree apart from outer whitespace.
+    ambiguous means a recorded fold erased the difference. That is not proof of
+    the same title or episode, and it is not an automatic mismatch.
+    different means the folded alphanumeric keys still differ.
+    """
     if not isinstance(left, str) or not isinstance(right, str):
         return 'unknown', [], []
     if left.strip() == '' or right.strip() == '':
