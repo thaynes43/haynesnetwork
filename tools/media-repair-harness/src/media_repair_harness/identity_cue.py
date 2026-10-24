@@ -66,7 +66,7 @@ def comparison_fold(text):
             folded.append(char)
     punctuated = ''.join(folded)
     if changed:
-        steps.append('dash-or-colon-to-space')
+        steps.append('dash-colon-or-semicolon-to-space')
     collapsed_again = re.sub(r'\s+', ' ', punctuated).strip()
     if collapsed_again != punctuated:
         steps.append('collapse-whitespace-after-punctuation')

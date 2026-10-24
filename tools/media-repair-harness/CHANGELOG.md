@@ -2,7 +2,7 @@
 
 ## #160: offline identity findings report
 
-`identity-report-1` adds `python3 -m media_repair_harness.identity_report`. `offline` checks a versioned manifest and retained artifact hashes, then writes findings, a markdown report, and a self-contained HTML/PDF audit. It does not start a process, open a socket, or call a model. `plan-recipe` prints one allowlisted exact-style ASS argv and does not open a descriptor. Human dispositions stay separate from machine states. `calibratedProbability` is null. A distinct sample is not a health result, and exit 255 with a recorded Broken pipe stays a deliberate post-cue stop. The runner, prompts, samplers, and evaluator contracts are unchanged. Details: `docs/identity-report.md`.
+`identity-report-1` adds `python3 -m media_repair_harness.identity_report`. `offline` checks a versioned manifest and retained artifact hashes, then writes findings, a markdown report, and a self-contained HTML/PDF audit. It does not start a process, open a socket, or call a model. `plan-recipe` prints one allowlisted exact-style ASS argv and does not open a descriptor. Human dispositions stay separate from machine states. `calibratedProbability` is null. A distinct sample is not a health result, and exit 255 with a recorded Broken pipe stays a deliberate post-cue stop. An unreadable artifact is a contradiction and exit 3, with a report and no traceback. The phone audit names the copied git sha. The runner, prompts, samplers, and evaluator contracts are unchanged. Details: `docs/identity-report.md`.
 
 ## #160 P2: mrh-sampler-3 receipt correction (offline)
 

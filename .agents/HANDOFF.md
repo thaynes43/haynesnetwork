@@ -6,7 +6,7 @@
 - Command: `python3 -m media_repair_harness.identity_report offline`. Design: `tools/media-repair-harness/docs/identity-report.md`.
 - The command validates a manifest and retained hashes. It does not read library media, call a model, or execute the recipe plan.
 - Local-model interpretation stays staged until GPU repadding and a separate health check. Do not expand the sample in this command.
-- Private run outputs stay outside git (`.media160-runs/`, excluded). Do not commit retained frames, catalog paths, or the private report.
+- Private run outputs stay outside git (`.media160-runs/` is in `.gitignore`). Do not commit retained frames, catalog paths, or the private report.
 
 ## 2026-10-19: media repair harness, authorized implementation (checkpoint 1 done)
 

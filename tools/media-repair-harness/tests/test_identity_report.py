@@ -386,6 +386,31 @@ class Report(unittest.TestCase):
         self.assertEqual(claim(findings, 'embedded-title:b')['observationState'], 'unknown')
         self.assertNotIn('Zzyzx', json.dumps(findings['claims']))
 
+    def test_unreadable_artifact_is_a_contradiction(self):
+        manifest_bytes, root, *_rest = self._case()
+        (root / 'loop').symlink_to('loop')
+        document = json.loads(manifest_bytes)
+        document['artifacts'][2]['path'] = 'loop'
+        findings, *_more = run(root, json.dumps(document).encode())
+        self.assertEqual(findings['execution']['exitCode'], 3)
+        self.assertTrue(any('unreadable' in row for row in findings['validation']['contradictions']))
+        self.assertNotIn('Zzyzx', json.dumps(findings['claims']))
+        self.assertNotIn('Traceback', json.dumps(findings))
+
+        document = json.loads(manifest_bytes)
+        real = Path.read_bytes
+
+        def denied(self):
+            if self.name == 'cue.json':
+                raise PermissionError(13, 'Permission denied')
+            return real(self)
+
+        with mock.patch.object(Path, 'read_bytes', denied):
+            findings, *_more = run(root, json.dumps(document).encode())
+        self.assertEqual(findings['execution']['exitCode'], 3)
+        self.assertTrue(any('unreadable' in row for row in findings['validation']['contradictions']))
+        self.assertNotIn('Zzyzx', json.dumps(findings['claims']))
+
     def test_malformed_manifest_exits_2(self):
         manifest_bytes, root, *_rest = self._case()
         document = json.loads(manifest_bytes)

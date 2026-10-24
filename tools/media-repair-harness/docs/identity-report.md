@@ -50,7 +50,7 @@ Each claim has a machine `issueLikelihood` of `candidate`, `not-observed-in-samp
 |---|---|
 | `scene:<id>` | No image is matched algorithmically. A human disposition is cited only after the frame hashes match. |
 | `embedded-title:<item>` | One exact-style ASS cue. The raw `Dialogue` line is reparsed and must agree with the structured fields. |
-| `catalog-title-disagreement:<id>` | Emitted for a same-scene comparison. A `candidate` needs a confirmed scene disposition, one validated cue, a catalog title that still differs after D-04, and a consistent probe when a probe is linked. That grade is `strong-candidate` only with the probe. |
+| `catalog-title-disagreement:<id>` | Emitted for a same-scene comparison. A `candidate` needs a confirmed scene disposition, one validated cue, and a catalog title that still differs after D-04. The grade is `strong-candidate` only when the linked probe and the collection receipt are both consistent. |
 | `full-episode:<item>` | Unknown. A cue plus one scene does not identify the whole file. |
 | `health:<item>` | Unknown. A distinct sampled comparison is not a health determination. Missing evidence is not health. |
 
@@ -60,7 +60,7 @@ Season numbers are recorded and are not mismatch evidence. Punctuation-ambiguous
 
 ## D-04 Title text
 
-Override blocks `{...}` are removed, `\N` and `\n` become spaces, and the ends are trimmed. That text is kept. A comparison fold then records its steps: strip, collapse whitespace, map dashes and colons to spaces, casefold, and strip trailing `.!?`. The fold is not a rewrite of the evidence. Equal folded titles are `ambiguous`, not a mismatch. Filename words are not required and are not a filter.
+Override blocks `{...}` are removed, `\N` and `\n` become spaces, and the ends are trimmed. That text is kept. A comparison fold then records its steps: strip, collapse whitespace, map dashes, colons, and semicolons to spaces (recorded as `dash-colon-or-semicolon-to-space`), casefold, and strip trailing `.!?`. The fold is not a rewrite of the evidence. Equal folded titles are `ambiguous`, not a mismatch. Filename words are not required and are not a filter.
 
 ASS times must match `[0-9]+:[0-5][0-9]:[0-5][0-9].[0-9]{2}`. Commas in the text field survive the ten-field split. The style compare is exact and case-sensitive. Any nonempty title is accepted.
 
@@ -74,4 +74,4 @@ No library scan, no sample expansion, no ASR, no OCR, no model call, no repair, 
 
 ## Test strategy
 
-`tests/test_identity_report.py` uses synthetic files only. It covers full-width integers, malformed and drifted artifacts, exact style versus suffix, generic, and empty text, ASS overrides, commas, Unicode, timings, an arbitrary title, contradictory and missing cues, distinct scene versus health, exit 255 versus an unexpected exit, escaping, provenance, and the absence of subprocess, socket, and URL calls.
+`tests/test_identity_report.py` uses synthetic files only. It covers full-width integers, malformed, drifted, missing, and unreadable artifacts, exact style versus suffix, generic, and empty text, ASS overrides, commas, Unicode, timings, an arbitrary title, contradictory and missing cues, distinct scene versus health, exit 255 versus an unexpected exit, escaping, provenance, and the absence of subprocess, socket, and URL calls. An unreadable artifact is a contradiction and exit 3, with a report and no traceback.

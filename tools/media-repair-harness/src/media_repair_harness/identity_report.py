@@ -436,23 +436,41 @@ def _relative(root, relative, errors):
     if any(part in ('', '.', '..') for part in parts):
         errors.append('path leaves the evidence root: %s' % relative)
         return None
-    root_real = root.resolve()
     candidate = root.joinpath(*parts)
-    real = candidate.resolve()
+    try:
+        root_real = root.resolve()
+        real = candidate.resolve()
+    except (OSError, RuntimeError):
+        errors.append('unreadable: %s' % relative)
+        return None
     if real != root_real and root_real not in real.parents:
         errors.append('path leaves the evidence root: %s' % relative)
         return None
     return candidate
 
 
+def _unreadable(digest, relative, note):
+    return {'status': 'unreadable', 'data': None, 'sha256': digest, 'path': relative, 'bytes': None, 'note': note}
+
+
 def _read_checked(root, relative, digest):
     errors = []
     path = _relative(root, relative, errors)
     if path is None:
-        return {'status': 'malformed', 'data': None, 'sha256': digest, 'path': relative, 'note': errors[0]}
-    if not path.is_file():
+        note = errors[0] if errors else 'unreadable'
+        if note.startswith('unreadable'):
+            return _unreadable(digest, relative, note)
+        return {'status': 'malformed', 'data': None, 'sha256': digest, 'path': relative, 'note': note, 'bytes': None}
+    try:
+        is_file = path.is_file()
+    except (OSError, RuntimeError):
+        return _unreadable(digest, relative, 'unreadable: %s' % relative)
+    if not is_file:
         return {'status': 'missing', 'data': None, 'sha256': digest, 'path': relative, 'bytes': None}
-    data = path.read_bytes()
+    try:
+        data = path.read_bytes()
+    except (OSError, RuntimeError):
+        return _unreadable(digest, relative, 'unreadable: %s' % relative)
     actual = hashlib.sha256(data).hexdigest()
     if actual != digest:
         return {'status': 'drift', 'data': None, 'sha256': digest, 'path': relative, 'bytes': len(data)}
