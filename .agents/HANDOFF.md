@@ -8,7 +8,7 @@
 - Local-model interpretation stays staged until GPU repadding and a separate health check. Do not expand the sample in this command.
 - Private run outputs stay outside git (`.media160-runs/` is in `.gitignore`). Do not commit retained frames, catalog paths, or the private report.
 - A human disposition applies only when every reviewed pin matches the manifest digest and the bytes on disk. Do not copy a new hash into an old review. A catalog-title disagreement also needs an applied exact-style cue. Health and whole-episode flags do not confirm those propositions. Punctuation or space elision is ambiguous and is not proof of the same title. Letter substitutions stay different.
-- PDF evidence is the source text, and that correction is published on this branch. Inline carriage returns and line feeds are spaces in the PDF drawing only. `findings.json` keeps the original characters. Raw ASS is a prefixed fence, not a report row. A wrapped continuation is framed with a renderer-owned `| `, including a wrapped raw ASS line. Markdown and HTML keep their own escapes.
+- PDF evidence is the source text, and that correction is published on this branch. Inline carriage returns and line feeds are spaces in the PDF drawing only. `findings.json` keeps the original characters. Raw ASS is a prefixed fence, not a report row. A wrapped continuation is framed with a renderer-owned `| `, including a wrapped raw ASS line. A note, item, frame, and contradiction row starts with a fixed label. Markdown and HTML keep their own escapes.
 
 ## 2026-10-19: media repair harness, authorized implementation (checkpoint 1 done)
 

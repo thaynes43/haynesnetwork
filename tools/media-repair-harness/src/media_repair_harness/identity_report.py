@@ -1536,7 +1536,7 @@ def _images(parsed, usable_ids, blobs):
         images.append({
             'bytes': blob['data'],
             'png': status,
-            'caption': '%s file %s at %ss sha256 %s' % (
+            'caption': 'Frame %s file %s at %ss sha256 %s' % (
                 item['alias'], item['fileId'], artifact['atSeconds'], artifact['sha256'],
             ),
         })

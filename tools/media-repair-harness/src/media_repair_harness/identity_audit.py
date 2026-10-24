@@ -172,7 +172,7 @@ def _report_sections(findings, plain=False):
             lines.append('- Manifest: %s' % escape(error))
     if contradictions:
         for item in contradictions:
-            lines.append('- %s' % escape(item))
+            lines.append('- Contradiction: %s' % escape(item))
     if not findings.get('errors') and not contradictions:
         lines.append('- None recorded.')
     lines.append('')
@@ -235,7 +235,7 @@ def _markdown_comparisons(findings, escape=_md_escape):
     for item in items:
         claim = item.get('catalogClaim') or {}
         echo = item.get('catalog') or {}
-        lines.append('- %s file %s catalog label %s episode %s season %s agreement %s snapshot path %s' % (
+        lines.append('- Item %s file %s catalog label %s episode %s season %s agreement %s snapshot path %s' % (
             escape(item.get('alias')),
             escape(item.get('fileId')),
             escape(claim.get('title')),
@@ -330,9 +330,9 @@ def _markdown_people(findings, escape=_md_escape):
         lines.append('- None copied.')
     for note in notes:
         if isinstance(note, dict):
-            lines.append('- %s (%s)' % (escape(note.get('text')), escape(note.get('basis'))))
+            lines.append('- Note: %s (basis %s)' % (escape(note.get('text')), escape(note.get('basis'))))
         else:
-            lines.append('- %s' % escape(note))
+            lines.append('- Note: %s' % escape(note))
     lines.append('')
     return lines
 
@@ -343,7 +343,7 @@ def _markdown_frames(findings, escape=_md_escape):
     for claim in findings.get('claims') or []:
         for frame in (claim.get('evidence') or {}).get('frames') or []:
             found = True
-            lines.append('- %s file %s at %ss sha256 %s usable %s' % (
+            lines.append('- Frame %s file %s at %ss sha256 %s usable %s' % (
                 escape(frame.get('alias')),
                 escape(frame.get('fileId')),
                 escape(frame.get('atSeconds')),
@@ -455,7 +455,7 @@ def _html_front(findings):
         claim = item.get('catalogClaim') or {}
         echo = item.get('catalog') if isinstance(item.get('catalog'), dict) else {}
         reasons = item.get('catalogReasons') or []
-        parts.append('<li>%s file %s label %s episode %s season %s agreement %s path %s reasons %s</li>' % (
+        parts.append('<li>Item %s file %s label %s episode %s season %s agreement %s path %s reasons %s</li>' % (
             html.escape(str(item.get('alias')), quote=True),
             html.escape(str(item.get('fileId')), quote=True),
             html.escape(str(claim.get('title')), quote=True),

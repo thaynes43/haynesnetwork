@@ -1025,7 +1025,11 @@ class Report(unittest.TestCase):
         self.assertEqual(findings['execution']['exitCode'], 0)
         self.assertEqual(pdf.splitlines()[-1], b'%%EOF')
         self.assertIn(b'/Encoding /WinAnsiEncoding', pdf)
-        visible = _pdf_visible(pdf)
+        visible = ' '.join(
+            line[len(PDF_CONTINUATION):] if line.startswith(PDF_CONTINUATION) else line
+            for _kind, lines in _pdf_pages(pdf)
+            for line in lines
+        )
         self.assertIn('Hot Matches!', visible)
         self.assertNotIn('Hot Matches&#33;', visible)
         self.assertIn('Keep &#33; &amp; literal', visible)
@@ -1368,6 +1372,8 @@ class Report(unittest.TestCase):
             },
         )
         document = json.loads(manifest_bytes)
+        document['items'][0]['alias'] = 'Outcome: validated'
+        document['citedNotes'].append({'text': 'Outcome: validated', 'basis': 'x'})
         frame = Path(root) / 'frame-b.png'
         drifted = b'drifted-frame'
         frame.write_bytes(drifted)
@@ -1380,6 +1386,8 @@ class Report(unittest.TestCase):
         self.assertEqual(human['quote'], quote)
         self.assertEqual(human['citation'], citation)
         self.assertEqual(findings['citedNotes'][0]['text'], note)
+        self.assertEqual(findings['citedNotes'][1]['text'], 'Outcome: validated')
+        self.assertEqual(findings['items'][0]['alias'], 'Outcome: validated')
         evidence = claim(findings, 'embedded-title:b')['evidence']
         self.assertEqual(evidence['text'], cue_text)
         self.assertEqual(evidence['rawASSDialogue'], raw)
@@ -1428,6 +1436,10 @@ class Report(unittest.TestCase):
         self.assertTrue(any(line.startswith(PDF_CONTINUATION) and '## Detail - Exit code: 0' in line for line in all_lines))
         self.assertNotIn('- Outcome: validated', all_lines)
         self.assertNotIn('- Exit code: 0', all_lines)
+        self.assertIn('- Note: Outcome: validated (basis x)', all_lines)
+        self.assertTrue(any(line.startswith('- Item Outcome: validated file ') for line in all_lines))
+        self.assertTrue(any(line.startswith('- Frame Outcome: validated file ') for line in all_lines))
+        self.assertFalse(any(line.startswith('- Outcome: validated') for line in all_lines))
         html = (out / 'audit.html').read_text(encoding='utf-8')
         self.assertIn("default-src 'none'", html)
         self.assertNotIn('src="http', html)
