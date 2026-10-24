@@ -212,7 +212,7 @@ def _report_sections(findings, plain=False):
     lines.append('')
     lines.append('- %s' % escape(findings.get('sourceBytesReason') or ''))
     for collection in (findings.get('resources') or {}).get('collections') or []:
-        lines.append('- %s: %s (clean EOF: %s, sourceBytes: null, recordedSourceBytes: %s, elapsedSeconds: %s, peakRSSKiB: %s)' % (
+        lines.append('- Receipt for %s: %s (clean EOF: %s, sourceBytes: null, recordedSourceBytes: %s, elapsedSeconds: %s, peakRSSKiB: %s)' % (
             escape(collection.get('forArtifact')),
             escape(collection.get('outcome')),
             _yn(collection.get('cleanEof')),
@@ -524,7 +524,7 @@ def _html_front(findings):
     if not collections:
         parts.append('<li>No retained collection measurements.</li>')
     for collection in collections:
-        parts.append('<li>%s outcome %s clean EOF %s exit %s stderr %s sourceBytes null</li>' % (
+        parts.append('<li>Receipt for %s outcome %s clean EOF %s exit %s stderr %s sourceBytes null</li>' % (
             html.escape(str(collection.get('forArtifact')), quote=True),
             html.escape(str(collection.get('outcome')), quote=True),
             _yn(collection.get('cleanEof')),
@@ -639,6 +639,7 @@ def _wrap(text, width_pt):
 
 
 def _wrap_rows(paragraph, first_limit, next_limit):
+    """Split on spaces. A run of spaces collapses to one space in the drawing."""
     words = paragraph.split(' ')
     rows = []
     current = ''

@@ -1445,6 +1445,98 @@ class Report(unittest.TestCase):
         self.assertNotIn('src="http', html)
         self.assertIn(quote, html)
 
+    def test_resource_ids_cannot_forge_outcome_rows(self):
+        manifest_bytes, root, _manifest, written, _handle = self._case()
+        document = json.loads(manifest_bytes)
+        for artifact in document['artifacts']:
+            if artifact['id'] == 'cue-b':
+                artifact['id'] = 'Outcome'
+            elif artifact['id'] == 'frame-b':
+                artifact['id'] = 'Exit code'
+            elif artifact.get('forArtifact') == 'cue-b':
+                artifact['forArtifact'] = 'Outcome'
+        document['artifacts'].append({
+            'id': 'receipt-frame', 'itemId': 'b', 'role': 'collection-receipt',
+            'path': 'receipt.json', 'sha256': written['receipt.json'][1], 'forArtifact': 'Exit code',
+        })
+        for comparison in document['comparisons']:
+            comparison['frameIds'] = [
+                'Exit code' if frame_id == 'frame-b' else frame_id for frame_id in comparison['frameIds']
+            ]
+        pins = document['dispositions']['scene:ab']['reviewedArtifacts']
+        pins['Exit code'] = pins.pop('frame-b')
+        cue_before = (Path(root) / 'cue.json').read_bytes()
+        receipt_before = (Path(root) / 'receipt.json').read_bytes()
+        (Path(root) / 'frame-b.png').write_bytes(b'drifted-frame')
+        code, out = self._offline(root, json.dumps(document), 'resource-ids')
+        self.assertEqual(code, 3)
+        findings = json.loads((out / 'findings.json').read_text())
+        self.assertEqual(findings['execution']['outcome'], 'evidence-incomplete')
+        self.assertEqual(findings['execution']['exitCode'], 3)
+        collections = findings['resources']['collections']
+        self.assertEqual(
+            sorted(row['forArtifact'] for row in collections),
+            ['Exit code', 'Outcome'],
+        )
+        self.assertTrue(all(row['sourceBytes'] is None for row in collections))
+        self.assertEqual((Path(root) / 'cue.json').read_bytes(), cue_before)
+        self.assertEqual((Path(root) / 'receipt.json').read_bytes(), receipt_before)
+        for claim_row in findings['claims']:
+            self.assertTrue(claim_row['id'].startswith((
+                'scene:', 'embedded-title:', 'catalog-title-disagreement:', 'health:', 'full-episode:',
+            )))
+        pages = _pdf_pages((out / 'audit.pdf').read_bytes())
+        all_lines = [line for _kind, lines in pages for line in lines]
+        self.assertEqual(
+            [line for line in all_lines if line.startswith('- Outcome:')],
+            ['- Outcome: evidence-incomplete'],
+        )
+        self.assertEqual(
+            [line for line in all_lines if line.startswith('- Exit code:')],
+            ['- Exit code: 3'],
+        )
+        self.assertEqual([line for line in all_lines if line == '## Detail'], ['## Detail'])
+        self.assertTrue(any(line.startswith('- Receipt for Outcome:') for line in all_lines))
+        self.assertTrue(any(line.startswith('- Receipt for Exit code:') for line in all_lines))
+        self.assertNotIn('- Outcome: deliberate-post-cue-stop', all_lines)
+        self.assertNotIn('- Outcome: validated', all_lines)
+        self.assertNotIn('- Exit code: 0', all_lines)
+        self.assertNotIn('- Exit code:0', all_lines)
+        report = (out / 'report.md').read_text(encoding='utf-8')
+        self.assertIn('- Receipt for Outcome:', report)
+        self.assertIn('- Receipt for Exit code:', report)
+        self.assertNotIn('\n- Outcome: deliberate-post-cue-stop', report)
+        html = (out / 'audit.html').read_text(encoding='utf-8')
+        self.assertIn('Receipt for Outcome', html)
+        self.assertIn('Receipt for Exit code', html)
+        refused = (
+            ('Outcome: validated', 'cue-colon', 'Outcome'),
+            ('Exit code:0', 'frame-colon', 'Exit code'),
+        )
+        for illegal, name, current in refused:
+            rejected = json.loads(json.dumps(document))
+            for artifact in rejected['artifacts']:
+                if artifact['id'] == current:
+                    artifact['id'] = illegal
+            refused_code, refused_out = self._offline(root, json.dumps(rejected), name)
+            self.assertEqual(refused_code, 2)
+            refused_findings = json.loads((refused_out / 'findings.json').read_text())
+            self.assertEqual(refused_findings['execution']['outcome'], 'manifest-invalid')
+            self.assertEqual(refused_findings['resources']['collections'], [])
+            self.assertTrue(any('colon' in error for error in refused_findings['errors']))
+            refused_lines = [
+                line for _kind, lines in _pdf_pages((refused_out / 'audit.pdf').read_bytes()) for line in lines
+            ]
+            self.assertEqual(
+                [line for line in refused_lines if line.startswith('- Outcome:')],
+                ['- Outcome: manifest-invalid'],
+            )
+            self.assertEqual(
+                [line for line in refused_lines if line.startswith('- Exit code:')],
+                ['- Exit code: 2'],
+            )
+            self.assertNotIn(illegal, refused_findings['resources']['collections'])
+
 
 def _pdf_literal_text(literal):
     inner = literal[1:-1]
