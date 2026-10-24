@@ -21,6 +21,9 @@ e2e-timings/
 # local identity-proof screenshots (owner review artifacts, never committed)
 identity-screenshots/
 
+# private offline identity runs (retained frames and reports, never committed)
+.media160-runs/
+
 # tooling
 .DS_Store
 *.log

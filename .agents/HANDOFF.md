@@ -1,5 +1,15 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-24: #160 offline identity findings report
+
+- Owner for this slice: headless Grok, session `f488f78c-ca25-41c7-b343-cfa5f47869c0`, branch `feat/media-identity-dryrun-160`.
+- Command: `python3 -m media_repair_harness.identity_report offline`. Design: `tools/media-repair-harness/docs/identity-report.md`.
+- The command validates a manifest and retained hashes. It does not read library media, call a model, or execute the recipe plan.
+- Local-model interpretation stays staged until GPU repadding and a separate health check. Do not expand the sample in this command.
+- Private run outputs stay outside git (`.media160-runs/` is in `.gitignore`). Do not commit retained frames, catalog paths, or the private report.
+- A human disposition applies only when every reviewed pin matches the manifest digest and the bytes on disk. Do not copy a new hash into an old review. A catalog-title disagreement also needs an applied exact-style cue. Health and whole-episode flags do not confirm those propositions. Punctuation or space elision is ambiguous and is not proof of the same title. Letter substitutions stay different.
+- PDF evidence is the source text, and that correction is published on this branch. Inline carriage returns and line feeds are spaces in the PDF drawing only. `findings.json` keeps the original characters. Raw ASS is a prefixed fence, not a report row. A wrapped continuation is framed with a renderer-owned `| `, including a wrapped raw ASS line. A note, item, frame, and contradiction row starts with a fixed label. A Resources row starts with `Receipt for` before the artifact id. Wrapping collapses a run of spaces to one space in the PDF drawing only. A cue file the parser cannot finish, including a depth-60000 object, stays worded as not a JSON object. Markdown and HTML keep their own escapes.
+
 ## 2026-10-19: media repair harness, authorized implementation (checkpoint 1 done)
 
 - Tom authorized implementation and a monitored rollout on 2026-10-19. This supersedes the 2026-10-18 spike-only hold for
