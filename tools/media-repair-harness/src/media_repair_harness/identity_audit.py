@@ -14,6 +14,8 @@ LEADING = 14
 # Helvetica '@' is 1.015 em in the standard AFM. 1.02 em is the worst cp1252 advance used for wrapping.
 GLYPH_EM = 1.02
 EM = FONT * GLYPH_EM
+# Renderer-owned frame for a wrapped continuation. It is not read from source bytes.
+PDF_CONTINUATION = '| '
 PDF_NOTE = (
     'PDF encoding: WinAnsiEncoding (cp1252). Characters outside that set are written as '
     '<U+XXXX>. This is not the character itself. The HTML and the markdown keep the exact UTF-8 text.'
@@ -614,28 +616,51 @@ def _pdf_literal(text, replaced):
 
 
 def _wrap(text, width_pt):
+    """Wrap inside the content box. A continuation starts with PDF_CONTINUATION.
+
+    The first physical line of a paragraph stays as written, so a trusted label
+    still begins at the left margin. Every later physical line, including a slice
+    of a long word, is framed as data. The frame width is reserved.
+    """
     limit = max(1, int(width_pt // EM))
+    prefix = PDF_CONTINUATION if len(PDF_CONTINUATION) < limit else ''
+    content_limit = limit - len(prefix)
     lines = []
     for paragraph in str(text).split('\n'):
         if paragraph == '':
             lines.append('')
             continue
-        words = paragraph.split(' ')
-        current = ''
-        for word in words:
-            while len(word) > limit:
-                lines.append(word[:limit])
-                word = word[limit:]
-            trial = word if current == '' else current + ' ' + word
-            if len(trial) <= limit:
-                current = trial
-            else:
-                if current:
-                    lines.append(current)
-                current = word
-        if current:
-            lines.append(current)
+        rows = _wrap_rows(paragraph, limit, content_limit)
+        if not rows:
+            continue
+        lines.append(rows[0])
+        lines.extend(prefix + row for row in rows[1:])
     return lines
+
+
+def _wrap_rows(paragraph, first_limit, next_limit):
+    words = paragraph.split(' ')
+    rows = []
+    current = ''
+    for word in words:
+        while word:
+            capacity = first_limit if not rows else next_limit
+            if current == '' and len(word) > capacity:
+                rows.append(word[:capacity])
+                word = word[capacity:]
+                continue
+            trial = word if current == '' else current + ' ' + word
+            if len(trial) <= capacity:
+                current = trial
+                break
+            if current:
+                rows.append(current)
+                current = ''
+                continue
+        # A word that fit is consumed by the break above.
+    if current:
+        rows.append(current)
+    return rows
 
 
 def _fit_image(width, height, box_w, box_h):

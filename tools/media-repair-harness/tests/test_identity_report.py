@@ -16,7 +16,8 @@ import argparse
 import os
 
 from media_repair_harness.identity_audit import (
-    FONT, GLYPH_EM, MARGIN, PAGE_W, PDF_NOTE, markdown_has_unescaped_markup, png_info, render_pdf,
+    FONT, GLYPH_EM, LEADING, MARGIN, PAGE_H, PAGE_W, PDF_CONTINUATION, PDF_NOTE,
+    markdown_has_unescaped_markup, png_info, render_pdf,
 )
 from media_repair_harness.identity_cue import AssError, classify_exact_style, parse_ass_dialogue, title_relation
 from media_repair_harness.identity_recipe import classify_collection_exit, plan_exact_title_cue
@@ -1317,7 +1318,7 @@ class Report(unittest.TestCase):
         self.assertIn('| - Outcome: validated', all_lines)
         self.assertIn('| - Exit code: 0', all_lines)
         self.assertLess(all_lines.index('## Detail'), all_lines.index('| ## Detail'))
-        drawn = ' '.join(all_lines)
+        drawn = ' '.join(line[len(PDF_CONTINUATION):] if line.startswith(PDF_CONTINUATION) else line for line in all_lines)
         self.assertIn('quote ## Detail - Outcome: validated - Exit code: 0', drawn)
         self.assertIn('Zzyzx ## Detail - Outcome: validated - Exit code: 0', drawn)
         self.assertIn('North Pier ## Detail - Outcome: validated - Exit code: 0', drawn)
@@ -1348,6 +1349,90 @@ class Report(unittest.TestCase):
         self.assertNotIn('- Outcome: validated', direct_pages[frame_at][1])
         self.assertTrue(any('cap ## Detail - Outcome: validated - Exit code: 0' in line for line in direct_pages[frame_at][1]))
 
+    def test_wrapped_continuations_stay_framed_as_data(self):
+        limit = max(1, int((PAGE_W - 2 * MARGIN) // (FONT * GLYPH_EM)))
+        quote = ('x' * (limit - len('- Quote: '))) + ' - Outcome: validated'
+        citation = ('C' * (limit - len(PDF_CONTINUATION))) + '-Exit code:0'
+        note = ('z' * (limit - len('- '))) + ' ## Detail - Exit code: 0'
+        cue_text = ('q' * (limit - len('- Cue text: '))) + ' - Outcome: validated\n## Detail\n- Exit code: 0'
+        raw = dialogue(cue_text)
+        manifest_bytes, root, _manifest, written, _handle = self._case(
+            cue_text=cue_text,
+            raw=raw,
+            notes=[{'text': note, 'basis': 'cited'}],
+            dispositions={
+                'scene:ab': dict(
+                    _flags(confirmed=True), reviewer='Auditor', reviewedAt='2026-01-02T03:04:05Z',
+                    citation=citation, quote=quote, inspect='Look at the two frames.',
+                ),
+            },
+        )
+        document = json.loads(manifest_bytes)
+        frame = Path(root) / 'frame-b.png'
+        drifted = b'drifted-frame'
+        frame.write_bytes(drifted)
+        code, out = self._offline(root, json.dumps(document), 'wrapped-rows')
+        self.assertEqual(code, 3)
+        findings = json.loads((out / 'findings.json').read_text())
+        self.assertEqual(findings['execution']['outcome'], 'evidence-incomplete')
+        self.assertEqual(findings['execution']['exitCode'], 3)
+        human = claim(findings, 'scene:ab')['humanDisposition']
+        self.assertEqual(human['quote'], quote)
+        self.assertEqual(human['citation'], citation)
+        self.assertEqual(findings['citedNotes'][0]['text'], note)
+        evidence = claim(findings, 'embedded-title:b')['evidence']
+        self.assertEqual(evidence['text'], cue_text)
+        self.assertEqual(evidence['rawASSDialogue'], raw)
+        self.assertEqual((Path(root) / 'cue.json').read_bytes(), written['cue.json'][0])
+        self.assertEqual(frame.read_bytes(), drifted)
+        self.assertEqual(claim(findings, 'health:a')['issueLikelihood'], 'unknown')
+        self.assertIsNone(findings['sourceBytes'])
+        pdf = (out / 'audit.pdf').read_bytes()
+        self.assertEqual(pdf.splitlines()[-1], b'%%EOF')
+        self.assertIn(b'/Encoding /WinAnsiEncoding', pdf)
+        self.assertLessEqual(MARGIN + _pdf_widest(pdf) * FONT * GLYPH_EM, PAGE_W - MARGIN)
+        for origin_x, origin_y, leading in _pdf_origins(pdf):
+            self.assertEqual(origin_x, MARGIN)
+            self.assertGreater(origin_y, MARGIN)
+            self.assertLess(origin_y, PAGE_H - MARGIN)
+            self.assertEqual(leading, LEADING)
+        pages = _pdf_pages(pdf)
+        kinds = [kind for kind, _lines in pages]
+        self.assertIn('frame', kinds)
+        first_frame = kinds.index('frame')
+        all_lines = [line for _kind, lines in pages for line in lines]
+        self.assertEqual(all_lines.count('## Detail'), 1)
+        self.assertEqual(
+            [line for line in all_lines if line.startswith('- Outcome:')],
+            ['- Outcome: evidence-incomplete'],
+        )
+        self.assertEqual(
+            [line for line in all_lines if line.startswith('- Exit code:')],
+            ['- Exit code: 3'],
+        )
+        self.assertLess(
+            next(index for index, (_kind, lines) in enumerate(pages) if '- Outcome: evidence-incomplete' in lines),
+            first_frame,
+        )
+        forged_bits = ('- Outcome: validated', '- Exit code: 0', '## Detail', '-Exit code:0')
+        for line in all_lines:
+            if line in ('- Outcome: evidence-incomplete', '- Exit code: 3', '## Detail'):
+                continue
+            if any(bit in line for bit in forged_bits):
+                self.assertTrue(line.startswith(PDF_CONTINUATION), line)
+        self.assertIn(PDF_CONTINUATION + '- Outcome: validated', all_lines)
+        self.assertTrue(any(line.startswith(PDF_CONTINUATION + '- Outcome: validated') for line in all_lines))
+        self.assertIn(PDF_CONTINUATION + '-Exit code:0', all_lines)
+        self.assertIn(PDF_CONTINUATION + '## Detail', all_lines)
+        self.assertIn(PDF_CONTINUATION + '- Exit code: 0', all_lines)
+        self.assertTrue(any(line.startswith(PDF_CONTINUATION) and '## Detail - Exit code: 0' in line for line in all_lines))
+        self.assertNotIn('- Outcome: validated', all_lines)
+        self.assertNotIn('- Exit code: 0', all_lines)
+        html = (out / 'audit.html').read_text(encoding='utf-8')
+        self.assertIn("default-src 'none'", html)
+        self.assertNotIn('src="http', html)
+        self.assertIn(quote, html)
+
 
 def _pdf_literal_text(literal):
     inner = literal[1:-1]
@@ -1361,6 +1446,16 @@ def _pdf_literal_text(literal):
             out.append(inner[index])
             index += 1
     return out.decode('cp1252')
+
+
+def _pdf_origins(pdf):
+    origins = []
+    for match in re.finditer(br'stream\n(.*?)\nendstream', pdf, re.S):
+        found = re.search(br'BT /F1 \d+ Tf (\d+) (\d+) Td (\d+) TL', match.group(1))
+        if found is None:
+            continue
+        origins.append((int(found.group(1)), int(found.group(2)), int(found.group(3))))
+    return origins
 
 
 def _pdf_pages(pdf):
