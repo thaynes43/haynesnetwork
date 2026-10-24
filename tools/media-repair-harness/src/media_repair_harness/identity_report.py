@@ -63,12 +63,18 @@ def _int(value, name, errors, minimum=0):
 
 
 def _has_surrogate(value):
-    if type(value) is str:
-        return any(0xD800 <= ord(char) <= 0xDFFF for char in value)
-    if type(value) is dict:
-        return any(_has_surrogate(key) or _has_surrogate(item) for key, item in value.items())
-    if type(value) is list:
-        return any(_has_surrogate(item) for item in value)
+    """Walk without recursion so a deep parsed document cannot escape as an output refusal."""
+    stack = [value]
+    while stack:
+        current = stack.pop()
+        if type(current) is str:
+            if any(0xD800 <= ord(char) <= 0xDFFF for char in current):
+                return True
+        elif type(current) is dict:
+            stack.extend(current.keys())
+            stack.extend(current.values())
+        elif type(current) is list:
+            stack.extend(current)
     return False
 
 
@@ -516,10 +522,10 @@ def _path_label(relative):
 def _load_json(data):
     try:
         document = json.loads(data.decode('utf-8'), parse_constant=_reject_constant)
+        if _has_surrogate(document):
+            return {'__lone_surrogate__': True}
     except (UnicodeError, json.JSONDecodeError, ValueError, RecursionError):
         return None
-    if _has_surrogate(document):
-        return {'__lone_surrogate__': True}
     return document
 
 
@@ -557,8 +563,23 @@ def _human(dispositions, claim_id, applies, reason, pin_check):
     return copied
 
 
-def _pin_check(dispositions, claim_id, required_ids, artifacts):
-    """Compare the disposition's original digests with the manifest. Never copy the manifest into the pin."""
+def _pin_row(artifact_id, reviewed, artifacts, blobs):
+    """A pin matches only when the manifest digest and the bytes on disk are that digest."""
+    current = artifacts.get(artifact_id, {}).get('sha256')
+    blob = blobs.get(artifact_id) if type(blobs) is dict else None
+    disk = blob.get('status') if type(blob) is dict else 'absent'
+    digest_ok = type(reviewed) is str and reviewed == current
+    return {
+        'id': artifact_id,
+        'reviewed': reviewed,
+        'manifest': current,
+        'diskStatus': disk,
+        'match': digest_ok and disk == 'match',
+    }
+
+
+def _pin_check(dispositions, claim_id, required_ids, artifacts, blobs):
+    """Compare original digests with the manifest and the on-disk read. Never copy the manifest into the pin."""
     base = dispositions.get(claim_id) or {}
     pins = base.get('reviewedArtifacts') or {}
     rows = []
@@ -567,25 +588,22 @@ def _pin_check(dispositions, claim_id, required_ids, artifacts):
         return False, []
     needed = list(required_ids)
     for artifact_id in needed:
-        reviewed = pins.get(artifact_id)
-        current = artifacts.get(artifact_id, {}).get('sha256')
-        match = type(reviewed) is str and reviewed == current
-        rows.append({'id': artifact_id, 'reviewed': reviewed, 'manifest': current, 'match': match})
-        if not match:
+        row = _pin_row(artifact_id, pins.get(artifact_id), artifacts, blobs)
+        rows.append(row)
+        if not row['match']:
             ok = False
     for artifact_id, reviewed in pins.items():
         if artifact_id in required_ids:
             continue
-        current = artifacts.get(artifact_id, {}).get('sha256')
-        match = type(reviewed) is str and reviewed == current
-        rows.append({'id': artifact_id, 'reviewed': reviewed, 'manifest': current, 'match': match})
-        if not match:
+        row = _pin_row(artifact_id, reviewed, artifacts, blobs)
+        rows.append(row)
+        if not row['match']:
             ok = False
     return ok, rows
 
 
-def _bound_human(dispositions, claim_id, evidence_ok, required_ids, artifacts, undefined=False):
-    pins_ok, rows = _pin_check(dispositions, claim_id, required_ids, artifacts)
+def _bound_human(dispositions, claim_id, evidence_ok, required_ids, artifacts, blobs, undefined=False):
+    pins_ok, rows = _pin_check(dispositions, claim_id, required_ids, artifacts, blobs)
     if undefined:
         return _human(dispositions, claim_id, False, 'undefined-proposition', rows)
     if claim_id not in dispositions:
@@ -653,10 +671,10 @@ def assess(parsed, evidence_root):
     collections = _collections(parsed['artifacts'], blobs, artifacts, items, frame_state, cue_state)
     claims = []
     claims.extend(_scene_claims(parsed, items, artifacts, frame_state, blobs))
-    claims.extend(_title_claims(parsed, items, artifacts, cue_state, catalog_state))
-    claims.extend(_disagreement_claims(parsed, items, artifacts, frame_state, cue_state, catalog_state))
-    claims.extend(_episode_claims(parsed, items, artifacts))
-    claims.extend(_health_claims(parsed, items, artifacts, frame_state))
+    claims.extend(_title_claims(parsed, items, artifacts, cue_state, catalog_state, blobs))
+    claims.extend(_disagreement_claims(parsed, items, artifacts, frame_state, cue_state, catalog_state, blobs))
+    claims.extend(_episode_claims(parsed, items, artifacts, blobs))
+    claims.extend(_health_claims(parsed, items, artifacts, frame_state, blobs))
     plans = _plans(cue_state)
     incomplete = bool(contradictions)
     git = parsed['gitSha']
@@ -1141,7 +1159,7 @@ def _scene_claims(parsed, items, artifacts, frame_state, blobs):
             subjects.append(_subject(item))
         claim_id = 'scene:' + comparison['id']
         required = list(comparison['frameIds']) + list(comparison.get('distinctFrom') or [])
-        human = _bound_human(parsed['dispositions'], claim_id, usable, required, artifacts)
+        human = _bound_human(parsed['dispositions'], claim_id, usable, required, artifacts, blobs)
         if comparison['kind'] == 'distinct-scene':
             rationale = (
                 'The disposition cites a distinct sampled comparison. This report did not compare the images. '
@@ -1166,14 +1184,14 @@ def _scene_claims(parsed, items, artifacts, frame_state, blobs):
     return claims
 
 
-def _title_claims(parsed, items, artifacts, cue_state, catalog_state):
+def _title_claims(parsed, items, artifacts, cue_state, catalog_state, blobs):
     claims = []
     for item in parsed['items']:
         cues = [state for cue_id, state in cue_state.items() if artifacts[cue_id]['itemId'] == item['id']]
         claim_id = 'embedded-title:' + item['id']
         catalog = catalog_state.get(item['id'])
         if not cues:
-            human = _bound_human(parsed['dispositions'], claim_id, False, [], artifacts)
+            human = _bound_human(parsed['dispositions'], claim_id, False, [], artifacts, blobs)
             claims.append(_make_claim(
                 claim_id, 'literal-embedded-title', 'unknown', 'not-observed-in-sample', 'unknown', 'observed',
                 'No exact-style cue artifact was named for this item. Absence is not wrong content and is not health.',
@@ -1184,7 +1202,7 @@ def _title_claims(parsed, items, artifacts, cue_state, catalog_state):
         applied = state['applied']
         cue_ids = [item['artifact']['id'] for item in cues]
         evidence_ok = applied or (state['observation'] not in ('unknown', 'tool-failed'))
-        human = _bound_human(parsed['dispositions'], claim_id, evidence_ok, cue_ids, artifacts)
+        human = _bound_human(parsed['dispositions'], claim_id, evidence_ok, cue_ids, artifacts, blobs)
         relation = 'unknown'
         steps = []
         if applied and catalog and catalog['agreement'] == 'consistent':
@@ -1239,7 +1257,7 @@ def _applied_cues_for(item_ids, cue_state, artifacts):
     return found
 
 
-def _disagreement_claims(parsed, items, artifacts, frame_state, cue_state, catalog_state):
+def _disagreement_claims(parsed, items, artifacts, frame_state, cue_state, catalog_state, blobs):
     claims = []
     for comparison in parsed['comparisons']:
         if comparison['kind'] != 'same-scene':
@@ -1256,7 +1274,7 @@ def _disagreement_claims(parsed, items, artifacts, frame_state, cue_state, catal
             if item['id'] not in {existing['id'] for existing in unique}:
                 unique.append(item)
         required = list(comparison['frameIds']) + list(comparison.get('distinctFrom') or [])
-        scene_human = _bound_human(parsed['dispositions'], 'scene:' + comparison['id'], frames_ok, required, artifacts)
+        scene_human = _bound_human(parsed['dispositions'], 'scene:' + comparison['id'], frames_ok, required, artifacts, blobs)
         confirmed = bool(scene_human['applies'] and scene_human['confirmed'])
         item_ids = {item['id'] for item in unique}
         applied = _applied_cues_for(item_ids, cue_state, artifacts)
@@ -1268,8 +1286,8 @@ def _disagreement_claims(parsed, items, artifacts, frame_state, cue_state, catal
             unique, applied, confirmed, frames_ok, tool_failed, catalog_state, artifacts,
         )
         cue_ids = [cue_id for cue_id, _state in applied]
-        evidence_ok = bool(frames_ok) and not tool_failed and observation not in ('unknown', 'tool-failed')
-        human = _bound_human(parsed['dispositions'], claim_id, evidence_ok, required + cue_ids, artifacts)
+        evidence_ok = bool(frames_ok) and not tool_failed and bool(applied)
+        human = _bound_human(parsed['dispositions'], claim_id, evidence_ok, required + cue_ids, artifacts, blobs)
         claims.append(_make_claim(
             claim_id, 'catalog-title-disagreement', issue, observation, grade, 'mixed',
             rationale, human, evidence, OPEN_ALTERNATIVES, [_subject(item) for item in unique],
@@ -1376,11 +1394,11 @@ def _pair(other, relation, left_steps, right_steps, catalog, cue_catalog, state)
     }
 
 
-def _episode_claims(parsed, items, artifacts):
+def _episode_claims(parsed, items, artifacts, blobs):
     claims = []
     for item in parsed['items']:
         claim_id = 'full-episode:' + item['id']
-        human = _bound_human(parsed['dispositions'], claim_id, False, [], artifacts, undefined=True)
+        human = _bound_human(parsed['dispositions'], claim_id, False, [], artifacts, blobs, undefined=True)
         rationale = 'A sampled scene and an embedded cue do not identify the whole file. Whole-episode identity stays unresolved.'
         if human['confirmed']:
             rationale += ' The confirmed flag does not define this proposition and is not applied.'
@@ -1391,7 +1409,7 @@ def _episode_claims(parsed, items, artifacts):
     return claims
 
 
-def _health_claims(parsed, items, artifacts, frame_state):
+def _health_claims(parsed, items, artifacts, frame_state, blobs):
     claims = []
     distinct_ids = set()
     for comparison in parsed['comparisons']:
@@ -1410,7 +1428,7 @@ def _health_claims(parsed, items, artifacts, frame_state):
         else:
             rationale = 'Item health was not determined. Missing evidence is not a health determination.'
         claim_id = 'health:' + item['id']
-        human = _bound_human(parsed['dispositions'], claim_id, False, [], artifacts, undefined=True)
+        human = _bound_human(parsed['dispositions'], claim_id, False, [], artifacts, blobs, undefined=True)
         if human['confirmed']:
             rationale += ' The confirmed flag does not define this proposition and is not applied.'
         claims.append(_make_claim(

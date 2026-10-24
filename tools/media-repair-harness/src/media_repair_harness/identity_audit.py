@@ -294,10 +294,11 @@ def _markdown_people(findings, escape=_md_escape):
         lines.append('  - Reviewer: %s' % escape(human.get('reviewer') or 'not recorded'))
         lines.append('  - Reviewed at: %s' % escape(human.get('reviewedAt') or 'not recorded'))
         for pin in human.get('pinCheck') or []:
-            lines.append('  - Reviewed %s digest %s manifest %s match %s' % (
+            lines.append('  - Reviewed %s digest %s manifest %s disk %s match %s' % (
                 escape(pin.get('id')),
                 escape(pin.get('reviewed')),
                 escape(pin.get('manifest')),
+                escape(pin.get('diskStatus')),
                 _yn(pin.get('match')),
             ))
     lines.append('')
@@ -490,10 +491,11 @@ def _html_front(findings):
             html.escape(str(human.get('citation') or 'not recorded'), quote=True),
         ))
         for pin in human.get('pinCheck') or []:
-            parts.append('<li>Pin %s reviewed %s manifest %s match %s</li>' % (
+            parts.append('<li>Pin %s reviewed %s manifest %s disk %s match %s</li>' % (
                 html.escape(str(pin.get('id')), quote=True),
                 html.escape(str(pin.get('reviewed')), quote=True),
                 html.escape(str(pin.get('manifest')), quote=True),
+                html.escape(str(pin.get('diskStatus')), quote=True),
                 _yn(pin.get('match')),
             ))
     parts.append('</ul><h2>Collections</h2><ul>')
@@ -553,6 +555,7 @@ def render_html(findings, images):
         'img{width:100%;height:auto;} figure{margin:0 0 1.5rem;}',
         'section{border-top:1px solid #444;padding-top:1rem;margin-top:1rem;}',
         'pre{white-space:pre-wrap;word-break:break-word;}',
+        'li,figcaption,p{overflow-wrap:anywhere;}',
         '</style></head><body>',
         _html_front(findings),
         '\n'.join(figures),

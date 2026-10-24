@@ -1050,6 +1050,198 @@ class Report(unittest.TestCase):
         self.assertNotIn('<script>', html)
         self.assertIn("default-src 'none'", html)
         self.assertEqual(json.loads((root / 'cue.json').read_text())['text'], cue)
+        self.assertIn('overflow-wrap:anywhere', html)
+
+    def _offline(self, root, payload, name):
+        path = Path(root) / ('manifest-%s.json' % name)
+        path.write_bytes(payload if isinstance(payload, bytes) else payload.encode())
+        out = Path(root) / ('out-%s' % name)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = main(['offline', '--manifest', str(path), '--evidence-root', str(root), '--out', str(out)])
+        text = stderr.getvalue()
+        self.assertNotIn('Traceback', text)
+        return code, out
+
+    def test_deep_hash_matched_json_is_exit_3_with_a_report(self):
+        nested = ('[' * 600) + '0' + (']' * 600)
+        deeper = ('[' * 2000) + '0' + (']' * 2000)
+
+        def plant(root, document, artifact_id, blob):
+            for artifact in document['artifacts']:
+                if artifact['id'] == artifact_id:
+                    target = Path(root) / artifact['path']
+                    before = target.read_bytes()
+                    target.write_bytes(blob)
+                    artifact['sha256'] = hashlib.sha256(blob).hexdigest()
+                    return target, before
+            raise AssertionError(artifact_id)
+
+        manifest_bytes, root, *_rest = self._case()
+        document = json.loads(manifest_bytes)
+        for artifact_id, label in (
+            ('cue-b', 'cue'), ('probe-b', 'probe'), ('receipt-b', 'receipt'),
+        ):
+            fresh = json.loads(manifest_bytes)
+            target, before = plant(root, fresh, artifact_id, nested.encode())
+            code, out = self._offline(root, json.dumps(fresh), 'deep-%s' % label)
+            self.assertEqual(code, 3, label)
+            report = (out / 'audit.html').read_text(encoding='utf-8')
+            self.assertTrue(report)
+            self.assertLess(len((out / 'findings.json').read_text(encoding='utf-8')), 200000)
+            self.assertEqual(target.read_bytes(), nested.encode())
+            target.write_bytes(before)
+
+        catalog_path = Path(root) / 'catalog.json'
+        original_catalog = catalog_path.read_bytes()
+        catalog_path.write_bytes(nested.encode())
+        fresh = json.loads(manifest_bytes)
+        fresh['catalogSnapshot']['sha256'] = hashlib.sha256(nested.encode()).hexdigest()
+        code, out = self._offline(root, json.dumps(fresh), 'deep-catalog')
+        self.assertEqual(code, 3)
+        self.assertIn('malformed', (out / 'audit.html').read_text(encoding='utf-8'))
+        self.assertEqual(catalog_path.read_bytes(), nested.encode())
+        catalog_path.write_bytes(original_catalog)
+
+        code, out = self._offline(root, deeper, 'deep-manifest')
+        self.assertEqual(code, 2)
+        self.assertTrue((out / 'audit.html').is_file())
+        code, out = self._offline(root, nested, 'parsed-manifest')
+        self.assertEqual(code, 2)
+        self.assertIn('manifest must be an object', (out / 'audit.html').read_text(encoding='utf-8'))
+
+    def test_pins_follow_bytes_on_disk_and_a_disagreement_needs_a_cue(self):
+        manifest_bytes, root, _manifest, written, _handle = self._case()
+        document = json.loads(manifest_bytes)
+        frame = png(7, 8, 9)
+        frame_sha = hashlib.sha256(frame).hexdigest()
+        (Path(root) / 'frame-c.png').write_bytes(frame)
+        document['artifacts'].append({
+            'id': 'frame-c', 'itemId': 'b', 'role': 'sampled-frame',
+            'path': 'frame-c.png', 'sha256': frame_sha, 'atSeconds': 260,
+        })
+        document['comparisons'][0]['distinctFrom'] = ['frame-c']
+        document['dispositions']['scene:ab']['reviewedArtifacts']['frame-c'] = frame_sha
+        document['dispositions']['scene:ab']['quote'] = 'same sample'
+        (Path(root) / 'frame-c.png').write_bytes(b'drifted-bytes')
+        code, out = self._offline(root, json.dumps(document), 'distinct-drift')
+        self.assertEqual(code, 3)
+        findings = json.loads((out / 'findings.json').read_text())
+        human = claim(findings, 'scene:ab')['humanDisposition']
+        self.assertFalse(human['applies'])
+        self.assertEqual(human['quote'], 'same sample')
+        pin = next(row for row in human['pinCheck'] if row['id'] == 'frame-c')
+        self.assertEqual(pin['diskStatus'], 'drift')
+        self.assertFalse(pin['match'])
+        self.assertEqual(pin['reviewed'], frame_sha)
+        self.assertIn('disk drift', (out / 'audit.html').read_text(encoding='utf-8'))
+        self.assertEqual((Path(root) / 'frame-c.png').read_bytes(), b'drifted-bytes')
+
+        manifest_bytes, root, *_rest = self._case()
+        document = json.loads(manifest_bytes)
+        cue_sha = next(item['sha256'] for item in document['artifacts'] if item['id'] == 'cue-b')
+        document['dispositions']['scene:ab']['reviewedArtifacts']['cue-b'] = cue_sha
+        document['dispositions']['scene:ab']['quote'] = 'same sample'
+        cue_path = Path(root) / 'cue.json'
+        original_cue = cue_path.read_bytes()
+        cue_path.unlink()
+        code, out = self._offline(root, json.dumps(document), 'missing-pin')
+        self.assertEqual(code, 3)
+        findings = json.loads((out / 'findings.json').read_text())
+        human = claim(findings, 'scene:ab')['humanDisposition']
+        self.assertFalse(human['applies'])
+        self.assertEqual(human['quote'], 'same sample')
+        pin = next(row for row in human['pinCheck'] if row['id'] == 'cue-b')
+        self.assertEqual(pin['diskStatus'], 'missing')
+        self.assertFalse(pin['match'])
+        self.assertFalse(cue_path.exists())
+        cue_path.write_bytes(original_cue)
+
+        manifest_bytes, root, *_rest = self._case(title_a="Jack's", title_b="Jack's", cue_text='Jacks')
+        document = json.loads(manifest_bytes)
+        pins = {
+            'frame-a': next(item['sha256'] for item in document['artifacts'] if item['id'] == 'frame-a'),
+            'frame-b': next(item['sha256'] for item in document['artifacts'] if item['id'] == 'frame-b'),
+            'cue-b': next(item['sha256'] for item in document['artifacts'] if item['id'] == 'cue-b'),
+        }
+        document['dispositions']['catalog-title-disagreement:ab'] = dict(
+            _flags(confirmed=True), reviewer='Auditor', reviewedAt='2026-01-02T03:04:05Z',
+            citation='synthetic-message', quote='folded words', reviewedArtifacts=dict(pins),
+        )
+        (Path(root) / 'cue.json').write_bytes(b'{"not":"the cue"}\n')
+        code, out = self._offline(root, json.dumps(document), 'cue-drift')
+        self.assertEqual(code, 3)
+        findings = json.loads((out / 'findings.json').read_text())
+        human = claim(findings, 'catalog-title-disagreement:ab')['humanDisposition']
+        self.assertFalse(human['applies'])
+        self.assertEqual(human['quote'], 'folded words')
+        pin = next(row for row in human['pinCheck'] if row['id'] == 'cue-b')
+        self.assertEqual(pin['diskStatus'], 'drift')
+        self.assertEqual(pin['manifest'], pins['cue-b'])
+        self.assertFalse(pin['match'])
+
+        manifest_bytes, root, _manifest, written, _handle = self._case(
+            with_cue=False, with_probe=False, with_receipt=False,
+        )
+        document = json.loads(manifest_bytes)
+        document['dispositions']['catalog-title-disagreement:ab'] = dict(
+            _flags(confirmed=True), reviewer='Auditor', reviewedAt='2026-01-02T03:04:05Z',
+            citation='synthetic-message', quote='no cue here',
+            reviewedArtifacts={
+                'frame-a': written['frame-a.png'][1],
+                'frame-b': written['frame-b.png'][1],
+            },
+        )
+        code, out = self._offline(root, json.dumps(document), 'absent-cue')
+        self.assertEqual(code, 0)
+        findings = json.loads((out / 'findings.json').read_text())
+        human = claim(findings, 'catalog-title-disagreement:ab')['humanDisposition']
+        self.assertFalse(human['applies'])
+        self.assertEqual(human['appliesReason'], 'evidence-unusable')
+        self.assertEqual(human['quote'], 'no cue here')
+
+        raw = dialogue('North Pier', 'Logo Sub-title')
+        manifest_bytes, root, _manifest, written, _handle = self._case(
+            style='Logo Sub-title', cue_text='North Pier', raw=raw, title_a='North Pier', title_b='North Pier',
+        )
+        document = json.loads(manifest_bytes)
+        document['dispositions']['catalog-title-disagreement:ab'] = dict(
+            _flags(confirmed=True), reviewer='Auditor', reviewedAt='2026-01-02T03:04:05Z',
+            citation='synthetic-message', quote='other style',
+            reviewedArtifacts={
+                'frame-a': written['frame-a.png'][1],
+                'frame-b': written['frame-b.png'][1],
+                'cue-b': written['cue.json'][1],
+            },
+        )
+        code, out = self._offline(root, json.dumps(document), 'other-style')
+        self.assertEqual(code, 0)
+        findings = json.loads((out / 'findings.json').read_text())
+        human = claim(findings, 'catalog-title-disagreement:ab')['humanDisposition']
+        self.assertFalse(human['applies'])
+        self.assertEqual(human['quote'], 'other style')
+
+        manifest_bytes, root, _manifest, written, _handle = self._case(
+            title_a='North Pier', title_b='North Pier', cue_text='North Pier',
+        )
+        document = json.loads(manifest_bytes)
+        document['dispositions']['catalog-title-disagreement:ab'] = dict(
+            _flags(confirmed=True), reviewer='Auditor', reviewedAt='2026-01-02T03:04:05Z',
+            citation='synthetic-message', quote='same words',
+            reviewedArtifacts={
+                'frame-a': written['frame-a.png'][1],
+                'frame-b': written['frame-b.png'][1],
+                'cue-b': written['cue.json'][1],
+            },
+        )
+        code, out = self._offline(root, json.dumps(document), 'same-cue')
+        self.assertEqual(code, 0)
+        findings = json.loads((out / 'findings.json').read_text())
+        human = claim(findings, 'catalog-title-disagreement:ab')['humanDisposition']
+        self.assertTrue(human['applies'])
+        self.assertEqual(human['appliesReason'], 'pinned-evidence-matches')
+        self.assertEqual(claim(findings, 'catalog-title-disagreement:ab')['evidence']['titleRelation'], 'same')
+        self.assertEqual(claim(findings, 'health:a')['issueLikelihood'], 'unknown')
 
 
 def _pdf_visible(pdf):
