@@ -1527,7 +1527,7 @@ def _rendered(findings, images):
     markdown = render_markdown(findings)
     html = render_html(findings, images)
     try:
-        pdf = render_pdf(markdown, images)
+        pdf = render_pdf(render_markdown(findings, plain=True), images)
     except (UnicodeError, ValueError, ZeroDivisionError, OSError, zlib.error, struct.error):
         errors = list(findings.get('errors') or [])
         errors.append('PDF rendering failed closed; the HTML keeps the exact text')

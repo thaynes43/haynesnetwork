@@ -74,6 +74,18 @@ def png_info(data):
     return {'width': header['width'], 'height': header['height'], 'idat': b''.join(idat)}
 
 
+def _pdf_plain(text):
+    """Canonical PDF text. No Markdown or HTML escaping, and no unescaping of source characters."""
+    if text is None:
+        return ''
+    return str(text).replace('\r\n', '\n').replace('\r', '\n')
+
+
+def _pdf_fence(text):
+    """Raw evidence for the PDF, including backticks and text that already looks like an entity."""
+    return _pdf_plain(text)
+
+
 def _md_escape(text):
     """Make untrusted text inert in Markdown, including link and image syntax."""
     body = str(text).replace('\r\n', '\n').replace('\r', '\n').replace('\n', ' ')
@@ -112,20 +124,23 @@ def _execution(findings):
     return findings.get('execution') or {}
 
 
-def render_markdown(findings):
+def render_markdown(findings, plain=False):
+    """Markdown for the text report. plain=True is the PDF's canonical text, not an unescape pass."""
+    escape = _pdf_plain if plain else _md_escape
+    fence = _pdf_fence if plain else _fence
     execution = _execution(findings)
     lines = [
         '# Identity findings (offline)',
         '',
         '## Outcome',
         '',
-        '- Outcome: %s' % _md_escape(execution.get('outcome')),
-        '- Exit code: %s' % _md_escape(execution.get('exitCode')),
+        '- Outcome: %s' % escape(execution.get('outcome')),
+        '- Exit code: %s' % escape(execution.get('exitCode')),
         '- Validation ok: %s' % _yn((findings.get('validation') or {}).get('ok')),
         '- Media reads: %s' % findings.get('mediaReads'),
         '- Model calls: %s' % findings.get('modelCalls'),
         '- calibratedProbability: null',
-        '- %s' % _md_escape(findings.get('calibratedProbabilityReason') or ''),
+        '- %s' % escape(findings.get('calibratedProbabilityReason') or ''),
         '',
     ]
     contradictions = (findings.get('validation') or {}).get('contradictions') or []
@@ -133,25 +148,25 @@ def render_markdown(findings):
     lines.append('')
     if findings.get('errors'):
         for error in findings['errors']:
-            lines.append('- Manifest: %s' % _md_escape(error))
+            lines.append('- Manifest: %s' % escape(error))
     if contradictions:
         for item in contradictions:
-            lines.append('- %s' % _md_escape(item))
+            lines.append('- %s' % escape(item))
     if not findings.get('errors') and not contradictions:
         lines.append('- None recorded.')
     lines.append('')
-    lines.extend(_markdown_comparisons(findings))
-    lines.extend(_markdown_people(findings))
-    lines.extend(_markdown_frames(findings))
+    lines.extend(_markdown_comparisons(findings, escape))
+    lines.extend(_markdown_people(findings, escape))
+    lines.extend(_markdown_frames(findings, escape))
     lines.append('## Detail')
     lines.append('')
-    lines.append('- Report version: %s' % _md_escape(findings.get('reportVersion')))
-    lines.append('- Manifest version: %s' % _md_escape(findings.get('manifestVersion')))
-    lines.append('- Recipe version: %s (not executed)' % _md_escape(findings.get('recipeVersion')))
-    lines.append('- Sample: %s' % _md_escape(findings.get('sampleId') or ''))
-    lines.append('- Input manifest sha256: %s' % _md_escape(findings.get('inputManifestSha256') or ''))
-    lines.append('- Git sha: %s' % _md_escape(findings.get('gitSha') if findings.get('gitSha') else 'null'))
-    lines.append('- Git sha reason: %s' % _md_escape(findings.get('gitShaReason') or ''))
+    lines.append('- Report version: %s' % escape(findings.get('reportVersion')))
+    lines.append('- Manifest version: %s' % escape(findings.get('manifestVersion')))
+    lines.append('- Recipe version: %s (not executed)' % escape(findings.get('recipeVersion')))
+    lines.append('- Sample: %s' % escape(findings.get('sampleId') or ''))
+    lines.append('- Input manifest sha256: %s' % escape(findings.get('inputManifestSha256') or ''))
+    lines.append('- Git sha: %s' % escape(findings.get('gitSha') if findings.get('gitSha') else 'null'))
+    lines.append('- Git sha reason: %s' % escape(findings.get('gitShaReason') or ''))
     lines.append('- Network: %s' % findings.get('network'))
     lines.append('- Subprocess: %s' % findings.get('subprocess'))
     lines.append('- ASR: %s' % findings.get('asr'))
@@ -164,25 +179,25 @@ def render_markdown(findings):
     lines.append('## Claims')
     lines.append('')
     for claim in findings.get('claims') or []:
-        lines.extend(_markdown_claim(claim))
+        lines.extend(_markdown_claim(claim, escape, fence))
     lines.append('## Coverage')
     lines.append('')
     for item in findings.get('coverage') or []:
-        lines.append('- %s' % _md_escape(item))
+        lines.append('- %s' % escape(item))
     if not findings.get('coverage'):
         lines.append('- No coverage notes.')
     lines.append('')
     lines.append('## Resources')
     lines.append('')
-    lines.append('- %s' % _md_escape(findings.get('sourceBytesReason') or ''))
+    lines.append('- %s' % escape(findings.get('sourceBytesReason') or ''))
     for collection in (findings.get('resources') or {}).get('collections') or []:
         lines.append('- %s: %s (clean EOF: %s, sourceBytes: null, recordedSourceBytes: %s, elapsedSeconds: %s, peakRSSKiB: %s)' % (
-            _md_escape(collection.get('forArtifact')),
-            _md_escape(collection.get('outcome')),
+            escape(collection.get('forArtifact')),
+            escape(collection.get('outcome')),
             _yn(collection.get('cleanEof')),
-            _md_escape(collection.get('recordedSourceBytes')),
-            _md_escape(collection.get('elapsedSeconds')),
-            _md_escape(collection.get('peakRSSKiB')),
+            escape(collection.get('recordedSourceBytes')),
+            escape(collection.get('elapsedSeconds')),
+            escape(collection.get('peakRSSKiB')),
         ))
     if not (findings.get('resources') or {}).get('collections'):
         lines.append('- No retained collection measurements.')
@@ -190,7 +205,7 @@ def render_markdown(findings):
     return '\n'.join(lines)
 
 
-def _markdown_comparisons(findings):
+def _markdown_comparisons(findings, escape=_md_escape):
     lines = ['## Compared titles', '']
     items = findings.get('items') or []
     if not items:
@@ -200,13 +215,13 @@ def _markdown_comparisons(findings):
         claim = item.get('catalogClaim') or {}
         echo = item.get('catalog') or {}
         lines.append('- %s file %s catalog label %s episode %s season %s agreement %s snapshot path %s' % (
-            _md_escape(item.get('alias')),
-            _md_escape(item.get('fileId')),
-            _md_escape(claim.get('title')),
-            _md_escape(claim.get('episodeCode')),
-            _md_escape(claim.get('seasonNumber')),
-            _md_escape(item.get('catalogAgreement')),
-            _md_escape(echo.get('relativePath') if isinstance(echo, dict) else None),
+            escape(item.get('alias')),
+            escape(item.get('fileId')),
+            escape(claim.get('title')),
+            escape(claim.get('episodeCode')),
+            escape(claim.get('seasonNumber')),
+            escape(item.get('catalogAgreement')),
+            escape(echo.get('relativePath') if isinstance(echo, dict) else None),
         ))
     lines.append('')
     any_pair = False
@@ -217,39 +232,39 @@ def _markdown_comparisons(findings):
         if not pairs and not evidence.get('text') and not cues:
             continue
         any_pair = True
-        lines.append('### %s' % _md_escape(claim.get('id')))
+        lines.append('### %s' % escape(claim.get('id')))
         lines.append('')
-        lines.append('- Issue likelihood: %s' % _md_escape(claim.get('issueLikelihood')))
-        lines.append('- Evidence grade: %s' % _md_escape(claim.get('evidenceGrade')))
-        lines.append('- Title relation: %s' % _md_escape(evidence.get('titleRelation') or evidence.get('ownCatalogRelation')))
+        lines.append('- Issue likelihood: %s' % escape(claim.get('issueLikelihood')))
+        lines.append('- Evidence grade: %s' % escape(claim.get('evidenceGrade')))
+        lines.append('- Title relation: %s' % escape(evidence.get('titleRelation') or evidence.get('ownCatalogRelation')))
         if evidence.get('text'):
-            lines.append('- Cue text: %s' % _md_escape(evidence.get('text')))
-            lines.append('- Cue style: %s' % _md_escape(evidence.get('style')))
-            lines.append('- Cue start: %s' % _md_escape(evidence.get('start')))
-            lines.append('- Cue end: %s' % _md_escape(evidence.get('end')))
-            lines.append('- Stream index: %s' % _md_escape(evidence.get('streamIndex')))
-            lines.append('- Probe: %s' % _md_escape(evidence.get('probe')))
-            lines.append('- Receipt: %s' % _md_escape(evidence.get('receipt')))
+            lines.append('- Cue text: %s' % escape(evidence.get('text')))
+            lines.append('- Cue style: %s' % escape(evidence.get('style')))
+            lines.append('- Cue start: %s' % escape(evidence.get('start')))
+            lines.append('- Cue end: %s' % escape(evidence.get('end')))
+            lines.append('- Stream index: %s' % escape(evidence.get('streamIndex')))
+            lines.append('- Probe: %s' % escape(evidence.get('probe')))
+            lines.append('- Receipt: %s' % escape(evidence.get('receipt')))
         for cue in cues:
-            lines.append('- Cue %s: %s' % (_md_escape(cue.get('artifactId')), _md_escape(cue.get('text'))))
+            lines.append('- Cue %s: %s' % (escape(cue.get('artifactId')), escape(cue.get('text'))))
         for pair in pairs:
             lines.append('- Pair %s catalog %s versus cue %s (%s)' % (
-                _md_escape(pair.get('catalogAlias')),
-                _md_escape(pair.get('catalogTitle')),
-                _md_escape(pair.get('cueText')),
-                _md_escape(pair.get('titleRelation')),
+                escape(pair.get('catalogAlias')),
+                escape(pair.get('catalogTitle')),
+                escape(pair.get('cueText')),
+                escape(pair.get('titleRelation')),
             ))
             lines.append('  - Catalog file %s season %s' % (
-                _md_escape(pair.get('catalogFileId')),
-                _md_escape(pair.get('catalogSeason')),
+                escape(pair.get('catalogFileId')),
+                escape(pair.get('catalogSeason')),
             ))
-            lines.append('  - Catalog fold: %s' % _md_escape(', '.join(pair.get('catalogTransformations') or []) or 'none'))
-            lines.append('  - Cue fold: %s' % _md_escape(', '.join(pair.get('cueTransformations') or []) or 'none'))
+            lines.append('  - Catalog fold: %s' % escape(', '.join(pair.get('catalogTransformations') or []) or 'none'))
+            lines.append('  - Cue fold: %s' % escape(', '.join(pair.get('cueTransformations') or []) or 'none'))
             lines.append('  - Season labels are mismatch evidence: %s' % _yn(pair.get('seasonLabelsAreMismatchEvidence')))
         transforms = evidence.get('transformations') or {}
         if transforms:
-            lines.append('- Own catalog fold: %s' % _md_escape(', '.join(transforms.get('catalog') or []) or 'none'))
-            lines.append('- Own cue fold: %s' % _md_escape(', '.join(transforms.get('cue') or []) or 'none'))
+            lines.append('- Own catalog fold: %s' % escape(', '.join(transforms.get('catalog') or []) or 'none'))
+            lines.append('- Own cue fold: %s' % escape(', '.join(transforms.get('cue') or []) or 'none'))
         lines.append('')
     if not any_pair and items:
         lines.append('- No title pair was compared.')
@@ -257,7 +272,7 @@ def _markdown_comparisons(findings):
     return lines
 
 
-def _markdown_people(findings):
+def _markdown_people(findings, escape=_md_escape):
     lines = ['## Human dispositions', '']
     claims = findings.get('claims') or []
     if not claims:
@@ -266,23 +281,23 @@ def _markdown_people(findings):
     for claim in claims:
         human = claim.get('humanDisposition') or {}
         lines.append('- %s: confirmed %s, contradicted %s, uncertain %s, not reviewed %s, applies %s (%s)' % (
-            _md_escape(claim.get('id')),
+            escape(claim.get('id')),
             _yn(human.get('confirmed')),
             _yn(human.get('contradicted')),
             _yn(human.get('uncertain')),
             _yn(human.get('notReviewed')),
             _yn(human.get('applies')),
-            _md_escape(human.get('appliesReason') or 'not recorded'),
+            escape(human.get('appliesReason') or 'not recorded'),
         ))
-        lines.append('  - Quote: %s' % _md_escape(human.get('quote') or 'not recorded'))
-        lines.append('  - Citation: %s' % _md_escape(human.get('citation') or 'not recorded'))
-        lines.append('  - Reviewer: %s' % _md_escape(human.get('reviewer') or 'not recorded'))
-        lines.append('  - Reviewed at: %s' % _md_escape(human.get('reviewedAt') or 'not recorded'))
+        lines.append('  - Quote: %s' % escape(human.get('quote') or 'not recorded'))
+        lines.append('  - Citation: %s' % escape(human.get('citation') or 'not recorded'))
+        lines.append('  - Reviewer: %s' % escape(human.get('reviewer') or 'not recorded'))
+        lines.append('  - Reviewed at: %s' % escape(human.get('reviewedAt') or 'not recorded'))
         for pin in human.get('pinCheck') or []:
             lines.append('  - Reviewed %s digest %s manifest %s match %s' % (
-                _md_escape(pin.get('id')),
-                _md_escape(pin.get('reviewed')),
-                _md_escape(pin.get('manifest')),
+                escape(pin.get('id')),
+                escape(pin.get('reviewed')),
+                escape(pin.get('manifest')),
                 _yn(pin.get('match')),
             ))
     lines.append('')
@@ -293,24 +308,24 @@ def _markdown_people(findings):
         lines.append('- None copied.')
     for note in notes:
         if isinstance(note, dict):
-            lines.append('- %s (%s)' % (_md_escape(note.get('text')), _md_escape(note.get('basis'))))
+            lines.append('- %s (%s)' % (escape(note.get('text')), escape(note.get('basis'))))
         else:
-            lines.append('- %s' % _md_escape(note))
+            lines.append('- %s' % escape(note))
     lines.append('')
     return lines
 
 
-def _markdown_frames(findings):
+def _markdown_frames(findings, escape=_md_escape):
     lines = ['## Retained frames', '']
     found = False
     for claim in findings.get('claims') or []:
         for frame in (claim.get('evidence') or {}).get('frames') or []:
             found = True
             lines.append('- %s file %s at %ss sha256 %s usable %s' % (
-                _md_escape(frame.get('alias')),
-                _md_escape(frame.get('fileId')),
-                _md_escape(frame.get('atSeconds')),
-                _md_escape(frame.get('sha256')),
+                escape(frame.get('alias')),
+                escape(frame.get('fileId')),
+                escape(frame.get('atSeconds')),
+                escape(frame.get('sha256')),
                 _yn(frame.get('usable')),
             ))
     if not found:
@@ -321,36 +336,36 @@ def _markdown_frames(findings):
     return lines
 
 
-def _markdown_claim(claim):
+def _markdown_claim(claim, escape=_md_escape, fence=_fence):
     human = claim.get('humanDisposition') or {}
     lines = [
-        '### %s' % _md_escape(claim.get('id')),
+        '### %s' % escape(claim.get('id')),
         '',
-        '- Kind: %s' % _md_escape(claim.get('kind')),
-        '- Issue likelihood: %s' % _md_escape(claim.get('issueLikelihood')),
-        '- Observation: %s' % _md_escape(claim.get('observationState')),
-        '- Evidence grade: %s' % _md_escape(claim.get('evidenceGrade')),
-        '- %s' % _md_escape(claim.get('evidenceGradeNote')),
-        '- Basis: %s' % _md_escape(claim.get('basis')),
+        '- Kind: %s' % escape(claim.get('kind')),
+        '- Issue likelihood: %s' % escape(claim.get('issueLikelihood')),
+        '- Observation: %s' % escape(claim.get('observationState')),
+        '- Evidence grade: %s' % escape(claim.get('evidenceGrade')),
+        '- %s' % escape(claim.get('evidenceGradeNote')),
+        '- Basis: %s' % escape(claim.get('basis')),
         '- calibratedProbability: null',
-        '- Disposition applies: %s (%s)' % (_yn(human.get('applies')), _md_escape(human.get('appliesReason') or 'not recorded')),
-        '- Inspect: %s' % _md_escape(claim.get('inspect')),
+        '- Disposition applies: %s (%s)' % (_yn(human.get('applies')), escape(human.get('appliesReason') or 'not recorded')),
+        '- Inspect: %s' % escape(claim.get('inspect')),
         '',
-        _md_escape(claim.get('rationale')),
+        escape(claim.get('rationale')),
         '',
     ]
     for item in claim.get('alternatives') or []:
-        lines.append('- Alternative: %s' % _md_escape(item))
+        lines.append('- Alternative: %s' % escape(item))
     if claim.get('alternatives'):
         lines.append('')
     evidence = claim.get('evidence') or {}
     if evidence.get('rawASSDialogue'):
         lines.append('Raw ASS dialogue:')
         lines.append('')
-        lines.append(_fence(evidence['rawASSDialogue']))
+        lines.append(fence(evidence['rawASSDialogue']))
         lines.append('')
     if evidence.get('preservedOther'):
-        lines.append('Preserved non-title text: %s' % _md_escape(evidence['preservedOther']))
+        lines.append('Preserved non-title text: %s' % escape(evidence['preservedOther']))
         lines.append('')
     return lines
 

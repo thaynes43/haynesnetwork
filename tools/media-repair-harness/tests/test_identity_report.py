@@ -1005,6 +1005,86 @@ class Report(unittest.TestCase):
         handle.cleanup()
         self.assertEqual((root / 'frame-a.png').read_bytes(), source)
 
+    def test_pdf_shows_source_text_and_markdown_stays_escaped(self):
+        cue = 'North [Pier] (Dock) & \\q `night` Caf\u00e9 \u2013 \u5317 <script>alert(1)</script> &#33; &amp;'
+        quote = 'Say "Hot!" & `more` &#33;'
+        manifest_bytes, root, *_rest = self._case(
+            title_a='Hot Matches!',
+            title_b='Keep &#33; &amp; literal',
+            cue_text=cue,
+            raw=dialogue(cue),
+            dispositions={
+                'scene:ab': dict(
+                    _flags(confirmed=True), reviewer='Auditor', reviewedAt='2026-01-02T03:04:05Z',
+                    citation='synthetic-message', quote=quote, inspect='Look at the two frames.',
+                ),
+            },
+        )
+        findings, markdown, html, pdf, _normalized = run(root, manifest_bytes)
+        self.assertEqual(findings['execution']['exitCode'], 0)
+        self.assertEqual(pdf.splitlines()[-1], b'%%EOF')
+        self.assertIn(b'/Encoding /WinAnsiEncoding', pdf)
+        visible = _pdf_visible(pdf)
+        self.assertIn('Hot Matches!', visible)
+        self.assertNotIn('Hot Matches&#33;', visible)
+        self.assertIn('Keep &#33; &amp; literal', visible)
+        self.assertIn('(Dock)', visible)
+        self.assertIn('[Pier]', visible)
+        self.assertNotIn('&#40;', visible)
+        self.assertNotIn('&#91;', visible)
+        self.assertIn('`night`', visible)
+        self.assertIn('<script>alert(1)</script>', visible)
+        self.assertIn(quote, visible)
+        self.assertIn('Caf\u00e9', visible)
+        self.assertIn('\u2013', visible)
+        self.assertIn('<U+5317>', visible)
+        self.assertLessEqual(MARGIN + _pdf_widest(pdf) * FONT * GLYPH_EM, PAGE_W - MARGIN)
+        self.assertIn('Hot Matches&#33;', markdown)
+        self.assertIn('&#40;Dock&#41;', markdown)
+        self.assertIn('&#91;Pier&#93;', markdown)
+        self.assertIn("'night'", markdown)
+        self.assertNotIn('`night`', markdown)
+        self.assertNotIn('<script>', markdown)
+        self.assertFalse(markdown_has_unescaped_markup(markdown))
+        self.assertIn('&lt;script&gt;', html)
+        self.assertNotIn('<script>', html)
+        self.assertIn("default-src 'none'", html)
+        self.assertEqual(json.loads((root / 'cue.json').read_text())['text'], cue)
+
+
+def _pdf_visible(pdf):
+    parts = []
+    for literal in re.findall(rb'\((?:\\.|[^\\)])*\)', pdf):
+        inner = literal[1:-1]
+        out = bytearray()
+        index = 0
+        while index < len(inner):
+            if inner[index:index + 1] == b'\\' and index + 1 < len(inner):
+                out.append(inner[index + 1])
+                index += 2
+            else:
+                out.append(inner[index])
+                index += 1
+        parts.append(out.decode('cp1252'))
+    return ''.join(parts)
+
+
+def _pdf_widest(pdf):
+    width = 0
+    for literal in re.findall(rb'\((?:\\.|[^\\)])*\)', pdf):
+        inner = literal[1:-1]
+        count = 0
+        index = 0
+        while index < len(inner):
+            if inner[index:index + 1] == b'\\' and index + 1 < len(inner):
+                count += 1
+                index += 2
+            else:
+                count += 1
+                index += 1
+        width = max(width, count)
+    return width
+
 
 if __name__ == '__main__':
     unittest.main()
