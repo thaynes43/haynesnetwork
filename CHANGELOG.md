@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.126.0](https://github.com/thaynes43/haynesnetwork/compare/v0.125.4...v0.126.0) (2026-10-24)
+
+
+### Features
+
+* **harness:** add an offline identity findings report for [#160](https://github.com/thaynes43/haynesnetwork/issues/160) ([8d63340](https://github.com/thaynes43/haynesnetwork/commit/8d63340f99c4e0c90bc6956208051fe943d151e1))
+
+
+### Documentation
+
+* media repair harness dev-c3 candidate (prompt v3, lazylibrarian, write_rejection) ([#1016](https://github.com/thaynes43/haynesnetwork/issues/1016)) ([616e3bf](https://github.com/thaynes43/haynesnetwork/commit/616e3bfcd18bebc662969ca0df3f5d83243d1cce))
+
 ## [0.125.4](https://github.com/thaynes43/haynesnetwork/compare/v0.125.3...v0.125.4) (2026-10-14)
 
 
