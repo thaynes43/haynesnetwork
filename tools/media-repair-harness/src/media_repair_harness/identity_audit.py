@@ -75,15 +75,23 @@ def png_info(data):
 
 
 def _pdf_plain(text):
-    """Canonical PDF text. No Markdown or HTML escaping, and no unescaping of source characters."""
+    """Canonical PDF text for one inline field.
+
+    A carriage return or line feed is a space in the drawing. findings.json keeps the
+    original characters. There is no Markdown escaping and no unescaping of source text.
+    """
     if text is None:
         return ''
-    return str(text).replace('\r\n', '\n').replace('\r', '\n')
+    return str(text).replace('\r\n', '\n').replace('\r', '\n').replace('\n', ' ')
 
 
 def _pdf_fence(text):
-    """Raw evidence for the PDF, including backticks and text that already looks like an entity."""
-    return _pdf_plain(text)
+    """Multiline evidence for the PDF. Each source line is prefixed so it is not a report row."""
+    body = '' if text is None else str(text).replace('\r\n', '\n').replace('\r', '\n')
+    lines = ['| (raw evidence, not a report row)']
+    for line in body.split('\n'):
+        lines.append('| ' + line)
+    return '\n'.join(lines)
 
 
 def _md_escape(text):
@@ -126,6 +134,17 @@ def _execution(findings):
 
 def render_markdown(findings, plain=False):
     """Markdown for the text report. plain=True is the PDF's canonical text, not an unescape pass."""
+    front, detail = _report_sections(findings, plain)
+    return '\n'.join(front + detail)
+
+
+def pdf_sections(findings):
+    """Front text, then the detail text. The PDF does not search rendered text for this split."""
+    front, detail = _report_sections(findings, plain=True)
+    return '\n'.join(front), '\n'.join(detail)
+
+
+def _report_sections(findings, plain=False):
     escape = _pdf_plain if plain else _md_escape
     fence = _pdf_fence if plain else _fence
     execution = _execution(findings)
@@ -158,8 +177,8 @@ def render_markdown(findings, plain=False):
     lines.extend(_markdown_comparisons(findings, escape))
     lines.extend(_markdown_people(findings, escape))
     lines.extend(_markdown_frames(findings, escape))
-    lines.append('## Detail')
-    lines.append('')
+    front = lines
+    lines = ['## Detail', '']
     lines.append('- Report version: %s' % escape(findings.get('reportVersion')))
     lines.append('- Manifest version: %s' % escape(findings.get('manifestVersion')))
     lines.append('- Recipe version: %s (not executed)' % escape(findings.get('recipeVersion')))
@@ -202,7 +221,7 @@ def render_markdown(findings, plain=False):
     if not (findings.get('resources') or {}).get('collections'):
         lines.append('- No retained collection measurements.')
     lines.append('')
-    return '\n'.join(lines)
+    return front, lines
 
 
 def _markdown_comparisons(findings, escape=_md_escape):
@@ -627,16 +646,13 @@ def _fit_image(width, height, box_w, box_h):
     return width * scale, height * scale
 
 
-def render_pdf(markdown, images):
-    """Text plus an 8-bit RGB PNG when it fits. Other bytes are labeled, not redrawn."""
+def render_pdf(front, images, detail=''):
+    """Draw the front block, then frames, then detail.
+
+    Those sections are arguments. Untrusted text is not searched for a section heading.
+    """
     replaced = []
     content_width = PAGE_W - 2 * MARGIN
-    marker = '\n## Detail\n'
-    if marker in markdown:
-        front, detail = markdown.split(marker, 1)
-        detail = '## Detail\n' + detail
-    else:
-        front, detail = markdown, ''
     pages = []
     contents = []
     xobjects = []
@@ -654,7 +670,7 @@ def render_pdf(markdown, images):
 
     def add_image(image):
         info = png_info(image.get('bytes') or b'')
-        caption = image.get('caption') or ''
+        caption = _pdf_plain(image.get('caption') or '')
         if info is None:
             reason = image.get('png')
             if reason == 'invalid':

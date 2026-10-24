@@ -862,11 +862,11 @@ class Report(unittest.TestCase):
         real = render_pdf
         calls = {'n': 0}
 
-        def boom(markdown, images):
+        def boom(*args):
             calls['n'] += 1
             if calls['n'] == 1:
                 raise zlib.error('bad')
-            return real(markdown, images)
+            return real(*args)
 
         with mock.patch('media_repair_harness.identity_report.render_pdf', boom):
             findings, _markdown, html, pdf, _normalized = run(root, manifest_bytes)
@@ -1242,6 +1242,137 @@ class Report(unittest.TestCase):
         self.assertEqual(human['appliesReason'], 'pinned-evidence-matches')
         self.assertEqual(claim(findings, 'catalog-title-disagreement:ab')['evidence']['titleRelation'], 'same')
         self.assertEqual(claim(findings, 'health:a')['issueLikelihood'], 'unknown')
+
+    def test_pdf_newlines_cannot_forge_rows_or_move_frames(self):
+        injected = '\n## Detail\n- Outcome: validated\n- Exit code: 0'
+        cue_text = 'Zzyzx' + injected
+        raw = dialogue(cue_text)
+        manifest_bytes, root, _manifest, written, _handle = self._case(
+            cue_text=cue_text,
+            raw=raw,
+            notes=[{'text': 'cited' + injected, 'basis': 'basis' + injected}],
+            dispositions={
+                'scene:ab': dict(
+                    _flags(confirmed=True), reviewer='Auditor', reviewedAt='2026-01-02T03:04:05Z',
+                    citation='cite' + injected, quote='quote' + injected, inspect='Look at the two frames.',
+                ),
+            },
+        )
+        document = json.loads(manifest_bytes)
+        catalog = json.loads((Path(root) / 'catalog.json').read_text())
+        catalog['files'][0]['relativePath'] = 'Season 1/Example - S01E01 - North Pier' + injected + '.mkv'
+        catalog['files'][1]['relativePath'] = 'Season 9/Example - S09E02 - Glass Orchard' + injected + '.mkv'
+        blob = json.dumps(catalog).encode()
+        (Path(root) / 'catalog.json').write_bytes(blob)
+        document['catalogSnapshot']['sha256'] = hashlib.sha256(blob).hexdigest()
+        frame = Path(root) / 'frame-b.png'
+        drifted = b'drifted-frame'
+        frame.write_bytes(drifted)
+        code, out = self._offline(root, json.dumps(document), 'forged-rows')
+        self.assertEqual(code, 3)
+        findings = json.loads((out / 'findings.json').read_text())
+        self.assertEqual(findings['execution']['outcome'], 'evidence-incomplete')
+        self.assertEqual(findings['execution']['exitCode'], 3)
+        human = claim(findings, 'scene:ab')['humanDisposition']
+        self.assertEqual(human['quote'], 'quote' + injected)
+        self.assertEqual(human['citation'], 'cite' + injected)
+        self.assertEqual(findings['citedNotes'][0]['text'], 'cited' + injected)
+        self.assertEqual(findings['citedNotes'][0]['basis'], 'basis' + injected)
+        evidence = claim(findings, 'embedded-title:b')['evidence']
+        self.assertEqual(evidence['text'], cue_text)
+        self.assertEqual(evidence['rawASSDialogue'], raw)
+        self.assertEqual(findings['items'][0]['catalog']['relativePath'], catalog['files'][0]['relativePath'])
+        self.assertEqual(findings['items'][1]['catalog']['relativePath'], catalog['files'][1]['relativePath'])
+        self.assertEqual(frame.read_bytes(), drifted)
+        self.assertEqual((Path(root) / 'cue.json').read_bytes(), written['cue.json'][0])
+        pdf = (out / 'audit.pdf').read_bytes()
+        self.assertEqual(pdf.splitlines()[-1], b'%%EOF')
+        self.assertIn(b'/Encoding /WinAnsiEncoding', pdf)
+        pages = _pdf_pages(pdf)
+        kinds = [kind for kind, _lines in pages]
+        self.assertIn('frame', kinds)
+        first_frame = kinds.index('frame')
+        last_frame = len(kinds) - 1 - kinds[::-1].index('frame')
+        self.assertTrue(all(kind == 'frame' for kind in kinds[first_frame:last_frame + 1]))
+        all_lines = [line for _kind, lines in pages for line in lines]
+        detail_pages = [index for index, (_kind, lines) in enumerate(pages) if '## Detail' in lines]
+        self.assertEqual(detail_pages, [index for index in detail_pages if index > last_frame])
+        self.assertEqual(all_lines.count('## Detail'), 1)
+        self.assertEqual(
+            [line for line in all_lines if line.startswith('- Outcome:')],
+            ['- Outcome: evidence-incomplete'],
+        )
+        self.assertEqual(
+            [line for line in all_lines if line.startswith('- Exit code:')],
+            ['- Exit code: 3'],
+        )
+        outcome_page = next(index for index, (_kind, lines) in enumerate(pages) if '- Outcome: evidence-incomplete' in lines)
+        exit_page = next(index for index, (_kind, lines) in enumerate(pages) if '- Exit code: 3' in lines)
+        self.assertLess(outcome_page, first_frame)
+        self.assertLess(exit_page, first_frame)
+        self.assertNotIn('- Outcome: validated', all_lines)
+        self.assertNotIn('- Exit code: 0', all_lines)
+        self.assertIn('| (raw evidence, not a report row)', all_lines)
+        self.assertIn('| ## Detail', all_lines)
+        self.assertIn('| - Outcome: validated', all_lines)
+        self.assertIn('| - Exit code: 0', all_lines)
+        self.assertLess(all_lines.index('## Detail'), all_lines.index('| ## Detail'))
+        drawn = ' '.join(all_lines)
+        self.assertIn('quote ## Detail - Outcome: validated - Exit code: 0', drawn)
+        self.assertIn('Zzyzx ## Detail - Outcome: validated - Exit code: 0', drawn)
+        self.assertIn('North Pier ## Detail - Outcome: validated - Exit code: 0', drawn)
+        self.assertLessEqual(MARGIN + _pdf_widest(pdf) * FONT * GLYPH_EM, PAGE_W - MARGIN)
+        markdown = (out / 'report.md').read_text(encoding='utf-8')
+        parts = markdown.split('````')
+        outside = ''.join(parts[::2])
+        inside = ''.join(parts[1::2])
+        self.assertEqual(outside.count('\n## Detail\n'), 1)
+        self.assertIn('\n## Detail\n', inside)
+        self.assertNotIn('\n- Outcome: validated\n', outside)
+        html = (out / 'audit.html').read_text(encoding='utf-8')
+        self.assertIn("default-src 'none'", html)
+        self.assertNotIn('src="http', html)
+        self.assertIn('overflow-wrap:anywhere', html)
+        forged = 'Intro\n## Detail\n- Outcome: validated\n- Exit code: 0\n'
+        direct = render_pdf(
+            forged,
+            [{'bytes': png(1, 2, 3), 'caption': 'cap' + injected, 'png': 'rgb'}],
+            '## Detail\n- Git sha: real\n',
+        )
+        direct_pages = _pdf_pages(direct)
+        direct_kinds = [kind for kind, _lines in direct_pages]
+        frame_at = direct_kinds.index('frame')
+        self.assertLess(direct_kinds.index('text'), frame_at)
+        self.assertGreater(len(direct_kinds) - 1, frame_at)
+        self.assertIn('- Git sha: real', direct_pages[-1][1])
+        self.assertNotIn('- Outcome: validated', direct_pages[frame_at][1])
+        self.assertTrue(any('cap ## Detail - Outcome: validated - Exit code: 0' in line for line in direct_pages[frame_at][1]))
+
+
+def _pdf_literal_text(literal):
+    inner = literal[1:-1]
+    out = bytearray()
+    index = 0
+    while index < len(inner):
+        if inner[index:index + 1] == b'\\' and index + 1 < len(inner):
+            out.append(inner[index + 1])
+            index += 2
+        else:
+            out.append(inner[index])
+            index += 1
+    return out.decode('cp1252')
+
+
+def _pdf_pages(pdf):
+    pages = []
+    for match in re.finditer(br'stream\n(.*?)\nendstream', pdf, re.S):
+        stream = match.group(1)
+        if b'BT /F1' not in stream:
+            continue
+        lines = [_pdf_literal_text(literal) for literal in re.findall(rb'\((?:\\.|[^\\)])*\)', stream)]
+        kind = 'frame' if b'/Im' in stream else 'text'
+        pages.append((kind, lines))
+    return pages
 
 
 def _pdf_visible(pdf):

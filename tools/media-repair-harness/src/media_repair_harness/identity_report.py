@@ -14,7 +14,9 @@ import sys
 import zlib
 from pathlib import Path
 
-from media_repair_harness.identity_audit import png_header, png_info, render_html, render_markdown, render_pdf
+from media_repair_harness.identity_audit import (
+    pdf_sections, png_header, png_info, render_html, render_markdown, render_pdf,
+)
 from media_repair_harness.identity_cue import AssError, classify_exact_style, parse_ass_dialogue, title_relation
 from media_repair_harness.identity_recipe import (
     RECIPE_VERSION,
@@ -1545,7 +1547,8 @@ def _rendered(findings, images):
     markdown = render_markdown(findings)
     html = render_html(findings, images)
     try:
-        pdf = render_pdf(render_markdown(findings, plain=True), images)
+        front, detail = pdf_sections(findings)
+        pdf = render_pdf(front, images, detail)
     except (UnicodeError, ValueError, ZeroDivisionError, OSError, zlib.error, struct.error):
         errors = list(findings.get('errors') or [])
         errors.append('PDF rendering failed closed; the HTML keeps the exact text')
