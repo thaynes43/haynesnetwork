@@ -299,6 +299,7 @@ class Report(unittest.TestCase):
         self.assertEqual(collection['recordedSourceBytes'], 'Unknown')
         self.assertEqual(findings['recipePlans'][0]['executed'], False)
         self.assertIn('data:image/png;base64,', html)
+        self.assertIn('Git %s' % ('a' * 40), html)
         self.assertTrue(pdf.startswith(b'%PDF-1.4'))
         self.assertNotIn('<script>', html)
         self.assertFalse(markdown_has_unescaped_markup(markdown))

@@ -210,8 +210,9 @@ def render_html(findings, images):
         'pre{white-space:pre-wrap;word-break:break-word;}',
         '</style></head><body>',
         '<h1>Identity findings</h1>',
-        '<p>Offline report %s. Media reads %s. Model calls %s. calibratedProbability is null.</p>' % (
+        '<p>Offline report %s. Git %s. Media reads %s. Model calls %s. calibratedProbability is null.</p>' % (
             html.escape(str(findings.get('reportVersion')), quote=True),
+            html.escape(str(findings.get('gitSha') or 'not supplied'), quote=True),
             html.escape(str(findings.get('mediaReads')), quote=True),
             html.escape(str(findings.get('modelCalls')), quote=True),
         ),
