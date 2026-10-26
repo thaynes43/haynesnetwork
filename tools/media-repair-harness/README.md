@@ -114,6 +114,10 @@ WO-W27 (OpenProject #145 remainder and the PR #1031 nits) adds diagnostic rules 
 
 `python3 -m media_repair_harness.identity_report offline --manifest sample.json --evidence-root DIR --out RUN` reads a versioned manifest, checks artifact hashes, and writes `findings.json`, `report.md`, `audit.html`, and `audit.pdf`. It does not sample media, start a child process, or call a model. `plan-recipe` prints one allowlisted exact-style subtitle argv and does not open a source. This is not the runner and not the 8-second subtitle window. Details: `docs/identity-report.md`, `CHANGELOG.md`.
 
+## #207: offline per-tool usage report
+
+`python3 tools/media-repair-harness/scripts/tool_usage_report.py --runs-root <runs dir> ... --suite-dir <suite dir> ... --out-md FILE --out-json FILE` reads recorded run directories and the public dev suites and reports, per run and tool, the cases offering the tool, the cases whose output was pre-supplied, the cases and calls where the model asked for it, call result statuses, citations, and correctness when called versus offered-and-not-called, plus per-class and identity_mismatch views and the tools no suite or run ever offered. Correlation only; no model, network, subprocess or media. The committed report and its exact command are `docs/tool-usage-report.md` and `.json` (a test regenerates the JSON from the committed records). Details: `CHANGELOG.md`.
+
 ## Layout
 
 | File (under `src/media_repair_harness/` unless noted) | Role |
