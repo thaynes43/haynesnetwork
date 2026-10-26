@@ -8,7 +8,7 @@ v3.1-format, produce identical records before and after, apart from clocks).
 
 * **`--evidence-handover full|none|askable`** (`handover.py`, `handover-1`, replay only). `none` withholds every pre-collected evidence entry from the first message and keeps
   `tools_available`, the budget and the rest of the view (title, filename, expected, client_profile, question, arr, notes_for_model are context and stay). `askable` withholds
-  only what an offered tool can return (a `prior_record`, an unoffered tool or an injected error/timeout stays). A call that matches a recorded entry returns it byte for byte
+  only what an offered tool can return (a `prior_record`, an unoffered tool or a tool the case injects a failure into stays). A call that matches a recorded entry returns it byte for byte
   with its recorded status (`served_from_record`); anything else goes to the normal replay tool; plain replay would not return the recorded output (see `README.md`). The audit,
   the guards, the reference resolver and `unverified_parts` read only what the model was shown. Config key `evidence_handover` only when set; run summary and record carry it.
   Refused with `--evidence live`, `--tools-behavior`, `--claude-schema`.

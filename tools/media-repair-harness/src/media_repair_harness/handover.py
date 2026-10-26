@@ -18,7 +18,7 @@ Modes (`full` is the default and means "no handover change"):
 * `none`: every evidence entry is withheld.  An entry no offered tool can produce (`prior_record`, or the output of a tool the case does not offer) is
   therefore gone for good; the reachability table (`docs/must-ask-reachability.md`) lists those cases.
 * `askable`: only the entries a call can return are withheld: the entry's tool is offered for the case, is a harness tool, and is not shadowed by the case's
-  injected failure.  What no call can produce stays in the first message, so a case that carries only a `prior_record` is the same in both arms.
+  injected failure (any mode: error, timeout or a cut `partial` result; a call to that tool runs the normal tool and the injection applies, as in a handed run).  What no call can produce stays in the first message, so a case that carries only a `prior_record` is the same in both arms.
 
 RETURN OF A WITHHELD ENTRY.  The tool layer serves a call from the recorded entry when it matches (the same rule the pinned-media replay uses: a time
 argument equals the entry's, `full` equals `full`; a tool that takes no time matches any call; an `epub_inspect` call with excerpt arguments is a different
@@ -45,9 +45,10 @@ def config(mode):
 
 
 def injected_shadow(case, tool):
-    """True when the case's injected failure answers a call to `tool` with an error or a timeout (the recorded output can then never be returned by a call)."""
+    """True when the case injects a failure into calls to `tool` (an error, a timeout, or a cut `partial` result): the recorded output can then never be returned
+    whole by a call, so such an entry is not served (the normal tool runs and the injection applies, as in a handed run) and is not askable."""
     inj = case.get('inject_tool_failure') or {}
-    return bool(inj) and inj.get('tool') == tool and inj.get('mode', 'error') in ('error', 'timeout')
+    return bool(inj) and inj.get('tool') == tool
 
 
 def askable(case, entry):
@@ -124,6 +125,8 @@ def serve(name, args, ctx):
     """The recorded-first answer of a call (a ToolResult), or None.  The text is the one the first message would have carried."""
     from . import run as R
     from . import tools as T
+    if injected_shadow(ctx.case, name):
+        return None
     e = match(ctx.case, name, args, ctx.frame_t)
     if e is None:
         return None

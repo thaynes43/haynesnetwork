@@ -175,7 +175,7 @@ def render_md(doc):
             s['askable_kept_entries'], s['cases_unchanged_by_askable']),
         '- Flags: ' + (', '.join('%s %d' % (k, v) for k, v in s['flags'].items()) or 'none') + '.', '',
          'Reasons: `no_tool` = no harness tool produces the entry (`prior_record`); `tool_not_offered` = its tool is not in the case\'s `tools_available`; `injected_failure` = the case '
-         'injects an error or timeout into every call of that tool, so the recorded output cannot be returned; `differs` = the call returned something else (none expected); '
+         'injects a failure (error, timeout or a cut partial result) into every call of that tool, so the recorded output cannot be returned whole; `differs` = the call returned something else (none expected); '
          '`over_budget` = more than 6 calls. Status: fully = every withheld entry reachable and all pages within 6 calls; partially = some; unreachable = none.', '',
          '## Per case', '',
          '| case | class | fixture | tools | withheld | reachable | calls (pages) | status | flags | unreachable entries |',

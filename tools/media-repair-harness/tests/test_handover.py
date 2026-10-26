@@ -209,6 +209,25 @@ class RecordedFirstReturn(unittest.TestCase):
         self.assertEqual(call['status'], 'error')
         self.assertNotIn('served_from_record', call)
 
+    def test_an_injected_partial_failure_is_not_served_and_not_askable(self):
+        """Advisory review of #1042: a recorded entry of a tool the case injects `partial` into must neither be served (the cut result would lose the marker and
+        be redacted twice) nor withheld by `askable`."""
+        import copy
+        case, sha = case_of('audiobook-corrupt-003')
+        self.assertEqual(case['inject_tool_failure'], {'tool': 'audiobook_inspect', 'mode': 'partial'})
+        case = copy.deepcopy(case)
+        case['evidence'].append({'id': 'e9', 'tool': 'audiobook_inspect', 'args': {}, 'status': 'ok', 'output': json.dumps({'chapters': ['a', 'b']})})
+        for mode, withheld in (('none', ['e1', 'e2', 'e9']), ('askable', ['e1', 'e2'])):
+            adapter = A.ScriptedAdapter('m', [json.dumps({'type': 'tool_call', 'tool': 'audiobook_inspect', 'args': {}, 'why': 'w'}), json.dumps(P.forced_decision_for('v7', 'x'))])
+            rec = R.run_case(case, sha, adapter, SUITE11, tempfile.mkdtemp(), which=lambda n: None, run_id='r', prompt_version='v7', evidence_format='v3.1-format', guards='v3',
+                             evidence_handover=mode)
+            self.assertEqual(rec['evidence_handover']['withheld'], withheld, mode)
+            call = rec['tool_calls'][0]
+            self.assertNotIn('served_from_record', call)
+            self.assertEqual(call['status'], 'partial')
+            self.assertEqual(call['mode'], 'injected')
+            self.assertEqual(rec['evidence_handover']['obtained_by_call'], {})
+
     def test_epub_with_excerpt_arguments_is_a_different_request(self):
         case, _ = case_of('epub-healthy-003')
         self.assertIn('epub_inspect', case['tools_available'])

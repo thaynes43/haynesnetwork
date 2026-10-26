@@ -19,7 +19,7 @@ Computed in the configuration of the registered local-model runs: `--evidence-fo
 - `--evidence-handover askable` keeps the 14 entries no offered call can return in the first message; it changes nothing for 11 cases.
 - Flags: injected_failure 1, no_tool 13, no_tools_offered 11.
 
-Reasons: `no_tool` = no harness tool produces the entry (`prior_record`); `tool_not_offered` = its tool is not in the case's `tools_available`; `injected_failure` = the case injects an error or timeout into every call of that tool, so the recorded output cannot be returned; `differs` = the call returned something else (none expected); `over_budget` = more than 6 calls. Status: fully = every withheld entry reachable and all pages within 6 calls; partially = some; unreachable = none.
+Reasons: `no_tool` = no harness tool produces the entry (`prior_record`); `tool_not_offered` = its tool is not in the case's `tools_available`; `injected_failure` = the case injects a failure (error, timeout or a cut partial result) into every call of that tool, so the recorded output cannot be returned whole; `differs` = the call returned something else (none expected); `over_budget` = more than 6 calls. Status: fully = every withheld entry reachable and all pages within 6 calls; partially = some; unreachable = none.
 
 ## Per case
 
