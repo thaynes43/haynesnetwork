@@ -1,5 +1,32 @@
 # Harness changelog
 
+## #209: the must-ask evidence handover and the llama-server adapter (opt-in, offline source)
+
+`HARNESS_VERSION` stays `dev-c8` (a behaviour change is a new opt-in version, as in #161). **No model call, no GPU, no exec into any pod.** The default is every earlier
+run byte for byte: without the flag the config, its hash, the records, the replay-identity digests and the prompts are unchanged (146 scripted runs, dev-v1.1 x legacy and
+v3.1-format, produce identical records before and after, apart from clocks).
+
+* **`--evidence-handover full|none|askable`** (`handover.py`, `handover-1`, replay only). `none` withholds every pre-collected evidence entry from the first message and keeps
+  `tools_available`, the budget and the rest of the view (title, filename, expected, client_profile, question, arr, notes_for_model are context and stay). `askable` withholds
+  only what an offered tool can return (a `prior_record`, an unoffered tool or a tool the case injects a failure into stays). A call that matches a recorded entry returns it byte for byte
+  with its recorded status (`served_from_record`); anything else goes to the normal replay tool; plain replay would not return the recorded output (see `README.md`). The audit,
+  the guards, the reference resolver and `unverified_parts` read only what the model was shown. Config key `evidence_handover` only when set; run summary and record carry it.
+  Refused with `--evidence live`, `--tools-behavior`, `--claude-schema`.
+* **`scripts/must_ask_reachability.py`** (`must-ask-reachability-1`): `docs/must-ask-reachability.{md,json}` for suite dev-v1.1 in the dev-c7 configuration (v3.1-format, prompt v7,
+  guards v3). 59 cases fully reachable within the 6-call budget (at most 4 calls, every result one page), 3 partly (the `prior_record` in `movie-decoder-001` and `tv-insuff-001`; the
+  injected `decode_sample` error in `tv-insuff-002`), 11 unreachable (they offer no tool and carry only a `prior_record`). 162 of 176 withheld entries are returned byte for byte; the other
+  14 are 13 `prior_record` and 1 injected failure. 144 of the 162 come back from a call with no arguments; 18 need an argument the prompt describes (`decode_sample` `{"full":true}` x5, `ocr` `{"at":1.0}` x11, `ocr` `{"at":62.0}` x2). `--evidence-handover askable` keeps those 14 in the message.
+* **`--adapter llamacpp`** (`llamacpp_adapter.py` `llamacpp-1`, `llamacpp_transport.py`): llama.cpp `llama-server` over `kubectl -n ai exec -i deploy/llama-server -c app` (the container
+  name read with `kubectl get deploy -n ai llama-server -o yaml`), bash `/dev/tcp` to port 8080. `POST /v1/chat/completions`: temperature 0, seed 42, `max_tokens`, `cache_prompt` false, per-family
+  stop, the per-turn schema as `response_format` `json_schema`. Preflight: `/health`, `/v1/models`, `/props`; refuses unless the alias is the requested model; `before_case` re-checks it. No
+  load, unload or warm-up. Records `/props` (template as sha256), `/v1/models`, usage, `timings`, finish reason, response model id, `reasoning_content` length.
+  **Unverified against a live server** (this story execs into no GPU pod): that bash, `timeout` and `cat` exist in `ghcr.io/ggml-org/llama.cpp:server-cuda-b11096`; that `/health` answers
+  `{"status":"ok"}`; that `/v1/models` lists `data[].id` = the `--alias`; the `/props` field names (`model_alias`, `build_info`, `total_slots`, `default_generation_settings.n_ctx`, `model_path`,
+  `chat_template`); that the server accepts `response_format.type=json_schema` with `json_schema.schema` and compiles the harness schemas (type arrays, `anyOf`, `maxLength`, `maxItems`);
+  that `seed`, `cache_prompt` and `stop` are honoured; the `timings` and `usage` keys; where a thinking model puts its reasoning (`--reasoning-effort low` is set on the server) and whether it
+  uses up `max_tokens`; whether the server echoes the request's `model` (the swap check therefore reads `/v1/models`, not the response).
+* **Tests:** `tests/test_handover.py` (default identity, first message, return, audit semantics, refusals, manifest, the committed table) and `tests/test_llamacpp.py` (fake transport only).
+
 ## #207: offline per-tool usage report
 
 `HARNESS_VERSION` stays `dev-c8`. **No model call, no GPU, no cluster, no network, no subprocess.** The runner, prompts, contracts, guards and every
