@@ -1,5 +1,9 @@
 # Harness changelog
 
+## #213: read-only series scan driver (opt-in, offline source)
+
+`scripts/series_scan.py` adds `discover` (remote `list`/`stat`/`probe` through the Stage R machinery, identity-bound, fail-closed, truncated listings refused), `build` (one deterministic truth-free case per file, ids `scan-sSSeEEE-<8 hex>`), `run` (prints or executes the Ollama Prime command for `--tools-behavior v3-remote-1`, option-checked offline, resumable by batch) and `report` (private `report.md`, counts-only `summary.json`). `src/media_repair_harness/scan_suite.py` is new (the validator that allows `truth: null` and `supported_actions: []` only for `split == "scan"`, and the scorer refusal); the `mrh-score` console script is now `scan_suite.score_main` (refuse a scan, then the unchanged `score_compat.main`; `score_compat.py` and `score.py` are byte-identical). No other source file changed; `HARNESS_VERSION`, every prompt digest and every config hash are as before. Docs: `docs/series-scan.md`; tests: `tests/test_series_scan.py`. **No model call, no GPU, no exec into any pod, no network.**
+
 ## dev-tl1: pre-registration of the handed vs must-ask measurement (#208, phase 1; no source change)
 
 `HARNESS_VERSION` stays `dev-c8`; `src/` is untouched. **No model call, no GPU, no exec into any pod.** `runs/dev-tl1/PREREGISTRATION.md` and `manifest-template.json` register four runs

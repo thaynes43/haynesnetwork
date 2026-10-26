@@ -13,7 +13,7 @@ dependencies = []
 
 [project.scripts]
 mrh-run = "media_repair_harness.run:main"
-mrh-score = "media_repair_harness.score_compat:main"
+mrh-score = "media_repair_harness.scan_suite:score_main"
 mrh-guard = "media_repair_harness.guard_cli:main"
 
 [tool.setuptools]
