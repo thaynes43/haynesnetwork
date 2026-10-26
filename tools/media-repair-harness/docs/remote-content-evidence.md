@@ -349,3 +349,34 @@ the finding text the model saw, clipped where the typed layer clipped it) and `c
 on the tokenizer's own physical lines (`io.StringIO(...).readlines()`, never `str.splitlines()`, which also splits at U+2028 inside a string), every line
 kept, a PEP 263 encoding cookie and a shebang kept. The bundler checks every module before it ships (`check_stripped`): an identical AST, identical string
 tokens, the same encoding declaration and line count; any difference aborts the build. 213028 bytes. The code that runs is unchanged.
+
+## 8. `v3-remote-2`: a per-file input quota, a measured window and the audio stream default (#213)
+
+`--tools-behavior v3-remote-2` (opt-in, with `--evidence-format v3.1-format` and `--evidence replay`, like `v3-remote-1`) exists because the first live check of the series scan
+(three Blu-ray remuxes of about 28 Mbit/s) failed twice under `v3-remote-1`: `decode_sample` hit the fixed 8 MiB quota before it decoded one frame (4 s of that video is about 14 MB), and
+`audio_sample {"stream": 0}` mapped the video stream (`-map 0:0` is an absolute index) and found no audio. `v3-remote-1`, `mrh-sampler-2`, `mrh-sampler-3` and every hash pin are unchanged;
+`remote_sampler_v4.py` (`mrh-sampler-4`), `remote_quota.py` and `remote_evidence_2.py` are new, and `remote_evidence.run_operation` gained keyword-only hooks whose defaults are its old behaviour.
+
+**The quota is computed per call, from the file's own data** (`remote_quota.py`, rule `dynamic-quota-1`), for `decode_sample` (4 s), `audio_sample` (4 s) and `subtitle_sample` (8 s):
+
+    quota_bytes = max(8 MiB, min(file size, ceil(window_s * bitrate_bps / 8 * margin) + overhead_bytes))
+
+`bitrate_bps` is the largest of the measured values for THIS file: `container_average` (`size_bytes * 8 / duration_s`, the stat identity's size and the probe's `format.duration`), `format_bit_rate`
+(the probe's `format.bit_rate`) and `track_bps_sum` (the Matroska `BPS` / `BPS-eng` tags of the streams the call reads). The winner and every input are recorded (`quota_basis`, `quota_inputs`).
+A file whose size or duration is missing or unparsable gets no quota: `quota_basis: unavailable`, the tool returns `unavailable`, and nothing is run. `margin` (2.0) and `overhead_bytes` (6,048,576) are
+named parameters recorded in every receipt: the overhead is the sampler's own `-probesize 5000000` plus a 1 MiB allowance for the header, the seek index and the read back to a keyframe. **Both are
+starting values, not measured truths** (a probe does not give those sizes); `window_completed` below is what checks them. `probe`, `chapters` and `frame` keep the 8 MiB default.
+
+**Every decode, audio and subtitle receipt** records, in `remote_evidence.receipts[].quota` (and on the tool call): `quota_bytes`, `quota_basis`, `quota_inputs`, `margin`, `overhead_bytes`, `bytes_read`,
+`quota_exhausted`, `window_requested_s`, `out_time_s` / `out_time` (ffmpeg's own `-progress` report, read on a private pipe by the sampler) and `window_completed` (decode and audio: the output time reaches
+the window within 0.25 s; a subtitle stream is sparse, so its window counts as completed only when the read was not cut; no reported time leaves it `null`, never a guess). The model reads, in the typed
+result, the facts (`window_completed`, `bytes_read`, `quota_bytes`) and an open item that says plainly that the window ran short, why (the per-file input limit, or something else) and that this is a limit of the read, not
+evidence of corruption.
+
+**Streams.** `audio_sample {"at": s, "stream": n}`: `stream` is optional; omitted, the sampler maps `0:a:0`. Given, it is the absolute index ffprobe lists and must be an audio stream of the case's probe result,
+otherwise the call returns an error that names the audio stream indexes and runs nothing. `subtitle_sample` takes the same optional `stream`, checked against the text subtitle streams. The capability
+advertisement says so, and gives the audio indexes and the computed read limit of the file.
+
+**Bounds** are unchanged: 25 s inside the sampler, 60 s outer deadline per operation (a larger quota does not change them: the 25 s limit bounds the read), `nice` 19, one thread, `allowed_root`, identity binding,
+`O_NOFOLLOW`, read-only. Not verified against a real ffmpeg: `-progress pipe:N` on an inherited descriptor (the tests use a fake ffmpeg), so a run whose receipts show `out_time_s: null` has not measured its windows.
+

@@ -129,18 +129,21 @@ TOOLS_BEHAVIORS = ('v1', 'v2', 'v3', 'v4')
 # every remote operation.  Selected only by `--tools-behavior v3-remote-1` (with `--evidence-format v3.1-format`); v1 to v4 (TOOLS_BEHAVIORS, pinned by the
 # W25 / W27 tests) are byte-identical.
 REMOTE_V1 = 'v3-remote-1'
-REMOTE_TOOLS_BEHAVIORS = (REMOTE_V1,)
+# v3-remote-2 (#213, remote_evidence_2.py): v3-remote-1 plus mrh-sampler-4, a per-file input quota for decode/audio/subtitle, a measured window and the audio stream
+# default.  Selected only by `--tools-behavior v3-remote-2`; v3-remote-1 is unchanged.
+REMOTE_V2 = 'v3-remote-2'
+REMOTE_TOOLS_BEHAVIORS = (REMOTE_V1, REMOTE_V2)
 
 
 def _v2plus(ctx):
     """Tools behaviour v2, v3 or v4: v3 (dev-c7, evidence format v3.1-format) is v2 plus the EPUB body excerpts (epub_text.py), every v2 rule unchanged;
     v4 (W25) is v3 plus three EPUB package-check corrections (_epub_stage remote_ok, _inspect_v4, SIZE_CAP_V4)."""
-    return ctx.tools_behavior in ('v2', 'v3', 'v4', REMOTE_V1)
+    return ctx.tools_behavior in ('v2', 'v3', 'v4') + REMOTE_TOOLS_BEHAVIORS
 
 
 def _v3plus(ctx):
     """Tools behaviour v3 or v4: the EPUB body excerpts and the literal media text (v4 changes only the package check, see tool_epub_inspect)."""
-    return ctx.tools_behavior in ('v3', 'v4', REMOTE_V1)
+    return ctx.tools_behavior in ('v3', 'v4') + REMOTE_TOOLS_BEHAVIORS
 
 
 # Tools behaviour v4 words two EPUB results that only diagnostic rules diag-2 recognise (`the spine documents contain no text` is damage there; under diag-1
@@ -208,6 +211,7 @@ class Context:
         # result names (set by the runner before the capabilities are computed).  Unused by every other tools behaviour.
         self.remote_binding = remote_binding
         self.subtitle_stream = None
+        self.media_probe = None     # v3-remote-2 only: the case's parsed probe result (remote_evidence_2.first_probe), set by the runner
         # #209 `--evidence-handover none|askable` only (handover.py): a call that matches one of the case's recorded evidence entries returns that entry
         self.serve_recorded = serve_recorded
 
@@ -232,8 +236,8 @@ def _num(args, key, default, lo, hi):
 
 
 def _run_remote(ctx, mode, at=0.0, stream=0):
-    if ctx.tools_behavior == REMOTE_V1:
-        return _remote_evidence().run_remote(ctx, mode, at, stream)      # receipts, identity binding, fail-closed (raises FatalOperation)
+    if ctx.tools_behavior in REMOTE_TOOLS_BEHAVIORS:
+        return _remote_module(ctx).run_remote(ctx, mode, at, stream)      # receipts, identity binding, fail-closed (raises FatalOperation)
     fx = ctx.fixture
     cmd = ['kubectl', '-n', fx.namespace, 'exec', '-i', 'deploy/' + fx.deploy, '-c', fx.container, '--',
            'python3', '-', mode, fx.path, '--at', str(at), '--stream', str(int(stream))]
@@ -260,6 +264,14 @@ def _remote_evidence():
     return remote_evidence
 
 
+def _remote_module(ctx):
+    """The module of this context's remote tools behaviour: remote_evidence (v3-remote-1) or remote_evidence_2 (v3-remote-2)."""
+    if ctx.tools_behavior == REMOTE_V2:
+        from . import remote_evidence_2
+        return remote_evidence_2
+    return _remote_evidence()
+
+
 def _handover():
     from . import handover
     return handover
@@ -267,14 +279,14 @@ def _handover():
 
 def registry(ctx):
     """The tools a context can run: REGISTRY, plus subtitle_sample under tools behaviour v3-remote-1 only."""
-    if ctx.tools_behavior == REMOTE_V1:
-        return dict(REGISTRY, subtitle_sample=_remote_evidence().tool_subtitle_sample)
+    if ctx.tools_behavior in REMOTE_TOOLS_BEHAVIORS:
+        return dict(REGISTRY, subtitle_sample=_remote_module(ctx).tool_subtitle_sample)
     return REGISTRY
 
 
 def extra_tools(ctx):
     """Tool names beyond protocol.TOOLS that this context runs (empty for every tools behaviour but v3-remote-1)."""
-    return _remote_evidence().EXTRA_TOOLS if ctx.tools_behavior == REMOTE_V1 else ()
+    return _remote_evidence().EXTRA_TOOLS if ctx.tools_behavior in REMOTE_TOOLS_BEHAVIORS else ()
 
 
 def _local_bin(ctx, name):
@@ -568,6 +580,8 @@ def tool_decode_sample(args, ctx):
     be = _backend(ctx, 'ffmpeg')
     if isinstance(be, ToolResult):
         return be
+    if be == 'remote' and ctx.tools_behavior == REMOTE_V2:
+        return _remote_module(ctx).tool_decode_sample(args, ctx)      # the per-file input quota and the measured window (#213)
     v2 = _v2plus(ctx)
     if be == 'replay':
         rec = ctx.replay_rec['decode_sample']
@@ -643,6 +657,8 @@ def tool_audio_sample(args, ctx):
     be = _backend(ctx, 'ffmpeg')
     if isinstance(be, ToolResult):
         return be
+    if be == 'remote' and ctx.tools_behavior == REMOTE_V2:
+        return _remote_module(ctx).tool_audio_sample(args, ctx)       # `stream` optional (the first audio stream), checked against the probe (#213)
     if be == 'replay':
         return _audio_replay(ctx, at, stream)
     if be == 'remote':
@@ -1324,7 +1340,7 @@ def live_tool(tool, args, ctx):
 # operation that was not called.  It mirrors `_backend` without running anything.
 def capability(ctx, name):
     cap = {'tool': name}
-    if name == 'subtitle_sample' and ctx.tools_behavior == REMOTE_V1:
+    if name == 'subtitle_sample' and ctx.tools_behavior in REMOTE_TOOLS_BEHAVIORS:
         return _subtitle_capability(ctx, cap)
     live = ctx.evidence_mode == 'live' and name in LIVE_KINDS
     if name == 'arr_lookup':
@@ -1373,6 +1389,8 @@ def capability(ctx, name):
             cap['excerpts'] = EXCERPT_CAPABILITY
         return cap
     binary = 'ffprobe' if name in ('ffprobe', 'audiobook_inspect') else 'ffmpeg'
+    if ctx.fixture.kind == 'remote' and ctx.tools_behavior == REMOTE_V2 and name in ('decode_sample', 'audio_sample'):
+        return _remote_module(ctx).capability(ctx, cap, name)
     if ctx.fixture.kind == 'remote':
         cap.update(backend='remote', available=True)
         if name == 'decode_sample':
@@ -1414,6 +1432,8 @@ def capability(ctx, name):
 
 def _subtitle_capability(ctx, cap):
     """tools behaviour v3-remote-1: what subtitle_sample can do for this item, from the fixture and the probe result only (nothing is run)."""
+    if ctx.tools_behavior == REMOTE_V2 and ctx.fixture.kind == 'remote' and _need_media(ctx) is None:
+        return _remote_module(ctx).capability(ctx, cap, 'subtitle_sample')
     RE = _remote_evidence()
     cap.update(args='{"at": seconds}: one %d s window from that offset; the stream is the first text subtitle stream (%s) of the probe result, never an argument'
                % (RE.SUBTITLE_WINDOW_S, ', '.join(RE.TEXT_SUBTITLE_CODECS)), window_s=RE.SUBTITLE_WINDOW_S, offsets_s='any')
@@ -1482,7 +1502,7 @@ def call_tool(ctx, name, args):
     inject = ctx.case.get('inject_tool_failure')
     offered = ctx.case.get('tools_available') or []
     reg = registry(ctx)
-    remote_v1 = ctx.tools_behavior == REMOTE_V1
+    remote_v1 = ctx.tools_behavior in REMOTE_TOOLS_BEHAVIORS
     since = len(ctx.remote_binding.receipts) if remote_v1 and ctx.remote_binding is not None else 0
     if name not in reg or name not in offered:
         # the capability is absent for this case: `unavailable`, and the call itself is a protocol violation (recorded by the runner)

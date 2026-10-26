@@ -2,7 +2,8 @@
 
 `scripts/series_scan.py` turns every video file of one TV series folder on the media share into a truth-free harness case, runs the existing runner over the
 cases with the local model, and aggregates a findings report. It is a driver: it adds no model, tool or scorer. It reuses the Stage R machinery
-(`remote_evidence.run_operation` with the `mrh-sampler-2` receipts, the Stage R driver's listing check, fingerprint check and probe evidence) unchanged.
+(`remote_evidence.run_operation` with the `mrh-sampler-2` receipts for discovery, the Stage R driver's listing check, fingerprint check and probe evidence) unchanged. The run uses
+tools behaviour `v3-remote-2` by default (below); `--tools-behavior v3-remote-1` selects the first one.
 
 ## Rules
 
@@ -68,13 +69,25 @@ Prints the command (always runs the runner's own option checks first, offline, w
 
 ```
 python3 -m media_repair_harness.run --adapter ollama --model qwen3.8:27b --num-ctx 16384 --context-policy ctx16k-v1 --gpu-fit-check full-gpu-v2
-  --keep-alive 10m --prompt v7 --evidence-format v3.1-format --guards v3 --evidence replay --tools-behavior v3-remote-1 --tool-output-bytes 8192
+  --keep-alive 10m --prompt v7 --evidence-format v3.1-format --guards v3 --evidence replay --tools-behavior v3-remote-2 --tool-output-bytes 8192
   --no-spend-limit --max-wall-s <cap> --split scan --suite SUITE --cases <ids> --out RUN/batch-NNN --scratch RUN/scratch/batch-NNN
 ```
 
-`--tools-behavior v3-remote-1` needs `--evidence-format v3.1-format` and `--evidence replay`; it works with the ollama adapter. `--stop-on-receipt-failure`
+`--tools-behavior v3-remote-2` (and `v3-remote-1`) needs `--evidence-format v3.1-format` and `--evidence replay`; it works with the ollama adapter. `--stop-on-receipt-failure`
 is off by default: a fail-closed remote operation fails that tool call (cause tool, listed in the report) and the scan goes on; add the flag to stop the
 whole batch at the first one.
+
+**Why `v3-remote-2` (#213).** The first live check (three Blu-ray remuxes of about 28 Mbit/s) failed twice under `v3-remote-1`: `decode_sample` hit the fixed 8 MiB input quota before it decoded a frame
+(4 s of that video is about 14 MB), and `audio_sample {"stream": 0}` mapped the video (the sampler's `-map 0:<stream>` is an absolute index), so there was nothing to decode. Under `v3-remote-2`
+(`docs/remote-content-evidence.md` section 8):
+
+- **The read limit is computed per file, never a global guess:** `quota_bytes = max(8 MiB, min(file size, ceil(window_s * bitrate_bps / 8 * margin) + overhead))`, where `bitrate_bps` is the largest of the
+  container average (`size * 8 / format.duration`), the probe's `format.bit_rate` and the Matroska `BPS` / `BPS-eng` tags of the streams read; `margin` is 2.0 and `overhead` 6,048,576 bytes (the sampler's
+  `-probesize` plus 1 MiB), both recorded in every receipt as starting values that the measured window checks. A file without a size or a duration in its probe gets no quota (`quota_basis: unavailable`) and the
+  tool runs nothing; that is the case for a file whose probe failed.
+- **Every decode, audio and subtitle receipt records** the quota, its basis and inputs, the bytes read, `quota_exhausted`, the requested window, the decoded output time and `window_completed`.
+- **`audio_sample` without `stream` reads the first audio stream** (`0:a:0`); a given `stream` is the absolute ffprobe index and must be an audio stream of the probe or the call returns an error that names the audio
+  stream indexes and runs nothing. `subtitle_sample` takes the same optional `stream` for text subtitle streams.
 
 **Resume.** The runner refuses a non-empty `--out`, so each invocation is a new batch directory `RUN/batch-NNN` over the cases that have no record yet in any
 batch (`--cases`). Run the same command again after an abort, a wall cap or a crash and it continues with the remaining cases. A record that carries an
@@ -88,12 +101,18 @@ operation is bounded at 25 s in the sampler and 60 s outside, and six tool calls
 
 Reads one or more run directories (a `RUN` root of `batch-NNN` directories, or single runner out dirs) and `discovery.json`. `report.md` (private): totals by
 class and action, tool call statuses, every non-healthy finding with its reason, every tool failure (fail-closed kind and an excerpt), missing cases, and a
-per-file table (season, episode, class, action, confidence, tools called with statuses, failed tools, forced, repairs, wall seconds). `summary.json` holds
+per-file table (season, episode, class, action, confidence, tools called with statuses, windows, failed tools, forced, repairs, wall seconds). `summary.json` holds
 counts only (no path, no title, no case id) and is safe to commit.
+
+**Windowed reads (#213).** For every decode, audio and subtitle call the report gives one outcome token in the per-file `windows` column and counts them in a "Windowed reads" section and in `summary.json`
+(`windowed_calls_by_tool_token`, `window_shortfalls_by_tool`, `window_shortfalls`, `files_with_window_shortfall`): `ok` (the window completed), `short:quota` (it ran short and the per-file quota was exhausted),
+`short` (short without exhausting it), `unmeasured` (no decoded time was reported), `n/a` (a `v3-remote-1` receipt: nothing was measured), `no-quota` (size or duration missing, nothing run) and `fatal`.
+A shortfall is a limit of the read, not a finding about the file.
 
 ## Tests
 
 `tests/test_series_scan.py` (serial, in `scripts/ci-test.sh`): discovery against the real sampler on a synthetic library (including a truncated listing, a
 missing receipt, a changed hostname and a file changed after its listing), name parsing, deterministic build, the scan-case validator, the scorer refusal,
-the run command and its offline option check, resume, a scripted run of built cases through the real runner, and report aggregation from fake records. All
+the run command and its offline option check (for both tools behaviours, with every run option), resume, scripted runs of built cases through the real runner under `v3-remote-1` and `v3-remote-2`, and report
+aggregation from fake records, including the windows. `tests/test_remote_evidence_2.py` covers the quota rule, the receipts, `window_completed`, the stream checks and the unchanged `v3-remote-1`. All
 paths are made up; nothing contacts a cluster, Ollama or the network.

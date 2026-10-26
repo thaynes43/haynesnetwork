@@ -15,6 +15,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import rem2_h as H2
 import rem_h as H
 import th
 from media_repair_harness import run as R
@@ -445,7 +446,7 @@ class RunCommand(Built):
         self.assertEqual(cmd[1:3], ['-m', 'media_repair_harness.run'])
         want = ['--adapter', 'ollama', '--model', 'qwen3.8:27b', '--num-ctx', '16384', '--context-policy', 'ctx16k-v1', '--gpu-fit-check', 'full-gpu-v2',
                 '--keep-alive', '10m', '--prompt', 'v7', '--evidence-format', 'v3.1-format', '--guards', 'v3', '--evidence', 'replay',
-                '--tools-behavior', 'v3-remote-1', '--tool-output-bytes', '8192', '--no-spend-limit']
+                '--tools-behavior', 'v3-remote-2', '--tool-output-bytes', '8192', '--no-spend-limit']
         self.assertEqual(cmd[3:3 + len(want)], want)
         rest = cmd[3 + len(want):]
         self.assertEqual(rest[rest.index('--split') + 1], 'scan')
@@ -460,9 +461,38 @@ class RunCommand(Built):
     def test_the_runner_accepts_the_combination_offline(self):
         code, out = self.run_cmd()
         self.assertIn('the runner accepts this combination', out)
-        self.assertIn('tools behaviour v3-remote-1', out)
+        self.assertIn('tools behaviour v3-remote-2', out)
         ok, msg = S.offline_check(S.RUN_OPTIONS + ['--max-wall-s', '1000', '--split', 'scan', '--suite', str(self.suite), '--out', 'x', '--scratch', 'y'], self.suite)
         self.assertTrue(ok, msg)
+
+    def test_v3_remote_2_is_the_default_and_v3_remote_1_stays_selectable(self):
+        self.assertEqual((S.DEFAULT_TOOLS_BEHAVIOR, S.TOOLS_BEHAVIORS), ('v3-remote-2', ('v3-remote-2', 'v3-remote-1')))
+        code, out = self.run_cmd('--tools-behavior', 'v3-remote-1')
+        self.assertEqual(code, 0)
+        cmd = self.command_of(out)
+        self.assertEqual(cmd[cmd.index('--tools-behavior') + 1], 'v3-remote-1')
+        self.assertIn('tools behaviour v3-remote-1', out)
+        self.assertEqual(cmd.count('--tools-behavior'), 1)
+        with self.assertRaises(SystemExit):
+            quiet(S.main, ['run', '--suite', str(self.suite), '--out', str(self.tmp / 'runs'), '--allow-in-git', '--tools-behavior', 'v3'])
+
+    def test_the_runner_accepts_v3_remote_2_with_every_series_scan_run_option(self):
+        code, out = self.run_cmd('--limit', '2', '--stop-on-receipt-failure', '--require-digest', 'sha256:abc', '--max-wall-s', '5000', '--model', 'qwen3.8:27b',
+                                 '--tools-behavior', 'v3-remote-2')
+        self.assertEqual(code, 0, out)
+        self.assertIn('the runner accepts this combination', out)
+        self.assertIn('tools behaviour v3-remote-2', out)
+        cmd = self.command_of(out)
+        self.assertEqual(cmd[cmd.index('--tools-behavior') + 1], 'v3-remote-2')
+        for flag in ('--stop-on-receipt-failure', '--require-digest'):
+            self.assertIn(flag, cmd)
+        self.assertEqual(len(cmd[cmd.index('--cases') + 1].split(',')), 2)
+        # the offline check is the runner's own: v3-remote-2 with a companion option it refuses is refused here too
+        opts = list(S.RUN_OPTIONS)
+        opts[opts.index('--evidence') + 1] = 'live'
+        ok, msg = S.offline_check(opts + ['--split', 'scan'], self.suite)
+        self.assertFalse(ok)
+        self.assertIn('--tools-behavior v3-remote-2', msg)
 
     def test_the_offline_check_reports_the_runners_own_refusal(self):
         opts = [x for x in S.RUN_OPTIONS]
@@ -562,13 +592,13 @@ class RunCommand(Built):
 class EndToEnd(Built):
     """The built suite through the REAL runner (scripted model, real sampler on the synthetic library), then the report."""
 
-    def run_batch(self, ids, replies, name='batch-001', root=None):
+    def run_batch(self, ids, replies, name='batch-001', root=None, behaviour='v3-remote-1'):
         root = Path(root or self.tmp / 'runs')
         script = self.tmp / ('script-%s.json' % name)
         script.write_text(json.dumps(replies))
         suite = self.tmp / 'priv' / 'suite'
         argv = ['--adapter', 'scripted', '--model', 'scripted-model', '--prompt', 'v7', '--evidence-format', 'v3.1-format', '--guards', 'v3', '--evidence', 'replay',
-                '--tools-behavior', 'v3-remote-1', '--tool-output-bytes', '8192', '--no-spend-limit', '--split', 'scan', '--suite', str(suite),
+                '--tools-behavior', behaviour, '--tool-output-bytes', '8192', '--no-spend-limit', '--split', 'scan', '--suite', str(suite),
                 '--cases', ','.join(ids), '--out', str(root / name), '--scratch', str(self.tmp / 'scr'), '--script', str(script)]
         code, _o, _e = quiet(R.main, argv, runner=self.pod)
         return code, root
@@ -604,6 +634,31 @@ class EndToEnd(Built):
         self.assertIn(ODD, text)
         self.assertIn('## Missing', text)
         self.assertIn(TWINS, text)
+
+    def test_scan_cases_run_under_v3_remote_2_and_the_report_counts_the_windows(self):
+        ff = self.pod.bin / 'ffmpeg'
+        ff.write_text(H2.FAKE_FFMPEG_2 % sys.executable)               # the progress-reporting fake ffmpeg for mrh-sampler-4
+        ff.chmod(0o755)
+        self.build()
+        ids = self.ids_by_name()
+        code, root = self.run_batch([ids[PILOT]], [th.tool_call('ffprobe', {}), th.tool_call('decode_sample', {'at': 5}), th.tool_call('audio_sample', {'at': 5}),
+                                                  th.tool_call('subtitle_sample', {'at': 60}), H.dec('healthy', 'none')], behaviour='v3-remote-2')
+        self.assertEqual(code, 0)
+        rec = json.loads((root / 'batch-001' / (ids[PILOT] + '.json')).read_text())
+        self.assertEqual([(c['tool'], c['status']) for c in rec['tool_calls']], [('ffprobe', 'ok'), ('decode_sample', 'ok'), ('audio_sample', 'ok'), ('subtitle_sample', 'ok')])
+        rem = rec['remote_evidence']
+        self.assertEqual((rem['tools_behavior'], rem['sampler'], rem['fatal']), ('v3-remote-2', 'mrh-sampler-4', None))
+        windowed = [e['quota'] for e in rem['receipts'] if e['mode'] in ('decode', 'audio', 'subtitle')]
+        self.assertEqual([q['window_completed'] for q in windowed], [True, True, True])
+        self.assertEqual({q['quota_bytes'] for q in windowed[:2]}, {8_388_608})          # a tiny made-up file: the floor
+        out = self.tmp / 'priv' / 'report.md'
+        c, _o, _e = quiet(S.main, ['report', '--run', str(root), '--discovery', str(self.priv / 'discovery.json'), '--out', str(out), '--allow-in-git'])
+        self.assertEqual(c, 0)
+        summary = json.loads((self.tmp / 'priv' / 'summary.json').read_text())
+        self.assertEqual(summary['windowed_calls_by_tool_token'], {'audio_sample': {'ok': 1}, 'decode_sample': {'ok': 1}, 'subtitle_sample': {'ok': 1}})
+        self.assertEqual((summary['window_shortfalls'], summary['files_with_window_shortfall']), (0, 0))
+        text = out.read_text(encoding='utf-8')
+        self.assertIn('decode ok, audio ok, subtitle ok', text)
 
     def test_a_scan_run_is_not_scoreable(self):
         self.build()
@@ -678,6 +733,36 @@ class Report(Lib):
         # per-file order is by season then episode, the unparsed name last
         order = [text.index('| %s |' % n) for n in (PILOT, TWINS, S2, ODD)]
         self.assertEqual(order, sorted(order))
+
+    def test_window_columns_and_shortfall_counts(self):
+        def entry(mode, done, quota_hit, with_quota=True, outcome='ok'):
+            e = {'n': 1, 'mode': mode, 'outcome': outcome, 'receipt': {'quota_exhausted': quota_hit}}
+            if with_quota:
+                e['quota'] = {'window_completed': done, 'quota_exhausted': quota_hit}
+            return e
+        i = self.ids
+        recs = [fake_record(i[PILOT], calls=[('decode_sample', 'ok', {'receipts': [entry('decode', True, False)]}),
+                                             ('audio_sample', 'partial', {'receipts': [entry('audio', False, True)]}),
+                                             ('subtitle_sample', 'partial', {'receipts': [entry('subtitle', False, False)]})]),
+                fake_record(i[TWINS], calls=[('decode_sample', 'partial', {'receipts': [entry('decode', None, False)]}),
+                                             ('decode_sample', 'unavailable', {'quota': {'quota_basis': 'unavailable'}, 'receipts': []}),
+                                             ('decode_sample', 'error', {'receipts': [entry('decode', None, None, outcome='fatal')]}),
+                                             ('frame_sample', 'ok', {'receipts': [{'mode': 'frame', 'outcome': 'ok', 'receipt': {}}]})]),
+                fake_record(i[ODD], calls=[('decode_sample', 'ok', {'receipts': [entry('decode', None, True, with_quota=False)]}),   # a v3-remote-1 receipt: quota hit, no window
+                                           ('decode_sample', 'ok', {'receipts': [entry('decode', None, False, with_quota=False)]}),
+                                           ('ffprobe', 'ok', {})])]
+        text, s = self.report(self.write_run('batch-001', recs))
+        self.assertEqual(s['windowed_calls_by_tool_token'],
+                         {'audio_sample': {'short:quota': 1}, 'decode_sample': {'fatal': 1, 'n/a': 1, 'no-quota': 1, 'ok': 1, 'short:quota': 1, 'unmeasured': 1},
+                          'subtitle_sample': {'short': 1}})
+        self.assertEqual(s['window_shortfalls_by_tool'], {'audio_sample': 1, 'decode_sample': 1, 'subtitle_sample': 1})
+        self.assertEqual((s['window_shortfalls'], s['files_with_window_shortfall']), (3, 2))
+        self.assertIn('| windows |', text)
+        self.assertIn('decode ok, audio short:quota, subtitle short', text)
+        self.assertIn('decode unmeasured, decode no-quota, decode fatal', text)
+        self.assertIn('decode short:quota, decode n/a', text)
+        self.assertIn('### Windowed reads', text)
+        self.assertIn('calls with a window shortfall: 3 (in 2 files)', text)
 
     def test_summary_json_holds_counts_only(self):
         i = self.ids

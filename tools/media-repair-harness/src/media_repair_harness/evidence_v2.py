@@ -1164,12 +1164,25 @@ def _derive_decode(d, data, known_duration):
             d.unresolved.append('the full decode did not run to the end of the file' if eof is False else 'whether the full decode ran to the end of the file is not shown')
     d.facts = {k: v for k, v in (('exit_code', code), ('frames', frames), ('decoded_s', fnum(decoded) if decoded is not None else None),
                                  ('error_lines', lines_of(stderr) or None), ('quota_exhausted', True if quota else None)) if v is not None}
+    _window_read_facts(d, data)
     unmet = data.get('request_unmet')
     if isinstance(unmet, dict):
         d.conflict('request_not_honored', 'requested %s; completed %s (%s)' % (unmet.get('requested'), unmet.get('completed'), unmet.get('reason')))
         d.unresolved.append('the whole file was not decoded: %s' % (unmet.get('reason') or 'the request was not completed'))
     if d.scope['completed']['streams'] == UNKNOWN:
         d.unresolved.append('which streams were decoded is not recorded')
+
+
+def _window_read_facts(d, data):
+    """Tools behaviour v3-remote-2 (#213) only, keyed on `window_completed`, a field no other tools behaviour writes: the read limit, the bytes read and whether the
+    window completed are facts, and the tool's own account of a window that ran short is an open item (a limit of the read, never a finding about the file)."""
+    if 'window_completed' not in data:
+        return
+    facts = dict(d.facts) if isinstance(d.facts, dict) else {}
+    facts.update({k: data[k] for k in ('window_completed', 'bytes_read', 'quota_bytes') if data.get(k) is not None})
+    d.facts = facts
+    if isinstance(data.get('scope_limit'), str):
+        d.unresolved.append(data['scope_limit'])
 
 
 def _first_num(mapping, keys):
@@ -1250,6 +1263,9 @@ def _derive_audio(d, data):
         if at is not None and served != at:
             d.conflict('request_not_honored', 'audio at %g s was requested; the recorded window served starts at %g s' % (at, served))
     d.integrity = 'clean' if d.obs['status'] == 'ok' and num(data.get('rms_dbfs')) is not None else UNKNOWN
+    _window_read_facts(d, data)
+    if 'window_completed' in data and data.get('quota_exhausted') is True:
+        d.facts['quota_exhausted'] = True
     d.unresolved.append('signal statistics only; no speech recognition was run')
 
 

@@ -7,11 +7,12 @@ model, and aggregates a findings report.  Four subcommands, each a separate step
   discover  list the series folder through the remote sampler (kubectl exec into the media pod: `list` for each season folder, `stat` and `probe` per
             video, every one bound to the file's identity) -> <out>/discovery.json
   build     discovery.json -> <out>/suite/ (cases/<id>.json + manifest.json): one truth-free case per file, split "scan", no model, no network
-  run       prints (or with --execute runs) the runner command for Ollama Prime over the suite; resumable by batch
+  run       prints (or with --execute runs) the runner command for Ollama Prime over the suite; resumable by batch.  The default tools behaviour is v3-remote-2
+            (a per-file input quota, a measured window, the audio stream default); --tools-behavior v3-remote-1 selects the earlier one
   report    <run dirs> + discovery.json -> <out>/report.md (private) and <out>/summary.json (counts only, safe to commit)
 
-Nothing here writes to media, the catalog, *arr, Plex or the cluster: the sampler is read-only (`mrh-sampler-2`: O_NOFOLLOW opens, descriptor-confined
-paths, fail-closed receipts) and `kubectl` is only ever called as `exec ... python3 - <sampler mode>`.  Sidecar subtitle files are listed by name and never
+Nothing here writes to media, the catalog, *arr, Plex or the cluster: the sampler is read-only (`mrh-sampler-2` for discovery, `mrh-sampler-4` for a v3-remote-2
+run: O_NOFOLLOW opens, descriptor-confined paths, fail-closed receipts) and `kubectl` is only ever called as `exec ... python3 - <sampler mode>`.  Sidecar subtitle files are listed by name and never
 read.  Case ids are `scan-sSSeEEE-<8 hex of sha256(path)>`; case files, discovery and the report hold real library paths and titles, so --out refuses a
 directory inside a git work tree.  See docs/series-scan.md.
 """
@@ -63,9 +64,11 @@ EXIT_OK, EXIT_BAD, EXIT_STOP = 0, 2, 3
 
 # ---------------------------------------------------------------------------------------------------------------------------------- run options
 MODEL = 'qwen3.8:27b'
+TOOLS_BEHAVIORS = ('v3-remote-2', 'v3-remote-1')
+DEFAULT_TOOLS_BEHAVIOR = TOOLS_BEHAVIORS[0]       # #213: a per-file input quota, a measured window and the audio stream default; v3-remote-1 stays selectable
 RUN_OPTIONS = ['--adapter', 'ollama', '--model', MODEL, '--num-ctx', '16384', '--context-policy', 'ctx16k-v1', '--gpu-fit-check', 'full-gpu-v2',
                '--keep-alive', '10m', '--prompt', 'v7', '--evidence-format', 'v3.1-format', '--guards', 'v3', '--evidence', 'replay',
-               '--tools-behavior', 'v3-remote-1', '--tool-output-bytes', '8192', '--no-spend-limit']
+               '--tools-behavior', DEFAULT_TOOLS_BEHAVIOR, '--tool-output-bytes', '8192', '--no-spend-limit']
 BASE_WALL_S = 900          # a model load and warm-up
 PER_CASE_WALL_S = 240      # six tool calls (each bounded at 60 s) and up to eight model turns
 NOTES = ('A library file is attached to the entry below. From the evidence and tools, decide what is wrong with it, if anything, and which action the '
@@ -415,6 +418,7 @@ def wall_cap(n, base_s=BASE_WALL_S, per_case_s=PER_CASE_WALL_S):
 def runner_options(args, pending, batch_out, scratch):
     opts = list(RUN_OPTIONS)
     opts[opts.index('--model') + 1] = args.model
+    opts[opts.index('--tools-behavior') + 1] = getattr(args, 'tools_behavior', DEFAULT_TOOLS_BEHAVIOR)
     opts += ['--max-wall-s', str(args.max_wall_s if args.max_wall_s else wall_cap(len(pending), args.base_wall_s, args.per_case_wall_s)), '--split', SS.SPLIT]
     if args.stop_on_receipt_failure:
         opts.append('--stop-on-receipt-failure')
@@ -536,6 +540,40 @@ def tool_summary(rec):
     return called, failed
 
 
+WINDOWED_TOOLS = ('decode_sample', 'audio_sample', 'subtitle_sample')
+WINDOWED_MODES = ('decode', 'audio', 'subtitle')
+
+
+def window_token(entry):
+    """One windowed sampler operation (a receipts entry) -> a short token: `ok` (the window completed), `short:quota` (it ran short and the quota was exhausted), `short`
+    (short without exhausting it), `unmeasured` (no decoded time was reported), `n/a` (a v3-remote-1 receipt: no window was measured) or `fatal`."""
+    if entry.get('outcome') != 'ok':
+        return 'fatal'
+    q = entry.get('quota')
+    if not isinstance(q, dict):
+        return 'short:quota' if (entry.get('receipt') or {}).get('quota_exhausted') is True else 'n/a'
+    done = q.get('window_completed')
+    if done is True:
+        return 'ok'
+    if done is False:
+        return 'short:quota' if q.get('quota_exhausted') is True else 'short'
+    return 'short:quota' if q.get('quota_exhausted') is True else 'unmeasured'
+
+
+def window_calls(rec):
+    """-> [(tool, token)] for every decode, audio and subtitle call of a record, in call order.  A call whose quota was `unavailable` ran nothing: token `no-quota`."""
+    out = []
+    for c in rec.get('tool_calls') or []:
+        if not isinstance(c, dict) or c.get('tool') not in WINDOWED_TOOLS or c.get('pages_of'):
+            continue
+        entries = [e for e in c.get('receipts') or [] if isinstance(e, dict) and e.get('mode') in WINDOWED_MODES]
+        if entries:
+            out += [(c['tool'], window_token(e)) for e in entries]
+        elif isinstance(c.get('quota'), dict) and c['quota'].get('quota_basis') == 'unavailable':
+            out.append((c['tool'], 'no-quota'))
+    return out
+
+
 def one_line(text, n=400):
     return ' '.join(str(text or '').split())[:n]
 
@@ -549,7 +587,7 @@ def row_of(cid, rec, drow):
             'class': d.get('class') if d else None, 'action': d.get('action') if d else None, 'confidence': d.get('confidence') if d else None,
             'reason': one_line(d.get('reason')) if d else None, 'called': called, 'failed': failed, 'forced': bool(rec.get('forced')),
             'forced_reason': rec.get('forced_reason'), 'repairs': len(rec.get('repair_prompts') or []), 'first_try_valid': rec.get('first_try_valid'),
-            'error': (rec.get('error') or {}).get('kind'), 'wall_s': (rec.get('wall') or {}).get('total_s')}
+            'error': (rec.get('error') or {}).get('kind'), 'wall_s': (rec.get('wall') or {}).get('total_s'), 'windows': window_calls(rec)}
 
 
 def aggregate(rows, planned_ids, manifests, partials):
@@ -567,6 +605,12 @@ def aggregate(rows, planned_ids, manifests, partials):
         for f in r['failed']:
             if f['fatal']:
                 fatal_kinds[f['fatal']] = fatal_kinds.get(f['fatal'], 0) + 1
+    windows = {}
+    for r in rows:
+        for tool, token in r['windows']:
+            windows.setdefault(tool, {})
+            windows[tool][token] = windows[tool].get(token, 0) + 1
+    shortfalls = {t: sum(n for k, n in c.items() if k.startswith('short')) for t, c in windows.items()}
     walls = sorted(r['wall_s'] for r in rows if isinstance(r['wall_s'], (int, float)))
     have = {r['case_id'] for r in rows}
     aborted = [m.get('aborted') for m in manifests if m.get('aborted')]
@@ -577,6 +621,9 @@ def aggregate(rows, planned_ids, manifests, partials):
             'record_errors': dict(sorted(errors.items())), 'tool_calls_by_tool_status': {t: dict(sorted(s.items())) for t, s in sorted(tool_status.items())},
             'tool_failures': sum(len(r['failed']) for r in rows), 'files_with_tool_failures': sum(1 for r in rows if r['failed']),
             'remote_fatal_by_kind': dict(sorted(fatal_kinds.items())),
+            'windowed_calls_by_tool_token': {t: dict(sorted(c.items())) for t, c in sorted(windows.items())},
+            'window_shortfalls_by_tool': dict(sorted(shortfalls.items())), 'window_shortfalls': sum(shortfalls.values()),
+            'files_with_window_shortfall': sum(1 for r in rows if any(tok.startswith('short') for _t, tok in r['windows'])),
             'wall_s': {'total': round(sum(walls), 1), 'median': round(statistics.median(walls), 1) if walls else None, 'max': walls[-1] if walls else None},
             'runs': len(manifests), 'aborted_runs': len(aborted),
             'models': sorted({m.get('requested_model') for m in manifests if m.get('requested_model')}),
@@ -597,6 +644,13 @@ def render(summary, rows, planned_map, missing, aborted, source_note):
     L += ['', '### By action', '', '| action | files |', '|---|---|'] + ['| %s | %d |' % (k, v) for k, v in summary['by_action'].items()]
     L += ['', '### Tool calls by status', '', '| tool | statuses |', '|---|---|']
     L += ['| %s | %s |' % (t, ', '.join('%s %d' % kv for kv in s.items())) for t, s in summary['tool_calls_by_tool_status'].items()]
+    L += ['', '### Windowed reads (decode, audio, subtitle)', '',
+          'ok = the requested window completed (the decoded output time reached it); short:quota = it ran short and the per-file input quota was exhausted; short = it ran short '
+          'without exhausting the quota; unmeasured = no decoded time was reported; n/a = a v3-remote-1 receipt (nothing measured); no-quota = size or duration missing, nothing run. '
+          'A shortfall is a limit of the read, not evidence about the file.', '',
+          '- calls with a window shortfall: %d (in %d files)' % (summary['window_shortfalls'], summary['files_with_window_shortfall']), '',
+          '| tool | outcomes |', '|---|---|']
+    L += ['| %s | %s |' % (t, ', '.join('%s %d' % kv for kv in c.items())) for t, c in summary['windowed_calls_by_tool_token'].items()] or ['| none | - |']
     if aborted:
         L += ['', '### Aborted runs', ''] + ['- %s' % one_line(a, 300) for a in aborted]
     ordered = sorted(rows, key=lambda r: (r['season'] is None, r['season'] or 0, r['episode'] is None, r['episode'] or 0, r['case_id']))
@@ -621,11 +675,12 @@ def render(summary, rows, planned_map, missing, aborted, source_note):
     for cid in sorted(missing):
         L.append('- `%s` (%s)' % (planned_map[cid]['basename'], cid))
     L += ['', '## Per file', '',
-          '| S | E | file | class | action | conf | tools (status) | failed | forced | repairs | wall s |', '|---|---|---|---|---|---|---|---|---|---|---|']
+          '| S | E | file | class | action | conf | tools (status) | windows | failed | forced | repairs | wall s |', '|---|---|---|---|---|---|---|---|---|---|---|---|']
     for r in ordered:
-        L.append('| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |' % (
+        L.append('| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |' % (
             r['season'] if r['season'] is not None else '', r['episode'] if r['episode'] is not None else '', (r['basename'] or r['case_id']).replace('|', '\\|'),
             r['class'], r['action'], r['confidence'], ', '.join('%s %s' % tc for tc in r['called']) or '-',
+            ', '.join('%s %s' % (t.replace('_sample', ''), tok) for t, tok in r['windows']) or '-',
             ', '.join('%s %s' % (f['tool'], f['status']) for f in r['failed']) or '-', 'yes' if r['forced'] else '', r['repairs'] or '', r['wall_s']))
     return '\n'.join(L) + '\n'
 
@@ -673,6 +728,9 @@ def build_parser():
     r.add_argument('--suite', required=True)
     r.add_argument('--out', required=True, help='run directory root; each invocation writes <out>/batch-NNN')
     r.add_argument('--model', default=MODEL)
+    r.add_argument('--tools-behavior', choices=list(TOOLS_BEHAVIORS), default=DEFAULT_TOOLS_BEHAVIOR,
+                   help='v3-remote-2 (default): decode, audio and subtitle read under a per-file input quota computed from the file\'s size, duration and bitrate, each receipt '
+                        'records whether the window completed, and audio_sample defaults to the first audio stream; v3-remote-1: the fixed 8 MiB quota of the first live check')
     r.add_argument('--limit', type=int, help='run only the first N cases that have no record yet')
     r.add_argument('--execute', action='store_true', help='actually run it (default: print the command only)')
     r.add_argument('--max-wall-s', type=int, help='override the wall cap (default %d + %d per pending case seconds)' % (BASE_WALL_S, PER_CASE_WALL_S))
