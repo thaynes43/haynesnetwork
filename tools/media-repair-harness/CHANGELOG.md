@@ -1,5 +1,24 @@
 # Harness changelog
 
+## #207: offline per-tool usage report
+
+`HARNESS_VERSION` stays `dev-c8`. **No model call, no GPU, no cluster, no network, no subprocess.** The runner, prompts, contracts, guards and every
+existing run record are unchanged.
+
+* **`scripts/tool_usage_report.py`** (`tool-usage-report-1`): reads run directories (one JSON per case, `score.json`, `manifest.json`) and the public
+  suites they ran on (matched by `suite_version`; each record's `case_sha256` is checked against the suite case file and its capability list against
+  `tools_available`). Per run and tool: cases offering the tool, cases with pre-supplied evidence of that type (the record's `evidence_shown` joined to the
+  suite case's `evidence`, so a decode_sample output that came with the case is told apart from a model call), cases called and calls, result status
+  counts, requests for a tool the case did not offer (counted apart; the harness answers `unavailable`), `page` continuations (counted under the tool they
+  continue), citations of pre-supplied versus called evidence, and the evaluator's `correct` (read from `score.json`) for offered-and-called versus
+  offered-and-not-called and cited versus not cited. Also: per-class tables, a same-case-different-round comparison, an identity_mismatch section with
+  the tv cases, the guards-undone figures from paired `-restored` runs (labelled), partial runs flagged and kept out of pooled numbers, and the tools never
+  offered in a suite or scanned run (`audio_sample` in dev-v1.1, `subtitle_sample` anywhere).
+* **Outputs:** `docs/tool-usage-report.md` (summary of at most 12 lines, caveats, tables) and `docs/tool-usage-report.json`, produced by the command at the
+  top of the markdown.
+* **Tests:** `tests/test_tool_usage_report.py` on synthetic records written in the test (hand-checked counts, partial and restored handling, integrity
+  flags, determinism, no network or process imports) plus a test that regenerates the committed JSON from the committed records and the public suites.
+
 ## #160: offline identity findings report
 
 `identity-report-1` adds `python3 -m media_repair_harness.identity_report`. `offline` checks a versioned manifest and retained artifact hashes, then writes findings, a markdown report, and a self-contained HTML/PDF audit. It does not start a process, open a socket, or call a model. `plan-recipe` prints one allowlisted exact-style ASS argv and does not open a descriptor. Human dispositions stay separate from machine states. `calibratedProbability` is null. A distinct sample is not a health result, and exit 255 with a recorded Broken pipe stays a deliberate post-cue stop. An unreadable artifact is a contradiction and exit 3, with a report and no traceback. Punctuation or space elision is ambiguous and is not treated as proof of the same title. Characters outside cp1252 are expanded to `<U+XXXX>` before the PDF line is wrapped. A human disposition applies only when its reviewed artifact digests match the manifest. The phone audit shows the outcome, the compared strings, catalog reasons, and collection results. The PDF ends with a literal `%%EOF` and uses WinAnsiEncoding. Its evidence text is the source string; Markdown escaping stays in `report.md` and HTML escaping stays in `audit.html`. A hash-matched artifact whose JSON is too deep to use is exit 3 with a report. A human disposition applies only when every reviewed pin matches the bytes on disk, and a title disagreement also needs an applied exact-style cue. Inline carriage returns and line feeds are spaces in the PDF drawing only. Raw ASS is a prefixed fence. A wrapped continuation is framed with a renderer-owned prefix whose width stays inside the content box. A note, item, frame, and contradiction row starts with a fixed label. A Resources row starts with `Receipt for` before the artifact id. Wrapping collapses a run of spaces to one space in the PDF drawing only. A cue the parser cannot finish, including a depth-60000 object, stays worded as not a JSON object. The PDF front and detail blocks are separate arguments. The phone audit names the copied git sha. The runner, prompts, samplers, and evaluator contracts are unchanged. Details: `docs/identity-report.md`.
