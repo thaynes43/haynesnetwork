@@ -184,3 +184,15 @@ The decision it feeds (Tom's, not this registration's): whether to let a local m
 * The smoke may find that `llamacpp-1` is wrong in a shape (section 5); the amendment procedure is registered there.
 * The 0.40.11 digest of `qwen3.8:27b` is checked only at the runner's preflight; a mismatch skips the qwen chain and is reported, not worked around.
 * The reasoning flag (`--reasoning-budget 0` against `--reasoning off`) is the coordinator's setting; it is verified by the smoke, not decided here.
+
+## Amendment 1 (2026-10-26, coordinator haynesnetwork-1026-150126; before any measured run)
+
+**Smoke attempt 1 failed** (`devtl1-smoke-muse-glimmer-30b`, `config_hash` `7f8d5201...` as registered; record kept in `runs/dev-tl1/devtl1-smoke-muse-glimmer-30b/`). It was a forced `insufficient_evidence/escalate`: turn 1 was a valid `epub_inspect` call; turns 2 and 3 ended with `finish_reason` `length`, 640 output tokens, empty `content` and `reasoning_content_chars` 2963. S3 and S4 failed. S1, S2 and S5 held: exec with bash/timeout/cat, `/props` alias, `total_slots` 1 and `n_ctx` 16384, `json_schema` accepted with no error body, `usage`/`timings` keys present, `timings.cache_n` 0.
+
+**Cause.** Muse Glimmer's chat template has no "off" for reasoning. Its `render_reasoning` macro uses `reasoning_strength` and falls back to `high` when none is given. `--reasoning-budget 0` did not suppress it, and removing `--reasoning-effort low` (section 4) left the template on `high`. A one-request probe on the same server at `chat_template_kwargs.reasoning_strength: minimal` answered a schema-constrained reply in 60 completion tokens with `finish_reason` `stop`.
+
+**Changes (server only; no change to `src/` or to any `config_hash`).**
+* Section 4, the benchmark arguments: `--reasoning-budget 0` is replaced by `--reasoning-effort minimal` (haynes-ops #4307). ctx 16384 and parallel 1 are unchanged. The executor's pre-run check (section 5 step 3) compares against these arguments.
+* S3 now reads: **no turn ends with `finish_reason` `length` and no turn has empty `content` because of reasoning.** `reasoning_content_chars` is recorded per turn and reported (sum and maximum per run), but it is not required to be 0, because this template cannot reach 0. Reasoning at `minimal` is a property of the muse arm in both handed and must-ask, so it does not confound the within-model comparison. It is named as a difference from qwen (`think:false`) in section 8.
+* The smoke repeats as `devtl1-smoke-muse-glimmer-30b-s2` after the rollout of #4307, with an unchanged command and hash. If a turn still ends at `length`, the fix is a source/config amendment (`--num-predict`, which changes the muse hashes), and nothing is measured before it.
+* **qwen is released** once this amendment is merged. The frozen `src/` tree (section 2) is unchanged, and the Ollama arm does not depend on the muse server.
