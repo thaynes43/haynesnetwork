@@ -175,7 +175,7 @@ LIVE_DEADLINE_S = TOOL_TIMEOUT_S - 15
 class Context:
     def __init__(self, case, fixture, scratch, runner=subprocess.run, which=shutil.which, ocr_backend=None,
                  suite_dir=None, replay='auto', evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None,
-                 evidence_bounds=None, tools_behavior='v1', keep_raw=False, live_behavior=evcol.DEFAULT_LIVE_BEHAVIOR, remote_binding=None):
+                 evidence_bounds=None, tools_behavior='v1', keep_raw=False, live_behavior=evcol.DEFAULT_LIVE_BEHAVIOR, remote_binding=None, serve_recorded=False):
         assert replay in ('auto', 'off', 'force')
         assert evidence_mode in EVIDENCE_MODES, evidence_mode
         assert tools_behavior in TOOLS_BEHAVIORS + REMOTE_TOOLS_BEHAVIORS, tools_behavior
@@ -208,6 +208,8 @@ class Context:
         # result names (set by the runner before the capabilities are computed).  Unused by every other tools behaviour.
         self.remote_binding = remote_binding
         self.subtitle_stream = None
+        # #209 `--evidence-handover none|askable` only (handover.py): a call that matches one of the case's recorded evidence entries returns that entry
+        self.serve_recorded = serve_recorded
 
 
 def _redact(self, text):
@@ -256,6 +258,11 @@ def _run_remote(ctx, mode, at=0.0, stream=0):
 def _remote_evidence():
     from . import remote_evidence
     return remote_evidence
+
+
+def _handover():
+    from . import handover
+    return handover
 
 
 def registry(ctx):
@@ -1492,6 +1499,10 @@ def call_tool(ctx, name, args):
                     return ToolResult('unavailable', 'no excerpt can be read for this item: %s; no body text was read and none is reconstructed' % (
                         'live collection does not serve excerpts' if ctx.evidence_mode == 'live' else 'only a recorded observation of the real media exists'),
                         mode='live' if ctx.evidence_mode == 'live' else 'pinned_replay')
+            if ctx.serve_recorded:
+                served = _handover().serve(name, args, ctx)
+                if served is not None:
+                    return served
             if ctx.evidence_mode == 'live' and name in LIVE_KINDS:
                 return live_tool(name, args, ctx)
             if ctx.fixture.kind == 'pinned' and name != 'arr_lookup':
@@ -1523,6 +1534,8 @@ def call_tool(ctx, name, args):
         if inject and inject.get('tool') == name and not (remote_v1 and res.extra.get('remote_fatal')):
             res = _failure(inject.get('mode', 'error'), name, res)       # (v3-remote-1: an injected `partial` never hides a fatal operation)
     redactor = ctx.redact
+    if res.extra.get('served_from_record') is not None:
+        redactor = None        # #209: a recorded entry returned as the first message would have carried it (already redacted, EPUB text kept as recorded)
     if remote_v1 and ctx.remote_binding is not None:
         res.extra['receipts'] = ctx.remote_binding.receipts[since:]      # record only (never in what the model sees): every receipt of this call
     if remote_v1 and name == 'subtitle_sample' and isinstance(res.output, dict):

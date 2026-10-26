@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified runner: `run.py --suite <cases dir> --adapter ollama|claude|codex|scripted --model <id> [--cases a,b] --out runs/<run-id>`
+"""Unified runner: `run.py --suite <cases dir> --adapter ollama|claude|codex|scripted|llamacpp --model <id> [--cases a,b] --out runs/<run-id>`
 
 Implements the CONTRACT.md turn protocol and writes one run record per case (failed runs included), an
 action-audit line per case and a run manifest.  Tools are read-only; write actions in a decision are only
@@ -263,6 +263,22 @@ def _remote_evidence():
     return remote_evidence
 
 
+# #209: `--evidence-handover none|askable` (handover.py, `handover-1`), opt-in.  `full` (the default, the flag absent) is every earlier run byte for byte.
+EVIDENCE_HANDOVERS = ('full', 'none', 'askable')
+
+
+def _handover():
+    from . import handover
+    return handover
+
+
+def check_handover_options(evidence_handover='full', evidence_mode='replay', tools_behavior=None, claude_schema=False):
+    """Raise ValueError for an unsupported combination of the #209 option (`full` is always accepted: it changes nothing)."""
+    if evidence_handover == 'full':
+        return
+    _handover().check_options(evidence_handover, evidence_mode, tools_behavior, claude_schema)
+
+
 safe_args = EV2.safe_args
 
 
@@ -292,6 +308,8 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, *args, **kw):
     The #161 options are keyword-only, and the call is bound to `_run_case`'s signature BEFORE anything is decided (a bad call raises TypeError), so no
     positional form can carry them past the schema-mode refusal."""
     bound = _RUN_CASE_SIGNATURE.bind(case, case_sha, adapter, suite_dir, scratch, *args, **kw)
+    if bound.arguments.get('evidence_handover', 'full') != 'full' and getattr(adapter, 'schema_mode', None) is not None:
+        raise ValueError('--evidence-handover is refused with the experimental Claude schema mode (its guard re-runs the case without it)')
     remote = {k: bound.arguments.get(k) for k in REMOTE_KWARGS}
     if any(v not in (None, False) for v in remote.values()) and getattr(adapter, 'schema_mode', None) is not None:
         raise ValueError('the #161 options (%s) are refused with the experimental Claude schema mode (its guard re-runs the case without them)'
@@ -304,7 +322,7 @@ def run_case(case, case_sha, adapter, suite_dir, scratch, *args, **kw):
 
 def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, runner=subprocess.run, which=None, replay='auto', run_id='', tool_output_bytes=None,
               prompt_version=P.DEFAULT_PROMPT, evidence_mode='replay', collect=None, evidence_runner=None, evidence_which=None, evidence_bounds=None, guards=None,
-              evidence_format=None, *, tools_behavior=None, stop_on_receipt_failure=False, remote_state=None, remote_time_left=None, _inner=False):
+              evidence_format=None, *, tools_behavior=None, stop_on_receipt_failure=False, remote_state=None, remote_time_left=None, evidence_handover='full', _inner=False):
     """Run one case through the turn protocol.  Returns the run record (never raises for model/tool trouble)."""
     import shutil
     sm_case = getattr(adapter, 'schema_mode', None) is not None      # dev-c8 claude-schema-1: the run-level guard of schema_run.py (round 6)
@@ -318,6 +336,8 @@ def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, run
             evidence_runner=evidence_runner, evidence_which=evidence_which, evidence_bounds=evidence_bounds, guards=guards, evidence_format=evidence_format))
     check_option_combination(prompt_version, evidence_format, guards, tool_output_bytes)
     check_remote_options(evidence_format, tools_behavior, stop_on_receipt_failure, evidence_mode)
+    check_handover_options(evidence_handover, evidence_mode, tools_behavior)
+    handover = evidence_handover != 'full'       # #209: the must-ask arms; `full` takes none of the branches below
     remote_v1 = tools_behavior in REMOTE_TOOLS_BEHAVIORS
     v31fmt = evidence_format == CONTRACT_V31_FORMAT
     v3fmt = evidence_format == 'v3' or v31fmt     # contract v3: turn-v3, decision-v3, audit v3 (format v3 or v3.1-format)
@@ -334,14 +354,17 @@ def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, run
     ctx = T.Context(case, fixture, Path(scratch) / case['id'], runner=runner, which=which or shutil.which, ocr_backend=ocr_backend,
                     suite_dir=suite_dir, replay=replay, evidence_mode=evidence_mode, collect=collect, evidence_runner=evidence_runner,
                     evidence_which=evidence_which, evidence_bounds=evidence_bounds, tools_behavior=tools_behavior or (('v3' if v31fmt else 'v2') if v2fmt else 'v1'),
-                    keep_raw=v2fmt, **({'remote_binding': binding} if remote_v1 else {}))
+                    keep_raw=v2fmt, **({'remote_binding': binding} if remote_v1 else {}), **({'serve_recorded': True} if handover else {}))
     if tool_output_bytes:
         ctx.output_cap = tool_output_bytes
     model_alias = leakguard.alias(run_id, case['id'])
     session = None
     wire_budget = min(EV2.WIRE_BYTES, tool_output_bytes) if tool_output_bytes else EV2.WIRE_BYTES   # --tool-output-bytes is the page budget under format v2
+    withheld, case_vis = [], case      # #209: `case_vis` is the case as the audit, the guards and the reference resolver read it (the evidence the model was shown)
     if v2fmt:
         evidence = resolve_evidence_raw(case, suite_dir, ctx.redact, literal_epub=v31fmt)
+        if handover:
+            evidence, withheld = _handover().split(case, evidence, evidence_handover)
         if remote_v1:
             ctx.subtitle_stream = _remote_evidence().select_subtitle_stream(evidence)     # from the case's existing probe result; nothing is invoked
         view = P.case_view(case, [], case_alias=model_alias)
@@ -356,7 +379,11 @@ def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, run
         view = dict(frame, evidence=block)   # the first message as a whole is what the 8192-byte budget was applied to
     else:
         evidence = resolve_evidence(case, suite_dir, ctx.redact)
+        if handover:
+            evidence, withheld = _handover().split(case, evidence, evidence_handover)
         view = P.case_view(case, evidence, case_alias=model_alias)
+    if handover:
+        case_vis = _handover().case_without(case, {e['id'] for e in withheld})
     prompt = P.get_prompt(prompt_version)
     system = prompt['text']
     # v1 sends the adapter's fixed schema (as in checkpoint 1); v2 builds one per case (tool enum, audit required on writes)
@@ -364,7 +391,7 @@ def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, run
                                                                 flat=getattr(adapter, 'schema_name', None) == 'flat')
     # Hash of the schema the model actually got: only the Ollama adapter sends one (v1: its own anyOf / flat schema; v2: the per-case
     # schema).  Claude, Codex and scripted adapters send none, so nothing is recorded as sent.
-    sent_schema = (schema if schema is not None else getattr(adapter, 'schema', None)) if getattr(adapter, 'name', None) == 'ollama' else None
+    sent_schema = (schema if schema is not None else getattr(adapter, 'schema', None)) if getattr(adapter, 'name', None) in ('ollama', 'llamacpp') else None
     # dev-c8: the Claude adapter forwards the schema only in its opt-in schema mode (claude-schema-1); whether the CLI registered it is read per turn from its
     # own init event (turns[].meta.schema), so `schema_sent` is true only when every model call confirmed delivery (set after the loop).  Legacy: unchanged.
     claude_schema = getattr(adapter, 'name', None) == 'claude' and getattr(adapter, 'schema_mode', None) is not None and schema is not None
@@ -537,7 +564,7 @@ def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, run
     # Decision guards (dev-c4, opt-in): deterministic checks on the final decision.  A guard can only turn it into insufficient_evidence / escalate;
     # the model's original decision stays in the record's `guard` field.  Off (the default) this block does nothing and adds no key.
     guard_rec = None
-    resolve = make_resolver(case, tool_calls, session)
+    resolve = make_resolver(case_vis, tool_calls, session)
     if guards:
         # the guards read references through the same resolver as the record: they see the decision with its references normalised, the record keeps the original
         v4ctx = None
@@ -545,7 +572,7 @@ def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, run
             from . import guard_v4 as GV4      # dev-c8: loaded only when v4 runs
             v4ctx = GV4.v4_context(view['context'], view['media_type'], caps, list(session.log), tool_calls, evidence_format, [e['id'] for e in evidence],
                                    wire_texts=[m['content'] for m in messages if m['role'] == 'user'], known_calls=[c['id'] for c in tool_calls])
-        final, guard_rec = DG.apply(case, decision, tool_calls, evidence, prompt_version, forced=forced, version=guards, resolve=resolve if v2fmt else None, v4ctx=v4ctx)
+        final, guard_rec = DG.apply(case_vis, decision, tool_calls, evidence, prompt_version, forced=forced, version=guards, resolve=resolve if v2fmt else None, v4ctx=v4ctx)
         decision = final
 
     # First-try validity is strict and never repaired after the fact: every model reply up to the first repair prompt must have
@@ -561,7 +588,7 @@ def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, run
     refs_checked = resolve((decision or {}).get('evidence_refs', []))
     bad_refs = sorted(r for r in refs_checked if r not in ev_ids and r not in call_ids)
     failed_refs = sorted(set(refs_checked) & {c['id'] for c in tool_calls if c['status'] in ('error', 'timeout') and c.get('injected')})
-    non_ok_refs = sorted(set(refs_checked) & AU.non_ok_evidence_ids(case, tool_calls))
+    non_ok_refs = sorted(set(refs_checked) & AU.non_ok_evidence_ids(case_vis, tool_calls))
     outcome = outcomes.run_outcome_step(case, suite_dir)
     total = time.monotonic() - started_wall
     usage = {'input_tokens': 0, 'output_tokens': 0, 'cost_usd': 0.0, 'cost_reported': False}
@@ -580,11 +607,11 @@ def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, run
         action_audit = EV3.action_audit(dict(decision, evidence_refs=refs_checked), evidence, tool_calls, view['context'], view['media_type'], caps, forced=forced)
     elif v2fmt:
         audited = dict(decision, evidence_refs=refs_checked)   # a finding id (t2.f1) cites its observation (t2); the decision itself is recorded as the model wrote it
-        action_audit = AU.compute(case, audited, tool_calls, forced=forced, prompt_version=prompt_version, audit_version='v2', shown=evidence)
+        action_audit = AU.compute(case_vis, audited, tool_calls, forced=forced, prompt_version=prompt_version, audit_version='v2', shown=evidence)
     else:
-        action_audit = AU.compute(case, decision, tool_calls, forced=forced, prompt_version=prompt_version)
+        action_audit = AU.compute(case_vis, decision, tool_calls, forced=forced, prompt_version=prompt_version)
     action_audit['outcome_step'] = outcome
-    parts = AU.unverified_parts(case, tool_calls)
+    parts = AU.unverified_parts(case_vis, tool_calls)
     evidence_summary = GP.evidence_summary(case, tool_calls, evidence_mode, decision, live_kinds=T.LIVE_KINDS)
     record = {
         'record_version': 1, 'harness_version': P.HARNESS_VERSION, 'case_id': case['id'], 'case_sha256': case_sha, 'suite_version': case.get('suite_version'),
@@ -614,6 +641,8 @@ def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, run
     }
     if guard_rec is not None:
         record['guard'] = guard_rec
+    if handover:
+        record['evidence_handover'] = _handover().record(evidence_handover, case, evidence, withheld, tool_calls)    # #209 only: a `full` record has no such key
     if remote_v1:
         # #161 only: receipts, identity, host, subtitle stream, the cue ids delivered, every raw write attempt with its own audit
         record['remote_evidence'] = remote_record(ctx, binding, stop_on_receipt_failure, messages[:sent_upto[0]], tool_calls, turns,
@@ -893,6 +922,7 @@ def summarize_run(records, manifest, partials=()):
         **({'guards': guard_summary(records)} if any('guard' in r for r in records) else {}),
         **({'limit_violations': manifest['limit_violations']} if manifest.get('limit_violations') else {}),
         **({'evidence_format': manifest['config']['evidence_format']} if manifest['config'].get('evidence_format') else {}),
+        **({'evidence_handover': manifest['config']['evidence_handover']} if manifest['config'].get('evidence_handover') else {}),
         'writes_executed': 0,
         'statement': 'Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; '
                      'this harness executed no write and changed no media, *arr, Plex or library state.',
@@ -1082,6 +1112,11 @@ def build_adapter(args):
                                stop=(args.stop.split(',') if args.stop is not None else None), do_warmup=not args.no_warmup,
                                schema=(P.FLAT_TURN_SCHEMA if args.ollama_schema == 'flat' else P.TURN_SCHEMA), schema_name=args.ollama_schema,
                                context_policy=getattr(args, 'context_policy', None), gpu_fit_check=getattr(args, 'gpu_fit_check', None))
+    if args.adapter == 'llamacpp':      # #209: llama-server (llamacpp_adapter.py), loaded only by a run that selects it
+        from . import llamacpp_adapter as LA
+        num_predict = args.num_predict or (LA.DEFAULT_NUM_PREDICT_V2 if P.protocol_of(args.prompt) in P.V2_TURN_PROTOCOLS else LA.DEFAULT_NUM_PREDICT_V1)
+        return LA.LlamaCppAdapter(model, num_predict=num_predict, stop=(args.stop.split(',') if args.stop is not None else None),
+                                  schema=(P.FLAT_TURN_SCHEMA if args.ollama_schema == 'flat' else P.TURN_SCHEMA), schema_name=args.ollama_schema)
     if args.adapter == 'claude':
         budget = None if getattr(args, 'no_spend_limit', False) else (args.max_budget_usd if args.max_budget_usd is not None else 2.0)
         return A.ClaudeAdapter(model, effort=args.effort, max_budget_usd=budget, schema_mode=getattr(args, 'claude_schema', None),
@@ -1126,6 +1161,8 @@ def run_config(args, adapter, evidence_bounds, evcol_clamped):
         config.update(tools_behavior=args.tools_behavior, remote_evidence=_remote_evidence().config())
     if getattr(args, 'stop_on_receipt_failure', False):
         config['stop_on_receipt_failure'] = True
+    if getattr(args, 'evidence_handover', 'full') != 'full':    # #209, only when set: a `full` (or absent) flag keeps the config and its hash as before
+        config['evidence_handover'] = _handover().config(args.evidence_handover)
     return config
 
 
@@ -1133,7 +1170,7 @@ def build_parser():
     """The runner's command line (dev-c7: factored out of main unchanged, so a registered command can be parsed offline)."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--suite', required=True, help='suite directory (with cases/) or a directory of case JSON files')
-    ap.add_argument('--adapter', required=True, choices=['ollama', 'claude', 'codex', 'scripted'])
+    ap.add_argument('--adapter', required=True, choices=['ollama', 'claude', 'codex', 'scripted', 'llamacpp'])
     ap.add_argument('--model', required=True, help='full model id (no aliases)')
     ap.add_argument('--cases', help='comma separated case ids')
     ap.add_argument('--split', help='only cases with this split (dev|heldout)')
@@ -1162,8 +1199,8 @@ def build_parser():
     ap.add_argument('--max-wall-s', type=float, default=None, help='dev-c5: stop the run cleanly before this many wall-clock seconds (counted from just before the adapter preflight, a model load included) are used; unset = no cap')
     ap.add_argument('--require-digest', help='dev-c5, ollama: abort before anything is loaded unless the installed model digest equals this value (recorded in the adapter config and so in the config hash)')
     ap.add_argument('--keep-alive', default='2m')
-    ap.add_argument('--stop', help='comma separated stop tokens (ollama); default per model family')
-    ap.add_argument('--ollama-schema', choices=['anyof', 'flat'], default='anyof', help='format schema variant sent to Ollama')
+    ap.add_argument('--stop', help='comma separated stop tokens (ollama, llamacpp); default per model family')
+    ap.add_argument('--ollama-schema', choices=['anyof', 'flat'], default='anyof', help='format schema variant sent to Ollama (and, as response_format, to llama-server)')
     ap.add_argument('--replay', choices=['auto', 'off', 'force'], default='auto', help='serve recorded ffprobe/decode/title-card results from <suite>/fixtures/probes when ffprobe/ffmpeg are missing (auto), never, or always')
     ap.add_argument('--evidence', choices=list(T.EVIDENCE_MODES), default='replay', help='replay (default): the tool layer as in dev-c1, recorded results; live: bounded read-only collectors on the case\'s own local media file (a case without one gets `unavailable`)')
     ap.add_argument('--evidence-bounds', help='live mode: JSON object of collector bounds (see evidence/core.py BOUND_SPEC), e.g. \'{"segments": 2}\'; clamped to the hard maxima, unknown names are refused')
@@ -1187,6 +1224,11 @@ def build_parser():
     ap.add_argument('--stop-on-receipt-failure', action='store_true',
                     help='#161, opt-in, with --tools-behavior v3-remote-1: the first remote operation that fails closed stops the run (exit 3): the case is kept as '
                          'started_aborted with every receipt, no further sampler operation is invoked and later cases never start')
+    ap.add_argument('--evidence-handover', choices=list(EVIDENCE_HANDOVERS), default='full',
+                    help='#209, opt-in (handover-1), replay only: full (the default) puts the case\'s pre-collected evidence in the first message, as in every earlier run. '
+                         'none withholds all of it (title, expected, arr ids and notes are context and stay; tools_available and the 6-call budget stay) and a call returns the '
+                         'recorded entry byte for byte when it matches; what no offered tool can produce (prior_record) is gone. askable withholds only what an offered tool can '
+                         'return and keeps the rest in the first message. Refused with --tools-behavior, --claude-schema and --evidence live. Recorded in the config and each record')
     return ap
 
 
@@ -1199,12 +1241,19 @@ def main(argv=None, runner=None):
         check_remote_options(args.evidence_format, args.tools_behavior, args.stop_on_receipt_failure, args.evidence)
         if args.tools_behavior and getattr(args, 'claude_schema', None):
             raise ValueError('--tools-behavior is refused with --claude-schema (experimental; its guard re-runs a case without the remote options)')
+        check_handover_options(args.evidence_handover, args.evidence, args.tools_behavior, bool(getattr(args, 'claude_schema', None)))
     except ValueError as e:
         raise SystemExit(str(e))
     if args.no_spend_limit and (args.max_budget_usd is not None or args.max_total_cost_usd is not None):
         raise SystemExit('--no-spend-limit is an explicitly uncapped run: it cannot be combined with --max-budget-usd or --max-total-cost-usd')
     if (args.context_policy or args.gpu_fit_check) and args.adapter != 'ollama':
         raise SystemExit('--context-policy and --gpu-fit-check apply to the ollama adapter only')
+    if args.adapter == 'llamacpp':
+        # llama-server owns the model and its context (--ctx-size, --parallel): there is nothing to load, keep alive, warm up or pin by digest from here
+        for flag, given in (('--num-ctx', args.num_ctx != A.DEFAULT_NUM_CTX), ('--keep-alive', args.keep_alive != '2m'), ('--no-warmup', args.no_warmup),
+                            ('--require-digest', bool(args.require_digest))):
+            if given:
+                raise SystemExit('%s applies to the ollama adapter only (llama-server owns the model, its context and its lifetime)' % flag)
     if args.context_policy is None and args.num_ctx not in A.ALLOWED_NUM_CTX:
         raise SystemExit('--num-ctx %d needs a context policy (--context-policy); without one the allowed values are %s' % (args.num_ctx, list(A.ALLOWED_NUM_CTX)))
     if args.context_policy is not None and args.num_ctx != A.CONTEXT_POLICIES[args.context_policy]['num_ctx']:
@@ -1275,6 +1324,7 @@ def main(argv=None, runner=None):
                 rec = run_case(case, sha, adapter, suite_dir, scratch, ocr_backend=ocr_backend, replay=args.replay, run_id=run_id,
                                tool_output_bytes=args.tool_output_bytes, prompt_version=args.prompt, evidence_mode=args.evidence,
                                evidence_bounds=evidence_bounds, guards=args.guards, evidence_format=args.evidence_format,
+                               **({'evidence_handover': args.evidence_handover} if args.evidence_handover != 'full' else {}),
                                **({'tools_behavior': args.tools_behavior, 'stop_on_receipt_failure': args.stop_on_receipt_failure, 'remote_state': remote_state,
                                    'remote_time_left': (lambda: limits.max_wall_s - limits.elapsed()) if limits.max_wall_s is not None else None}
                                   if args.tools_behavior else {}), **({'runner': runner} if runner is not None else {}))

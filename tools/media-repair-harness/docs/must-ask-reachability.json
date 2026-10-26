@@ -1,0 +1,4919 @@
+{
+ "cases": [
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "audiobook-corrupt-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "audiobook",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "audiobook_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "audiobook-corrupt-002",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "audiobook",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "audiobook_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "audiobook-corrupt-003",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "audiobook",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "audiobook_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [
+    "e1"
+   ],
+   "askable_withheld": [],
+   "call_budget": 6,
+   "case": "audiobook-healthy-001",
+   "fixture_kind": "none",
+   "flags": [
+    "no_tools_offered",
+    "no_tool"
+   ],
+   "media_type": "audiobook",
+   "min_calls": 0,
+   "min_calls_with_all_pages": 0,
+   "reachable_count": 0,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "unreachable",
+   "tools_offered": [],
+   "truth_class": "insufficient_evidence",
+   "withheld": [
+    {
+     "askable": false,
+     "detail": "no harness tool produces prior_record (a note carried over from an earlier report)",
+     "id": "e1",
+     "reachable": false,
+     "reason": "no_tool",
+     "recorded_status": "ok",
+     "tool": "prior_record"
+    }
+   ],
+   "withheld_count": 1
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "audiobook-healthy-002",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "audiobook",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "audiobook_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "healthy",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "audiobook-healthy-003",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "audiobook",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "audiobook_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "healthy",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [
+    "e1"
+   ],
+   "askable_withheld": [],
+   "call_budget": 6,
+   "case": "audiobook-identity-001",
+   "fixture_kind": "none",
+   "flags": [
+    "no_tools_offered",
+    "no_tool"
+   ],
+   "media_type": "audiobook",
+   "min_calls": 0,
+   "min_calls_with_all_pages": 0,
+   "reachable_count": 0,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "unreachable",
+   "tools_offered": [],
+   "truth_class": "identity_mismatch",
+   "withheld": [
+    {
+     "askable": false,
+     "detail": "no harness tool produces prior_record (a note carried over from an earlier report)",
+     "id": "e1",
+     "reachable": false,
+     "reason": "no_tool",
+     "recorded_status": "ok",
+     "tool": "prior_record"
+    }
+   ],
+   "withheld_count": 1
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "audiobook-identity-002",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "audiobook",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "audiobook_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "identity_mismatch",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "audiobook-insuff-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "audiobook",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "audiobook_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "insufficient_evidence",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "audiobook-naming-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "audiobook",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "audiobook_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "metadata_naming",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "audiobook-order-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "audiobook",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "audiobook_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "order_edition_ambiguity",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "audiobook-outcome-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "audiobook",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "audiobook_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "audiobook-outcome-002",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "audiobook",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "audiobook_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-corrupt-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-corrupt-002",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-corrupt-003",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-corrupt-004",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-corrupt-005",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [
+    "e1"
+   ],
+   "askable_withheld": [],
+   "call_budget": 6,
+   "case": "epub-healthy-001",
+   "fixture_kind": "none",
+   "flags": [
+    "no_tools_offered",
+    "no_tool"
+   ],
+   "media_type": "epub",
+   "min_calls": 0,
+   "min_calls_with_all_pages": 0,
+   "reachable_count": 0,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "unreachable",
+   "tools_offered": [],
+   "truth_class": "insufficient_evidence",
+   "withheld": [
+    {
+     "askable": false,
+     "detail": "no harness tool produces prior_record (a note carried over from an earlier report)",
+     "id": "e1",
+     "reachable": false,
+     "reason": "no_tool",
+     "recorded_status": "ok",
+     "tool": "prior_record"
+    }
+   ],
+   "withheld_count": 1
+  },
+  {
+   "askable_kept": [
+    "e1"
+   ],
+   "askable_withheld": [],
+   "call_budget": 6,
+   "case": "epub-healthy-002",
+   "fixture_kind": "none",
+   "flags": [
+    "no_tools_offered",
+    "no_tool"
+   ],
+   "media_type": "epub",
+   "min_calls": 0,
+   "min_calls_with_all_pages": 0,
+   "reachable_count": 0,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "unreachable",
+   "tools_offered": [],
+   "truth_class": "insufficient_evidence",
+   "withheld": [
+    {
+     "askable": false,
+     "detail": "no harness tool produces prior_record (a note carried over from an earlier report)",
+     "id": "e1",
+     "reachable": false,
+     "reason": "no_tool",
+     "recorded_status": "ok",
+     "tool": "prior_record"
+    }
+   ],
+   "withheld_count": 1
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-healthy-003",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "healthy",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-healthy-004",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "healthy",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-healthy-005",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "metadata_naming",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-healthy-006",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "healthy",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [
+    "e1"
+   ],
+   "askable_withheld": [],
+   "call_budget": 6,
+   "case": "epub-identity-001",
+   "fixture_kind": "none",
+   "flags": [
+    "no_tools_offered",
+    "no_tool"
+   ],
+   "media_type": "epub",
+   "min_calls": 0,
+   "min_calls_with_all_pages": 0,
+   "reachable_count": 0,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "unreachable",
+   "tools_offered": [],
+   "truth_class": "identity_mismatch",
+   "withheld": [
+    {
+     "askable": false,
+     "detail": "no harness tool produces prior_record (a note carried over from an earlier report)",
+     "id": "e1",
+     "reachable": false,
+     "reason": "no_tool",
+     "recorded_status": "ok",
+     "tool": "prior_record"
+    }
+   ],
+   "withheld_count": 1
+  },
+  {
+   "askable_kept": [
+    "e1"
+   ],
+   "askable_withheld": [],
+   "call_budget": 6,
+   "case": "epub-identity-002",
+   "fixture_kind": "none",
+   "flags": [
+    "no_tools_offered",
+    "no_tool"
+   ],
+   "media_type": "epub",
+   "min_calls": 0,
+   "min_calls_with_all_pages": 0,
+   "reachable_count": 0,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "unreachable",
+   "tools_offered": [],
+   "truth_class": "identity_mismatch",
+   "withheld": [
+    {
+     "askable": false,
+     "detail": "no harness tool produces prior_record (a note carried over from an earlier report)",
+     "id": "e1",
+     "reachable": false,
+     "reason": "no_tool",
+     "recorded_status": "ok",
+     "tool": "prior_record"
+    }
+   ],
+   "withheld_count": 1
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-identity-003",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "identity_mismatch",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-identity-004",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "identity_mismatch",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-identity-005",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "identity_mismatch",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1"
+   ],
+   "call_budget": 6,
+   "case": "epub-insuff-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 1,
+   "min_calls_with_all_pages": 1,
+   "reachable_count": 1,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "insufficient_evidence",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 1
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-insuff-002",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "identity_mismatch",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-naming-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "metadata_naming",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-outcome-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "epub-outcome-002",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "epub",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "epub_inspect",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "epub_inspect"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "epub_inspect"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "movie-corrupt-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "movie",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "movie-corrupt-002",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "movie",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "movie-corrupt-003",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "movie",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "error",
+     "returned_status": "error",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 2
+  },
+  {
+   "askable_kept": [
+    "e3"
+   ],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "movie-decoder-001",
+   "fixture_kind": "remote",
+   "flags": [
+    "no_tool"
+   ],
+   "media_type": "movie",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "partially_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "decoder_incompatible",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": false,
+     "detail": "no harness tool produces prior_record (a note carried over from an earlier report)",
+     "id": "e3",
+     "reachable": false,
+     "reason": "no_tool",
+     "recorded_status": "ok",
+     "tool": "prior_record"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "movie-decoder-002",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "movie",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "decoder_incompatible",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "full": true
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [
+    "e1"
+   ],
+   "askable_withheld": [],
+   "call_budget": 6,
+   "case": "movie-healthy-001",
+   "fixture_kind": "none",
+   "flags": [
+    "no_tools_offered",
+    "no_tool"
+   ],
+   "media_type": "movie",
+   "min_calls": 0,
+   "min_calls_with_all_pages": 0,
+   "reachable_count": 0,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "unreachable",
+   "tools_offered": [],
+   "truth_class": "insufficient_evidence",
+   "withheld": [
+    {
+     "askable": false,
+     "detail": "no harness tool produces prior_record (a note carried over from an earlier report)",
+     "id": "e1",
+     "reachable": false,
+     "reason": "no_tool",
+     "recorded_status": "ok",
+     "tool": "prior_record"
+    }
+   ],
+   "withheld_count": 1
+  },
+  {
+   "askable_kept": [
+    "e1"
+   ],
+   "askable_withheld": [],
+   "call_budget": 6,
+   "case": "movie-healthy-002",
+   "fixture_kind": "none",
+   "flags": [
+    "no_tools_offered",
+    "no_tool"
+   ],
+   "media_type": "movie",
+   "min_calls": 0,
+   "min_calls_with_all_pages": 0,
+   "reachable_count": 0,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "unreachable",
+   "tools_offered": [],
+   "truth_class": "insufficient_evidence",
+   "withheld": [
+    {
+     "askable": false,
+     "detail": "no harness tool produces prior_record (a note carried over from an earlier report)",
+     "id": "e1",
+     "reachable": false,
+     "reason": "no_tool",
+     "recorded_status": "ok",
+     "tool": "prior_record"
+    }
+   ],
+   "withheld_count": 1
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "call_budget": 6,
+   "case": "movie-healthy-003",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "movie",
+   "min_calls": 4,
+   "min_calls_with_all_pages": 4,
+   "reachable_count": 4,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "healthy",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "at": 1.0
+      },
+      "tool": "ocr"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ocr"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t4",
+     "id": "e4",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 4
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "call_budget": 6,
+   "case": "movie-healthy-004",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "movie",
+   "min_calls": 4,
+   "min_calls_with_all_pages": 4,
+   "reachable_count": 4,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "healthy",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "at": 1.0
+      },
+      "tool": "ocr"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ocr"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t4",
+     "id": "e4",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 4
+  },
+  {
+   "askable_kept": [
+    "e1"
+   ],
+   "askable_withheld": [],
+   "call_budget": 6,
+   "case": "movie-identity-001",
+   "fixture_kind": "none",
+   "flags": [
+    "no_tools_offered",
+    "no_tool"
+   ],
+   "media_type": "movie",
+   "min_calls": 0,
+   "min_calls_with_all_pages": 0,
+   "reachable_count": 0,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "unreachable",
+   "tools_offered": [],
+   "truth_class": "identity_mismatch",
+   "withheld": [
+    {
+     "askable": false,
+     "detail": "no harness tool produces prior_record (a note carried over from an earlier report)",
+     "id": "e1",
+     "reachable": false,
+     "reason": "no_tool",
+     "recorded_status": "ok",
+     "tool": "prior_record"
+    }
+   ],
+   "withheld_count": 1
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "call_budget": 6,
+   "case": "movie-identity-002",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "movie",
+   "min_calls": 4,
+   "min_calls_with_all_pages": 4,
+   "reachable_count": 4,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "identity_mismatch",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "at": 1.0
+      },
+      "tool": "ocr"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ocr"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t4",
+     "id": "e4",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 4
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "call_budget": 6,
+   "case": "movie-insuff-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "movie",
+   "min_calls": 4,
+   "min_calls_with_all_pages": 4,
+   "reachable_count": 4,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "insufficient_evidence",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "at": 1.0
+      },
+      "tool": "ocr"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ocr"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t4",
+     "id": "e4",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 4
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "call_budget": 6,
+   "case": "movie-naming-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "movie",
+   "min_calls": 4,
+   "min_calls_with_all_pages": 4,
+   "reachable_count": 4,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "metadata_naming",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "at": 1.0
+      },
+      "tool": "ocr"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ocr"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t4",
+     "id": "e4",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 4
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "call_budget": 6,
+   "case": "movie-order-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "movie",
+   "min_calls": 4,
+   "min_calls_with_all_pages": 4,
+   "reachable_count": 4,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "order_edition_ambiguity",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "at": 1.0
+      },
+      "tool": "ocr"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ocr"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t4",
+     "id": "e4",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 4
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "movie-outcome-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "movie",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "decoder_incompatible",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "full": true
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "movie-outcome-002",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "movie",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "decoder_incompatible",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "full": true
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-corrupt-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-corrupt-002",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-corrupt-003",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-decoder-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "decoder_incompatible",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "full": true
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [
+    "e1"
+   ],
+   "askable_withheld": [],
+   "call_budget": 6,
+   "case": "tv-healthy-001",
+   "fixture_kind": "none",
+   "flags": [
+    "no_tools_offered",
+    "no_tool"
+   ],
+   "media_type": "tv",
+   "min_calls": 0,
+   "min_calls_with_all_pages": 0,
+   "reachable_count": 0,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "unreachable",
+   "tools_offered": [],
+   "truth_class": "insufficient_evidence",
+   "withheld": [
+    {
+     "askable": false,
+     "detail": "no harness tool produces prior_record (a note carried over from an earlier report)",
+     "id": "e1",
+     "reachable": false,
+     "reason": "no_tool",
+     "recorded_status": "ok",
+     "tool": "prior_record"
+    }
+   ],
+   "withheld_count": 1
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-healthy-002",
+   "fixture_kind": "remote",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "healthy",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "at": 62.0
+      },
+      "tool": "ocr"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ocr"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "call_budget": 6,
+   "case": "tv-healthy-003",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 4,
+   "min_calls_with_all_pages": 4,
+   "reachable_count": 4,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "healthy",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "at": 1.0
+      },
+      "tool": "ocr"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ocr"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t4",
+     "id": "e4",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 4
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-healthy-004",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "healthy",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-healthy-005",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "healthy",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-healthy-006",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "healthy",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "full": true
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "call_budget": 6,
+   "case": "tv-healthy-007",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 4,
+   "min_calls_with_all_pages": 4,
+   "reachable_count": 4,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "healthy",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "at": 1.0
+      },
+      "tool": "ocr"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ocr"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t4",
+     "id": "e4",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 4
+  },
+  {
+   "askable_kept": [
+    "e1"
+   ],
+   "askable_withheld": [],
+   "call_budget": 6,
+   "case": "tv-identity-001",
+   "fixture_kind": "none",
+   "flags": [
+    "no_tools_offered",
+    "no_tool"
+   ],
+   "media_type": "tv",
+   "min_calls": 0,
+   "min_calls_with_all_pages": 0,
+   "reachable_count": 0,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "unreachable",
+   "tools_offered": [],
+   "truth_class": "identity_mismatch",
+   "withheld": [
+    {
+     "askable": false,
+     "detail": "no harness tool produces prior_record (a note carried over from an earlier report)",
+     "id": "e1",
+     "reachable": false,
+     "reason": "no_tool",
+     "recorded_status": "ok",
+     "tool": "prior_record"
+    }
+   ],
+   "withheld_count": 1
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-identity-002",
+   "fixture_kind": "remote",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "identity_mismatch",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "at": 62.0
+      },
+      "tool": "ocr"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ocr"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "call_budget": 6,
+   "case": "tv-identity-003",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 4,
+   "min_calls_with_all_pages": 4,
+   "reachable_count": 4,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "identity_mismatch",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "at": 1.0
+      },
+      "tool": "ocr"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ocr"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t4",
+     "id": "e4",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 4
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-identity-004",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "identity_mismatch",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [
+    "e3"
+   ],
+   "askable_withheld": [
+    "e1",
+    "e2"
+   ],
+   "call_budget": 6,
+   "case": "tv-insuff-001",
+   "fixture_kind": "remote",
+   "flags": [
+    "no_tool"
+   ],
+   "media_type": "tv",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "partially_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "insufficient_evidence",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": false,
+     "detail": "no harness tool produces prior_record (a note carried over from an earlier report)",
+     "id": "e3",
+     "reachable": false,
+     "reason": "no_tool",
+     "recorded_status": "ok",
+     "tool": "prior_record"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [
+    "e2"
+   ],
+   "askable_withheld": [
+    "e1",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-insuff-002",
+   "fixture_kind": "local",
+   "flags": [
+    "injected_failure"
+   ],
+   "media_type": "tv",
+   "min_calls": 2,
+   "min_calls_with_all_pages": 2,
+   "reachable_count": 2,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "partially_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "insufficient_evidence",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": false,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "detail": "the case injects a error into every decode_sample call; the recorded output cannot be returned",
+     "id": "e2",
+     "pages": 1,
+     "reachable": false,
+     "reason": "injected_failure",
+     "recorded_status": "ok",
+     "returned_status": "error",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-insuff-003",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "insufficient_evidence",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "call_budget": 6,
+   "case": "tv-naming-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 4,
+   "min_calls_with_all_pages": 4,
+   "reachable_count": 4,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "metadata_naming",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "at": 1.0
+      },
+      "tool": "ocr"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ocr"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t4",
+     "id": "e4",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 4
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3",
+    "e4"
+   ],
+   "call_budget": 6,
+   "case": "tv-order-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 4,
+   "min_calls_with_all_pages": 4,
+   "reachable_count": 4,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "order_edition_ambiguity",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": false,
+     "call": {
+      "args": {
+       "at": 1.0
+      },
+      "tool": "ocr"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ocr"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t4",
+     "id": "e4",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 4
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-outcome-001",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-outcome-002",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  },
+  {
+   "askable_kept": [],
+   "askable_withheld": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "call_budget": 6,
+   "case": "tv-outcome-003",
+   "fixture_kind": "local",
+   "flags": [],
+   "media_type": "tv",
+   "min_calls": 3,
+   "min_calls_with_all_pages": 3,
+   "reachable_count": 3,
+   "rerun_ok": true,
+   "solvable": true,
+   "status": "fully_reachable",
+   "tools_offered": [
+    "ffprobe",
+    "decode_sample",
+    "frame_sample",
+    "ocr",
+    "arr_lookup"
+   ],
+   "truth_class": "corrupt_file",
+   "withheld": [
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "ffprobe"
+     },
+     "call_id": "t1",
+     "id": "e1",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "ffprobe"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {
+       "at": 0.0
+      },
+      "tool": "decode_sample"
+     },
+     "call_id": "t2",
+     "id": "e2",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "decode_sample"
+    },
+    {
+     "askable": true,
+     "bare_call_returns_it": true,
+     "call": {
+      "args": {},
+      "tool": "arr_lookup"
+     },
+     "call_id": "t3",
+     "id": "e3",
+     "pages": 1,
+     "reachable": true,
+     "recorded_status": "ok",
+     "returned_status": "ok",
+     "returns": "identical",
+     "tool": "arr_lookup"
+    }
+   ],
+   "withheld_count": 3
+  }
+ ],
+ "configuration": {
+  "evidence": "replay",
+  "evidence_format": "v3.1-format",
+  "evidence_handover": "none",
+  "guards": "v3",
+  "prompt": "v7",
+  "tool_output_bytes": 8192
+ },
+ "handover_version": "handover-1",
+ "harness_version": "dev-c8",
+ "suite": ".agents/context/media-repair-harness-2026-10-19/suite-dev-v1.1",
+ "suite_version": "dev-v1.1",
+ "summary": {
+  "askable_kept_entries": 14,
+  "by_status": {
+   "fully_reachable": 59,
+   "partially_reachable": 3,
+   "unreachable": 11
+  },
+  "cases": 73,
+  "cases_over_budget": [],
+  "cases_unchanged_by_askable": 11,
+  "entries_needing_arguments": [
+   [
+    "decode_sample {\"full\":true}",
+    5
+   ],
+   [
+    "ocr {\"at\":1.0}",
+    11
+   ],
+   [
+    "ocr {\"at\":62.0}",
+    2
+   ]
+  ],
+  "flags": {
+   "injected_failure": 1,
+   "no_tool": 13,
+   "no_tools_offered": 11
+  },
+  "max_min_calls": 4,
+  "max_min_calls_with_all_pages": 4,
+  "reachable_entries": 162,
+  "unreachable_entries_by_reason": {
+   "injected_failure": 1,
+   "no_tool": 13
+  },
+  "withheld_entries": 176
+ },
+ "version": "must-ask-reachability-1"
+}
