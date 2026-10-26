@@ -65,14 +65,14 @@ def _abort(self):
 
 def build(options, suite=SUITE):
     """-> (exit code, manifest) of the runner's `main()` on `options` with the adapters stubbed so that nothing is contacted."""
-    work = tempfile.mkdtemp(prefix='devtl1-config-')
-    out = Path(work) / 'run'
-    argv = list(options) + ['--suite', str(suite), '--out', str(out), '--scratch', str(Path(work) / 'scratch')]
-    with mock.patch.object(A.OllamaAdapter, 'preflight', _abort), mock.patch.object(LA.LlamaCppAdapter, 'preflight', _abort), \
-            mock.patch.object(A.OllamaAdapter, 'finish', lambda self: {}), mock.patch.object(LA.LlamaCppAdapter, 'finish', lambda self: {}), \
-            contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
-        code = R.main(argv)
-    manifest = json.loads((out / 'manifest.json').read_text())
+    with tempfile.TemporaryDirectory(prefix='devtl1-config-') as work:
+        out = Path(work) / 'run'
+        argv = list(options) + ['--suite', str(suite), '--out', str(out), '--scratch', str(Path(work) / 'scratch')]
+        with mock.patch.object(A.OllamaAdapter, 'preflight', _abort), mock.patch.object(LA.LlamaCppAdapter, 'preflight', _abort), \
+                mock.patch.object(A.OllamaAdapter, 'finish', lambda self: {}), mock.patch.object(LA.LlamaCppAdapter, 'finish', lambda self: {}), \
+                contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            code = R.main(argv)
+        manifest = json.loads((out / 'manifest.json').read_text())
     return code, manifest
 
 
