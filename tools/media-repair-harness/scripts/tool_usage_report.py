@@ -444,10 +444,13 @@ def build_report(run_dirs, suite_dirs, include_restored_pairs=True):
         sib = restored_dirs.get(str(d.parent / (d.name + '-restored')))
         if sib is not None and 'unavailable' not in a:
             ra = analyse_run(loaded[str(sib)], by_version)
-            same = sorted(c for c in loaded[str(d)]['records'] if c in loaded[str(sib)]['records']
+        if sib is not None and 'unavailable' not in a and 'unavailable' in ra:
+            a['restored_unavailable'] = ra['unavailable']
+        elif sib is not None and 'unavailable' not in a:
+            differ = sorted(c for c in loaded[str(d)]['records'] if c in loaded[str(sib)]['records']
                           and _calls_signature(loaded[str(d)]['records'][c]) != _calls_signature(loaded[str(sib)]['records'][c]))
             a['restored'] = {'dir': str(sib), 'overall': ra['overall'], 'tools': strip_lists(ra['tools']), 'by_class': {c: {'n': v['n'], 'correct': v['correct']} for c, v in ra['by_class'].items()},
-                             'tool_calls_differ_from_primary_in_cases': same}
+                             'tool_calls_differ_from_primary_in_cases': differ}
         runs.append(a)
     for k, d in sorted(restored_dirs.items()):
         if not any(r['dir'] == str(d.parent / d.name[:-len('-restored')]) for r in runs):
@@ -457,9 +460,11 @@ def build_report(run_dirs, suite_dirs, include_restored_pairs=True):
     all_dirs = [str(d) for d in run_dirs]
     for tool in TOOL_ORDER:
         per_suite = {}
+        removed = {}
         for s in suites:
             per_suite[s['version']] = sum(1 for c in s['cases'].values() if tool in (c.get('tools_available') or []))
-        never[tool] = {'cases_offering_by_suite': per_suite, 'scanned_runs': scan_runs_for_tool(all_dirs, tool)}
+            removed[s['version']] = sum(1 for c in s['cases'].values() if any(tool in str(n) and 'removed' in str(n) for n in c.get('corrections') or []))
+        never[tool] = {'cases_offering_by_suite': per_suite, 'removed_by_correction_by_suite': removed, 'scanned_runs': scan_runs_for_tool(all_dirs, tool)}
     return {
         'report': 'tool-usage-report-1',
         'suites': [offer_matrix(s, ok_runs) for s in suites],
@@ -642,8 +647,11 @@ def summary_lines(report):
     L = []
     nruns = sum(len(g['runs']) for g in loc)
     ncase = sum(g['overall']['n'] for g in loc)
-    L.append('Scope: %d full local-model runs (%s), %d cases scored in all, suite dev-v1.1; the partial dev-c7 qwen run is left out. Correlation only.' % (
-        nruns, ', '.join('%s x%d' % (g['model'], len(g['runs'])) for g in loc), ncase))
+    versions = sorted({r['meta']['suite_version'] for r in report['runs'] if 'unavailable' not in r and r['meta']['role'] == 'local' and not r['meta']['partial']})
+    partial = sorted(run_label(r) for r in report['runs'] if 'unavailable' not in r and r['meta']['partial'])
+    L.append('Scope: %d full local-model runs (%s), %d cases scored in all, suite %s; %s. Correlation only.' % (
+        nruns, ', '.join('%s x%d' % (g['model'], len(g['runs'])) for g in loc), ncase, ', '.join(map(str, versions)),
+        ('partial runs left out of every pooled number: ' + ', '.join(partial)) if partial else 'no partial run'))
     offered = {k: a for k, a in agg.items() if a['offered']}
     used = sorted((k for k, a in offered.items() if a['calls']), key=lambda k: (-offered[k]['called'], k))
     for g in loc:
@@ -694,8 +702,9 @@ def summary_lines(report):
             miss = sum(t['identity_misses']['n'] for t in tvs)
             right = sum(t['identity_misses']['named_identity_mismatch_but_other_action'] for t in tvs)
             esc = sum(t['identity_misses']['named_identity_mismatch_and_escalated'] for t in tvs)
-            L.append('Wrong-episode/wrong-content (identity_mismatch, all 14 cases per run), %s correct by round: %s; misses in all: %d, of which %d named identity_mismatch but chose an unsupported action (%d escalated). On the %d tv identity run-cases it made %s; output was supplied up front for %s.' % (
-                g['model'], ia, miss, right, esc, ncase, ', '.join('%d %s' % (n, k) for k, n in sorted(calls.items()) if n) or 'no calls',
+            nid = sorted({t['identity_all_media']['n'] for t in tvs if t['identity_all_media']})
+            L.append('Wrong-episode/wrong-content (identity_mismatch, %s cases per run), %s correct by round: %s; misses in all: %d, of which %d named identity_mismatch but chose an unsupported action (%d escalated). On the %d tv identity run-cases it made %s; output was supplied up front for %s.' % (
+                '/'.join(map(str, nid)), g['model'], ia, miss, right, esc, ncase, ', '.join('%d %s' % (n, k) for k, n in sorted(calls.items()) if n) or 'no calls',
                 ', '.join('%s in %d' % (k, n) for k, n in sorted(pres.items()) if n) or 'no tool'))
     mixed = [k for k in used if k not in mostly_pre and k not in call_only]
     L.append('For the tool-lift run: the clean on/off arms are the call-only tools (%s)%s. For %s switching calls off leaves the supplied output in place, so an arm that also hides it '
@@ -740,7 +749,7 @@ def render_md(report, command, summary):
         rs = r.get('restored')
         rows.append([run_label(r), m['role'], m['model'], m['harness_version'], 'prompt %s, format %s, guards %s' % (m['prompt'], m['evidence_format'], m['guards']),
                      ('PARTIAL %d of %s (%s)' % (m['cases_recorded'], m['cases_planned'], m['aborted'])) if m['partial'] else str(o['n']), '%d/%d' % (o['correct'], o['n']),
-                     ('%d/%d' % (rs['overall']['correct'], rs['overall']['n'])) if rs else 'no restored run', o['forced'], o['protocol_violations'],
+                     ('%d/%d' % (rs['overall']['correct'], rs['overall']['n'])) if rs else ('restored run unavailable: %s' % r['restored_unavailable']) if r.get('restored_unavailable') else 'no restored run', o['forced'], o['protocol_violations'],
                      '%d / %d' % (o['cases_zero_calls']['n'], o['cases_some_calls']['n'])])
     L += table(['run', 'role', 'model', 'harness', 'configuration', 'cases', 'correct (as run)', 'correct (guards undone)', 'forced', 'protocol violations', 'cases with zero / some calls'], rows)
     bad = [run_label(r) for r in report['runs'] if 'unavailable' in r]
@@ -749,8 +758,10 @@ def render_md(report, command, summary):
     integ = [run_label(r) for r in runs if r['integrity']['case_sha256_mismatch'] or r['integrity']['record_capabilities_differ_from_suite']]
     L += ['', 'Integrity: every record\'s `case_sha256` equals the sha256 of the suite case file, and every record\'s own capability list equals the suite `tools_available`' +
           (' (exceptions: %s).' % ', '.join(integ) if integ else ' in all %d primary runs.' % len(runs))]
-    L += ['', 'Restored runs: %s. Where a primary run has no restored sibling its guards-undone figure is unavailable (dev-c3 ran without guards).' % (
-        'used only in the "guards undone" columns' + ((' (restored dirs with no primary: %s)' % ', '.join(report['restored_dirs_without_primary'])) if report['restored_dirs_without_primary'] else ''))]
+    no_rest = [run_label(r) for r in runs if 'restored' not in r]
+    L += ['', 'Restored runs: %s. Primary runs with no restored sibling (their guards-undone figure is unavailable): %s.' % (
+        'used only in the "guards undone" columns' + ((' (restored dirs with no primary: %s)' % ', '.join(report['restored_dirs_without_primary'])) if report['restored_dirs_without_primary'] else ''),
+        ', '.join(no_rest) or 'none')]
 
     L += ['', '## 2. What each suite offers, and tools never offered', '']
     for s in report['suites']:
@@ -764,9 +775,7 @@ def render_md(report, command, summary):
         sc = v['scanned_runs']
         rows.append([tool, ', '.join('%s: %d' % kv for kv in v['cases_offering_by_suite'].items()), sc['offered_in_capabilities'], sc['requested'], sc['records_scanned']])
     L += table(['tool', 'cases offering it, by suite', 'records whose capability list offered it', 'requests for it by a model', 'records scanned'], rows)
-    L += ['', 'Reading: `audio_sample` is offered in 0 cases of suite dev-v1.1 (build_v11 correction C5 removed it: no replay data) and in 45 cases of the older suite dev-v1, '
-          'but no run in scope used dev-v1; its only requests were two Haiku calls in dev-c3 (harness dev-c2) that the harness answered `unavailable` because the case did not offer it. '
-          '`subtitle_sample` (#161, tools behaviour `v3-remote-1`) is in no suite case and in no record, offered or requested.', '']
+    L += ['', 'Reading, from the numbers above:'] + ['- ' + x for x in never_reading(report)] + ['']
 
     for title, role in (('3. Local models: per run, per tool', 'local'), ('4. Frontier comparison: per run, per tool', 'frontier')):
         L += ['## ' + title, '']
@@ -848,14 +857,48 @@ def render_md(report, command, summary):
     return '\n'.join(L)
 
 
-UNAVAILABLE = [
-    'Whether a result was actually used by the model beyond being cited: the records hold the cited refs, not the reasoning, so "cited" is the only usefulness signal here.',
-    'Per-tool wall time and cost: not computed (records carry per-turn time and usage, not a per-tool split that this report attributes).',
-    'Guards-undone figures exist only for dev-c5, dev-c6, dev-c7 and dev-c7-qwen-r2 (paired `-restored` runs); dev-c3 ran without guards, and dev-c4 has no restored run (its guards v1 scores are in `runs/dev-c4/unguarded-scores`, not read here).',
-    'The dev-c7 qwen run stopped after 5 of 73 cases (GPU API check); it is listed and flagged but kept out of every pooled number.',
-    'Tool use on held-out cases: not read (forbidden by the work order).',
-    'dev-c8 what-if and dev-validity-opus55 runs are outside this report\'s scope.',
-]
+def never_reading(report):
+    out = []
+    runs = [r for r in report['runs'] if 'unavailable' not in r]
+    used = Counter(r['meta']['suite_version'] for r in runs)
+    out.append('The scanned primary runs used suite version(s): %s.' % ', '.join('%s (%d runs)' % kv for kv in sorted(used.items(), key=lambda kv: str(kv[0]))))
+    for tool, v in report['never_offered'].items():
+        sc = v['scanned_runs']
+        if sc['offered_in_capabilities']:
+            continue
+        by = v['cases_offering_by_suite']
+        txt = '`%s` was offered in no scanned record. Cases offering it: %s.' % (tool, ', '.join('%s %d' % kv for kv in sorted(by.items())))
+        used_with = [ver for ver, n in by.items() if n and ver in used]
+        if any(by.values()) and not used_with:
+            txt += ' No scanned run used a suite that offers it.'
+        rem = {ver: n for ver, n in v.get('removed_by_correction_by_suite', {}).items() if n}
+        if rem:
+            txt += ' %s.' % '; '.join('%d cases of suite %s carry a correction note saying it was removed from tools_available' % (n, ver) for ver, n in sorted(rem.items()))
+        if sc['requested']:
+            txt += ' A model asked for it %d times; the harness answered `unavailable` because the case did not offer it.' % sc['requested']
+        if tool == 'subtitle_sample':
+            txt += ' It is the opt-in tool of tools behaviour `v3-remote-1` (#161, README), reachable only in a run configured for it; no scanned run was.'
+        out.append(txt)
+    return out
+
+
+def unavailable_fields(report):
+    runs = [r for r in report['runs'] if 'unavailable' not in r]
+    no_rest = [run_label(r) for r in runs if 'restored' not in r]
+    partial = [run_label(r) for r in runs if r['meta']['partial']]
+    out = [
+        'Whether a result was actually used by the model beyond being cited: the records hold the cited refs, not the reasoning, so "cited" is the only usefulness signal here.',
+        'Per-tool wall time and cost: not computed (records carry per-turn time and usage, not a per-tool split that this report attributes).',
+        'Guards-undone figures: unavailable for %s (no `-restored` sibling in the given roots).' % (', '.join(no_rest) or 'no run'),
+    ]
+    if partial:
+        out.append('Partial runs (%s) are listed and flagged but kept out of every pooled number and the summary.' % ', '.join(
+            '%s: %d of %s cases, aborted: %s' % (run_label(r), r['meta']['cases_recorded'], r['meta']['cases_planned'], r['meta']['aborted']) for r in runs if r['meta']['partial']))
+    unav = [run_label(r) for r in report['runs'] if 'unavailable' in r]
+    if unav:
+        out.append('Runs whose suite version matches no given suite are not analysed: %s.' % ', '.join(unav))
+    out.append('Held-out cases and runs outside the given roots are not read.')
+    return out
 
 
 def to_jsonable(o):
@@ -899,7 +942,7 @@ def finish_report(report):
     ok = [r for r in report['runs'] if 'unavailable' not in r]
     report['paired'] = paired_same_case(ok)
     report['tv_identity'] = tv_identity_view(ok)
-    report['unavailable_fields'] = list(UNAVAILABLE)
+    report['unavailable_fields'] = unavailable_fields(report)
     report['caveats'] = list(CAVEATS)
     report['summary'] = summary_lines(report)
     return report

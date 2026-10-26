@@ -251,6 +251,29 @@ class Runs(Base):
         self.assertEqual(rep['runs'], [])
         self.assertEqual(len(rep['restored_dirs_without_primary']), 1)
 
+    def test_restored_run_on_an_unknown_suite_is_reported_not_a_crash(self):
+        s = self.suite
+        make_run(self.root / 'runs', 'r1', s, self.standard_records(), dict.fromkeys(SUITE_CASES, True))
+        make_run(self.root / 'runs', 'r1-restored', s, [record(s, c, version='other-9') for c in SUITE_CASES], dict.fromkeys(SUITE_CASES, True))
+        rep = R.finish_report(R.build_report(R.find_run_dirs([self.root / 'runs']), [self.suite]))
+        self.assertNotIn('restored', rep['runs'][0])
+        self.assertIn('other-9', rep['runs'][0]['restored_unavailable'])
+        self.assertIn('restored run unavailable', R.render_md(rep, 'cmd', rep['summary']))
+
+    def test_summary_and_notes_are_built_from_the_data_not_fixed_prose(self):
+        s = self.suite
+        make_run(self.root / 'runs', 'loc', s, self.standard_records(), dict.fromkeys(SUITE_CASES, True), model='qwen')
+        make_run(self.root / 'runs', 'cut', s, self.standard_records()[:1], {'c-corrupt': True}, model='qwen', planned=4, aborted='stopped here')
+        rep = R.finish_report(R.build_report(R.find_run_dirs([self.root / 'runs']), [self.suite]))
+        scope = rep['summary'][0]
+        self.assertIn('syn-1', scope)
+        self.assertIn('runs/cut', scope)                                   # the partial run is named from the data
+        self.assertNotIn('dev-v1.1', ' '.join(rep['summary']))
+        self.assertTrue(any('1 of 4' in u or '1 of 4 cases' in u for u in rep['unavailable_fields']))
+        one = R.finish_report(R.build_report(R.find_run_dirs([self.root / 'runs' / 'loc']), [self.suite]))
+        self.assertIn('no partial run', one['summary'][0])
+        self.assertNotIn('Partial runs', ' '.join(one['unavailable_fields']))
+
     def test_integrity_flags_a_changed_case_file_and_a_capability_mismatch(self):
         s = self.suite
         recs = self.standard_records()

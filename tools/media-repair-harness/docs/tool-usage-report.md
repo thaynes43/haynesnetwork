@@ -18,15 +18,15 @@ python3 tools/media-repair-harness/scripts/tool_usage_report.py \
 
 ## Summary
 
-- Scope: 5 full local-model runs (muse-glimmer:30b x1, qwen3.8:27b x4), 365 cases scored in all, suite dev-v1.1; the partial dev-c7 qwen run is left out. Correlation only.
+- Scope: 5 full local-model runs (muse-glimmer:30b x1, qwen3.8:27b x4), 365 cases scored in all, suite dev-v1.1; partial runs left out of every pooled number: dev-c7/devc7-qwen3.8-27b. Correlation only.
 - muse-glimmer:30b (runs: 1) calls, as cases called of cases offering the tool, with total calls and the share of results with status ok: ffprobe 33 of 45, 33 calls, 91%; arr_lookup 28 of 62, 28 calls, 100%; decode_sample 28 of 34, 29 calls, 90%; epub_inspect 17 of 17, 18 calls, 50%; audiobook_inspect 11 of 11, 13 calls, 54%; frame_sample 4 of 34, 4 calls, 75%; ocr 4 of 34, 4 calls, 75%. An error status is often a real finding (a damaged file), not a tool fault.
 - qwen3.8:27b (runs: 4) calls, as cases called of cases offering the tool, with total calls and the share of results with status ok: audiobook_inspect 42 of 44, 42 calls, 57%; decode_sample 36 of 136, 42 calls, 71%; arr_lookup 30 of 248, 30 calls, 100%; epub_inspect 21 of 68, 24 calls, 71%; ocr 16 of 136, 20 calls, 95%; frame_sample 8 of 136, 9 calls, 67%; ffprobe 2 of 180, 2 calls, 100%.
 - Only reachable by asking (the case supplies no output of that type): audiobook_inspect called in 53 of 55 offering cases; frame_sample called in 12 of 170 offering cases.
 - Output already supplied up front in at least 90% of the offering cases, so zero calls is not zero use: arr_lookup (supplied in 290 of 310; still called in 58 cases, 42 of them with the output already shown); decode_sample (supplied in 155 of 170; still called in 64 cases, 58 of them with the output already shown); epub_inspect (supplied in 80 of 85; still called in 38 cases, 33 of them with the output already shown); ffprobe (supplied in 225 of 225; still called in 35 cases, 35 of them with the output already shown).
 - Never offered in any scanned run: audio_sample (offered in none of the 1762 records scanned, as-run and restored; suites offer it in: 45 cases in dev-v1, 0 cases in dev-v1.1; 2 requests for it were answered unavailable); subtitle_sample (offered in none of the 1762 records scanned, as-run and restored; suites offer it in: 0 cases in dev-v1, 0 cases in dev-v1.1).
 - Outcomes that go with use (correlation; a model may call because a case looks hard; flagged at a gap of 10 points or more with 10 or more cases each side): muse-glimmer:30b arr_lookup: correct 24/28 (86%) when called vs 25/34 (74%) when offered and not called; qwen3.8:27b arr_lookup: correct 22/30 (73%) when called vs 188/218 (86%) when offered and not called. The two models point opposite ways for arr_lookup.
-- Wrong-episode/wrong-content (identity_mismatch, all 14 cases per run), muse-glimmer:30b correct by round: dev-c4 13/14; misses in all: 1, of which 0 named identity_mismatch but chose an unsupported action (0 escalated). On the 4 tv identity run-cases it made 1 arr_lookup, 2 decode_sample, 2 ffprobe, 1 frame_sample, 1 ocr; output was supplied up front for arr_lookup in 2, decode_sample in 3, ffprobe in 3, ocr in 2, prior_record in 1.
-- Wrong-episode/wrong-content (identity_mismatch, all 14 cases per run), qwen3.8:27b correct by round: dev-c4 13/14; dev-c5 11/14 (11/14 with guards undone); dev-c6 6/14 (6/14 with guards undone); dev-c7-qwen-r2 6/14 (6/14 with guards undone); misses in all: 20, of which 11 named identity_mismatch but chose an unsupported action (11 escalated). On the 16 tv identity run-cases it made 6 arr_lookup, 2 frame_sample, 7 ocr; output was supplied up front for arr_lookup in 8, decode_sample in 12, ffprobe in 12, ocr in 8, prior_record in 4.
+- Wrong-episode/wrong-content (identity_mismatch, 14 cases per run), muse-glimmer:30b correct by round: dev-c4 13/14; misses in all: 1, of which 0 named identity_mismatch but chose an unsupported action (0 escalated). On the 4 tv identity run-cases it made 1 arr_lookup, 2 decode_sample, 2 ffprobe, 1 frame_sample, 1 ocr; output was supplied up front for arr_lookup in 2, decode_sample in 3, ffprobe in 3, ocr in 2, prior_record in 1.
+- Wrong-episode/wrong-content (identity_mismatch, 14 cases per run), qwen3.8:27b correct by round: dev-c4 13/14; dev-c5 11/14 (11/14 with guards undone); dev-c6 6/14 (6/14 with guards undone); dev-c7-qwen-r2 6/14 (6/14 with guards undone); misses in all: 20, of which 11 named identity_mismatch but chose an unsupported action (11 escalated). On the 16 tv identity run-cases it made 6 arr_lookup, 2 frame_sample, 7 ocr; output was supplied up front for arr_lookup in 8, decode_sample in 12, ffprobe in 12, ocr in 8, prior_record in 4.
 - For the tool-lift run: the clean on/off arms are the call-only tools (audiobook_inspect, frame_sample); ocr is supplied in only part of its cases (65 of 170), so its arm mixes both effects. For arr_lookup, decode_sample, epub_inspect, ffprobe switching calls off leaves the supplied output in place, so an arm that also hides it is a separate, larger experiment to decide on purpose. audio_sample and subtitle_sample need fixtures with replay data before any arm.
 - Frontier models for comparison: claude-haiku-5-5 272 calls over 9 full runs (flagged: arr_lookup correct 6/36 (17%) when called vs 412/522 (79%) when not, audiobook_inspect correct 37/59 (63%) when called vs 30/40 (75%) when not; mixes rounds, see caveats); gpt-6-astra 75 calls over 2 full runs (flagged: arr_lookup correct 7/38 (18%) when called vs 67/86 (78%) when not; mixes rounds, see caveats) (section 4).
 
@@ -66,7 +66,7 @@ Counts below are counts of per-case record files in the named directory (`tools/
 
 Integrity: every record's `case_sha256` equals the sha256 of the suite case file, and every record's own capability list equals the suite `tools_available` in all 17 primary runs.
 
-Restored runs: used only in the "guards undone" columns. Where a primary run has no restored sibling its guards-undone figure is unavailable (dev-c3 ran without guards).
+Restored runs: used only in the "guards undone" columns. Primary runs with no restored sibling (their guards-undone figure is unavailable): dev-c3/devc3-base-haiku-5-5-v2, dev-c3/devc3-v3a-haiku-5-5, dev-c3/devc3-v3b-haiku-5-5, dev-c3/devc3-v3c-haiku-5-5, dev-c3/devc3-v3d-haiku-5-5, dev-c4/devc4-v4g-haiku-5-5, dev-c4/devc4-v4g-muse-glimmer-30b, dev-c4/devc4-v4g-qwen3.8-27b.
 
 ## 2. What each suite offers, and tools never offered
 
@@ -114,7 +114,10 @@ Restored runs: used only in the "guards undone" columns. Where a primary run has
 | arr_lookup | dev-v1.1: 62, dev-v1: 62 | 1496 | 230 | 1762 |
 | subtitle_sample | dev-v1.1: 0, dev-v1: 0 | 0 | 0 | 1762 |
 
-Reading: `audio_sample` is offered in 0 cases of suite dev-v1.1 (build_v11 correction C5 removed it: no replay data) and in 45 cases of the older suite dev-v1, but no run in scope used dev-v1; its only requests were two Haiku calls in dev-c3 (harness dev-c2) that the harness answered `unavailable` because the case did not offer it. `subtitle_sample` (#161, tools behaviour `v3-remote-1`) is in no suite case and in no record, offered or requested.
+Reading, from the numbers above:
+- The scanned primary runs used suite version(s): dev-v1.1 (17 runs).
+- `audio_sample` was offered in no scanned record. Cases offering it: dev-v1 45, dev-v1.1 0. No scanned run used a suite that offers it. 45 cases of suite dev-v1.1 carry a correction note saying it was removed from tools_available. A model asked for it 2 times; the harness answered `unavailable` because the case did not offer it.
+- `subtitle_sample` was offered in no scanned record. Cases offering it: dev-v1 0, dev-v1.1 0. It is the opt-in tool of tools behaviour `v3-remote-1` (#161, README), reachable only in a run configured for it; no scanned run was.
 
 ## 3. Local models: per run, per tool
 
@@ -706,7 +709,6 @@ Pooled over local runs, identity_mismatch only (all media):
 
 - Whether a result was actually used by the model beyond being cited: the records hold the cited refs, not the reasoning, so "cited" is the only usefulness signal here.
 - Per-tool wall time and cost: not computed (records carry per-turn time and usage, not a per-tool split that this report attributes).
-- Guards-undone figures exist only for dev-c5, dev-c6, dev-c7 and dev-c7-qwen-r2 (paired `-restored` runs); dev-c3 ran without guards, and dev-c4 has no restored run (its guards v1 scores are in `runs/dev-c4/unguarded-scores`, not read here).
-- The dev-c7 qwen run stopped after 5 of 73 cases (GPU API check); it is listed and flagged but kept out of every pooled number.
-- Tool use on held-out cases: not read (forbidden by the work order).
-- dev-c8 what-if and dev-validity-opus55 runs are outside this report's scope.
+- Guards-undone figures: unavailable for dev-c3/devc3-base-haiku-5-5-v2, dev-c3/devc3-v3a-haiku-5-5, dev-c3/devc3-v3b-haiku-5-5, dev-c3/devc3-v3c-haiku-5-5, dev-c3/devc3-v3d-haiku-5-5, dev-c4/devc4-v4g-haiku-5-5, dev-c4/devc4-v4g-muse-glimmer-30b, dev-c4/devc4-v4g-qwen3.8-27b (no `-restored` sibling in the given roots).
+- Partial runs (dev-c7/devc7-qwen3.8-27b: 5 of 73 cases, aborted: cannot read /api/ps (1); refusing to touch the GPU blind) are listed and flagged but kept out of every pooled number and the summary.
+- Held-out cases and runs outside the given roots are not read.
