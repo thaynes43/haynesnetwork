@@ -1,5 +1,13 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-26: #208 dev-tl1 tool-lift measurement (done)
+
+- Coordinator: Claude Code `claude-opus-5-5`, session https://claude.ai/code/session_017Mz4kKcxwNy41sCHoJKJVu, for Tom via dev-env-1019-205125. Tracker: OpenProject haynes-media-repair #208 (epic #48, saga #43). #207 (tool usage report, PR #1041) and #209 (must-ask handover and llamacpp adapter, PR #1042) are merged.
+- Question asked: do the 8 existing tools help local models, measured as handed vs must-ask on dev-v1.1? Pre-registration and amendments 1 to 3 are in `tools/media-repair-harness/runs/dev-tl1/PREREGISTRATION.md` (PRs #1043 to #1046). Results are in `runs/dev-tl1/README.md` (PR #1047).
+- Result: every model fetches evidence when it must. Must-ask is neutral for qwen3.8 27B (59/73 both arms) and nemotron 74B-A9B IQ2 (47/46), and costs muse-glimmer 30B 7 cases (50/43). identity_mismatch is 2 to 6 of 14 for every model: the gap is identity judgment and evidence content, not tool access. qwen remains the best and fastest (about 5 s per case); nemotron is the least safe (2 and 4 unsafe writes).
+- Runtime state: talosw04 llama-server returned to its voice config (haynes-ops #4321, after the #4306 and #4307 benchmark settings). Prime has nothing resident. Nemotron runs on Prime only without `--gpu-fit-check` (partial CPU load). A cold NFS load takes about 575 s, so give the wall cap room.
+- Next: the owner discussion of the tool backlog for a full-series scan (Pokemon). Candidates named so far are a series scan driver, a live `subtitle_sample`, ASR for subtitle-less files, and cross-episode comparison for identity. Each needs its own story. No media, catalog or watch writes were made.
+
 ## 2026-10-24: #160 offline identity findings report
 
 - Owner for this slice: headless Grok, session `f488f78c-ca25-41c7-b343-cfa5f47869c0`, branch `feat/media-identity-dryrun-160`.

@@ -1,0 +1,70 @@
+{
+  "aborted": null,
+  "cases_planned": 73,
+  "config_hash": "3940ce69cf1dae59a373947c164af72d6cb39133edfa468d478b6f7af784e3ca",
+  "cost_usd": null,
+  "evidence": {
+    "gaps": 38,
+    "gaps_by_type": {
+      "incomplete": 1,
+      "not_run": 14,
+      "standing": 23
+    },
+    "tool_calls_by_evidence_mode": {
+      "replay": 231
+    }
+  },
+  "evidence_format": "v3.1-format",
+  "evidence_handover": {
+    "mode": "askable",
+    "serve": "recorded-first",
+    "version": "handover-1"
+  },
+  "evidence_mode": "replay",
+  "guards": {
+    "applied_by_rule": {
+      "G-write": 1
+    },
+    "decisions_changed": 1,
+    "version": "v3"
+  },
+  "harness_git": {
+    "branch": "agent/haynesnetwork-1026-150126",
+    "dirty": false,
+    "sha": "46a80852880b3219a66de56dcef63477f6eca35c"
+  },
+  "harness_version": "dev-c8",
+  "incomplete_records": {},
+  "latency_s_per_case": {
+    "max": 113.639,
+    "median": 63.979,
+    "min": 22.614
+  },
+  "never_started": [],
+  "prompt": {
+    "sha256": "79a7fc73b855ccee6964c4752249477b070b79acebc3daf5c9c17a8a6b3eafb5",
+    "version": "v7"
+  },
+  "records_complete": true,
+  "records_written": 73,
+  "requested_model": "muse-glimmer-30b",
+  "response_model_ids": [
+    "muse-glimmer-30b"
+  ],
+  "run_id": "devtl1-muse-glimmer-30b-mustask-a2",
+  "started_aborted": [],
+  "statement": "Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; this harness executed no write and changed no media, *arr, Plex or library state.",
+  "validity": {
+    "adapter_errors": 0,
+    "crashes": 0,
+    "final_decision_valid": 73,
+    "first_try_failure_modes": {},
+    "first_try_valid": 73,
+    "forced": 0,
+    "forced_after_rejected_write": 0,
+    "protocol_violations": 0,
+    "rejected_write_attempts": 0,
+    "repaired": 0
+  },
+  "writes_executed": 0
+}
