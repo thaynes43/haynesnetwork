@@ -196,3 +196,16 @@ The decision it feeds (Tom's, not this registration's): whether to let a local m
 * S3 now reads: **no turn ends with `finish_reason` `length` and no turn has empty `content` because of reasoning.** `reasoning_content_chars` is recorded per turn and reported (sum and maximum per run), but it is not required to be 0, because this template cannot reach 0. Reasoning at `minimal` is a property of the muse arm in both handed and must-ask, so it does not confound the within-model comparison. It is named as a difference from qwen (`think:false`) in section 8.
 * The smoke repeats as `devtl1-smoke-muse-glimmer-30b-s2` after the rollout of #4307, with an unchanged command and hash. If a turn still ends at `length`, the fix is a source/config amendment (`--num-predict`, which changes the muse hashes), and nothing is measured before it.
 * **qwen is released** once this amendment is merged. The frozen `src/` tree (section 2) is unchanged, and the Ollama arm does not depend on the muse server.
+
+## Amendment 2 (2026-10-26, coordinator; after qwen's two arms, before any valid muse measurement)
+
+**Muse's first measured arm was stopped by the coordinator after 22 of 73 cases** (`devtl1-muse-glimmer-30b-handed`, kept as an aborted record in `runs/dev-tl1/devtl1-muse-glimmer-30b-handed-aborted/`; not scored as a result). Even at `--reasoning-effort minimal`, Muse reasons for a median of about 2,700 characters per turn. 33 of its first 43 turns ended at `finish_reason` `length` (640 tokens), and 14 of the first 20 cases were forced. The arm measured the token cap, not the model. Smoke s2 had passed on a short EPUB case that stayed under the cap, so S3 did not catch this. Amendment 1's rule applies: the fix is a config amendment, and nothing on the unfixed config is reported as a measurement.
+
+**Changes (muse only; qwen's completed runs and hashes are untouched):**
+* `--num-predict 3072` (`max_tokens`). 4096 would exceed the adapter's fixed 120 s call timeout at the observed 30.6 generated tokens/s, so 3072 keeps the worst-case turn near 100 s plus prompt reading.
+* `--max-wall-s 10800` per muse arm. At about 25 s or more per turn, 73 cases do not fit in 3600 s.
+* New run ids and hashes, otherwise the same commands as section 3:
+  * `devtl1-muse-glimmer-30b-handed-a2`: `e2d64af4113d14194b0324d0c01571cc8e985226b6f614061542ba154d7d4441`
+  * `devtl1-muse-glimmer-30b-mustask-a2`: `3940ce69cf1dae59a373947c164af72d6cb39133edfa468d478b6f7af784e3ca`
+* A smoke `devtl1-smoke-muse-glimmer-30b-s3` repeats the registered smoke with `--num-predict 3072`. Then the two arms run serially, handed first. The `src/` tree is unchanged (`d1e669d3...`).
+* **Reported as a named difference:** muse runs with minimal reasoning and a 3072-token reply budget; qwen runs with `think:false` and 640. Comparisons stay within-model (handed vs must-ask). Turns that still end at `length` are counted per arm.
