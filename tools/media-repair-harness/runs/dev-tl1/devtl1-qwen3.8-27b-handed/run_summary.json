@@ -1,0 +1,64 @@
+{
+  "aborted": null,
+  "cases_planned": 73,
+  "config_hash": "92949d0b879084d379fe518c83446e298915c6c0ac3fccc1a81d79bebe72e47e",
+  "cost_usd": null,
+  "evidence": {
+    "gaps": 5,
+    "gaps_by_type": {
+      "incomplete": 1,
+      "not_run": 4
+    },
+    "tool_calls_by_evidence_mode": {
+      "replay": 44
+    }
+  },
+  "evidence_format": "v3.1-format",
+  "evidence_mode": "replay",
+  "guards": {
+    "applied_by_rule": {
+      "G-healthy": 1
+    },
+    "decisions_changed": 1,
+    "version": "v3"
+  },
+  "harness_git": {
+    "branch": "agent/haynesnetwork-1026-150126",
+    "dirty": false,
+    "sha": "7ef2a4bf7ff5d2dfc525d6675e1c818c9b17efb3"
+  },
+  "harness_version": "dev-c8",
+  "incomplete_records": {},
+  "latency_s_per_case": {
+    "max": 9.647,
+    "median": 4.267,
+    "min": 2.384
+  },
+  "never_started": [],
+  "prompt": {
+    "sha256": "79a7fc73b855ccee6964c4752249477b070b79acebc3daf5c9c17a8a6b3eafb5",
+    "version": "v7"
+  },
+  "records_complete": true,
+  "records_written": 73,
+  "requested_model": "qwen3.8:27b",
+  "response_model_ids": [
+    "qwen3.8:27b"
+  ],
+  "run_id": "devtl1-qwen3.8-27b-handed",
+  "started_aborted": [],
+  "statement": "Validity and completeness only; nothing here is scored. Write actions are proposals recorded for a human-supervised system; this harness executed no write and changed no media, *arr, Plex or library state.",
+  "validity": {
+    "adapter_errors": 0,
+    "crashes": 0,
+    "final_decision_valid": 73,
+    "first_try_failure_modes": {},
+    "first_try_valid": 73,
+    "forced": 0,
+    "forced_after_rejected_write": 0,
+    "protocol_violations": 0,
+    "rejected_write_attempts": 0,
+    "repaired": 0
+  },
+  "writes_executed": 0
+}

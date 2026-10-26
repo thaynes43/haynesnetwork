@@ -1,0 +1,11 @@
+differing cases 62 identical-input 11
+correct on differing: handed 47/62  must-ask 40/62
+correct on identical-input (noise control): handed 3/11  must-ask 3/11
+correct all 73: handed 50/73  must-ask 43/73
+identity_mismatch differing: handed 4/9 must-ask 2/9 ; all identity: handed 5/14 must-ask 3/14
+per class on differing (handed/must-ask/n): {'corrupt_file': '17/15/21', 'decoder_incompatible': '5/4/5', 'healthy': '11/11/13', 'identity_mismatch': '4/2/9', 'insufficient_evidence': '4/3/6', 'metadata_naming': '4/3/5', 'order_edition_ambiguity': '2/2/3'}
+tool calls on differing: handed 83 must-ask 231
+withheld entries 162 obtained by a call 123 | must-ask cases with zero calls 0 of 62
+forced: handed 0 must-ask 0
+flips (handed,mustask): {(True, False): 10, (True, True): 37, (False, True): 3, (False, False): 12}
+evidence_handover keys: ['mode', 'never_asked_for', 'note', 'obtained_by_call', 'serve', 'shown', 'version', 'withheld', 'withheld_tools']
