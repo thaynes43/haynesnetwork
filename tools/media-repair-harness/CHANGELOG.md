@@ -1,5 +1,13 @@
 # Harness changelog
 
+## dev-tl1: pre-registration of the handed vs must-ask measurement (#208, phase 1; no source change)
+
+`HARNESS_VERSION` stays `dev-c8`; `src/` is untouched. **No model call, no GPU, no exec into any pod.** `runs/dev-tl1/PREREGISTRATION.md` and `manifest-template.json` register four runs
+(qwen3.8:27b on Ollama Prime and muse-glimmer-30b on llama-server, each `--evidence-handover full` and `askable`, the dev-c7 configuration, 62 of the 73 cases differ between the arms) and a live
+llamacpp smoke, with their pre-computed `config_hash` values. `scripts/devtl1_config.py` rebuilds them offline through the runner's own `main()` with every adapter preflight stubbed (so the real
+option checks apply; `--check` compares with the template); `tests/test_devtl1.py` pins the hashes, the arm and model differences, the equality of the handed qwen config with dev-c7-qwen-r2's
+(but `harness_version` and the wall cap) and the handover counts against `docs/must-ask-reachability.json`.
+
 ## #209: the must-ask evidence handover and the llama-server adapter (opt-in, offline source)
 
 `HARNESS_VERSION` stays `dev-c8` (a behaviour change is a new opt-in version, as in #161). **No model call, no GPU, no exec into any pod.** The default is every earlier
