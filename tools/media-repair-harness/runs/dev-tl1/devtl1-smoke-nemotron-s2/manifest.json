@@ -1,0 +1,240 @@
+{
+  "aborted": null,
+  "adapter": "ollama",
+  "argv": [
+    "--adapter",
+    "ollama",
+    "--model",
+    "nemotron-3.5-bolt:74b-a9b",
+    "--num-ctx",
+    "16384",
+    "--context-policy",
+    "ctx16k-v1",
+    "--keep-alive",
+    "10m",
+    "--cases",
+    "td-epub-healthy-001",
+    "--prompt",
+    "v7",
+    "--evidence-format",
+    "v3.1-format",
+    "--guards",
+    "v3",
+    "--evidence",
+    "replay",
+    "--tool-output-bytes",
+    "8192",
+    "--no-spend-limit",
+    "--max-wall-s",
+    "1800",
+    "--evidence-handover",
+    "askable",
+    "--suite",
+    "tests/testdata",
+    "--out",
+    "/home/dev/devtl1-out/devtl1-smoke-nemotron-s2",
+    "--scratch",
+    "/home/dev/devtl1-scratch/nemo-s2"
+  ],
+  "case_ids": [
+    "td-epub-healthy-001"
+  ],
+  "case_sha256": {
+    "td-epub-healthy-001": "2e5cd3466a835fda36a15b04bd8aabf41a64a32b7ade82b7b123511a17233228"
+  },
+  "config": {
+    "adapter_config": {
+      "adapter": "ollama",
+      "call_timeout_s": 120,
+      "context_policy": "ctx16k-v1",
+      "format": "TURN_SCHEMA:anyof",
+      "keep_alive": "10m",
+      "model": "nemotron-3.5-bolt:74b-a9b",
+      "options": {
+        "num_ctx": 16384,
+        "num_predict": 640,
+        "seed": 42,
+        "temperature": 0,
+        "use_mmap": false
+      },
+      "psi_guard": {
+        "consecutive": 2,
+        "interval_s": 30.0,
+        "threshold": 0.2
+      },
+      "stop": [],
+      "stream": false,
+      "think": false,
+      "warmup_timeout_s": 900
+    },
+    "audit_version": "v3",
+    "checker_rubric": "contract-v3-rubric-3.1",
+    "contract": "contract-v3",
+    "decision_schema": "decision-v3",
+    "decision_schema_sha256": "d26ce3d1ed5ba7b44f54626c0ab6b5e95c86162fc375d67653f9d6bb572ad42b",
+    "evidence_bounds": null,
+    "evidence_bounds_clamped": null,
+    "evidence_format": "v3.1-format",
+    "evidence_handover": {
+      "mode": "askable",
+      "serve": "recorded-first",
+      "version": "handover-1"
+    },
+    "evidence_mode": "replay",
+    "excerpt_rule": "xhtml-body-text-3",
+    "excerpt_rules_sha256": "f7bc75e2330ab888b9d3e48fd37860bd410e41b218ef345547da3d0f64b7b7d1",
+    "flat_schema_sha256": "0cc08ff1de36f459c2654838e3dad024986815dd843572340b74a624ffb7d2eb",
+    "guards": "v3",
+    "harness_version": "dev-c8",
+    "limits": {
+      "max_total_cost_usd": null,
+      "max_wall_s": 1800.0
+    },
+    "max_tool_calls": 6,
+    "ocr_model": null,
+    "page_contract": "pages-v1",
+    "prompt_version": "v7",
+    "protocol": "turn-v3",
+    "replay": "auto",
+    "rubric": "contract-v3-rubric-3.2",
+    "spend_limit": "uncapped",
+    "system_prompt_sha256": "79a7fc73b855ccee6964c4752249477b070b79acebc3daf5c9c17a8a6b3eafb5",
+    "tool_output_bytes": 8192,
+    "tool_timeout_s": 60,
+    "tools_behavior": "v3",
+    "turn_schema_sha256": "4d976ba5fc8f82af307a7cfb4f168db248b08ffb5e7bf2a82d11b2b9ce28790b",
+    "turn_schema_v2_sha256": "febb1ea15e399104d90772b01c6e4b51d7eb3dc66f5af951f8ff3e8cd882eb36",
+    "wire_bytes": 8192
+  },
+  "config_hash": "e98331509d1dd6f2350d3091faa414f09a27cbe73c5d287599027eb00189d080",
+  "ended_at": "2026-10-26T20:46:48.362710+00:00",
+  "finish": {
+    "psi_guard": {
+      "baseline_pod": {
+        "container_id": "containerd://d53ad788090a57556cd8279067cfb950a52edea68bf6130616b32bd4583b2e43",
+        "name": "ollama-prime-59ff4d54fb-4cjj4",
+        "restarts": 0,
+        "uid": "57d1b678-b8a0-406b-88ce-9b55302f4d02"
+      },
+      "blind_samples": 0,
+      "consecutive": 2,
+      "interval_s": 30.0,
+      "max_rate": 0.00235,
+      "samples": 2,
+      "samples_detail": [
+        {
+          "pod": "ollama-prime-59ff4d54fb-4cjj4",
+          "rate": null,
+          "restarts": 0,
+          "stall_s": 0.234445,
+          "t": 1194378.164
+        },
+        {
+          "pod": "ollama-prime-59ff4d54fb-4cjj4",
+          "rate": 0.00235,
+          "restarts": 0,
+          "stall_s": 0.280785,
+          "t": 1194397.874
+        }
+      ],
+      "source": "cgroup memory.pressure full total via kubectl exec (Prometheus unreachable from this pod)",
+      "threshold": 0.2,
+      "tripped": null
+    },
+    "residents_after": [],
+    "resources_after": {
+      "at": "2026-10-26T20:46:48.204290+00:00",
+      "compute_processes": "",
+      "compute_query_exit": 0,
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 100 %\n28119384064\nMemTotal:       142070968 kB\nMemFree:         7618456 kB\nMemAvailable:   116410180 kB\n"
+    },
+    "unload_response": {
+      "created_at": "2026-10-26T20:46:46.88120426Z",
+      "done": true,
+      "done_reason": "unload",
+      "model": "nemotron-3.5-bolt:74b-a9b",
+      "response": ""
+    },
+    "unloaded": true
+  },
+  "harness_git": {
+    "branch": "agent/haynesnetwork-1026-150126",
+    "dirty": false,
+    "sha": "46a80852880b3219a66de56dcef63477f6eca35c"
+  },
+  "harness_version": "dev-c8",
+  "limit_violations": [],
+  "limits_state": {
+    "cost_unreported": null,
+    "cost_usd": 0.0,
+    "elapsed_after_cleanup_s": 20.6,
+    "elapsed_s": 19.0,
+    "max_call_cost_usd": 0.0,
+    "max_total_cost_usd": null,
+    "max_wall_s": 1800.0,
+    "model_calls": 2,
+    "stopped": null
+  },
+  "model_digest": "d6d3deeca27134af015d1ab4d57ee655dd6d624dbef4f5dfd18f4b54f76bb554",
+  "model_digest_na_reason": null,
+  "never_started": [],
+  "preflight": {
+    "adapter": "ollama",
+    "loaded_by_us": true,
+    "model_digest": "d6d3deeca27134af015d1ab4d57ee655dd6d624dbef4f5dfd18f4b54f76bb554",
+    "model_digest_na_reason": null,
+    "model_info": {
+      "details": {
+        "context_length": 262144,
+        "embedding_length": 4096,
+        "families": [
+          "nemotron_h_moe"
+        ],
+        "family": "nemotron_h_moe",
+        "format": "gguf",
+        "parameter_size": "74.0B",
+        "parent_model": "nemotron-3.5-bolt:74b-a9b-iq2",
+        "quantization_level": "IQ2_XXS",
+        "runner": "llamacpp"
+      },
+      "size": 24750264767
+    },
+    "psi_baseline": {
+      "pod": "ollama-prime-59ff4d54fb-4cjj4",
+      "rate": null,
+      "restarts": 0,
+      "stall_s": 0.234445,
+      "t": 1194378.164
+    },
+    "requested_model": "nemotron-3.5-bolt:74b-a9b",
+    "residents_before": [],
+    "resources_before": {
+      "at": "2026-10-26T20:46:28.494214+00:00",
+      "compute_processes": "",
+      "compute_query_exit": 0,
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "uuid, memory.used [MiB], memory.free [MiB], utilization.gpu [%]\nGPU-6ff9702a-1b2c-6094-5a85-00aa1924c55a, 1 MiB, 24124 MiB, 0 %\n28044169216\nMemTotal:       142070968 kB\nMemFree:         7051220 kB\nMemAvailable:   117226264 kB\n"
+    },
+    "runtime_version": "0.40.11",
+    "warmup": {
+      "error": null,
+      "exit_code": 0,
+      "load_duration_ns": 8310827282,
+      "ok": true,
+      "wall_s": 9.106
+    }
+  },
+  "python": "3.11.2",
+  "records_written": [
+    "td-epub-healthy-001"
+  ],
+  "requested_model": "nemotron-3.5-bolt:74b-a9b",
+  "run_id": "devtl1-smoke-nemotron-s2",
+  "runtime_version": "0.40.11",
+  "started_aborted": [],
+  "started_at": "2026-10-26T20:46:27.775327+00:00",
+  "suite_dir": "tests/testdata"
+}

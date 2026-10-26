@@ -209,3 +209,21 @@ The decision it feeds (Tom's, not this registration's): whether to let a local m
   * `devtl1-muse-glimmer-30b-mustask-a2`: `3940ce69cf1dae59a373947c164af72d6cb39133edfa468d478b6f7af784e3ca`
 * A smoke `devtl1-smoke-muse-glimmer-30b-s3` repeats the registered smoke with `--num-predict 3072`. Then the two arms run serially, handed first. The `src/` tree is unchanged (`d1e669d3...`).
 * **Reported as a named difference:** muse runs with minimal reasoning and a 3072-token reply budget; qwen runs with `think:false` and 640. Comparisons stay within-model (handed vs must-ask). Turns that still end at `length` are counted per arm.
+
+## Amendment 3 (2026-10-26, coordinator; adds Nemotron on Prime, parallel to muse)
+
+**Owner direction (2026-10-26):** run Nemotron on Prime (talosw01) in parallel with muse on talosw04. It is a third model with its own handed and must-ask arms. Nothing registered above changes.
+
+**Model and fit.** `nemotron-3.5-bolt:74b-a9b` is a 74B mixture of experts with about 9B active parameters, quantized IQ2_XXS, 24.75 GB, digest `d6d3deec...`. It does not fit the 3090's 24 GB, so it runs **without** `--gpu-fit-check`, and Ollama keeps part of the model on the CPU. That deliberately departs from qwen's `full-gpu-v2`. The protections behind the 2026-10-19 OOM stay on: `num_ctx` 16384 under `ctx16k-v1`, `use_mmap:false`, the 900 s warm-up timeout and the PSI guard.
+
+**Smokes (unscored, kept in `runs/dev-tl1/devtl1-smoke-nemotron-s1/` and `-s2/`).**
+* s1 aborted before its first model call: a cold NFS load took 575 s and used up its 900 s wall cap. PSI max was 0.002, and nothing was left resident after the unload.
+* s2 used a 1800 s cap with a warm cache: the load took 8 s and the case took 8.8 s, ending in a valid `healthy/none` after one tool call. PSI max was 0.0024.
+
+**Registered commands.** Each is `--adapter ollama --model nemotron-3.5-bolt:74b-a9b --num-ctx 16384 --context-policy ctx16k-v1 --keep-alive 10m --require-digest d6d3deeca27134af015d1ab4d57ee655dd6d624dbef4f5dfd18f4b54f76bb554`, followed by section 3's common options with `--max-wall-s 7200` (the cap includes a possible cold reload of about 600 s). The must-ask arm adds `--evidence-handover askable`. `think:false`, `num_predict` 640, and no stop tokens (none by default for this family).
+* `devtl1-nemotron-3.5-bolt-handed`: `750cfa200b7f0428c2f0aaf43feab1f967d4f3bca0b6d4262fadbc8bb789c96e`
+* `devtl1-nemotron-3.5-bolt-mustask`: `abe7143d466ba913b3fc6485faa5dfd4d51e92c8a5155e80fd8461b365717638`
+
+**Order.** The two arms run serially, handed first, and start once this amendment is pushed. Its commit fixes the commands and hashes before any Nemotron measurement. Section 6's rules apply, including the Prime rerun rule (-r2, -r3), except for the GPU-fit aborts, which cannot occur here. The `src/` tree is unchanged (`d1e669d3...`).
+
+**Named differences.** Partial CPU offload affects speed only, not the decision. IQ2 is a 2-bit quantization, far coarser than qwen's. Comparisons stay within the model (handed vs must-ask).
