@@ -5,7 +5,9 @@ the 25 s sampler and 60 s outer deadlines, allowed root, read-only); `v3-remote-
 
 1. The sampler is `mrh-sampler-4` (remote_sampler_v4.py).  For `decode_sample`, `audio_sample` and `subtitle_sample` the input quota is computed for THIS file
    (remote_quota.py: `ceil(window_s * bitrate_bps / 8 * margin) + overhead`, bitrate the largest of the measured values, floor 8 MiB, ceiling the file size).  A file
-   whose size or duration is missing or unparsable gets no quota (`quota_basis: unavailable`) and nothing is run.  `probe`, `chapters` and `frame` keep the 8 MiB default.
+   whose size or duration is missing or unparsable gets no quota (`quota_basis: unavailable`) and nothing is run.  `frame_sample` gets the same quota from the same
+   formula, for a lead-in window (FRAME_WINDOW_S, below), because a frame is found by seeking and decoding from the preceding keyframe, which a high-bitrate file can
+   need more than 8 MiB for.  `probe` and `chapters` keep the 8 MiB default.
 2. Every such call records `quota_bytes`, `quota_basis`, `quota_inputs`, the margin and the overhead, `bytes_read`, `quota_exhausted`, the requested window, the decoded
    output time (`out_time`, from ffmpeg's own progress) and `window_completed`.  A window that ran short is said so plainly in the result the model reads, and the
    result says that a shortfall of the read is not evidence of corruption.
@@ -26,6 +28,12 @@ SAMPLER = RE.HERE / 'remote_sampler_v4.py'
 RECEIPT = 'mrh-sampler-4'
 DECODE_WINDOW_S = 4
 AUDIO_WINDOW_S = 4
+# frame_sample reads from the keyframe before `at` up to the frame, so the data it needs is one GOP, not a window.  The sampler's probe (remote_sampler_v4.py `probe`
+# show_entries) does not list a GOP size or a keyframe interval, so none is measured here: the lead-in is the decode window, a STARTING VALUE like the margin.  It
+# holds a GOP of up to 4 s at the file's own bitrate, and with the 2.0 margin up to 8 s.  The receipt measures whether it was enough (`frame_produced`).
+FRAME_WINDOW_S = DECODE_WINDOW_S
+FRAME_WINDOW_SOURCE = 'decode_window_starting_value'
+FRAME_WINDOW_ROLE = 'keyframe_lead_in'
 SUBTITLE_WINDOW_S = RE.SUBTITLE_WINDOW_S
 WINDOWED_MODES = ('decode', 'audio', 'subtitle')
 EXTRA_TOOLS = RE.EXTRA_TOOLS
@@ -41,7 +49,8 @@ def sampler_sha256():
 def config():
     """What a run with this tools behaviour records in its config (and so in its config hash)."""
     return dict(RE.config(), version=VERSION, base_tools_behavior=BASE_TOOLS_BEHAVIOR, sampler=RECEIPT, sampler_sha256=sampler_sha256(),
-                quota=dict(RQ.PARAMETERS), decode_window_s=DECODE_WINDOW_S, audio_window_s=AUDIO_WINDOW_S, subtitle_window_s=SUBTITLE_WINDOW_S,
+                quota=dict(RQ.PARAMETERS), decode_window_s=DECODE_WINDOW_S, audio_window_s=AUDIO_WINDOW_S, frame_window_s=FRAME_WINDOW_S,
+                frame_window_source=FRAME_WINDOW_SOURCE, subtitle_window_s=SUBTITLE_WINDOW_S,
                 stream_selection='audio-default-first-1')
 
 
@@ -153,6 +162,13 @@ def make_validator(quota_bytes, window_s):
 def measure(mode, window_s, quota, receipt):
     """The receipt-side record of one windowed call: the quota (rule, basis, inputs, parameters), what was read, the requested window, the decoded output time and
     whether the window completed.  Pure: the same receipt and quota give the same record."""
+    if mode == 'frame':
+        # a frame has no decoded window to measure: the measure is whether a frame came out.  The receipt knows an exit 0 with bytes on stdout; the tool, which sees
+        # the bytes, confirms the PNG signature and replaces `frame_produced` in its own copy of this record and in the receipts entry.
+        produced = None if receipt is None else (receipt['exit_code'] == 0 and receipt['stdout_bytes'] > 0)
+        return dict(quota, bytes_read=None if receipt is None else receipt['bytes_read'], quota_exhausted=None if receipt is None else receipt['quota_exhausted'],
+                    window_role=FRAME_WINDOW_ROLE, window_source=FRAME_WINDOW_SOURCE, frame_produced=produced,
+                    window_measure='frame_produced' if receipt is not None else 'no_receipt')
     progress = (receipt or {}).get('progress') if isinstance((receipt or {}).get('progress'), dict) else {}
     out_time_s = progress.get('out_time_s')
     if receipt is None:
@@ -183,7 +199,7 @@ def run_for_ctx(ctx, mode, opts, quota=None, window_s=None):
 
 
 def run_remote(ctx, mode, at=0.0, stream=0):
-    """tools._run_remote for the modes that keep the 8 MiB default (probe, chapters, frame) -> (info, stdout, err)."""
+    """tools._run_remote for the modes that keep the 8 MiB default (probe, chapters) -> (info, stdout, err)."""
     receipt, out = run_for_ctx(ctx, mode, ['--at', at, '--stream', int(stream)])
     if receipt['exit_code'] == 'timeout':
         return receipt, out, 'timeout'
@@ -193,10 +209,13 @@ def run_remote(ctx, mode, at=0.0, stream=0):
 
 
 # ------------------------------------------------------------------------------------------------------------------ the quota of one call
-def plan_call(ctx, window_s, selected):
+def plan_call(ctx, window_s, selected, frame=False):
     """-> the remote_quota record of this call.  The size is the stat identity the case binds; the rest comes from the case's probe result."""
     ident = getattr(ctx.remote_binding, 'identity', None) or {}
-    return RQ.plan(ident.get('size'), getattr(ctx, 'media_probe', None) or {}, window_s, selected)
+    record = RQ.plan(ident.get('size'), getattr(ctx, 'media_probe', None) or {}, window_s, selected)
+    if frame:
+        record.update(window_role=FRAME_WINDOW_ROLE, window_source=FRAME_WINDOW_SOURCE)      # frame_sample's window is a lead-in allowance, not a decoded window
+    return record
 
 
 def unavailable(tool, quota, mode='remote'):
@@ -226,6 +245,61 @@ def shortfall(m, window_s, what):
 
 def window_fields(m):
     return {'quota_bytes': m['quota_bytes'], 'bytes_read': m['bytes_read'], 'quota_exhausted': m['quota_exhausted'], 'window_completed': m['window_completed']}
+
+
+# ------------------------------------------------------------------------------------------------------------------ frame_sample
+def frame_shortfall(m):
+    """The plain-language note of a call that produced no frame, or None when a frame came out.  A shortfall of the READ is never evidence about the file."""
+    if m['frame_produced']:
+        return None
+    if m['quota_exhausted']:
+        return ('no frame was produced because the sampler reached its per-file input limit of %d bytes (computed from this file\'s size and bitrate for a %g s lead-in from '
+                'the keyframe before the offset; %d bytes read). The decoder\'s own read errors are a result of that cut. That is a limit of this read, not evidence that '
+                'the file is corrupt.' % (m['quota_bytes'], FRAME_WINDOW_S, m['bytes_read']))
+    return None
+
+
+def tool_frame_sample(args, ctx):
+    """`frame_sample {"at": s}` on a remote file under v3-remote-2: one picture, with the input quota computed for this file (FRAME_WINDOW_S of its own bitrate)."""
+    import hashlib
+    import struct
+    from . import tools as T
+    at = T._at(args)
+    name = 'frame@%g' % at
+    probe = getattr(ctx, 'media_probe', None)
+    if not probe:
+        return no_probe('frame_sample')
+    video = RQ.streams_of_type(probe, 'video')
+    if not video:
+        return T.ToolResult('error', {'note': 'no frame produced: the probe result of this file lists no video stream; nothing was run'}, mode='remote')
+    q = plan_call(ctx, FRAME_WINDOW_S, video[:1], frame=True)
+    if q['quota_bytes'] is None:
+        return unavailable('frame_sample', q)
+    receipt, png = run_for_ctx(ctx, 'frame', ['--at', at, '--stream', 0], q, FRAME_WINDOW_S)
+    if receipt['exit_code'] == 'timeout':
+        return T.ToolResult('timeout', 'timeout', mode='remote', quota=measure('frame', FRAME_WINDOW_S, q, receipt))
+    if receipt['exit_code'] == 'error':
+        return T.ToolResult('error', 'error: %s' % (receipt.get('error') or 'the sampler could not run the operation'), mode='remote')
+    m = measure('frame', FRAME_WINDOW_S, q, receipt)
+    m['frame_produced'] = bool(png.startswith(b'\x89PNG') and len(png) >= 24)
+    ctx.remote_binding.receipts[-1]['quota'] = m          # the entry measure() wrote at run time had no PNG check; keep one record
+    fields = {'quota_bytes': m['quota_bytes'], 'bytes_read': m['bytes_read'], 'quota_exhausted': m['quota_exhausted'], 'frame_produced': m['frame_produced']}
+    if not m['frame_produced']:
+        out = dict({'exit_code': receipt['exit_code'], 'note': 'no frame produced'}, **fields)
+        if m['quota_exhausted']:
+            out['scope_limit'] = frame_shortfall(m)       # the decoder's own messages are a limit of the read, not a finding about the file: not shown
+            return T.ToolResult('partial', out, mode='remote', quota=m)
+        out['stderr'] = (receipt.get('stderr') or '')[:1000]
+        return T.ToolResult('error', out, mode='remote', quota=m)
+    path = ctx.scratch / (hashlib.sha256(png).hexdigest()[:16] + '.png')
+    path.write_bytes(png)         # scratch only, never inside the committed run directory
+    ctx.frames[name] = str(path)
+    ctx.frame_t[name] = at
+    width, height = struct.unpack('>II', png[16:24])
+    out = {'frame': name, 'width': width, 'height': height, 'bytes': len(png), 'sha256': hashlib.sha256(png).hexdigest(),
+           'note': 'image kept in scratch; call ocr with this frame name to read text from it'}
+    out.update(fields)
+    return T.ToolResult('ok', out, mode='remote', quota=m)
 
 
 # ------------------------------------------------------------------------------------------------------------------ decode_sample and audio_sample
@@ -370,6 +444,15 @@ def capability(ctx, cap, name):
     if name == 'decode_sample':
         cap.update(window_s=DECODE_WINDOW_S, full_decode='not_possible (the remote sampler reads a bounded window under a per-file input limit and runs 25 s)')
         selected = (RQ.streams_of_type(probe, 'video')[:1] + audio_streams(probe)[:1]) if probe else []
+    elif name == 'frame_sample':
+        video = RQ.streams_of_type(probe, 'video') if probe else []
+        cap.update(offsets_s='any', window_s=FRAME_WINDOW_S, window_role=FRAME_WINDOW_ROLE,
+                   note='a frame is found by seeking and decoding from the keyframe before the offset; the input limit below is sized for a %g s lead-in at this file\'s '
+                        'own bitrate (a starting value: the probe lists no keyframe interval). A call that produces no frame because it reached that limit says so, and '
+                        'that is not evidence of corruption' % FRAME_WINDOW_S)
+        selected = video[:1]
+        if probe and not video:
+            cap.update(available=False, why='the probe result of this item lists no video stream')
     elif name == 'audio_sample':
         streams = audio_streams(probe) if probe else []
         cap.update(window_s=AUDIO_WINDOW_S, offsets_s='any',

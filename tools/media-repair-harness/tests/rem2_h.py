@@ -41,6 +41,10 @@ if fd is not None and not hdr.get('no_progress'):
     os.write(fd, ('frame=%%d\\nout_time_us=%%d\\nprogress=end\\n' %% (int(out_time * 24), int(out_time * 1e6))).encode())
 if fmt == 'srt':
     sys.stdout.write(hdr.get('srt', ''))
+elif fmt == 'image2pipe':
+    # a cut input gives no picture, exit 0, as the real one did on the high-bitrate remuxes; otherwise a stub PNG header (signature, IHDR length and tag, 640x360)
+    if not cut and not hdr.get('no_frame'):
+        sys.stdout.buffer.write(bytes.fromhex('89504e470d0a1a0a0000000d49484452') + (640).to_bytes(4, 'big') + (360).to_bytes(4, 'big') + bytes.fromhex('0802000000') + bytes(64))
 elif fmt == 'wav' and out_time > 0:
     buf = io.BytesIO()
     with wave.open(buf, 'wb') as w:

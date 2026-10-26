@@ -85,6 +85,8 @@ whole batch at the first one.
   container average (`size * 8 / format.duration`), the probe's `format.bit_rate` and the Matroska `BPS` / `BPS-eng` tags of the streams read; `margin` is 2.0 and `overhead` 6,048,576 bytes (the sampler's
   `-probesize` plus 1 MiB), both recorded in every receipt as starting values that the measured window checks. A file without a size or a duration in its probe gets no quota (`quota_basis: unavailable`) and the
   tool runs nothing; that is the case for a file whose probe failed.
+- **`frame_sample` gets the same quota** from the same formula with a 4 s keyframe lead-in (a starting value: the probe lists no keyframe interval), because a frame is found by decoding from the preceding keyframe and the fixed 8 MiB
+  returned `no frame produced` on 28 Mbit/s files. The receipt records `quota_bytes`, `quota_basis`, `bytes_read`, `quota_exhausted` and `frame_produced`; a frame missed only because the limit was reached is said so and is not evidence of corruption.
 - **Every decode, audio and subtitle receipt records** the quota, its basis and inputs, the bytes read, `quota_exhausted`, the requested window, the decoded output time and `window_completed`.
 - **`audio_sample` without `stream` reads the first audio stream** (`0:a:0`); a given `stream` is the absolute ffprobe index and must be an audio stream of the probe or the call returns an error that names the audio
   stream indexes and runs nothing. `subtitle_sample` takes the same optional `stream` for text subtitle streams.
@@ -104,8 +106,8 @@ class and action, tool call statuses, every non-healthy finding with its reason,
 per-file table (season, episode, class, action, confidence, tools called with statuses, windows, failed tools, forced, repairs, wall seconds). `summary.json` holds
 counts only (no path, no title, no case id) and is safe to commit.
 
-**Windowed reads (#213).** For every decode, audio and subtitle call the report gives one outcome token in the per-file `windows` column and counts them in a "Windowed reads" section and in `summary.json`
-(`windowed_calls_by_tool_token`, `window_shortfalls_by_tool`, `window_shortfalls`, `files_with_window_shortfall`): `ok` (the window completed), `short:quota` (it ran short and the per-file quota was exhausted),
+**Windowed reads (#213).** For every decode, audio, subtitle and (`v3-remote-2`) frame call the report gives one outcome token in the per-file `windows` column and counts them in a "Windowed reads" section and in `summary.json`
+(`windowed_calls_by_tool_token`, `window_shortfalls_by_tool`, `window_shortfalls`, `files_with_window_shortfall`): `ok` (the window completed; for a frame, a frame was produced), `short:quota` (it ran short and the per-file quota was exhausted),
 `short` (short without exhausting it), `unmeasured` (no decoded time was reported), `n/a` (a `v3-remote-1` receipt: nothing was measured), `no-quota` (size or duration missing, nothing run) and `fatal`.
 A shortfall is a limit of the read, not a finding about the file.
 

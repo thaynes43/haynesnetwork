@@ -631,6 +631,8 @@ def tool_frame_sample(args, ctx):
         ctx.frames[name] = None
         ctx.frame_t[name] = at
         return ToolResult('ok', {'frame': name, 'replay': True, 'note': 'no image is available in replay mode; call ocr with this frame to read the recorded on-screen text'}, mode='replay')
+    if be == 'remote' and ctx.tools_behavior == REMOTE_V2:
+        return _remote_module(ctx).tool_frame_sample(args, ctx)      # the per-file input quota for the seek and the read back to a keyframe (#213)
     if be == 'remote':
         info, png, err = _run_remote(ctx, 'frame', at=at)
         if err:
@@ -1389,7 +1391,7 @@ def capability(ctx, name):
             cap['excerpts'] = EXCERPT_CAPABILITY
         return cap
     binary = 'ffprobe' if name in ('ffprobe', 'audiobook_inspect') else 'ffmpeg'
-    if ctx.fixture.kind == 'remote' and ctx.tools_behavior == REMOTE_V2 and name in ('decode_sample', 'audio_sample'):
+    if ctx.fixture.kind == 'remote' and ctx.tools_behavior == REMOTE_V2 and name in ('decode_sample', 'audio_sample', 'frame_sample'):
         return _remote_module(ctx).capability(ctx, cap, name)
     if ctx.fixture.kind == 'remote':
         cap.update(backend='remote', available=True)

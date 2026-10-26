@@ -540,8 +540,8 @@ def tool_summary(rec):
     return called, failed
 
 
-WINDOWED_TOOLS = ('decode_sample', 'audio_sample', 'subtitle_sample')
-WINDOWED_MODES = ('decode', 'audio', 'subtitle')
+WINDOWED_TOOLS = ('decode_sample', 'audio_sample', 'subtitle_sample', 'frame_sample')
+WINDOWED_MODES = ('decode', 'audio', 'subtitle', 'frame')
 
 
 def window_token(entry):
@@ -552,7 +552,7 @@ def window_token(entry):
     q = entry.get('quota')
     if not isinstance(q, dict):
         return 'short:quota' if (entry.get('receipt') or {}).get('quota_exhausted') is True else 'n/a'
-    done = q.get('window_completed')
+    done = q.get('frame_produced') if entry.get('mode') == 'frame' else q.get('window_completed')      # a frame has no decoded window: the measure is whether one came out
     if done is True:
         return 'ok'
     if done is False:
@@ -561,12 +561,13 @@ def window_token(entry):
 
 
 def window_calls(rec):
-    """-> [(tool, token)] for every decode, audio and subtitle call of a record, in call order.  A call whose quota was `unavailable` ran nothing: token `no-quota`."""
+    """-> [(tool, token)] for every decode, audio, subtitle and (v3-remote-2) frame call of a record, in call order.  A call whose quota was `unavailable` ran nothing: token `no-quota`."""
     out = []
     for c in rec.get('tool_calls') or []:
         if not isinstance(c, dict) or c.get('tool') not in WINDOWED_TOOLS or c.get('pages_of'):
             continue
-        entries = [e for e in c.get('receipts') or [] if isinstance(e, dict) and e.get('mode') in WINDOWED_MODES]
+        entries = [e for e in c.get('receipts') or [] if isinstance(e, dict) and e.get('mode') in WINDOWED_MODES
+                   and (e.get('mode') != 'frame' or isinstance(e.get('quota'), dict))]       # a v3-remote-1 frame receipt measured nothing: not counted
         if entries:
             out += [(c['tool'], window_token(e)) for e in entries]
         elif isinstance(c.get('quota'), dict) and c['quota'].get('quota_basis') == 'unavailable':
@@ -644,9 +645,9 @@ def render(summary, rows, planned_map, missing, aborted, source_note):
     L += ['', '### By action', '', '| action | files |', '|---|---|'] + ['| %s | %d |' % (k, v) for k, v in summary['by_action'].items()]
     L += ['', '### Tool calls by status', '', '| tool | statuses |', '|---|---|']
     L += ['| %s | %s |' % (t, ', '.join('%s %d' % kv for kv in s.items())) for t, s in summary['tool_calls_by_tool_status'].items()]
-    L += ['', '### Windowed reads (decode, audio, subtitle)', '',
+    L += ['', '### Windowed reads (decode, audio, subtitle, frame)', '',
           'ok = the requested window completed (the decoded output time reached it); short:quota = it ran short and the per-file input quota was exhausted; short = it ran short '
-          'without exhausting the quota; unmeasured = no decoded time was reported; n/a = a v3-remote-1 receipt (nothing measured); no-quota = size or duration missing, nothing run. '
+          'without exhausting the quota (for frame_sample: ok = a frame was produced, short = none, whatever the cause); unmeasured = no decoded time was reported; n/a = a v3-remote-1 receipt (nothing measured); no-quota = size or duration missing, nothing run. '
           'A shortfall is a limit of the read, not evidence about the file.', '',
           '- calls with a window shortfall: %d (in %d files)' % (summary['window_shortfalls'], summary['files_with_window_shortfall']), '',
           '| tool | outcomes |', '|---|---|']
