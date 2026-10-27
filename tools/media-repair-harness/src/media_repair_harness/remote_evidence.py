@@ -156,7 +156,7 @@ def exec_argv(namespace, target, container, mode, path, opts=()):
 
 
 # ------------------------------------------------------------------------------------------------------------------ receipts
-def parse_receipt(stderr_bytes):
+def parse_receipt(stderr_bytes, receipt_name=None):
     """-> (receipt dict or None, problem or None).  The receipt is the last non-empty stderr line."""
     lines = [ln for ln in stderr_bytes.decode('utf-8', errors='replace').splitlines() if ln.strip()]
     if not lines:
@@ -165,8 +165,9 @@ def parse_receipt(stderr_bytes):
         r = json.loads(lines[-1])
     except ValueError:
         return None, 'the last stderr line is not a JSON receipt'
-    if not isinstance(r, dict) or r.get('receipt') != RECEIPT:
-        return None, 'the last stderr line is not an %s receipt' % RECEIPT
+    name = receipt_name or RECEIPT
+    if not isinstance(r, dict) or r.get('receipt') != name:
+        return None, 'the last stderr line is not an %s receipt' % name
     return r, None
 
 
@@ -216,10 +217,11 @@ def _ident_errors(name, v):
     return []
 
 
-def receipt_errors(r, mode, stdout_len):
+def receipt_errors(r, mode, stdout_len, quota_bytes=QUOTA_BYTES):
     """Every way a receipt can be malformed (empty when it is well formed): every field present with its type and range (booleans are real booleans, numbers
     integers or finite, identities integers), and the receipt consistent with itself (`source_unchanged` exactly when the end identity equals the start one
-    and the path still names the opened file) and with what was received (`stdout_bytes`).  It checks shape and consistency, not the verdicts."""
+    and the path still names the opened file) and with what was received (`stdout_bytes`).  It checks shape and consistency, not the verdicts.
+    `quota_bytes` is the input quota the call was given (8 MiB for every sampler before mrh-sampler-4; remote_evidence_2 passes the per-file one)."""
     errs = []
     if not isinstance(r, dict):
         return ['the receipt is not an object']
@@ -239,7 +241,7 @@ def receipt_errors(r, mode, stdout_len):
         errs.append('a completed operation carries an error')
     if not _int_in(r['stdout_bytes'], 0, I64) or r['stdout_bytes'] != stdout_len:
         errs.append('stdout_bytes %r does not match the %d bytes received' % (r['stdout_bytes'], stdout_len))
-    cap = STAT_BYTES_MAX if mode == 'stat' else (0 if mode == 'list' else MAX_BYTES_READ)
+    cap = STAT_BYTES_MAX if mode == 'stat' else (0 if mode == 'list' else quota_bytes)
     if not _int_in(r['bytes_read'], 0, cap):
         errs.append('bytes_read malformed or out of range for %s' % mode)
     if not _int_in(r['requests'], 0, 10 ** 6):
@@ -259,7 +261,7 @@ def receipt_errors(r, mode, stdout_len):
         errs.append('source_unchanged must be a boolean or null')
     if not _bool_or_none(r['confined']):
         errs.append('confined must be a boolean or null')
-    if r['quota_exhausted'] is True and r['bytes_read'] != QUOTA_BYTES:
+    if r['quota_exhausted'] is True and r['bytes_read'] != quota_bytes:
         errs.append('quota_exhausted without the quota read')
     if ec == 'timeout' and r['timed_out'] is not True:
         errs.append('exit_code timeout without timed_out')
@@ -299,57 +301,60 @@ def receipt_errors(r, mode, stdout_len):
     return errs
 
 
-def run_operation(runner, namespace, target, container, mode, path, binding, opts=(), bind_identity=True):
+def run_operation(runner, namespace, target, container, mode, path, binding, opts=(), bind_identity=True, *, sampler=None, validate=None, entry_extra=None, receipt_name=None):
     """One remote sampler operation under `binding`.  -> (receipt, stdout bytes).  Raises FatalOperation on every fatal path; never invokes anything once the
-    binding is fatal.  `bind_identity=False` only for an operation that SETS the identity (the driver's G1 stat) or reads a directory (`list`)."""
+    binding is fatal.  `bind_identity=False` only for an operation that SETS the identity (the driver's G1 stat) or reads a directory (`list`).
+    The keyword-only hooks are for tools behaviour v3-remote-2 (remote_evidence_2.py) and default to this behaviour exactly: `sampler` (the script sent on stdin),
+    `validate(receipt, mode, stdout_len)` (the receipt check), `receipt_name` (the sampler's receipt id) and `entry_extra(receipt or None)` (fields added to the
+    receipts entry of the operation)."""
     if binding.fatal:
         raise FatalOperation('stopped', 'an earlier operation failed closed (%s); no further operation is started' % binding.fatal.get('kind'))
     if binding.root is None:
-        return _fail(binding, FatalOperation('no_allowed_root', 'the operation has no allowed root to confine its path; nothing was invoked'), mode, None)
+        return _fail(binding, FatalOperation('no_allowed_root', 'the operation has no allowed root to confine its path; nothing was invoked'), mode, None, entry_extra)
     if binding.time_left is not None:
         left = binding.time_left()
         if left is None or not left >= OUTER_DEADLINE_S:
             return _fail(binding, FatalOperation('target_deadline', 'the %d s outer deadline of an operation does not fit the %s s left of the target deadline; '
-                                                 'nothing was invoked' % (OUTER_DEADLINE_S, left if left is None else round(left, 1))), mode, None)
+                                                 'nothing was invoked' % (OUTER_DEADLINE_S, left if left is None else round(left, 1))), mode, None, entry_extra)
     if binding.max_operations is not None and binding.operations >= binding.max_operations:
-        return _fail(binding, FatalOperation('operation_cap', 'the cap of %d sampler operations for this file is reached' % binding.max_operations), mode, None)
+        return _fail(binding, FatalOperation('operation_cap', 'the cap of %d sampler operations for this file is reached' % binding.max_operations), mode, None, entry_extra)
     want = binding.expected() if bind_identity else None
     if bind_identity and want is None:
-        return _fail(binding, FatalOperation('no_expected_identity', 'the operation has no expected identity to bind; nothing was invoked'), mode, None)
+        return _fail(binding, FatalOperation('no_expected_identity', 'the operation has no expected identity to bind; nothing was invoked'), mode, None, entry_extra)
     extra = list(opts) + ['--root', binding.root]
     if want is not None:
         extra += ['--expect-size', want['size'], '--expect-mtime-ns', want['mtime_ns'], '--expect-dev', want['dev'], '--expect-ino', want['ino']]
     argv = exec_argv(namespace, target, container, mode, path, extra)
     binding.operations += 1
     try:
-        r = runner(argv, input=SAMPLER.read_bytes(), capture_output=True, timeout=OUTER_DEADLINE_S)
+        r = runner(argv, input=(sampler or SAMPLER).read_bytes(), capture_output=True, timeout=OUTER_DEADLINE_S)
     except subprocess.TimeoutExpired:
-        return _fail(binding, FatalOperation('outer_timeout', 'the %d s outer deadline of the operation expired (no receipt)' % OUTER_DEADLINE_S, argv=argv), mode, argv)
+        return _fail(binding, FatalOperation('outer_timeout', 'the %d s outer deadline of the operation expired (no receipt)' % OUTER_DEADLINE_S, argv=argv), mode, argv, entry_extra)
     except Exception as e:  # noqa: BLE001 - an exec that did not complete (OSError or anything else) has no receipt: fatal
-        return _fail(binding, FatalOperation('exec_failed', '%s: %s' % (type(e).__name__, str(e)[:200]), argv=argv), mode, argv)
+        return _fail(binding, FatalOperation('exec_failed', '%s: %s' % (type(e).__name__, str(e)[:200]), argv=argv), mode, argv, entry_extra)
     stdout = r.stdout if isinstance(getattr(r, 'stdout', None), bytes) else b''
     try:
-        receipt, problem = parse_receipt(r.stderr if isinstance(getattr(r, 'stderr', None), bytes) else b'')
+        receipt, problem = parse_receipt(r.stderr if isinstance(getattr(r, 'stderr', None), bytes) else b'', receipt_name)
     except Exception as e:  # noqa: BLE001 - a receipt that cannot even be read is a missing one
         receipt, problem = None, 'the receipt could not be read (%s)' % type(e).__name__
     rc = getattr(r, 'returncode', None)
     if rc != 0:
         # kubectl (or the remote python) did not exit cleanly: whatever it printed is not a completed operation, even with a receipt line
-        return _fail(binding, FatalOperation('exec_failed', 'the exec exited %r' % (rc,), receipt, argv), mode, argv)
+        return _fail(binding, FatalOperation('exec_failed', 'the exec exited %r' % (rc,), receipt, argv), mode, argv, entry_extra)
     if receipt is None:
-        return _fail(binding, FatalOperation('missing_receipt', problem, argv=argv), mode, argv)
+        return _fail(binding, FatalOperation('missing_receipt', problem, argv=argv), mode, argv, entry_extra)
     try:
-        errs = receipt_errors(receipt, mode, len(stdout))
+        errs = (validate or receipt_errors)(receipt, mode, len(stdout))
     except Exception as e:  # noqa: BLE001 - any exception while validating a receipt is a fatal receipt failure, never an ordinary tool error
         errs = ['validating the receipt raised %s' % type(e).__name__]
     if errs:
-        return _fail(binding, FatalOperation('malformed_receipt', '; '.join(errs)[:400], receipt, argv), mode, argv)
+        return _fail(binding, FatalOperation('malformed_receipt', '; '.join(errs)[:400], receipt, argv), mode, argv, entry_extra)
     if receipt['confined'] is False or (receipt['exit_code'] in (0, 'timeout') and receipt['confined'] is not True):
         return _fail(binding, FatalOperation('not_confined', 'the path is not confined under the allowed root (confined %r)' % receipt['confined'], receipt, argv),
-                     mode, argv)
+                     mode, argv, entry_extra)
     if not binding.host.check(receipt['hostname']):
         return _fail(binding, FatalOperation('hostname_changed', 'the receipt names host %r; the run is bound to %r' % (receipt['hostname'], binding.host.hostname),
-                                             receipt, argv), mode, argv)
+                                             receipt, argv), mode, argv, entry_extra)
     if mode in FILE_MODES:
         ident = receipt['identity']
         if want is not None:
@@ -359,21 +364,22 @@ def run_operation(runner, namespace, target, container, mode, path, binding, opt
                   and ident['end_ok'] is True and ident['end'] == want and ident['same_file'] is True)
             if not ok:
                 return _fail(binding, FatalOperation('identity_mismatch', 'expected %s; start %s, end %s, same file %s' % (
-                    want, ident['start'], ident['end'], ident['same_file']), receipt, argv), mode, argv)
+                    want, ident['start'], ident['end'], ident['same_file']), receipt, argv), mode, argv, entry_extra)
         if receipt['source_unchanged'] is False or ident['same_file'] is False:
             return _fail(binding, FatalOperation('source_changed', 'the sampler reports source_unchanged %r, same_file %r' % (
-                receipt['source_unchanged'], ident['same_file']), receipt, argv), mode, argv)
+                receipt['source_unchanged'], ident['same_file']), receipt, argv), mode, argv, entry_extra)
         if receipt['exit_code'] in (0, 'timeout') and receipt['source_unchanged'] is not True:
             # an operation that read something must have its end verified; a missing end check never delivers what was read
             return _fail(binding, FatalOperation('identity_mismatch', 'the end of the operation was not verified (source_unchanged %r)' % receipt['source_unchanged'],
-                                                 receipt, argv), mode, argv)
-    binding.receipts.append({'n': binding.operations, 'mode': mode, 'argv': argv, 'receipt': receipt, 'outcome': 'ok'})
+                                                 receipt, argv), mode, argv, entry_extra)
+    binding.receipts.append(dict({'n': binding.operations, 'mode': mode, 'argv': argv, 'receipt': receipt, 'outcome': 'ok'}, **(entry_extra(receipt) if entry_extra else {})))
     return receipt, stdout
 
 
-def _fail(binding, exc, mode, argv):
+def _fail(binding, exc, mode, argv, entry_extra=None):
     binding.fatal = exc.as_record()
-    binding.receipts.append({'n': binding.operations, 'mode': mode, 'argv': argv, 'receipt': exc.receipt, 'outcome': 'fatal', 'fatal': exc.as_record()})
+    binding.receipts.append(dict({'n': binding.operations, 'mode': mode, 'argv': argv, 'receipt': exc.receipt, 'outcome': 'fatal', 'fatal': exc.as_record()},
+                                 **(entry_extra(None) if entry_extra else {})))
     raise exc
 
 
