@@ -972,6 +972,14 @@ def bit_depth(pix_fmt):
     return 8 if re.fullmatch(r'(yuvj?\d{3}p|nv12|nv21|rgb24|bgr24|gray|yuva\d{3}p)', pix_fmt) else None
 
 
+def _probe_read_note(d, data):
+    """Tools behaviour v3-remote-2 (#213) only, keyed on `probe_read`, a field no other tools behaviour writes: what the adaptive probe limit did (attempts the sampler's
+    input limit stopped, the limit the result comes from) is an open item, so a limit of the read is never taken for a truncated file."""
+    pr = data.get('probe_read') if isinstance(data, dict) else None
+    if isinstance(pr, dict) and isinstance(pr.get('note'), str):
+        d.unresolved.append(pr['note'])
+
+
 def _derive_probe(d, data):
     ex = d.execution
     d.scope['requested'] = {'what': 'container, stream and chapter metadata'}
@@ -1020,9 +1028,11 @@ def _derive_probe(d, data):
         if dur is None:
             d.unresolved.append('the container duration is not stated')
         d.unresolved.append('nothing was decoded: stream contents are unchecked by this result')
+        _probe_read_note(d, data)
         return
     if isinstance(data, dict) and ('exit_code' in data or 'stderr' in data):
         _failed_exit(d, data, 'container')
+        _probe_read_note(d, data)
 
 
 def _failed_exit(d, data, part):

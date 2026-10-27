@@ -11,7 +11,7 @@ model, and aggregates a findings report.  Four subcommands, each a separate step
             (a per-file input quota, a measured window, the audio stream default); --tools-behavior v3-remote-1 selects the earlier one
   report    <run dirs> + discovery.json -> <out>/report.md (private) and <out>/summary.json (counts only, safe to commit)
 
-Nothing here writes to media, the catalog, *arr, Plex or the cluster: the sampler is read-only (`mrh-sampler-2` for discovery, `mrh-sampler-4` for a v3-remote-2
+Nothing here writes to media, the catalog, *arr, Plex or the cluster: the sampler is read-only (`mrh-sampler-2` for discovery's list and stat, `mrh-sampler-4` for its probe and for a v3-remote-2
 run: O_NOFOLLOW opens, descriptor-confined paths, fail-closed receipts) and `kubectl` is only ever called as `exec ... python3 - <sampler mode>`.  Sidecar subtitle files are listed by name and never
 read.  Case ids are `scan-sSSeEEE-<8 hex of sha256(path)>`; case files, discovery and the report hold real library paths and titles, so --out refuses a
 directory inside a git work tree.  See docs/series-scan.md.
@@ -51,6 +51,8 @@ RE, R, Stop = D1.RE, D1.R, D1.Stop
 
 from media_repair_harness import leakguard  # noqa: E402
 from media_repair_harness import protocol as P  # noqa: E402
+from media_repair_harness import remote_evidence_2 as RE2  # noqa: E402
+from media_repair_harness import remote_quota as RQ  # noqa: E402
 from media_repair_harness import scan_suite as SS  # noqa: E402
 
 DRIVER_VERSION = 'series-scan-1'
@@ -151,11 +153,30 @@ def clean_abs(path, what):
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------- discover
+def probe_evidence(receipt, out, summary):
+    """The case evidence (`e1`) of an adaptive probe: the Stage R driver's own evidence for the LAST attempt, plus what the model must be told about any attempt that the
+    sampler's input limit stopped (remote_quota.probe_note), so a limit of the read never looks like a truncated file.  A failure that came from a used-up limit shows
+    no decoder messages (they are a result of the limit; the receipt keeps them).  One attempt that did not use its limit up gives the Stage R evidence unchanged."""
+    if summary['final'] in ('whole_file_unprobeable', 'ceiling_reached'):
+        receipt = dict(receipt, stderr='')
+    ev = D1.Driver.probe_evidence(receipt, out)
+    note = RQ.probe_note(summary)
+    if note is not None and ev.get('status') in ('ok', 'error'):
+        try:
+            data = json.loads(ev['output'])
+        except ValueError:
+            data = None
+        if isinstance(data, dict):
+            ev = dict(ev, output=json.dumps(dict(data, probe_read=note), sort_keys=True, ensure_ascii=False))
+    return ev
+
+
 class Scanner:
     """The remote half of discovery.  `op` is the Stage R driver's (run_operation under the stop rules); `listing` is the Stage R driver's own listing check,
     called unchanged on this object (it only needs `op` and `dir_binding`)."""
 
-    def __init__(self, target, root, runner, wall_s=DEFAULT_DISCOVER_WALL_S, clock=time.monotonic):
+    def __init__(self, target, root, runner, wall_s=DEFAULT_DISCOVER_WALL_S, clock=time.monotonic, adaptive_probe=False):
+        self.adaptive_probe = adaptive_probe        # v3-remote-2: the probe reads under the adaptive input limit (mrh-sampler-4); list and stat are mrh-sampler-2 either way
         self.ns, self.deployment, self.container = target['namespace'], target['deployment'], target['container']
         self.exec_target = 'deploy/' + self.deployment
         self.runner, self.wall_s, self.clock, self.started = runner, float(wall_s), clock, clock()
@@ -168,16 +189,27 @@ class Scanner:
         if self.clock() - self.started + RE.OUTER_DEADLINE_S > self.wall_s:
             raise Stop(phase, 'discover_deadline', 'the %.0f s discovery wall cap leaves no room for another %d s operation' % (self.wall_s, RE.OUTER_DEADLINE_S))
 
-    def op(self, phase, binding, mode, path, opts=(), bind_identity=True, target=None):
+    def op(self, phase, binding, mode, path, opts=(), bind_identity=True, target=None, limit=None):
+        """One sampler operation under the stop rules.  `limit` (bytes) is for an adaptive probe attempt only: it runs under mrh-sampler-4 with exactly that input limit."""
         self.need_time(phase)
         n = len(binding.receipts)
         try:
-            receipt, out = RE.run_operation(self.runner, self.ns, self.exec_target, self.container, mode, path, binding, opts, bind_identity=bind_identity)
+            if limit is None:
+                receipt, out = RE.run_operation(self.runner, self.ns, self.exec_target, self.container, mode, path, binding, opts, bind_identity=bind_identity)
+            else:
+                receipt, out = RE2.run_probe_attempt(self.runner, self.ns, self.exec_target, self.container, path, binding, limit, binding.identity['size'], opts, bind_identity)
         except RE.FatalOperation as e:
-            self.operations += [{'phase': phase, 'mode': r['mode'], 'outcome': r['outcome'], 'receipt': r['receipt']} for r in binding.receipts[n:]]
+            self.operations += [self.operation_row(phase, r) for r in binding.receipts[n:]]
             raise Stop(phase, e.kind, e.detail, target)
-        self.operations += [{'phase': phase, 'mode': r['mode'], 'outcome': r['outcome'], 'receipt': r['receipt']} for r in binding.receipts[n:]]
+        self.operations += [self.operation_row(phase, r) for r in binding.receipts[n:]]
         return receipt, out
+
+    @staticmethod
+    def operation_row(phase, r):
+        row = {'phase': phase, 'mode': r['mode'], 'outcome': r['outcome'], 'receipt': r['receipt']}
+        if 'probe_attempt' in r:
+            row['probe_attempt'] = r['probe_attempt']          # the same object the adaptive probe completes (outcome, attempt number) when the rule is done
+        return row
 
     def listing(self, phase, path, prefix=''):
         return D1.Driver.listing(self, phase, path, prefix)
@@ -218,8 +250,14 @@ class Scanner:
         frag = {'head_1m_sha256': fp['head_1m_sha256'], 'tail_1m_sha256': fp['tail_1m_sha256'], 'probe': None}
         if probe:
             b.identity = dict(start, head_1m_sha256=fp['head_1m_sha256'], tail_1m_sha256=fp['tail_1m_sha256'])
-            receipt, out = self.op('probe', b, 'probe', path, ['--at', 0.0, '--stream', 0], target=path)
-            frag['probe'] = D1.Driver.probe_evidence(receipt, out)
+            if self.adaptive_probe:
+                receipt, out, summary = RE2.adaptive_probe(lambda limit: self.op('probe', b, 'probe', path, ['--at', 0.0, '--stream', 0], target=path, limit=limit),
+                                                           b, start['size'])
+                frag['probe'] = probe_evidence(receipt, out, summary)
+                frag['probe_read'] = summary
+            else:
+                receipt, out = self.op('probe', b, 'probe', path, ['--at', 0.0, '--stream', 0], target=path)
+                frag['probe'] = D1.Driver.probe_evidence(receipt, out)
         return frag, None
 
 
@@ -232,7 +270,8 @@ def discover(args, runner=subprocess.run, clock=time.monotonic):
         raise SystemExit('--series-dir %s is not below --root %s' % (series_dir, root))
     if (out / 'discovery.json').exists():
         raise SystemExit('refusing to overwrite %s; move it away first' % (out / 'discovery.json'))
-    sc = Scanner(target, root, runner, args.max_wall_s, clock)
+    adaptive = getattr(args, 'tools_behavior', 'v3-remote-1') == 'v3-remote-2'
+    sc = Scanner(target, root, runner, args.max_wall_s, clock, adaptive_probe=adaptive)
     rows, skipped, listings, seasons_found = [], [], [], []
     try:
         seasons, _top = sc.season_dirs(series_dir, args.season)
@@ -283,7 +322,8 @@ def discover(args, runner=subprocess.run, clock=time.monotonic):
             'generated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
             'target': args.target, 'namespace': target['namespace'], 'deployment': target['deployment'], 'container': target['container'],
             'exec_target': sc.exec_target, 'allowed_root': root, 'series_dir': series_dir, 'season_filter': args.season,
-            'expected_hostname': sc.host.hostname, 'probe': not args.no_probe, 'list_cap': RE.LIST_CAP, 'season_folders': seasons_found,
+            'expected_hostname': sc.host.hostname, 'probe': not args.no_probe, 'tools_behavior': getattr(args, 'tools_behavior', 'v3-remote-1'),
+            'probe_limit': dict(RQ.PROBE_PARAMETERS) if adaptive else {'rule': 'fixed', 'bytes': RE.QUOTA_BYTES}, 'list_cap': RE.LIST_CAP, 'season_folders': seasons_found,
             'files': kept, 'skipped': skipped, 'operation_count': len(sc.operations)}
     write_text(out / 'discovery.json', dumps(disc))
     write_text(out / 'discovery-receipts.json', dumps(sc.operations))
@@ -719,6 +759,9 @@ def build_parser():
     d.add_argument('--season', type=int, help='only this season folder (Season N); default every season folder and loose files')
     d.add_argument('--out', required=True, help='private output directory, outside git')
     d.add_argument('--no-probe', action='store_true', help='skip the per-file ffprobe (then subtitle_sample has no stream to use)')
+    d.add_argument('--tools-behavior', choices=list(TOOLS_BEHAVIORS), default=DEFAULT_TOOLS_BEHAVIOR,
+                   help='v3-remote-2 (default): the per-file probe reads under an ADAPTIVE input limit (8 MiB first; doubled, up to the file size, only after a probe that failed '
+                        'with its limit used up), every attempt its own receipt; v3-remote-1: the fixed 8 MiB probe of the first live check')
     d.add_argument('--max-wall-s', type=float, default=DEFAULT_DISCOVER_WALL_S, help='discovery wall cap in seconds (default %(default)s)')
     d.add_argument('--allow-in-git', action='store_true', help='tests only')
     b = sub.add_parser('build', help='discovery.json -> a truth-free suite directory')

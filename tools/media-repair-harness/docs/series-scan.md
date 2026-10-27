@@ -54,6 +54,14 @@ discovery with exit 3, writes `discovery-failed.json` and no `discovery.json`. A
 under `skipped`. Time bound: `--max-wall-s` (default 3600 s); each file costs two `kubectl exec` calls (about 2 to 10 s), so 82 files take well under
 30 minutes.
 
+**The probe limit is adaptive under `--tools-behavior v3-remote-2` (the default; `v3-remote-1` keeps the fixed 8 MiB).** The probe runs under `mrh-sampler-4` (`list` and `stat` stay `mrh-sampler-2`) with
+the rule `adaptive-probe-1` (`docs/remote-content-evidence.md` section 8): 8 MiB first; a probe that fails with its receipt showing `quota_exhausted` is retried at double the limit, the file size being the last
+step; any other failure is the decoder's and is not retried. Each attempt is one entry of `discovery-receipts.json` (with `probe_attempt`: limit, bytes read, exhausted, outcome), each row of `discovery.json`
+carries `probe_read` (the attempts, the limit that succeeded, `total_bytes_read`, the worst case), and the header records `tools_behavior` and `probe_limit`. A probe that needed a retry carries a `probe_read` note
+in its evidence (`e1`) saying which attempts the sampler's limit stopped; a probe that fails with the whole file readable says so and shows no cut messages. The retries of one probe do not count against the
+two sampler operations per file (stat, probe). The worst case is below three times the file size per file (a 250,000,000 byte file: 6 attempts, 510,046,848 bytes), and a file whose probe needs no more than 8 MiB
+costs what it did.
+
 ### build
 
 `discovery.json` to `suite/cases/<id>.json` plus `suite/manifest.json`. Deterministic: the same discovery gives byte-identical files (sorted paths, sorted

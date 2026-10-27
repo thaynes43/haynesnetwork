@@ -7,7 +7,12 @@ the 25 s sampler and 60 s outer deadlines, allowed root, read-only); `v3-remote-
    (remote_quota.py: `ceil(window_s * bitrate_bps / 8 * margin) + overhead`, bitrate the largest of the measured values, floor 8 MiB, ceiling the file size).  A file
    whose size or duration is missing or unparsable gets no quota (`quota_basis: unavailable`) and nothing is run.  `frame_sample` gets the same quota from the same
    formula, for a lead-in window (FRAME_WINDOW_S, below), because a frame is found by seeking and decoding from the preceding keyframe, which a high-bitrate file can
-   need more than 8 MiB for.  `probe` and `chapters` keep the 8 MiB default.
+   need more than 8 MiB for.  `chapters` keeps the 8 MiB default.
+   `probe` cannot be sized from a bitrate (it is what produces the bitrate), so its limit is ADAPTIVE and measured (remote_quota.py, `adaptive-probe-1`): 8 MiB first; if
+   and only if that attempt failed and its receipt shows the limit was used up, the same probe is tried again at double the limit, and so on, the last step being the
+   file's stat size.  Every attempt is its own receipt (`probe_attempt`: limit, bytes read, exhausted, outcome); a failure without exhaustion is ffprobe's own and is
+   never retried; a failure at the file's size says the file could not be probed with the whole file readable; and whatever the model reads says which attempts were
+   stopped by the read limit, so a limit never looks like a truncated file.
 2. Every such call records `quota_bytes`, `quota_basis`, `quota_inputs`, the margin and the overhead, `bytes_read`, `quota_exhausted`, the requested window, the decoded
    output time (`out_time`, from ffmpeg's own progress) and `window_completed`.  A window that ran short is said so plainly in the result the model reads, and the
    result says that a shortfall of the read is not evidence of corruption.
@@ -49,14 +54,19 @@ def sampler_sha256():
 def config():
     """What a run with this tools behaviour records in its config (and so in its config hash)."""
     return dict(RE.config(), version=VERSION, base_tools_behavior=BASE_TOOLS_BEHAVIOR, sampler=RECEIPT, sampler_sha256=sampler_sha256(),
-                quota=dict(RQ.PARAMETERS), decode_window_s=DECODE_WINDOW_S, audio_window_s=AUDIO_WINDOW_S, frame_window_s=FRAME_WINDOW_S,
+                quota=dict(RQ.PARAMETERS), probe_limit=dict(RQ.PROBE_PARAMETERS), decode_window_s=DECODE_WINDOW_S, audio_window_s=AUDIO_WINDOW_S, frame_window_s=FRAME_WINDOW_S,
                 frame_window_source=FRAME_WINDOW_SOURCE, subtitle_window_s=SUBTITLE_WINDOW_S,
                 stream_selection='audio-default-first-1')
 
 
 class Binding(RE.Binding):
+    probe_retries = 0       # extra sampler operations made by the adaptive probe (retries of ONE probe call; see allow_probe_retry)
+
     def record(self):
-        return dict(super().record(), tools_behavior=VERSION, sampler=RECEIPT)
+        rec = dict(super().record(), tools_behavior=VERSION, sampler=RECEIPT)
+        if self.probe_retries:
+            rec.update(max_operations=self.max_operations - self.probe_retries, probe_retries=self.probe_retries)       # the case's own cap, and the retries beside it
+        return rec
 
 
 def binding_for_case(case, host, max_operations=None, time_left=None):
@@ -198,14 +208,75 @@ def run_for_ctx(ctx, mode, opts, quota=None, window_s=None):
     return run_operation(ctx.runner, fx.namespace, target, fx.container, mode, fx.path, ctx.remote_binding, opts, quota=quota, window_s=window_s)
 
 
+def allow_probe_retry(binding):
+    """A retry of the SAME probe call is not a new tool call: raise the operation cap by one before it, so the retries of one ffprobe call do not use up the case's
+    budget of sampler operations for its other tools.  Every retry is still a counted operation (`n`, `operations`) with its own receipt, and the binding records the
+    retries beside the case's own cap.  The cap is only raised for a call that was allowed to start (run_operation still refuses the first attempt at the cap)."""
+    if binding.max_operations is not None:
+        binding.max_operations += 1
+    if hasattr(binding, 'probe_retries'):
+        binding.probe_retries += 1
+
+
+def probe_entry_extra(limit, size):
+    """The receipts-entry field of one probe attempt: the limit it was given and what the receipt says it read.  The outcome is added once the output is parsed."""
+    def extra(receipt):
+        return {'probe_attempt': {'quota_bytes': limit, 'bytes_read': None if receipt is None else receipt['bytes_read'],
+                                  'quota_exhausted': None if receipt is None else receipt['quota_exhausted'], 'limit_is_file_size': bool(size and limit >= size),
+                                  'outcome': None}}
+    return extra
+
+
+def run_probe_attempt(runner, namespace, target, container, path, binding, limit, size, opts=(), bind_identity=True):
+    """ONE probe at an input limit of `limit` bytes under mrh-sampler-4: the receipt is checked against exactly that limit, and its entry carries the attempt."""
+    return RE.run_operation(runner, namespace, target, container, 'probe', path, binding, list(opts) + ['--input-quota-bytes', limit], bind_identity, sampler=SAMPLER,
+                            validate=make_validator(limit, None), receipt_name=RECEIPT, entry_extra=probe_entry_extra(limit, size))
+
+
+def adaptive_probe(attempt, binding, size):
+    """The adaptive probe limit (remote_quota.adaptive_probe) over `binding`: `attempt(limit)` runs one attempt.  Each attempt is its own receipts entry; once the
+    rule is done every entry of it gets its outcome (ok / failed_quota_exhausted / failed) and its place in the sequence.  -> (receipt, stdout, summary)."""
+    first = len(binding.receipts)
+    receipt, out, summary = RQ.adaptive_probe(size, attempt, before_retry=lambda: allow_probe_retry(binding))
+    for entry, rec in zip(binding.receipts[first:], summary['attempts']):
+        if isinstance(entry.get('probe_attempt'), dict):
+            entry['probe_attempt'].update(attempt=rec['attempt'], outcome=rec['outcome'], exit_code=rec['exit_code'])
+    return receipt, out, summary
+
+
 def run_remote(ctx, mode, at=0.0, stream=0):
-    """tools._run_remote for the modes that keep the 8 MiB default (probe, chapters) -> (info, stdout, err)."""
+    """tools._run_remote for the modes that keep the 8 MiB default (chapters) -> (info, stdout, err).  `probe` reads under the adaptive limit: it starts at 8 MiB and, if
+    the probe failed because that limit was used up, doubles it (up to the file's size); `info` is then the last attempt's receipt plus `probe_read` (the attempts and
+    the verdict) and `probe_read_note` (what the model is told, or None)."""
+    if mode == 'probe':
+        return run_adaptive_probe(ctx, at, stream)
     receipt, out = run_for_ctx(ctx, mode, ['--at', at, '--stream', int(stream)])
     if receipt['exit_code'] == 'timeout':
         return receipt, out, 'timeout'
     if receipt['exit_code'] == 'error':
         return receipt, out, 'error: %s' % (receipt.get('error') or 'the sampler could not run the operation')
     return receipt, out, None
+
+
+def run_adaptive_probe(ctx, at=0.0, stream=0):
+    fx = ctx.fixture
+    target = getattr(fx, 'exec_target', None) or 'deploy/' + fx.deploy
+    binding = ctx.remote_binding
+    size = (getattr(binding, 'identity', None) or {}).get('size')
+    size = size if isinstance(size, int) and not isinstance(size, bool) and size > 0 else None
+    opts = ['--at', at, '--stream', int(stream)]
+
+    def attempt(limit):
+        return run_probe_attempt(ctx.runner, fx.namespace, target, fx.container, fx.path, binding, limit, size, opts)
+    receipt, out, summary = adaptive_probe(attempt, binding, size)
+    if receipt['exit_code'] == 'timeout':
+        return receipt, out, 'timeout'
+    if receipt['exit_code'] == 'error':
+        return receipt, out, 'error: %s' % (receipt.get('error') or 'the sampler could not run the operation')
+    info = dict(receipt, probe_read=summary, probe_read_note=RQ.probe_note(summary))
+    if summary['final'] in ('whole_file_unprobeable', 'ceiling_reached'):
+        info['stderr'] = ''         # the decoder's messages after a used-up limit ("Stream ends prematurely ...") are a result of the limit: not shown; the receipt keeps them
+    return info, out, None
 
 
 # ------------------------------------------------------------------------------------------------------------------ the quota of one call

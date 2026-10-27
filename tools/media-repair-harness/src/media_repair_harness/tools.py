@@ -463,12 +463,19 @@ def _probe(ctx, remote_mode, with_chapters):
         info, out, err = _run_remote(ctx, remote_mode)
         if err:
             return ToolResult('timeout' if err == 'timeout' else 'error', err, mode='remote')
+        # v3-remote-2 only: the adaptive probe limit (remote_evidence_2.run_adaptive_probe) adds `probe_read` (the attempts, recorded) and `probe_read_note` (what the model is
+        # told about any attempt that the read limit stopped).  A v3-remote-1 receipt carries neither, so its results are exactly what they were.
+        read = info.get('probe_read') if isinstance(info, dict) else None
+        note = info.get('probe_read_note') if isinstance(info, dict) else None
+        extra = {'probe_read': read} if read else {}
         if info and info.get('exit_code') not in (0, None):
-            return ToolResult('error', {'exit_code': info.get('exit_code'), 'stderr': (info.get('stderr') or '')[:1500]}, mode='remote')
+            shown = {'exit_code': info.get('exit_code'), 'stderr': (info.get('stderr') or '')[:1500]}
+            return ToolResult('error', dict({'probe_read': note}, **shown) if note else shown, mode='remote', **extra)
         try:
-            return ToolResult('ok', _condense(json.loads(out.decode())), mode='remote')
+            data = _condense(json.loads(out.decode()))
+            return ToolResult('ok', dict(data, probe_read=note) if note else data, mode='remote', **extra)
         except ValueError:
-            return ToolResult('error', 'ffprobe returned no JSON', mode='remote')
+            return ToolResult('error', 'ffprobe returned no JSON', mode='remote', **extra)
     entries = ('format=format_name,duration,size,bit_rate:format_tags:stream=index,codec_name,codec_type,'
                'profile,pix_fmt,width,height,channels,channel_layout,sample_rate,duration,bit_rate:stream_tags=language,title')
     argv = [ctx.which('ffprobe'), '-v', 'error', '-threads', '1']
