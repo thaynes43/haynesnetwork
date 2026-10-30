@@ -126,6 +126,60 @@ packaged shared-library symlinks were not hydrated. Running the package's own
 `scripts/hydrate-symlinks.js` from that package directory repaired the local install; the subsequent
 suite passed. No repository dependency, lockfile or system package change was needed.
 
-Next safe step: driver review/PR checks and independent native review, then driver-owned approved
-configuration through the existing domain writers and exact native/batch validation. No media
-deletion or accelerated expiry is part of this worker's handoff.
+The worker's handoff was source-only. The following driver checkpoint records the subsequent
+runtime work separately.
+
+## Driver runtime confirmation — 15:18 UTC
+
+The movie rule update was applied through `upsertTrashRule` at 14:53 UTC. Its fresh read-back
+confirmed IMDb < 6.5, the other four predicates, section 0/AND grouping, activation, library and
+collection identity, and all safety flags. Maintainerr regenerated condition IDs 151–155 as
+160–164; a stricter operator check initially stopped on that ID change. Comparing the decoded
+predicates confirmed the intended result, so the rule PUT was not replayed. The normal refresh
+marker was armed through `requestPoolRefreshAfterSave` at 14:54 UTC. The 15:00 incremental sync
+accepted it, and Maintainerr completed movie evaluation at 15:05:09 UTC and TV at 15:07:47 UTC.
+
+The actual native movie pool held 619 entries. Applying the proposal's Save, tag, watchlist and
+Age Guard filters left 529 entries and 14,067,971,814,952 nominal bytes. The largest 50 held
+3,591,025,375,575 nominal bytes. One had a current recent-watch guardian hold, leaving 49 and
+3,525,999,994,557 nominal bytes without a known current hold. There were no failed-rule,
+unknown-age or missing-ledger-identity cases among those 50. These observations supersede the
+earlier projected counts; they do not remove any deletion-time check.
+
+At 15:07:46 UTC, audited `setAppSetting` installed minimum 1 and the largest-first movie strategy
+with cap 50. The effective per-array minimum was read back. The seven-day save window, 75% ceiling,
+TV predicates and five-item TV cap were retained. No direct SQL update or accelerated expiry was used.
+The 15:15 sync refreshed the cached movie snapshot to 619 entries.
+
+The normal 15:17 space-policy job succeeded and created one **Leaving Soon** movie batch:
+
+| Evidence | Observed result |
+| --- | --- |
+| Selected items | 50 |
+| Selected nominal bytes | 3,591,025,375,575 |
+| Greenlit | 2026-10-30 15:17:11.487 UTC |
+| Save window ends | 2026-11-06 15:17:11.487 UTC |
+| Deleted at this checkpoint | 0 |
+
+The log's `candidateBytes` is the full 14.068 TB eligible pool, not this batch's selected size.
+Selected bytes above come from the batch-item sum. Saves, changed watchlists, fresh guardian checks,
+release/exclusion preflight, deletion outcomes and hardlinks can reduce actual physical reclaim.
+Measure the subsequent sweep and physical free-space change before claiming an achieved net rate.
+
+The current exclusion check also has deployed evidence: today's successful Kometa collections run
+logged titles ignored by Radarr's exclusion list. All 515 currently absent deleted movies and 12
+shows had exclusions. No backfill or Seerr test request was executed.
+
+Source PR [#1049](https://github.com/thaynes43/haynesnetwork/pull/1049) merged as `cfca294f` after all
+four required checks passed, independent native review and Claude advisory review. The native
+review's condition-ID documentation correction was addressed before merge. The Save-accounting
+patch is awaiting normal release [#1051](https://github.com/thaynes43/haynesnetwork/pull/1051) and
+deployment [haynes-ops #4448](https://github.com/thaynes43/haynes-ops/pull/4448). At this checkpoint
+the runtime still runs v0.126.0; the live filter configuration and source-image installation are
+separate states. Deployment must wait for final-head release checks and image publication.
+
+Inventory story #297 is complete with merged PR #1050 and
+[its bounded inventory and cleanup evidence](2026-10-30-tower-storage-inventory.md).
+No retained file was proved safe to purge; no cleanup was performed. The host SSH timeout, partial
+Music inventory and unresolved legacy ownership remain recorded there. OpenProject #296 carries
+the latest delivery checkpoint and next safe step.
