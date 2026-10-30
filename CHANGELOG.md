@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.126.1](https://github.com/thaynes43/haynesnetwork/compare/v0.126.0...v0.126.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **trash:** exclude saved titles from policy minimum ([#1049](https://github.com/thaynes43/haynesnetwork/issues/1049)) ([cfca294](https://github.com/thaynes43/haynesnetwork/commit/cfca294f8f3e327ae0a46218d3db0d32a87b1f82))
+
 ## [0.126.0](https://github.com/thaynes43/haynesnetwork/compare/v0.125.4...v0.126.0) (2026-10-24)
 
 
