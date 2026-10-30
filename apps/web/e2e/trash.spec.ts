@@ -84,9 +84,13 @@ async function removePending(page: Page, mediaServerId: string): Promise<void> {
   });
 }
 
-async function openTrashMovies(page: Page): Promise<void> {
-  await page.goto('/trash?tab=movies');
-  await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(1);
+async function openTrashMovies(page: Page, expectedVanished = 1): Promise<void> {
+  // Existing action/inspection scenarios exercise the complete pool. The watchlist
+  // scenario passes zero to exercise the new hide-by-default view explicitly.
+  await page.goto(`/trash?tab=movies${expectedVanished === 0 ? '' : '&protected=show'}`);
+  await expect(page.getByRole('checkbox', { name: /Show protected/ })).toBeVisible();
+  await expect(page.getByTestId('trash-wall')).toBeVisible();
+  await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(expectedVanished);
 }
 
 /** Assign the Marge Member persona's user to a role by name (admin user-detail select). */
@@ -240,19 +244,25 @@ test.describe('trash — watchlist protection on the page (ADR-093)', () => {
     refreshWatchlists();
     try {
       await signIn(page, 'admin');
-      await openTrashMovies(page);
+      await openTrashMovies(page, 0);
       const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
+      await expect(vanished).toHaveCount(0);
+      await page.getByRole('checkbox', { name: /Show protected/ }).check();
+      // Compose another view change immediately, before the visibility URL settles.
+      await page.getByRole('button', { name: /^Size/ }).click();
+      await expect(page).toHaveURL(/protected=show/);
       const note = vanished.getByTestId('wall-watchlisted');
       await expect(note).toBeVisible();
       await expect(note).toHaveAttribute('title', "On a watchlist. It won't be deleted while it stays there.");
       await expect(note).toHaveAttribute('aria-label', "On a watchlist. It won't be deleted while it stays there.");
-      await expect(note.locator('.bwall-watchlisted__label')).toBeVisible();
+      await expect(vanished.getByTestId('trash-toggle')).toHaveAttribute('title', /^Kept: on a watchlist\n/);
+      await expect(note.locator('.bwall-watchlisted__label')).toHaveCount(0);
       await expectMetaInsideTiles(page);
 
       for (const width of [390, 360, 320]) {
         await page.setViewportSize({ width, height: 844 });
         await expect(note).toBeVisible();
-        await expect(note.locator('.bwall-watchlisted__label')).toBeHidden();
+        await expect(vanished.getByTestId('wall-year')).toBeVisible();
         const texts = await expectMetaInsideTiles(page);
         // The size text keeps room beside the chips (it ellipsizes; it never collapses to nothing).
         for (const t of texts) expect(t.textWidth, `${t.title} at ${width}px`).toBeGreaterThan(12);
@@ -988,7 +998,9 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(back).toHaveText('← Trash Movies');
     // …and returns to the origin WITH its filter state preserved (history.back()).
     await back.click();
-    await page.waitForURL(/\/trash\?tab=movies&genre=Action$/);
+    await page.waitForURL((url) => url.pathname === '/trash' &&
+      url.searchParams.get('tab') === 'movies' && url.searchParams.get('genre') === 'Action' &&
+      url.searchParams.get('protected') === 'show');
     await expect(page.getByTestId('trash-tile')).toHaveCount(1);
 
     // A deep-linked garbage `from` falls to the Library default (no open redirect).
@@ -1854,7 +1866,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
 
     await memberPage.goto('/');
     expect(await memberPage.locator('.topbar__nav a').allInnerTexts()).toContain('Trash');
-    await memberPage.goto('/trash?tab=movies');
+    await memberPage.goto('/trash?tab=movies&protected=show');
     await expect(memberPage.getByTestId('trash-tile')).toHaveCount(4);
     // Expedite-all is absent (no grant). Per-item expedite lives on the item page (also absent):
     // open a pending, non-tombstoned item (The Fixture) whose guard card DOES mount for this role.

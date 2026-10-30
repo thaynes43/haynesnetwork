@@ -5631,6 +5631,40 @@ input[aria-invalid='true'] {
   min-width: 0;
   position: relative; /* the library-nav corner (a .bwall-tap sibling) anchors to the tile */
 }
+.bwall-art {
+  display: block;
+  position: relative;
+}
+.trash-protected-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.bwall-notes {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 5px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+}
+.bwall-notes:empty {
+  display: none;
+}
+.bwall-note--failed {
+  display: inline-flex;
+  color: var(--color-danger);
+}
+.bwall-note--failed svg {
+  width: 13px;
+  height: 13px;
+}
 .bwall-tap {
   display: block;
   position: relative;
@@ -5897,19 +5931,24 @@ button.bwall-tap:hover .bwall-overlay[data-armed='true'] {
 .bwall-meta {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   font-size: 11px;
   line-height: 1.3;
   height: 15px;
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-/* The size · ★rating text ellipsizes; the watch indicator (below) stays pinned + un-clipped. */
+/* Only size may shrink defensively; the year and rating always retain their width. */
 .bwall-meta-text {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.bwall-year,
+.bwall-rating {
+  flex: none;
 }
 /* DESIGN-010 D-12 (build C) — the cross-server watch chip: a small eye pinned at the end of the meta
    line (INFO, not protection). BOTH watch states live here now — the action corner never carries watch
@@ -5932,10 +5971,8 @@ button.bwall-tap:hover .bwall-overlay[data-armed='true'] {
   width: 13px;
   height: 13px;
 }
-/* ADR-093 / DESIGN-052 D-10 — the "On a watchlist" note: a bookmark + a short label pinned on the meta line (info
-   tone). A watchlisted title is kept by the sweep while it stays listed (not a Save). The label never wraps; the
-   size · rating text ellipsizes before it does. Fixed size ⇒ the tile never reflows (ADR-015); the full meaning
-   rides the tooltip / aria. */
+/* DESIGN-052 D-10 amendment — watchlist protection is a compact poster icon at all
+   widths. Its full meaning rides the tooltip and accessible name. */
 .bwall-watchlisted {
   flex: none;
   display: inline-flex;
@@ -5947,9 +5984,6 @@ button.bwall-tap:hover .bwall-overlay[data-armed='true'] {
 .bwall-watchlisted svg {
   width: 12px;
   height: 12px;
-}
-.bwall-watchlisted__label {
-  font-size: 10px;
 }
 /* ADR-025 / DESIGN-011 errata (2026-07-09) — the requester INFO chip: a small person icon pinned on
    the meta line, co-existing with the watch eye. Requested is informational only now (it changes no
@@ -6005,11 +6039,9 @@ button.bwall-tap:hover .bwall-overlay[data-armed='true'] {
   .bwall-section__note {
     margin-bottom: 6px;
   }
-  /* ADR-093 / DESIGN-052 D-25bi — on a phone the "On a watchlist" note is the bookmark alone (the tooltip and
-     aria-label carry the words): the ~76px label beside the eye and requester chips squeezed the size text to
-     nothing on a 3-column wall and pushed the meta line past the tile at 375px and below. */
-  .bwall-watchlisted__label {
-    display: none;
+  .bwall-meta {
+    font-size: 10px;
+    gap: 2px;
   }
 }
 

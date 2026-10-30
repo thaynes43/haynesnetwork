@@ -12,7 +12,6 @@ import {
   EXPEDITE_PROTECTED_REASON,
   SWEEP_PAUSED_COPY,
   WATCHLIST_NOTE_DETAIL,
-  WATCHLIST_NOTE_LABEL,
   trashNoticeText,
   type TrashSweepBannerName,
 } from '../trash';
@@ -53,10 +52,20 @@ describe('the paused banner (D-10 / D-25v)', () => {
     expect(banner({ ...safe, sweepPause: null })).not.toContain('trash-sweep-paused');
     expect(banner({ ...safe, sweepPause: null })).toContain('data-state="safe"');
     // Maintainerr's own trouble takes precedence (the unsafe audit), and so does an unreachable install.
-    const unsafe = banner({ ...safe, safe: false, integrations: { ...safe.integrations, seerr: false }, sweepPause: 'gate' });
+    const unsafe = banner({
+      ...safe,
+      safe: false,
+      integrations: { ...safe.integrations, seerr: false },
+      sweepPause: 'gate',
+    });
     expect(unsafe).not.toContain('trash-sweep-paused');
     expect(unsafe).toContain('Maintainerr safety check failed');
-    const aging = banner({ ...safe, safe: false, agingViolations: ['Least watched: 3 days'], sweepPause: 'media_apps' });
+    const aging = banner({
+      ...safe,
+      safe: false,
+      agingViolations: ['Least watched: 3 days'],
+      sweepPause: 'media_apps',
+    });
     expect(aging).not.toContain('trash-sweep-paused');
     expect(aging).toContain('auto-delete safeguard tripped');
     const down = banner({ ...safe, reachable: false, sweepPause: 'release_block' });
@@ -76,7 +85,8 @@ describe('the "On a watchlist" tile note (D-10 / D-25bi)', () => {
         year: 2021,
         toggle: { tappable: false, pressed: false, label: 'Slated', title: 'Slated' },
         libraryLink: null,
-        metaText: '2 GB',
+        sizeLabel: '2 GB',
+        ratingLabel: '6.3',
         requesters: ['Marge'],
         watchNote: { label: 'Watched a while ago', tone: 'muted' },
         onWatchlist,
@@ -85,13 +95,14 @@ describe('the "On a watchlist" tile note (D-10 / D-25bi)', () => {
       }),
     );
 
-  it('renders the bookmark with its tooltip and aria-label, and the short label for wider screens', () => {
+  it('renders an icon with its tooltip and aria-label without crowding the fixed facts', () => {
     const html = card(true);
     expect(html).toContain('data-testid="wall-watchlisted"');
     expect(html).toContain(`title="${esc(WATCHLIST_NOTE_DETAIL)}"`);
     expect(html).toContain(`aria-label="${esc(WATCHLIST_NOTE_DETAIL)}"`);
-    // The label is decoration the phone breakpoint hides (the tooltip and aria carry the words).
-    expect(html).toMatch(new RegExp(`class="bwall-watchlisted__label" aria-hidden="true">${WATCHLIST_NOTE_LABEL}<`));
+    expect(html).not.toContain('bwall-watchlisted__label');
+    expect(html).toContain('data-testid="wall-year">2021<');
+    expect(html).toContain('title="2 GB · 2021 · ★6.3"');
     expect(card(false)).not.toContain('wall-watchlisted');
   });
 });
@@ -139,7 +150,9 @@ describe('the Expedite copy for a watchlisted item (D-09 / D-25av)', () => {
       }),
     );
     expect(saved).toContain('data-testid="trash-expedite-item-saved"');
-    expect(saved).toContain('This item is saved, so it won&#x27;t be deleted. Nothing will be deleted.');
+    expect(saved).toContain(
+      'This item is saved, so it won&#x27;t be deleted. Nothing will be deleted.',
+    );
     expect(saved).not.toMatch(/[–—]/);
   });
 

@@ -41,6 +41,56 @@ async function expectPosterCardAnatomy(card: Locator): Promise<void> {
 }
 
 test.describe('card gallery — the shared-card-system drift gate (ADR-058)', () => {
+  test('Trash facts stay visible with long titles and every status on touch screens', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    try {
+      for (const width of [1280, 390, 360, 320]) {
+        await page.setViewportSize({ width, height: 844 });
+        await openGallery(page, 'hnet-dark');
+        const wall = page.getByTestId('gallery-trash');
+        await expect(wall.getByTestId('wall-year').first()).toHaveText('2019');
+        const geometry = await wall.locator('.bwall-tile').evaluateAll((tiles) =>
+          tiles.map((tile) => {
+            const facts = [
+              ...tile.querySelectorAll('.bwall-meta-text, .bwall-year, .bwall-rating'),
+            ];
+            const box = tile.getBoundingClientRect();
+            return {
+              facts: facts.map((fact) => ({
+                text: fact.textContent,
+                clipped: fact.scrollWidth > fact.clientWidth + 1,
+                right: fact.getBoundingClientRect().right,
+              })),
+              right: box.right,
+              height: box.height,
+              iconsInFacts: tile.querySelectorAll('.bwall-meta [role="img"]').length,
+            };
+          }),
+        );
+        for (const tile of geometry) {
+          expect(tile.facts).toHaveLength(3);
+          expect(tile.iconsInFacts).toBe(0);
+          for (const fact of tile.facts) {
+            expect(fact.clipped, `${fact.text} clipped at ${width}px`).toBe(false);
+            expect(fact.right).toBeLessThanOrEqual(tile.right + 0.5);
+          }
+        }
+        expect(
+          Math.max(...geometry.map((tile) => tile.height)) -
+            Math.min(...geometry.map((tile) => tile.height)),
+        ).toBeLessThan(1);
+        if (width === 390) {
+          await wall.screenshot({ path: test.info().outputPath('trash-facts-touch-390.png') });
+        }
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
   test('every poster-idiom card variant keeps the canonical anatomy', async ({ page }) => {
     await openGallery(page, 'hnet-dark');
 

@@ -159,6 +159,8 @@ export const trashRouter = router({
       z.object({
         media: trashMedia,
         query: z.string().optional(),
+        /** Candidate-wall view only; hidden items retain all deletion protections. */
+        includeWatchlisted: z.boolean().optional(),
         genres: z.array(z.string()).optional(),
         resolutions: z.array(z.string()).optional(),
         requesters: z.array(z.string()).optional(),
@@ -192,6 +194,7 @@ export const trashRouter = router({
           maintainerr: resolveMaintainerrBundle(ctx),
           media: input.media,
           filters: {
+            includeWatchlisted: input.includeWatchlisted,
             query: input.query,
             genres: input.genres,
             resolutions: input.resolutions,

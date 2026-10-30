@@ -4,13 +4,19 @@
 // family: the shared reserved 2:3 poster box with the wall's TWO fixed corner slots — the
 // state/action puck (top-right: trash · shield · check · skip · gone; a tap the server confirmed flips
 // glyph + color in place, ADR-096) and the /library nav puck (top-left, a book glyph — never a state) — over the fixed-height
-// caption + ONE meta row (size · ★rating text, the requester person chip, the watch eye). Every
+// caption + ONE fixed Size · Year · Rating row, with status icons over the poster. Every
 // slot is a typed prop (ADR-058 — no children escape hatch); serves BOTH trash walls (the pending
-// candidates wall and the batch curation/terminal wall). Pixel-neutral with the pre-refit markup:
-// same classes, same DOM, same fixed heights (ADR-015 — a state flip recolors, never reflows).
+// candidates wall and the batch curation/terminal wall). Fixed heights keep state flips in place
+// (ADR-015 — a state flip recolors, never reflows; DESIGN-052 D-10 amendment, 2026-10-30).
 import Link from 'next/link';
-import { BookmarkGlyph, EyeGlyph, LibraryLinkGlyph, PersonGlyph, WallGlyphSvg } from '../trash-shield';
-import { WATCHLIST_NOTE_DETAIL, WATCHLIST_NOTE_LABEL } from '@/lib/trash';
+import {
+  BookmarkGlyph,
+  EyeGlyph,
+  LibraryLinkGlyph,
+  PersonGlyph,
+  WallGlyphSvg,
+} from '../trash-shield';
+import { WATCHLIST_NOTE_DETAIL } from '@/lib/trash';
 import { MediaPoster } from './media-poster';
 
 /** The unified wall glyph set (ADR-033 — keep in lockstep with lib/trash-batches.ts WallGlyph
@@ -102,9 +108,8 @@ function WatchNoteBadge({ label, tone }: { label: string; tone: 'info' | 'muted'
   );
 }
 
-/** ADR-093 / DESIGN-052 D-10 — the "On a watchlist" meta-line note: a bookmark + the short label (info tone); the
- *  tooltip and aria-label say what it means. Never whose watchlist, never how many. Fixed size, pinned like its
- *  siblings, so a tile with the note keeps the same geometry (ADR-015). */
+/** DESIGN-052 D-10 amendment — icon-only watchlist status on every screen size.
+ *  Tooltip and accessible name retain its meaning; never whose watchlist or how many. */
 function WatchlistNoteBadge() {
   return (
     <span
@@ -115,9 +120,6 @@ function WatchlistNoteBadge() {
       title={WATCHLIST_NOTE_DETAIL}
     >
       <BookmarkGlyph />
-      <span className="bwall-watchlisted__label" aria-hidden="true">
-        {WATCHLIST_NOTE_LABEL}
-      </span>
     </span>
   );
 }
@@ -130,7 +132,8 @@ export function TrashCard({
   year,
   toggle,
   libraryLink,
-  metaText,
+  sizeLabel,
+  ratingLabel,
   requesters,
   watchNote,
   onWatchlist = false,
@@ -147,15 +150,15 @@ export function TrashCard({
   toggle: TrashCardToggle;
   /** The top-left /library nav corner — null when the item isn't ledger-joined. */
   libraryLink: { href: string; title: string; ariaLabel: string } | null;
-  /** The size · ★rating text line (ellipsizes; the chips stay pinned). */
-  metaText: string;
+  /** Fixed facts, independent of the title's truncation and changing status icons. */
+  sizeLabel: string;
+  ratingLabel: string | null;
   requesters: readonly string[];
   watchNote: { label: string; tone: 'info' | 'muted' } | null;
   /** ADR-093 / DESIGN-052 D-10 — the title is on a watchlist (the "On a watchlist" note). */
   onWatchlist?: boolean;
-  /** ADR-096 — the tile's last tap failed: this short note ("Not saved") takes the meta text's
-   *  place in the danger tone and the poster gets the danger ring. Same fixed-height line, so the
-   *  tile never moves (ADR-015). Null = no failure. */
+  /** ADR-096 / D-10 amendment — an accessible failure icon and danger ring, keeping
+   *  the fixed facts visible. Null = no failure; the wall retains its error slot. */
   failedNote?: string | null;
   /** The pending walls' tile marker class (same geometry; kept for selector parity). */
   pwall?: boolean;
@@ -163,6 +166,8 @@ export function TrashCard({
   testId: string;
 }) {
   const armed = toggle.armed === true;
+  const fullTitle = `${title}${year !== null ? ` (${year})` : ''}`;
+  const facts = `${sizeLabel} · ${year ?? '—'} · ★${ratingLabel ?? '—'}`;
   const inner = (
     <>
       <MediaPoster posterUrl={posterUrl} kind={kind} alt="" />
@@ -193,54 +198,80 @@ export function TrashCard({
       data-failed={failedNote !== null ? 'true' : undefined}
       data-testid={testId}
     >
-      {toggle.tappable ? (
-        <button
-          type="button"
-          className="bwall-tap"
-          data-testid={toggle.testId}
-          data-armed={armed ? 'true' : undefined}
-          aria-pressed={toggle.pressed}
-          aria-label={toggle.label}
-          title={toggle.title}
-          aria-busy={toggle.busy || undefined}
-          onClick={toggle.busy ? undefined : toggle.onTap}
-        >
-          {inner}
-        </button>
-      ) : (
-        <span
-          className="bwall-tap"
-          data-testid={toggle.testId}
-          data-inert={toggle.markInert ? 'true' : undefined}
-          role="img"
-          aria-label={toggle.label}
-          title={toggle.title}
-        >
-          {inner}
-        </span>
-      )}
-      {libraryLink !== null ? (
-        <LibraryCornerLink
-          href={libraryLink.href}
-          title={libraryLink.title}
-          ariaLabel={libraryLink.ariaLabel}
-        />
-      ) : null}
-      <span className="bwall-caption">
-        {title}
-        {year !== null ? <span className="muted"> ({year})</span> : null}
-      </span>
-      <span className="bwall-meta">
-        {failedNote !== null ? (
-          <span className="bwall-meta-text bwall-meta-text--failed" data-testid="wall-failed-note">
-            {failedNote}
-          </span>
+      <span className="bwall-art">
+        {toggle.tappable ? (
+          <button
+            type="button"
+            className="bwall-tap"
+            data-testid={toggle.testId}
+            data-armed={armed ? 'true' : undefined}
+            aria-pressed={toggle.pressed}
+            aria-label={toggle.label}
+            title={`${toggle.title}\n${fullTitle}`}
+            aria-busy={toggle.busy || undefined}
+            onClick={toggle.busy ? undefined : toggle.onTap}
+          >
+            {inner}
+          </button>
         ) : (
-          <span className="bwall-meta-text">{metaText}</span>
+          <span
+            className="bwall-tap"
+            data-testid={toggle.testId}
+            data-inert={toggle.markInert ? 'true' : undefined}
+            role="img"
+            aria-label={toggle.label}
+            title={`${toggle.title}\n${fullTitle}`}
+          >
+            {inner}
+          </span>
         )}
-        <RequestedByBadge requesters={requesters} />
-        {watchNote !== null ? <WatchNoteBadge label={watchNote.label} tone={watchNote.tone} /> : null}
-        {onWatchlist ? <WatchlistNoteBadge /> : null}
+        {libraryLink !== null ? (
+          <LibraryCornerLink
+            href={libraryLink.href}
+            title={libraryLink.title}
+            ariaLabel={libraryLink.ariaLabel}
+          />
+        ) : null}
+        <span className="bwall-notes">
+          <RequestedByBadge requesters={requesters} />
+          {watchNote !== null ? (
+            <WatchNoteBadge label={watchNote.label} tone={watchNote.tone} />
+          ) : null}
+          {onWatchlist ? <WatchlistNoteBadge /> : null}
+          {failedNote !== null ? (
+            <span
+              className="bwall-note--failed"
+              data-testid="wall-failed-note"
+              role="img"
+              aria-label={failedNote}
+              title={failedNote}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v6m0 3v1" />
+              </svg>
+              <span className="sr-only">{failedNote}</span>
+            </span>
+          ) : null}
+        </span>
+      </span>
+      <span className="bwall-caption" title={fullTitle}>
+        {title}
+      </span>
+      <span className="bwall-meta" title={facts}>
+        <span className="bwall-meta-text">{sizeLabel}</span>
+        <span aria-hidden="true">·</span>
+        <span className="bwall-year" data-testid="wall-year">
+          {year ?? '—'}
+        </span>
+        <span aria-hidden="true">·</span>
+        <span className="bwall-rating">★{ratingLabel ?? '—'}</span>
       </span>
     </li>
   );

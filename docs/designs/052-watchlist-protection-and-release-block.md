@@ -490,6 +490,24 @@ All copy follows the owner's rules: no em dashes, no names, never whose watchlis
 - **On a phone** (480 px and narrower) the tile note is the bookmark alone; the tooltip and aria-label carry the
   words (D-25bi).
 
+#### D-10 amendment — visible years and watchlist visibility (Tom, 2026-10-30; #300)
+
+Trash cards keep a fixed **Size · Year · Rating** row below the title. The release year
+is always in that row, including on touch screens and when a long title ellipsizes;
+unknown facts use an em-dash placeholder. Requester, watch, watchlist and failed-action
+status use compact labelled icons over the bottom of the poster, outside the action
+and navigation corners. Their accessible names and tooltips retain the explanation.
+An action failure keeps the facts visible and retains the wall's fixed error slot.
+These supersede the meta-line text/chip placement above and D-25bi at every width.
+
+The pending and future-candidate walls hide known watchlisted titles by default.
+**Show protected** includes them for inspection; the control explicitly describes
+watchlisted titles. Filtering happens before pagination, and the displayed count and
+bytes follow the visible set. The complete candidate population, Expedite preview
+and guardian checks are unchanged. This is a view preference, never deletion authority.
+Batch audit walls retain their saved/kept records. Saved tiles do not disappear after
+an in-place Save; other protection types retain their existing presentation.
+
 ### D-11 — The Deleted-Release Record: what identity exists
 
 Recorded for every item the sweep or Expedite is about to delete, before the handle (D-14). Sources, in order of

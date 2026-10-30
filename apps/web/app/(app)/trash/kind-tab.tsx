@@ -25,6 +25,7 @@ import { TrashCard, TrashWall, TrashWallSkeleton } from '@/components/cards';
 import { type TrashAccess } from '@/components/trash-shield';
 import {
   PendingWall,
+  WatchlistVisibilityControl,
   useInfiniteScroll,
   usePendingSaves,
   type PendingWallItem,
@@ -188,7 +189,8 @@ const windowStillOpen = (expiresAt: string | null): boolean =>
   expiresAt !== null && Date.parse(expiresAt) > Date.now();
 
 /** The kind → `?from=` key so a poster-nav returns to THIS tab (Part 2). */
-const fromKeyFor = (kind: 'movie' | 'tv'): string => (kind === 'movie' ? 'trash-movies' : 'trash-tv');
+const fromKeyFor = (kind: 'movie' | 'tv'): string =>
+  kind === 'movie' ? 'trash-movies' : 'trash-tv';
 
 /**
  * One batch-wall tile. It exists as a component (rather than inline in the wall's map) because it
@@ -280,7 +282,8 @@ function BatchTile({
             }
           : null
       }
-      metaText={`${item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}${rating !== null ? ` · ★ ${rating}` : ''}`}
+      sizeLabel={item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
+      ratingLabel={rating}
       requesters={item.requesters}
       watchNote={note !== null ? { label: note.label, tone: note.tone } : null}
       onWatchlist={view.onWatchlist}
@@ -846,7 +849,9 @@ function StartBatchModal({
   // With no policy caps configured, "Cap the batch" defaults to the SIZE cap on (the classic GB
   // target). A policy maxItems-only cap respects that (size off); a targetBytes cap turns size on.
   const [useSize, setUseSize] = useState<boolean>(capSize || !anyCap);
-  const [gb, setGb] = useState(capSize ? String(Math.round((caps!.targetBytes.value / BYTES_PER_GB) * 10) / 10) : '20');
+  const [gb, setGb] = useState(
+    capSize ? String(Math.round((caps!.targetBytes.value / BYTES_PER_GB) * 10) / 10) : '20',
+  );
   const [useCount, setUseCount] = useState<boolean>(capCount);
   const [maxItemsStr, setMaxItemsStr] = useState(capCount ? String(caps!.maxItems.value) : '25');
   // Policy batches trim worst-rated first, so pre-fill that when caps drove the picker into target mode.
@@ -872,7 +877,12 @@ function StartBatchModal({
   // space (the sweep keeps a watchlisted one while it stays listed, DESIGN-052 D-25cw).
   const allCount = candidates.length;
   const freeableBytes = previewTargetSelection(candidates, { watchlistFiltered }).freesBytes;
-  const preview = previewTargetSelection(candidates, { targetBytes, maxItems, strategy, watchlistFiltered });
+  const preview = previewTargetSelection(candidates, {
+    targetBytes,
+    maxItems,
+    strategy,
+    watchlistFiltered,
+  });
 
   const plural = (n: number) => (n === 1 ? '' : 's');
   const capsChosen = (useSize && gbValid) || (useCount && maxValid);
@@ -1056,9 +1066,10 @@ function FutureCandidatesWall({
   const canSave = access.actions.includes('save_exclude') && reachable;
   const canUnsave = access.actions.includes('remove_exclude') && reachable;
   const fromKey = fromKeyFor(kind);
+  const [showProtected, setShowProtected] = useState(false);
 
   const q = trpc.trash.pending.useInfiniteQuery(
-    { media: kind, excludeOpenBatch: true, limit: 50 },
+    { media: kind, excludeOpenBatch: true, includeWatchlisted: showProtected, limit: 50 },
     {
       getNextPageParam: (last) => last.nextCursor ?? undefined,
       placeholderData: (prev) => prev,
@@ -1067,7 +1078,8 @@ function FutureCandidatesWall({
   );
   const pages = q.data?.pages ?? [];
   const items: PendingWallItem[] = pages.flatMap((p) => p.items);
-  const total = pages[0]?.total ?? 0;
+  const total = pages[0]?.filteredCount ?? 0;
+  const poolTotal = pages[0]?.total ?? 0;
   // ADR-035 — the strip serves the candidate snapshot; carry its honest age in the head line.
   const asOf = candidatesAsOfLabel(pages[0]?.refreshedAt ?? null);
   const refreshing = q.isPlaceholderData && q.isFetching;
@@ -1079,14 +1091,15 @@ function FutureCandidatesWall({
 
   // Nothing to show: unreachable Maintainerr, or no candidates left outside the batch. Hide the strip.
   if (!reachable) return null;
-  if (!q.isLoading && total === 0) return null;
+  if (!q.isLoading && poolTotal === 0) return null;
 
   return (
     <div className="batch-newcands" data-testid="batch-new-candidates">
       <p className="batch-newcands__head muted">
-        Potential in future batches ({total}) — eligible for the next batch
-        {canSave ? '; tap a poster to save it out' : ''}.{asOf !== null ? ` ${asOf}.` : ''}
+        Potential in future batches ({total}){canSave ? '; tap a poster to save it out' : ''}.
+        {asOf !== null ? ` ${asOf}.` : ''}
       </p>
+      <WatchlistVisibilityControl checked={showProtected} onChange={setShowProtected} />
       <p
         className="bwall-error"
         role="alert"
@@ -1421,7 +1434,10 @@ function PastBatchRow({ batch, kind }: { batch: BatchSummaryWire; kind: 'movie' 
         <span className="batch-past__meta muted">
           {formatDay(batch.deletedAt ?? batch.cancelledAt ?? batch.createdAt)} ·{' '}
           {batch.counts.total} item{batch.counts.total === 1 ? '' : 's'} · {batch.counts.saved}{' '}
-          rescued · {batch.reclaimedBytes > 0 ? `${formatBytes(batch.reclaimedBytes)} reclaimed` : 'nothing deleted'}
+          rescued ·{' '}
+          {batch.reclaimedBytes > 0
+            ? `${formatBytes(batch.reclaimedBytes)} reclaimed`
+            : 'nothing deleted'}
         </span>
       </summary>
       {detailData === undefined ? (
