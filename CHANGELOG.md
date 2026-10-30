@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.126.2](https://github.com/thaynes43/haynesnetwork/compare/v0.126.1...v0.126.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* **trash:** show release years and hide watchlisted candidates ([#1054](https://github.com/thaynes43/haynesnetwork/issues/1054)) ([b47df17](https://github.com/thaynes43/haynesnetwork/commit/b47df179602ef74c41dc3dec3c88a3bcea62e04e))
+
 ## [0.126.1](https://github.com/thaynes43/haynesnetwork/compare/v0.126.0...v0.126.1) (2026-10-30)
 
 
