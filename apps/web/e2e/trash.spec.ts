@@ -85,7 +85,9 @@ async function removePending(page: Page, mediaServerId: string): Promise<void> {
 }
 
 async function openTrashMovies(page: Page, expectedVanished = 1): Promise<void> {
-  await page.goto('/trash?tab=movies');
+  // Existing action/inspection scenarios exercise the complete pool. The watchlist
+  // scenario passes zero to exercise the new hide-by-default view explicitly.
+  await page.goto(`/trash?tab=movies${expectedVanished === 0 ? '' : '&protected=show'}`);
   await expect(page.getByRole('checkbox', { name: /Show protected/ })).toBeVisible();
   await expect(page.getByTestId('trash-wall')).toBeVisible();
   await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(expectedVanished);
@@ -996,7 +998,9 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(back).toHaveText('← Trash Movies');
     // …and returns to the origin WITH its filter state preserved (history.back()).
     await back.click();
-    await page.waitForURL(/\/trash\?tab=movies&genre=Action$/);
+    await page.waitForURL((url) => url.pathname === '/trash' &&
+      url.searchParams.get('tab') === 'movies' && url.searchParams.get('genre') === 'Action' &&
+      url.searchParams.get('protected') === 'show');
     await expect(page.getByTestId('trash-tile')).toHaveCount(1);
 
     // A deep-linked garbage `from` falls to the Library default (no open redirect).
@@ -1862,7 +1866,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
 
     await memberPage.goto('/');
     expect(await memberPage.locator('.topbar__nav a').allInnerTexts()).toContain('Trash');
-    await memberPage.goto('/trash?tab=movies');
+    await memberPage.goto('/trash?tab=movies&protected=show');
     await expect(memberPage.getByTestId('trash-tile')).toHaveCount(4);
     // Expedite-all is absent (no grant). Per-item expedite lives on the item page (also absent):
     // open a pending, non-tombstoned item (The Fixture) whose guard card DOES mount for this role.
