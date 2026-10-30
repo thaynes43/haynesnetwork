@@ -39,7 +39,8 @@ collectionId **1**. The API constants and deployed contracts/comparator confirm 
 | 154 | Radarr tags (`[1,2]`), `NOT_CONTAINS=9`, value `"mediarequests"` |
 | 155 | Plex added date (`[0,0]`), `BEFORE=5`, value `"15552000"` seconds |
 
-All clauses share section 0; clauses after the first use `AND=0`. The number comparisons are
+The entity IDs in this table are the pre-change snapshot, not stable identifiers: Maintainerr
+deletes and recreates condition rows on update. All clauses share section 0; clauses after the first use `AND=0`. The number comparisons are
 strict `<` and `>`; BEFORE compares `addedAt <= now - seconds`.
 
 The projection read all 5,240 HOps Plex movie entries with GUIDs, live Radarr ratings/tags, and
@@ -70,11 +71,13 @@ The driver ratified these **pending runtime changes** within Tom's catch-up auth
 - Space-policy minimum `10 → 1`; retain the seven-day save window and 75% ceiling.
 - Keep TV predicates and its five-item cap unchanged; preserve all app protections.
 
-Use `upsertTrashRule` with the freshly read group: change only entity 151's encoded RuleDto
-`customVal.value` to `"6.5"`. Its shape is `{operator:null,action:1,firstVal:[1,16],customVal:
+Use `upsertTrashRule` with the freshly read group: identify the rating predicate by
+`firstVal: [1,16]`, `action: 1`, section 0 and its null operator, then change only its encoded
+RuleDto `customVal.value` to `"6.5"`. Its shape is `{operator:null,action:1,firstVal:[1,16],customVal:
 {ruleTypeId:0,value:"6.5"},section:0}`. Round-trip the full group, leaving identity, manual-collection
 fields and every other predicate unchanged. The domain seam decodes the entities and preserves and
 reads back `arrAction`, `listExclusions`, `forceSeerr`, the server selection and aging horizon.
+Compare decoded predicate bodies after the write; do not require the regenerated entity IDs to match.
 Use audited `setAppSetting` for policy changes; source defaults are unchanged.
 
 ## Durable automation exclusions
