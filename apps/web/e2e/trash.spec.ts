@@ -246,6 +246,8 @@ test.describe('trash — watchlist protection on the page (ADR-093)', () => {
       const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
       await expect(vanished).toHaveCount(0);
       await page.getByRole('checkbox', { name: /Show protected/ }).check();
+      // Compose another view change immediately, before the visibility URL settles.
+      await page.getByRole('button', { name: /^Size/ }).click();
       await expect(page).toHaveURL(/protected=show/);
       const note = vanished.getByTestId('wall-watchlisted');
       await expect(note).toBeVisible();

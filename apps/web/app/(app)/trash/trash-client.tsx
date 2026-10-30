@@ -203,10 +203,11 @@ function PendingTab({
   // ── URL → state (same param contract as /library and /ledger) ──
   const qParam = searchParams.get('q') ?? '';
   const protectedParam = searchParams.get('protected') === 'show';
+  const viewUrl = searchParams.toString();
   // Reflect a tap immediately while navigation settles, and follow URL/back navigation.
-  const [protectedView, setProtectedView] = useState({ param: protectedParam, show: protectedParam });
-  if (protectedView.param !== protectedParam) {
-    setProtectedView({ param: protectedParam, show: protectedParam });
+  const [protectedView, setProtectedView] = useState({ url: viewUrl, show: protectedParam });
+  if (protectedView.url !== viewUrl) {
+    setProtectedView({ url: viewUrl, show: protectedParam });
   }
   const showProtected = protectedView.show;
   const filters = useMemo<FilterMap<PendingField>>(() => {
@@ -224,6 +225,10 @@ function PendingTab({
 
   const patchParams = (patch: Record<string, string | string[] | null>) => {
     const params = new URLSearchParams(window.location.search);
+    // Another filter can be tapped before the visibility navigation commits.
+    // Carry its pending value forward instead of reading it back from the old URL.
+    if (showProtected) params.set('protected', 'show');
+    else params.delete('protected');
     for (const [k, v] of Object.entries(patch)) {
       params.delete(k);
       if (v === null || v === '') continue;
@@ -434,7 +439,7 @@ function PendingTab({
           <WatchlistVisibilityControl
             checked={showProtected}
             onChange={(checked) => {
-              setProtectedView({ param: protectedParam, show: checked });
+              setProtectedView({ url: viewUrl, show: checked });
               patchParams({ protected: checked ? 'show' : null });
             }}
           />
