@@ -467,11 +467,11 @@ async function proposeForKind(input: {
       media: input.mediaKind as TrashMedia,
       watchlist,
     });
-    // D-08 — minCandidates counts DELETABLE candidates only: not `dnd`, not on a watchlist (neither frees space), and
-    // not inside the Age Guard's 180 days (D-26: never proposed).
+    // D-08 / ADR-099 D-4 — minCandidates excludes Saves (even before their exclusion is enforced), `dnd`,
+    // watchlisted titles and the Age Guard's recent dates, matching the batch builder's eligibility.
     actionable = pending.items.filter(
       (p): p is TrashPendingItem & { maintainerrMediaId: string } =>
-        p.maintainerrMediaId !== null && !p.protectedByTag && !p.onWatchlist && p.ageGuard !== 'recent',
+        p.maintainerrMediaId !== null && !p.saveIntent && !p.protectedByTag && !p.onWatchlist && p.ageGuard !== 'recent',
     );
   } catch (err) {
     return {

@@ -92,6 +92,12 @@ reads themselves fail. The **`arr` param is the minimal `UtilizationArrBundle`**
 {getDiskSpace}} }`) — a full `ArrClientBundle` satisfies it, and the sync mode passes a bazarr-free
 diskspace-only bundle (no confined write surface, no `BAZARR_API_KEY`).
 
+**Correction 2026-10-30 (OpenProject #296):** the minimum-candidate count and its byte total exclude
+open Save intents, alongside protective tags, watchlisted titles and recent Age Guard dates. A Save
+awaiting Maintainerr enforcement must not satisfy the minimum for a batch that cannot include it
+(ADR-099 D-4). This changes the proposal accounting only; the batch builder and deletion guardian
+already honor the same Save.
+
 The returned `SpacePolicyReport` carries per-array `{ key, label, usedPct, target, overTarget, enabled,
 unavailable, proposals[] }`, each proposal `{ mediaKind, outcome, batchId, gateSkipped, candidateCount,
 candidateBytes, cooldownUntil, reason }`, outcomes one of `proposed | skipped_open_batch | skipped_cooldown

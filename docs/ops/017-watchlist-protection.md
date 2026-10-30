@@ -182,7 +182,36 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/title-exclusion-ba
   `--enroll` is an audited setting write. `--show` prints `enrolled`, `alreadyOn`, `optedOut` and `pending` (a write
   whose answer was lost; the next registry run confirms it by reading the flags, D-25bs).
 
-## 8. Rollback
+## 8. Catch-up tuning without weakening protection
+
+When an array is over target but the space policy reports `skipped_min_candidates`, compare the
+live actionable count with the raw pool before changing rules. Watchlisted titles, open Saves,
+protective tags and recent Age Guard dates do not provide reclaim capacity. A small final pool
+can remain blocked by a higher configured minimum even when the jobs and integrations are healthy.
+
+The 2026-10-30 operating choice (OpenProject #296; execution was still pending when documented)
+raises only the movie IMDb cutoff from 6.0 to 6.5, uses the largest-first movie strategy with a
+50-item cap, and lowers the policy minimum from 10 to 1. It retains IMDb votes > 99, never watched,
+the `mediarequests` exclusion, the 180-day rule and app Age Guard, all Save/watchlist/tag/watch
+protections, the seven-day save window and the 75% ceiling. TV's rule and five-item cap stay as they
+were. Source defaults do not change. Read-only projections put the largest 50 at 3.587 nominal TB;
+native rule membership and the actual batch must be checked before reporting this as selected
+capacity. It is not a physical reclaim or sustained-rate guarantee. The measurements and remaining
+one-title preview discrepancy are in
+[the story's evidence](../../.agents/context/2026-10-30-trash-catch-up.md).
+
+Apply a ratified rule change through `upsertTrashRule`, round-tripping the freshly read group and
+changing only the intended condition. This preserves and reads back the delete flags and aging
+invariant. Apply policy values through audited `setAppSetting`. Confirm the native rule results,
+the actionable app count, the batch's selected nominal bytes and its save-window expiry. Do not
+shorten that window or use Expedite to make a forecast look achieved.
+
+For a recurrence report, separate currently absent deleted titles missing import-list exclusions
+from titles already present. ADR-097's legacy backfill intentionally skipped present titles; their
+missing exclusions alone do not prove the current delete writer failed. Explicit Seerr re-requests
+remain allowed. Never use a returned-title count alone to justify a backfill or another deletion.
+
+## 9. Rollback
 
 PLAN-072's Rollback section is the order. Every CronJob suspend and resume in it goes through haynes-ops git, never
 `kubectl` (section 1: a Helm upgrade puts a hand-set `suspend` back to git's, D-25db). In short: first, in one
