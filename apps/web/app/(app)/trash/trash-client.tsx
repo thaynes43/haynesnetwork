@@ -585,7 +585,7 @@ function PendingTab({
           emptyLabel={
             hasFilters
               ? 'Nothing matches the filters.'
-              : showProtected
+              : showProtected || total === 0
                 ? `Nothing pending — no ${label.toLowerCase()} are scheduled for deletion.`
                 : 'No candidates to show. Use Show protected to include watchlisted titles.'
           }

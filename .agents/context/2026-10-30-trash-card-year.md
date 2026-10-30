@@ -35,6 +35,15 @@ counts, no load loops. Source and runtime status will be recorded after validati
   390, 360 and 320px, with long titles and all status icons; the 390px screenshot was
   visually reviewed. The watchlist browser case caught URL-controlled checkbox lag;
   local view state now updates immediately and synchronizes with URL navigation.
-  That browser case is being rechecked before delivery.
+  The browser case passed, including composing an immediate Size sort with the
+  visibility change and the unchanged protected deletion preview. The default
+  30-second dev budget expired on cold compilation; a bounded 120-second local
+  run passed (poster/settings compilation took 76–86 seconds). No source timeout
+  changed. A follow-up native review's pending-URL race was fixed by preserving
+  the view preference across parameter patches and reconciling complete URL changes.
+- Claude advisory review found a misleading empty-wall hint when the entire pool
+  is empty. The hint now offers Show protected only when the pool contains items.
+- Source PR: **#1054**. Required production CI is the merge gate. The latest tracker
+  journal/PR records delivery status after this verification checkpoint.
 - Deletion/protection settings and media files are unchanged. Runtime delivery is
   pending PR CI and the normal release/GitOps path.
