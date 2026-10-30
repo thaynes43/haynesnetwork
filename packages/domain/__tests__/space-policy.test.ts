@@ -6,7 +6,7 @@
 // audit, and the ledger-derived status read.
 import { afterEach, beforeAll, beforeEach, afterAll, describe, expect, it } from 'vitest';
 import { eq, inArray } from 'drizzle-orm';
-import { ledgerEvents, notifications, permissionAudit, trashBatchItems, trashBatches } from '@hnet/db/schema';
+import { ledgerEvents, mediaItems, notifications, permissionAudit, trashBatchItems, trashBatches } from '@hnet/db/schema';
 import {
   buildArrClientBundle,
   createBatchFromPending,
@@ -14,6 +14,7 @@ import {
   evaluateSpacePolicy,
   getSpacePolicy,
   getSpacePolicyStatus,
+  saveExclusion,
   setAppSetting,
   type ArrClientBundle,
   type SpacePolicy,
@@ -95,6 +96,7 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
   });
   afterEach(async () => {
     await t.db.delete(trashBatches);
+    await t.db.delete(mediaItems);
   });
 
   const setPolicy = (p: SpacePolicy) => setAppSetting({ db: t.db, key: 'space_policy', value: p, actorId });
@@ -359,6 +361,40 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(movie.outcome).toBe('skipped_min_candidates');
     expect(movie.candidateCount).toBe(3);
     expect(report.proposedCount).toBe(0);
+  });
+
+  it('an unenforced Save does not satisfy the minimum or contribute candidate bytes', async () => {
+    await setPolicy({ ...ENABLED, minCandidates: 3 });
+    const state = baseState({ collections: [movieCollection()] });
+    const { bundle } = makeMaintainerr(state);
+    const [saved] = await t.db.insert(mediaItems).values({
+      arrKind: 'radarr', arrItemId: 1, tmdbId: 9001,
+      title: 'Saved movie', sortTitle: 'saved movie', monitored: true,
+      qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/movies',
+    }).returning();
+    state.fail.add('GET /rules/exclusion');
+    const save = await saveExclusion({
+      db: t.db, maintainerr: bundle, mediaItemId: saved!.id,
+      maintainerrMediaId: 'ms-9001', actorId,
+    });
+    state.fail.clear();
+    expect(save).toMatchObject({ recorded: true, exclusion: 'pending' });
+    expect(state.exclusions.has('ms-9001')).toBe(false);
+
+    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie).toMatchObject({ outcome: 'skipped_min_candidates', candidateCount: 2, candidateBytes: 5_000_000_000 });
+    expect(report.proposedCount).toBe(0);
+    expect(await t.db.select().from(trashBatches)).toHaveLength(0);
+    expect(await t.db.select().from(ledgerEvents).where(eq(ledgerEvents.eventType, 'trash_space_policy'))).toHaveLength(0);
+    expect(await t.db.select().from(notifications).where(eq(notifications.type, 'space_policy'))).toHaveLength(0);
+
+    // Lowering the minimum admits the same two unsaved titles; the pending Save still takes no slot.
+    await setPolicy({ ...ENABLED, minCandidates: 2 });
+    const next = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+    const proposed = next.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(proposed).toMatchObject({ outcome: 'proposed', candidateCount: 2, candidateBytes: 5_000_000_000 });
+    expect(await batchIds(proposed.batchId!)).toEqual(['ms-9002', 'ms-9003']);
   });
 
   it('skip-gate ON → the proposed batch flows straight to leaving_soon (not special-cased)', async () => {
