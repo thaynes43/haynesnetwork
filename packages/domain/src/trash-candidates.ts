@@ -265,6 +265,8 @@ export interface TrashPendingSort {
 
 /** The facet filters the pending wall's chips narrow by (OR within a field, AND across fields). */
 export interface TrashPendingFilters {
+  /** View preference only; the full-set Expedite preview and guardian stay unchanged. */
+  includeWatchlisted?: boolean;
   query?: string;
   genres?: string[];
   resolutions?: string[];
@@ -527,7 +529,9 @@ export async function listTrashPendingPage(input: {
   const totalSizeBytes = universe.reduce((n, i) => n + i.sizeBytes, 0);
 
   const filters = input.filters ?? {};
-  const filtered = universe.filter((i) => matchesFilters(i, filters));
+  const filtered = universe.filter(
+    (i) => (filters.includeWatchlisted !== false || !i.onWatchlist) && matchesFilters(i, filters),
+  );
   const filteredCount = filtered.length;
   const filteredSizeBytes = filtered.reduce((n, i) => n + i.sizeBytes, 0);
 

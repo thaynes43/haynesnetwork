@@ -60,6 +60,7 @@ import { CHIP_LABELS, RatingChip } from '@/components/filter-chips';
 import { type TrashAccess } from '@/components/trash-shield';
 import {
   PendingWall,
+  WatchlistVisibilityControl,
   useInfiniteScroll,
   usePendingSaves,
   type PendingWallItem,
@@ -201,6 +202,13 @@ function PendingTab({
 
   // ── URL → state (same param contract as /library and /ledger) ──
   const qParam = searchParams.get('q') ?? '';
+  const protectedParam = searchParams.get('protected') === 'show';
+  // Reflect a tap immediately while navigation settles, and follow URL/back navigation.
+  const [protectedView, setProtectedView] = useState({ param: protectedParam, show: protectedParam });
+  if (protectedView.param !== protectedParam) {
+    setProtectedView({ param: protectedParam, show: protectedParam });
+  }
+  const showProtected = protectedView.show;
   const filters = useMemo<FilterMap<PendingField>>(() => {
     const out: FilterMap<PendingField> = {};
     for (const f of FILTER_FIELDS) {
@@ -251,6 +259,7 @@ function PendingTab({
   const pending = trpc.trash.pending.useInfiniteQuery(
     {
       media,
+      includeWatchlisted: showProtected,
       ...(trimmedQuery !== '' ? { query: trimmedQuery } : {}),
       ...(genres.length > 0 ? { genres } : {}),
       ...(resolutions.length > 0 ? { resolutions } : {}),
@@ -422,6 +431,13 @@ function PendingTab({
           />
         </div>
         <div className="library-chipbar" role="group" aria-label="Filters">
+          <WatchlistVisibilityControl
+            checked={showProtected}
+            onChange={(checked) => {
+              setProtectedView({ param: protectedParam, show: checked });
+              patchParams({ protected: checked ? 'show' : null });
+            }}
+          />
           {FILTER_FIELDS.map((f) => (
             <FilterChip
               key={f.field}
@@ -564,7 +580,9 @@ function PendingTab({
           emptyLabel={
             hasFilters
               ? 'Nothing matches the filters.'
-              : `Nothing pending — no ${label.toLowerCase()} are scheduled for deletion.`
+              : showProtected
+                ? `Nothing pending — no ${label.toLowerCase()} are scheduled for deletion.`
+                : 'No candidates to show. Use Show protected to include watchlisted titles.'
           }
           wallLabel={`Pending ${label} deletions`}
           sentinelRef={sentinelRef}
@@ -606,8 +624,8 @@ function PendingTab({
         ) : hasFilters ? (
           <div className="trash-confirm" data-testid="trash-expedite-refusal">
             <p className="alert" role="alert">
-              Filters can’t scope “Delete all now” — it processes the <strong>entire</strong> pending{' '}
-              {label} set ({total} item{total === 1 ? '' : 's'}), including the{' '}
+              Filters can’t scope “Delete all now” — it processes the <strong>entire</strong>{' '}
+              pending {label} set ({total} item{total === 1 ? '' : 's'}), including the{' '}
               {total - filteredCount} your filters currently hide.
             </p>
             <p className="muted">

@@ -535,7 +535,7 @@ export function CardGallery() {
             glyph="trash"
             posterUrl={POSTER_A}
             kind="radarr"
-            title="Slated Movie"
+            title="Slated Movie with a Very Long Title That Hides Its Release Year"
             year={2019}
             toggle={{
               tappable: true,
@@ -550,7 +550,8 @@ export function CardGallery() {
               title: 'Open Slated Movie (2019)',
               ariaLabel: 'Open Slated Movie (2019)',
             }}
-            metaText="3.0 GB · ★ 6.4"
+            sizeLabel="3.0 GB"
+            ratingLabel="6.4"
             requesters={[]}
             watchNote={null}
           />
@@ -571,9 +572,12 @@ export function CardGallery() {
               markInert: true,
             }}
             libraryLink={null}
-            metaText="1.2 GB"
+            sizeLabel="1.2 GB"
+            ratingLabel={null}
             requesters={['Marge Member']}
             watchNote={{ label: 'Watched recently on k8plex', tone: 'info' }}
+            onWatchlist
+            failedNote="Not saved"
           />
           {/* ADR-014 two-step (2026-09-14) — the ARMED release: the SAME shield tile mid-confirm.
               Identical geometry to the tile above (same 30px puck, same glyph, same caption/meta
@@ -596,7 +600,8 @@ export function CardGallery() {
               markInert: true,
             }}
             libraryLink={null}
-            metaText="1.2 GB"
+            sizeLabel="1.2 GB"
+            ratingLabel={null}
             requesters={[]}
             watchNote={null}
           />
@@ -617,7 +622,8 @@ export function CardGallery() {
               markInert: true,
             }}
             libraryLink={null}
-            metaText="—"
+            sizeLabel="—"
+            ratingLabel={null}
             requesters={[]}
             watchNote={{ label: 'Last watched on k8plex · Feb 2026', tone: 'muted' }}
           />
@@ -635,7 +641,8 @@ export function CardGallery() {
               title: 'Kept by the Sweep was skipped',
             }}
             libraryLink={null}
-            metaText="2.1 GB · ★ 7.0"
+            sizeLabel="2.1 GB"
+            ratingLabel="7.0"
             requesters={[]}
             watchNote={null}
           />
@@ -653,7 +660,8 @@ export function CardGallery() {
               title: 'Deleted was removed by the sweep',
             }}
             libraryLink={null}
-            metaText="4.4 GB"
+            sizeLabel="4.4 GB"
+            ratingLabel={null}
             requesters={[]}
             watchNote={null}
           />

@@ -73,6 +73,30 @@ export interface PendingWallItem {
 const itemRating = (item: PendingWallItem): number | null =>
   ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating);
 
+/** A view preference, never a release of watchlist protection. */
+export function WatchlistVisibilityControl({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label
+      className="trash-protected-toggle"
+      title="Include watchlisted titles. They remain protected from deletion."
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      Show protected
+      <span className="sr-only"> watchlisted titles. They remain protected from deletion.</span>
+    </label>
+  );
+}
+
 /** The tile tooltip — the detail the retired table columns carried; the full history is one tap
  *  away on /library/[id]. */
 function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph, armed = false): string {
@@ -81,11 +105,13 @@ function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph, armed = false)
     // pointer user sees the same thing the aria-label tells a screen-reader user.
     ...(armed ? ['Tap again to un-save — 3 seconds'] : []),
     // DESIGN-052 D-26 / Q-14 — a title the Age Guard keeps leads with the batch wall's kept reason, never a date.
-    glyph === 'skip'
-      ? KEPT_REASON_TOOLTIPS.recently_added
-      : item.scheduledDeleteAt !== null
-        ? `Deletes ${formatDay(item.scheduledDeleteAt)} (${daysLeftLabel(daysUntil(item.scheduledDeleteAt))})`
-        : 'No scheduled delete date',
+    item.onWatchlist === true
+      ? KEPT_REASON_TOOLTIPS.watchlisted
+      : glyph === 'skip'
+        ? KEPT_REASON_TOOLTIPS.recently_added
+        : item.scheduledDeleteAt !== null
+          ? `Deletes ${formatDay(item.scheduledDeleteAt)} (${daysLeftLabel(daysUntil(item.scheduledDeleteAt))})`
+          : 'No scheduled delete date',
   ];
   if (glyph === 'shield') lines.push('Saved by you — protected from deletion');
   else if (glyph === 'check' && item.saveIntent === true) lines.push("Saved, so it won't be deleted");
@@ -107,7 +133,11 @@ function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph, armed = false)
   // still deletable". It never gates the corner action.
   const note = watchNote(item);
   if (note !== null)
-    lines.push(note.recent ? `${note.label} — the guardian keeps it at the sweep` : `${note.label} — still deletable`);
+    lines.push(
+      note.recent
+        ? `${note.label} — the guardian keeps it at the sweep`
+        : `${note.label} — still deletable`,
+    );
   // ADR-093 / DESIGN-052 D-10 — the watchlist keep, in the note's own words.
   if (item.onWatchlist === true) lines.push(WATCHLIST_NOTE_DETAIL);
   // The requester attribution is INFO ONLY now (owner ruling 2026-07-09) — it never changes the
@@ -233,11 +263,13 @@ function PendingTile({
         : `${item.title} is saved — protected from deletion`
       : glyph === 'check'
         ? `${item.title} is protected from deletion`
-        : glyph === 'skip'
-          ? `${item.title}. ${KEPT_REASON_TOOLTIPS.recently_added}`
-          : tappable
-          ? `${item.title} is slated to delete — tap to save it`
-          : `${item.title} is slated to delete`;
+        : item.onWatchlist === true
+          ? `${item.title} is protected while on a watchlist${tappable ? ' — tap to save it permanently' : ''}`
+          : glyph === 'skip'
+            ? `${item.title}. ${KEPT_REASON_TOOLTIPS.recently_added}`
+            : tappable
+              ? `${item.title} is slated to delete — tap to save it`
+              : `${item.title} is slated to delete`;
   const toggleLabel = isBusy
     ? wallTapBusyLabel(busyAction, item.title)
     : failedAction !== undefined
@@ -274,7 +306,8 @@ function PendingTile({
             }
           : null
       }
-      metaText={`${item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}${rating !== null ? ` · ★ ${rating}` : ''}`}
+      sizeLabel={item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
+      ratingLabel={rating}
       requesters={item.requesters}
       watchNote={note !== null ? { label: note.label, tone: note.tone } : null}
       onWatchlist={item.onWatchlist === true}
