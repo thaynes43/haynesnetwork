@@ -111,7 +111,7 @@ export class ProwlarrWriteClient extends ProwlarrReadClient {
       );
     }
     if (!res.ok) {
-      const isMam = [current.definition, current.name].some(
+      const isMam = [current.definitionName, current.name].some(
         (name) => typeof name === 'string' && /^myanonamouse$/i.test(name),
       );
       throw new DownloadsHttpError(url, res.status, isMam ? await mamSaveRefusal(res) : undefined);

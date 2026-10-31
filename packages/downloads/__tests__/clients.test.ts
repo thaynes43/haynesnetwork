@@ -219,14 +219,21 @@ describe('ProwlarrWriteClient.setIndexerEnabled', () => {
     });
   });
 
-  async function refusedSave(response: Response, name = 'MyAnonaMouse', enabled = true) {
+  async function refusedSave(
+    response: Response,
+    name = 'MyAnonaMouse',
+    enabled = true,
+    definitionName?: string,
+  ) {
     const calls: string[] = [];
     const client = new ProwlarrWriteClient({
       baseUrl: 'http://prowlarr:9696',
       apiKey: 'PK',
       fetchImpl: async (input, init) => {
         calls.push(`${init?.method ?? 'GET'} ${String(input)}`);
-        return init?.method === 'PUT' ? response : jsonResponse({ id: 17, name, enable: !enabled });
+        return init?.method === 'PUT'
+          ? response
+          : jsonResponse({ id: 17, name, definitionName, enable: !enabled });
       },
     });
     const error = await client.setIndexerEnabled(17, enabled).catch((err: unknown) => err);
@@ -289,6 +296,16 @@ describe('ProwlarrWriteClient.setIndexerEnabled', () => {
     const response = jsonResponse(validation, 503);
     expect((await refusedSave(response)).message).toBe(genericRefusal.replace('400', '503'));
     expect(response.bodyUsed).toBe(false);
+  });
+
+  it('recognizes a renamed MAM indexer by Prowlarr definitionName', async () => {
+    const error = await refusedSave(
+      jsonResponse([{ propertyName: '', errorMessage: 'mam_id invalid' }], 400),
+      'Household books',
+      true,
+      'MyAnonamouse',
+    );
+    expect(error.message).toBe(`${genericRefusal}: ${mamReason}`);
   });
 
   it('bounds a chunked body by bytes and cancels before reading its remaining tail', async () => {
