@@ -332,6 +332,34 @@ describe('ProwlarrWriteClient.setIndexerEnabled', () => {
     expect(cancelled).toBe(true);
   });
 
+  it('cancels the stream when a chunk is not valid UTF-8, before reading its tail', async () => {
+    const chunks = [
+      new Uint8Array([0x5b, 0xff, 0xfe]),
+      new TextEncoder().encode('UNREAD_SECRET_MARKER'),
+    ];
+    let reads = 0;
+    let cancelled = false;
+    const response = new Response(
+      new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            controller.enqueue(chunks[reads++]!);
+          },
+          cancel() {
+            cancelled = true;
+          },
+        },
+        { highWaterMark: 0 },
+      ),
+      { status: 400, headers: { 'content-length': '1' } },
+    );
+    const error = await refusedSave(response);
+    expect(error.message).toBe(genericRefusal);
+    expect(JSON.stringify(error)).not.toContain('UNREAD_SECRET_MARKER');
+    expect(reads).toBe(1);
+    expect(cancelled).toBe(true);
+  });
+
   it('accepts an exactly 32 KiB validation body but rejects one byte more', async () => {
     const validation = JSON.stringify([{ propertyName: '', errorMessage: 'mam_id invalid' }]);
     const atLimit = validation.padEnd(32 * 1024, ' ');

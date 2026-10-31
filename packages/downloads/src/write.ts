@@ -66,6 +66,8 @@ async function mamSaveRefusal(res: Response): Promise<string | undefined> {
     }
   } catch {
     // A failed diagnostic read/parse must preserve the original refused-save HTTP error.
+    // Cancel too, so an undecodable body's unread tail cannot hold the connection open.
+    void reader?.cancel().catch(() => {});
   } finally {
     reader?.releaseLock();
   }
