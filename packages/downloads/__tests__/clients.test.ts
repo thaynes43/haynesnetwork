@@ -137,31 +137,34 @@ describe('ProwlarrReadClient.getIndexerEnabled', () => {
 });
 
 describe('ProwlarrWriteClient.setIndexerEnabled', () => {
-  it('GET-then-PUTs the full object with ONLY enable changed (preserving other fields)', async () => {
-    const calls: Array<{ method: string; body?: unknown }> = [];
-    const indexer = {
-      id: 17,
-      name: 'MyAnonaMouse',
-      enable: true,
-      priority: 50,
-      fields: [{ name: 'x', value: 'y' }],
-    };
-    const client = new ProwlarrWriteClient({
-      baseUrl: 'http://prowlarr:9696',
-      apiKey: 'PK',
-      fetchImpl: async (input, init) => {
-        const method = init?.method ?? 'GET';
-        calls.push({ method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-        if (method === 'GET') return jsonResponse(indexer);
-        return jsonResponse({ ...JSON.parse(String(init!.body)) }, 202); // echo
-      },
-    });
-    await client.setIndexerEnabled(17, false);
-    expect(calls[0]!.method).toBe('GET');
-    expect(calls[1]!.method).toBe('PUT');
-    // ONLY enable changed; every other field preserved verbatim.
-    expect(calls[1]!.body).toEqual({ ...indexer, enable: false });
-  });
+  it.each([true, false])(
+    'GET-then-PUTs the full object with ONLY enable=%s changed',
+    async (enabled) => {
+      const calls: Array<{ method: string; body?: unknown }> = [];
+      const indexer = {
+        id: 17,
+        name: 'MyAnonaMouse',
+        enable: true,
+        priority: 50,
+        fields: [{ name: 'x', value: 'y' }],
+      };
+      const client = new ProwlarrWriteClient({
+        baseUrl: 'http://prowlarr:9696',
+        apiKey: 'PK',
+        fetchImpl: async (input, init) => {
+          const method = init?.method ?? 'GET';
+          calls.push({ method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+          if (method === 'GET') return jsonResponse(indexer);
+          return jsonResponse({ ...JSON.parse(String(init!.body)) }, 202); // echo
+        },
+      });
+      await client.setIndexerEnabled(17, enabled);
+      expect(calls[0]!.method).toBe('GET');
+      expect(calls[1]!.method).toBe('PUT');
+      // ONLY enable changed; every other field preserved verbatim.
+      expect(calls[1]!.body).toEqual({ ...indexer, enable: enabled });
+    },
+  );
 
   it('throws when the PUT echoes a value that did not take (phantom success guard)', async () => {
     const client = new ProwlarrWriteClient({
@@ -187,6 +190,207 @@ describe('ProwlarrWriteClient.setIndexerEnabled', () => {
       },
     });
     await expect(client.setIndexerEnabled(17, false)).rejects.toBeInstanceOf(DownloadsHttpError);
+  });
+
+  it('reports a fixed MAM authentication reason for a refused validation save', async () => {
+    const client = new ProwlarrWriteClient({
+      baseUrl: 'http://prowlarr:9696',
+      apiKey: 'PK',
+      fetchImpl: async (_input, init) =>
+        init?.method === 'PUT'
+          ? jsonResponse(
+              [
+                {
+                  propertyName: '',
+                  errorMessage: 'You are not signed in. mam_id expired or invalid',
+                },
+              ],
+              400,
+            )
+          : jsonResponse({ id: 17, name: 'MyAnonaMouse', enable: false, fields: [] }),
+    });
+    const error = await client.setIndexerEnabled(17, true).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(DownloadsHttpError);
+    expect(error).toMatchObject({
+      status: 400,
+      url: 'http://prowlarr:9696/api/v1/indexer/17',
+      message:
+        'downloads request http://prowlarr:9696/api/v1/indexer/17 failed (HTTP 400): mam_auth_invalid: MAM session expired, invalid, or not signed in',
+    });
+  });
+
+  async function refusedSave(
+    response: Response,
+    name = 'MyAnonaMouse',
+    enabled = true,
+    definitionName?: string,
+  ) {
+    const calls: string[] = [];
+    const client = new ProwlarrWriteClient({
+      baseUrl: 'http://prowlarr:9696',
+      apiKey: 'PK',
+      fetchImpl: async (input, init) => {
+        calls.push(`${init?.method ?? 'GET'} ${String(input)}`);
+        return init?.method === 'PUT'
+          ? response
+          : jsonResponse({ id: 17, name, definitionName, enable: !enabled });
+      },
+    });
+    const error = await client.setIndexerEnabled(17, enabled).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(DownloadsHttpError);
+    expect(calls).toEqual([
+      'GET http://prowlarr:9696/api/v1/indexer/17',
+      'PUT http://prowlarr:9696/api/v1/indexer/17',
+    ]);
+    return error as DownloadsHttpError;
+  }
+
+  const genericRefusal =
+    'downloads request http://prowlarr:9696/api/v1/indexer/17 failed (HTTP 400)';
+  const mamReason = 'mam_auth_invalid: MAM session expired, invalid, or not signed in';
+
+  it.each([
+    'mam_id expired or invalid',
+    'mam_id invalid',
+    'mam_id expired',
+    'You are not signed in',
+  ])('classifies a known MAM validation without leaking any remote field: %s', async (reason) => {
+    // Synthetic markers only. JSON escapes, percent encoding, HTML entities and newlines must never echo.
+    const marker =
+      'COOKIE_MARKER\nAPIKEY_MARKER https://URL_MARKER/?key=SECRET_MARKER %43OOKIE_MARKER &#65;PIKEY_MARKER';
+    const response = jsonResponse(
+      [
+        {
+          propertyName: marker,
+          errorMessage: `${reason}\n${marker}`,
+          attemptedValue: marker,
+          customState: { cookie: marker, apiKey: marker },
+        },
+      ],
+      400,
+    );
+    const error = await refusedSave(response);
+    expect(error.message).toBe(`${genericRefusal}: ${mamReason}`);
+    expect(JSON.stringify(error)).not.toContain('MARKER');
+  });
+
+  it.each([
+    '{malformed JSON',
+    '<html>You are not signed in. mam_id expired or invalid</html>',
+    JSON.stringify({ errorMessage: 'You are not signed in' }),
+    JSON.stringify([{ propertyName: 'apiKey', errorMessage: 'Unknown validation SECRET_MARKER' }]),
+    JSON.stringify([{ propertyName: '', errorMessage: 'mam_id expires tomorrow' }]),
+    JSON.stringify([{ propertyName: '', errorMessage: 42 }]),
+    JSON.stringify([{ errorMessage: 'You are not signed in' }]),
+    JSON.stringify([{ propertyName: '', errorMessage: 'mam_id invalid' }, null]),
+    '[]',
+  ])('keeps an unrecognized body generic (case %#)', async (body) => {
+    expect((await refusedSave(new Response(body, { status: 400 }))).message).toBe(genericRefusal);
+  });
+
+  it('keeps other indexers and nonvalidation HTTP statuses generic', async () => {
+    const validation = [{ propertyName: '', errorMessage: 'You are not signed in' }];
+    expect((await refusedSave(jsonResponse(validation, 400), 'OtherIndexer')).message).toBe(
+      genericRefusal,
+    );
+    const response = jsonResponse(validation, 503);
+    expect((await refusedSave(response)).message).toBe(genericRefusal.replace('400', '503'));
+    expect(response.bodyUsed).toBe(false);
+  });
+
+  it('recognizes a renamed MAM indexer by Prowlarr definitionName', async () => {
+    const error = await refusedSave(
+      jsonResponse([{ propertyName: '', errorMessage: 'mam_id invalid' }], 400),
+      'Household books',
+      true,
+      'MyAnonamouse',
+    );
+    expect(error.message).toBe(`${genericRefusal}: ${mamReason}`);
+  });
+
+  it('bounds a chunked body by bytes and cancels before reading its remaining tail', async () => {
+    const prefix = JSON.stringify([{ propertyName: '', errorMessage: 'mam_id invalid' }]);
+    const chunks = [prefix, 'é'.repeat(16 * 1024), 'UNREAD_SECRET_MARKER'];
+    let reads = 0;
+    let cancelled = false;
+    const response = new Response(
+      new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            controller.enqueue(new TextEncoder().encode(chunks[reads++]!));
+          },
+          cancel() {
+            cancelled = true;
+          },
+        },
+        { highWaterMark: 0 },
+      ),
+      { status: 400, headers: { 'content-length': '1' } },
+    );
+    expect((await refusedSave(response)).message).toBe(genericRefusal);
+    expect(reads).toBe(2);
+    expect(cancelled).toBe(true);
+  });
+
+  it('cancels the stream when a chunk is not valid UTF-8, before reading its tail', async () => {
+    const chunks = [
+      new Uint8Array([0x5b, 0xff, 0xfe]),
+      new TextEncoder().encode('UNREAD_SECRET_MARKER'),
+    ];
+    let reads = 0;
+    let cancelled = false;
+    const response = new Response(
+      new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            controller.enqueue(chunks[reads++]!);
+          },
+          cancel() {
+            cancelled = true;
+          },
+        },
+        { highWaterMark: 0 },
+      ),
+      { status: 400, headers: { 'content-length': '1' } },
+    );
+    const error = await refusedSave(response);
+    expect(error.message).toBe(genericRefusal);
+    expect(JSON.stringify(error)).not.toContain('UNREAD_SECRET_MARKER');
+    expect(reads).toBe(1);
+    expect(cancelled).toBe(true);
+  });
+
+  it('accepts an exactly 32 KiB validation body but rejects one byte more', async () => {
+    const validation = JSON.stringify([{ propertyName: '', errorMessage: 'mam_id invalid' }]);
+    const atLimit = validation.padEnd(32 * 1024, ' ');
+    expect((await refusedSave(new Response(atLimit, { status: 400 }))).message).toBe(
+      `${genericRefusal}: ${mamReason}`,
+    );
+    expect((await refusedSave(new Response(`${atLimit} `, { status: 400 }))).message).toBe(
+      genericRefusal,
+    );
+  });
+
+  it('preserves the refused HTTP error when its body stream fails', async () => {
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.error(new Error('SECRET_MARKER'));
+        },
+      }),
+      { status: 400 },
+    );
+    expect((await refusedSave(response)).message).toBe(genericRefusal);
+  });
+
+  it('still rejects a disable refused by MAM validation', async () => {
+    const error = await refusedSave(
+      jsonResponse([{ propertyName: '', errorMessage: 'mam_id invalid' }], 400),
+      'MyAnonaMouse',
+      false,
+    );
+    expect(error.status).toBe(400);
+    expect(error.message).toBe(`${genericRefusal}: ${mamReason}`);
   });
 
   it('tolerates an empty PUT body (202 no echo)', async () => {

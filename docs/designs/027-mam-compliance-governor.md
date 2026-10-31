@@ -75,6 +75,18 @@ indexer ACTUALLY is after the run — so a transition is only ever recorded/page
 changed (an actuation failure records the last-known state and pages nothing). The LL propagation is a
 side-effect of the Prowlarr write; the governor's contract is the Prowlarr `enable` flag.
 
+**Refused-save diagnostic (2026-10-31).** A refused HTTP 400 indexer save may expose only the fixed
+reason `mam_auth_invalid: MAM session expired, invalid, or not signed in` through the existing
+`DownloadsHttpError` detail. Classify only MyAnonaMouse indexers and JSON validation arrays with a
+recognized authentication message. Buffer at most 32 KiB, cancel on overflow, and discard all remote
+field values. Unknown, malformed, oversized or unreadable bodies and other HTTP statuses retain the
+generic error. Validation, GET-then-PUT, enable/disable semantics and fail-closed state are unchanged;
+this diagnostic does not renew credentials or bypass Prowlarr's enabled-indexer validation.
+
+Verification plan: fail-first fetch-stub regression; known MAM reasons; unknown/malformed/HTML and
+nonvalidation fallback; byte-bound stream cancellation; encoded/multiline secret-marker non-leak;
+existing success/disable tests; downloads and domain MAM governor tests, typecheck/lint, required CI/e2e.
+
 ### D-05 — transitions, stuck alert, same-tx (ADR-034 C-01)
 
 - Transition: `prev.gateOpen !== appliedOpen` ⇒ `mam_gate_resumed` (→open) or `mam_gate_paused` (→closed).

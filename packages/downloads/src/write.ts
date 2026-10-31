@@ -31,6 +31,49 @@ import {
 /** Prowlarr's PUT echoes the updated indexer; we only assert `enable` came back as requested. */
 const prowlarrPutEchoSchema = z.object({ enable: z.boolean().optional() }).passthrough();
 
+// Inspect only bounded validation JSON. Remote values are evidence for a fixed category, never output.
+async function mamSaveRefusal(res: Response): Promise<string | undefined> {
+  if (res.status !== 400 || !res.body) return undefined;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  try {
+    reader = res.body.getReader();
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    let raw = '';
+    let bytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > 32 * 1024) {
+        void reader.cancel().catch(() => {});
+        return undefined;
+      }
+      raw += decoder.decode(value, { stream: true });
+    }
+    raw += decoder.decode();
+    const validation = z
+      .array(z.object({ propertyName: z.string(), errorMessage: z.string() }))
+      .safeParse(JSON.parse(raw));
+    if (
+      validation.success &&
+      validation.data.some(({ errorMessage }) =>
+        /\byou are not signed in\b|\bmam_id\s+(?:expired|invalid)\b/i.test(
+          errorMessage,
+        ),
+      )
+    ) {
+      return 'mam_auth_invalid: MAM session expired, invalid, or not signed in';
+    }
+  } catch {
+    // A failed diagnostic read/parse must preserve the original refused-save HTTP error.
+    // Cancel too, so an undecodable body's unread tail cannot hold the connection open.
+    void reader?.cancel().catch(() => {});
+  } finally {
+    reader?.releaseLock();
+  }
+  return undefined;
+}
+
 export type ProwlarrWriteClientOptions = ProwlarrReadClientOptions;
 
 /**
@@ -69,7 +112,12 @@ export class ProwlarrWriteClient extends ProwlarrReadClient {
         err instanceof Error ? err.message : String(err),
       );
     }
-    if (!res.ok) throw new DownloadsHttpError(url, res.status);
+    if (!res.ok) {
+      const isMam = [current.definitionName, current.name].some(
+        (name) => typeof name === 'string' && /^myanonamouse$/i.test(name),
+      );
+      throw new DownloadsHttpError(url, res.status, isMam ? await mamSaveRefusal(res) : undefined);
+    }
     // Prowlarr PUT echoes the updated indexer; confirm the flag took (a 200/202 with the old value would
     // be a phantom success). An empty/near-empty body is tolerated (some builds 202 with no echo).
     const raw = await res.text();
