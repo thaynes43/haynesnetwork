@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.126.3](https://github.com/thaynes43/haynesnetwork/compare/v0.126.2...v0.126.3) (2026-10-31)
+
+
+### Bug Fixes
+
+* **downloads:** retain a safe reason for refused MAM saves ([#1056](https://github.com/thaynes43/haynesnetwork/issues/1056)) ([878a103](https://github.com/thaynes43/haynesnetwork/commit/878a1032db88b88cd1148c85a8e4fd0e90f930cd))
+
 ## [0.126.2](https://github.com/thaynes43/haynesnetwork/compare/v0.126.1...v0.126.2) (2026-10-30)
 
 
