@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.126.4](https://github.com/thaynes43/haynesnetwork/compare/v0.126.3...v0.126.4) (2026-11-05)
+
+
+### Documentation
+
+* correct the Import Check's file-replacement rule in CLAUDE.md ([#1058](https://github.com/thaynes43/haynesnetwork/issues/1058)) ([30295c8](https://github.com/thaynes43/haynesnetwork/commit/30295c8b69d5a99f29d8fe1aabb1c60db648c36f))
+
 ## [0.126.3](https://github.com/thaynes43/haynesnetwork/compare/v0.126.2...v0.126.3) (2026-10-31)
 
 
