@@ -111,7 +111,9 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    **ADR-109 adds the Import Check's ManualImport** (DESIGN-055 D-07, PLAN-077 P2): one Sonarr or Radarr `ManualImport`
    command (the body their own interactive-import UI sends, `importMode: auto`) for a finished download whose import is
    blocked and whose Import Check passes, mapping its files onto the target the *arr's manual-import view, the queue and
-   Title Evidence agree on; it adds files, never deletes one. Two callers: a person's queue-aware Force Search on a missing
+   Title Evidence agree on. It never deletes a library file the *arr would not replace on its own import (DESIGN-046 D-27
+   rule 7, DESIGN-055 D-07 rule 2): an import the *arr scores as an upgrade replaces the existing file, the janitor's
+   enforced cell included, while Force Search lists those files and needs consent first. Two callers: a person's queue-aware Force Search on a missing
    episode or movie (one Repair Request, `import_download`, only with the plan the person confirmed, behind the
    `import_check` remedy) and the janitor's `importable` cell (DESIGN-046 D-27, census until promoted, loop-guarded). The same
    explicit import may continue its own open Fix or Release Pick through `owned-sonarr-import.ts` (DESIGN-055 P4
