@@ -156,7 +156,7 @@ Estimated remaining exposure, movies only: 3,630 below-cutoff files have a runti
 | Remux (1080p and 2160p) | 10,800 | 82,094.1 GB | 37.7% |
 | Bluray-2160p Remux, the cutoff | 929 | 15,994.6 GB | 7.3% |
 
-The cutoff flag is false on exactly those 929 remuxes. Of them, 870 score 500 or more and 59 score below 500. A score of 500 or more does not stop a later quality-rank upgrade; it only finishes a file that is already on the top rung. Median Bluray-2160p Remux: 14.89 GB, p90 29.64 GB (n=929). Median WEBDL-2160p: 5.01 GB, p90 8.49 GB (n=9,221). Median WEBDL-1080p: 1.59 GB (n=32,126). HDTV-2160p still holds 141 files. The profile does not allow that quality; the files predate the rule.
+Radarr and Sonarr report `qualityCutoffNotMet` as false on exactly those 929 remuxes: they are the only files that have reached the cutoff, and every other file is still below it. Of them, 870 score 500 or more and 59 score below 500. A score of 500 or more does not stop a later quality-rank upgrade; it only finishes a file that is already on the top rung. Median Bluray-2160p Remux: 14.89 GB, p90 29.64 GB (n=929). Median WEBDL-2160p: 5.01 GB, p90 8.49 GB (n=9,221). Median WEBDL-1080p: 1.59 GB (n=32,126). HDTV-2160p still holds 141 files. The profile does not allow that quality; the files predate the rule.
 
 **Music.** 304,595 track files, 8,767.7 GB. The replica's artist bytes the same evening were 8,761.4 GB. The gap is 6.3 GB and was not reconciled. Lossless (FLAC, FLAC 24bit, ALAC, APE, WavPack, and the 24-bit ALAC name) is 8,530.8 GB, 97.3% of the API bytes, and 276,659 files, 90.8% of the files. FLAC plus FLAC 24bit is essentially all of that. The lossy remainder is about 236 GB. Medians were not computed: the walk stored a sum per artist and quality, not each file.
 
@@ -292,7 +292,7 @@ Nineteen movie upgrades replaced a Remux-2160p whose recorded score was already 
 Twenty-one upgrades, including the repeats. The full fields (formats gained and lost, revision, repack flag, inferred source) are `2026-11-13-quality-upgrade-sample.csv`. GB here is rounded. Trigger rule: higher quality when the rank rose; cutoff already met or not yet met from the old rank; custom-format score when the quality name was unchanged and the score rose by 100 or more; proper or repack when the revision rose or the repack flag was set and the score rose by less than 100; otherwise the same-quality score change, including a score that fell or did not change. A penalty format of -10000 that left the file is named as well.
 
 | # | Date | Title | From → to | Down GB | Net GB | Score | Trigger |
-| --- | --- | --- | ---: | ---: | --- | --- |
+| --- | --- | --- | --- | ---: | ---: | --- | --- |
 | 1 | 2026-08-19 | The Mandalorian and Grogu | WEBDL-2160p → Remux-2160p | 83.3 | 58.4 | 6320→4500 | higher quality; cutoff not met; score fell |
 | 2 | 2026-08-19 | The Mandalorian and Grogu | Remux-2160p → Remux-2160p | 79.3 | -4.0 | 6500→6500 | cutoff met; no score change, no format change |
 | 3 | 2026-08-19 | The Mandalorian and Grogu | Remux-2160p → Remux-2160p | 73.6 | -5.7 | 6500→8550 | cutoff met; HDR10+ Boost and Remux Tier 01 |
