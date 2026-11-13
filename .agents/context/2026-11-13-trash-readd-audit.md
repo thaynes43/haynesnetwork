@@ -1,5 +1,7 @@
 # Trash re-add audit — 2026-11-13
 
+> **Read this with its adversarial review, [2026-11-13-trash-readd-audit-review.md](2026-11-13-trash-readd-audit-review.md). Where they differ, the review governs.** The counts below were confirmed by re-measurement. Three things were not: claim 3 is wrong as written (eight deleted titles re-fetched the deleted release before the Release Block went live on 2026-09-27, and three of the four rows marked "Unproven" are provable from the ledger); the route table omits three routes this app owns (Trash Restore, Ledger Add & search, the failsafe restore diff); and the question list changes (Q-03 dropped, Q-04 and Q-05 reframed, Q-08 to Q-11 added). This text is left as the worker wrote it. Banner added by the coordinator at intake.
+
 Read-only audit for OpenProject story **#818** (epic #814, saga #813). Worker `haynesnetwork-1113-163844`. No setting, search, delete, or sweep was issued. Every number below is measured on 2026-11-13 unless it says estimated.
 
 The story's constraint line says an ADR or design amendment lands in the same change. The story's scope is this audit and forbids a fix. Nothing here changes behavior, so no ADR is amended. The acceptance line also asks for an adversarial review on the story; that review is the coordinator's, and this note does not record it.
