@@ -1,6 +1,7 @@
 # ADR-047: Access-aware "Watch/Listen/Read here" deep links — the *arr→Plex match, the library-access invariant, and the availability resolver
 
 - **Status:** Accepted
+- **Amended by ADR-123 (2026-11-13):** the shared-GUID match is limited to the fitting library type. The gate, the deep link and the single-writer rule in this record stand.
 - **Date:** 2026-07-11
 - **Deciders:** Tom Haynes (owner idea + LOCKED decisions 2026-07-11 AM — PLAN-028 Q-01/Q-A/Q-B/Q-C/Q-D) · ratified by Fable 5 (PLAN-028 build run)
 - **Relates:** REUSES the [ADR-024](024-role-scoped-all-libraries.md) / [ADR-017](017-plex-library-sharing.md) /

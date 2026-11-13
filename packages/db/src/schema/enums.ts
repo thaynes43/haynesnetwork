@@ -622,7 +622,8 @@ export type PlexMediaType = (typeof PLEX_MEDIA_TYPES)[number];
 // ADR-047 / DESIGN-025 (PLAN-028 — Library "Watch/Listen/Read here" deep links) — the shared external
 // GUID a media_items row and a Plex title BOTH carry, used to resolve the *arr → Plex match (which Plex
 // library the item lives in + its ratingKey). Radarr matches on tmdb/imdb, Sonarr on tvdb/imdb, Lidarr
-// on musicbrainz. `media_plex_matches.matched_via` is CHECK-constrained to this set.
+// on musicbrainz, and only inside the fitting library type (ADR-123: movie, show, artist).
+// `media_plex_matches.matched_via` is CHECK-constrained to this set.
 export const PLEX_MATCH_GUID_SOURCES = ['tmdb', 'imdb', 'tvdb', 'musicbrainz'] as const;
 export type PlexMatchGuidSource = (typeof PLEX_MATCH_GUID_SOURCES)[number];
 
