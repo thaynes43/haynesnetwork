@@ -27,6 +27,7 @@ import {
   bucketFlatPendingForMedia,
   classifyForExpedite,
   fetchLiveExclusions,
+  classifyGuardian,
   trashWallProtection,
   fetchMaintainerrPending,
   shapePendingItems,
@@ -301,6 +302,9 @@ export interface TrashExpeditePreview {
   watchlisted: number;
   /** DESIGN-052 D-26 / Q-14 — how many of `protected` the Age Guard keeps (added or upgraded recently). A subset. */
   recentlyAdded: number;
+  /** ADR-117 / DESIGN-052 D-29 — how many of `unverifiable` are kept because the file on disk has no verified posted
+   *  release name (the Release Name Check). A subset of `unverifiable`, never added to it. */
+  releaseUnverified: number;
 }
 
 export interface TrashPendingPage {
@@ -451,6 +455,7 @@ export function partitionPendingForExpedite(
     unverifiable: 0,
     watchlisted: 0,
     recentlyAdded: 0,
+    releaseUnverified: 0,
   };
   for (const i of items) {
     const verdict = classifyForExpedite(i);
@@ -459,6 +464,11 @@ export function partitionPendingForExpedite(
       out.deletableBytes += i.sizeBytes;
     } else if (verdict === 'unverifiable') {
       out.unverifiable += 1;
+      // D-29 — the guardian's own reason, so the count is exactly the titles it keeps for want of a name.
+      const kept = classifyGuardian(i);
+      if (i.maintainerrMediaId !== null && kept.keep && kept.reason === 'release_unverified') {
+        out.releaseUnverified += 1;
+      }
     } else {
       out.protected += 1;
       if (verdict === 'protected_watchlist') out.watchlisted += 1;
@@ -614,6 +624,9 @@ export interface TrashPendingCandidate {
   onWatchlist: boolean;
   /** DESIGN-052 D-26 — inside the Age Guard's 180 days: no batch takes it, so the preview leaves it out too. */
   recentlyAdded: boolean;
+  /** ADR-117 / DESIGN-052 D-29 — no verified posted release name for the file on disk: no batch takes it, and the
+   *  sweep would keep it, so the preview leaves it out too. */
+  releaseUnverified: boolean;
 }
 
 /**
@@ -653,6 +666,7 @@ export async function listTrashPendingCandidates(input: {
       protectedByTag: i.protectedByTag,
       onWatchlist: i.onWatchlist,
       recentlyAdded: i.ageGuard === 'recent',
+      releaseUnverified: i.releaseName === 'unverified',
     }));
   return {
     candidates,

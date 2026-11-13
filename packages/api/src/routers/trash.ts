@@ -12,7 +12,6 @@ import {
   cancelBatch,
   createBatchFromPending,
   deleteTrashRule,
-  downloadHistoryFromEnv,
   expediteDeletion,
   FINAL_WARNING_HOURS_MAX,
   FINAL_WARNING_HOURS_MIN,
@@ -386,7 +385,6 @@ export const trashRouter = router({
           maintainerr: resolveMaintainerrBundle(ctx),
           // ADR-093 / DESIGN-052 D-14 — the release is recorded and blocked before the handle.
           arr: resolveReleaseBlockArr(ctx),
-          downloadHistory: await downloadHistoryFromEnv(),
           scope: 'item',
           media: input.media,
           actorId: ctx.user.id,
@@ -424,7 +422,6 @@ export const trashRouter = router({
           db: ctx.db,
           maintainerr: resolveMaintainerrBundle(ctx),
           arr: resolveReleaseBlockArr(ctx),
-          downloadHistory: await downloadHistoryFromEnv(),
           scope: 'all',
           media: input.media,
           actorId: ctx.user.id,
@@ -650,7 +647,6 @@ export const trashRouter = router({
             forceOverride: input.forceOverride,
             actorId: ctx.user.id,
             registry: 'gate-only',
-            downloadHistory: await downloadHistoryFromEnv(),
           });
           if (report.paused !== null) throw new TrashSweepPausedError(report.paused.reason, report.paused.step);
           return report;

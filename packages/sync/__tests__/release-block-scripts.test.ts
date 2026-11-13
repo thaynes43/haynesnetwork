@@ -48,16 +48,10 @@ describe('release-block-seed arguments', () => {
 });
 
 describe('release-block-backfill arguments', () => {
-  it('needs exactly one of --dry-run and --apply', () => {
-    expect(parseBackfillArgs(['--dry-run'])).toEqual({ apply: false, legacySab: null });
-    expect(parseBackfillArgs(['--apply', '--legacy-sab=/tmp/sab.tsv'])).toEqual({
-      apply: true,
-      legacySab: '/tmp/sab.tsv',
-    });
-    expect(parseBackfillArgs(['--dry-run', '--legacy-sab', '/tmp/sab.tsv'])).toEqual({
-      apply: false,
-      legacySab: '/tmp/sab.tsv',
-    });
+  it('needs exactly one of --dry-run and --apply, and reads no file (ADR-117: names come from the app tables)', () => {
+    expect(parseBackfillArgs(['--dry-run'])).toEqual({ apply: false });
+    expect(parseBackfillArgs(['--apply'])).toEqual({ apply: true });
+    expect(() => parseBackfillArgs(['--apply', '--legacy-sab=/tmp/sab.tsv'])).toThrow(/unknown/);
     expect(parseBackfillArgs(['--help'])).toBe('help');
     expect(() => parseBackfillArgs([])).toThrow(/--dry-run or --apply/);
     expect(() => parseBackfillArgs(['--dry-run', '--apply'])).toThrow(/exclusive/);

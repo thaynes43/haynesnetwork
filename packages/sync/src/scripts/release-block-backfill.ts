@@ -1,56 +1,41 @@
-// ADR-117 / DESIGN-052 D-29 — one-off backfill of verified posted names for titles already deleted.
+// ADR-117 / DESIGN-052 D-29 — one-off backfill of posted release names for titles Trash already deleted.
 //
-//   tsx release-block-backfill.ts --dry-run [--legacy-sab=<file>]
-//   tsx release-block-backfill.ts --apply  [--legacy-sab=<file>]
+//   tsx release-block-backfill.ts --dry-run
+//   tsx release-block-backfill.ts --apply
 //
-// --dry-run writes nothing and does not call Radarr or Sonarr. --apply inserts active records (365 days
-// from the original delete) and reconciles the profiles. Do not run --apply until the dry-run counts
-// have been read. The legacy file is never committed.
+// One of the two is required: there is no default. --dry-run writes nothing and does not call Radarr or Sonarr.
+// --apply inserts records (365 days from the original delete), writes and reads back the release profiles, and
+// refuses a title whose terms would not fit under the cap (nothing older is pruned). Do not run --apply until the
+// dry-run counts have been read. Names come from the app's own tables: the ledger and the legacy tables the
+// loader fills (legacy-release-names-load.ts); the script reads no file and no download client.
 //
 // Env: DATABASE_URL. --apply also needs RADARR_URL/RADARR_API_KEY and SONARR_URL/SONARR_API_KEY
-// (URLs default in-cluster). The script does not read the live download client; pass a history file.
-import { readFileSync } from 'node:fs';
+// (URLs default in-cluster).
 import { getPool } from '@hnet/db';
-import {
-  backfillPostedReleaseNames,
-  parseLegacySabFile,
-  releaseBlockArrClientsFromEnv,
-} from '@hnet/domain';
+import { backfillPostedReleaseNames, releaseBlockArrClientsFromEnv } from '@hnet/domain';
 import { createConsoleLogger } from '../logger';
 
-const USAGE = `Usage: release-block-backfill.ts --dry-run|--apply [--legacy-sab=<file>]
+const USAGE = `Usage: release-block-backfill.ts --dry-run|--apply
 
-  --dry-run            count verified terms that would be added (writes nothing, calls no *arr)
-  --apply              write those records and reconcile the release profiles
-  --legacy-sab=<file>  download history: JSON lines or name<TAB>bytes<TAB>completed
+  --dry-run  count the terms that would be added (writes nothing, calls no *arr)
+  --apply    write those records and reconcile the release profiles
 
 Env: DATABASE_URL. --apply also RADARR_API_KEY and SONARR_API_KEY.`;
 
 export interface BackfillArgs {
   apply: boolean;
-  legacySab: string | null;
 }
 
 export function parseBackfillArgs(argv: readonly string[]): BackfillArgs | 'help' {
   let mode: 'dry' | 'apply' | null = null;
-  let legacySab: string | null = null;
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i] as string;
-    const valueOf = (flag: string): string => {
-      if (arg.startsWith(`${flag}=`)) return arg.slice(flag.length + 1);
-      const next = argv[i + 1];
-      if (next === undefined || next.startsWith('--')) throw new Error(`${flag} needs a file`);
-      i += 1;
-      return next;
-    };
+  for (const arg of argv) {
     if (arg === '--help' || arg === '-h') return 'help';
     if (arg === '--dry-run') mode = mode !== null && mode !== 'dry' ? badMode() : 'dry';
     else if (arg === '--apply') mode = mode !== null && mode !== 'apply' ? badMode() : 'apply';
-    else if (arg === '--legacy-sab' || arg.startsWith('--legacy-sab=')) legacySab = valueOf('--legacy-sab');
     else throw new Error(`unknown argument "${arg}"`);
   }
   if (mode === null) throw new Error('one of --dry-run or --apply is required');
-  return { apply: mode === 'apply', legacySab: legacySab || null };
+  return { apply: mode === 'apply' };
 }
 
 function badMode(): never {
@@ -74,11 +59,9 @@ async function main(): Promise<number> {
     logger.error('DATABASE_URL is required');
     return 2;
   }
-  const legacySab = args.legacySab ? parseLegacySabFile(readFileSync(args.legacySab, 'utf8')) : undefined;
   const report = await backfillPostedReleaseNames({
     ...(args.apply ? { arr: releaseBlockArrClientsFromEnv() } : {}),
     apply: args.apply,
-    ...(legacySab ? { legacySab } : {}),
     logger,
   });
   console.log(JSON.stringify(report, null, 2));

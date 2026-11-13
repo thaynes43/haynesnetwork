@@ -16,11 +16,15 @@ import type { DbClient } from '@hnet/db';
 import { consoleDomainLogger, type DomainLogger } from './domain-logger';
 import type { MaintainerrClientBundle } from './maintainerr-clients';
 import {
+  RELEASE_BLOCK_TERM_CAP,
   identifyRelease,
+  readLiveTerms,
+  reserveTermsUnderCap,
   resolveTitleExclusionTarget,
   type ReleaseBlockArrClients,
   type UnrecordedReason,
 } from './release-block';
+import { resolveDb } from './db-client';
 import { listTrashPending } from './trash-flow';
 import { readDisplayWatchlistSnapshot } from './watchlist-registry';
 
@@ -33,7 +37,8 @@ export interface PoolReleaseKindReport {
   /** Items D-11 would keep `release_unrecorded`, per reason (`no_ledger_item`: no ledger row, which the guardian keeps
    *  `unevaluable` anyway; `read_failed`: an *arr read failed during the report). */
   unrecordable: Record<UnrecordedReason, number>;
-  /** Of `pool`, the share kept `release_unrecorded` for want of a term (`no_term` + `gone`), 0..1. */
+  /** Of `pool`, the share the Release Block keeps (`no_term`, `gone`, `no_exclusion_key`, and since ADR-117 / D-29
+   *  `unverified_name` and `cap`), 0..1. */
   unrecordedShare: number;
   /** Records by shape: `exact` counts the D-12 self-check falling back from the group form (or no group at all). */
   shape: { group: number; exact: number; none: number };
@@ -53,6 +58,14 @@ export interface PoolReleaseKindReport {
   nullGroup: number;
   /** The kept items' titles and reasons (library titles; never a person, D-21). */
   unrecorded: Array<{ title: string; reason: UnrecordedReason }>;
+  /**
+   * ADR-117 / DESIGN-052 D-29 — the cap, as the delete path would apply it to the pool in this order: the distinct
+   * live terms of this *arr now, the distinct new terms the recordable items would add, and the cap. An item whose
+   * terms would not fit is counted under `unrecordable.cap`, and adds nothing.
+   */
+  terms: { live: number; added: number; cap: number };
+  /** D-29 — posted names of the recordable items that would get no term because they name no release. */
+  skippedNames: number;
 }
 
 export interface PoolReleaseReport {
@@ -89,6 +102,8 @@ export async function reportPoolReleaseIdentity(input: {
         id_mismatch: 0,
         read_failed: 0,
         no_exclusion_key: 0,
+        unverified_name: 0,
+        cap: 0,
       },
       unrecordedShare: 0,
       shape: { group: 0, exact: 0, none: 0 },
@@ -100,7 +115,11 @@ export async function reportPoolReleaseIdentity(input: {
       identitySource: {},
       nullGroup: 0,
       unrecorded: [],
+      terms: { live: 0, added: 0, cap: RELEASE_BLOCK_TERM_CAP },
+      skippedNames: 0,
     };
+    const live = new Set(await readLiveTerms(resolveDb(input.db), media === 'movie' ? 'radarr' : 'sonarr'));
+    report.terms.live = live.size;
     const keep = (title: string, reason: UnrecordedReason) => {
       report.unrecordable[reason] += 1;
       report.unrecorded.push({ title, reason });
@@ -133,6 +152,14 @@ export async function reportPoolReleaseIdentity(input: {
         keep(item.title, 'no_exclusion_key');
         continue;
       }
+      // ADR-117 / D-29 — the cap, as the delete path applies it: an item whose terms would not fit is kept.
+      const room = reserveTermsUnderCap(live, identity.drafts);
+      if (!room.fits) {
+        keep(item.title, 'cap');
+        continue;
+      }
+      report.terms.added += room.fresh;
+      report.skippedNames += identity.skippedNames;
       report.recordable += 1;
       for (const d of identity.drafts) {
         report.shape[d.shape] += 1;
@@ -147,7 +174,11 @@ export async function reportPoolReleaseIdentity(input: {
       }
     }
     const kept =
-      report.unrecordable.no_term + report.unrecordable.gone + report.unrecordable.no_exclusion_key;
+      report.unrecordable.no_term +
+      report.unrecordable.gone +
+      report.unrecordable.no_exclusion_key +
+      report.unrecordable.unverified_name +
+      report.unrecordable.cap;
     report.unrecordedShare = report.pool === 0 ? 0 : Math.round((kept / report.pool) * 1000) / 1000;
     const withTerm = report.shape.group + report.shape.exact;
     report.foldOnlyShare = withTerm === 0 ? 0 : Math.round((report.foldOnly / withTerm) * 1000) / 1000;

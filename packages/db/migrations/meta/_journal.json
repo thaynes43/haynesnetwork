@@ -750,6 +750,13 @@
       "when": 1791450000000,
       "tag": "0107_seerr_bridge_smoke",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1791480000000,
+      "tag": "0110_legacy_release_names",
+      "breakpoints": true
     }
   ]
 }

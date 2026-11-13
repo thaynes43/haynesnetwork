@@ -1,16 +1,19 @@
-// ADR-117 / DESIGN-052 D-29 — one-off backfill of verified posted names onto titles Trash already deleted.
-// Dry-run writes nothing and does not call Radarr or Sonarr. Apply inserts `active` records (origin
-// `backfill`, 365 days from the original delete) through insertReleaseRecords, then reconcileReleaseBlock.
-// It never removes a low-confidence row, never lengthens a term, and never terms a title the ledger
-// still lists as live.
+// ADR-117 / DESIGN-052 D-29 — one-off backfill of posted release names onto titles Trash already deleted.
+// A dry run writes nothing and does not call Radarr or Sonarr. Apply inserts records (origin `backfill`, 365 days
+// from the original delete) through insertReleaseRecords, reconciles the profile through reconcileReleaseBlock and
+// only then turns them `active`. It never removes or weakens an existing record, never lengthens a term's life,
+// never prunes an older term to make room, and never terms a title the ledger lists as live.
 //
-// Selection (the replica counts mirror these filters):
-//   low — trash_deleted_releases state in (active, in_flight), identity_source arr_file,
-//         term_confidence low_confidence.
-//   movies — distinct tmdb of a deleted movie batch item whose media item is tombstoned
-//         (deleted_from_arr_at is not null) and that has no termed record in
-//         (active, in_flight, expired, pruned).
-//   shows — the same for tvdb and media_kind tv. No size match: a series is many downloads.
+// Selection: every TITLE Trash deleted that is still gone. A title is one (arr kind, tmdb id or tvdb id) with a
+// `deleted` batch item, or with a live (`active` / `in_flight`) Deleted-Release Record (an Expedite delete has no
+// batch item), whose media item is tombstoned (`deleted_from_arr_at` set). Each title lands in ONE class:
+//   lowConfidence — it has a live record from the renamed file (`arr_file`, `low_confidence`);
+//   movies / shows — it has no record with a term at all;
+//   otherNames — every other title: it has a term, and may still have a posted name no live term matches
+//                (review F5: an earlier grab, a failed download, an upgrade's predecessor).
+// For each title, its posted names are the ledger's `grabbed` and `download_failed` rows up to the delete, every row
+// of the legacy tables for its id, and for a movie the old download jobs the D-15 size rule matches. A name that a
+// live term of the same *arr already matches is `alreadyBlocked`; every other name that terms gets a record.
 import {
   ledgerEvents,
   mediaItems,
@@ -22,12 +25,17 @@ import {
 import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { resolveDb } from './db-client';
 import { consoleDomainLogger, type DomainLogger } from './domain-logger';
-import { matchLegacySab, postedReleaseName, type LegacySabJob } from './release-block-names';
+import { matchLegacySab, postedReleaseName } from './release-block-names';
+import { readLegacyJobsForSize, readLegacyReleaseNames } from './release-block-legacy';
 import {
+  RELEASE_BLOCK_TERM_CAP,
   RELEASE_TERM_LIFETIME_DAYS,
+  abandonReleaseRecords,
+  activateReleaseRecords,
   draftForVerifiedName,
   insertReleaseRecords,
   reconcileReleaseBlock,
+  reserveTermsUnderCap,
   type KeyedDrafts,
   type PostedRelease,
   type ReleaseArrKind,
@@ -35,29 +43,36 @@ import {
   type ReleaseBlockReconcileReport,
   type ReleaseRecordDraft,
 } from './release-block';
+import { termMatchesRaw } from './release-terms';
 
 const DAY_MS = 86_400_000;
 const TERMED_STATES = ['active', 'in_flight', 'expired', 'pruned'] as const;
-const LIVE_STATES = ['active', 'in_flight'] as const;
 
-/** Title counts: candidates = expired + named + unnamed + noNewTerm. Name counts are separate. */
+/** Title counts: titles = expired + named + unnamed + noNewTerm + capRefused + unread. Name counts are separate. */
 export interface PostedNameBackfillClass {
-  candidates: number;
+  titles: number;
   /** The delete is already 365 days old. Nothing is inserted, so the term's life is not restarted. */
   expired: number;
-  /** At least one new verified term. */
+  /** At least one new term. */
   named: number;
-  /** No posted name (a URL is not a name). */
+  /** No posted name in any source (a URL is not a name). */
   unnamed: number;
-  /** Posted names, and none of them became a new term. */
+  /** Posted names, and none of them became a new term (all blocked already, skipped or untermed). */
   noNewTerm: number;
+  /** New terms that would not all fit under the cap: nothing is inserted for the title, nothing older is pruned. */
+  capRefused: number;
+  /** The legacy read for the title did not finish (past its row bound): nothing is inserted for it. */
+  unread: number;
   namesSeen: number;
+  /** New records (one per new term). */
   records: number;
+  /** Names that name a release and yield no term the *arr would match. */
   untermed: number;
+  /** Names that name no release (a season-0 special, a bare title). */
+  skipped: number;
+  /** Names a live term already matches. */
   alreadyBlocked: number;
   urlsSkipped: number;
-  /** Deleted titles the ledger still lists as live. Not part of `candidates`. */
-  skippedLive: number;
 }
 
 export interface PostedNameBackfillReport {
@@ -65,39 +80,46 @@ export interface PostedNameBackfillReport {
   lowConfidence: PostedNameBackfillClass;
   movies: PostedNameBackfillClass;
   shows: PostedNameBackfillClass;
+  otherNames: PostedNameBackfillClass;
+  /** Deleted titles the ledger lists as live again (re-added): never termed, not part of any class. */
+  skippedLive: { movies: number; shows: number };
+  /** Per *arr: the distinct live terms before, the distinct terms this run adds, and the cap. */
+  terms: Record<ReleaseArrKind, { live: number; added: number; cap: number }>;
   reconciled: ReleaseBlockReconcileReport[];
 }
 
 interface Candidate {
   key: string;
   arrKind: ReleaseArrKind;
+  externalId: number;
   title: string;
   year: number | null;
   tmdbId: number | null;
   tvdbId: number | null;
   imdbId: string | null;
-  mediaItemId: string | null;
+  mediaItemId: string;
   arrItemId: number | null;
   batchItemId: string | null;
+  /** The delete's own time: a new term expires 365 days from it. */
   deletedAt: Date;
   sizeBytes: number | null;
-  /** Movies only. */
-  sab: boolean;
 }
 
 function emptyClass(): PostedNameBackfillClass {
   return {
-    candidates: 0,
+    titles: 0,
     expired: 0,
     named: 0,
     unnamed: 0,
     noNewTerm: 0,
+    capRefused: 0,
+    unread: 0,
     namesSeen: 0,
     records: 0,
     untermed: 0,
+    skipped: 0,
     alreadyBlocked: 0,
     urlsSkipped: 0,
-    skippedLive: 0,
   };
 }
 
@@ -106,25 +128,18 @@ const payloadString = (payload: Record<string, unknown>, key: string): string | 
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 };
 
-function blockKey(candidate: Candidate, term: string): string {
-  const id =
-    candidate.arrKind === 'radarr'
-      ? `tmdb:${candidate.tmdbId ?? ''}`
-      : `tvdb:${candidate.tvdbId ?? ''}`;
-  return `${candidate.arrKind}|${id}|${term}`;
-}
+const titleKey = (arrKind: ReleaseArrKind, externalId: number) => `${arrKind}:${externalId}`;
 
 /**
- * D-29 — verified terms for deleted titles that have only a renamed-file record, or none. `apply: false`
- * writes nothing and does not call the *arr. A legacy download history is optional; without it only the
- * ledger's grabbed and failed-download names are used.
+ * D-29 — records for the posted names of deleted titles that no live term matches. `apply: false` writes nothing
+ * and does not call the *arr. `apply: true` refuses a title whose terms would not fit under the cap, and stops
+ * (records abandoned, nothing left in the profile) when the profile cannot be written and read back.
  */
 export async function backfillPostedReleaseNames(input: {
   db?: DbClient;
   /** Required for `--apply` (the reconcile). A dry run never calls it. */
   arr?: ReleaseBlockArrClients;
   apply: boolean;
-  legacySab?: readonly LegacySabJob[];
   logger?: DomainLogger;
   now?: Date;
 }): Promise<PostedNameBackfillReport> {
@@ -136,83 +151,76 @@ export async function backfillPostedReleaseNames(input: {
     lowConfidence: emptyClass(),
     movies: emptyClass(),
     shows: emptyClass(),
+    otherNames: emptyClass(),
+    skippedLive: { movies: 0, shows: 0 },
+    terms: {
+      radarr: { live: 0, added: 0, cap: RELEASE_BLOCK_TERM_CAP },
+      sonarr: { live: 0, added: 0, cap: RELEASE_BLOCK_TERM_CAP },
+    },
     reconciled: [],
   };
+  const t = trashDeletedReleases;
 
-  const liveTerms = await db
+  // Every record that has (or had) a term, per title: the live terms, whether any is the renamed-file kind, and the
+  // delete clock its life runs from (expires_at less the lifetime).
+  const records = await db
     .select({
-      arrKind: trashDeletedReleases.arrKind,
-      tmdbId: trashDeletedReleases.tmdbId,
-      tvdbId: trashDeletedReleases.tvdbId,
-      term: trashDeletedReleases.term,
+      arrKind: t.arrKind,
+      tmdbId: t.tmdbId,
+      tvdbId: t.tvdbId,
+      imdbId: t.imdbId,
+      title: t.title,
+      year: t.year,
+      mediaItemId: t.mediaItemId,
+      arrItemId: t.arrItemId,
+      batchItemId: t.batchItemId,
+      sizeBytes: t.sizeBytes,
+      term: t.term,
+      state: t.state,
+      identitySource: t.identitySource,
+      termConfidence: t.termConfidence,
+      expiresAt: t.expiresAt,
     })
-    .from(trashDeletedReleases)
-    .where(and(inArray(trashDeletedReleases.state, [...LIVE_STATES]), isNotNull(trashDeletedReleases.term)));
-  const blocked = new Set(
-    liveTerms.map(
-      (row) =>
-        `${row.arrKind}|${row.arrKind === 'radarr' ? `tmdb:${row.tmdbId ?? ''}` : `tvdb:${row.tvdbId ?? ''}`}|${row.term}`,
-    ),
-  );
+    .from(t)
+    .where(and(inArray(t.state, [...TERMED_STATES]), isNotNull(t.term)));
+  const liveTerms: Record<ReleaseArrKind, Set<string>> = { radarr: new Set(), sonarr: new Set() };
+  const termed = new Set<string>();
+  const lowConfidence = new Set<string>();
+  const fromRecords = new Map<string, Candidate>();
+  for (const r of records) {
+    if (r.arrKind !== 'radarr' && r.arrKind !== 'sonarr') continue;
+    const live = r.state === 'active' || r.state === 'in_flight';
+    if (live) liveTerms[r.arrKind].add(r.term as string);
+    const externalId = r.arrKind === 'radarr' ? r.tmdbId : r.tvdbId;
+    if (externalId === null || externalId <= 0) continue;
+    const key = titleKey(r.arrKind, externalId);
+    termed.add(key);
+    if (!live) continue;
+    if (r.identitySource === 'arr_file' && r.termConfidence === 'low_confidence') lowConfidence.add(key);
+    if (r.mediaItemId === null) continue;
+    const deletedAt = new Date(r.expiresAt.getTime() - RELEASE_TERM_LIFETIME_DAYS * DAY_MS);
+    const known = fromRecords.get(key);
+    if (known && known.deletedAt.getTime() >= deletedAt.getTime()) continue;
+    fromRecords.set(key, {
+      key,
+      arrKind: r.arrKind,
+      externalId,
+      title: r.title,
+      year: r.year,
+      tmdbId: r.tmdbId,
+      tvdbId: r.tvdbId,
+      imdbId: r.imdbId,
+      mediaItemId: r.mediaItemId,
+      arrItemId: r.arrItemId,
+      batchItemId: r.batchItemId,
+      deletedAt,
+      sizeBytes: r.sizeBytes,
+    });
+  }
+  report.terms.radarr.live = liveTerms.radarr.size;
+  report.terms.sonarr.live = liveTerms.sonarr.size;
 
-  const termedMovies = new Set(
-    (
-      await db
-        .select({ tmdbId: trashDeletedReleases.tmdbId })
-        .from(trashDeletedReleases)
-        .where(
-          and(
-            eq(trashDeletedReleases.arrKind, 'radarr'),
-            inArray(trashDeletedReleases.state, [...TERMED_STATES]),
-            isNotNull(trashDeletedReleases.term),
-            isNotNull(trashDeletedReleases.tmdbId),
-          ),
-        )
-    ).map((row) => row.tmdbId as number),
-  );
-  const termedShows = new Set(
-    (
-      await db
-        .select({ tvdbId: trashDeletedReleases.tvdbId })
-        .from(trashDeletedReleases)
-        .where(
-          and(
-            eq(trashDeletedReleases.arrKind, 'sonarr'),
-            inArray(trashDeletedReleases.state, [...TERMED_STATES]),
-            isNotNull(trashDeletedReleases.term),
-            isNotNull(trashDeletedReleases.tvdbId),
-          ),
-        )
-    ).map((row) => row.tvdbId as number),
-  );
-
-  const lowRows = await db
-    .select({
-      id: trashDeletedReleases.id,
-      arrKind: trashDeletedReleases.arrKind,
-      title: trashDeletedReleases.title,
-      year: trashDeletedReleases.year,
-      tmdbId: trashDeletedReleases.tmdbId,
-      tvdbId: trashDeletedReleases.tvdbId,
-      imdbId: trashDeletedReleases.imdbId,
-      mediaItemId: trashDeletedReleases.mediaItemId,
-      arrItemId: trashDeletedReleases.arrItemId,
-      batchItemId: trashDeletedReleases.batchItemId,
-      sizeBytes: trashDeletedReleases.sizeBytes,
-      recordedAt: trashDeletedReleases.recordedAt,
-      deletedAt: trashBatchItems.deletedAt,
-      deletedSizeBytes: trashBatchItems.deletedSizeBytes,
-    })
-    .from(trashDeletedReleases)
-    .leftJoin(trashBatchItems, eq(trashBatchItems.id, trashDeletedReleases.batchItemId))
-    .where(
-      and(
-        inArray(trashDeletedReleases.state, [...LIVE_STATES]),
-        eq(trashDeletedReleases.identitySource, 'arr_file'),
-        eq(trashDeletedReleases.termConfidence, 'low_confidence'),
-      ),
-    );
-
+  // Every title a batch deleted (the newest delete of each).
   const deletedRows = await db
     .select({
       id: trashBatchItems.id,
@@ -226,138 +234,116 @@ export async function backfillPostedReleaseNames(input: {
       deletedSizeBytes: trashBatchItems.deletedSizeBytes,
       imdbId: mediaItems.imdbId,
       arrItemId: mediaItems.arrItemId,
-      tombstoned: mediaItems.deletedFromArrAt,
     })
     .from(trashBatchItems)
     .innerJoin(trashBatches, eq(trashBatches.id, trashBatchItems.batchId))
     .innerJoin(mediaItems, eq(mediaItems.id, trashBatchItems.mediaItemId))
     .where(and(eq(trashBatchItems.state, 'deleted'), isNotNull(trashBatchItems.deletedAt)))
     .orderBy(desc(trashBatchItems.deletedAt));
-
-  const candidates: Array<{ bucket: PostedNameBackfillClass; candidate: Candidate }> = [];
-  for (const row of lowRows) {
-    if (row.arrKind !== 'radarr' && row.arrKind !== 'sonarr') continue;
-    candidates.push({
-      bucket: report.lowConfidence,
-      candidate: {
-        key: `low:${row.id}`,
-        arrKind: row.arrKind,
-        title: row.title,
-        year: row.year,
-        tmdbId: row.tmdbId,
-        tvdbId: row.tvdbId,
-        imdbId: row.imdbId,
-        mediaItemId: row.mediaItemId,
-        arrItemId: row.arrItemId,
-        batchItemId: row.batchItemId,
-        deletedAt: row.deletedAt ?? row.recordedAt,
-        sizeBytes: row.deletedSizeBytes ?? row.sizeBytes,
-        sab: row.arrKind === 'radarr',
-      },
+  const titles = new Map<string, Candidate>();
+  for (const row of deletedRows) {
+    const arrKind: ReleaseArrKind | null =
+      row.mediaKind === 'movie' ? 'radarr' : row.mediaKind === 'tv' ? 'sonarr' : null;
+    if (arrKind === null || row.mediaItemId === null) continue;
+    const externalId = arrKind === 'radarr' ? row.tmdbId : row.tvdbId;
+    if (externalId === null || externalId <= 0) continue;
+    const key = titleKey(arrKind, externalId);
+    if (titles.has(key)) continue; // newest delete first
+    titles.set(key, {
+      key,
+      arrKind,
+      externalId,
+      title: row.title,
+      year: row.year,
+      tmdbId: row.tmdbId,
+      tvdbId: row.tvdbId,
+      imdbId: row.imdbId,
+      mediaItemId: row.mediaItemId,
+      arrItemId: row.arrItemId,
+      batchItemId: row.id,
+      deletedAt: row.deletedAt as Date,
+      sizeBytes: arrKind === 'radarr' ? row.deletedSizeBytes : null,
     });
   }
+  for (const [key, candidate] of fromRecords) if (!titles.has(key)) titles.set(key, candidate);
 
-  const seenMovie = new Set<number>();
-  const seenShow = new Set<number>();
-  for (const row of deletedRows) {
-    const deletedAt = row.deletedAt as Date;
-    if (row.mediaKind === 'movie') {
-      if (row.tmdbId === null || seenMovie.has(row.tmdbId)) continue;
-      seenMovie.add(row.tmdbId);
-      if (termedMovies.has(row.tmdbId)) continue;
-      if (row.tombstoned === null) {
-        report.movies.skippedLive += 1;
-        continue;
-      }
-      candidates.push({
-        bucket: report.movies,
-        candidate: {
-          key: `movie:${row.tmdbId}`,
-          arrKind: 'radarr',
-          title: row.title,
-          year: row.year,
-          tmdbId: row.tmdbId,
-          tvdbId: row.tvdbId,
-          imdbId: row.imdbId,
-          mediaItemId: row.mediaItemId,
-          arrItemId: row.arrItemId,
-          batchItemId: row.id,
-          deletedAt,
-          sizeBytes: row.deletedSizeBytes,
-          sab: true,
-        },
-      });
-    } else if (row.mediaKind === 'tv') {
-      if (row.tvdbId === null || seenShow.has(row.tvdbId)) continue;
-      seenShow.add(row.tvdbId);
-      if (termedShows.has(row.tvdbId)) continue;
-      if (row.tombstoned === null) {
-        report.shows.skippedLive += 1;
-        continue;
-      }
-      candidates.push({
-        bucket: report.shows,
-        candidate: {
-          key: `show:${row.tvdbId}`,
-          arrKind: 'sonarr',
-          title: row.title,
-          year: row.year,
-          tmdbId: row.tmdbId,
-          tvdbId: row.tvdbId,
-          imdbId: row.imdbId,
-          mediaItemId: row.mediaItemId,
-          arrItemId: row.arrItemId,
-          batchItemId: row.id,
-          deletedAt,
-          sizeBytes: null,
-          sab: false,
-        },
-      });
+  // Only a title that is still gone: one the ledger lists as live again is never termed.
+  const mediaIds = [...new Set([...titles.values()].map((c) => c.mediaItemId))];
+  const tombstoned = new Set<string>();
+  for (let at = 0; at < mediaIds.length; at += 1_000) {
+    const rows = await db
+      .select({ id: mediaItems.id })
+      .from(mediaItems)
+      .where(and(inArray(mediaItems.id, mediaIds.slice(at, at + 1_000)), isNotNull(mediaItems.deletedFromArrAt)));
+    for (const row of rows) tombstoned.add(row.id);
+  }
+
+  const eventsByItem = new Map<string, Array<{ occurredAt: Date; payload: Record<string, unknown> }>>();
+  const goneIds = mediaIds.filter((id) => tombstoned.has(id));
+  for (let at = 0; at < goneIds.length; at += 500) {
+    const events = await db
+      .select({
+        mediaItemId: ledgerEvents.mediaItemId,
+        occurredAt: ledgerEvents.occurredAt,
+        payload: ledgerEvents.payload,
+      })
+      .from(ledgerEvents)
+      .where(
+        and(
+          inArray(ledgerEvents.mediaItemId, goneIds.slice(at, at + 500)),
+          inArray(ledgerEvents.eventType, ['grabbed', 'download_failed']),
+        ),
+      );
+    for (const event of events) {
+      if (event.mediaItemId === null) continue;
+      const list = eventsByItem.get(event.mediaItemId) ?? [];
+      list.push(event);
+      eventsByItem.set(event.mediaItemId, list);
     }
   }
 
-  const mediaIds = [
-    ...new Set(candidates.map((c) => c.candidate.mediaItemId).filter((id): id is string => id !== null)),
-  ];
-  const events =
-    mediaIds.length === 0
-      ? []
-      : await db
-          .select({
-            mediaItemId: ledgerEvents.mediaItemId,
-            occurredAt: ledgerEvents.occurredAt,
-            payload: ledgerEvents.payload,
-          })
-          .from(ledgerEvents)
-          .where(
-            and(
-              inArray(ledgerEvents.mediaItemId, mediaIds),
-              inArray(ledgerEvents.eventType, ['grabbed', 'download_failed']),
-            ),
-          );
-  const eventsByItem = new Map<string, typeof events>();
-  for (const event of events) {
-    if (event.mediaItemId === null) continue;
-    const list = eventsByItem.get(event.mediaItemId) ?? [];
-    list.push(event);
-    eventsByItem.set(event.mediaItemId, list);
-  }
-
+  // The cap, as the delete path applies it: the live terms plus what this run has reserved so far.
+  const reserved: Record<ReleaseArrKind, Set<string>> = {
+    radarr: new Set(liveTerms.radarr),
+    sonarr: new Set(liveTerms.sonarr),
+  };
   const items: KeyedDrafts[] = [];
   const deletedAtByKey = new Map<string, Date>();
-  for (const { bucket, candidate } of candidates) {
-    bucket.candidates += 1;
+  for (const candidate of titles.values()) {
+    if (!tombstoned.has(candidate.mediaItemId)) {
+      report.skippedLive[candidate.arrKind === 'radarr' ? 'movies' : 'shows'] += 1;
+      continue;
+    }
+    const bucket = lowConfidence.has(candidate.key)
+      ? report.lowConfidence
+      : !termed.has(candidate.key)
+        ? candidate.arrKind === 'radarr'
+          ? report.movies
+          : report.shows
+        : report.otherNames;
+    bucket.titles += 1;
     if (candidate.deletedAt.getTime() + RELEASE_TERM_LIFETIME_DAYS * DAY_MS <= now.getTime()) {
       bucket.expired += 1;
       continue;
     }
-    const names = namesFor(candidate, eventsByItem.get(candidate.mediaItemId ?? '') ?? [], input.legacySab ?? [], bucket);
+    const names = await namesFor(db, candidate, eventsByItem.get(candidate.mediaItemId) ?? [], bucket);
+    if (names === 'unread') {
+      bucket.unread += 1;
+      continue;
+    }
     if (names.length === 0) {
       bucket.unnamed += 1;
       continue;
     }
+    const live = [...liveTerms[candidate.arrKind]];
     const drafts: ReleaseRecordDraft[] = [];
+    const mine = new Set<string>();
     for (const posted of names) {
+      // Review F5 — a name is blocked only when a live term matches it as the *arr would test it.
+      if (live.some((term) => termMatchesRaw(term, posted.name))) {
+        bucket.alreadyBlocked += 1;
+        continue;
+      }
       const built = draftForVerifiedName({
         arrKind: candidate.arrKind,
         arrItemId: candidate.arrItemId,
@@ -374,18 +360,25 @@ export async function backfillPostedReleaseNames(input: {
         bucket.untermed += 1;
         continue;
       }
-      if (built === 'skip' || built.term === null) continue;
-      if (blocked.has(blockKey(candidate, built.term))) {
-        bucket.alreadyBlocked += 1;
+      if (built === 'skip' || built.term === null) {
+        bucket.skipped += 1;
         continue;
       }
-      blocked.add(blockKey(candidate, built.term));
+      if (mine.has(built.term)) continue; // two names of this title, one term
+      mine.add(built.term);
       drafts.push({ ...built, sizeBytes: built.sizeBytes ?? candidate.sizeBytes });
     }
     if (drafts.length === 0) {
       bucket.noNewTerm += 1;
       continue;
     }
+    // The reconcile must never prune an older term to make room: a title that does not fit is left out, whole.
+    const room = reserveTermsUnderCap(reserved[candidate.arrKind], drafts);
+    if (!room.fits) {
+      bucket.capRefused += 1;
+      continue;
+    }
+    report.terms[candidate.arrKind].added += room.fresh;
     bucket.named += 1;
     bucket.records += drafts.length;
     items.push({ key: candidate.key, drafts, batchItemId: candidate.batchItemId });
@@ -395,35 +388,52 @@ export async function backfillPostedReleaseNames(input: {
   if (!input.apply || items.length === 0) return report;
   if (!input.arr) throw new Error('backfill apply needs the Release Block clients');
   const arr = input.arr;
-  await insertReleaseRecords({
+  // Phase A's shape: the records go in `in_flight`, the profile is written and read back with them, and only then
+  // are they `active`. A failure abandons them and takes their terms back out, so a second apply starts clean.
+  const inserted = await insertReleaseRecords({
     db: input.db,
     items,
     origin: 'backfill',
-    state: 'active',
+    state: 'in_flight',
     recordedAt: now,
     expiresFrom: (key) => deletedAtByKey.get(key),
     logger,
   });
-  const kinds = new Set(items.flatMap((item) => item.drafts.map((d) => d.arrKind)));
-  for (const arrKind of ['radarr', 'sonarr'] as const) {
-    if (!kinds.has(arrKind)) continue;
-    report.reconciled.push(
-      await reconcileReleaseBlock({ db: input.db, arr, arrKind, logger, now }),
-    );
+  const recordIds = [...inserted.values()].flat();
+  const kinds = (['radarr', 'sonarr'] as const).filter((kind) =>
+    items.some((item) => item.drafts.some((d) => d.arrKind === kind)),
+  );
+  try {
+    for (const arrKind of kinds) {
+      report.reconciled.push(
+        await reconcileReleaseBlock({ db: input.db, arr, arrKind, logger, now, prune: false }),
+      );
+    }
+  } catch (error) {
+    await abandonReleaseRecords({ db: input.db, recordIds, at: now });
+    for (const arrKind of kinds) {
+      try {
+        await reconcileReleaseBlock({ db: input.db, arr, arrKind, logger, now, prune: false });
+      } catch {
+        // best effort: the upkeep's drift check removes an orphan term
+      }
+    }
+    throw error;
   }
+  await activateReleaseRecords({ db: input.db, recordIds, at: now });
   return report;
 }
 
-function namesFor(
+async function namesFor(
+  db: DbClient,
   candidate: Candidate,
   events: ReadonlyArray<{ occurredAt: Date; payload: Record<string, unknown> }>,
-  jobs: readonly LegacySabJob[],
   bucket: PostedNameBackfillClass,
-): PostedRelease[] {
+): Promise<PostedRelease[] | 'unread'> {
   const seen = new Set<string>();
   const out: PostedRelease[] = [];
-  const add = (posted: PostedRelease | null) => {
-    if (!posted || seen.has(posted.name)) return;
+  const add = (posted: PostedRelease) => {
+    if (seen.has(posted.name)) return;
     seen.add(posted.name);
     out.push(posted);
     bucket.namesSeen += 1;
@@ -447,30 +457,34 @@ function namesFor(
       sizeBytes: null,
     });
   }
-  if (candidate.sab && jobs.length > 0) {
-    for (const job of matchLegacySab(
+  const legacy = await readLegacyReleaseNames(db, candidate.arrKind, candidate.externalId);
+  if (legacy === 'truncated') return 'unread';
+  for (const row of legacy) {
+    const name = postedReleaseName(row.releaseName);
+    if (!name) continue;
+    add({
+      name,
+      releaseGroup: row.releaseGroup,
+      quality: row.quality,
+      indexer: null,
+      source: 'legacy_arr',
+      sizeBytes: row.sizeBytes,
+    });
+  }
+  if (candidate.arrKind === 'radarr') {
+    const jobs = matchLegacySab(
       {
         title: candidate.title,
         year: candidate.year,
         deletedAt: candidate.deletedAt,
         deletedSizeBytes: candidate.sizeBytes,
       },
-      jobs,
-    )) {
-      if (job.name.includes('://')) {
-        bucket.urlsSkipped += 1;
-        continue;
-      }
+      await readLegacyJobsForSize(db, candidate.sizeBytes),
+    );
+    for (const job of jobs) {
       const name = postedReleaseName(job.name);
       if (!name) continue;
-      add({
-        name,
-        releaseGroup: null,
-        quality: null,
-        indexer: null,
-        source: 'legacy_sab',
-        sizeBytes: job.bytes,
-      });
+      add({ name, releaseGroup: null, quality: null, indexer: null, source: 'legacy_sab', sizeBytes: job.bytes });
     }
   }
   return out;

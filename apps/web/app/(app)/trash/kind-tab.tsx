@@ -176,6 +176,8 @@ interface PendingCandidate {
   onWatchlist?: boolean;
   /** DESIGN-052 D-26 — inside the Age Guard's 180 days: no batch takes it. Absent ⇒ false (older server). */
   recentlyAdded?: boolean;
+  /** ADR-117 / DESIGN-052 D-29 — no verified release name on record: no batch takes it. Absent ⇒ false. */
+  releaseUnverified?: boolean;
 }
 
 interface SafetyLike {
@@ -1564,6 +1566,7 @@ export function KindTab({
     protectedByTag: p.protectedByTag,
     onWatchlist: p.onWatchlist === true,
     recentlyAdded: p.recentlyAdded === true,
+    releaseUnverified: p.releaseUnverified === true,
   }));
 
   const kindNoun = kind === 'movie' ? 'movie' : 'TV';

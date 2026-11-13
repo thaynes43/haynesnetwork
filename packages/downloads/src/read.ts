@@ -231,8 +231,6 @@ const sabHistorySlotSchema = z
     fail_message: z.string().optional(),
     /** When the job finished (unix epoch SECONDS). Read by the queue janitor's age rail (DESIGN-046 D-18). */
     completed: z.number().optional(),
-    /** Downloaded size. Read only by the Release Block's posted-name match (ADR-117). */
-    bytes: z.union([z.string(), z.number()]).optional(),
   })
   .passthrough();
 const sabHistorySchema = z
@@ -388,38 +386,6 @@ export class SabnzbdReadClient {
           ? new Date(s.completed * 1000)
           : null,
     }));
-  }
-
-  /**
-   * ADR-117 / DESIGN-052 D-29 — one page of `mode=history` as name, bytes and completion only. URLs, storage
-   * paths and job ids are dropped before the result leaves this method. `slotCount` is how many slots SAB
-   * returned, so the caller can page without seeing the dropped ones.
-   */
-  async listReleaseJobs(query: {
-    archive: boolean;
-    start: number;
-    limit: number;
-  }): Promise<{ jobs: Array<{ name: string; bytes: number; completedAt: Date }>; slotCount: number }> {
-    const data = await this.getJson(
-      {
-        mode: 'history',
-        archive: query.archive ? 1 : 0,
-        start: query.start,
-        limit: query.limit,
-      },
-      sabHistorySchema,
-    );
-    const slots = data.history.slots ?? [];
-    const jobs: Array<{ name: string; bytes: number; completedAt: Date }> = [];
-    for (const slot of slots) {
-      const name = (slot.name ?? '').trim();
-      const bytes = typeof slot.bytes === 'number' ? slot.bytes : Number(slot.bytes);
-      if (name.length === 0 || name.includes('://')) continue;
-      if (!Number.isFinite(bytes) || bytes <= 0) continue;
-      if (typeof slot.completed !== 'number' || !Number.isFinite(slot.completed) || slot.completed <= 0) continue;
-      jobs.push({ name, bytes, completedAt: new Date(slot.completed * 1000) });
-    }
-    return { jobs, slotCount: slots.length };
   }
 
   /** `mode=history` (archive included) — the terminal Completed/Failed slots. `limit` bounds the read. */

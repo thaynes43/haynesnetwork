@@ -471,7 +471,13 @@ async function proposeForKind(input: {
     // watchlisted titles and the Age Guard's recent dates, matching the batch builder's eligibility.
     actionable = pending.items.filter(
       (p): p is TrashPendingItem & { maintainerrMediaId: string } =>
-        p.maintainerrMediaId !== null && !p.saveIntent && !p.protectedByTag && !p.onWatchlist && p.ageGuard !== 'recent',
+        p.maintainerrMediaId !== null &&
+        !p.saveIntent &&
+        !p.protectedByTag &&
+        !p.onWatchlist &&
+        p.ageGuard !== 'recent' &&
+        // ADR-117 / DESIGN-052 D-29 — a title with no verified release name is never proposed.
+        p.releaseName !== 'unverified',
     );
   } catch (err) {
     return {

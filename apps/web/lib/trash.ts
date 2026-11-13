@@ -56,6 +56,9 @@ export interface GuardianPreviewInput {
   /** ADR-099 D-4 — somebody saved it (an open save intent): the server keeps it, exclusion or not. Absent ⇒ not
    *  saved (an older server). */
   saveIntent?: boolean;
+  /** ADR-117 / DESIGN-052 D-29 — `unverified`: the file on disk has no verified posted release name, so the server
+   *  keeps it (skipped). Absent or `unchecked` ⇒ not judged here (an older server, a series). */
+  releaseName?: 'verified' | 'unverified' | 'unchecked';
 }
 
 /**
@@ -107,6 +110,8 @@ export function previewGuardian(item: GuardianPreviewInput): GuardianPreview {
   ) {
     return 'unverifiable';
   }
+  // ADR-117 / DESIGN-052 D-29 — no verified posted release name for the file on disk ⇒ kept (skipped), never deleted.
+  if (item.releaseName === 'unverified') return 'unverifiable';
   return 'deletable';
 }
 
@@ -120,6 +125,7 @@ export function unverifiableReason(item: GuardianPreviewInput): string {
   if (item.watchlistEvaluable !== true) return "its watchlists can't be checked right now";
   if (item.ruleEvaluationFailed) return "Maintainerr couldn't check its rules";
   if (item.ageGuard === 'unknown') return "its dates can't be checked right now";
+  if (item.releaseName === 'unverified') return "the name of its download isn't on record";
   return "it can't be checked right now";
 }
 
@@ -133,7 +139,7 @@ export const EXPEDITE_PROTECTED_REASON =
 
 /** D-25by — the Expedite-all confirm's line for the unverifiable count (every cause, one sentence). */
 export const EXPEDITE_UNVERIFIABLE_REASON =
-  "not in our ledger, their watchlists or dates can't be checked right now, or Maintainerr couldn't check their rules, so they are skipped, never deleted.";
+  "not in our ledger, their watchlists or dates can't be checked right now, Maintainerr couldn't check their rules, or the name of their download isn't on record, so they are skipped, never deleted.";
 
 export interface ExpeditePartition {
   /** Items the server will hand to Maintainerr's per-item delete handler. */
@@ -714,7 +720,8 @@ export type WallReasonName =
   | 'rules_unknown'
   | 'age_unknown'
   | 'unactionable'
-  | 'live_excluded';
+  | 'live_excluded'
+  | 'release_unverified';
 
 /**
  * What a kept tile says, per reason. `label` is the line on the tile: it has to fit a poster a third
@@ -745,6 +752,11 @@ export const WALL_REASON_COPY: Record<WallReasonName, { label: string; detail: s
   unactionable: {
     label: "Can't be removed",
     detail: "Kept: not linked to Plex, so it can't be removed",
+  },
+  // ADR-117 / DESIGN-052 D-29 — the same sentence as the batch wall's kept tooltip.
+  release_unverified: {
+    label: 'Download unknown',
+    detail: "Kept: the name of its download isn't on record",
   },
 };
 
@@ -973,7 +985,9 @@ export type TrashKeepReasonName =
   | 'live_excluded'
   | 'release_unrecorded'
   | 'recently_added'
-  | 'saved';
+  | 'saved'
+  | 'release_unverified'
+  | 'release_block_full';
 
 /** The batch wall's kept-tile tooltip, per keep reason (D-10). `tag` and `live_excluded` are both a Save. */
 export const KEPT_REASON_TOOLTIPS: Record<TrashKeepReasonName, string> = {
@@ -984,6 +998,11 @@ export const KEPT_REASON_TOOLTIPS: Record<TrashKeepReasonName, string> = {
   live_excluded: 'Kept: saved',
   tag: 'Kept: saved',
   release_unrecorded: "Kept: couldn't be removed safely",
+  // ADR-117 / DESIGN-052 D-29 — no verified posted release name for the file on disk: nothing could stop the same
+  // download being fetched again, so the title stays until its name is on record.
+  release_unverified: "Kept: the name of its download isn't on record",
+  // D-29 — the list of blocked downloads has no room for this title's entries.
+  release_block_full: 'Kept: the list of blocked downloads is full',
   // DESIGN-052 D-26 — the Age Guard: downloaded, upgraded or added to a server in the last 180 days.
   recently_added: 'Kept: added or upgraded recently',
   // ADR-099 D-4 — saved from another surface (the pending wall, the library) while the row was still pending.

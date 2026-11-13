@@ -1,109 +1,74 @@
-// ADR-117 / DESIGN-052 D-29 — the posted-name backfill and the download-history page read, on embedded PG16.
+// ADR-117 / DESIGN-052 D-29 — the posted-name backfill, on embedded PG16 with the in-memory *arr (no live API):
+// one class per title still gone; the names come from the ledger, the legacy tables and the size-matched old jobs;
+// review F5 (a title that has a term and still has a posted name no live term matches; a title whose terms would
+// not fit under the cap is left out and nothing is pruned; a failed reconcile leaves nothing behind and a second
+// apply starts clean); a dry run writes nothing and builds no *arr client; a title back in the library is never
+// termed; a delete 365 days old is never restarted. Every title, group and release name here is invented.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
-import {
-  ledgerEvents,
-  mediaItems,
-  trashBatchItems,
-  trashBatches,
-  trashDeletedReleases,
-} from '@hnet/db/schema';
+import { eq, inArray, sql } from 'drizzle-orm';
+import { ledgerEvents, mediaItems, trashBatchItems, trashBatches, trashDeletedReleases } from '@hnet/db/schema';
 import {
   RELEASE_BLOCK_SENTINEL,
   RELEASE_BLOCK_TERM_CAP,
   RELEASE_TERM_LIFETIME_DAYS,
+  ReleaseBlockError,
   backfillPostedReleaseNames,
   createStaticReleaseBlockArr,
-  downloadHistoryFromEnv,
-  loadReleaseDownloadHistory,
-  silentDomainLogger,
+  deriveTerm,
+  loadLegacyReleaseNames,
+  termMatchesRaw,
+  upsertMediaItemsBatch,
   type DomainLogger,
   type PostedNameBackfillClass,
 } from '../src/index';
 import { bootMigratedDb, type TestDb } from './helpers';
 
-const DAY = 86_400_000;
-const NOW = new Date('2026-11-13T18:00:00Z');
-const DELETED = new Date('2026-08-01T00:00:00Z');
-const EXPIRED = new Date('2024-01-01T00:00:00Z');
+const DAY_MS = 86_400_000;
+const NOW = new Date('2026-11-13T12:00:00Z');
+const DELETED = new Date('2026-10-10T12:00:00Z');
+const EXPIRED = new Date(NOW.getTime() - (RELEASE_TERM_LIFETIME_DAYS + 1) * DAY_MS);
+const quiet: DomainLogger = { info: () => {}, warn: () => {}, error: () => {} };
 
+const termFor = (title: string, year: number, name: string) =>
+  deriveTerm({
+    kind: 'movie',
+    arrTitle: title,
+    arrYears: [year],
+    releaseNames: [name],
+    renamedFileName: null,
+    releaseGroup: null,
+    resolution: null,
+    remux: false,
+  })!.term;
+
+/** Every title is in exactly one outcome. */
 function sums(row: PostedNameBackfillClass): void {
-  expect(row.expired + row.named + row.unnamed + row.noNewTerm).toBe(row.candidates);
+  expect(row.expired + row.named + row.unnamed + row.noNewTerm + row.capRefused + row.unread).toBe(row.titles);
 }
 
-describe('download history paging (D-29)', () => {
-  it('reads both views a page at a time and stops on a short page', async () => {
-    const calls: Array<{ archive: boolean; start: number }> = [];
-    const page = (slotCount: number) => ({
-      jobs: Array.from({ length: slotCount }, (_, i) => ({
-        name: `Name.${slotCount}.${i}.2020.1080p.BluRay.x264-GRP`,
-        bytes: 100,
-        completedAt: new Date('2026-01-01T00:00:00Z'),
-      })),
-      slotCount,
-    });
-    const { jobs, truncated } = await loadReleaseDownloadHistory({
-      listReleaseJobs: async (query) => {
-        calls.push({ archive: query.archive, start: query.start });
-        if (!query.archive && query.start === 0) return page(1000);
-        return page(2);
-      },
-    });
-    expect(truncated).toBe(false);
-    expect(calls).toEqual([
-      { archive: false, start: 0 },
-      { archive: false, start: 1000 },
-      { archive: true, start: 0 },
-    ]);
-    expect(jobs).toHaveLength(1004);
-  });
-
-  it('a missing key does not throw and returns no jobs', async () => {
-    const warnings: string[] = [];
-    const logger: DomainLogger = {
-      info: () => {},
-      warn: (msg) => warnings.push(msg),
-      error: () => {},
-    };
-    expect(await downloadHistoryFromEnv({}, logger)).toBeUndefined();
-    expect(warnings).toEqual(['[release-block] download_history_unavailable']);
-  });
-});
-
-describe('the posted-name backfill (DESIGN-052 D-29)', () => {
+describe('the posted-name backfill (ADR-117 / DESIGN-052 D-29)', () => {
   let t: TestDb;
   const ids: Record<string, string> = {};
+  const MOVIES: Array<[string, number, number]> = [
+    ['Posted Movie', 7001, 2020],
+    ['Renamed Movie', 7002, 2019],
+    ['Live Movie', 7003, 2018],
+    ['Old Movie', 7004, 2017],
+    ['Sized Movie', 7005, 2016],
+    ['Upgraded Movie', 7006, 2021],
+  ];
 
   beforeAll(async () => {
     t = await bootMigratedDb();
-    await upsertBoth();
-    for (const row of await t.db.select().from(mediaItems)) ids[row.title] = row.id;
-  });
-  afterAll(async () => t?.stop());
-  beforeEach(async () => {
-    await t.db.delete(trashDeletedReleases);
-    await t.db.delete(trashBatchItems);
-    await t.db.delete(trashBatches);
-    await t.db.delete(ledgerEvents);
-  });
-
-  async function upsertBoth(): Promise<void> {
-    const { upsertMediaItemsBatch } = await import('../src/index');
     await upsertMediaItemsBatch({
       db: t.db,
       arrKind: 'radarr',
-      items: [
-        ['Posted Movie', 7001, 2020],
-        ['Renamed Movie', 7002, 2019],
-        ['Live Movie', 7003, 2018],
-        ['Old Movie', 7004, 2017],
-        ['Sized Movie', 7005, 2016],
-      ].map(([title, tmdbId, year], i) => ({
+      items: MOVIES.map(([title, tmdbId, year], i) => ({
         arrItemId: 800 + i,
-        tmdbId: tmdbId as number,
-        title: title as string,
-        sortTitle: String(title).toLowerCase(),
-        year: year as number,
+        tmdbId,
+        title,
+        sortTitle: title.toLowerCase(),
+        year,
         monitored: true,
         qualityProfileId: 1,
         qualityProfileName: 'Any',
@@ -117,8 +82,8 @@ describe('the posted-name backfill (DESIGN-052 D-29)', () => {
         {
           arrItemId: 80,
           tvdbId: 8001,
-          title: 'Nameless Show',
-          sortTitle: 'nameless show',
+          title: 'Quiet Show',
+          sortTitle: 'quiet show',
           year: 2015,
           monitored: true,
           qualityProfileId: 1,
@@ -127,218 +92,272 @@ describe('the posted-name backfill (DESIGN-052 D-29)', () => {
         },
       ],
     });
-  }
+    for (const row of await t.db.select().from(mediaItems)) ids[row.title] = row.id;
+  });
+  afterAll(async () => t?.stop());
+  beforeEach(async () => {
+    await t.db.delete(trashDeletedReleases);
+    await t.db.delete(trashBatchItems);
+    await t.db.delete(trashBatches);
+    await t.db.delete(ledgerEvents);
+    await t.db.execute(sql`TRUNCATE legacy_release_names, legacy_download_jobs`);
+    // Every title is gone from its *arr, except the one that was added back.
+    await t.db.update(mediaItems).set({ deletedFromArrAt: DELETED });
+    await t.db.update(mediaItems).set({ deletedFromArrAt: null }).where(eq(mediaItems.tmdbId, 7003));
+  });
 
   async function deletedBatch(
     kind: 'movie' | 'tv',
-    rows: Array<{
-      title: string;
-      year: number;
-      tmdbId?: number;
-      tvdbId?: number;
-      deletedAt: Date;
-      size?: number;
-    }>,
+    rows: Array<{ title: string; deletedAt?: Date; size?: number }>,
   ): Promise<void> {
     const [batch] = await t.db
       .insert(trashBatches)
-      .values({ mediaKind: kind, state: 'deleted', deletedAt: rows[0]!.deletedAt })
+      .values({ mediaKind: kind, state: 'deleted', deletedAt: rows[0]!.deletedAt ?? DELETED })
       .returning();
+    const movie = (title: string) => MOVIES.find(([name]) => name === title);
     await t.db.insert(trashBatchItems).values(
       rows.map((row, i) => ({
         batchId: batch!.id,
-        maintainerrMediaId: `bf-${kind}-${i}`,
+        maintainerrMediaId: `bf-${kind}-${batch!.id}-${i}`,
         mediaItemId: ids[row.title]!,
         title: row.title,
-        year: row.year,
-        tmdbId: row.tmdbId ?? null,
-        tvdbId: row.tvdbId ?? null,
+        year: kind === 'movie' ? movie(row.title)![2] : 2015,
+        tmdbId: kind === 'movie' ? movie(row.title)![1] : null,
+        tvdbId: kind === 'tv' ? 8001 : null,
         state: 'deleted' as const,
-        deletedAt: row.deletedAt,
+        deletedAt: row.deletedAt ?? DELETED,
         deletedSizeBytes: row.size ?? null,
       })),
     );
   }
-
-  it('dry-run counts each class and writes nothing; apply keeps the renamed row and blocks the verified names', async () => {
-    await t.db.update(mediaItems).set({ deletedFromArrAt: DELETED });
-    await t.db.update(mediaItems).set({ deletedFromArrAt: null }).where(eq(mediaItems.tmdbId, 7003));
-    await deletedBatch('movie', [
-      { title: 'Posted Movie', year: 2020, tmdbId: 7001, deletedAt: DELETED, size: 5_000 },
-      { title: 'Renamed Movie', year: 2019, tmdbId: 7002, deletedAt: DELETED, size: 5_000 },
-      { title: 'Live Movie', year: 2018, tmdbId: 7003, deletedAt: DELETED, size: 5_000 },
-      { title: 'Old Movie', year: 2017, tmdbId: 7004, deletedAt: EXPIRED, size: 5_000 },
-      { title: 'Sized Movie', year: 2016, tmdbId: 7005, deletedAt: DELETED, size: 9_600 },
-    ]);
-    await deletedBatch('tv', [{ title: 'Nameless Show', year: 2015, tvdbId: 8001, deletedAt: DELETED }]);
-    await t.db.insert(ledgerEvents).values([
-      {
-        mediaItemId: ids['Posted Movie']!,
-        eventType: 'grabbed',
-        source: 'radarr',
-        sourceEventId: 'bf-g1',
-        occurredAt: new Date('2026-07-01T00:00:00Z'),
-        payload: {
-          sourceTitle: 'Posted.Movie.2020.1080p.BluRay.x264-GRP',
-          releaseGroup: 'GRP',
-          quality: 'Bluray-1080p',
-          indexer: 'indexer A',
-        },
-      },
-      {
-        mediaItemId: ids['Posted Movie']!,
-        eventType: 'download_failed',
-        source: 'radarr',
-        sourceEventId: 'bf-f1',
-        occurredAt: new Date('2026-06-01T00:00:00Z'),
-        payload: { sourceTitle: 'Posted.Movie.2020.720p.WEB.x264-OTHER', releaseGroup: 'OTHER', quality: 'WEBDL-720p' },
-      },
-      {
-        mediaItemId: ids['Posted Movie']!,
-        eventType: 'grabbed',
-        source: 'radarr',
-        sourceEventId: 'bf-url',
-        occurredAt: new Date('2026-05-01T00:00:00Z'),
-        payload: { sourceTitle: 'https://download.example/get?id=1' },
-      },
-      {
-        mediaItemId: ids['Renamed Movie']!,
-        eventType: 'grabbed',
-        source: 'radarr',
-        sourceEventId: 'bf-g2',
-        occurredAt: new Date('2026-07-02T00:00:00Z'),
-        payload: { sourceTitle: 'Renamed.Movie.2019.1080p.BluRay.x264-SPARKS', releaseGroup: 'SPARKS', quality: 'Bluray-1080p' },
-      },
-    ]);
+  /** A live record the delete itself wrote. */
+  async function record(
+    title: string,
+    over: {
+      term: string;
+      identitySource?: 'arr_file' | 'arr_grab_history';
+      termConfidence?: 'low_confidence' | 'verified';
+      state?: 'active' | 'expired';
+    },
+  ): Promise<void> {
+    const [, tmdbId, year] = MOVIES.find(([name]) => name === title)!;
     await t.db.insert(trashDeletedReleases).values({
       arrKind: 'radarr',
-      tmdbId: 7002,
-      mediaItemId: ids['Renamed Movie']!,
-      title: 'Renamed Movie',
-      year: 2019,
-      identitySource: 'arr_file',
-      termConfidence: 'low_confidence',
-      term: '/^kept(?:[^a-z0-9]|$)/i',
-      state: 'active',
+      mediaItemId: ids[title]!,
+      tmdbId,
+      title,
+      year,
+      identitySource: over.identitySource ?? 'arr_grab_history',
+      term: over.term,
+      termConfidence: over.termConfidence ?? 'verified',
+      state: over.state ?? 'active',
       origin: 'sweep',
       recordedAt: DELETED,
-      expiresAt: new Date(DELETED.getTime() + RELEASE_TERM_LIFETIME_DAYS * DAY),
+      activatedAt: DELETED,
+      expiresAt: new Date(DELETED.getTime() + RELEASE_TERM_LIFETIME_DAYS * DAY_MS),
     });
-    const jobs = [
-      {
-        name: 'Sized.Movie.2016.1080p.BluRay.x264-GRP',
-        bytes: 10_000,
-        completedAt: new Date('2026-07-01T00:00:00Z'),
-      },
-    ];
-    const { arr, fixture } = createStaticReleaseBlockArr({ synthesize: false });
-    const dry = await backfillPostedReleaseNames({
-      db: t.db,
-      arr,
-      apply: false,
-      legacySab: jobs,
-      now: NOW,
-      logger: silentDomainLogger,
+  }
+  async function grab(title: string, name: string, eventType: 'grabbed' | 'download_failed' = 'grabbed', at = DELETED) {
+    await t.db.insert(ledgerEvents).values({
+      mediaItemId: ids[title]!,
+      eventType,
+      source: 'radarr',
+      sourceEventId: `${title}:${name}:${eventType}`,
+      occurredAt: new Date(at.getTime() - DAY_MS),
+      payload: { sourceTitle: name, downloadId: `dl:${name}` },
     });
-    expect(dry.apply).toBe(false);
-    expect(dry.reconciled).toEqual([]);
-    expect(fixture.calls).toEqual([]);
-    expect(await t.db.select().from(trashDeletedReleases)).toHaveLength(1);
-    sums(dry.lowConfidence);
-    sums(dry.movies);
-    sums(dry.shows);
-    expect(dry.lowConfidence).toMatchObject({ candidates: 1, named: 1, records: 1, unnamed: 0 });
-    expect(dry.movies).toMatchObject({
-      candidates: 3,
-      named: 2,
-      expired: 1,
-      unnamed: 0,
-      skippedLive: 1,
-    });
-    expect(dry.movies.records).toBe(3);
-    expect(dry.movies.urlsSkipped).toBe(1);
-    expect(dry.lowConfidence.urlsSkipped).toBe(0);
-    expect(dry.shows).toMatchObject({ candidates: 1, unnamed: 1, named: 0, skippedLive: 0 });
-    // The URL was on Posted Movie, which is in the movies class (no low-confidence row).
-    expect(dry.movies.namesSeen).toBeGreaterThan(0);
+  }
+  const tsv = (...fields: Array<string | number>) => fields.join('\t');
+  const legacy = (files: Parameters<typeof loadLegacyReleaseNames>[0]['files']) =>
+    loadLegacyReleaseNames({ db: t.db, files, apply: true, logger: quiet });
+  const rows = () => t.db.select().from(trashDeletedReleases);
 
-    const applied = await backfillPostedReleaseNames({
-      db: t.db,
-      arr,
-      apply: true,
-      legacySab: jobs,
-      now: NOW,
-      logger: silentDomainLogger,
-    });
-    expect(applied.lowConfidence.records).toBe(1);
-    expect(applied.reconciled.map((row) => row.arrKind)).toEqual(['radarr']);
-    const rows = await t.db.select().from(trashDeletedReleases);
-    const renamed = rows.filter((row) => row.tmdbId === 7002 && row.identitySource === 'arr_file');
-    expect(renamed).toHaveLength(1);
-    expect(rows.filter((row) => row.tmdbId === 7002 && row.identitySource === 'ledger_grab' && row.state === 'active')).toHaveLength(
-      1,
-    );
-    expect(rows.filter((row) => row.tmdbId === 7001 && row.state === 'active').map((row) => row.identitySource).sort()).toEqual([
-      'ledger_grab',
-      'ledger_grab',
+  /** The estate every class test starts from. */
+  async function seedClasses(): Promise<{ renamedTerm: string; upgradedTerm: string }> {
+    await deletedBatch('movie', [
+      { title: 'Posted Movie', size: 5_000 },
+      { title: 'Renamed Movie', size: 5_000 },
+      { title: 'Live Movie', size: 5_000 },
+      { title: 'Old Movie', deletedAt: EXPIRED, size: 5_000 },
+      { title: 'Sized Movie', size: 9_600 },
+      { title: 'Upgraded Movie', size: 5_000 },
     ]);
-    expect(rows.filter((row) => row.tmdbId === 7005 && row.identitySource === 'legacy_sab')).toHaveLength(1);
-    expect(rows.some((row) => row.tmdbId === 7004)).toBe(false);
-    expect(rows.some((row) => row.tmdbId === 7003)).toBe(false);
-    expect(rows.some((row) => (row.releaseTitle ?? '').includes('://'))).toBe(false);
-    expect(fixture.profiles.radarr[0]!.ignored).toContain(RELEASE_BLOCK_SENTINEL);
-    const verified = rows.find((row) => row.tmdbId === 7001);
-    expect(fixture.profiles.radarr[0]!.ignored).toContain(verified!.term);
+    await deletedBatch('tv', [{ title: 'Quiet Show' }]);
+    // `movies`: no term at all; the ledger has the grab, a failed grab, a URL and a later (post-delete) grab.
+    await grab('Posted Movie', 'Posted.Movie.2020.1080p.WEB-DL.x264-POSTGRP');
+    await grab('Posted Movie', 'Posted.Movie.2020.720p.WEB-DL.x264-BROKEN', 'download_failed');
+    await grab('Posted Movie', 'https://example.invalid/x');
+    await grab('Posted Movie', 'Posted.Movie.2020.2160p.WEB-DL.x265-AFTER', 'grabbed', new Date(DELETED.getTime() + 5 * DAY_MS));
+    // `lowConfidence`: a live renamed-file record; only the legacy table names it.
+    const renamedTerm = termFor('Renamed Movie', 2019, 'Renamed.Movie.2019.1080p.BluRay.x264-RENGRP');
+    await record('Renamed Movie', { term: renamedTerm, identitySource: 'arr_file', termConfidence: 'low_confidence' });
+    // Back in the library: never termed, whatever the ledger holds.
+    await grab('Live Movie', 'Live.Movie.2018.1080p.WEB-DL.x264-LIVEGRP');
+    // 365 days gone: nothing restarts its term.
+    await grab('Old Movie', 'Old.Movie.2017.1080p.WEB-DL.x264-OLDGRP', 'grabbed', EXPIRED);
+    // `otherNames` (review F5): a verified term for the last file, and an earlier grab it does not match.
+    const upgradedTerm = termFor('Upgraded Movie', 2021, 'Upgraded.Movie.2021.2160p.WEB-DL.x265-NEWGRP');
+    await record('Upgraded Movie', { term: upgradedTerm });
+    await grab('Upgraded Movie', 'Upgraded.Movie.2021.2160p.WEB-DL.x265-NEWGRP');
+    await grab('Upgraded Movie', 'Upgraded.Movie.2021.1080p.WEB-DL.x264-FIRSTGRP');
+    return { renamedTerm, upgradedTerm };
+  }
 
-    const second = await backfillPostedReleaseNames({
-      db: t.db,
-      arr,
-      apply: false,
-      legacySab: jobs,
-      now: NOW,
-      logger: silentDomainLogger,
+  it('a dry run counts each class, writes nothing and needs no *arr client', async () => {
+    await seedClasses();
+    await legacy({
+      radarrHistory: tsv(7002, 2019, 1, '2025-01-15 10:00:00', 'Renamed.Movie.2019.1080p.BluRay.x264-TRUEGRP', 'x', '', 'TRUEGRP', 'Renamed Movie'),
+      // 96 percent of this job is the deleted file: it adds a term, by the D-15 size rule.
+      sabJobs: tsv('old-history-a', 'Sized.Movie.2016.1080p.BluRay.x264-SIZEGRP', 10_000, 1_700_000_000, 'movies', 'Completed'),
     });
-    expect(second.movies.named).toBe(0);
-    expect(second.lowConfidence.named).toBe(0);
+    const before = await rows();
+    const report = await backfillPostedReleaseNames({ db: t.db, apply: false, logger: quiet, now: NOW });
+    expect(await rows()).toEqual(before);
+    for (const bucket of [report.lowConfidence, report.movies, report.shows, report.otherNames]) sums(bucket);
+
+    expect(report.lowConfidence).toMatchObject({ titles: 1, named: 1, records: 1, namesSeen: 1 });
+    // Posted Movie (2 records, 1 URL skipped, the post-delete grab not read), Old Movie (expired), Sized Movie (1).
+    expect(report.movies).toMatchObject({ titles: 3, expired: 1, named: 2, records: 3, urlsSkipped: 1, namesSeen: 3 });
+    expect(report.shows).toMatchObject({ titles: 1, unnamed: 1, records: 0 });
+    expect(report.otherNames).toMatchObject({ titles: 1, named: 1, records: 1, alreadyBlocked: 1, namesSeen: 2 });
+    expect(report.skippedLive).toEqual({ movies: 1, shows: 0 });
+    expect(report.terms.radarr).toEqual({ live: 2, added: 5, cap: RELEASE_BLOCK_TERM_CAP });
+    expect(report.terms.sonarr).toEqual({ live: 0, added: 0, cap: RELEASE_BLOCK_TERM_CAP });
+    expect(report.reconciled).toEqual([]);
   });
 
-  it('apply respects the 3,000-term cap through the same reconcile', async () => {
-    await t.db.update(mediaItems).set({ deletedFromArrAt: DELETED }).where(eq(mediaItems.tmdbId, 7001));
-    await deletedBatch('movie', [{ title: 'Posted Movie', year: 2020, tmdbId: 7001, deletedAt: DELETED, size: 5_000 }]);
-    await t.db.insert(ledgerEvents).values({
-      mediaItemId: ids['Posted Movie']!,
-      eventType: 'grabbed',
-      source: 'radarr',
-      sourceEventId: 'bf-cap',
-      occurredAt: new Date('2026-07-01T00:00:00Z'),
-      payload: { sourceTitle: 'Posted.Movie.2020.1080p.BluRay.x264-CAPGRP', releaseGroup: 'CAPGRP', quality: 'Bluray-1080p' },
+  it('apply records the names beside what is there, writes and reads back the profile, then turns them active', async () => {
+    const { renamedTerm, upgradedTerm } = await seedClasses();
+    await legacy({
+      radarrHistory: tsv(7002, 2019, 1, '2025-01-15 10:00:00', 'Renamed.Movie.2019.1080p.BluRay.x264-TRUEGRP', 'x', '', 'TRUEGRP', 'Renamed Movie'),
     });
-    const old = new Date(NOW.getTime() - 10 * DAY);
-    await t.db.insert(trashDeletedReleases).values(
-      Array.from({ length: RELEASE_BLOCK_TERM_CAP }, (_, i) => ({
-        arrKind: 'radarr' as const,
-        title: `cap${i}`,
-        identitySource: 'arr_file' as const,
-        term: `/^c${i}(?:[^a-z0-9]|$)/i`,
-        state: 'active' as const,
-        origin: 'sweep' as const,
-        recordedAt: new Date(old.getTime() + i),
-        expiresAt: new Date(NOW.getTime() + DAY),
-      })),
-    );
-    const { arr, fixture } = createStaticReleaseBlockArr({ synthesize: false });
-    const report = await backfillPostedReleaseNames({
-      db: t.db,
-      arr,
-      apply: true,
-      now: NOW,
-      logger: silentDomainLogger,
+    const { arr, fixture } = createStaticReleaseBlockArr();
+    const report = await backfillPostedReleaseNames({ db: t.db, arr, apply: true, logger: quiet, now: NOW });
+    expect(report.reconciled).toHaveLength(1);
+    expect(report.reconciled[0]).toMatchObject({ arrKind: 'radarr', added: 6, pruned: 0, wrote: true });
+
+    const all = await rows();
+    const backfilled = all.filter((r) => r.origin === 'backfill');
+    expect(backfilled).toHaveLength(4);
+    expect(backfilled.every((r) => r.state === 'active' && r.termConfidence === 'verified')).toBe(true);
+    // The term's life runs from the delete, not from today.
+    for (const r of backfilled) {
+      expect(r.expiresAt.getTime()).toBe(DELETED.getTime() + RELEASE_TERM_LIFETIME_DAYS * DAY_MS);
+    }
+    // Nothing that was there is removed or weakened.
+    expect(all.find((r) => r.term === renamedTerm)).toMatchObject({ state: 'active', termConfidence: 'low_confidence' });
+    expect(all.find((r) => r.term === upgradedTerm)).toMatchObject({ state: 'active' });
+    const ignored = fixture.profiles.radarr[0]!.ignored;
+    expect(ignored).toContain(RELEASE_BLOCK_SENTINEL);
+    for (const name of [
+      'Posted.Movie.2020.1080p.WEB-DL.x264-POSTGRP',
+      'Posted.Movie.2020.720p.WEB-DL.x264-BROKEN',
+      'Renamed.Movie.2019.1080p.BluRay.x264-TRUEGRP',
+      'Upgraded.Movie.2021.1080p.WEB-DL.x264-FIRSTGRP',
+    ]) {
+      expect(ignored.some((term) => termMatchesRaw(term, name)), name).toBe(true);
+    }
+    // The title back in the library, the post-delete grab and the 365-day-old delete got nothing.
+    for (const name of [
+      'Live.Movie.2018.1080p.WEB-DL.x264-LIVEGRP',
+      'Posted.Movie.2020.2160p.WEB-DL.x265-AFTER',
+      'Old.Movie.2017.1080p.WEB-DL.x264-OLDGRP',
+    ]) {
+      expect(ignored.some((term) => termMatchesRaw(term, name)), name).toBe(false);
+    }
+
+    // A second apply adds nothing: every name is blocked now.
+    const again = await backfillPostedReleaseNames({ db: t.db, arr, apply: true, logger: quiet, now: NOW });
+    expect(again.movies.records + again.lowConfidence.records + again.otherNames.records).toBe(0);
+    expect(again.reconciled).toEqual([]);
+    expect((await rows()).length).toBe(all.length);
+  });
+
+  it('a title that has only an expired record still counts as termed, and its unblocked name is recorded (otherNames)', async () => {
+    await deletedBatch('movie', [{ title: 'Upgraded Movie', size: 5_000 }]);
+    await record('Upgraded Movie', {
+      term: termFor('Upgraded Movie', 2021, 'Upgraded.Movie.2021.2160p.WEB-DL.x265-NEWGRP'),
+      state: 'expired',
     });
-    expect(report.movies.records).toBe(1);
-    expect(report.reconciled[0]).toMatchObject({ pruned: 1, total: RELEASE_BLOCK_TERM_CAP });
+    await grab('Upgraded Movie', 'Upgraded.Movie.2021.1080p.WEB-DL.x264-FIRSTGRP');
+    const report = await backfillPostedReleaseNames({ db: t.db, apply: false, logger: quiet, now: NOW });
+    expect(report.movies.titles).toBe(0);
+    expect(report.otherNames).toMatchObject({ titles: 1, named: 1, records: 1 });
+  });
+
+  it('review F5: a title whose terms would not fit under the cap is left out whole, and apply prunes nothing', async () => {
+    await deletedBatch('movie', [{ title: 'Posted Movie', size: 5_000 }, { title: 'Upgraded Movie', size: 5_000 }]);
+    // Posted Movie needs two new terms, Upgraded Movie one. One slot is free.
+    await grab('Posted Movie', 'Posted.Movie.2020.1080p.WEB-DL.x264-POSTGRP');
+    await grab('Posted Movie', 'Posted.Movie.2020.720p.WEB-DL.x264-BROKEN', 'download_failed');
+    await grab('Upgraded Movie', 'Upgraded.Movie.2021.1080p.WEB-DL.x264-FIRSTGRP');
+    const filler = Array.from({ length: RELEASE_BLOCK_TERM_CAP - 1 }, (_, i) => ({
+      arrKind: 'radarr' as const,
+      title: `Cap ${i}`,
+      identitySource: 'arr_grab_history' as const,
+      term: termFor(`Cap ${i}`, 2020, `Cap.${i}.2020.1080p.BluRay.x264-CAPGRP`),
+      termConfidence: 'verified' as const,
+      state: 'active' as const,
+      origin: 'sweep' as const,
+      recordedAt: new Date(DELETED.getTime() - DAY_MS + i),
+      expiresAt: new Date(NOW.getTime() + 100 * DAY_MS),
+    }));
+    for (let from = 0; from < filler.length; from += 500) {
+      await t.db.insert(trashDeletedReleases).values(filler.slice(from, from + 500));
+    }
+    const { arr, fixture } = createStaticReleaseBlockArr();
+    const report = await backfillPostedReleaseNames({ db: t.db, arr, apply: true, logger: quiet, now: NOW });
+    expect(report.movies).toMatchObject({ titles: 2, named: 1, capRefused: 1, records: 1 });
+    expect(report.terms.radarr).toEqual({ live: RELEASE_BLOCK_TERM_CAP - 1, added: 1, cap: RELEASE_BLOCK_TERM_CAP });
+    expect(report.reconciled[0]).toMatchObject({ pruned: 0, total: RELEASE_BLOCK_TERM_CAP });
+    const all = await rows();
+    expect(all.some((r) => r.state === 'pruned')).toBe(false);
+    expect(all.filter((r) => r.state === 'active')).toHaveLength(RELEASE_BLOCK_TERM_CAP);
     expect(fixture.profiles.radarr[0]!.ignored).toHaveLength(RELEASE_BLOCK_TERM_CAP + 1);
-    const added = (await t.db.select().from(trashDeletedReleases)).find((row) => row.origin === 'backfill');
-    expect(fixture.profiles.radarr[0]!.ignored).toContain(added!.term);
-    expect(fixture.profiles.radarr[0]!.ignored).not.toContain('/^c0(?:[^a-z0-9]|$)/i');
+    expect(all.filter((r) => r.origin === 'backfill').map((r) => r.title)).toEqual(['Upgraded Movie']);
+  });
+
+  it('a profile that cannot be written leaves no record live and no term behind; the next apply starts clean', async () => {
+    await deletedBatch('movie', [{ title: 'Posted Movie', size: 5_000 }]);
+    await grab('Posted Movie', 'Posted.Movie.2020.1080p.WEB-DL.x264-POSTGRP');
+    const failing = createStaticReleaseBlockArr({ fail: new Set(['radarr:create']) });
+    const err = await backfillPostedReleaseNames({ db: t.db, arr: failing.arr, apply: true, logger: quiet, now: NOW }).catch(
+      (error: unknown) => error,
+    );
+    expect(err).toBeInstanceOf(ReleaseBlockError);
+    expect((await rows()).map((r) => r.state)).toEqual(['abandoned']);
+    expect(failing.fixture.profiles.radarr).toHaveLength(0);
+
+    const { arr, fixture } = createStaticReleaseBlockArr();
+    const report = await backfillPostedReleaseNames({ db: t.db, arr, apply: true, logger: quiet, now: NOW });
+    expect(report.movies).toMatchObject({ titles: 1, named: 1, records: 1 });
+    expect((await rows()).filter((r) => r.state === 'active')).toHaveLength(1);
+    expect(fixture.profiles.radarr[0]!.ignored).toHaveLength(2);
+  });
+
+  it('counts a name it cannot term and a name that names no release, and records the rest of the title', async () => {
+    await deletedBatch('movie', [{ title: 'Posted Movie', size: 5_000 }]);
+    await grab('Posted Movie', 'Posted.Movie.2020.1080p.WEB-DL.x264-POSTGRP');
+    await grab('Posted Movie', '[02/31] - "Posted.Movie.2020.1080p.WEB-DL.x264-ODD.part02.rar" yEnc');
+    await grab('Posted Movie', 'Posted Movie');
+    const report = await backfillPostedReleaseNames({ db: t.db, apply: false, logger: quiet, now: NOW });
+    expect(report.movies).toMatchObject({ titles: 1, named: 1, records: 1, untermed: 1, skipped: 1, namesSeen: 3 });
+  });
+
+  it('never touches a title the ledger lists as live, whichever class it would be in', async () => {
+    await deletedBatch('movie', [{ title: 'Live Movie', size: 5_000 }]);
+    await record('Live Movie', {
+      term: termFor('Live Movie', 2018, 'Live.Movie.2018.1080p.BluRay.x264-RENGRP'),
+      identitySource: 'arr_file',
+      termConfidence: 'low_confidence',
+    });
+    await grab('Live Movie', 'Live.Movie.2018.1080p.WEB-DL.x264-LIVEGRP');
+    const { arr } = createStaticReleaseBlockArr();
+    const report = await backfillPostedReleaseNames({ db: t.db, arr, apply: true, logger: quiet, now: NOW });
+    expect(report.skippedLive).toEqual({ movies: 1, shows: 0 });
+    expect(report.lowConfidence.titles + report.movies.titles + report.otherNames.titles).toBe(0);
+    expect(await t.db.select().from(trashDeletedReleases).where(inArray(trashDeletedReleases.origin, ['backfill']))).toEqual(
+      [],
+    );
   });
 });

@@ -176,23 +176,27 @@ describe('previewGuardian parity with @hnet/domain classifyForExpedite (ADR-086 
                     // DESIGN-052 D-26 / Q-14 — the Age Guard joins the matrix; ADR-099 D-4 — and the save intent.
                     for (const ageGuard of ['clear', 'recent', 'unknown'] as const) {
                       for (const saveIntent of [false, true]) {
-                        const item = {
-                          maintainerrMediaId,
-                          mediaItemId,
-                          protectedByTag,
-                          recentlyWatched,
-                          requesters,
-                          onWatchlist,
-                          watchlistEvaluable,
-                          ruleEvaluationFailed,
-                          ageGuard,
-                          saveIntent,
-                        };
-                        // Compared as objects so a failure prints WHICH input diverged.
-                        expect({ ...item, verdict: previewGuardian(item) }).toEqual({
-                          ...item,
-                          verdict: classifyForExpedite(item),
-                        });
+                        // ADR-117 / DESIGN-052 D-29 — the Release Name Check joins the matrix (absent ⇒ not judged).
+                        for (const releaseName of [undefined, 'verified', 'unverified', 'unchecked'] as const) {
+                          const item = {
+                            maintainerrMediaId,
+                            mediaItemId,
+                            protectedByTag,
+                            recentlyWatched,
+                            requesters,
+                            onWatchlist,
+                            watchlistEvaluable,
+                            ruleEvaluationFailed,
+                            ageGuard,
+                            saveIntent,
+                            ...(releaseName === undefined ? {} : { releaseName }),
+                          };
+                          // Compared as objects so a failure prints WHICH input diverged.
+                          expect({ ...item, verdict: previewGuardian(item) }).toEqual({
+                            ...item,
+                            verdict: classifyForExpedite(item),
+                          });
+                        }
                       }
                     }
                   }
@@ -203,6 +207,24 @@ describe('previewGuardian parity with @hnet/domain classifyForExpedite (ADR-086 
         }
       }
     }
+  });
+
+  it('ADR-117 / D-29: a title with no verified release name is kept (skipped) on both sides, below every other keep', () => {
+    const unnamed = { ...base, ageGuard: 'clear' as const, saveIntent: false, releaseName: 'unverified' as const };
+    expect(previewGuardian(unnamed)).toBe('unverifiable');
+    expect(classifyForExpedite(unnamed)).toBe('unverifiable');
+    expect(unverifiableReason(unnamed)).toBe("the name of its download isn't on record");
+    // A deliberate keep still names itself first; a verified or unjudged name changes nothing.
+    expect(previewGuardian({ ...unnamed, protectedByTag: true })).toBe('protected_tag');
+    expect(previewGuardian({ ...unnamed, ageGuard: 'recent' })).toBe('protected_recent');
+    expect(previewGuardian({ ...base, releaseName: 'verified' })).toBe('deletable');
+    expect(previewGuardian({ ...base, releaseName: 'unchecked' })).toBe('deletable');
+    expect(keptReasonTooltip('release_unverified')).toBe("Kept: the name of its download isn't on record");
+    expect(keptReasonTooltip('release_block_full')).toBe('Kept: the list of blocked downloads is full');
+    expect(wallReasonCopy('release_unverified')).toEqual({
+      label: 'Download unknown',
+      detail: "Kept: the name of its download isn't on record",
+    });
   });
 
   it('both sides agree a requester is informational, never a keep (the closed drift)', () => {
@@ -755,6 +777,7 @@ describe('the pending wall views: Deletable | All (story 821)', () => {
     expect(WALL_REASON_COPY.recently_added.detail).toBe(KEPT_REASON_TOOLTIPS.recently_added);
     expect(WALL_REASON_COPY.saved.detail).toBe(KEPT_REASON_TOOLTIPS.saved);
     expect(WALL_REASON_COPY.live_excluded.detail).toBe(KEPT_REASON_TOOLTIPS.live_excluded);
+    expect(WALL_REASON_COPY.release_unverified.detail).toBe(KEPT_REASON_TOOLTIPS.release_unverified);
   });
 
   it('a reason this build does not know still says the title is kept', () => {

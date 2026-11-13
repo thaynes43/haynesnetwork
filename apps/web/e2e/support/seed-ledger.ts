@@ -13,6 +13,7 @@ import {
   createFixRequest,
   createRole,
   ingestLedgerEvents,
+  loadLegacyReleaseNames,
   recordFixAction,
   recordNotification,
   setAppSetting,
@@ -103,6 +104,25 @@ async function main(): Promise<void> {
         sizeOnDisk: 0,
       },
     ],
+  });
+  // ADR-117 / DESIGN-052 D-29 — The Fixture's file has a verified posted release name on record: one legacy file
+  // record with the file's IDENTICAL byte size and the name the stub Radarr's `/moviefile` gives as its scene name.
+  // Without it the Release Name Check keeps the title (`release_unverified`), as it keeps any movie whose only known
+  // name is the one Radarr rebuilt on rename. Loaded through the legacy loader, the tables' single writer.
+  await loadLegacyReleaseNames({
+    files: {
+      radarrFiles: [
+        '880001',
+        '2022',
+        'The.Fixture.2022.1080p.WEB-DL.DDP5.1.H.264-STUB',
+        'STUB',
+        '4294967296',
+        'WEBDL-1080p',
+        '2024-01-15 00:00:00',
+        'The Fixture',
+      ].join('\t'),
+    },
+    apply: true,
   });
   // Tombstone Vanished Heist (single writer — writes the 'deleted' ledger event in-tx). The
   // mass-tombstone guard stays quiet: 1 missing row of 3 is under the >10-rows floor.

@@ -404,6 +404,19 @@ describe('previewTargetSelection — the Start-a-batch client preview (mirrors s
     ).toMatchObject({ count: 1, bytes: 3e9 });
   });
 
+  it('ADR-117 / D-29 — a title with no verified release name takes no targeted slot and frees nothing', () => {
+    const unnamed = [c(4e9, { releaseUnverified: true }), c(3e9), c(2e9, { protectedByTag: true }), c(1e9)];
+    expect(previewTargetSelection(unnamed, {})).toMatchObject({ count: 3, bytes: 8e9, freesBytes: 4e9, poolCount: 2 });
+    expect(previewTargetSelection(unnamed, { maxItems: 1, strategy: 'largest' })).toMatchObject({
+      count: 1,
+      bytes: 3e9,
+      freesBytes: 3e9,
+    });
+    expect(
+      previewTargetSelection(unnamed, { maxItems: 1, strategy: 'largest', watchlistFiltered: false }),
+    ).toMatchObject({ count: 1, bytes: 3e9 });
+  });
+
   it('D-25cw — "All current candidates" frees only what can go: a watchlisted title is kept while it stays listed', () => {
     const listed = [c(4e9, { onWatchlist: true }), c(3e9), c(2e9, { protectedByTag: true }), c(1e9)];
     // Three items snapshot (D-25y counts the watchlisted one), but at most 4 GB can be freed, never 8 GB.

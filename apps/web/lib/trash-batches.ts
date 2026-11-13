@@ -317,6 +317,9 @@ export interface TargetCandidate {
   /** DESIGN-052 D-26 — inside the Age Guard's 180 days: a TARGETED batch leaves it out, and it frees nothing while it
    *  stays inside the window (the sweep keeps it). Absent ⇒ false. */
   recentlyAdded?: boolean;
+  /** ADR-117 / DESIGN-052 D-29 — no verified posted release name for the file on disk: handled like `recentlyAdded`
+   *  (a TARGETED batch leaves it out, and it frees nothing while the sweep keeps it). Absent ⇒ false. */
+  releaseUnverified?: boolean;
 }
 
 export interface TargetPreview {
@@ -359,12 +362,15 @@ export function previewTargetSelection(
   // it out (always: the age needs no registry), an untargeted batch snapshots it, and it frees nothing.
   const pending = candidates.filter((c) => !c.protectedByTag);
   const filtered = spec.watchlistFiltered !== false;
+  // ADR-117 / DESIGN-052 D-29 — and so is a title with no verified release name on record.
   const deletable = (filtered ? pending.filter((c) => c.onWatchlist !== true) : pending).filter(
-    (c) => c.recentlyAdded !== true,
+    (c) => c.recentlyAdded !== true && c.releaseUnverified !== true,
   );
   const poolBytes = deletable.reduce((n, c) => n + c.sizeBytes, 0);
   const frees = (items: readonly TargetCandidate[]) =>
-    items.filter((c) => c.onWatchlist !== true && c.recentlyAdded !== true).reduce((n, c) => n + c.sizeBytes, 0);
+    items
+      .filter((c) => c.onWatchlist !== true && c.recentlyAdded !== true && c.releaseUnverified !== true)
+      .reduce((n, c) => n + c.sizeBytes, 0);
   const capped = spec.targetBytes !== undefined || spec.maxItems !== undefined;
   if (!capped) {
     return {
