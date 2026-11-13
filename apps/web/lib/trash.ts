@@ -239,6 +239,12 @@ export function pendingWallGlyph(
     ageGuard?: 'recent' | 'clear' | 'unknown';
     /** ADR-099 D-4 — an open save intent: saved, whether or not Maintainerr holds the exclusion yet. */
     saveIntent?: boolean;
+    /**
+     * DESIGN-052 D-10 amendment (story 832) — Wall Protection from the server.
+     * Absent means an older server: the Age Guard skip falls back to `recentlyAddedKeep`.
+     * Null means the server says the title may be offered, so that fallback does not run.
+     */
+    protectionReason?: string | null;
   },
   override: 'saved' | 'unsaved' | undefined,
 ): PendingWallGlyph {
@@ -263,7 +269,19 @@ export function pendingWallGlyph(
   if (override !== 'unsaved' && (item.protectedByExclusion || item.saveIntent === true)) return 'check';
   // DESIGN-052 D-26 / Q-14 — a title the Age Guard keeps is never offered for deletion: the inert `skip` (kept),
   // as on the batch wall. A Save stays one tap away on its Library page.
-  if (recentlyAddedKeep(item)) return 'skip';
+  // Story 832 — the server reason is the definition. Other holds keep the corners already ruled
+  // (a tag and a recent watch stay tappable; a live exclusion and a Save stay the check).
+  if (item.protectionReason === 'recently_added') return 'skip';
+  // Two cases still read the Age Guard from the item itself, so the corner stays as ruled:
+  // an older server that sends no reason, and a title with no Maintainerr id. That check comes first
+  // in Wall Protection, so its reason is `unactionable`, but a title inside the Age Guard wore the
+  // kept badge before story 832 whether or not it had an id, and it still does.
+  if (
+    (item.protectionReason === undefined || item.protectionReason === 'unactionable') &&
+    recentlyAddedKeep(item)
+  ) {
+    return 'skip';
+  }
   return 'trash';
 }
 
@@ -296,6 +314,45 @@ export function releaseNeedsConfirm(
   glyph: 'trash' | 'shield' | 'check' | 'skip' | 'gone',
 ): boolean {
   return glyph === 'shield' || glyph === 'check';
+}
+
+/**
+ * DESIGN-052 D-10 amendment (story 832) / ADR-015 — a tile the viewer saved from the default view, and
+ * the place it had in the wall when they tapped it.
+ */
+export interface PinnedTile<T> {
+  item: T;
+  /** Its index in the wall as shown at the tap. */
+  index: number;
+}
+
+/**
+ * DESIGN-052 D-10 amendment (story 832) / ADR-015 — keep a title the viewer just saved where it was.
+ *
+ * The default view lists only titles that can be deleted, so the read that follows a Save no longer
+ * returns the saved title. Dropping its tile would move every tile after it (hard rule 9) and would
+ * take the un-save tap away with it. So the wall puts each such tile back at the index it had, until
+ * the view is opened again. A tile the server still returns is never duplicated: the server's copy
+ * wins, in the server's place.
+ *
+ * `pins` are in the order they were tapped. Each index was taken from the wall as it stood at that
+ * tap (earlier pins already in it), so putting the missing ones back lowest index first rebuilds
+ * that wall exactly.
+ */
+export function withPinnedTiles<T extends { maintainerrMediaId: string | null; collectionId: number }>(
+  serverItems: readonly T[],
+  pins: readonly PinnedTile<T>[],
+): T[] {
+  if (pins.length === 0) return serverItems as T[];
+  const keyOf = (i: T) => `${i.collectionId}:${i.maintainerrMediaId ?? ''}`;
+  const present = new Set(serverItems.map(keyOf));
+  const missing = pins
+    .filter((p) => !present.has(keyOf(p.item)))
+    .sort((a, b) => a.index - b.index);
+  if (missing.length === 0) return serverItems as T[];
+  const out = [...serverItems];
+  for (const pin of missing) out.splice(Math.min(Math.max(pin.index, 0), out.length), 0, pin.item);
+  return out;
 }
 
 // ── cross-server watch visibility (DESIGN-010 D-12 amendment 2026-07-09, build C) ─────────────
@@ -626,6 +683,129 @@ export function reclaimLabel(
 ): string {
   if (count === 0) return 'Nothing pending';
   return `Reclaiming ${formatBytes(totalBytes)} across ${count} item${count === 1 ? '' : 's'}`;
+}
+
+// ── the pending wall's two views (DESIGN-052 D-10 amendment 2026-11-13, story 821) ────────────
+// The wall has two views, picked with the Library's segmented control: `deletable` (the default: only
+// the titles that can be deleted) and `all` (every title the rules flagged, each kept one saying why).
+// A view is a way of looking, never a release of protection. Everything the two views say in words
+// lives here, so it is unit-tested and the owner can read it in one place.
+
+export type PendingView = 'deletable' | 'all';
+
+/** The two segments, in order. The first is the default. */
+export const PENDING_VIEWS: ReadonlyArray<{ view: PendingView; label: string; hint: string }> = [
+  { view: 'deletable', label: 'Deletable', hint: 'Only the titles that can be deleted' },
+  { view: 'all', label: 'All', hint: 'Every title the rules flagged, with the reason any of them is kept' },
+];
+
+/**
+ * Why the wall will not offer a title (mirrors @hnet/domain TRASH_WALL_PROTECTION_REASONS; the client
+ * never imports server packages, so lib/__tests__/trash.test.ts compares the two lists).
+ */
+export type WallReasonName =
+  | 'saved'
+  | 'tag'
+  | 'recently_watched'
+  | 'watchlisted'
+  | 'recently_added'
+  | 'not_in_ledger'
+  | 'watchlist_unknown'
+  | 'rules_unknown'
+  | 'age_unknown'
+  | 'unactionable'
+  | 'live_excluded';
+
+/**
+ * What a kept tile says, per reason. `label` is the line on the tile: it has to fit a poster a third
+ * of a phone wide, so it is a few plain words. `detail` is the same thing in full, for the tooltip
+ * and for a screen reader. Where the batch wall already says it (the "Kept: ..." tooltips above), the
+ * detail is that same sentence, so the two walls never use two wordings for one reason.
+ */
+export const WALL_REASON_COPY: Record<WallReasonName, { label: string; detail: string }> = {
+  saved: { label: 'Saved', detail: 'Kept: saved' },
+  live_excluded: { label: 'Saved', detail: 'Kept: saved' },
+  tag: { label: 'Marked to keep', detail: 'Kept: marked do not delete' },
+  recently_watched: { label: 'Watched recently', detail: 'Kept: watched recently' },
+  watchlisted: { label: 'On a watchlist', detail: 'Kept: on a watchlist' },
+  recently_added: { label: 'Added recently', detail: 'Kept: added or upgraded recently' },
+  not_in_ledger: {
+    label: 'Not in the library',
+    detail: "Kept: not in the library, so it can't be checked",
+  },
+  watchlist_unknown: {
+    label: "Can't be checked",
+    detail: "Kept: its watchlists can't be checked right now",
+  },
+  rules_unknown: { label: "Can't be checked", detail: "Kept: its rules couldn't be checked" },
+  age_unknown: {
+    label: "Can't be checked",
+    detail: "Kept: its dates can't be checked right now",
+  },
+  unactionable: {
+    label: "Can't be removed",
+    detail: "Kept: not linked to Plex, so it can't be removed",
+  },
+};
+
+/** A reason this build has no words for (a newer server): still say it is kept, never nothing. */
+export const WALL_REASON_FALLBACK = { label: 'Kept', detail: "Kept: it can't be deleted right now" };
+
+/** The words for a reason; the fallback for one this build does not know. */
+export function wallReasonCopy(reason: string): { label: string; detail: string } {
+  return (WALL_REASON_COPY as Record<string, { label: string; detail: string }>)[reason] ?? WALL_REASON_FALLBACK;
+}
+
+/** A Save (the app's record, or a live exclusion) as opposed to a keep nobody chose. */
+export function wallReasonIsSave(reason: string): boolean {
+  return reason === 'saved' || reason === 'live_excluded';
+}
+
+/**
+ * The reason a tile shows right now: the server's, moved by what the viewer has just done. A Save the
+ * server confirmed reads `saved` at once (the next read says the same); an un-save the server
+ * confirmed clears a Save's reason at once (the next read drops it). Any other reason is the
+ * server's alone: un-saving a title does not take it off a watchlist.
+ */
+export function shownWallReason(
+  item: { protectionReason?: string | null },
+  override: 'saved' | 'unsaved' | undefined,
+): string | null {
+  if (override === 'saved') return 'saved';
+  const reason = item.protectionReason ?? null;
+  if (override === 'unsaved' && (reason === 'saved' || reason === 'live_excluded')) return null;
+  return reason;
+}
+
+/**
+ * The counts bar's line. `deletable` says what a delete would free, as before. `all` lists kept
+ * titles too, so it must not say "Reclaiming": it counts the titles and their size. `poolTotal` is
+ * every title the rules flagged for this kind, before the view and the filters.
+ */
+export function pendingTotalLabel(
+  view: PendingView,
+  totalBytes: number,
+  count: number,
+  poolTotal: number,
+  formatBytes: (b: number) => string,
+): string {
+  if (count === 0) return view === 'deletable' && poolTotal > 0 ? 'Nothing to delete' : 'Nothing pending';
+  if (view === 'deletable') return reclaimLabel(totalBytes, count, formatBytes);
+  return `${count} title${count === 1 ? '' : 's'} in all · ${formatBytes(totalBytes)}`;
+}
+
+/** The pending wall's line when it has no tile to show. `kind` is "movies" or "tv", as the page writes it. */
+export function pendingEmptyLabel(input: {
+  view: PendingView;
+  hasFilters: boolean;
+  poolTotal: number;
+  kind: string;
+}): string {
+  if (input.hasFilters) return 'Nothing matches the filters.';
+  if (input.view === 'deletable' && input.poolTotal > 0) {
+    return 'Nothing here can be deleted right now. Choose All to see what is kept, and why.';
+  }
+  return `Nothing pending — no ${input.kind} are scheduled for deletion.`;
 }
 
 // ── the Overview landing + tab count badges (DESIGN-010 amendment 2026-07-08) ────────────────

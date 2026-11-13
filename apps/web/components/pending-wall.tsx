@@ -34,12 +34,19 @@ import {
   daysLeftLabel,
   daysUntil,
   KEPT_REASON_TOOLTIPS,
+  PENDING_VIEWS,
   pendingWallGlyph,
   pendingWallTappable,
   releaseNeedsConfirm,
+  shownWallReason,
+  wallReasonCopy,
+  wallReasonIsSave,
   watchNote,
   WATCHLIST_NOTE_DETAIL,
+  withPinnedTiles,
+  type PendingView,
   type PendingWallGlyph,
+  type PinnedTile,
 } from '@/lib/trash';
 
 /** The pending-item surface a tile renders (a structural mirror of the trash.pending wire item). */
@@ -68,50 +75,77 @@ export interface PendingWallItem {
   ageGuard?: 'recent' | 'clear' | 'unknown';
   /** ADR-099 D-4 — somebody saved it (an open save intent): saved, whether or not Maintainerr has caught up. */
   saveIntent?: boolean;
+  /** DESIGN-052 D-10 amendment (story 832) — why this title cannot be deleted, or null when it can. */
+  protectionReason?: string | null;
 }
 
 const itemRating = (item: PendingWallItem): number | null =>
   ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating);
 
-/** A view preference, never a release of watchlist protection. */
-export function WatchlistVisibilityControl({
-  checked,
+/**
+ * DESIGN-052 D-10 amendment (story 821) — which titles the wall lists: `Deletable | All`.
+ *
+ * The Library's view selector ("Collections | All movies"): the same `.seg` pill, the same markup
+ * and the same pressed-button semantics, so the selected segment is the green one here as it is
+ * there. It replaces the "Show protected" checkbox. A view is a way of looking, never a release of
+ * protection: a title kept in one view is kept in the other. `.seg--steady` holds each segment at
+ * the width of its bold label, so choosing one recolors the pill and moves nothing (ADR-015).
+ */
+export function PendingViewSelector({
+  view,
   onChange,
+  testId = 'trash-view',
 }: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
+  view: PendingView;
+  onChange: (view: PendingView) => void;
+  testId?: string;
 }) {
   return (
-    <label
-      className="trash-protected-toggle"
-      title="Include watchlisted titles. They remain protected from deletion."
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      Show protected
-      <span className="sr-only"> watchlisted titles. They remain protected from deletion.</span>
-    </label>
+    <div className="seg seg--steady" role="group" aria-label="View" data-testid={testId}>
+      {PENDING_VIEWS.map((v) => {
+        const isActive = v.view === view;
+        return (
+          <button
+            key={v.view}
+            type="button"
+            className={isActive ? 'is-active' : undefined}
+            aria-pressed={isActive}
+            title={v.hint}
+            data-label={v.label}
+            onClick={() => onChange(v.view)}
+          >
+            <span>{v.label}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
 /** The tile tooltip — the detail the retired table columns carried; the full history is one tap
  *  away on /library/[id]. */
-function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph, armed = false): string {
+function tileInfo(
+  item: PendingWallItem,
+  glyph: PendingWallGlyph,
+  armed = false,
+  reason: string | null = null,
+): string {
   const lines: string[] = [
     // ADR-014 — while the release is armed the tooltip leads with the ask + the window, so a
     // pointer user sees the same thing the aria-label tells a screen-reader user.
     ...(armed ? ['Tap again to un-save — 3 seconds'] : []),
-    // DESIGN-052 D-26 / Q-14 — a title the Age Guard keeps leads with the batch wall's kept reason, never a date.
-    item.onWatchlist === true
-      ? KEPT_REASON_TOOLTIPS.watchlisted
-      : glyph === 'skip'
-        ? KEPT_REASON_TOOLTIPS.recently_added
-        : item.scheduledDeleteAt !== null
-          ? `Deletes ${formatDay(item.scheduledDeleteAt)} (${daysLeftLabel(daysUntil(item.scheduledDeleteAt))})`
-          : 'No scheduled delete date',
+    // DESIGN-052 D-10 amendment (story 821) — a kept title leads with why it is kept, never with a
+    // delete date it will not meet. The two older checks below cover a server that sends no reason
+    // (D-26 / Q-14: the Age Guard's kept reason; the watchlist's).
+    reason !== null
+      ? wallReasonCopy(reason).detail
+      : item.onWatchlist === true
+        ? KEPT_REASON_TOOLTIPS.watchlisted
+        : glyph === 'skip'
+          ? KEPT_REASON_TOOLTIPS.recently_added
+          : item.scheduledDeleteAt !== null
+            ? `Deletes ${formatDay(item.scheduledDeleteAt)} (${daysLeftLabel(daysUntil(item.scheduledDeleteAt))})`
+            : 'No scheduled delete date',
   ];
   if (glyph === 'shield') lines.push('Saved by you — protected from deletion');
   else if (glyph === 'check' && item.saveIntent === true) lines.push("Saved, so it won't be deleted");
@@ -202,6 +236,72 @@ export function usePendingSaves(media: 'movie' | 'tv') {
   };
 }
 
+/**
+ * DESIGN-052 D-10 amendment (story 832) / ADR-015 — a title saved from the default view keeps its tile.
+ *
+ * The default view lists only titles that can be deleted. A Save makes its title undeletable, so the
+ * read that follows the Save no longer returns it, and without this its tile would vanish and every
+ * tile after it would move up (hard rule 9), taking the un-save tap with it. The wall therefore keeps
+ * that tile at the place it had, wearing the saved shield, until the view is opened again: another
+ * segment, filter, sort or search (`viewKey` changes), or a new visit to the page.
+ *
+ * Wrap the host's page items and its `usePendingSaves` toggle with this, and render what it returns.
+ */
+export function usePinnedSaves(
+  serverItems: PendingWallItem[],
+  viewKey: string,
+  overrides: ReadonlyMap<string, 'saved' | 'unsaved'>,
+  toggle: (item: PendingWallItem, glyph: PendingWallGlyph) => void,
+): { items: PendingWallItem[]; toggle: (item: PendingWallItem, glyph: PendingWallGlyph) => void } {
+  const [pinned, setPinned] = useState<{ key: string; pins: PinnedTile<PendingWallItem>[] }>({
+    key: viewKey,
+    pins: [],
+  });
+  const sameTile = (a: PendingWallItem, b: PendingWallItem) =>
+    a.maintainerrMediaId === b.maintainerrMediaId && a.collectionId === b.collectionId;
+  // A changed view is a fresh read: nothing is pinned in it.
+  const current = pinned.key === viewKey ? pinned.pins : [];
+  // An un-saved title the server lists again is an ordinary tile once more. Forget its pin, so that
+  // if it is deleted later its tile goes too. (Until the server lists it, the pin holds the tile in
+  // place: the un-save is confirmed a moment before the read that brings the title back.)
+  const kept = current.filter(
+    (p) =>
+      !(
+        p.item.maintainerrMediaId !== null &&
+        overrides.get(p.item.maintainerrMediaId) === 'unsaved' &&
+        serverItems.some((i) => sameTile(i, p.item))
+      ),
+  );
+  if (pinned.key !== viewKey || kept.length !== current.length) {
+    setPinned({ key: viewKey, pins: kept });
+  }
+  // Only a tap the server has answered holds its tile. A save still out, or one that failed, is
+  // still in the server's list, and leaves with it if a refresh drops it for another reason.
+  const items = withPinnedTiles(
+    serverItems,
+    kept.filter((p) => p.item.maintainerrMediaId !== null && overrides.has(p.item.maintainerrMediaId)),
+  );
+
+  const pinAndToggle = (item: PendingWallItem, glyph: PendingWallGlyph) => {
+    // A slated `trash` tile saves on tap: remember where it is before the save is sent.
+    if (glyph === 'trash' && item.maintainerrMediaId !== null) {
+      const index = items.findIndex((i) => sameTile(i, item));
+      if (index >= 0) {
+        setPinned((prev) => ({
+          key: viewKey,
+          pins: [
+            ...(prev.key === viewKey ? prev.pins : []).filter((p) => !sameTile(p.item, item)),
+            { item, index },
+          ],
+        }));
+      }
+    }
+    toggle(item, glyph);
+  };
+
+  return { items, toggle: pinAndToggle };
+}
+
 function PendingTile({
   item,
   media,
@@ -212,6 +312,7 @@ function PendingTile({
   canSave,
   canUnsave,
   onToggle,
+  showReasons,
 }: {
   item: PendingWallItem;
   media: 'movie' | 'tv';
@@ -222,11 +323,14 @@ function PendingTile({
   canSave: boolean;
   canUnsave: boolean;
   onToggle: (item: PendingWallItem, glyph: PendingWallGlyph) => void;
+  showReasons: boolean;
 }) {
   const rating = formatRating(itemRating(item));
   const override =
     item.maintainerrMediaId === null ? undefined : overrides.get(item.maintainerrMediaId);
   const glyph = pendingWallGlyph(item, override);
+  // DESIGN-052 D-10 amendment (story 821) — why the title is kept, or null when it can be deleted.
+  const reason = shownWallReason(item, override);
   const tappable =
     item.maintainerrMediaId !== null && pendingWallTappable(glyph, canSave, canUnsave);
   // ADR-014 (2026-09-14) — SAVING stays one tap (protective, fast); RELEASING a save is the
@@ -250,7 +354,7 @@ function PendingTile({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needsConfirm, isBusy]);
   const armed = release.armed && needsConfirm && !isBusy;
-  const info = tileInfo(item, glyph, armed);
+  const info = tileInfo(item, glyph, armed, reason);
   // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone eye (recently watched) or muted
   // eye (watched a while ago). Null when there is no watch signal. NEVER in the action corner.
   const note = watchNote(item);
@@ -267,9 +371,12 @@ function PendingTile({
           ? `${item.title} is protected while on a watchlist${tappable ? ' — tap to save it permanently' : ''}`
           : glyph === 'skip'
             ? `${item.title}. ${KEPT_REASON_TOOLTIPS.recently_added}`
-            : tappable
-              ? `${item.title} is slated to delete — tap to save it`
-              : `${item.title} is slated to delete`;
+            : reason !== null
+              ? // A kept title is not "slated to delete": say why it is kept, then what a tap does.
+                `${item.title}. ${wallReasonCopy(reason).detail}${tappable ? '. Tap to save it' : ''}`
+              : tappable
+                ? `${item.title} is slated to delete — tap to save it`
+                : `${item.title} is slated to delete`;
   const toggleLabel = isBusy
     ? wallTapBusyLabel(busyAction, item.title)
     : failedAction !== undefined
@@ -312,6 +419,13 @@ function PendingTile({
       watchNote={note !== null ? { label: note.label, tone: note.tone } : null}
       onWatchlist={item.onWatchlist === true}
       failedNote={failedAction !== undefined ? wallTapFailedNote(failedAction) : null}
+      keptNote={
+        showReasons
+          ? reason !== null
+            ? { ...wallReasonCopy(reason), saved: wallReasonIsSave(reason) }
+            : null
+          : undefined
+      }
     />
   );
 }
@@ -370,6 +484,7 @@ export function PendingWall({
   hasNextPage,
   isFetchingNextPage,
   onLoadMore,
+  showReasons = false,
   testId = 'trash-wall',
 }: {
   items: PendingWallItem[];
@@ -391,6 +506,8 @@ export function PendingWall({
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   onLoadMore: () => void;
+  /** DESIGN-052 D-10 amendment (story 821) — the All view: each kept tile says why, under its facts. */
+  showReasons?: boolean;
   testId?: string;
 }) {
   return (
@@ -415,6 +532,7 @@ export function PendingWall({
               canSave={canSave}
               canUnsave={canUnsave}
               onToggle={onToggle}
+              showReasons={showReasons}
             />
           ))}
         </TrashWall>

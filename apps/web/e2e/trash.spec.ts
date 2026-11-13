@@ -85,12 +85,55 @@ async function removePending(page: Page, mediaServerId: string): Promise<void> {
 }
 
 async function openTrashMovies(page: Page, expectedVanished = 1): Promise<void> {
-  // Existing action/inspection scenarios exercise the complete pool. The watchlist
-  // scenario passes zero to exercise the new hide-by-default view explicitly.
+  // Existing action/inspection scenarios exercise the complete pool: the All view
+  // (`protected=show`, the param the retired checkbox wrote). The watchlist scenario passes zero
+  // to exercise the default Deletable view explicitly.
   await page.goto(`/trash?tab=movies${expectedVanished === 0 ? '' : '&protected=show'}`);
-  await expect(page.getByRole('checkbox', { name: /Show protected/ })).toBeVisible();
+  await expect(page.getByTestId('trash-view')).toBeVisible();
+  if (expectedVanished === 0) {
+    // Every seeded movie is held, so the default wall is the empty state, not the poster grid.
+    await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(0);
+    return;
+  }
   await expect(page.getByTestId('trash-wall')).toBeVisible();
   await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(expectedVanished);
+}
+
+/** One segment of a `Deletable | All` selector (`trash-view` on the pending wall, `future-view` on the strip). */
+function viewSegment(page: Page, selector: 'trash-view' | 'future-view', name: 'Deletable' | 'All'): Locator {
+  return page.getByTestId(selector).getByRole('button', { name, exact: true });
+}
+
+/**
+ * The default Deletable view omits held titles. Choose All when a test needs one of them.
+ * `trash-view` is the pending wall's own selector: an open batch's future strip has a selector too
+ * (`future-view`), and right after a cancel or a sweep it can still be on the page, so a lookup by
+ * the segment's name alone would press that one and leave the returning wall on its default view.
+ */
+async function showAllTitles(page: Page): Promise<void> {
+  const all = viewSegment(page, 'trash-view', 'All');
+  await expect(all).toBeVisible();
+  if ((await all.getAttribute('aria-pressed')) !== 'true') await all.click();
+  await expect(all).toHaveAttribute('aria-pressed', 'true');
+}
+
+/**
+ * Switch the Trash tab and wait until it is the selected one. A tab switch keeps only `?tab`, so the
+ * new tab's wall starts on the default view. Without the wait, the next step can still read the
+ * previous tab's controls (its view selector) before the new tab has mounted.
+ */
+async function switchTrashTab(page: Page, name: 'Movies' | 'TV'): Promise<void> {
+  const tab = page.getByRole('tab', { name });
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+/** The future-batch strip has its own selector, separate from the pending wall's. */
+async function showFutureAll(page: Page): Promise<void> {
+  const all = viewSegment(page, 'future-view', 'All');
+  await expect(all).toBeVisible();
+  if ((await all.getAttribute('aria-pressed')) !== 'true') await all.click();
+  await expect(all).toHaveAttribute('aria-pressed', 'true');
 }
 
 /** Assign the Marge Member persona's user to a role by name (admin user-detail select). */
@@ -247,7 +290,7 @@ test.describe('trash — watchlist protection on the page (ADR-093)', () => {
       await openTrashMovies(page, 0);
       const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
       await expect(vanished).toHaveCount(0);
-      await page.getByRole('checkbox', { name: /Show protected/ }).check();
+      await viewSegment(page, 'trash-view', 'All').click();
       // Compose another view change immediately, before the visibility URL settles.
       await page.getByRole('button', { name: /^Size/ }).click();
       await expect(page).toHaveURL(/protected=show/);
@@ -256,6 +299,9 @@ test.describe('trash — watchlist protection on the page (ADR-093)', () => {
       await expect(note).toHaveAttribute('title', "On a watchlist. It won't be deleted while it stays there.");
       await expect(note).toHaveAttribute('aria-label', "On a watchlist. It won't be deleted while it stays there.");
       await expect(vanished.getByTestId('trash-toggle')).toHaveAttribute('title', /^Kept: on a watchlist\n/);
+      // Story 821 — in All the tile says why it is kept, in words, under its facts.
+      await expect(vanished.getByTestId('wall-kept')).toHaveText('On a watchlist');
+      await expect(vanished.getByTestId('wall-kept')).toHaveAttribute('title', 'Kept: on a watchlist');
       await expect(note.locator('.bwall-watchlisted__label')).toHaveCount(0);
       await expectMetaInsideTiles(page);
 
@@ -376,6 +422,33 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(runner).toHaveAttribute('data-glyph', 'trash');
     await expect(unknown).toHaveAttribute('data-glyph', 'trash');
 
+    // Story 821 — in All, a tile that cannot be deleted says why, in plain words, from the reason the
+    // read returns; the one deletable tile says nothing. The full sentence is the tooltip, and the
+    // tile's accessible name no longer calls a kept title "slated to delete".
+    await expect(vanished.getByTestId('wall-kept')).toHaveText('');
+    await expect(fixture.getByTestId('wall-kept')).toHaveText('Watched recently');
+    await expect(fixture.getByTestId('wall-kept')).toHaveAttribute('title', 'Kept: watched recently');
+    await expect(runner.getByTestId('wall-kept')).toHaveText('Marked to keep');
+    await expect(runner.getByTestId('wall-kept')).toHaveAttribute('title', 'Kept: marked do not delete');
+    await expect(unknown.getByTestId('wall-kept')).toHaveText('Not in the library');
+    await expect(unknown.getByTestId('wall-kept')).toHaveAttribute(
+      'title',
+      "Kept: not in the library, so it can't be checked",
+    );
+    await expect(fixture.getByTestId('trash-toggle')).toHaveAttribute(
+      'aria-label',
+      'The Fixture. Kept: watched recently. Tap to save it',
+    );
+    await expect(vanished.getByTestId('trash-toggle')).toHaveAttribute(
+      'aria-label',
+      'Vanished Heist is slated to delete — tap to save it',
+    );
+    // Every tile of the All wall carries the line, so the rows are one height (ADR-015).
+    const heights = await page
+      .getByTestId('trash-tile')
+      .evaluateAll((tiles) => tiles.map((t) => Math.round(t.getBoundingClientRect().height)));
+    expect(new Set(heights).size, `tile heights ${heights.join(', ')}`).toBe(1);
+
     // The requester attribution rides the meta line as an info badge (person icon + tooltip),
     // co-existing with the watch chip — it never changes the corner action.
     await expect(fixture.getByTestId('wall-requested')).toHaveAttribute('title', /Requested by /);
@@ -397,7 +470,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(unknown.getByTestId('wall-lib-link')).toHaveCount(0);
 
     // The reclaim counts bar sits ABOVE the wall: 4+8+2+1 GiB = 15 GB across 4 items.
-    await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 15 GB across 4 items');
+    // Story 821 — All lists kept titles too, so its line counts titles and never says "Reclaiming".
+    await expect(page.getByTestId('trash-total')).toHaveText('4 titles in all · 15 GB');
 
     // ADR-035 — the snapshot honesty line + the manage-gated Refresh affordance ride the bar.
     // (dev/e2e refresh inline per read, so the age always reads "just now" here.)
@@ -433,7 +507,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('trash-tile')).toHaveCount(1);
     await expect(page.getByTestId('trash-total')).toHaveText(
-      'Reclaiming 8.0 GB across 1 item · filtered from 4 pending',
+      '1 title in all · 8.0 GB · filtered from 4 pending',
     );
     await expect(page).toHaveURL(/genre=Action/);
 
@@ -446,6 +520,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // corner is the inert kept `skip` with the batch wall's reason, never the slated trash-can.
     await page.getByRole('tab', { name: 'TV' }).click();
     await expect(page).toHaveURL(/\/trash\?tab=tv$/);
+    // The tab drops `protected=show`. Breaking Prod is Age Guard, so the default wall omits it.
+    await showAllTitles(page);
     const tvTile = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
     await expect(tvTile).toHaveCount(1);
     await expect(tvTile).toHaveAttribute('data-glyph', 'skip');
@@ -460,7 +536,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // The tooltip leads with the kept reason (never a delete date) and still carries the requester line.
     await expect(tvTile.getByTestId('trash-toggle')).toHaveAttribute('title', /^Kept: added or upgraded recently\n/);
     await expect(tvTile.getByTestId('trash-toggle')).toHaveAttribute('title', /Requested by /);
-    await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 20 GB across 1 item');
+    await expect(tvTile.getByTestId('wall-kept')).toHaveText('Added recently');
+    await expect(page.getByTestId('trash-total')).toHaveText('1 title in all · 20 GB');
   });
 
   test('D-12 cross-server watch visibility (build C): BOTH watch states show a meta chip (info vs muted), the corner is always the action, and the detail card gains the line', async ({
@@ -507,7 +584,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // TV: Breaking Prod is REQUESTED and also watched-long-ago — the corner is the Age Guard's kept `skip` (it was
     // downloaded moments ago, DESIGN-052 D-26), and BOTH facts still ride the meta line: the requester info badge +
     // the muted watch chip (D-12).
-    await page.getByRole('tab', { name: 'TV' }).click();
+    await switchTrashTab(page, 'TV');
+    await showAllTitles(page);
     const tv = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
     await expect(tv).toHaveAttribute('data-glyph', 'skip');
     await expect(tv.getByTestId('wall-requested')).toHaveAttribute('title', /Requested by /);
@@ -588,6 +666,270 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
       (c) => c.method === 'DELETE' && c.path === `/rules/exclusions/${STUB_MAINT_VANISHED_ID}`,
     );
     expect(removes).toHaveLength(1);
+  });
+
+  // DESIGN-052 D-10 amendment (story 832) — the default view lists only titles that can be deleted.
+  // Every held title is absent from it and present, with its reason and its behaviour, in All. A
+  // Save made FROM the default view makes its title undeletable, so the read that follows no longer
+  // returns it: the tile must stay where it was all the same (hard rule 9), one two-step tap from
+  // un-saving, and only a freshly opened default view leaves it out.
+  test('the default view holds only deletable titles; a Save there keeps its tile in place until the view is reopened', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    await page.goto('/trash?tab=movies');
+    await expect(viewSegment(page, 'trash-view', 'Deletable')).toHaveAttribute('aria-pressed', 'true');
+
+    // Four seeded movies; one can be deleted. The Fixture was watched recently, Stub Runner carries
+    // the dnd tag and tmdb:990009 is not in the ledger, so the default view leaves all three out.
+    const tiles = page.getByTestId('trash-tile');
+    const vanished = tiles.filter({ hasText: 'Vanished Heist' });
+    await expect(vanished).toHaveAttribute('data-glyph', 'trash');
+    await expect(tiles).toHaveCount(1);
+    await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 2.0 GB across 1 item');
+    // No tile on the default view wears the kept badge or a protected check, and none carries a
+    // reason line: there is nothing to explain.
+    await expect(page.locator('[data-testid="trash-tile"][data-glyph="skip"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="trash-tile"][data-glyph="check"]')).toHaveCount(0);
+    await expect(page.getByTestId('wall-kept')).toHaveCount(0);
+
+    // Save it here. The server confirms, the read that follows drops the title (the counts bar says
+    // so), and the tile is still there, the saved shield, in the same box.
+    const toggle = vanished.getByTestId('trash-toggle');
+    await page.waitForLoadState('networkidle');
+    await toggle.scrollIntoViewIfNeeded();
+    const before = (await vanished.boundingBox())!;
+    const saveSettled = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
+    await toggle.click();
+    await saveSettled;
+    await expect(page.getByTestId('trash-total')).toHaveText('Nothing to delete');
+    await expect(vanished).toHaveCount(1);
+    await expect(vanished).toHaveAttribute('data-glyph', 'shield');
+    await expect(page.getByTestId('trash-wall-empty')).toHaveCount(0);
+    expectSameBox(before, await vanished.boundingBox());
+
+    // Un-save it in place (the ADR-014 two-step): back to the slated trash can, same box, counted again.
+    const unsaveSettled = page.waitForResponse((r) => r.url().includes('trash.removeExclusion'));
+    await releaseTile(vanished, toggle, 'shield');
+    await unsaveSettled;
+    await expect(vanished).toHaveAttribute('data-glyph', 'trash');
+    await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 2.0 GB across 1 item');
+    await expect(tiles).toHaveCount(1);
+    expectSameBox(before, await vanished.boundingBox());
+
+    // Save again and open the view afresh: the saved title is not on the default view any more, and
+    // the empty wall says where the kept titles are.
+    const resaved = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
+    await toggle.click();
+    await resaved;
+    await expect(vanished).toHaveAttribute('data-glyph', 'shield');
+    await page.reload();
+    await expect(viewSegment(page, 'trash-view', 'Deletable')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('trash-wall-empty')).toHaveText(
+      'Nothing here can be deleted right now. Choose All to see what is kept, and why.',
+    );
+    await expect(tiles).toHaveCount(0);
+
+    // All: the four are there, each with its reason in words and the behaviour that reason already had.
+    await showAllTitles(page);
+    await expect(tiles).toHaveCount(4);
+    await expect(vanished).toHaveAttribute('data-glyph', 'check'); // saved: the protected check
+    await expect(vanished.getByTestId('wall-kept')).toHaveText('Saved');
+    const fixture = tiles.filter({ hasText: 'The Fixture' });
+    await expect(fixture).toHaveAttribute('data-glyph', 'trash'); // watched recently: still one tap from a Save
+    await expect(fixture.locator('button[data-testid="trash-toggle"]')).toHaveCount(1);
+    await expect(fixture.getByTestId('wall-watched')).toHaveAttribute('data-tone', 'info');
+    await expect(fixture.getByTestId('wall-kept')).toHaveText('Watched recently');
+    const runner = tiles.filter({ hasText: 'Stub Runner' });
+    await expect(runner).toHaveAttribute('data-glyph', 'trash'); // a lapsed dnd tag: tappable to re-save
+    await expect(runner.getByTestId('wall-kept')).toHaveText('Marked to keep');
+
+    // In All a Save shows its reason at once, in the line every tile already reserves: the tile and
+    // its neighbour stay in their boxes, and the un-save clears the reason again.
+    const fixtureToggle = fixture.getByTestId('trash-toggle');
+    await page.waitForLoadState('networkidle');
+    await fixtureToggle.scrollIntoViewIfNeeded();
+    const fixtureBox = (await fixture.boundingBox())!;
+    const runnerBox = (await runner.boundingBox())!;
+    const fixtureSaved = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
+    await fixtureToggle.click();
+    await fixtureSaved;
+    await expect(fixture).toHaveAttribute('data-glyph', 'shield');
+    await expect(fixture.getByTestId('wall-kept')).toHaveText('Saved');
+    await expect(fixture.getByTestId('wall-kept')).toHaveAttribute('data-tone', 'saved');
+    expectSameBox(fixtureBox, await fixture.boundingBox());
+    expectSameBox(runnerBox, await runner.boundingBox());
+    const fixtureUnsaved = page.waitForResponse((r) => r.url().includes('trash.removeExclusion'));
+    await releaseTile(fixture, fixtureToggle, 'shield');
+    await fixtureUnsaved;
+    // Un-saving lifts the Save, never the recent watch: that reason is back.
+    await expect(fixture.getByTestId('wall-kept')).toHaveText('Watched recently');
+    expectSameBox(fixtureBox, await fixture.boundingBox());
+    await resetMaintainerr(page);
+  });
+
+  // DESIGN-052 D-10 amendment (story 821) — the view switch is the Library's segmented control
+  // ("Collections | All movies"), in the Library's place, and the selected segment is the green one.
+  // Choosing a segment recolors the pill and changes which tiles the wall lists; it moves nothing
+  // else (hard rule 9): not the control, not the search beside it, not the counts, not the reclaim
+  // bar or anything in it, and not the wall's own top-left tile. Checked at desktop width and on a
+  // 390 px phone, in both themes.
+  test('story 821: Deletable | All is the Library segmented control; the selected segment is green and a switch moves nothing', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+
+    // The control it must be: Library > Movies. Read its green from the page rather than assume it.
+    // The tab is named, so the reference never depends on which Library tab opens first.
+    await page.goto('/library?tab=movies');
+    const libraryView = page.getByTestId('view-selector');
+    await expect(libraryView).toBeVisible();
+    const segStyle = (pill: Locator) =>
+      pill.evaluate((el) => {
+        const on = el.querySelector('button[aria-pressed="true"]')!;
+        const off = el.querySelector('button[aria-pressed="false"]')!;
+        const css = (node: Element) => {
+          const c = getComputedStyle(node);
+          return { background: c.backgroundColor, color: c.color, weight: c.fontWeight };
+        };
+        const pillCss = getComputedStyle(el);
+        return {
+          on: css(on),
+          off: css(off),
+          pill: { background: pillCss.backgroundColor, radius: pillCss.borderRadius, padding: pillCss.padding },
+          isSeg: el.classList.contains('seg'),
+          role: el.getAttribute('role'),
+          label: el.getAttribute('aria-label'),
+          firstInControls: el.parentElement?.classList.contains('library-controls') === true &&
+            el.parentElement.firstElementChild === el,
+        };
+      });
+    const libraryStyle = await segStyle(libraryView);
+
+    await page.goto('/trash?tab=movies');
+    const view = page.getByTestId('trash-view');
+    const deletable = viewSegment(page, 'trash-view', 'Deletable');
+    const all = viewSegment(page, 'trash-view', 'All');
+    await expect(view).toBeVisible();
+    // The checkbox is gone.
+    await expect(page.getByRole('checkbox', { name: /Show protected/ })).toHaveCount(0);
+    await expect(page.getByText('Show protected')).toHaveCount(0);
+    // Two segments, Deletable first and selected by default; no view param in the URL.
+    await expect(view.getByRole('button')).toHaveText(['Deletable', 'All']);
+    await expect(deletable).toHaveAttribute('aria-pressed', 'true');
+    await expect(all).toHaveAttribute('aria-pressed', 'false');
+    await expect(page).toHaveURL(/\/trash\?tab=movies$/);
+    // The same control as the Library's: the same pill, group and place, and the same green.
+    expect(await segStyle(view)).toEqual(libraryStyle);
+    expect(libraryStyle.isSeg && libraryStyle.firstInControls).toBe(true);
+    const accent = await page.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.backgroundColor = 'var(--color-accent)';
+      document.body.append(probe);
+      const color = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return color;
+    });
+    expect(libraryStyle.on.background).toBe(accent);
+    expect(libraryStyle.off.background).not.toBe(accent);
+
+    /** Everything a segment switch must leave exactly where it is. */
+    const frame = () =>
+      page.evaluate(() => {
+        const box = (selector: string) => {
+          const el = document.querySelector(selector);
+          if (el === null) return null;
+          const r = el.getBoundingClientRect();
+          return [r.x, r.y, r.width, r.height].map((n) => Math.round(n * 10) / 10);
+        };
+        return {
+          control: box('[data-testid="trash-view"]'),
+          deletable: box('[data-testid="trash-view"] button:nth-child(1)'),
+          all: box('[data-testid="trash-view"] button:nth-child(2)'),
+          search: box('.library-search'),
+          chips: box('.library-chipbar'),
+          sort: box('.library-sortbar'),
+          bar: box('.trash-countsbar'),
+          total: box('[data-testid="trash-total"]'),
+          asOf: box('[data-testid="trash-asof"]'),
+          refresh: box('[data-testid="trash-refresh-candidates"]'),
+          deleteAll: box('[data-testid="trash-expedite-all"]'),
+          errorSlot: box('[data-testid="trash-wall-error"]'),
+          // The wall's top-left tile is Vanished Heist in both views (it leads "Next up").
+          firstPoster: box('[data-testid="trash-tile"] .bwall-art'),
+          scrollWidth: document.documentElement.scrollWidth,
+        };
+      });
+
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });
+      await expect(deletable).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 2.0 GB across 1 item');
+      await expect(page.getByTestId('trash-tile')).toHaveCount(1);
+      await page.waitForLoadState('networkidle');
+      const onDeletable = await frame();
+      expect(onDeletable.control, 'the control is on the page').not.toBeNull();
+      expect(onDeletable.refresh, 'an admin sees Refresh').not.toBeNull();
+
+      // Deletable → All.
+      await all.click();
+      await expect(all).toHaveAttribute('aria-pressed', 'true');
+      await expect(deletable).toHaveAttribute('aria-pressed', 'false');
+      await expect(page).toHaveURL(/protected=show/);
+      await expect(page.getByTestId('trash-tile')).toHaveCount(4);
+      await expect(page.getByTestId('trash-total')).toHaveText('4 titles in all · 15 GB');
+      expect(await frame(), `Deletable → All at ${width}px`).toEqual(onDeletable);
+      // The green moved with the selection.
+      expect((await segStyle(view)).on.background).toBe(accent);
+
+      // All → Deletable.
+      await deletable.click();
+      await expect(deletable).toHaveAttribute('aria-pressed', 'true');
+      await expect(page).toHaveURL(/\/trash\?tab=movies$/);
+      await expect(page.getByTestId('trash-tile')).toHaveCount(1);
+      await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 2.0 GB across 1 item');
+      expect(await frame(), `All → Deletable at ${width}px`).toEqual(onDeletable);
+
+      // Nothing runs off the side, and on the phone the whole pill is on screen.
+      await expectViewportFit(page);
+      const [controlLeft = 0, , controlWidth = 0] = onDeletable.control ?? [];
+      expect(controlLeft + controlWidth).toBeLessThanOrEqual(width);
+    }
+
+    // The dark theme: the same control, the selected segment is that theme's green, and the switch
+    // still moves nothing (a theme changes color tokens, never layout).
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.evaluate(() => localStorage.setItem('hnet-theme', 'hnet-dark'));
+    await page.reload();
+    await page.locator('html[data-theme="hnet-dark"]').waitFor();
+    try {
+      await expect(deletable).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByTestId('trash-tile')).toHaveCount(1);
+      await page.waitForLoadState('networkidle');
+      const darkAccent = await page.evaluate(() => {
+        const probe = document.createElement('span');
+        probe.style.backgroundColor = 'var(--color-accent)';
+        document.body.append(probe);
+        const color = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return color;
+      });
+      expect((await segStyle(view)).on.background).toBe(darkAccent);
+      const darkFrame = await frame();
+      await all.click();
+      await expect(page.getByTestId('trash-tile')).toHaveCount(4);
+      expect((await segStyle(view)).on.background).toBe(darkAccent);
+      expect(await frame(), 'Deletable → All, dark theme').toEqual(darkFrame);
+    } finally {
+      await page.evaluate(() => localStorage.setItem('hnet-theme', 'hnet-light'));
+      await page.reload();
+      await page.locator('html[data-theme="hnet-light"]').waitFor();
+    }
+
+    // The view is a way of looking, never a release: nothing reached Maintainerr.
+    expect((await maintainerrCalls(page)).filter((c) => c.method !== 'GET')).toHaveLength(0);
   });
 
   /** ADR-014 — the arm expires on its own. An interrupted release leaves the save intact. */
@@ -784,6 +1126,9 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
     await expect(vanished).toHaveAttribute('data-glyph', 'check');
     await expect(vanished.locator('button[data-testid="trash-toggle"]')).toHaveCount(0);
+    // Story 821 — its reason in words, in the Save's green.
+    await expect(vanished.getByTestId('wall-kept')).toHaveText('Saved');
+    await expect(vanished.getByTestId('wall-kept')).toHaveAttribute('data-tone', 'saved');
     await resetMaintainerr(page);
   });
 
@@ -869,6 +1214,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await signIn(page, 'admin');
     await page.goto('/trash?tab=tv');
     // Breaking Prod was downloaded moments ago (the spec's beforeAll): kept, never offered for deletion.
+    await showAllTitles(page);
     const tile = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
     await expect(tile).toHaveAttribute('data-glyph', 'skip');
 
@@ -1195,6 +1541,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // holder the admin sees the tap-to-save invitation in the head line.
     await addPendingCandidate(page);
     await page.goto('/trash?tab=movies');
+    // The fresh candidate is not in the ledger, so the strip's default view omits it.
+    await showFutureAll(page);
     await expect(page.getByTestId('batch-new-candidates')).toContainText(
       'Potential in future batches (1)',
     );
@@ -1520,6 +1868,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // fresh ms-990010 candidate tile renders, but with NO save button and the head line drops the
     // "tap a poster to save it out" invitation.
     const familyStrip = memberPage.getByTestId('batch-new-candidates');
+    await showFutureAll(memberPage);
     await expect(familyStrip).toContainText('Potential in future batches (1)');
     await expect(familyStrip).not.toContainText('tap a poster to save it out');
     await expect(memberPage.getByTestId('future-wall').getByTestId('trash-tile')).toHaveCount(1);
@@ -1561,6 +1910,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // for a save_exclude holder — tap a coming-soon candidate to save it out of the NEXT batch (a real
     // exclusion write). The head line now carries the "tap a poster to save it out" invitation, and the
     // fresh ms-990010 tile is a save BUTTON. Save then un-save to leave the strip state clean.
+    await showFutureAll(memberPage);
     await expect(memberPage.getByTestId('batch-new-candidates')).toContainText(
       'tap a poster to save it out',
     );
@@ -1590,6 +1940,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
 
     // The future strip is visible to this pure read-only role too, but fully READ-ONLY: the fresh
     // candidate renders (browse what's coming), with NO save button and no "tap to save" head-line.
+    await showFutureAll(memberPage);
     await expect(memberPage.getByTestId('batch-new-candidates')).toContainText(
       'Potential in future batches',
     );
@@ -1615,6 +1966,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // terminal ⇒ the LifecycleView drops out and the pending wall returns (no open batch).
     await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
     await armAndConfirm(page.getByTestId('batch-cancel'));
+    // The earlier tests' saves are still open here, so every title is held and the default wall is empty.
+    await showAllTitles(page);
     await expect(page.getByTestId('trash-wall')).toBeVisible();
     await resetMaintainerr(page);
 
@@ -1664,6 +2017,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // the Past-batches strip (ADR-033). Expanding the Deleted row reveals its final report
     // (the terminal PosterWall with the sweep glyphs).
     await report.getByRole('button', { name: 'Done' }).click();
+    // The cold title was just deleted. What remains is held, so the default wall is empty.
+    await showAllTitles(page);
     await expect(page.getByTestId('trash-wall')).toBeVisible();
     const strip = page.getByTestId('batch-history');
     await expect(strip).toBeVisible();
@@ -1728,6 +2083,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('batch-gate-skipped')).toBeVisible();
     await expect(page.getByTestId('batch-countdown')).toContainText('window closes');
     await armAndConfirm(page.getByTestId('batch-cancel'));
+    // Breaking Prod is Age Guard, so the returning default wall hides it until All is chosen.
+    await showAllTitles(page);
     await expect(page.getByTestId('trash-wall')).toBeVisible(); // terminal ⇒ TV pending wall returns
 
     // Restore the gate — "Enable" turns it back ON (the safe direction, a plain button).
@@ -2136,6 +2493,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
 
     // Done ⇒ the batch is terminal, the pending wall returns.
     await page.getByRole('button', { name: 'Done' }).click();
+    // The cold title was just deleted. What remains is held, so the default wall is empty.
+    await showAllTitles(page);
     await expect(page.getByTestId('trash-wall')).toBeVisible();
     await resetMaintainerr(page);
   });
