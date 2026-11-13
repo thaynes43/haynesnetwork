@@ -684,6 +684,33 @@ describe('forecastPanels — every state of the read keeps one panel per array',
     });
   });
 
+  it('a refresh that fails keeps the last forecast and says it is old', () => {
+    const tower = towerSeries({
+      points: line(112.4304 * TB, 100 * GB),
+      forecast: forecasting(112.4304 * TB, -100 * GB, TOWER_FLOOR),
+    });
+    const fresh = forecastPanels(report([tower]), arrays, { kind: 'ready' }, H)[0]!;
+    const stale = forecastPanels(
+      report([tower]),
+      arrays,
+      { kind: 'error', message: 'fetch failed.' },
+      H,
+    )[0]!;
+    expect(fresh).toMatchObject({ stale: false, tone: 'filling', chip: 'Filling' });
+    // The dates and the plot are the last read's; the chip, the tone and the sentence say so.
+    expect(stale).toMatchObject({
+      stale: true,
+      tone: 'none',
+      chip: 'Not refreshed',
+      sentence:
+        'Couldn’t refresh the forecast (fetch failed). The dates here are from the last read.',
+      target: fresh.target,
+      full: fresh.full,
+      plot: fresh.plot,
+    });
+    expect(stale.summary).toContain('Couldn’t refresh the forecast (fetch failed).');
+  });
+
   it('with a forecast the panels are the read’s arrays; with no array known there are none', () => {
     const tower = towerSeries({
       points: line(112.4304 * TB, 100 * GB),

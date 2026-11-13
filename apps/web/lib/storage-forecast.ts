@@ -527,6 +527,8 @@ export interface ForecastPanel {
   plot: ForecastPlot | null;
   /** What the plot's place says when there is nothing to draw. */
   emptyPlot: string;
+  /** True when this is the last forecast read and the refresh after it failed. */
+  stale: boolean;
   /** Everything above in one line, for a reader who cannot see the plot. */
   summary: string;
 }
@@ -572,6 +574,7 @@ export function forecastPanel(
     notes,
     plot: forecastPlot(series, report, plotHeight),
     emptyPlot: 'Nothing to plot yet.',
+    stale: false,
     summary: summarise(series.label, sentence, target, full),
   };
 }
@@ -614,14 +617,30 @@ function placeholderPanel(array: ForecastArrayRef, state: ForecastLoadState): Fo
     notes: [],
     plot: null,
     emptyPlot: loading ? 'Loading forecast…' : 'No plot while the forecast is unavailable.',
+    stale: false,
     summary: `${array.label}. ${sentence}`,
+  };
+}
+
+/** A forecast the page already holds, after a refresh of it failed: kept, and said to be old. */
+function stalePanel(panel: ForecastPanel, message: string): ForecastPanel {
+  const sentence = `Couldn’t refresh the forecast (${message.replace(/[.\s]+$/, '')}). The dates here are from the last read.`;
+  return {
+    ...panel,
+    tone: 'none', // the projection and the chip lose the direction's colour: this is not live
+    chip: 'Not refreshed',
+    sentence,
+    stale: true,
+    summary: summarise(panel.label, sentence, panel.target, panel.full),
   };
 }
 
 /**
  * The panels for every state of the read. With a forecast: one per array of the read. Without one
  * (loading, failed, Prometheus down): one per array the page already knows, in the same shape, so
- * the card keeps its geometry while the read is away (ADR-015).
+ * the card keeps its geometry while the read is away (ADR-015). A refresh that fails while a
+ * forecast is on the page (a saved target refetches it) keeps that forecast and says it is old,
+ * so the last read is never shown as the current one.
  */
 export function forecastPanels(
   report: StorageForecastReport | undefined,
@@ -630,7 +649,8 @@ export function forecastPanels(
   plotHeight: number,
 ): ForecastPanel[] {
   if (report && !report.unavailable) {
-    return report.series.map((series) => forecastPanel(series, report, plotHeight));
+    const panels = report.series.map((series) => forecastPanel(series, report, plotHeight));
+    return state.kind === 'error' ? panels.map((p) => stalePanel(p, state.message)) : panels;
   }
   const why: ForecastLoadState = report?.unavailable ? { kind: 'ready' } : state;
   return arrays.map((array) => placeholderPanel(array, why));

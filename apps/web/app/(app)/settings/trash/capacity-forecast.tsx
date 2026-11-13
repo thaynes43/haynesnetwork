@@ -151,6 +151,7 @@ function Panel({ panel }: { panel: ForecastPanel }) {
       className={`storage-forecast__array forecast-tone--${panel.tone}`}
       data-testid={`forecast-${panel.key}`}
       data-tone={panel.tone}
+      data-stale={panel.stale || undefined}
     >
       <div className="storage-forecast__words">
         <header className="storage-forecast__name">

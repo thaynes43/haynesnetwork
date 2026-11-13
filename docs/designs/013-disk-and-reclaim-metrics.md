@@ -517,10 +517,15 @@ one sentence. `{date}` and `{away}` are the date wording below; `X` is a capacit
 | No reading at all | No forecast | Unknown / the array could not be read | No date yet / not enough history | No forecast: there are no free-space readings for this array yet. |
 | Prometheus down (`unavailable`) | No forecast | No date / forecast unavailable | No date / forecast unavailable | Forecast unavailable: couldn’t reach Prometheus right now. The meters above still show live utilization. |
 | The read failed | No forecast | No date / forecast unavailable | No date / forecast unavailable | Failed to load the forecast: `{message}` |
+| A refresh failed (a forecast is on the page) | Not refreshed | as last read | as last read | Couldn’t refresh the forecast (`{message}`). The dates here are from the last read. |
 | Loading | … | … / loading | … / loading | Loading forecast… |
 
 A target with no array size to place it (the *arr unreachable) reads "Unknown / the array could
-not be read". The 90, 36 and 13 are the read's own values, not copies in the page.
+not be read". The 90, 36 and 13 are the read's own values, not copies in the page. A refresh that
+fails while a forecast is on the page (a saved target refetches it) keeps that forecast and says
+it is old: the chip reads "Not refreshed", the projection loses the direction's colour, and the
+sentence says the dates are from the last read. The last read is never shown as the current one
+(advisory review on PR 1072).
 
 **Date wording.** The read carries no error band (D-08: the function does not return the standard
 error), so the page states a date no finer than the forecast supports and steps the precision
@@ -637,8 +642,9 @@ reading from Nov 12: the live free space could not be read."
 **ADR-015.** The card has no control of its own. What a reader can do to it is save a target on
 the meter above: the save now also refetches `storage.forecast`, and the panel swaps its words
 and marks in place. Every state has the same two tiles, each with one value line and two reserved
-lines of detail, and the plot region is 160px in every state (plot, history only, nothing to
-plot, loading, unavailable). While the read is away the card keeps one panel per array the page
+lines of detail; the sentence keeps three lines in every state (the longest it holds takes three
+at the narrowest column, and a longer error is cut at three); and the plot region is 160px in
+every state (plot, history only, nothing to plot, loading, unavailable). While the read is away the card keeps one panel per array the page
 already knows from `storage.utilization`. The card's key is static text. Measured 2026-11-13 in
 the local stack: the four tiles are 88px high at 360, 390 and 1280px viewports, and the page has
 no sideways scroll at 360 or 390px (`scrollWidth` equals `innerWidth`).
@@ -701,7 +707,7 @@ story.
 (`apps/web/lib/__tests__/storage-forecast.test.ts`) — every row of the D-09 table (use rising
 under and over target and with nothing left, use falling over and under target, no target in
 both directions, flat on each side of a target, each kind of too short, no reading, Prometheus
-down, loading, a failed read), the date and pace wording at each cut, the jump note in its three
+down, loading, a failed read, a failed refresh), the date and pace wording at each cut, the jump note in its three
 forms and the read-with-care comparison on both recorded arrays, a level that is not live, and
 the plot: the horizon, the marks, the projection ending on zero or on the floor, a rise capped at
 the array's size, the axis units from days to centuries and which labels give way. The jump rule

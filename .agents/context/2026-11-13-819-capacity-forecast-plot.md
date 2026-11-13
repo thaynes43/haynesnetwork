@@ -75,10 +75,10 @@ Each count was checked against the rule written for it.
   the median step by more than a day of the rate). The test asserts counts and byte totals.
 - 30 steps; `floor(30 × 0.25) = 7` set aside at each end; `partlyCounted` needs 8 or more far
   steps one way. The test builds 7 (not partly counted) and 8 (partly counted).
-- The D-09 table has 13 rows: 5 with a forecast (use rising under and over target and with
+- The D-09 table has 14 rows: 5 with a forecast (use rising under and over target and with
   nothing left; use falling over and under target), 1 for no target, 4 for no forecast (flat, too
-  few days, readings missing, no reading), 3 for the read being away (Prometheus down, failed,
-  loading). The unit test file covers each.
+  few days, readings missing, no reading), 4 for the read being away or old (Prometheus down,
+  failed, a failed refresh, loading). The unit test file covers each.
 - The card's key has 5 entries: the history, today, the two directions, the target.
 - One number does not follow from a rule: the 46px axis gutter was chosen to fit the widest tick
   label drawn in the local stack ("100 TB", "150 TB") with 8px to spare. A label wider than that

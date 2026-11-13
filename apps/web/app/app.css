@@ -7285,9 +7285,19 @@ button.bwall-tap:hover .bwall-overlay[data-armed='true'] {
   line-height: 16px;
   min-height: 32px; /* two lines reserved: a longer detail after a target change never grows the tile */
 }
+/* Three lines, always: the longest sentence the slot holds (no forecast, the read away, a failed
+   refresh) takes three at the narrowest column, so a refetch that changes the sentence after a
+   saved target never moves the plot under it (ADR-015). A longer error is cut at three. */
 .storage-forecast__sentence {
   margin: 0;
   font-size: 13px;
+  line-height: 18px;
+  min-height: 54px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
 }
 .storage-forecast__figure {
   margin: 0;
