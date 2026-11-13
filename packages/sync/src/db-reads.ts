@@ -3,6 +3,7 @@
 import {
   mediaItems,
   mediaMetadata,
+  mediaPlexMatches,
   plexLibraries,
   plexServers,
   syncState,
@@ -186,6 +187,47 @@ export async function resolveSeerrMediaItemId(
     if (byTvdb !== null) return byTvdb;
   }
   return request.tmdbId === null ? null : lookup('sonarr', 'tmdbId', request.tmdbId);
+}
+
+/** External ids a Plex rating key already resolves to, so the watch harvest can skip `get_metadata`. */
+export interface PlexRatingGuids {
+  imdbId?: string;
+  tmdbId?: number;
+  tvdbId?: number;
+}
+
+/** Map key for one server's Plex rating key. The rating key is per server, so the slug is part of the key. */
+export function plexRatingGuidKey(slug: string, ratingKey: string): string {
+  return `${slug}\0${ratingKey}`;
+}
+
+/**
+ * DESIGN-008 D-03 — rating keys the plex-match sync has already joined to a ledger item.
+ * The watch harvest uses this before `get_metadata`. A key with no external id is omitted.
+ */
+export async function loadPlexRatingGuids(db: DbClient): Promise<Map<string, PlexRatingGuids>> {
+  const rows = await db
+    .select({
+      slug: plexServers.slug,
+      ratingKey: mediaPlexMatches.ratingKey,
+      tmdbId: mediaItems.tmdbId,
+      imdbId: mediaItems.imdbId,
+      tvdbId: mediaItems.tvdbId,
+    })
+    .from(mediaPlexMatches)
+    .innerJoin(plexLibraries, eq(plexLibraries.id, mediaPlexMatches.plexLibraryId))
+    .innerJoin(plexServers, eq(plexServers.id, plexLibraries.serverId))
+    .innerJoin(mediaItems, eq(mediaItems.id, mediaPlexMatches.mediaItemId));
+  const map = new Map<string, PlexRatingGuids>();
+  for (const row of rows) {
+    const guids: PlexRatingGuids = {};
+    if (row.tmdbId !== null) guids.tmdbId = row.tmdbId;
+    if (row.imdbId) guids.imdbId = row.imdbId;
+    if (row.tvdbId !== null) guids.tvdbId = row.tvdbId;
+    if (guids.tmdbId === undefined && guids.imdbId === undefined && guids.tvdbId === undefined) continue;
+    map.set(plexRatingGuidKey(row.slug, row.ratingKey), guids);
+  }
+  return map;
 }
 
 /**
