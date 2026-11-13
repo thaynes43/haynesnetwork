@@ -236,33 +236,61 @@ export async function seedMediaItem(
 
 /**
  * ADR-119 — a ledger item with no Plex match is `unknown` (kept). Deletion tests were written when
- * that case was `clear`. Stamp each still-unmatched item with a date older than 180 days so the
- * Age Guard can clear it. An item that already has a match, including an undated one, is left as
- * the test set it up.
+ * that case was `clear`. Stamp each item that has no fitting match with a date older than 180 days
+ * so the Age Guard can clear it. ADR-123 deletes a cross-type row inside `syncPlexMatches`, so each
+ * kind is stamped into the library type that fits it. An item that already has a fitting match,
+ * including an undated one, is left as the test set it up.
  */
 export async function stampOldPlexMatches(db: Database): Promise<void> {
-  await upsertPlexLibraries({
-    db,
-    slug: 'haynesops',
-    libraries: [{ sectionKey: 'age-guard-dated', name: 'Age Guard Dated', mediaType: 'movie' }],
-  });
+  const libraries = [
+    { sectionKey: 'age-guard-dated-movie', name: 'Age Guard Movies', mediaType: 'movie' as const },
+    { sectionKey: 'age-guard-dated-show', name: 'Age Guard Shows', mediaType: 'show' as const },
+    { sectionKey: 'age-guard-dated-artist', name: 'Age Guard Music', mediaType: 'artist' as const },
+  ];
+  await upsertPlexLibraries({ db, slug: 'haynesops', libraries });
   const libs = await db.select().from(schema.plexLibraries);
-  const library = libs.find((l) => l.sectionKey === 'age-guard-dated');
-  if (!library) throw new Error('age-guard-dated library was not upserted');
-  const items = await db.select({ id: schema.mediaItems.id }).from(schema.mediaItems);
+  const byType = new Map(
+    libs
+      .filter((l) => l.sectionKey.startsWith('age-guard-dated-'))
+      .map((l) => [l.mediaType, l.id] as const),
+  );
+  const typeForKind = (kind: string): 'movie' | 'show' | 'artist' | undefined => {
+    if (kind === 'radarr') return 'movie';
+    if (kind === 'sonarr') return 'show';
+    if (kind === 'lidarr') return 'artist';
+    return undefined;
+  };
+  const items = await db
+    .select({ id: schema.mediaItems.id, arrKind: schema.mediaItems.arrKind })
+    .from(schema.mediaItems);
+  const kindById = new Map(items.map((item) => [item.id, item.arrKind]));
   const matched = await db
-    .select({ id: schema.mediaPlexMatches.mediaItemId })
-    .from(schema.mediaPlexMatches);
-  const have = new Set(matched.map((m) => m.id));
-  const missing = items.filter((row) => !have.has(row.id));
+    .select({
+      mediaItemId: schema.mediaPlexMatches.mediaItemId,
+      mediaType: schema.plexLibraries.mediaType,
+    })
+    .from(schema.mediaPlexMatches)
+    .innerJoin(
+      schema.plexLibraries,
+      eq(schema.plexLibraries.id, schema.mediaPlexMatches.plexLibraryId),
+    );
+  const haveFitting = new Set(
+    matched
+      .filter((row) => typeForKind(kindById.get(row.mediaItemId) ?? '') === row.mediaType)
+      .map((row) => row.mediaItemId),
+  );
+  const missing = items.filter((item) => {
+    const type = typeForKind(item.arrKind);
+    return type !== undefined && byType.has(type) && !haveFitting.has(item.id);
+  });
   if (missing.length === 0) return;
   const old = new Date(Date.now() - 400 * 86_400_000);
   await syncPlexMatches({
     db,
-    matches: missing.map((row) => ({
-      mediaItemId: row.id,
-      plexLibraryId: library.id,
-      ratingKey: `old-${row.id}`,
+    matches: missing.map((item) => ({
+      mediaItemId: item.id,
+      plexLibraryId: byType.get(typeForKind(item.arrKind)!)!,
+      ratingKey: `old-${item.id}`,
       matchedVia: 'tmdb',
       plexAddedAt: old,
     })),

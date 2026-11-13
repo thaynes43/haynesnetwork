@@ -333,7 +333,8 @@ describe('fetchPlexMatchSnapshot + syncPlexMatches (ADR-047)', () => {
 });
 
 describe('a library whose live type disagrees with the registry', () => {
-  it('keeps a row that fits the live type through a run', async () => {
+  it('logs the skip, returns the library id, and leaves fitting rows in place', async () => {
+    const before = await matchPairs(t.db);
     await upsertPlexLibraries({
       db: t.db,
       slug: 'haynestower',
@@ -348,17 +349,6 @@ describe('a library whose live type disagrees with the registry', () => {
           eq(plexLibraries.sectionKey, '8'),
         ),
       );
-    const [movie] = await t.db
-      .select({ id: mediaItems.id })
-      .from(mediaItems)
-      .where(and(eq(mediaItems.arrKind, 'radarr'), eq(mediaItems.arrItemId, 1)));
-    await t.db.insert(mediaPlexMatches).values({
-      mediaItemId: movie!.id,
-      plexLibraryId: lib!.id,
-      ratingKey: 'fits-live',
-      matchedVia: 'tmdb',
-      plexAddedAt: new Date('2024-01-01T00:00:00.000Z'),
-    });
     const errors: string[] = [];
     const logger: SyncLogger = {
       info: () => {},
@@ -394,11 +384,7 @@ describe('a library whose live type disagrees with the registry', () => {
       excludeCrossTypeLibraryIds: snap.typeDisagreementLibraryIds,
     });
     expect(report.crossTypeRemoved).toBe(0);
-    const kept = await t.db
-      .select({ ratingKey: mediaPlexMatches.ratingKey })
-      .from(mediaPlexMatches)
-      .where(eq(mediaPlexMatches.ratingKey, 'fits-live'));
-    expect(kept).toHaveLength(1);
+    expect(await matchPairs(t.db)).toEqual(before);
   });
 });
 
