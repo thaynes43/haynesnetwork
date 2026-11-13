@@ -82,6 +82,7 @@ import {
   windowClosed,
   WATCHLIST_BREAKDOWN_TERM,
   RECENT_BREAKDOWN_TERM,
+  REQUEST_BREAKDOWN_TERM,
 } from '@/lib/trash';
 
 export type { TrashAccess };
@@ -396,11 +397,14 @@ function PendingTab({
     unverifiable: 0,
     watchlisted: 0,
     recentlyAdded: 0,
+    requested: 0,
   };
   // ADR-093 / DESIGN-052 D-10 — the watchlisted share of `protected` (an older server omits it ⇒ 0).
   const watchlistedCount = (partition as { watchlisted?: number }).watchlisted ?? 0;
   // DESIGN-052 D-26 / Q-14 — the Age Guard's share of `protected` (an older server omits it ⇒ 0).
   const recentCount = (partition as { recentlyAdded?: number }).recentlyAdded ?? 0;
+  // ADR-117 — the Request Keep's share of `protected` (an older server omits it ⇒ 0).
+  const requestedCount = (partition as { requested?: number }).requested ?? 0;
 
   // ── the sort bar (shared nextSort/arrowFor cycle over SORT_COLUMNS) ──
   const clickCycle = Object.fromEntries(
@@ -667,24 +671,45 @@ function PendingTab({
               </li>
               <li>
                 <strong>{partition.protected} protected:</strong> {EXPEDITE_PROTECTED_REASON}
-                {watchlistedCount > 0 || recentCount > 0 ? (
-                  <>
-                    {' '}
-                    Includes{' '}
-                    {watchlistedCount > 0 ? (
-                      <strong data-testid="trash-expedite-watchlisted">
+                {(() => {
+                  const parts = [
+                    watchlistedCount > 0 ? (
+                      <strong key="watchlisted" data-testid="trash-expedite-watchlisted">
                         {watchlistedCount} {WATCHLIST_BREAKDOWN_TERM}
                       </strong>
-                    ) : null}
-                    {watchlistedCount > 0 && recentCount > 0 ? ' and ' : null}
-                    {recentCount > 0 ? (
-                      <strong data-testid="trash-expedite-recent">
+                    ) : null,
+                    recentCount > 0 ? (
+                      <strong key="recent" data-testid="trash-expedite-recent">
                         {recentCount} {RECENT_BREAKDOWN_TERM}
                       </strong>
-                    ) : null}
-                    .
-                  </>
-                ) : null}
+                    ) : null,
+                    requestedCount > 0 ? (
+                      <strong key="requested" data-testid="trash-expedite-requested">
+                        {requestedCount} {REQUEST_BREAKDOWN_TERM}
+                      </strong>
+                    ) : null,
+                  ].filter((part) => part !== null);
+                  if (parts.length === 0) return null;
+                  return (
+                    <>
+                      {' '}
+                      Includes{' '}
+                      {parts.map((part, index) => (
+                        <span key={part.key}>
+                          {index === 0
+                            ? null
+                            : index === parts.length - 1
+                              ? parts.length === 2
+                                ? ' and '
+                                : ', and '
+                              : ', '}
+                          {part}
+                        </span>
+                      ))}
+                      .
+                    </>
+                  );
+                })()}
               </li>
               <li>
                 <strong>{partition.unverifiable} kept, can’t be verified safe:</strong>{' '}

@@ -44,6 +44,8 @@ export interface StubRuleGroup {
   libraryId: string;
   dataType: string;
   collectionId: number;
+  /** ADR-117 — present only when a test models the clause list. Omitted means the stub does not model rules. */
+  rules?: unknown[];
 }
 export interface MaintState {
   integrations: { radarr: boolean; sonarr: boolean; tautulli: boolean; seerr: boolean };
@@ -157,6 +159,7 @@ export function makeMaintainerr(state: MaintState): {
           useRules: g.useRules,
           libraryId: g.libraryId,
           dataType: g.dataType,
+          ...(g.rules !== undefined ? { rules: g.rules } : {}),
           collection: (() => {
             const c = state.collections.find((col) => col.id === g.collectionId);
             return c ? { id: c.id, title: c.title, manualCollection: c.manualCollection ?? false } : null;

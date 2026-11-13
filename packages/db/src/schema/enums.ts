@@ -1740,10 +1740,10 @@ export type WatchlistSourceOutcome = (typeof WATCHLIST_SOURCE_OUTCOMES)[number];
 export const WATCHLIST_ITEM_KINDS = ['movie', 'show'] as const;
 export type WatchlistItemKind = (typeof WATCHLIST_ITEM_KINDS)[number];
 
-/** trash_batch_items.keep_reason — why the sweep kept a batch item (D-05, D-09, D-14). The guardian's four
- *  reasons, the two pre-guardian skips, the release that could not be recorded (D-11), and the Age Guard's
- *  `recently_added` (DESIGN-052 D-26, migration 0086: downloaded, upgraded or added to any Plex server in the last
- *  180 days). */
+/** trash_batch_items.keep_reason — why the sweep kept a batch item (D-05, D-09, D-14). The guardian's
+ *  reasons, the two pre-guardian skips, the release that could not be recorded (D-11), the Age Guard's
+ *  `recently_added` (DESIGN-052 D-26, migration 0086), and the Request Keep's `media_request`
+ *  (ADR-117, migration 0108: the ledger tags include `mediarequests`). */
 export const TRASH_KEEP_REASONS = [
   'tag',
   'recently_watched',
@@ -1756,6 +1756,8 @@ export const TRASH_KEEP_REASONS = [
   // ADR-099 D-4 — an open save intent (a Save the app recorded). Authoritative whether or not Maintainerr holds the
   // exclusion yet.
   'saved',
+  // ADR-117 / DESIGN-052 D-29 — the title's ledger tags include `mediarequests`.
+  'media_request',
 ] as const;
 export type TrashKeepReason = (typeof TRASH_KEEP_REASONS)[number];
 

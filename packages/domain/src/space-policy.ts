@@ -50,7 +50,12 @@ import { TrashBatchEmptyError, TrashBatchOpenError } from './errors';
 import type { MaintainerrClientBundle } from './maintainerr-clients';
 import { getUtilization, STORAGE_ARRAYS, type UtilizationArrBundle } from './storage-metrics';
 import { recordNotification } from './notifications';
-import { listTrashPending, type TrashMedia, type TrashPendingItem } from './trash-flow';
+import {
+  countsTowardDeletion,
+  listTrashPending,
+  type TrashMedia,
+  type TrashPendingItem,
+} from './trash-flow';
 import { evaluateRegistryGate } from './watchlist-registry';
 
 const OPEN_STATES = TRASH_BATCH_OPEN_STATES as readonly TrashBatchState[];
@@ -92,9 +97,7 @@ function resolveCap(raw: unknown, fallback: SpacePolicyCap): SpacePolicyCap {
 function resolvePerKind(stored: SpacePolicy | undefined): SpacePolicyPerKind {
   const out = defaultPerKind();
   const storedPerKind = stored?.perKind as
-    | Partial<Record<TrashMediaKind, Partial<SpacePolicyKindCaps>>>
-    | null
-    | undefined;
+    Partial<Record<TrashMediaKind, Partial<SpacePolicyKindCaps>>> | null | undefined;
   if (storedPerKind !== null && typeof storedPerKind === 'object') {
     for (const kind of TRASH_MEDIA_KINDS) {
       const sk = storedPerKind[kind];
@@ -467,11 +470,11 @@ async function proposeForKind(input: {
       media: input.mediaKind as TrashMedia,
       watchlist,
     });
-    // D-08 / ADR-099 D-4 — minCandidates excludes Saves (even before their exclusion is enforced), `dnd`,
-    // watchlisted titles and the Age Guard's recent dates, matching the batch builder's eligibility.
+    // D-08 / ADR-099 D-4 / ADR-117 — minCandidates excludes Saves (even before their exclusion is enforced), `dnd`,
+    // watchlisted titles, the Age Guard's recent dates and `mediarequests`, matching the batch builder.
     actionable = pending.items.filter(
       (p): p is TrashPendingItem & { maintainerrMediaId: string } =>
-        p.maintainerrMediaId !== null && !p.saveIntent && !p.protectedByTag && !p.onWatchlist && p.ageGuard !== 'recent',
+        p.maintainerrMediaId !== null && countsTowardDeletion(p),
     );
   } catch (err) {
     return {

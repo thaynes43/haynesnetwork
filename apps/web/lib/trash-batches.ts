@@ -317,6 +317,8 @@ export interface TargetCandidate {
   /** DESIGN-052 D-26 — inside the Age Guard's 180 days: a TARGETED batch leaves it out, and it frees nothing while it
    *  stays inside the window (the sweep keeps it). Absent ⇒ false. */
   recentlyAdded?: boolean;
+  /** ADR-117 — tagged mediarequests: a targeted batch leaves it out, and it frees nothing while the tag stays. */
+  requested?: boolean;
 }
 
 export interface TargetPreview {
@@ -357,14 +359,17 @@ export function previewTargetSelection(
   // (mirrors selectBatchCandidates, DESIGN-052 D-08) — unless the server's proposal is unfiltered (D-25cx).
   // DESIGN-052 D-26 — a title inside the Age Guard's 180 days is handled like a watchlisted one: a targeted pick leaves
   // it out (always: the age needs no registry), an untargeted batch snapshots it, and it frees nothing.
+  // ADR-117 — a requested title is handled the same way. It frees nothing while the tag stays.
   const pending = candidates.filter((c) => !c.protectedByTag);
   const filtered = spec.watchlistFiltered !== false;
   const deletable = (filtered ? pending.filter((c) => c.onWatchlist !== true) : pending).filter(
-    (c) => c.recentlyAdded !== true,
+    (c) => c.recentlyAdded !== true && c.requested !== true,
   );
   const poolBytes = deletable.reduce((n, c) => n + c.sizeBytes, 0);
   const frees = (items: readonly TargetCandidate[]) =>
-    items.filter((c) => c.onWatchlist !== true && c.recentlyAdded !== true).reduce((n, c) => n + c.sizeBytes, 0);
+    items
+      .filter((c) => c.onWatchlist !== true && c.recentlyAdded !== true && c.requested !== true)
+      .reduce((n, c) => n + c.sizeBytes, 0);
   const capped = spec.targetBytes !== undefined || spec.maxItems !== undefined;
   if (!capped) {
     return {
@@ -417,7 +422,10 @@ export interface ExpirePreviewItem {
  * watched (the guardian), not in our ledger (unverifiable), known absent from the live pool, and on a watchlist (the
  * Watchlist Keep). Unknown always reads as slated, the conservative side.
  */
-export function expirePreview(items: ReadonlyArray<ExpirePreviewItem>): { willDelete: number; willKeep: number } {
+export function expirePreview(items: ReadonlyArray<ExpirePreviewItem>): {
+  willDelete: number;
+  willKeep: number;
+} {
   const pending = items.filter((i) => i.state === 'pending');
   const willDelete = pending.filter(
     (i) => !i.recentlyWatched && i.mediaItemId !== null && i.inLivePool !== false && i.onWatchlist !== true,
@@ -464,7 +472,12 @@ export function expireConfirmLines(counts: {
 
 /** The inputs one batch-wall tile's label, tooltip and note derive from (DESIGN-011 D-07, DESIGN-052 D-10). */
 export interface BatchTileViewInput {
-  item: { title: string; state: BatchItemStateName; keepReason?: string | null; onWatchlist?: boolean };
+  item: {
+    title: string;
+    state: BatchItemStateName;
+    keepReason?: string | null;
+    onWatchlist?: boolean;
+  };
   glyph: WallGlyph;
   /** This `skip` is the pool PROJECTION over a still-`pending` row, not a swept `skipped` row. */
   projectedSkip: boolean;

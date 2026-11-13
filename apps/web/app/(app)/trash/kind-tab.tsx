@@ -175,6 +175,8 @@ interface PendingCandidate {
   onWatchlist?: boolean;
   /** DESIGN-052 D-26 — inside the Age Guard's 180 days: no batch takes it. Absent ⇒ false (older server). */
   recentlyAdded?: boolean;
+  /** ADR-117 — tagged mediarequests: a targeted batch leaves it out. Absent ⇒ false. */
+  requested?: boolean;
 }
 
 interface SafetyLike {
@@ -1220,9 +1222,7 @@ function LifecycleView({
       ) : (
         // Window closed but the batch is still awaiting the sweep — name the sweep time, not a stale
         // "window closes <past date>".
-        <>
-          window closed{sweepLabel !== null ? ` · deletes ${sweepLabel}` : ''}
-        </>
+        <>window closed{sweepLabel !== null ? ` · deletes ${sweepLabel}` : ''}</>
       )
     ) : (
       <>created {formatDay(batch.createdAt)}</>
@@ -1545,6 +1545,7 @@ export function KindTab({
     protectedByTag: p.protectedByTag,
     onWatchlist: p.onWatchlist === true,
     recentlyAdded: p.recentlyAdded === true,
+    requested: p.requested === true,
   }));
 
   const kindNoun = kind === 'movie' ? 'movie' : 'TV';

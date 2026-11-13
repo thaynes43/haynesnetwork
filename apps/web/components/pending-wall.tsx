@@ -35,6 +35,7 @@ import {
   daysUntil,
   KEPT_REASON_TOOLTIPS,
   pendingWallGlyph,
+  skipKeepTooltip,
   pendingWallTappable,
   releaseNeedsConfirm,
   watchNote,
@@ -68,6 +69,8 @@ export interface PendingWallItem {
   ageGuard?: 'recent' | 'clear' | 'unknown';
   /** ADR-099 D-4 — somebody saved it (an open save intent): saved, whether or not Maintainerr has caught up. */
   saveIntent?: boolean;
+  /** ADR-117 — the ledger tags. The wire item already carries them; absent ⇒ not requested. */
+  arrTags?: readonly string[];
 }
 
 const itemRating = (item: PendingWallItem): number | null =>
@@ -108,7 +111,7 @@ function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph, armed = false)
     item.onWatchlist === true
       ? KEPT_REASON_TOOLTIPS.watchlisted
       : glyph === 'skip'
-        ? KEPT_REASON_TOOLTIPS.recently_added
+        ? skipKeepTooltip(item)
         : item.scheduledDeleteAt !== null
           ? `Deletes ${formatDay(item.scheduledDeleteAt)} (${daysLeftLabel(daysUntil(item.scheduledDeleteAt))})`
           : 'No scheduled delete date',
@@ -266,7 +269,7 @@ function PendingTile({
         : item.onWatchlist === true
           ? `${item.title} is protected while on a watchlist${tappable ? ' — tap to save it permanently' : ''}`
           : glyph === 'skip'
-            ? `${item.title}. ${KEPT_REASON_TOOLTIPS.recently_added}`
+            ? `${item.title}. ${skipKeepTooltip(item)}`
             : tappable
               ? `${item.title} is slated to delete — tap to save it`
               : `${item.title} is slated to delete`;

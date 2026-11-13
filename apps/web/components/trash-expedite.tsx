@@ -76,7 +76,14 @@ export function ExpediteItemConfirm({
       ) : verdict === 'protected_recent' ? (
         // DESIGN-052 D-26 / Q-14 — the Age Guard: refused like a watchlisted item, never auto-saved.
         <p className="status-note" data-testid="trash-expedite-item-recent">
-          This item was added or upgraded recently, so it won&apos;t be deleted yet. Nothing will be deleted.
+          This item was added or upgraded recently, so it won&apos;t be deleted yet. Nothing will be
+          deleted.
+        </p>
+      ) : verdict === 'protected_request' ? (
+        // ADR-117 — the Request Keep: refused like a watchlisted item, never auto-saved. The tag lasts until it is removed.
+        <p className="status-note" data-testid="trash-expedite-item-request">
+          This item was requested, so it won&apos;t be deleted while that request stands. Nothing
+          will be deleted.
         </p>
       ) : verdict === 'unverifiable' ? (
         <p className="status-note status-note--warn" data-testid="trash-expedite-item-unverifiable">
@@ -85,9 +92,8 @@ export function ExpediteItemConfirm({
         </p>
       ) : (
         <p className="status-note">
-          This item is{' '}
-          {verdict === 'protected_watched' ? 'recently watched' : 'whitelisted'}{' '}
-          — instead of deleting, Maintainerr will <strong>protect it</strong> (auto-whitelist).
+          This item is {verdict === 'protected_watched' ? 'recently watched' : 'whitelisted'} —
+          instead of deleting, Maintainerr will <strong>protect it</strong> (auto-whitelist).
         </p>
       )}
       <div className="form-actions">

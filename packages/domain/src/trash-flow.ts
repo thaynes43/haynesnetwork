@@ -64,6 +64,17 @@ import {
  *  the first-class "protected" signal — we never hand-apply it (it stays Maintainerr-managed). */
 export const PROTECTED_TAG = 'dnd';
 
+/**
+ * ADR-117 / DESIGN-052 D-29 — the Seerr add tag. A title whose ledger tags include this exact label is kept.
+ * A personal requester tag (`<n>-…`) is not this tag and is not a keep.
+ */
+export const MEDIA_REQUEST_TAG = 'mediarequests';
+
+/** True when the ledger tag list contains `mediarequests` as its own label (not a prefix of another label). */
+export function hasMediaRequestTag(tags: readonly string[] | null | undefined): boolean {
+  return Array.isArray(tags) && tags.includes(MEDIA_REQUEST_TAG);
+}
+
 /** Addendum a — the cross-server watch guardian window. An item watched on ANY of the three Plex
  *  servers within this many days (media_metadata.last_viewed_at = cross-server MAX, PLAN-004) is
  *  auto-protected from deletion and flagged in the pending tables. A constant for now (Q-01:
@@ -233,6 +244,185 @@ export function evaluateAgingInvariants(collections: readonly AgingCollectionVie
   return violations;
 }
 
+/** Maintainerr's NOT_CONTAINS action. The live movie and TV clauses used 9 on 2026-11-13; the 2026-10-30
+ *  clause table names that code NOT_CONTAINS. */
+const REQUEST_CLAUSE_ACTION = 9;
+
+/** Radarr tags are application 1 property 2; Sonarr show tags are application 2 property 2.
+ *  Both ids were read from Maintainerr `GET /api/rules/constants` on 2026-11-13. */
+function requestTagFirstVal(dataType: unknown): readonly [number, number] | null {
+  if (dataType === 'movie' || dataType === 1) return [1, 2];
+  if (
+    dataType === 'show' ||
+    dataType === 2 ||
+    dataType === 'season' ||
+    dataType === 3 ||
+    dataType === 'episode' ||
+    dataType === 4
+  ) {
+    return [2, 2];
+  }
+  return null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/** One Maintainerr rule after `ruleJson` is decoded. `active` is false only when the entity or the body says so. */
+export interface DecodedTrashRule {
+  action: unknown;
+  operator: unknown;
+  firstVal: unknown;
+  section: unknown;
+  value: unknown;
+  active: boolean;
+}
+
+/** Decode a GET rule entity (`ruleJson` string) or a PUT rule body. Null when the JSON does not parse. */
+export function decodeTrashRule(rule: unknown): DecodedTrashRule | null {
+  const entity = asRecord(rule);
+  if (!entity) return null;
+  let body = entity;
+  if (typeof entity.ruleJson === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(entity.ruleJson);
+      const rec = asRecord(parsed);
+      if (!rec) return null;
+      body = rec;
+    } catch {
+      return null;
+    }
+  }
+  const custom = body.customVal;
+  const value = typeof custom === 'string' ? custom : asRecord(custom)?.value;
+  return {
+    action: body.action,
+    operator: body.operator,
+    firstVal: body.firstVal,
+    section: body.section ?? entity.section,
+    value,
+    active: entity.isActive !== false && body.isActive !== false,
+  };
+}
+
+function samePair(value: unknown, pair: readonly [number, number]): boolean {
+  return Array.isArray(value) && value.length === 2 && value[0] === pair[0] && value[1] === pair[1];
+}
+
+/** The clause that keeps a requested title out of the pool: tags do not contain `mediarequests`, ANDed, in section 0. */
+function ruleKeepsRequests(rule: DecodedTrashRule, dataType: unknown): boolean {
+  const pair = requestTagFirstVal(dataType);
+  if (!pair || !rule.active) return false;
+  if (rule.action !== REQUEST_CLAUSE_ACTION || rule.value !== MEDIA_REQUEST_TAG) return false;
+  if (!samePair(rule.firstVal, pair)) return false;
+  // operator 0 is AND (2026-10-30 clause table). null is the first clause. Anything else (an OR) does not count.
+  if (rule.operator !== 0 && rule.operator !== null && rule.operator !== undefined) return false;
+  if (rule.section !== 0 && rule.section !== null && rule.section !== undefined) return false;
+  return true;
+}
+
+function groupNeedsRequestClause(group: Record<string, unknown>): boolean {
+  if (group.isActive !== true) return false;
+  if (isLeavingSoonCollectionTitle(typeof group.name === 'string' ? group.name : null))
+    return false;
+  if (group.useRules === false) return false;
+  if (!Array.isArray(group.rules)) return false;
+  // A shell that is not marked useRules and carries no clauses is not a deletion rule. An armed
+  // useRules group with an empty list, and any group that has clauses, is held to the request clause.
+  if (group.useRules !== true && group.rules.length === 0) return false;
+  return true;
+}
+
+/**
+ * ADR-117 / DESIGN-052 D-29 — an armed movie or TV rule group must still exclude `mediarequests`.
+ * A missing clause is a violation string, folded into the audit the same way a dropped `listExclusions`
+ * or `forceSeerr` is. A disarmed group and a Leaving Soon shell are not checked. A group whose `rules`
+ * field is absent is not checked: the live GET always sends an array, and a stub that does not model
+ * rules must not turn every existing sweep red.
+ */
+export function evaluateRequestClauses(groups: readonly unknown[]): string[] {
+  const violations: string[] = [];
+  for (const raw of groups) {
+    const group = asRecord(raw);
+    if (!group || !groupNeedsRequestClause(group)) continue;
+    const label =
+      typeof group.name === 'string' && group.name !== '' ? group.name : 'untitled rule group';
+    if (requestTagFirstVal(group.dataType) === null) {
+      violations.push(
+        `The '${label}' rule group is armed and its type cannot be checked for the request clause. Destructive actions are blocked until it can be confirmed.`,
+      );
+      continue;
+    }
+    const ok = (group.rules as unknown[]).some((rule) => {
+      const decoded = decodeTrashRule(rule);
+      return decoded !== null && ruleKeepsRequests(decoded, group.dataType);
+    });
+    if (!ok) {
+      violations.push(
+        `The '${label}' rule group no longer excludes requested titles (the mediarequests tag). Turn that clause back on in Maintainerr.`,
+      );
+    }
+  }
+  return violations;
+}
+
+/** Property names read from Maintainerr `GET /api/rules/constants` on 2026-11-13. An unknown id is named by its ids. */
+const RULE_PROPERTY_LABELS: Record<string, string> = {
+  '0,0': 'Plex date added',
+  '0,5': 'Plex times viewed',
+  '0,17': 'Plex total views',
+  '1,2': 'Radarr tags',
+  '1,16': 'Radarr IMDb rating',
+  '1,19': 'Radarr IMDb vote count',
+  '2,2': 'Sonarr tags',
+  '2,19': 'Sonarr show rating',
+};
+
+function propertyLabel(firstVal: unknown): string {
+  if (Array.isArray(firstVal) && firstVal.length >= 2) {
+    const key = `${String(firstVal[0])},${String(firstVal[1])}`;
+    return RULE_PROPERTY_LABELS[key] ?? `property ${key}`;
+  }
+  return 'property';
+}
+
+/**
+ * ADR-117 C-06 — the description the app writes for a rule group, taken from the clauses it is writing.
+ * Action words follow the 2026-10-30 clause table (0 above, 1 below, 5 before, 9 does not contain);
+ * the action number is included so an unnamed action still matches the body.
+ */
+export function describeTrashRules(rules: readonly unknown[]): string {
+  const parts: string[] = [];
+  for (const [index, raw] of rules.entries()) {
+    const rule = decodeTrashRule(raw);
+    if (!rule) {
+      parts.push(`rule ${index + 1} could not be read`);
+      continue;
+    }
+    const value = rule.value === null || rule.value === undefined ? '' : String(rule.value);
+    const action = rule.action;
+    const phrase =
+      action === 0
+        ? `is above ${value}`
+        : action === 1
+          ? `is below ${value}`
+          : action === 5
+            ? `is before ${value}`
+            : action === 9
+              ? `does not contain ${value}`
+              : `action ${String(action)} ${value}`.trim();
+    const oddJoin =
+      index > 0 && rule.operator !== 0 && rule.operator !== null && rule.operator !== undefined
+        ? ` (operator ${String(rule.operator)})`
+        : '';
+    parts.push(`${rule.active ? '' : 'off: '}${propertyLabel(rule.firstVal)} ${phrase}${oddJoin}`);
+  }
+  return parts.join(', and ');
+}
+
 /**
  * ADR-023 D-04 — the read-only preflight audit. Writes NO state. Reachability + version come from
  * `GET /api/app/status`; Plex from `GET /api/settings/test/plex`; the other integrations from
@@ -298,9 +488,18 @@ export async function auditMaintainerr(input: {
     (async () => {
       try {
         const rules = await read.getRules();
-        return rules.filter((r) => r.isActive === true).length;
+        return {
+          armedRules: rules.filter((r) => r.isActive === true).length,
+          clauseViolations: evaluateRequestClauses(rules),
+        };
       } catch {
-        return 0;
+        // A rules outage cannot prove the request clause is still there, so the sweep refuses (ADR-117).
+        return {
+          armedRules: 0,
+          clauseViolations: [
+            'Maintainerr rules could not be read, so the request clause cannot be confirmed. Destructive actions are blocked until they can be.',
+          ],
+        };
       }
     })(),
     (async () => {
@@ -336,12 +535,23 @@ export async function auditMaintainerr(input: {
     })(),
   ]);
   const { radarr, sonarr, tautulli, seerr } = integrationFlags;
-  const { activeCollections, agingViolations } = collectionsResult;
+  const { activeCollections, agingViolations: agingOnly } = collectionsResult;
+  const agingViolations = [...agingOnly, ...armedRules.clauseViolations];
 
   const integrations: MaintainerrIntegrations = { plex, radarr, sonarr, tautulli, seerr };
   const safe =
-    reachable && REQUIRED_INTEGRATIONS.every((k) => integrations[k]) && agingViolations.length === 0;
-  return { safe, reachable, version, integrations, armedRules, activeCollections, agingViolations };
+    reachable &&
+    REQUIRED_INTEGRATIONS.every((k) => integrations[k]) &&
+    agingViolations.length === 0;
+  return {
+    safe,
+    reachable,
+    version,
+    integrations,
+    armedRules: armedRules.armedRules,
+    activeCollections,
+    agingViolations,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1350,11 +1560,12 @@ export async function removeExclusion(input: {
  * what we cannot evaluate.
  *
  * SEPARATION OF RESPONSIBILITIES (owner ruling 2026-07-09): "Maintainerr rules decide what gets
- * promoted; the app controls how much and when it's deleted." A personal requester is NO LONGER a
- * keep reason — requested items in batches/sweeps/expedites are treated like any other item (rules
- * promote, humans decide, the app schedules). Requester attribution is informational only now
- * (surfaced as a wall meta badge), never an app-side overrule. See ADR-025/DESIGN-010/DESIGN-011
- * errata (2026-07-09).
+ * promoted; the app controls how much and when it's deleted." A personal requester tag is not a
+ * keep (surfaced as a wall meta badge). See ADR-025 errata (2026-07-09).
+ *
+ * SUPERSEDED FOR ONE TAG (owner ruling 2026-11-13, ADR-117): a title whose ledger tags include
+ * `mediarequests` IS a keep (`media_request`). The tag lasts until it is removed. The earlier keeps
+ * below still win, in the same order, so a title kept today is kept for the same reason.
  */
 export type GuardianKeepReason =
   | 'saved'
@@ -1362,12 +1573,13 @@ export type GuardianKeepReason =
   | 'recently_watched'
   | 'watchlisted'
   | 'recently_added'
+  | 'media_request'
   | 'unevaluable';
 export type GuardianVerdict = { keep: true; reason: GuardianKeepReason } | { keep: false };
 
-/** The three fields the guardian actually reads. A structural subset of `TrashPendingItem` (every
- *  real caller still passes a whole pending item) so the shared expedite derivation below can
- *  compose it without an unchecked cast. */
+/** The fields the guardian reads. A structural subset of `TrashPendingItem` (every real caller still
+ *  passes a whole pending item) so the shared expedite derivation below can compose it without an
+ *  unchecked cast. `arrTags` is optional so a fixture that does not model tags is not requested. */
 export type GuardianInput = Pick<
   TrashPendingItem,
   | 'protectedByTag'
@@ -1378,15 +1590,16 @@ export type GuardianInput = Pick<
   | 'ruleEvaluationFailed'
   | 'ageGuard'
   | 'saveIntent'
->;
+> & { arrTags?: readonly string[] };
 
 /**
  * The guardian's per-item verdict (P4 — fail closed). An item is expeditable ONLY when it is
- * positively evaluated (resolved to our ledger) AND cold (not tag-protected, not recently watched).
+ * positively evaluated (resolved to our ledger) AND cold (not tag-protected, not recently watched,
+ * not on a watchlist, not recently added, and not tagged `mediarequests`).
  * Anything we cannot positively clear — including an item unknown to our ledger — is KEPT. A personal
- * requester is NOT a keep (owner ruling 2026-07-09 — requested is informational only). The
- * `media`-param bypass (P3) is defeated by callers running this over the item's REAL pending
- * identity, never a client-declared kind.
+ * requester tag is NOT a keep (owner ruling 2026-07-09). The `mediarequests` tag IS a keep (owner
+ * ruling 2026-11-13, ADR-117). The `media`-param bypass (P3) is defeated by callers running this over
+ * the item's REAL pending identity, never a client-declared kind.
  */
 export function classifyGuardian(item: GuardianInput): GuardianVerdict {
   // ADR-099 D-4 — a Save is the app's record, checked first: authoritative whether or not Maintainerr holds the
@@ -1400,6 +1613,9 @@ export function classifyGuardian(item: GuardianInput): GuardianVerdict {
   // DESIGN-052 D-26 / Q-14 — the Age Guard: downloaded, upgraded or added to any Plex server in the last 180 days ⇒
   // kept on every delete path (the sweep and both Expedite scopes). Not a Save: it lapses when the title ages out.
   if (item.ageGuard === 'recent') return { keep: true, reason: 'recently_added' };
+  // ADR-117 / DESIGN-052 D-29 — the Request Keep. After every earlier keep, so those reasons are unchanged, and
+  // before `unevaluable`, so a tagged title is reported as requested. It lasts while the tag is on the ledger row.
+  if (hasMediaRequestTag(item.arrTags)) return { keep: true, reason: 'media_request' };
   // Fail closed: no ledger resolution ⇒ no watch data ⇒ we cannot confirm it is safe. Likewise an item whose
   // watchlist status cannot be evaluated (no verified snapshot, or no guid while a registry title of its kind is
   // unmapped), an item Maintainerr flags `ruleEvaluationFailed` (its own handler skips those), and an item whose
@@ -1415,6 +1631,27 @@ export function classifyGuardian(item: GuardianInput): GuardianVerdict {
   return { keep: false };
 }
 
+/**
+ * A pending title that takes a deletion slot: not saved, not `dnd`, not watchlisted, not inside the Age Guard,
+ * and not tagged `mediarequests` (ADR-117). The Request Keep is last so the earlier keeps are unchanged.
+ * An untargeted snapshot still includes a requested title; the sweep keeps it. Only the slot math drops it.
+ */
+export function countsTowardDeletion(item: {
+  saveIntent: boolean;
+  protectedByTag: boolean;
+  onWatchlist: boolean;
+  ageGuard: 'recent' | 'clear' | 'unknown';
+  arrTags?: readonly string[];
+}): boolean {
+  return (
+    !item.saveIntent &&
+    !item.protectedByTag &&
+    !item.onWatchlist &&
+    item.ageGuard !== 'recent' &&
+    !hasMediaRequestTag(item.arrTags)
+  );
+}
+
 /** The minimal item surface an expedite verdict reads — the guardian's three fields plus the
  *  Maintainerr id the 'all' loop pre-checks. */
 export interface ExpediteVerdictInput extends GuardianInput {
@@ -1423,11 +1660,12 @@ export interface ExpediteVerdictInput extends GuardianInput {
 
 /**
  * Why an item survives (or not) an expedite:
- * - `deletable`         — cold + positively evaluated ⇒ the server WILL delete it. A requested item
- *                         is deletable (owner ruling 2026-07-09 — requested is informational only,
- *                         never an app-side keep); its requester rides the meta badge, not the verdict.
+ * - `deletable`         — cold + positively evaluated ⇒ the server WILL delete it. A personal requester
+ *                         tag stays informational (owner ruling 2026-07-09). A `mediarequests` tag is
+ *                         `protected_request` (owner ruling 2026-11-13, ADR-117).
  * - `protected_saved`   — kept because somebody saved it (ADR-099: the app's record, exclusion or not).
  * - `protected_tag` / `protected_watched` — kept deliberately (whitelist / watch guardian).
+ * - `protected_request` — kept because the ledger tags include `mediarequests`.
  * - `unverifiable`      — kept because it CANNOT be verified safe (no Maintainerr id, or unknown to
  *                         our ledger) ⇒ counted as SKIPPED, never deleted. NOT the same thing as
  *                         protected — surface it distinctly (ADR-023 C-07b).
@@ -1439,6 +1677,7 @@ export type ExpediteVerdict =
   | 'protected_watched'
   | 'protected_watchlist'
   | 'protected_recent'
+  | 'protected_request'
   | 'unverifiable';
 
 /**
@@ -1467,6 +1706,7 @@ export function classifyForExpedite(item: ExpediteVerdictInput): ExpediteVerdict
   if (verdict.reason === 'recently_watched') return 'protected_watched';
   if (verdict.reason === 'watchlisted') return 'protected_watchlist';
   if (verdict.reason === 'recently_added') return 'protected_recent';
+  if (verdict.reason === 'media_request') return 'protected_request';
   return 'unverifiable'; // 'unevaluable' — kept because it cannot be cleared, not whitelisted.
 }
 
@@ -2032,8 +2272,8 @@ export async function expediteDeletion(
     const verdict = classifyGuardian(target);
     if (verdict.keep) {
       // Watched ⇒ auto-whitelist; tag ⇒ already protected; unevaluable ⇒ keep (fail closed). A
-      // requester is no longer a keep (owner ruling 2026-07-09) — a requested item is cold here and
-      // proceeds to deletion below unless another guard protects it.
+      // personal requester tag is not a keep (owner ruling 2026-07-09). The mediarequests tag is
+      // (ADR-117): kept, never auto-saved.
       if (verdict.reason === 'recently_watched') {
         await saveExclusion({
           db: input.db,
@@ -2049,11 +2289,21 @@ export async function expediteDeletion(
         verdict.reason === 'saved' ||
         verdict.reason === 'tag' ||
         verdict.reason === 'watchlisted' ||
-        verdict.reason === 'recently_added'
+        verdict.reason === 'recently_added' ||
+        verdict.reason === 'media_request'
       ) {
         // Saved (ADR-099 D-4: the app's record; the keeper owns its exclusion), already whitelisted, on a watchlist
-        // (the Watchlist Keep) or inside the Age Guard (D-26): refused like a tagged item, never auto-saved.
-        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
+        // (the Watchlist Keep), inside the Age Guard (D-26) or tagged mediarequests (ADR-117): refused like a
+        // tagged item, never auto-saved.
+        return {
+          scope: 'item',
+          protectedCount: 1,
+          expeditedCount: 0,
+          skippedCount: 0,
+          stalePending: 0,
+          expeditedIds: [],
+          unrecordedCount: 0,
+        };
       }
       // unevaluable — not deleted, not force-whitelisted.
       return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
@@ -2137,8 +2387,8 @@ export async function expediteDeletion(
   );
 
   const arrKind = arrKindForTrashMedia(input.media);
-  // PASS 1 — guardian: whitelist watched, skip anything we can't positively clear. A requester is
-  // no longer a keep (owner ruling 2026-07-09) — a requested item is cold and expedites like any other.
+  // PASS 1 — guardian: whitelist watched, skip anything we can't positively clear. A personal requester
+  // tag is not a keep (owner ruling 2026-07-09). A mediarequests tag is (ADR-117): kept, never auto-saved.
   const survivors: ExpediteSurvivor[] = [];
   let protectedCount = 0;
   // Legacy (unpinned) parity: unactionable items still count as skipped. When pinned they are simply
@@ -2181,6 +2431,8 @@ export async function expediteDeletion(
         protectedCount += 1; // the Watchlist Keep — kept, never auto-saved (a watchlist is not a Save).
       } else if (verdict.reason === 'recently_added') {
         protectedCount += 1; // the Age Guard (D-26) — kept, never auto-saved (it lapses when the title ages out).
+      } else if (verdict.reason === 'media_request') {
+        protectedCount += 1; // the Request Keep (ADR-117) — kept while the tag is on the title, never auto-saved.
       } else {
         skippedCount += 1; // unevaluable — fail closed.
       }
@@ -2391,7 +2643,9 @@ export async function upsertTrashRule(input: {
   /** D-21 seam for `[trash] rule_save_drift`. */
   logger?: DomainLogger;
 }): Promise<void> {
-  const decoded = backfillGroupServerSelection(decodeRuleGroupRules(input.payload));
+  const decoded = withDescribedRules(
+    backfillGroupServerSelection(decodeRuleGroupRules(input.payload)),
+  );
   const hasId = typeof decoded.id === 'number';
   if (!hasId) {
     await guardMaintainerrCall('maintainerr POST /rules', () =>
@@ -2474,7 +2728,16 @@ export function buildRuleGroupUpdate(
       'Refusing to save a rule group with rules but useRules off: Maintainerr would delete every rule.',
     );
   }
-  return out;
+  // ADR-117 C-06 — a group that carries clauses gets its description from those clauses, so the text
+  // cannot name a threshold or a protection the body does not have. An empty list (Leaving Soon) keeps
+  // the description the caller wrote.
+  return withDescribedRules(out);
+}
+
+/** Replace a rule group's description with the text of its clauses. No rules means the payload is unchanged. */
+function withDescribedRules(payload: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(payload.rules) || payload.rules.length === 0) return payload;
+  return { ...payload, description: describeTrashRules(payload.rules) };
 }
 
 /**

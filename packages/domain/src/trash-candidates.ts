@@ -26,6 +26,7 @@ import { e2eHarnessActive } from './e2e-harness';
 import {
   bucketFlatPendingForMedia,
   classifyForExpedite,
+  hasMediaRequestTag,
   fetchLiveExclusions,
   fetchMaintainerrPending,
   shapePendingItems,
@@ -296,6 +297,8 @@ export interface TrashExpeditePreview {
   watchlisted: number;
   /** DESIGN-052 D-26 / Q-14 — how many of `protected` the Age Guard keeps (added or upgraded recently). A subset. */
   recentlyAdded: number;
+  /** ADR-117 — how many of `protected` the Request Keep holds. A subset. */
+  requested: number;
 }
 
 export interface TrashPendingPage {
@@ -446,6 +449,7 @@ export function partitionPendingForExpedite(
     unverifiable: 0,
     watchlisted: 0,
     recentlyAdded: 0,
+    requested: 0,
   };
   for (const i of items) {
     const verdict = classifyForExpedite(i);
@@ -458,6 +462,7 @@ export function partitionPendingForExpedite(
       out.protected += 1;
       if (verdict === 'protected_watchlist') out.watchlisted += 1;
       if (verdict === 'protected_recent') out.recentlyAdded += 1;
+      if (verdict === 'protected_request') out.requested += 1;
     }
   }
   return out;
@@ -565,9 +570,7 @@ export async function listTrashPendingPage(input: {
     facets: firstPage ? pendingFacets(universe) : null,
     expeditePreview: firstPage ? partitionPendingForExpedite(universe) : null,
     allActionableIds: firstPage
-      ? universe
-          .map((i) => i.maintainerrMediaId)
-          .filter((id): id is string => id !== null)
+      ? universe.map((i) => i.maintainerrMediaId).filter((id): id is string => id !== null)
       : null,
   };
 }
@@ -588,6 +591,8 @@ export interface TrashPendingCandidate {
   onWatchlist: boolean;
   /** DESIGN-052 D-26 — inside the Age Guard's 180 days: no batch takes it, so the preview leaves it out too. */
   recentlyAdded: boolean;
+  /** ADR-117 — the ledger tags include mediarequests: a targeted batch leaves it out. */
+  requested: boolean;
 }
 
 /**
@@ -627,6 +632,7 @@ export async function listTrashPendingCandidates(input: {
       protectedByTag: i.protectedByTag,
       onWatchlist: i.onWatchlist,
       recentlyAdded: i.ageGuard === 'recent',
+      requested: hasMediaRequestTag(i.arrTags),
     }));
   return {
     candidates,

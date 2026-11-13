@@ -7,7 +7,8 @@
 - **Last updated:** 2026-07-18
 - **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26; in effect since 2026-09-28): the
   space policy's proposal leaves out a title on any read Plex watchlist (it takes no cap slot), and `minCandidates`
-  counts deletable candidates only (DESIGN-052 D-08).
+  counts deletable candidates only (DESIGN-052 D-08). Amended 2026-11-13 (ADR-117 / DESIGN-052 D-29): `minCandidates`
+  also leaves out a title tagged `mediarequests`.
 - **Author:** Fable 5 (autonomous run, PLAN-014); D-14 amendment by an Opus autonomous run
 - **Implements:** [ADR-031](../adrs/031-space-driven-batch-policy.md),
   [ADR-073](../adrs/073-autonomous-trash-cycle.md). Consumes ADR-030 / DESIGN-013
@@ -339,3 +340,5 @@ the propose-only parts of D-01..D-03 and D-07/D-09c.
 Tests: `packages/domain/__tests__/space-policy.test.ts` proves auto-promote to `leaving_soon`, the
 **self-heal of a stuck `admin_review` system batch** (the reproduced prod stall → `promoted`), that a
 MANUAL admin_review batch is left untouched, and that a healthy `leaving_soon` batch is not duplicated.
+
+**Request Keep (ADR-117, 2026-11-13).** `minCandidates` counts the same titles a targeted batch can take. A title tagged `mediarequests` is not one of them (DESIGN-052 D-29). A personal requester tag still counts.
