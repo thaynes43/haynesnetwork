@@ -42,7 +42,6 @@ import {
   setAppSetting,
   silentDomainLogger,
   sweepExpiredBatches,
-  upsertMediaItemsBatch,
   upsertMediaMetadataBatch,
   buildArrClientBundle,
   defaultPerKind,
@@ -57,7 +56,7 @@ import {
   tvCollection,
   type MaintState,
 } from './maintainerr-stub';
-import { bootMigratedDb, createUser, seedVerifiedWatchlistRegistry, type TestDb } from './helpers';
+import { bootMigratedDb, createUser, seedVerifiedWatchlistRegistry, type TestDb , upsertDeletableMediaItems } from './helpers';
 
 /** ADR-093 / DESIGN-052 D-14 — the in-memory Release Block *arr (every item synthesized recordable). */
 const { arr: releaseArr } = createStaticReleaseBlockArr();
@@ -124,7 +123,7 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     t = await bootMigratedDb();
     admin = (await createUser(t.db, { email: 'wl-guard@example.com', displayName: 'Guard Admin' }))
       .id;
-    await upsertMediaItemsBatch({
+    await upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'radarr',
       items: [9001, 9002, 9003, 9004].map((tmdbId, i) => ({
@@ -139,7 +138,7 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
       })),
     });
     // AC-33 — a TV pool (three shows) for the series cases.
-    await upsertMediaItemsBatch({
+    await upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'sonarr',
       items: [8001, 8002, 8003].map((tvdbId, i) => ({

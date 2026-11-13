@@ -30,12 +30,11 @@ import {
   saveExclusion,
   upsertTrashRule,
   tombstoneMissingItems,
-  upsertMediaItemsBatch,
   upsertMediaMetadataBatch,
   type MaintainerrClientBundle,
   createStaticReleaseBlockArr,
 } from '../src/index';
-import { seedVerifiedWatchlistRegistry, TEST_DELETE_SNAPSHOT, TEST_DISPLAY_SNAPSHOT, bootMigratedDb, createUser, type TestDb } from './helpers';
+import { seedVerifiedWatchlistRegistry, TEST_DELETE_SNAPSHOT, TEST_DISPLAY_SNAPSHOT, bootMigratedDb, createUser, type TestDb , upsertDeletableMediaItems } from './helpers';
 
 /** ADR-093 / DESIGN-052 D-14 — the in-memory Release Block *arr (every item synthesized recordable). */
 const { arr: releaseArr } = createStaticReleaseBlockArr();
@@ -671,7 +670,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     await seedVerifiedWatchlistRegistry(t.db);
     actorId = (await createUser(t.db, { email: 'trash-exp@example.com' })).id;
     // Two radarr rows: 8001 recently watched, 8002 cold.
-    await upsertMediaItemsBatch({
+    await upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'radarr',
       items: [
@@ -1028,7 +1027,7 @@ describe('expedite deletion audit — Recently Deleted + Activity (deletion-trac
     t = await bootMigratedDb();
     await seedVerifiedWatchlistRegistry(t.db);
     actorId = (await createUser(t.db, { email: 'deleter@example.com', displayName: 'Tom Haynes' })).id;
-    await upsertMediaItemsBatch({
+    await upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'radarr',
       items: [
@@ -1135,7 +1134,7 @@ describe('listRecentlyDeleted + restore music rejection (ADR-023 D-02 / R-87)', 
   beforeAll(async () => {
     t = await bootMigratedDb();
     await seedVerifiedWatchlistRegistry(t.db);
-    await upsertMediaItemsBatch({
+    await upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'radarr',
       items: [
@@ -1350,7 +1349,7 @@ describe('listTrashPending — live exclusion reflected in the pending list (Bug
     t = await bootMigratedDb();
     await seedVerifiedWatchlistRegistry(t.db);
     // A cold, ledger-known movie with NO dnd tag (arrTags empty) — protectedByTag stays false.
-    await upsertMediaItemsBatch({
+    await upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'radarr',
       items: [

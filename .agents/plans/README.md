@@ -9,7 +9,8 @@ proposed stories are bounded to one agent in one session. Dependencies determine
 possible serial/parallel work only after grooming. Do not dispatch from numbering,
 directory presence, spare capacity or a merged document. The separate future
 [smart-home saga PLAN-089](089-smart-home-saga.md) is also ungroomed/paused and excluded
-from automatic dispatch. Each story needs explicit
+from automatic dispatch. [PLAN-091](091-age-guard-library-fill.md) is the story 836 record of
+the Age Guard library-fill change; it is not a release to dispatch. Each story needs explicit
 execution authorization, and each next epic needs a separate grooming decision.
 
 This folder is a **queue of release-sized plans**. Each `NNN-<slug>.md` is one plan ≈ one

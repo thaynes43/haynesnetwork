@@ -1,8 +1,7 @@
 # DESIGN-052: Watchlist protection for Trash — the Watchlist Registry, the Registry Gate, the Watchlist Keep, the Release Block, and everyone's Seerr watchlist
 
 - **Status:** Accepted (2026-09-28; live since v0.101.0, PLAN-072 S6–S10 verified)
-- **Last updated:** 2026-11-13 (D-26 cross-reference: DESIGN-014 D-15's TV predicates include the votes floor, and the removed TV date-added clause is what a title with no Plex match relied on). Prior: 2026-11-13 (D-10 amendment, story 821: the Show protected checkbox becomes the Library's segmented control, Deletable | All; in All a kept tile says why in plain words; Q-18 opened). Prior: 2026-11-13 (D-10 amendment, story 832: Wall Protection, one definition of a title the pending wall will not offer; the default view holds none, and a title saved from it keeps its tile until the view is opened again; Q-15, Q-16, Q-17 opened). Prior: 2026-10-03 (Q-14 answered: the Age Guard moves into `classifyGuardian`, so Expedite never deletes a title inside it, and the pending walls show such a title kept, D-26). Prior: 2026-10-03 (ADR-097, owner ruling "Block automation only": D-27 adds the Title Exclusion, an import-list exclusion the app writes on Radarr or Sonarr for every title Trash is about to delete, after identity and before Phase A; D-28 adds its one-off backfill for the titles deleted before; D-14, D-21, D-22, D-23, the overview and the test strategy updated). Prior: 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
-  the rulings they needed: a term now matches the raw release title Radarr and Sonarr test (an apostrophe inside a word
+- **Last updated:** 2026-11-13 (ADR-119, D-31: a library-fill Plex date does not extend the Age Guard when the setting is on and that *arr's ledger covers 180 days; a title with no Plex match is unknown, the one change that alters today's behaviour, and it only ever keeps more). Prior: 2026-11-13 (D-26 cross-reference: DESIGN-014 D-15's TV predicates include the votes floor, and the removed TV date-added clause is what a title with no Plex match relied on). Prior: 2026-11-13 (D-10 amendment, story 821: the Show protected checkbox becomes the Library's segmented control, Deletable | All; in All a kept tile says why in plain words; Q-18 opened). Prior: 2026-11-13 (D-10 amendment, story 832: Wall Protection, one definition of a title the pending wall will not offer; the default view holds none, and a title saved from it keeps its tile until the view is opened again; Q-15, Q-16, Q-17 opened). Prior: 2026-10-03 (Q-14 answered: the Age Guard moves into `classifyGuardian`, so Expedite never deletes a title inside it, and the pending walls show such a title kept, D-26). Prior: 2026-10-03 (ADR-097, owner ruling "Block automation only": D-27 adds the Title Exclusion, an import-list exclusion the app writes on Radarr or Sonarr for every title Trash is about to delete, after identity and before Phase A; D-28 adds its one-off backfill for the titles deleted before; D-14, D-21, D-22, D-23, the overview and the test strategy updated). Prior: 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and  the rulings they needed: a term now matches the raw release title Radarr and Sonarr test (an apostrophe inside a word
   is an optional separator, an accented letter an alternation, an inner `and` optional), because S6(e) found 345 of
   19,434 Sonarr names and 3 of 1,159 Radarr names the *arr would not have blocked; the owner leaves managed Home users
   out (Q-01, PRD Q-15); 2 of 164 pool items kept `release_unrecorded` is not material (Q-12; Q-13 not asked); Q-03 and
@@ -1402,9 +1401,17 @@ newestImportAt    = max(ledger_events.occurred_at) where event_type = 'imported'
 newestPlexAddedAt = max(media_plex_matches.plex_added_at) over every library holding the title (any server)
 newest            = the later of the two
 recent   if newest is younger than TRASH_AGE_GUARD_DAYS (180)
-unknown  else if the item is not in the ledger, or any of its Plex matches carries no date yet
-clear    otherwise (a title no Plex library is matched to is judged on its imports alone)
+unknown  else if the item is not in the ledger, or any of its Plex matches carries no date yet,
+         or no Plex library is matched to it
+clear    otherwise (every matched library is dated and the newest date is outside the window)
 ```
+
+When `age_guard_ignore_library_fill` is on and that *arr's first download import is at least 180 days old,
+[D-31](#d-31--a-library-fill-date-does-not-extend-the-age-guard-adr-119) changes which Plex dates enter
+`newestPlexAddedAt`. A stamp from a library whose type does not fit the title never counts as the older date.
+Off, when the setting is absent or not the boolean true, and when the ledger does not cover the window, the
+max above is exact. A title with no Plex match is `unknown` in every case (the line above). That is the one
+change from the 2026-10-03 rule, and it only ever keeps more.
 
 - **The rebuild is excluded by the data, not by a date or a title list.** The rebuild stamped Radarr's movie `added`
   (`media_metadata.arr_added_at`) and its movie file's `dateAdded` on nearly every movie; the guard reads neither.
@@ -1466,9 +1473,10 @@ clear    otherwise (a title no Plex library is matched to is judged on its impor
   below 6.0, rating votes greater than 99, not tagged `mediarequests`, ended, and the last episode
   HaynesOps holds in its highest-numbered season aired at least 180 days ago; the HaynesOps views
   clause and the HaynesOps date-added clause removed). That change does not express this guard and
-  does not replace it. Removing the TV date-added clause removes the cover `judgeAge` assumes for a
-  title with no Plex match; the movie pool's added-date clause stays and is still that cover for a
-  movie. D-15 is the spec; it is not applied to the live Maintainerr in story 835.
+  does not replace it. Removing the TV date-added clause removed the cover the old `judgeAge` comment
+  assumed for a title with no Plex match. [ADR-119](../adrs/119-age-guard-library-fill.md) makes that case
+  `unknown` (kept), with the library-fill setting on or off. It only ever keeps more. The movie pool's
+  added-date clause stays. D-15 is the spec; it is not applied to the live Maintainerr in story 835.
 
 **Data:** migration **0086** (`0086_trash_age_guard.sql`, journal idx 85): `media_plex_matches.plex_added_at`
 (nullable) and `trash_batch_items.keep_reason` admitting `recently_added`. The previous image runs unchanged against
@@ -1695,6 +1703,244 @@ already excluded 0, **to exclude 13**; no row without a key.
   library read writes nothing; a failed chunk stops that *arr only. The D-14 call-order tests in
   `release-block.test.ts` include the exclusion's three calls. `@hnet/sync`: the script's arguments.
 
+### D-31 — A library-fill date does not extend the Age Guard (ADR-119)
+
+**Amends D-26 in two places.** When `age_guard_ignore_library_fill` is on and that *arr's ledger covers the
+window, it changes which Plex dates enter the newest date. In every case, a title with no Plex match is
+`unknown` instead of `clear`. The 180-day window, the download-import signal, the ignored folder imports,
+fail-closed for an undated match, the guardian order, Expedite and the pending walls are otherwise unchanged.
+Save, `dnd`, the watchlist and recent watch are not read by this decision and are not weakened.
+
+The first draft said "D-26 is not edited." That was wrong in a narrow way: a paragraph inside D-26 already
+pointed at this rule, while the formula's rule text was unchanged. This correction does edit the formula's
+no-match line, which now says `unknown`. The rest of the 2026-10-03 formula is unchanged.
+
+**Setting.** `age_guard_ignore_library_fill`, a boolean app setting, default **false**. Migration 0109 admits
+the key and inserts no row. The journal index is 107, the next index after 0107 on current `main`; the filename
+is 0109 because 0108 is reserved by another open change. `setAgeGuardIgnoreLibraryFill` refuses a non-boolean
+and calls `setAppSetting`, which writes the value and an `update_app_setting` audit row in the same transaction.
+The admin mutation `trash.settings.set` accepts `{ ageGuardIgnoreLibraryFill: boolean }` and calls that writer.
+This change adds no control on the settings page. Absent, or any stored value that is not the boolean `true`,
+the fill query does not run. This story does not turn the setting on.
+
+**The rule, when the setting is on.** First, `applyLibraryFill` reads `min(occurred_at)` of
+`downloadFolderImported` for this *arr only. If that first import is missing, or is younger than 180 days
+(`now - first < 180 days`, the same comparison as `judgeAge`), every stamp stays and the fill query does not
+run. The other *arr's history does not open the window. With that guard the rule does nothing for the July 2026
+fill. Those stamps stop protecting on their own on 2026-12-29 (the 869 fill stamps run from 2026-07-02 22:00:21
+to 2026-07-03 00:36:12, so they age out between 2026-12-29 21:00:21 and 23:36:12; the review of PR 1067,
+2026-11-13). The Sonarr ledger covers a full window only from 2026-12-30 10:20:40. The rule works for any later
+fill.
+
+When the ledger does cover the window, a library-day is one Plex library and one America/New_York calendar
+date. It is a fill day when it has at least 100 titles and at most 5% of them (`nearImports * 20 <= titles`,
+both integers) have a `downloadFolderImported` event of that title's own *arr kind within 6 hours of that
+title's added time, inclusive. A fill stamp is left out of `newestPlexAddedAt` only when that title has no such
+nearby import of its own and a **different Plex server** has a strictly older dated added time in a library
+whose type fits the title (a movie library for Radarr, a show library for Sonarr). A stamp from a library whose
+type does not fit never counts as that older date. It can still be a stamp of its own. The oldest dated stamp
+that can retire another always stays. An undated match is not an older date. Two libraries on the same server
+are not two servers. Equal timestamps are not strictly older. A download import inside 180 days still protects
+the title whether or not a Plex stamp was left out. Match counts are unchanged: an ignored fill stamp is still
+a dated match.
+
+**A title with no Plex match.** `judgeAge` returns `unknown` when `plexMatches` is 0, or any match is undated,
+and no date inside the window already made the title `recent`. This holds with the setting on or off. The old
+comment said Maintainerr's HaynesOps date-added clause still covered a title no library is matched to, and
+`judgeAge` returned `clear`. DESIGN-014 D-15 removes that clause for TV. `unknown` keeps the title. This is the
+one change in this decision that alters today's behaviour, and it only ever keeps more. Measured 2026-11-13 on
+replica `postgres16-11` (`SELECT` joining `trash_candidates` to `media_plex_matches`;
+`trash_candidates_state.refreshed_at` 2026-11-13 15:15:05.495-05): 0 of 524 movie candidates have no Plex match,
+and the TV pool has 0 members. The ten shows that pass story 835's predicates all have a Plex match and a
+Sonarr download import inside 180 days (same replica, same day). The review of story 835 measured the same zero
+on the pools earlier that day (18:32Z–18:50Z).
+
+**Why the data separates fills from arrivals.** Measured 2026-11-13 on the replica `postgres16-11`
+(`SELECT` only; clock `2026-11-13 12:51:41.238254-05`; the 180-day cutoff is
+`2026-05-17 12:51:41.238254-04`, exactly 180 × 24 hours). The day tables and the query shapes are in
+`.agents/context/2026-11-13-age-guard-library-fill.md`.
+
+- HaynesOps TV Shows: 1,013 matches over 69 days, largest day 638. The two days of 2026-07-02 (638 titles, 0 nearby
+  imports, 120-minute span) and 2026-07-03 (232 titles, 1 nearby import) are the fill. The next HaynesOps TV day is
+  8 titles. Of the 953 live Sonarr shows on that library, 824 sit on those two days.
+- Movie mass days in the same week, on both movie libraries, are the opposite shape: 2026-07-03 through 2026-07-06,
+  2026-07-15, 2026-10-01, 2026-10-17 and 2026-11-01 each have a download import within 6 hours for every title. D-26
+  already recorded Radarr's steady 5 to 10 imports an hour. Those days are not fills.
+- Inside the window, every movie or show day of at least 5 titles and under half nearby imports, other than the two
+  TV days, is a May 17 through June 30 movie trickle of at most 12 titles. The ledger's Radarr history starts
+  2026-07-02 22:27:34-04 and its Sonarr history starts 2026-07-03 11:20:40-04, so those days have no import to show.
+  The cutoff of 100 leaves them protected. A per-title "no nearby import" rule would not (option A in ADR-119).
+- On this replica, any integer cutoff from 13 through 232, with the same 5% test, changes the same verdicts
+  (the review of PR 1067, 2026-11-13, the review's SQL with `minT` varied: the same 389 shows and 40 movies).
+  At 12, 46 movies change; at 9, 65; at 8, 70. Not 9 through 232. 100 is the cutoff. It also sits above the
+  39-title movie day of 2026-05-05, which is already outside the window. The same review's flat ranges, not
+  re-run here: the share from 1% through 50% changes the same verdicts, and 0% changes 280 shows and 30 movies;
+  the near window from 1 hour through 48 hours changes the same verdicts, and 7 days changes 109 shows and 10
+  movies; a minimum of 233 through 638 changes 280 shows and 30 movies, and 639 or more changes none.
+
+**The 5% test had no power on the July fill.** The last scan stamp plus 6 hours is 2026-07-03 06:36. The
+ledger's first Sonarr import is 2026-07-03 11:20:40. "0 of 638" and "1 of 232" would read the same had every
+show been downloaded that night (review of PR 1067, 2026-11-13). The sentence "same overnight scan, now inside
+Sonarr history" is wrong: only one stamp, at 11:31, is inside history, and it is a real arrival. With a
+24-hour window the counts are 7 and 2. The label is still right, on evidence the rule does not use: 869 stamps
+in 2 hours 36 minutes, 866 of them with a date on the other server more than a day older. That is one more
+reason for the ledger-coverage guard.
+
+**Paper census of the fill rule alone, as if the ledger already covered the window.** Live Radarr and Sonarr
+titles with a movie or show Plex match and `deleted_from_arr_at` null. "Changes protection" means today's
+verdict is recent and the new verdict is not. No row in this table moved from recent to unknown, because every
+row already has a movie or show Plex match. These figures are the Age Guard alone (worker census 2026-11-13
+12:51:41-05, reproduced by the review the same day: 389 shows, 85,031,322,181,927 bytes; 40 movies,
+1,368,757,512,491 bytes). With the ledger-coverage guard, none of these verdicts change today. The July stamps
+lapse on 2026-12-29, as above.
+
+Under the pools the switch changes no deletion today (review of PR 1067, 2026-11-13, `trash_candidates`
+refreshed 14:00:13):
+
+- Live pools: TV 0 members; movies 524, of which 464 are clear before and after, 60 recent before and after,
+  0 change.
+- Story 835's rule (ended, last aired over 180 days ago, rating below 6.0, no `mediarequests` tag), the
+  review's projection counting unrated shows as passing: 0 of the 389.
+- Today's live TV rule without its age and views clauses: 2 of the 389, both continuing: The Masked Singer
+  (US), 380.3 GB, and Squid Game: The Challenge, 45.8 GB.
+- 379 of the 389 are rated 6.0 or higher; 182 carry `mediarequests`.
+
+| Kind | Transition | Titles | Bytes (`size_on_disk`, one row per title) |
+|------|------------|--------|--------------------------------------------|
+| Radarr | clear → clear | 3,783 | 121,192,914,574,090 |
+| Radarr | recent → clear | 40 | 1,368,757,512,491 |
+| Radarr | recent → recent | 1,370 | 43,611,721,155,978 |
+| Sonarr | clear → clear | 3 | 104,700,881,687 |
+| Sonarr | recent → clear | 389 | 85,031,322,181,927 |
+| Sonarr | recent → recent | 567 | 130,776,036,718,854 |
+
+That is **429 titles, 86,400,079,694,418 bytes** (86.400 decimal TB, bytes ÷ 10^12). Other keeps still apply and
+were not subtracted here. The 389 shows are every show that is recent only by a Plex date against an older Plex
+date and has no download import inside the window. Of the 157 movies in that same shape (5,155,985,257,336 bytes),
+40 change and 117 stay (3,787,227,744,845 bytes, the difference of those two measured totals). The 117 are days
+under 100 titles.
+
+The 40 movies are Radarr rows whose only in-window Plex date is a tmdb match into HaynesOps TV Shows on 2026-07-02
+or 2026-07-03. Thirty-three have movie-library dates, all outside the window, and their listed bytes add to
+1,368,757,512,491 (checked by summing the table, 2026-11-13). Seven have `size_on_disk` 0 and matches only on show
+libraries: Black Gunn (1972), Kiss of the Dragon (2001), The Finishers (2013), Christmas Every Day (1996), The Man
+Who Came Back (2008), A Nightmare on Elm Street: The Dream Child (1989), P.O.W. The Escape (1986). Be Cool (2005)
+has the same TV-fill stamp and stays recent, because its other server's show date is 2026-06-07, still inside the
+window.
+
+**Twenty largest shows the fill rule would release once the ledger covers the window.** With the guard they stay until the stamps lapse on 2026-12-29. All HaynesOps dates are 2026-07-02 except the five marked
+July 3. Bytes are `size_on_disk`. None of the 33 movies reaches this list.
+
+| Title | Year | Bytes | tvdb | Other server's show day |
+|-------|------|-------|------|-------------------------|
+| Live PD | 2016 | 2,447,841,409,349 | 318451 | 2024-08-04 |
+| Game of Thrones | 2011 | 2,074,757,574,282 | 121361 | 2023-10-02 |
+| Seinfeld | 1989 | 1,937,068,550,813 | 79169 | 2024-01-10 |
+| Friends | 1994 | 1,888,726,482,497 | 79168 | 2023-09-20 |
+| Supernatural | 2005 | 1,860,411,199,739 | 78901 | 2023-11-21 |
+| 24 | 2001 | 1,812,167,153,236 | 76290 | 2024-01-09 |
+| The Walking Dead | 2010 | 1,446,865,128,256 | 153021 | 2023-09-20 (HaynesOps 2026-07-03) |
+| Doctor Who (2005) | 2005 | 1,434,245,503,352 | 78804 | 2023-09-20 |
+| House | 2004 | 1,403,631,227,457 | 73255 | 2023-10-22 |
+| Star Trek: The Next Generation | 1987 | 1,302,180,638,930 | 71470 | 2025-08-29 |
+| Marvel's Agents of S.H.I.E.L.D. | 2013 | 1,198,196,915,930 | 263365 | 2023-10-16 |
+| Suits | 2011 | 1,183,766,587,816 | 247808 | 2023-10-24 |
+| Psych | 2006 | 1,078,367,567,804 | 79335 | 2025-07-13 |
+| The Office (US) | 2005 | 1,075,982,742,077 | 73244 | 2023-10-15 (HaynesOps 2026-07-03) |
+| WWE Raw | 1993 | 1,029,765,156,027 | 76779 | 2024-04-02 (HaynesOps 2026-07-03) |
+| Dexter | 2006 | 1,025,614,745,157 | 79349 | 2023-10-22 |
+| The Sopranos | 1999 | 1,020,562,062,589 | 75299 | 2023-11-07 (HaynesOps 2026-07-03) |
+| The West Wing | 1999 | 1,012,159,246,393 | 72521 | 2023-10-24 (HaynesOps 2026-07-03) |
+| Lost | 2004 | 975,059,261,064 | 73739 | 2023-10-22 |
+| Glee | 2009 | 974,126,983,734 | 83610 | 2023-10-15 |
+
+**The 33 movies the fill rule would release once the ledger covers the window.** With the guard they stay until the stamps lapse. tmdb id, bytes, then the two movie-library days (HaynesOps, then
+the other server).
+
+| Title | Year | tmdb | Bytes | Movie-library days |
+|-------|------|------|-------|--------------------|
+| A Simple Plan | 1998 | 10223 | 85,239,155,760 | 2026-05-05, 2026-05-05 |
+| Donnie Darko | 2001 | 141 | 84,447,656,230 | 2021-04-24, 2023-10-16 |
+| Paris, Texas | 1984 | 655 | 80,467,419,230 | 2024-11-25, 2024-03-25 |
+| Citizen Kane | 1941 | 15 | 78,356,974,315 | 2023-12-13, 2023-09-24 |
+| 2001: A Space Odyssey | 1968 | 62 | 77,358,146,060 | 2020-11-22, 2023-09-19 |
+| The Matrix Reloaded | 2003 | 604 | 75,203,194,023 | 2022-05-03, 2023-09-20 |
+| Back to the Future | 1985 | 105 | 74,776,450,258 | 2026-01-01, 2023-09-20 |
+| The Departed | 2006 | 1422 | 70,820,325,271 | 2024-04-25, 2023-09-18 |
+| The Sum of All Fears | 2002 | 4614 | 58,893,521,776 | 2021-02-03, 2023-09-18 |
+| Pan's Labyrinth | 2006 | 1417 | 54,751,785,901 | 2025-01-16, 2023-09-18 |
+| The Empire Strikes Back | 1980 | 1891 | 52,582,080,307 | 2023-10-02, 2023-09-20 |
+| The Evil Dead | 1983 | 764 | 52,109,254,878 | 2021-10-07, 2023-09-18 |
+| It's a Wonderful Life | 1946 | 1585 | 50,104,359,697 | 2023-12-25, 2023-09-24 |
+| Hellboy | 2004 | 1487 | 49,388,589,524 | 2026-02-09, 2026-02-09 |
+| Das Boot | 1981 | 387 | 40,319,763,579 | 2018-06-06, 2023-10-10 |
+| David | 1997 | 2734 | 37,799,011,256 | 2022-06-07, 2024-09-26 |
+| Armageddon | 1998 | 95 | 35,560,995,734 | 2024-02-03, 2023-09-18 |
+| 28 Weeks Later | 2007 | 1562 | 29,984,721,480 | 2022-10-06, 2023-09-27 |
+| Amélie | 2001 | 194 | 29,867,047,297 | 2020-10-24, 2023-10-10 |
+| All Star Superman | 2011 | 56590 | 29,654,426,351 | 2023-04-26, 2023-09-23 |
+| Reign Over Me | 2007 | 2355 | 26,754,919,860 | 2019-01-22, 2023-09-25 |
+| Diary of a Mad Housewife | 1970 | 31677 | 25,571,139,014 | 2022-08-19, 2024-03-26 |
+| History of the World: Part I | 1981 | 10156 | 24,503,423,609 | 2023-04-11, 2025-10-28 |
+| The Passion of the Christ | 2004 | 615 | 24,081,961,866 | 2026-03-02, 2026-03-02 |
+| Planet Terror | 2007 | 1992 | 22,201,320,136 | 2018-11-25, 2025-01-27 |
+| On Her Majesty's Secret Service | 1969 | 668 | 20,996,093,465 | 2022-02-06, 2023-09-16 |
+| Sister Act | 1992 | 2005 | 20,636,310,845 | 2020-03-28, 2026-02-02 |
+| The Bridges of Madison County | 1995 | 688 | 15,823,603,583 | 2026-02-15, 2026-02-15 |
+| Fracture | 2007 | 6145 | 15,311,227,249 | 2025-04-30, 2025-11-01 |
+| Green Lantern: Emerald Knights | 2011 | 65291 | 14,260,606,395 | 2025-12-28, 2023-09-23 |
+| Porgy and Bess | 1959 | 1940 | 5,754,483,053 | 2025-12-15, 2025-12-16 |
+| Rock Hudson's Home Movies | 1992 | 124101 | 3,362,167,927 | 2021-07-19, 2024-05-15 |
+| Odd Obsession | 1959 | 43095 | 1,815,376,562 | 2026-02-16, 2026-02-16 |
+
+A Simple Plan is the closest keep-or-release case: both movie libraries added it on 2026-05-05, twelve days before
+the cutoff, so the movie arrival has already aged out and the TV-library fill is the only remaining recent date.
+Once the ledger covers the window, the rule releases it, because the date that kept it recent belongs to another
+title. With the guard, it stays until that stamp ages out on its own. A person checking the list should look at
+that one first.
+
+The review of PR 1067 (2026-11-13) read the 40 rows as wrong-type matches: the date that kept them recent belongs
+to another title, and their own movie dates are past 180 days, so releasing them once the ledger covers is the
+intended result. Be Cool stays because another show's date is still inside the window. The reverse, a wrong-type
+stamp used as the older date, is what the fitting-type test stops. The review found that shape on 7 Radarr rows,
+all with no file. This decision does not change the matcher (story 847, Q-24).
+
+**Where the rule can be wrong, and what happens.**
+
+| Case | What happens |
+|------|----------------|
+| A real download burst of at least 100 titles in one library on one calendar day, with at most 5% recorded as download imports. | Titles in that burst that are older on another server, and have no import inside 180 days, lose the Plex date. A title with an import inside 180 days stays. A day under 100 is not a fill. No in-window day on this replica has this shape except the TV fill. |
+| A fill split across midnight into two days of under 100 titles. | Not a fill. Today's behaviour. The July fill was 638 and 232, so it was not hidden. The next HaynesOps TV day is 8. |
+| The other server is older, but that date is still inside 180 days. | That date still protects. Live example: Be Cool, other server 2026-06-07. |
+| The title is on one server only. | The stamp stays. Two HaynesOps shows on the fill have no other server. |
+| The other server holds the title with no date. | No strictly older date. The stamp stays, and recent still wins over undated. |
+| A download import is inside 180 days but more than 6 hours from the stamp. | The stamp may be left out. The import still protects. |
+| One title on a fill day has its own import within 6 hours. | That stamp stays, and the import protects. |
+| A day of at least 100 titles where every title has an import within 6 hours. | Not a fill. The July movie days are this shape. |
+| The same timestamp on the other server. | Not strictly older. The stamp stays. |
+| Two libraries on the same server, and no other server. | The stamp stays. |
+| A movie's only in-window date is the show-library fill, and another server is older. | The Age Guard clears. This is the 40 movies. It is intentional: the fill date is not a download. |
+| A day of 12 or 60 titles with no imports and an older other server. | Not a fill. The recent date protects. This is the 117 movies. |
+| The setting is off. | Newest Plex date, exactly the max in D-26. A title with no Plex match is `unknown` either way, which only ever keeps more. |
+| One title arrives on a second server inside the window (a day of one). | Not a fill. The date protects. |
+| This *arr's first download import is missing, or younger than 180 days. | Every stamp stays. The July 2026 fill is this case until the Sonarr ledger covers a full window on 2026-12-30. |
+| The only older date is on a library whose type does not fit the title. | That stamp does not retire the newer one. The matcher that creates the row is story 847 and is not fixed here. |
+
+Historical movie days on the other server of 100 or more titles with no nearby import (2023-09-18, 2023-09-19,
+2023-09-20, 2023-09-24, 2023-09-26, 2025-05-31) are labeled fills. They are already outside 180 days and only get
+older, so the label does not remove a protection that exists today or later. The ledger cannot see imports from
+those years. Music-library days are large and are not read by the Age Guard.
+
+**Before the setting may be turned on (story 823).** All five, from the review of PR 1067 (2026-11-13):
+
+1. The ledger-coverage guard above is in the code. With it, the rule does nothing for the July 2026 fill and works for any later fill.
+2. A census against the Trash pool the TV rule in force would build, read by a person. The review's census against today's pools found no deletion change (the pool figures above). Story 823 repeats it against the rule that is live then.
+3. No open batch holds a title whose verdict would flip. An untargeted batch snapshots a recent title and its tile says "Kept: added or upgraded recently"; a flip mid-window deletes it at the sweep. The review: today's open movie batch held 50 items and none was affected (2026-11-13).
+4. An audited way to set the value and to set it back. `setAgeGuardIgnoreLibraryFill` is that way, through `trash.settings.set`. It writes the row and an `update_app_setting` audit row in one transaction, and the same call sets the value back. This change does not turn the setting on and does not add a settings-page control.
+5. A stamp from a library whose type does not fit the title never counts as the older date. It is in the code. The matcher is a separate story.
+
+**Limits of the label.** The fill label is recomputed from the titles still matched. 2026-07-03 has 232 titles; once 133 leave Plex, that day stops being a fill and its remaining shows are protected again (109 of the 389 are on that day; review of PR 1067, 2026-11-13). The setting is read once per pending read: once per batch and kind in a sweep, once per Expedite, once per wall page. The reads are separate statements, not one snapshot. A change between two batches of one run applies to the second.
+
 ## Open questions
 
 | ID | Question | Resolution |
@@ -1717,3 +1963,5 @@ already excluded 0, **to exclude 13**; no row without a key.
 | Q-16 | `release_unrecorded` is decided when a delete runs, from the *arr's files. The wall cannot know it without that read, so a title can look deletable and still be kept at the sweep. | **Open. Recommendation, shipped with story 832:** leave it on the delete path. Do not copy it into the wall filter, and do not change the guard. |
 | Q-17 | The default view holds no undeletable title (the owner's report, 2026-11-13), and a tap must not move its neighbours (hard rule 9). A title saved from the default view is undeletable from that moment. Should its tile leave at once, which moves every tile after it and takes the un-save tap away, or stay until the view is opened again? | **Open. Recommendation, shipped with story 832:** it stays in place, shown as saved, until the view is opened again; a freshly opened default view never contains it. Hard rule 9 allows no exception for this, and the tile is one the viewer has just saved, not one the wall offered as deletable. Removing the tile at once is a one-line change (drop `usePinnedSaves`) if the owner rules the other way. |
 | Q-18 | In All, a kept title now says in words that it is kept, but four kinds still wear the red trash can in the corner, because the corner is the Save tap (owner ruling 2026-07-09): a `dnd` tag, a recent watch, a watchlisted title, and a title that cannot be checked. Only the Age Guard wears the kept badge and only a Save the check. Should a kept title's corner change, and if so to what? | **Open. Recommendation, shipped with story 821:** leave the corners as ruled in this change, which is display of the reason only, and ask the owner with the screenshots in hand. The option to weigh: every kept title wears the kept badge and stays one tap from a Save, so the trash can means "will be deleted" and nothing else. That would retire part of the 2026-07-09 ruling, so it needs his word. |
+| Q-24 | Why do live Radarr rows match into a TV library, and can that match retire a real stamp? The review of PR 1067 (2026-11-13) measured all 60 Radarr rows in one TV library and all 61 in the other sharing a Plex item with a Sonarr show, and four Sonarr shows matching a movie by the same kind of shared number. | **Answered for this decision, and it does not block it.** The matcher is story 847 and is not fixed here. A stamp whose library type does not fit the title never counts as the older date (D-31). The 40 movies the fill rule would release once the ledger covers are released because the date that kept them recent belongs to another title and their own movie dates are past 180 days. |
+| Q-25 | The 2026-10-30 Trash catch-up counted 7 movies kept "recent only". Which titles were they, and were they a library fill? | **Not re-identified, and it does not block.** That row means kept by the Age Guard and not by a watchlist, not kept by a fill. The review of PR 1067 measured, the same day, 60 pool movies kept by the Age Guard: 54 by an import, 6 by a Plex date, none by a fill day. |

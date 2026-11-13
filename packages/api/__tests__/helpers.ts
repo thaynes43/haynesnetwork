@@ -9,7 +9,9 @@ import type { Database } from '@hnet/db';
 import { resolvePlexIdentity, type PlexIdentity, type SessionUser } from '@hnet/auth';
 import {
   assignRole,
+  syncPlexMatches,
   upsertMediaItemsBatch,
+  upsertPlexLibraries,
   type ArrClientBundle,
   type MaintainerrClientBundle,
   type MediaItemSyncFields,
@@ -230,6 +232,42 @@ export async function seedMediaItem(
     .where(and(eq(schema.mediaItems.arrKind, arrKind), eq(schema.mediaItems.arrItemId, arrItemId)));
   if (!row) throw new Error('seeded media item not found');
   return row;
+}
+
+/**
+ * ADR-119 — a ledger item with no Plex match is `unknown` (kept). Deletion tests were written when
+ * that case was `clear`. Stamp each still-unmatched item with a date older than 180 days so the
+ * Age Guard can clear it. An item that already has a match, including an undated one, is left as
+ * the test set it up.
+ */
+export async function stampOldPlexMatches(db: Database): Promise<void> {
+  await upsertPlexLibraries({
+    db,
+    slug: 'haynesops',
+    libraries: [{ sectionKey: 'age-guard-dated', name: 'Age Guard Dated', mediaType: 'movie' }],
+  });
+  const libs = await db.select().from(schema.plexLibraries);
+  const library = libs.find((l) => l.sectionKey === 'age-guard-dated');
+  if (!library) throw new Error('age-guard-dated library was not upserted');
+  const items = await db.select({ id: schema.mediaItems.id }).from(schema.mediaItems);
+  const matched = await db
+    .select({ id: schema.mediaPlexMatches.mediaItemId })
+    .from(schema.mediaPlexMatches);
+  const have = new Set(matched.map((m) => m.id));
+  const missing = items.filter((row) => !have.has(row.id));
+  if (missing.length === 0) return;
+  const old = new Date(Date.now() - 400 * 86_400_000);
+  await syncPlexMatches({
+    db,
+    matches: missing.map((row) => ({
+      mediaItemId: row.id,
+      plexLibraryId: library.id,
+      ratingKey: `old-${row.id}`,
+      matchedVia: 'tmdb',
+      plexAddedAt: old,
+    })),
+    scopedLibraryIds: [],
+  });
 }
 
 const callerFactory = createCallerFactory(appRouter);

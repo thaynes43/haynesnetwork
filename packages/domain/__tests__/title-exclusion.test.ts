@@ -29,11 +29,10 @@ import {
   setAppSetting,
   silentDomainLogger,
   sweepExpiredBatches,
-  upsertMediaItemsBatch,
   type StaticArrMovie,
 } from '../src/index';
 import { baseState, makeMaintainerr, movieCollection, tvCollection, type MaintState } from './maintainerr-stub';
-import { bootMigratedDb, createUser, seedVerifiedWatchlistRegistry, type TestDb } from './helpers';
+import { bootMigratedDb, createUser, seedVerifiedWatchlistRegistry, type TestDb , upsertDeletableMediaItems } from './helpers';
 
 const logger = silentDomainLogger;
 
@@ -66,7 +65,7 @@ describe('the Title Exclusion (ADR-097 / DESIGN-052 D-27, D-28)', () => {
   beforeAll(async () => {
     t = await bootMigratedDb();
     admin = (await createUser(t.db, { email: 'te@example.com', displayName: 'TE Admin' })).id;
-    await upsertMediaItemsBatch({
+    await upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'radarr',
       items: [9001, 9002, 9003].map((tmdbId, i) => ({
@@ -81,7 +80,7 @@ describe('the Title Exclusion (ADR-097 / DESIGN-052 D-27, D-28)', () => {
         rootFolder: '/movies',
       })),
     });
-    await upsertMediaItemsBatch({
+    await upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'sonarr',
       items: [8001, 8002].map((tvdbId, i) => ({

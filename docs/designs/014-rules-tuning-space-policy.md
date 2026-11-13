@@ -627,24 +627,25 @@ ADR-036 stays Accepted and is not edited. No superseding ADR.
 in the sweep re-reads the five clauses. Story 823 depends on a predicate check in that audit before
 the new body is left in place across later days. This story does not write that check.
 
-The Age Guard is a separate check. It still uses the newest of a download import and any server's
-Plex added date, 180 times 86,400,000 ms (`judgeAge`). D-15 does not change the function. Removing
-the TV date-added clause removes what the guard's own comment relies on for a title with no Plex
-match (`packages/domain/src/trash-age-guard.ts`: a title no Plex library is matched to is judged on
-its imports alone, "the Maintainerr rule's own HaynesOps date-added clause still applies to it").
-`judgeAge` returns `clear` when there is no `media_plex_matches` row and no download import inside
-180 days. For TV, after this body is applied, that comment is no longer true. The movie added-date
-clause stays, and it is still that cover for a movie. DESIGN-010 no longer calls the Age Guard the
-guarantee for this case. DESIGN-052 D-26's "the rules stay" sentence is narrowed: the movie
-added-date clause stays; the TV predicates are this section; the guard stays in the app and does not
-replace the removed TV date-added clause.
+The Age Guard is a separate check. It uses the newest of a download import and any server's
+Plex added date, 180 times 86,400,000 ms (`judgeAge`). D-15 does not change the function. Story 835
+left `judgeAge` returning `clear` when there is no `media_plex_matches` row and no download import
+inside 180 days, which the comment then attributed to Maintainerr's HaynesOps date-added clause.
+Removing the TV date-added clause removes that cover. The movie added-date clause stays.
+DESIGN-010 no longer calls the Age Guard the guarantee for this case. DESIGN-052 D-26's "the rules
+stay" sentence is narrowed: the movie added-date clause stays; the TV predicates are this section;
+the guard stays in the app and does not replace the removed TV date-added clause.
 
-The adversarial review measured, on 2026-11-13 (18:32Z–18:50Z), that this bites nothing in today's
-pools: 0 of 524 movie candidates and 0 of the ten shows below have no Plex match. It matters more
-once story 836 lands: that review measured 339 of 661 ended HaynesOps shows with no download import
-inside 180 days. The code question for 836, already passed on by the coordinator (comment 8099), is
-that a pool member with no Plex match should be `unknown`, not `clear`. This story does not change
-`judgeAge`.
+The adversarial review of this design measured, on 2026-11-13 (18:32Z–18:50Z), that this bites
+nothing in today's pools: 0 of 524 movie candidates and 0 of the ten shows below have no Plex match.
+It matters more for a pool that can hold a show with no Plex match: that review measured 339 of 661
+ended HaynesOps shows with no download import inside 180 days. ADR-119 (story 836) then changed
+`judgeAge`: that case is `unknown`, which keeps the title, with the library-fill setting on or off.
+It is the one change in that ADR that alters the behaviour D-15 left in place, and it only ever
+keeps more. This session remeasured the same shape on replica `postgres16-11` (`SELECT`, 2026-11-13,
+`trash_candidates_state.refreshed_at` 2026-11-13 15:15:05.495-05): 0 of 524 movie candidates have no
+Plex match, the TV pool has 0 members, and the ten shows below all have a Plex match and a Sonarr
+download import inside 180 days.
 
 ### Apply and read back
 

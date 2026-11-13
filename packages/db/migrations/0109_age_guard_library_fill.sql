@@ -1,0 +1,4 @@
+-- ADR-119 / DESIGN-052 D-31: admit the Age Guard library-fill switch. No row is inserted; an absent key
+-- leaves the fill rule off (the 2026-10-03 newest Plex date). The value is written only by setAppSetting, which audits it.
+ALTER TABLE "app_settings" DROP CONSTRAINT "app_settings_key_enum";--> statement-breakpoint
+ALTER TABLE "app_settings" ADD CONSTRAINT "app_settings_key_enum" CHECK ("app_settings"."key" = ANY (ARRAY['trash_skip_admin_gate','trash_default_window_days','trash_relink_enabled','motd','space_targets','space_policy','notify_window','pool_refresh_after_save','final_warning','upload_capacity_mbps','download_capacity_mbps','authentik_owned_groups','authentik_group_map','collection_size_cap','mam_governor_config','arr_queue_cleanup_config','seerr_watchlist_enroll','repair_guide_remedies','playback_known_issue_servers','seerr_issue_bridge','seerr_issue_bridge_smoke','age_guard_ignore_library_fill']));

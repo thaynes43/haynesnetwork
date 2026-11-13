@@ -23,6 +23,7 @@ import { mapDomainErrors } from '../src/trpc';
 import {
   bootMigratedDb,
   seedWatchlistRegistry,
+  stampOldPlexMatches,
   caller,
   createUser,
   makeCtx,
@@ -155,6 +156,8 @@ describe('trash.batches + trash.settings (ADR-025 / DESIGN-011)', () => {
         { arrItemId: 72, tmdbId: 55002, title: 'B', sortTitle: 'b', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/m' },
       ],
     });
+    // ADR-119 keeps a ledger title with no Plex match. Date both so a forced expire can still delete.
+    await stampOldPlexMatches(t.db);
   });
   afterAll(async () => t?.stop());
 
@@ -347,6 +350,8 @@ describe('trash — the Registry Gate on the web paths (ADR-093)', () => {
         { arrItemId: 82, tmdbId: 55002, title: 'B', sortTitle: 'b', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/m' },
       ],
     });
+    // ADR-119 keeps a ledger title with no Plex match. Date both so a refused write is still attempted.
+    await stampOldPlexMatches(t.db);
   });
   afterAll(async () => t?.stop());
 
