@@ -779,8 +779,9 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     expect(byId['ms-9001']).toMatchObject({ onWatchlist: false, watchlistEvaluable: true });
     expect(page.expeditePreview).toMatchObject({ watchlisted: 1, unverifiable: 0 });
 
-    // The default wall's view filter acts BEFORE pagination/counts; the complete
-    // deletion preview and id snapshot still include the protected candidate.
+    // The default wall hides every title Wall Protection would keep, before pagination.
+    // This pool keeps ms-9002 (watchlisted) and ms-9004 (recently watched). The complete
+    // deletion preview and id snapshot still include them.
     const hidden = await listTrashPendingPage({
       db: t.db,
       maintainerr: bundle,
@@ -790,10 +791,14 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
       filters: { includeWatchlisted: false },
     });
     expect(hidden.total).toBe(page.total);
-    expect(hidden.filteredCount).toBe(page.total - 1);
-    expect(hidden.filteredSizeBytes).toBe(page.totalSizeBytes - byId['ms-9002']!.sizeBytes);
+    expect(hidden.filteredCount).toBe(page.total - 2);
+    expect(hidden.filteredSizeBytes).toBe(
+      page.totalSizeBytes - byId['ms-9002']!.sizeBytes - byId['ms-9004']!.sizeBytes,
+    );
     expect(hidden.items).toHaveLength(1);
+    expect(hidden.items[0]!.protectionReason).toBeNull();
     expect(hidden.items[0]!.onWatchlist).toBe(false);
+    expect(hidden.items[0]!.recentlyWatched).toBe(false);
     expect(hidden.nextCursor).toBe(1);
     expect(hidden.expeditePreview).toEqual(page.expeditePreview);
     expect(hidden.allActionableIds).toEqual(page.allActionableIds);
@@ -805,8 +810,10 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
       offset: hidden.nextCursor!,
       filters: { includeWatchlisted: false },
     });
-    expect(next.items).toHaveLength(page.total - 2);
-    expect(next.items.every((item) => !item.onWatchlist)).toBe(true);
+    expect(next.items).toHaveLength(page.total - 3);
+    expect(next.items.every((item) => item.protectionReason === null && !item.onWatchlist)).toBe(
+      true,
+    );
     expect(
       next.items.every((item) => item.maintainerrMediaId !== hidden.items[0]!.maintainerrMediaId),
     ).toBe(true);
@@ -821,6 +828,9 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     });
     expect(shown.items).toHaveLength(page.total);
     expect(shown.filteredSizeBytes).toBe(page.totalSizeBytes);
+    const shownById = Object.fromEntries(shown.items.map((i) => [i.maintainerrMediaId, i]));
+    expect(shownById['ms-9002']!.protectionReason).toBe('watchlisted');
+    expect(shownById['ms-9004']!.protectionReason).toBe('recently_watched');
 
     // The batch wall (getBatchDetail's own join).
     const batchId = await expiredBatch(state);
