@@ -9,7 +9,7 @@ evidence. Counts below are **measured** (command and time) or a **projection** (
 not a Maintainerr run). Decimal TB is bytes / 10^12.
 
 Story 835's written scope (comment 7994) lists four clauses and does not mention a votes floor.
-Tom's later ruling on the same story (comment 8099, 2026-11-13T18:55Z, "Add the votes floor") adds
+The owner's later ruling on the same story (comment 8099, 2026-11-13T18:55Z, "Add the votes floor") adds
 the fifth clause. This note follows that ruling. The story names DESIGN-014 or its successor; D-15
 is on DESIGN-014. The movie clause stays.
 
