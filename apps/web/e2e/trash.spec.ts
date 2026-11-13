@@ -89,8 +89,47 @@ async function openTrashMovies(page: Page, expectedVanished = 1): Promise<void> 
   // scenario passes zero to exercise the new hide-by-default view explicitly.
   await page.goto(`/trash?tab=movies${expectedVanished === 0 ? '' : '&protected=show'}`);
   await expect(page.getByRole('checkbox', { name: /Show protected/ })).toBeVisible();
+  if (expectedVanished === 0) {
+    // Every seeded movie is held, so the default wall is the empty state, not the poster grid.
+    await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(0);
+    return;
+  }
   await expect(page.getByTestId('trash-wall')).toBeVisible();
   await expect(page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' })).toHaveCount(expectedVanished);
+}
+
+/**
+ * The default wall omits held titles. Check Show protected when a test needs one of them.
+ * Scoped to the pending wall's own filter bar: an open batch's future strip has a Show protected
+ * box too, and right after a cancel or a sweep it can still be on the page, so an unscoped lookup
+ * would tick that one and leave the returning wall on its default view.
+ */
+async function showHeldTitles(page: Page): Promise<void> {
+  const box = page
+    .getByRole('group', { name: 'Filters' })
+    .getByRole('checkbox', { name: /Show protected/ });
+  await expect(box).toBeVisible();
+  if (!(await box.isChecked())) await box.check();
+}
+
+/**
+ * Switch the Trash tab and wait until it is the selected one. A tab switch keeps only `?tab`, so the
+ * new tab's wall starts on the default view. Without the wait, the next step can still read the
+ * previous tab's controls (its Show protected box) before the new tab has mounted.
+ */
+async function switchTrashTab(page: Page, name: 'Movies' | 'TV'): Promise<void> {
+  const tab = page.getByRole('tab', { name });
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+/** The future-batch strip has its own checkbox, separate from the pending wall's. */
+async function showFutureHeld(page: Page): Promise<void> {
+  const box = page
+    .getByTestId('batch-new-candidates')
+    .getByRole('checkbox', { name: /Show protected/ });
+  await expect(box).toBeVisible();
+  if (!(await box.isChecked())) await box.check();
 }
 
 /** Assign the Marge Member persona's user to a role by name (admin user-detail select). */
@@ -446,6 +485,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // corner is the inert kept `skip` with the batch wall's reason, never the slated trash-can.
     await page.getByRole('tab', { name: 'TV' }).click();
     await expect(page).toHaveURL(/\/trash\?tab=tv$/);
+    // The tab drops `protected=show`. Breaking Prod is Age Guard, so the default wall omits it.
+    await showHeldTitles(page);
     const tvTile = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
     await expect(tvTile).toHaveCount(1);
     await expect(tvTile).toHaveAttribute('data-glyph', 'skip');
@@ -507,7 +548,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // TV: Breaking Prod is REQUESTED and also watched-long-ago — the corner is the Age Guard's kept `skip` (it was
     // downloaded moments ago, DESIGN-052 D-26), and BOTH facts still ride the meta line: the requester info badge +
     // the muted watch chip (D-12).
-    await page.getByRole('tab', { name: 'TV' }).click();
+    await switchTrashTab(page, 'TV');
+    await showHeldTitles(page);
     const tv = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
     await expect(tv).toHaveAttribute('data-glyph', 'skip');
     await expect(tv.getByTestId('wall-requested')).toHaveAttribute('title', /Requested by /);
@@ -588,6 +630,78 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
       (c) => c.method === 'DELETE' && c.path === `/rules/exclusions/${STUB_MAINT_VANISHED_ID}`,
     );
     expect(removes).toHaveLength(1);
+  });
+
+  // DESIGN-052 D-10 amendment (story 832) — the default view lists only titles that can be deleted.
+  // Every held title is absent from it and present, with its reason's behaviour, once Show protected
+  // is on. A Save made FROM the default view makes its title undeletable, so the read that follows no
+  // longer returns it: the tile must stay where it was all the same (hard rule 9), one two-step tap
+  // from un-saving, and only a freshly opened default view leaves it out.
+  test('the default view holds only deletable titles; a Save there keeps its tile in place until the view is reopened', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    await page.goto('/trash?tab=movies');
+    const box = page.getByRole('group', { name: 'Filters' }).getByRole('checkbox', { name: /Show protected/ });
+    await expect(box).not.toBeChecked();
+
+    // Four seeded movies; one can be deleted. The Fixture was watched recently, Stub Runner carries
+    // the dnd tag and tmdb:990009 is not in the ledger, so the default view leaves all three out.
+    const tiles = page.getByTestId('trash-tile');
+    const vanished = tiles.filter({ hasText: 'Vanished Heist' });
+    await expect(vanished).toHaveAttribute('data-glyph', 'trash');
+    await expect(tiles).toHaveCount(1);
+    await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 2.0 GB across 1 item');
+    // No tile on the default view wears the kept badge or a protected check.
+    await expect(page.locator('[data-testid="trash-tile"][data-glyph="skip"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="trash-tile"][data-glyph="check"]')).toHaveCount(0);
+
+    // Save it here. The server confirms, the read that follows drops the title (the counts bar says
+    // so), and the tile is still there, the saved shield, in the same box.
+    const toggle = vanished.getByTestId('trash-toggle');
+    await page.waitForLoadState('networkidle');
+    await toggle.scrollIntoViewIfNeeded();
+    const before = (await vanished.boundingBox())!;
+    const saveSettled = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
+    await toggle.click();
+    await saveSettled;
+    await expect(page.getByTestId('trash-total')).toHaveText('Nothing pending');
+    await expect(vanished).toHaveCount(1);
+    await expect(vanished).toHaveAttribute('data-glyph', 'shield');
+    await expect(page.getByTestId('trash-wall-empty')).toHaveCount(0);
+    expectSameBox(before, await vanished.boundingBox());
+
+    // Un-save it in place (the ADR-014 two-step): back to the slated trash can, same box, counted again.
+    const unsaveSettled = page.waitForResponse((r) => r.url().includes('trash.removeExclusion'));
+    await releaseTile(vanished, toggle, 'shield');
+    await unsaveSettled;
+    await expect(vanished).toHaveAttribute('data-glyph', 'trash');
+    await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 2.0 GB across 1 item');
+    await expect(tiles).toHaveCount(1);
+    expectSameBox(before, await vanished.boundingBox());
+
+    // Save again and open the view afresh: the saved title is not on the default view any more.
+    const resaved = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
+    await toggle.click();
+    await resaved;
+    await expect(vanished).toHaveAttribute('data-glyph', 'shield');
+    await page.reload();
+    await expect(box).not.toBeChecked();
+    await expect(page.getByTestId('trash-wall-empty')).toBeVisible();
+    await expect(tiles).toHaveCount(0);
+
+    // Show protected: all four are there, each with the behaviour its reason already had.
+    await box.check();
+    await expect(tiles).toHaveCount(4);
+    await expect(vanished).toHaveAttribute('data-glyph', 'check'); // saved: the protected check
+    const fixture = tiles.filter({ hasText: 'The Fixture' });
+    await expect(fixture).toHaveAttribute('data-glyph', 'trash'); // watched recently: still one tap from a Save
+    await expect(fixture.locator('button[data-testid="trash-toggle"]')).toHaveCount(1);
+    await expect(fixture.getByTestId('wall-watched')).toHaveAttribute('data-tone', 'info');
+    const runner = tiles.filter({ hasText: 'Stub Runner' });
+    await expect(runner).toHaveAttribute('data-glyph', 'trash'); // a lapsed dnd tag: tappable to re-save
+    await resetMaintainerr(page);
   });
 
   /** ADR-014 — the arm expires on its own. An interrupted release leaves the save intact. */
@@ -869,6 +983,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await signIn(page, 'admin');
     await page.goto('/trash?tab=tv');
     // Breaking Prod was downloaded moments ago (the spec's beforeAll): kept, never offered for deletion.
+    await showHeldTitles(page);
     const tile = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
     await expect(tile).toHaveAttribute('data-glyph', 'skip');
 
@@ -1195,6 +1310,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // holder the admin sees the tap-to-save invitation in the head line.
     await addPendingCandidate(page);
     await page.goto('/trash?tab=movies');
+    // The fresh candidate is not in the ledger, so the strip's default view omits it.
+    await showFutureHeld(page);
     await expect(page.getByTestId('batch-new-candidates')).toContainText(
       'Potential in future batches (1)',
     );
@@ -1520,6 +1637,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // fresh ms-990010 candidate tile renders, but with NO save button and the head line drops the
     // "tap a poster to save it out" invitation.
     const familyStrip = memberPage.getByTestId('batch-new-candidates');
+    await showFutureHeld(memberPage);
     await expect(familyStrip).toContainText('Potential in future batches (1)');
     await expect(familyStrip).not.toContainText('tap a poster to save it out');
     await expect(memberPage.getByTestId('future-wall').getByTestId('trash-tile')).toHaveCount(1);
@@ -1561,6 +1679,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // for a save_exclude holder — tap a coming-soon candidate to save it out of the NEXT batch (a real
     // exclusion write). The head line now carries the "tap a poster to save it out" invitation, and the
     // fresh ms-990010 tile is a save BUTTON. Save then un-save to leave the strip state clean.
+    await showFutureHeld(memberPage);
     await expect(memberPage.getByTestId('batch-new-candidates')).toContainText(
       'tap a poster to save it out',
     );
@@ -1590,6 +1709,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
 
     // The future strip is visible to this pure read-only role too, but fully READ-ONLY: the fresh
     // candidate renders (browse what's coming), with NO save button and no "tap to save" head-line.
+    await showFutureHeld(memberPage);
     await expect(memberPage.getByTestId('batch-new-candidates')).toContainText(
       'Potential in future batches',
     );
@@ -1615,6 +1735,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // terminal ⇒ the LifecycleView drops out and the pending wall returns (no open batch).
     await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
     await armAndConfirm(page.getByTestId('batch-cancel'));
+    // The earlier tests' saves are still open here, so every title is held and the default wall is empty.
+    await showHeldTitles(page);
     await expect(page.getByTestId('trash-wall')).toBeVisible();
     await resetMaintainerr(page);
 
@@ -1664,6 +1786,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     // the Past-batches strip (ADR-033). Expanding the Deleted row reveals its final report
     // (the terminal PosterWall with the sweep glyphs).
     await report.getByRole('button', { name: 'Done' }).click();
+    // The cold title was just deleted. What remains is held, so the default wall is empty.
+    await showHeldTitles(page);
     await expect(page.getByTestId('trash-wall')).toBeVisible();
     const strip = page.getByTestId('batch-history');
     await expect(strip).toBeVisible();
@@ -1728,6 +1852,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('batch-gate-skipped')).toBeVisible();
     await expect(page.getByTestId('batch-countdown')).toContainText('window closes');
     await armAndConfirm(page.getByTestId('batch-cancel'));
+    // Breaking Prod is Age Guard, so the returning default wall hides it until Show protected.
+    await showHeldTitles(page);
     await expect(page.getByTestId('trash-wall')).toBeVisible(); // terminal ⇒ TV pending wall returns
 
     // Restore the gate — "Enable" turns it back ON (the safe direction, a plain button).
@@ -2136,6 +2262,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
 
     // Done ⇒ the batch is terminal, the pending wall returns.
     await page.getByRole('button', { name: 'Done' }).click();
+    // The cold title was just deleted. What remains is held, so the default wall is empty.
+    await showHeldTitles(page);
     await expect(page.getByTestId('trash-wall')).toBeVisible();
     await resetMaintainerr(page);
   });

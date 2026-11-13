@@ -1,0 +1,21 @@
+rank,arr,source,collection_or_list,import_events,distinct_parents,landed_bytes_no_watch_record,pct_of_all_no_watch_record_bytes
+1,sonarr,upgrade,upgrade,5107,237,16217346082762,34.9
+2,radarr,upgrade,upgrade,360,293,12653302451414,27.2
+3,lidarr,unattributed,no source tag,250986,2510,6571819214711,14.1
+4,sonarr,seerr,seerr request,1478,65,4650008704609,10.0
+5,sonarr,kometa-legacy,no collection tag,501,31,1129819908626,2.4
+6,radarr,kometa,seasonal,62,62,864035474059,1.9
+7,sonarr,manual,manual grab,256,16,817560333958,1.8
+8,radarr,seerr,seerr request,33,33,771344649510,1.7
+9,radarr,kometa,IMDB Popular,47,47,626455669255,1.3
+10,sonarr,unattributed,no source tag,486,18,570454267467,1.2
+11,lidarr,import-list,spotifyplaylist,18895,448,434744952647,0.9
+12,radarr,manual,manual grab,16,16,208669234815,0.4
+13,sonarr,kometa-legacy,Emmy collection (legacy tag),151,5,185139276309,0.4
+14,radarr,kometa,IMDB Top 250,11,11,158388715940,0.3
+15,sonarr,conflict,kometa and seerr,44,3,126228232711,0.3
+16,radarr,kometa,Popular Now,3,3,112906505351,0.2
+17,sonarr,kometa-legacy,Trakt trending (commented out),21,4,95086756046,0.2
+18,lidarr,manual,manual grab,2192,135,75179515627,0.2
+19,radarr,kometa,In Theaters (removed from the files 2026-07-10),8,8,53889433395,0.1
+20,radarr,kometa,universe,2,2,35929538561,0.1
