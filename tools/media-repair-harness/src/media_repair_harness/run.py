@@ -258,7 +258,11 @@ def check_remote_options(evidence_format=None, tools_behavior=None, stop_on_rece
         raise ValueError('--tools-behavior %s reads through the replay/remote path and is accepted with --evidence replay only' % tools_behavior)
 
 
-def _remote_evidence():
+def _remote_evidence(tools_behavior=None):
+    """remote_evidence (v3-remote-1) or, for `tools_behavior == 'v3-remote-2'`, remote_evidence_2.  Called without a behaviour for what both share."""
+    if tools_behavior == T.REMOTE_V2:
+        from . import remote_evidence_2
+        return remote_evidence_2
     from . import remote_evidence
     return remote_evidence
 
@@ -350,7 +354,7 @@ def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, run
     binding = None
     if remote_v1 and fixture.kind == 'remote':
         remote_state = remote_state if remote_state is not None else _remote_evidence().HostState()
-        binding = _remote_evidence().binding_for_case(case, remote_state, time_left=remote_time_left)
+        binding = _remote_evidence(tools_behavior).binding_for_case(case, remote_state, time_left=remote_time_left)
     ctx = T.Context(case, fixture, Path(scratch) / case['id'], runner=runner, which=which or shutil.which, ocr_backend=ocr_backend,
                     suite_dir=suite_dir, replay=replay, evidence_mode=evidence_mode, collect=collect, evidence_runner=evidence_runner,
                     evidence_which=evidence_which, evidence_bounds=evidence_bounds, tools_behavior=tools_behavior or (('v3' if v31fmt else 'v2') if v2fmt else 'v1'),
@@ -367,6 +371,8 @@ def _run_case(case, case_sha, adapter, suite_dir, scratch, ocr_backend=None, run
             evidence, withheld = _handover().split(case, evidence, evidence_handover)
         if remote_v1:
             ctx.subtitle_stream = _remote_evidence().select_subtitle_stream(evidence)     # from the case's existing probe result; nothing is invoked
+            if tools_behavior == T.REMOTE_V2:
+                ctx.media_probe = _remote_evidence(tools_behavior).first_probe(evidence)      # v3-remote-2: the streams to choose from and the file's bitrate data
         view = P.case_view(case, [], case_alias=model_alias)
         caps = T.capabilities(ctx)
         if v3fmt:
@@ -1158,7 +1164,7 @@ def run_config(args, adapter, evidence_bounds, evcol_clamped):
     elif args.evidence_format:   # likewise only when on; the three versions it selects are recorded so the config hash tells the formats apart
         config.update(evidence_format=args.evidence_format, tools_behavior='v2', audit_version='v2', page_contract=EV2.PAGE_CONTRACT, wire_bytes=min(EV2.WIRE_BYTES, args.tool_output_bytes))
     if getattr(args, 'tools_behavior', None):   # #161, only when set: the tools behaviour and every registered bound of the remote evidence, so the config hash tells it apart
-        config.update(tools_behavior=args.tools_behavior, remote_evidence=_remote_evidence().config())
+        config.update(tools_behavior=args.tools_behavior, remote_evidence=_remote_evidence(args.tools_behavior).config())
     if getattr(args, 'stop_on_receipt_failure', False):
         config['stop_on_receipt_failure'] = True
     if getattr(args, 'evidence_handover', 'full') != 'full':    # #209, only when set: a `full` (or absent) flag keeps the config and its hash as before
@@ -1220,7 +1226,11 @@ def build_parser():
                     help='#161, opt-in: v3-remote-1 is tools behaviour v3 plus subtitle_sample {"at": s} (the first text subtitle stream of the case\'s probe result), the '
                          'mrh-sampler-2 receipts (hostname, source_unchanged, bytes_read, quota, wall, timeout) and the expected-identity binding (fixture.expected_identity) '
                          'of every remote operation; a missing or malformed receipt, an identity mismatch, source_unchanged false, a changed host or an outer timeout '
-                         'fails closed (cause tool). Only with --evidence-format v3.1-format and --evidence replay. Unset = the behaviour the evidence format selects')
+                         'fails closed (cause tool). Only with --evidence-format v3.1-format and --evidence replay. Unset = the behaviour the evidence format selects. '
+                         '#213, v3-remote-2 is v3-remote-1 plus mrh-sampler-4: decode_sample, audio_sample and subtitle_sample read under a per-file input quota computed from '
+                         'the file\'s size, duration and bitrate (never a fixed number), every such receipt records the quota, its basis, the bytes read, the decoded output time '
+                         'and whether the window completed, and audio_sample {"at": s, "stream": n} reads the first audio stream when "stream" is omitted and refuses an index '
+                         'that is not an audio stream of the probe result')
     ap.add_argument('--stop-on-receipt-failure', action='store_true',
                     help='#161, opt-in, with --tools-behavior v3-remote-1: the first remote operation that fails closed stops the run (exit 3): the case is kept as '
                          'started_aborted with every receipt, no further sampler operation is invoked and later cases never start')
