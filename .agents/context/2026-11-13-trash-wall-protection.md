@@ -93,11 +93,12 @@ because it is a choice between two of the owner's rules.
   `trash.pending` read. `protectionReason` is read only by that function and by the tile's glyph. The
   Expedite preview and `allActionableIds` are still built from the unfiltered set, and the guard test
   asserts they are equal with the flag on and off.
-- **One display difference from `main`, in the protected view only.** The kept badge now follows the
-  reason `recently_added`. A title that has no Maintainerr id and is also inside the Age Guard used to
-  wear the kept badge and now wears the plain (not tappable) trash can, because its first reason is
-  `unactionable`. It could not be deleted before and cannot be now. Story 821 gives every held tile
-  its reason in words, which covers it.
+- **Corner glyphs stay as ruled: one case did not, and is fixed.** The first worker made the kept
+  badge follow the reason `recently_added`. A title that has no Maintainerr id and is also inside the
+  Age Guard has `unactionable` as its first reason, so on the protected view it lost the kept badge
+  and wore the plain trash can. The advisory reviewer on the PR raised the same thing. Such a title
+  now reads the Age Guard from the item itself, as before story 832, and keeps the badge
+  (`pendingWallGlyph`, with a unit test). It could not be deleted before and cannot be now.
 
 ### Checks (measured 2026-11-13, local, one suite at a time)
 
@@ -105,6 +106,6 @@ because it is a choice between two of the owner's rules.
 | ----- | ------- | ------ |
 | Trash e2e | `pnpm --filter web e2e trash.spec.ts` | 39 passed of 39 (38 existing, 1 new) |
 | Domain | `vitest run __tests__/trash-protection-filter.test.ts __tests__/trash-watchlist-guard.test.ts --maxWorkers=2` | 36 passed of 36 |
-| Web unit | `vitest run lib/__tests__/trash.test.ts --maxWorkers=2` | 76 passed of 76 |
+| Web unit | `vitest run lib/__tests__/trash.test.ts --maxWorkers=2` | 76 passed of 76 (re-run after the glyph fix) |
 | Types | `pnpm typecheck` | clean |
 | Lint | `pnpm lint`, `pnpm lint:css` | no errors; 3 warnings, all in two test files this change does not touch |

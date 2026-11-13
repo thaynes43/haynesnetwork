@@ -347,6 +347,14 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle â€
     expect(pendingWallGlyph({ ...recent, protectionReason: 'recently_added' }, undefined)).toBe('skip');
     expect(pendingWallGlyph({ ...recent, protectionReason: null }, undefined)).toBe('trash');
     expect(pendingWallGlyph({ ...recent, protectionReason: 'tag' }, undefined)).toBe('trash');
+    // A title with no Maintainerr id is `unactionable` first, but inside the Age Guard it keeps the
+    // kept badge it wore before story 832 (the corners stay as ruled). Outside it, the plain trash can.
+    expect(pendingWallGlyph({ ...recent, protectionReason: 'unactionable' }, undefined)).toBe('skip');
+    expect(pendingWallGlyph({ ...cold, protectionReason: 'unactionable' }, undefined)).toBe('trash');
+    // The other first reasons still win over the Age Guard, as before.
+    expect(
+      pendingWallGlyph({ ...recent, recentlyWatched: true, protectionReason: 'unactionable' }, undefined),
+    ).toBe('trash');
   });
   it('unprotected cold â‡’ trash (slated); tappable to SAVE only with save_exclude', () => {
     expect(pendingWallGlyph(cold, undefined)).toBe('trash');

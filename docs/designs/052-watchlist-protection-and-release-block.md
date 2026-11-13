@@ -543,8 +543,10 @@ The checkbox label stays **Show protected**. Its description covers every held t
 change does not restyle the control. Story 821 replaces it.
 
 Corner glyphs stay as already ruled. The inert skip is the Age Guard
-(`protectionReason === 'recently_added'`; a missing field still uses the previous client
-check, so an older server keeps the badge). A `dnd` tag and a recent watch stay a tappable
+(`protectionReason === 'recently_added'`). Two cases still read the Age Guard from the item
+itself (the previous client check), so they keep the badge they had: a missing field (an
+older server), and a title with no Maintainerr id, whose reason is `unactionable` because
+that check comes first. A `dnd` tag and a recent watch stay a tappable
 trash can (ADR-086 D-5 and the 2026-07-09 ruling). A live exclusion and a Save stay the
 check. The complete candidate population, the Expedite preview, `allActionableIds`, and
 every delete-path guard are unchanged. `release_unrecorded` stays a delete-time keep (Q-16).

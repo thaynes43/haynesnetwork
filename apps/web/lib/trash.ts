@@ -272,7 +272,16 @@ export function pendingWallGlyph(
   // Story 832 — the server reason is the definition. Other holds keep the corners already ruled
   // (a tag and a recent watch stay tappable; a live exclusion and a Save stay the check).
   if (item.protectionReason === 'recently_added') return 'skip';
-  if (item.protectionReason === undefined && recentlyAddedKeep(item)) return 'skip';
+  // Two cases still read the Age Guard from the item itself, so the corner stays as ruled:
+  // an older server that sends no reason, and a title with no Maintainerr id. That check comes first
+  // in Wall Protection, so its reason is `unactionable`, but a title inside the Age Guard wore the
+  // kept badge before story 832 whether or not it had an id, and it still does.
+  if (
+    (item.protectionReason === undefined || item.protectionReason === 'unactionable') &&
+    recentlyAddedKeep(item)
+  ) {
+    return 'skip';
+  }
   return 'trash';
 }
 
