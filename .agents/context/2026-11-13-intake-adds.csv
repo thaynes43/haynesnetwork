@@ -1,0 +1,12 @@
+arr,source,collection_or_list,titles,titles_still_in_arr,size_on_disk_bytes,titles_with_watch_record,titles_no_watch_record,bytes_with_watch_record,bytes_no_watch_record,pct_bytes_no_watch_record
+lidarr,import-list,spotifyartists,3,3,0,0,3,0,0,
+lidarr,unattributed,no source tag,323,323,27649683013,0,323,0,27649683013,100.0
+radarr,kometa,IMDB Popular,108,108,1137647984292,23,85,492490785791,645157198501,56.7
+radarr,kometa,IMDB Top 250,12,12,158388715940,0,12,0,158388715940,100.0
+radarr,kometa,Popular Now,4,4,137169018127,1,3,24262512776,112906505351,82.3
+radarr,kometa,Top Rated,1,1,21169680937,0,1,0,21169680937,100.0
+radarr,kometa,seasonal,332,332,1229475862270,13,319,310166390319,919309471951,74.8
+radarr,kometa,universe,17,17,50059691785,1,16,20168427193,29891264592,59.7
+radarr,seerr,seerr request,99,99,1016693827326,19,80,245349177816,771344649510,75.9
+sonarr,kometa,shows-franchises,3,3,0,0,3,0,0,
+sonarr,seerr,seerr request,45,45,4451697491425,18,27,1704919486439,2746778004986,61.7

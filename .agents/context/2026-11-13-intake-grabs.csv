@@ -1,0 +1,119 @@
+arr,source,collection_or_list,quality,grab_events,distinct_parents,announced_bytes_per_event,events_missing_size,announced_bytes_per_event_no_watch_record,pct_bytes_no_watch_record
+lidarr,import-list,spotifyplaylist,FLAC,56,27,76331432906,0,76331432906,100.0
+lidarr,import-list,spotifyplaylist,FLAC 24bit,23,16,13227193556,0,13227193556,100.0
+lidarr,import-list,spotifyplaylist,MP3-320,20,15,1981923099,0,1981923099,100.0
+lidarr,import-list,spotifyplaylist,Unknown,8,5,651468689,0,651468689,100.0
+lidarr,manual,manual grab,FLAC,226,157,272467097897,0,272467097897,100.0
+lidarr,manual,manual grab,FLAC 24bit,61,53,55159237733,0,55159237733,100.0
+lidarr,manual,manual grab,MP3-320,41,31,4057711150,0,4057711150,100.0
+lidarr,manual,manual grab,Unknown,73,35,4109656813,0,4109656813,100.0
+lidarr,unattributed,no source tag,FLAC,685,344,328038310504,0,328038310504,100.0
+lidarr,unattributed,no source tag,FLAC 24bit,170,101,157327024846,0,157327024846,100.0
+lidarr,unattributed,no source tag,MP3-320,119,87,10897229409,0,10897229409,100.0
+lidarr,unattributed,no source tag,Unknown,174,73,12284120503,0,12284120503,100.0
+lidarr,unattributed,no source tag,WavPack,5,3,23734088438,0,23734088438,100.0
+lidarr,upgrade,upgrade,FLAC,16,14,7810684079,0,7810684079,100.0
+lidarr,upgrade,upgrade,FLAC 24bit,6,6,5503338736,0,5503338736,100.0
+lidarr,upgrade,upgrade,MP3-320,1,1,52056102,0,52056102,100.0
+radarr,conflict,kometa and seerr,Remux-1080p,1,1,21601319345,0,0,0.0
+radarr,kometa,IMDB Popular,Bluray-1080p,2,2,33745388768,0,20185422127,59.8
+radarr,kometa,IMDB Popular,Remux-1080p,7,7,179044799101,0,153368542982,85.7
+radarr,kometa,IMDB Popular,Remux-2160p,3,3,237179371746,0,87201969796,36.8
+radarr,kometa,IMDB Popular,WEBDL-1080p,38,38,294377520233,0,150601219512,51.2
+radarr,kometa,IMDB Popular,WEBDL-2160p,39,36,637458317159,0,283293291399,44.4
+radarr,kometa,IMDB Popular,WEBRip-1080p,1,1,5360722359,0,5360722359,100.0
+radarr,kometa,IMDB Popular,WEBRip-2160p,1,1,5310291612,0,0,0.0
+radarr,kometa,IMDB Top 250,Bluray-1080p,1,1,10284283561,0,10284283561,100.0
+radarr,kometa,IMDB Top 250,Remux-1080p,3,3,198664001121,0,198664001121,100.0
+radarr,kometa,IMDB Top 250,WEBDL-1080p,6,6,40859537894,0,40859537894,100.0
+radarr,kometa,IMDB Top 250,WEBDL-2160p,1,1,17316150143,0,17316150143,100.0
+radarr,kometa,In Theaters (removed from the files 2026-07-10),Bluray-1080p,1,1,15149194613,0,15149194613,100.0
+radarr,kometa,In Theaters (removed from the files 2026-07-10),WEBDL-1080p,7,7,41311407569,0,31821185029,77.0
+radarr,kometa,In Theaters (removed from the files 2026-07-10),WEBDL-2160p,2,2,23363243604,0,23363243604,100.0
+radarr,kometa,Popular Now,Remux-1080p,3,3,76180987994,0,49887988740,65.5
+radarr,kometa,Popular Now,Remux-2160p,1,1,72444683977,0,72444683977,100.0
+radarr,kometa,Popular Now,WEBDL-2160p,1,1,21871745790,0,0,0.0
+radarr,kometa,Top Rated,WEBDL-2160p,1,1,22267378000,0,22267378000,100.0
+radarr,kometa,seasonal,Bluray-1080p,22,13,514699674968,0,419386670384,81.5
+radarr,kometa,seasonal,Bluray-2160p,1,1,18865376625,0,18865376625,100.0
+radarr,kometa,seasonal,Remux-1080p,22,21,544206330413,0,399631201874,73.4
+radarr,kometa,seasonal,Remux-2160p,11,8,590552452241,0,232448073441,39.4
+radarr,kometa,seasonal,WEBDL-1080p,32,32,193025639937,0,176887808114,91.6
+radarr,kometa,seasonal,WEBDL-2160p,10,10,165479317513,0,165479317513,100.0
+radarr,kometa,seasonal,WEBRip-1080p,3,3,16720835560,0,16720835560,100.0
+radarr,kometa,universe,Remux-1080p,1,1,33829799726,0,33829799726,100.0
+radarr,kometa,universe,WEBDL-1080p,1,1,6576013510,0,6576013510,100.0
+radarr,kometa,universe,WEBDL-2160p,5,2,104733815474,0,0,0.0
+radarr,kometa-legacy,IMDB Popular Now (legacy tag),Remux-1080p,1,1,60337403181,0,60337403181,100.0
+radarr,kometa-legacy,IMDB Popular Now (legacy tag),WEBDL-2160p,6,4,90067547843,0,75519203882,83.8
+radarr,kometa-legacy,IMDB Top 250,Bluray-2160p,1,1,15002084876,0,15002084876,100.0
+radarr,kometa-legacy,TMDB now playing (legacy tag),WEBDL-2160p,2,1,39814195873,0,39814195873,100.0
+radarr,kometa-legacy,no collection tag,Remux-1080p,6,3,202792724402,0,202792724402,100.0
+radarr,kometa-legacy,no collection tag,WEBDL-2160p,1,1,6140127353,0,6140127353,100.0
+radarr,kometa-legacy,seasonal,WEBDL-1080p,2,2,12855670519,0,12855670519,100.0
+radarr,manual,manual grab,Bluray-1080p,3,3,55308179031,0,33240878000,60.1
+radarr,manual,manual grab,Remux-1080p,13,11,290390739074,0,185025017235,63.7
+radarr,manual,manual grab,Remux-2160p,2,2,128592640515,0,48756780884,37.9
+radarr,manual,manual grab,WEBDL-1080p,8,7,52071596768,0,52071596768,100.0
+radarr,manual,manual grab,WEBDL-2160p,9,9,122896616583,0,113364182216,92.2
+radarr,manual,manual grab,WEBDL-720p,1,1,1890258942,0,0,0.0
+radarr,manual,manual grab,WEBRip-1080p,1,1,2244931625,0,2244931625,100.0
+radarr,seerr,seerr request,Bluray-1080p,5,5,42184650388,0,19498120563,46.2
+radarr,seerr,seerr request,Remux-1080p,21,19,487503574557,0,403149583455,82.7
+radarr,seerr,seerr request,Remux-2160p,7,7,435651363511,0,376063733114,86.3
+radarr,seerr,seerr request,WEBDL-1080p,14,14,87165763363,0,30993022013,35.6
+radarr,seerr,seerr request,WEBDL-2160p,10,10,125608324897,0,89622961142,71.4
+radarr,seerr,seerr request,WEBRip-1080p,1,1,10884965764,0,10884965764,100.0
+radarr,unattributed,no source tag,Bluray-1080p,1,1,10737955141,0,10737955141,100.0
+radarr,unattributed,no source tag,Bluray-2160p,1,1,9732951542,0,9732951542,100.0
+radarr,unattributed,no source tag,Remux-1080p,11,1,286603539432,0,0,0.0
+radarr,unattributed,no source tag,Remux-2160p,6,1,384901888756,0,0,0.0
+radarr,unattributed,no source tag,WEBDL-1080p,1,1,4656246106,0,0,0.0
+radarr,upgrade,upgrade,Bluray-1080p,17,17,268475545543,0,233476520136,87.0
+radarr,upgrade,upgrade,Bluray-2160p,11,10,283320066459,0,258360866874,91.2
+radarr,upgrade,upgrade,Remux-1080p,79,73,2182043051569,0,1972820382945,90.4
+radarr,upgrade,upgrade,Remux-2160p,185,138,13104100336837,0,8876218017089,67.7
+radarr,upgrade,upgrade,WEBDL-1080p,35,34,277699283282,0,241089965878,86.8
+radarr,upgrade,upgrade,WEBDL-2160p,167,130,3286931579146,0,2109162726865,64.2
+radarr,upgrade,upgrade,WEBRip-2160p,6,6,98506840339,0,72604471680,73.7
+sonarr,conflict,kometa and seerr,WEBDL-1080p,38,3,133766456864,0,133766456864,100.0
+sonarr,conflict,kometa and seerr,WEBDL-2160p,6,2,32731510097,0,32731510097,100.0
+sonarr,kometa,shows-franchises,WEBDL-1080p,7,1,17675691680,0,0,0.0
+sonarr,kometa,shows-franchises,WEBDL-2160p,2,1,10284182367,0,0,0.0
+sonarr,kometa-legacy,Emmy collection (legacy tag),WEBDL-1080p,309,4,350467820591,0,350467820591,100.0
+sonarr,kometa-legacy,Emmy collection (legacy tag),WEBDL-2160p,4,1,24003830781,0,24003830781,100.0
+sonarr,kometa-legacy,Trakt trending (commented out),WEBDL-1080p,41,7,214688146252,0,208954379438,97.3
+sonarr,kometa-legacy,Trakt trending (commented out),WEBDL-2160p,14,3,276432429992,0,260214994313,94.1
+sonarr,kometa-legacy,no collection tag,Bluray-1080p,45,4,123905754930,0,123905754930,100.0
+sonarr,kometa-legacy,no collection tag,Bluray-1080p Remux,4,1,27667392881,0,27667392881,100.0
+sonarr,kometa-legacy,no collection tag,WEBDL-1080p,570,41,1342700643064,0,1130963266995,84.2
+sonarr,kometa-legacy,no collection tag,WEBDL-2160p,41,10,308637886426,0,244182779234,79.1
+sonarr,kometa-legacy,no collection tag,WEBRip-1080p,2,1,53385890826,0,53385890826,100.0
+sonarr,kometa-legacy,no collection tag,WEBRip-2160p,6,1,31656313644,0,0,0.0
+sonarr,manual,manual grab,Bluray-1080p Remux,38,2,193086375655,0,193086375655,100.0
+sonarr,manual,manual grab,HDTV-1080p,1,1,512521338,0,0,0.0
+sonarr,manual,manual grab,WEBDL-1080p,546,28,2056688092884,0,403904070314,19.6
+sonarr,manual,manual grab,WEBDL-2160p,211,6,1057342742363,0,637203108482,60.3
+sonarr,manual,manual grab,WEBDL-480p,4,1,903692000,0,0,0.0
+sonarr,manual,manual grab,WEBDL-720p,1,1,671334345,0,0,0.0
+sonarr,manual,manual grab,WEBRip-1080p,15,2,9039858221,0,1364894000,15.1
+sonarr,manual,manual grab,WEBRip-480p,4,1,3756698408,0,0,0.0
+sonarr,manual,manual grab,WEBRip-720p,2,1,1318430686,0,1318430686,100.0
+sonarr,seerr,seerr request,Bluray-1080p,225,5,1857115639539,0,1857115639539,100.0
+sonarr,seerr,seerr request,Bluray-1080p Remux,193,8,10374193844551,0,8672728886551,83.6
+sonarr,seerr,seerr request,Bluray-2160p,32,1,205742499000,0,205742499000,100.0
+sonarr,seerr,seerr request,WEBDL-1080p,2675,94,26556599783440,0,6000834770212,22.6
+sonarr,seerr,seerr request,WEBDL-2160p,376,39,8227450459636,0,3266685803670,39.7
+sonarr,seerr,seerr request,WEBRip-1080p,136,7,1561864345607,0,71021271549,4.5
+sonarr,unattributed,no source tag,Bluray-1080p Remux,5,2,33337123165,0,33337123165,100.0
+sonarr,unattributed,no source tag,WEBDL-1080p,544,29,774049149301,0,580486453295,75.0
+sonarr,unattributed,no source tag,WEBDL-2160p,11,1,33267648807,0,0,0.0
+sonarr,unattributed,no source tag,WEBRip-1080p,1,1,848050748,0,0,0.0
+sonarr,unattributed,no source tag,WEBRip-2160p,1,1,962272000,0,962272000,100.0
+sonarr,upgrade,upgrade,Bluray-1080p,158,7,844383046440,0,837444072874,99.2
+sonarr,upgrade,upgrade,Bluray-1080p Remux,383,20,31302071071377,0,31237100094313,99.8
+sonarr,upgrade,upgrade,Bluray-2160p Remux,30,2,1414588824000,0,1218354717000,86.1
+sonarr,upgrade,upgrade,WEBDL-1080p,6232,154,51217208373663,0,35829459760173,70.0
+sonarr,upgrade,upgrade,WEBDL-2160p,1745,181,45046437286387,0,29094839313108,64.6
+sonarr,upgrade,upgrade,WEBRip-1080p,47,5,59503042406,0,27546183681,46.3
+sonarr,upgrade,upgrade,WEBRip-2160p,20,3,1092390747335,0,1092390747335,100.0
