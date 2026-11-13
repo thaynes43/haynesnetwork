@@ -1,7 +1,7 @@
 # DESIGN-052: Watchlist protection for Trash — the Watchlist Registry, the Registry Gate, the Watchlist Keep, the Release Block, and everyone's Seerr watchlist
 
 - **Status:** Accepted (2026-09-28; live since v0.101.0, PLAN-072 S6–S10 verified)
-- **Last updated:** 2026-11-13 (ADR-117, D-29, story 838, owner ruling: Trash deletes a title only when each file on disk has a verified posted release name, and writes a term for every posted name of the title first; the legacy release names of the old Radarr and Sonarr databases are loaded into the app; a delete never prunes an older term; migration 0110 is journal index 108 after 0109; Q-19..Q-22 decided, Q-23 and Q-26..Q-30 open. The second review of PR 1070: a current-path original name or scene name is not verified, and the 17:00 ET pool read is recorded beside the earlier one). Prior: 2026-11-13 (ADR-119, D-31: a library-fill Plex date does not extend the Age Guard when the setting is on and that *arr's ledger covers 180 days; a title with no Plex match is unknown, the one change that alters today's behaviour, and it only ever keeps more). Prior: 2026-11-13 (D-26 cross-reference: DESIGN-014 D-15's TV predicates include the votes floor, and the removed TV date-added clause is what a title with no Plex match relied on). Prior: 2026-11-13 (D-10 amendment, story 821: the Show protected checkbox becomes the Library's segmented control, Deletable | All; in All a kept tile says why in plain words; Q-18 opened). Prior: 2026-11-13 (D-10 amendment, story 832: Wall Protection, one definition of a title the pending wall will not offer; the default view holds none, and a title saved from it keeps its tile until the view is opened again; Q-15, Q-16, Q-17 opened). Prior: 2026-10-03 (Q-14 answered: the Age Guard moves into `classifyGuardian`, so Expedite never deletes a title inside it, and the pending walls show such a title kept, D-26). Prior: 2026-10-03 (ADR-097, owner ruling "Block automation only": D-27 adds the Title Exclusion, an import-list exclusion the app writes on Radarr or Sonarr for every title Trash is about to delete, after identity and before Phase A; D-28 adds its one-off backfill for the titles deleted before; D-14, D-21, D-22, D-23, the overview and the test strategy updated). Prior: 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
+- **Last updated:** 2026-11-13 (ADR-117, D-29, story 838: a media extension and a library id token do not verify a release name). Prior: 2026-11-13 (ADR-117, D-29, story 838, owner ruling: Trash deletes a title only when each file on disk has a verified posted release name, and writes a term for every posted name of the title first; the legacy release names of the old Radarr and Sonarr databases are loaded into the app; a delete never prunes an older term; migration 0110 is journal index 108 after 0109; Q-19..Q-22 decided, Q-23 and Q-26..Q-30 open. The second review of PR 1070: a current-path original name or scene name is not verified, and the 17:00 ET pool read is recorded beside the earlier one). Prior: 2026-11-13 (ADR-119, D-31: a library-fill Plex date does not extend the Age Guard when the setting is on and that *arr's ledger covers 180 days; a title with no Plex match is unknown, the one change that alters today's behaviour, and it only ever keeps more). Prior: 2026-11-13 (D-26 cross-reference: DESIGN-014 D-15's TV predicates include the votes floor, and the removed TV date-added clause is what a title with no Plex match relied on). Prior: 2026-11-13 (D-10 amendment, story 821: the Show protected checkbox becomes the Library's segmented control, Deletable | All; in All a kept tile says why in plain words; Q-18 opened). Prior: 2026-11-13 (D-10 amendment, story 832: Wall Protection, one definition of a title the pending wall will not offer; the default view holds none, and a title saved from it keeps its tile until the view is opened again; Q-15, Q-16, Q-17 opened). Prior: 2026-10-03 (Q-14 answered: the Age Guard moves into `classifyGuardian`, so Expedite never deletes a title inside it, and the pending walls show such a title kept, D-26). Prior: 2026-10-03 (ADR-097, owner ruling "Block automation only": D-27 adds the Title Exclusion, an import-list exclusion the app writes on Radarr or Sonarr for every title Trash is about to delete, after identity and before Phase A; D-28 adds its one-off backfill for the titles deleted before; D-14, D-21, D-22, D-23, the overview and the test strategy updated). Prior: 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
   the rulings they needed: a term now matches the raw release title Radarr and Sonarr test (an apostrophe inside a word
   is an optional separator, an accented letter an alternation, an inner `and` optional), because S6(e) found 345 of
   19,434 Sonarr names and 3 of 1,159 Radarr names the *arr would not have blocked; the owner leaves managed Home users
@@ -1728,15 +1728,38 @@ basis for a delete. The 365-day life (D-13), which titles Maintainerr proposes, 
 
 - the *arr's own record of the file: the grab its import history joins it to, its scene name, or its original path.
   A scene name or an original path whose base name is the file's current relative path is the renamed file, not a
-  verified name. The comparison ignores case and surrounding space on that base name, so neither difference verifies
-  a delete. The library's rename template includes a resolution and a group, so `looksLikeRelease` accepts the rebuilt
-  name (the second review of PR 1070, 2026-11-13: the original base name equals the relative base name on 0 of 1,176
+  verified name. The comparison ignores case and surrounding space on that base name, and one trailing media or
+  container extension, so none of those differences verifies a delete. The library's rename template includes a
+  resolution and a group, so `looksLikeRelease` accepts the rebuilt name (the second review of PR 1070, 2026-11-13,
+  compared the base names with their extensions: the original base name equals the relative base name on 0 of 1,176
   files, and the same equality is 0 for `sceneName`; all 468 renamed base names in the pool pass `looksLikeRelease`);
 - the ledger's newest download import of the title, with its grab, when it agrees with the file (D-25bd, unchanged).
   A folder import (`movieFolderImported`, `seriesFolderImported`) is a library scan: its name is the renamed file,
   so it is no import here. The ledger holds none today (measured below);
 - a legacy file record of the same title id (TMDB on Radarr, TVDB on Sonarr) with the **identical byte size** and an
   original release name. For a series the record's season must be the file's too. Exact, never a ratio.
+
+**Compared without the file extension (2026-11-13).** The base-name comparison strips one trailing media or
+container extension from each side before it compares, without regard to case. The extensions are the ones this
+code already treats as a file extension, the union of `releaseBaseName` (`mkv`, `mp4`, `avi`, `m4v`, `ts`, `wmv`,
+`mov`, `iso`, `nzb`) and the Title Check's dropped video extension (`mpg`, `mpeg`, `m2ts`, `webm`, and the ones
+they share). A dotted release group is not among them and is left in place. A scene name equal to the current
+file's base name without that extension is the renamed file, and so is an original path that differs from the
+current path only by that extension. Neither verifies a movie or an episode file. This only keeps titles the
+previous comparison would have deleted.
+
+**A library id token is a renamed file (2026-11-13).** Radarr's naming template here is
+`{Movie CleanTitle} {(Release Year)} {tmdb-{TmdbId}} ...`, so a renamed movie file carries a token such as
+`{tmdb-12345}`. Wherever a recorded name is admitted as the verified name of a file — the *arr's record of the
+file, the ledger's import, or a legacy file record — a name containing `{tmdb-`, `{imdb-` or `{tvdb-` is not a
+posted name and does not verify the file. Those three sources pass through `postedReleaseName`, which rejects
+the prefixes without regard to case, and no term is built from such a name. The Release Name Check uses the same
+prefixes, so a token-only import or legacy file record does not read `verified`. Measured by the coordinator on
+2026-11-13 on a replica (story 838, comment 8265; this session did not re-run the query): 0 of 1,823 Radarr grab
+names, 0 of 28,056 Sonarr grab names, and 0 of the import names in the ledger contain those prefixes. A bracket
+run and Sonarr's ` - S01E02 - ` shape are not this rule. That same measurement found a bracket run on 1,777
+Sonarr grab names and the ` - S01E02 - ` shape on 2,696, and both occur in real posted names, so rejecting them
+would keep titles for no reason.
 
 A movie whose file has none of these is `unverified_name`: kept `release_unverified`. A series needs a name for
 **every** episode file in a season of 1 or more; one file without is enough to keep the series (a group term
@@ -1770,7 +1793,8 @@ download job that the D-15 size rule matches adds a term too (point 5). One reco
   kept a long series for good. Past 20,000 rows, past 20,000 legacy rows for one title, or past 100,000 old jobs in
   one file's size window (the two histories hold 60,581 in all), the read is `truncated` and the title is kept: a
   name not read is a release not blocked.
-- A name containing `://` is never a name, in any source.
+- A name containing `://` is never a name, in any source. Neither is a name containing `{tmdb-`, `{imdb-` or
+  `{tvdb-` (the library id token, above): it is not a term.
 
 **3. The legacy tables** (migration 0110). `legacy_release_names`: one row per record of the Radarr and Sonarr
 databases from before the 2026-07-03 move, keyed by the title's own id: `arr_kind`, `external_id`, `record_kind`
@@ -1813,7 +1837,8 @@ delete path. What each source could name for the 468 pool movies the ledger cann
 new keep would have hidden nothing either, and the default view would have offered hundreds of titles the sweep
 keeps. So the check in point 1 has a second form that needs no *arr read. A pending movie is `verified` when it has
 no file (`on_disk_file_count = 0`), or the ledger's newest download import carries a release name (its own or its
-grab's), or a legacy file record of its TMDB id has exactly `media_items.size_on_disk` bytes; else `unverified`. A
+grab's), or a legacy file record of its TMDB id has exactly `media_items.size_on_disk` bytes; else `unverified`.
+A name containing `{tmdb-`, `{imdb-` or `{tvdb-` is not a release name in that import or that file record. A
 series is `unchecked` (it has many files and the database holds no per-file size; Q-23), and so is an item with no
 ledger row.
 
@@ -1920,8 +1945,11 @@ and Expire now, and no batch proposes it; each name source, the legacy tables in
 off; a size-matched job from another group and from the same group adds a term and names nothing; a failed grab is
 termed; an untrimmed name; a name with a release mark and no term; the ledger read across pages and past its bound;
 the cap keeps a title and prunes nothing; a failed write or read-back deletes nothing. `release-name-rule.test.ts`:
-an original path or scene name equal to the current file keeps a movie and an episode file; a different original
-name still verifies; a failed read of the legacy tables keeps the title. `release-block-backfill.test.ts`:
+an original path or scene name equal to the current file keeps a movie and an episode file; a scene name or original
+path that matches the current file apart from a media extension keeps a movie and an episode file, and a dotted
+release group still verifies; a library id token does not verify from the *arr record, the ledger import or a
+legacy file record, and a real name beside it does; a different original name still verifies; a failed read of the
+legacy tables keeps the title. `release-block-backfill.test.ts`:
 each class, the F5 class, the cap refusal, a failed reconcile, a second apply. `legacy-release-load.test.ts`: every
 file format and line outcome, a URL refused, the dry run, a second load. `trash-release-name.test.ts`: the check's
 three ways to verify and its `unverified` and `unchecked` answers.

@@ -13,14 +13,29 @@ export interface LegacySabJob {
 export const LEGACY_SAB_SIZE_MIN_RATIO = 0.9;
 
 /**
- * A string that can be stored as a release name: not blank, and not a URL. Returned EXACTLY as stored, never
- * trimmed (D-29, review F3): Radarr and Sonarr test a term against the release title as it is, so a term must be
- * built from, and checked against, the stored name. A name with a leading space whose term starts `^title` does
- * not match and is not verified.
+ * The library's own id token, as Radarr and Sonarr write it into a renamed file (`{tmdb-12345}`, `{imdb-tt…}`,
+ * `{tvdb-…}`). A posted release name does not carry one. Matched without regard to case, on the prefix the
+ * coordinator counted (story 838, comment 8265, 2026-11-13).
+ */
+export const LIBRARY_ID_TOKEN_PREFIXES = ['{tmdb-', '{imdb-', '{tvdb-'] as const;
+
+/** True when `value` carries a library id token. Such a name is a renamed file, never a posted release name. */
+export function carriesLibraryIdToken(value: string): boolean {
+  const lower = value.toLowerCase();
+  return LIBRARY_ID_TOKEN_PREFIXES.some((prefix) => lower.includes(prefix));
+}
+
+/**
+ * A string that can be stored as a release name: not blank, not a URL, and not a library id token. Returned
+ * EXACTLY as stored, never trimmed (D-29, review F3): Radarr and Sonarr test a term against the release title as
+ * it is, so a term must be built from, and checked against, the stored name. A name with a leading space whose
+ * term starts `^title` does not match and is not verified. The *arr's file record, the ledger's import and a
+ * legacy file record all pass through here before a name can verify a file, and a token is not a term either.
  */
 export function postedReleaseName(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
-  if (value.trim().length === 0 || value.includes('://')) return null;
+  if (value.trim().length === 0 || value.includes('://') || carriesLibraryIdToken(value))
+    return null;
   return value;
 }
 

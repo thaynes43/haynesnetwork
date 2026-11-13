@@ -318,15 +318,29 @@ function pathBaseName(path: string): string {
 }
 
 /**
+ * One trailing media or container extension. The union of the extensions `releaseBaseName` already drops
+ * (`mkv`, `mp4`, `avi`, `m4v`, `ts`, `wmv`, `mov`, `iso`, `nzb`) and the Title Check's dropped video extension
+ * (`mpg`, `mpeg`, `m2ts`, `webm`, and the ones they share). A dotted release group is not in this list.
+ */
+const MEDIA_OR_CONTAINER_EXTENSION = /\.(mkv|mp4|m4v|avi|wmv|mov|mpg|mpeg|ts|m2ts|webm|iso|nzb)$/i;
+
+/** The base name with one trailing media or container extension removed. Anything else after a dot stays. */
+function withoutMediaExtension(base: string): string {
+  return base.replace(MEDIA_OR_CONTAINER_EXTENSION, '');
+}
+
+/**
  * ADR-117 correction — the library's rename template includes a resolution and a group, so `looksLikeRelease`
  * accepts the rebuilt file. An original path or a scene name whose base name is the file's current relative path
  * is that rebuilt file. Ignore it: it must never verify a delete. Case and surrounding space on the base name do
- * not make it a different file, so they do not verify one either. A grab title is not tested here.
+ * not make it a different file, and neither does one trailing media or container extension: a scene name has no
+ * extension, and an original path may keep the container the file had before the rename. A dotted release group
+ * is not an extension and still verifies. A grab title is not tested here.
  */
 function isCurrentFileBase(recorded: string | null | undefined, relativePath: string | null | undefined): boolean {
   if (!recorded || !relativePath) return false;
-  const recordedBase = pathBaseName(recorded);
-  const currentBase = pathBaseName(relativePath);
+  const recordedBase = withoutMediaExtension(pathBaseName(recorded));
+  const currentBase = withoutMediaExtension(pathBaseName(relativePath));
   return recordedBase.length > 0 && recordedBase === currentBase;
 }
 

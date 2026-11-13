@@ -248,6 +248,75 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
       expect(await records()).toHaveLength(0);
     });
 
+    it('a scene name or original path that matches the current file apart from its extension is not verified', async () => {
+      const base = diskMovie(1);
+      const current = base.file!.relativePath!;
+      const stem = current.slice(0, -'.mkv'.length);
+      const movie = (over: {
+        relativePath?: string;
+        sceneName?: string | null;
+        originalFilePath?: string | null;
+        releaseGroup?: string;
+      }) => diskMovie(1, { file: { ...base.file!, ...over } });
+      for (const one of [
+        movie({ sceneName: stem }),
+        movie({ relativePath: current.replace(/\.mkv$/, '.MKV'), sceneName: stem.toUpperCase() }),
+        movie({ originalFilePath: `incoming/${stem}.mp4` }),
+        movie({ originalFilePath: `incoming/${stem}.MP4` }),
+        movie({
+          relativePath: 'Movie.9001.2024.1080p.BluRay.x264-OLDSRC.mkv',
+          originalFilePath: 'incoming/Movie.9001.2024.1080p.BluRay.x264-OLDSRC.webm',
+        }),
+      ]) {
+        const { arr } = createStaticReleaseBlockArr({ movies: new Map([[1, one]]) });
+        expect(await identify('radarr', 1, arr)).toEqual({ status: 'unrecordable', reason: 'unverified_name' });
+      }
+      // A dotted release group is not an extension. Stripping it would hide this posted name.
+      const posted = 'Movie.9001.2024.1080p.BluRay.x264-OLDSRC';
+      const { arr } = createStaticReleaseBlockArr({
+        movies: new Map([
+          [
+            1,
+            movie({
+              relativePath: 'Movie.9001.2024.1080p.BluRay.mkv',
+              sceneName: posted,
+              releaseGroup: 'OLDSRC',
+            }),
+          ],
+        ]),
+      });
+      const identity = await identify('radarr', 1, arr);
+      expect(identity.status).toBe('recordable');
+      expect(drafts(identity)[0]).toMatchObject({ identitySource: 'arr_file', releaseTitle: posted });
+      expect(await records()).toHaveLength(0);
+    });
+
+    it('an episode scene name or original path that matches the current file apart from its extension keeps the series', async () => {
+      const relativePath = 'Season 01/Night Shift - S01E01 [WEBDL-1080p]-TVGRP.mkv';
+      const stem = 'Night Shift - S01E01 [WEBDL-1080p]-TVGRP';
+      const file = (over: { sceneName?: string | null; originalFilePath?: string | null; relativePath?: string }) => ({
+        seriesId: 50,
+        seasonNumber: 1,
+        relativePath,
+        sceneName: null,
+        originalFilePath: null,
+        releaseGroup: 'TVGRP',
+        quality: { quality: { id: 3, name: 'WEBDL-1080p', resolution: 1080, source: 'web', modifier: 'none' } },
+        size: 1_000_000_001,
+        ...over,
+      });
+      for (const files of [
+        [file({ sceneName: stem })],
+        [file({ originalFilePath: `incoming/${stem}.mp4` })],
+        [file({ relativePath: relativePath.replace(/\.mkv$/, '.MKV'), sceneName: stem })],
+      ]) {
+        const series: StaticArrSeries = { title: 'Night Shift', year: 2019, tvdbId: 8050, files, history: [] };
+        const { arr } = createStaticReleaseBlockArr({ series: new Map([[50, series]]) });
+        expect(await identify('sonarr', 50, arr)).toEqual({ status: 'unrecordable', reason: 'unverified_name' });
+      }
+      expect(await records()).toHaveLength(0);
+    });
+
     it('a different original name still verifies the file', async () => {
       const base = diskMovie(1);
       const current = base.file!.relativePath!;
@@ -315,6 +384,80 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
         releaseTitle: POSTED(9001),
         termConfidence: 'verified',
       });
+    });
+
+    const TOKEN = 'Movie 9001 (2024) {tmdb-9001} [Bluray-1080p][x264]-NEWGRP';
+
+    it('a library id token is not a posted name; a bracket run and an episode shape still are', () => {
+      expect(postedReleaseName(TOKEN)).toBeNull();
+      expect(postedReleaseName(`${TOKEN}.mkv`)).toBeNull();
+      expect(postedReleaseName('Movie.9001.2024.1080p.BluRay.x264-NEWGRP {IMDB-tt0009001}')).toBeNull();
+      expect(postedReleaseName('Night.Shift.S01E01.1080p.WEB.x264-TVGRP {tvdb-8050}')).toBeNull();
+      expect(postedReleaseName(POSTED(9001))).toBe(POSTED(9001));
+      const bracketed = 'Night Shift (2019) - S01E02 - Pilot [WEBDL-1080p]-TVGRP';
+      expect(postedReleaseName(bracketed)).toBe(bracketed);
+    });
+
+    it('the *arr record: a library id token does not verify the file; a real name beside it does', async () => {
+      const base = diskMovie(1);
+      const only = diskMovie(1, { file: { ...base.file!, sceneName: TOKEN } });
+      const { arr: unnamed } = createStaticReleaseBlockArr({ movies: new Map([[1, only]]) });
+      expect(await identify('radarr', 1, unnamed)).toEqual({ status: 'unrecordable', reason: 'unverified_name' });
+
+      const posted = 'Movie.9001.2024.1080p.BluRay.x264-OLDSRC';
+      const beside = diskMovie(1, {
+        file: { ...base.file!, sceneName: `${TOKEN}.mkv`, originalFilePath: `incoming/${posted}` },
+      });
+      const { arr } = createStaticReleaseBlockArr({ movies: new Map([[1, beside]]) });
+      const identity = await identify('radarr', 1, arr);
+      expect(identity.status).toBe('recordable');
+      expect(drafts(identity).map((d) => d.releaseTitle)).toEqual([posted]);
+      expect(drafts(identity).some((d) => String(d.releaseTitle).includes('{tmdb-'))).toBe(false);
+    });
+
+    it('the ledger import: a library id token does not verify the file; a real name beside it does', async () => {
+      const { arr } = createStaticReleaseBlockArr({ movies: new Map([[1, diskMovie(1)]]) });
+      await ledgerEvent(
+        1,
+        'imported',
+        {
+          rawEventType: 'downloadFolderImported',
+          sourceTitle: TOKEN,
+          downloadId: 'dl-token',
+          releaseGroup: 'NEWGRP',
+          quality: 'Bluray-1080p',
+        },
+        'token-import',
+      );
+      expect(await identify('radarr', 1, arr)).toEqual({ status: 'unrecordable', reason: 'unverified_name' });
+
+      await ledgerEvent(
+        1,
+        'grabbed',
+        { sourceTitle: POSTED(9001), downloadId: 'dl-token', releaseGroup: 'NEWGRP', quality: 'Bluray-1080p' },
+        'token-grab',
+      );
+      const identity = await identify('radarr', 1, arr);
+      expect(identity.status).toBe('recordable');
+      expect(drafts(identity).map((d) => d.releaseTitle)).toContain(POSTED(9001));
+      expect(drafts(identity).some((d) => String(d.releaseTitle).includes('{tmdb-'))).toBe(false);
+      expect(drafts(identity)[0]).toMatchObject({ identitySource: 'ledger_grab', releaseTitle: POSTED(9001) });
+    });
+
+    it('a legacy file record: a library id token does not verify the file; a real name beside it does', async () => {
+      const { arr } = createStaticReleaseBlockArr({ movies: new Map([[1, diskMovie(1)]]) });
+      await loadLegacy({ radarrFiles: radarrFile(9001, TOKEN, FILE_SIZE) });
+      expect(await identify('radarr', 1, arr)).toEqual({ status: 'unrecordable', reason: 'unverified_name' });
+
+      await loadLegacy({
+        radarrFiles: [radarrFile(9001, TOKEN, FILE_SIZE), radarrFile(9001, POSTED(9001), FILE_SIZE)].join('\n'),
+        radarrHistory: radarrEvent(9001, 1, `${TOKEN} {imdb-tt0009001}`),
+      });
+      const identity = await identify('radarr', 1, arr);
+      expect(identity.status).toBe('recordable');
+      expect(drafts(identity).map((d) => d.releaseTitle)).toContain(POSTED(9001));
+      expect(drafts(identity).some((d) => /\{(?:tmdb|imdb|tvdb)-/i.test(String(d.releaseTitle)))).toBe(false);
+      expect(drafts(identity).every((d) => d.termConfidence === 'verified')).toBe(true);
     });
 
     it('a grab or a failed download of the title does not name the file on disk', async () => {
@@ -901,6 +1044,82 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
       const series = await mediaItemId('sonarr', 50);
       const tv = await loadReleaseNameStates({ db: t.db, arrKind: 'sonarr', mediaItemIds: [series] });
       expect(tv.get(series)).toBe('unchecked');
+    });
+
+    it('a library id token does not verify a movie in the check, and the runbook query agrees', async () => {
+      await seedMovies(1);
+      const ids = await Promise.all([1, 2, 3].map((n) => mediaItemId('radarr', n)));
+      const token = (tmdb: number, kind: 'tmdb' | 'imdb' | 'tvdb', id: string) =>
+        `Movie ${tmdb} (2024) {${kind}-${id}} [Bluray-1080p][x264]-NEWGRP`;
+      await ledgerEvent(
+        1,
+        'imported',
+        {
+          rawEventType: 'downloadFolderImported',
+          sourceTitle: token(9001, 'tmdb', '9001'),
+          downloadId: 'dl-token',
+          releaseGroup: 'NEWGRP',
+        },
+        'i-token',
+      );
+      await loadLegacy({
+        radarrFiles: [
+          radarrFile(9002, token(9002, 'imdb', 'tt0009002'), FILE_SIZE),
+          radarrFile(9003, token(9003, 'tvdb', '9003'), FILE_SIZE),
+        ].join('\n'),
+      });
+      const verdicts = async () => {
+        const states = await loadReleaseNameStates({ db: t.db, arrKind: 'radarr', mediaItemIds: ids });
+        return ids.map((id) => states.get(id));
+      };
+      expect(await verdicts()).toEqual(['unverified', 'unverified', 'unverified']);
+
+      await t.db.delete(trashCandidates);
+      await t.db.insert(trashCandidates).values(
+        [9001, 9002, 9003].map((tmdbId, ord) => ({
+          mediaKind: 'movie' as const,
+          collectionId: 7,
+          maintainerrMediaId: `ms-${tmdbId}`,
+          tmdbId,
+          sizeBytes: FILE_SIZE,
+          ord,
+        })),
+      );
+      const runbook = readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'docs', 'ops', '017-watchlist-protection.md'),
+        'utf8',
+      );
+      const from = runbook.indexOf('```sql', runbook.indexOf('Pool titles the Release Name Check lets go'));
+      const statement = runbook.slice(from + '```sql'.length, runbook.indexOf('```', from + 6));
+      const counts = async () => (await t.pool.query(statement)).rows[0] as Record<string, string>;
+      try {
+        expect(await counts()).toEqual({
+          pool: '3',
+          no_file: '0',
+          ledger_names_it: '0',
+          legacy_names_it: '0',
+          deletable: '0',
+          kept_no_verified_name: '3',
+        });
+        await ledgerEvent(
+          1,
+          'grabbed',
+          { sourceTitle: POSTED(9001), downloadId: 'dl-token', releaseGroup: 'NEWGRP' },
+          'g-token',
+        );
+        await loadLegacy({ radarrFiles: radarrFile(9002, POSTED(9002), FILE_SIZE) });
+        expect(await verdicts()).toEqual(['verified', 'verified', 'unverified']);
+        expect(await counts()).toEqual({
+          pool: '3',
+          no_file: '0',
+          ledger_names_it: '1',
+          legacy_names_it: '1',
+          deletable: '2',
+          kept_no_verified_name: '1',
+        });
+      } finally {
+        await t.db.delete(trashCandidates);
+      }
     });
 
     it('the runbook`s pool query (docs/ops/017) counts exactly what the check decides', async () => {

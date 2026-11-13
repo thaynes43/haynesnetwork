@@ -12,6 +12,8 @@
 //     name, its own or its grab's (the same `downloadId`); or
 //   • a legacy file record of its TMDB id has the IDENTICAL byte size (`media_items.size_on_disk`, never a ratio)
 //     and an original release name.
+// A name containing `{tmdb-`, `{imdb-` or `{tvdb-` is the library's rename token, not a release name, in either
+// source (the same prefixes as `postedReleaseName`).
 // Anything else is `unverified`: only the name Radarr rebuilt when it renamed the file is known. A series is
 // `unchecked` here (it has many files and the database holds no per-file size): the delete path decides it from
 // Sonarr's files (Q-23). Read-only.
@@ -19,6 +21,7 @@ import { ledgerEvents, legacyReleaseNames, mediaItems, type DbClient } from '@hn
 import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { resolveDb } from './db-client';
+import { LIBRARY_ID_TOKEN_PREFIXES } from './release-block-names';
 
 /**
  * The Release Name Check's verdict for one pending item:
@@ -47,8 +50,16 @@ export async function loadReleaseNameStates(input: {
   }
   const db = resolveDb(input.db);
   const grab = alias(ledgerEvents, 'grab');
+  // The same three prefixes `postedReleaseName` rejects. A library id token is a renamed file, not a release name.
+  const noLibraryIdToken = (column: unknown) =>
+    sql.join(
+      LIBRARY_ID_TOKEN_PREFIXES.map(
+        (prefix) => sql`position(${prefix} in lower(coalesce(${column}, ''))) = 0`,
+      ),
+      sql` AND `,
+    );
   const named = (column: unknown) =>
-    sql`(btrim(coalesce(${column}, '')) <> '' AND position('://' in coalesce(${column}, '')) = 0)`;
+    sql`(btrim(coalesce(${column}, '')) <> '' AND position('://' in coalesce(${column}, '')) = 0 AND ${noLibraryIdToken(column)})`;
   for (let at = 0; at < ids.length; at += IDS_PER_READ) {
     const chunk = ids.slice(at, at + IDS_PER_READ);
     const items = await db
@@ -98,7 +109,16 @@ export async function loadReleaseNameStates(input: {
           eq(legacyReleaseNames.sizeBytes, mediaItems.sizeOnDisk),
         ),
       )
-      .where(and(inArray(mediaItems.id, chunk), gt(mediaItems.sizeOnDisk, 0)));
+      .where(
+        and(
+          inArray(mediaItems.id, chunk),
+          gt(mediaItems.sizeOnDisk, 0),
+          // A file record whose only name is the library's id token does not name the file.
+          ...LIBRARY_ID_TOKEN_PREFIXES.map(
+            (prefix) => sql`position(${prefix} in lower(${legacyReleaseNames.releaseName})) = 0`,
+          ),
+        ),
+      );
     for (const row of legacy) out.set(row.id, 'verified');
   }
   return out;

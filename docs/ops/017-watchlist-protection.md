@@ -227,7 +227,8 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/release-block-back
 - **Pool titles the Release Name Check lets go** (the database's view, no *arr read; D-29). Run it on a replica
   before and after the load; it needs migration 0110 (before that release, drop the `by_legacy` part). On
   2026-11-13, with no legacy names: 524 pool movies, 2 with no file, 54 the ledger names, 468 with no verified name;
-  so 56 deletable. A domain test runs this exact statement against the check (`release-name-rule.test.ts`).
+  so 56 deletable. A name containing `{tmdb-`, `{imdb-` or `{tvdb-` does not count (D-29). A domain test runs this
+  exact statement against the check (`release-name-rule.test.ts`).
 
   ```sql
   WITH pool AS (
@@ -243,17 +244,27 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/release-block-back
     ORDER BY e.media_item_id, e.occurred_at DESC, e.id DESC
   ), by_ledger AS (
     SELECT n.media_item_id AS id FROM newest n
-    WHERE (btrim(coalesce(n.payload->>'sourceTitle', '')) <> '' AND position('://' in n.payload->>'sourceTitle') = 0)
+    WHERE (btrim(coalesce(n.payload->>'sourceTitle', '')) <> ''
+           AND position('://' in n.payload->>'sourceTitle') = 0
+           AND position('{tmdb-' in lower(coalesce(n.payload->>'sourceTitle', ''))) = 0
+           AND position('{imdb-' in lower(coalesce(n.payload->>'sourceTitle', ''))) = 0
+           AND position('{tvdb-' in lower(coalesce(n.payload->>'sourceTitle', ''))) = 0)
        OR EXISTS (SELECT 1 FROM ledger_events g
                   WHERE g.media_item_id = n.media_item_id AND g.event_type = 'grabbed'
                     AND g.payload->>'downloadId' = n.payload->>'downloadId'
                     AND btrim(coalesce(g.payload->>'sourceTitle', '')) <> ''
-                    AND position('://' in g.payload->>'sourceTitle') = 0)
+                    AND position('://' in g.payload->>'sourceTitle') = 0
+                    AND position('{tmdb-' in lower(coalesce(g.payload->>'sourceTitle', ''))) = 0
+                    AND position('{imdb-' in lower(coalesce(g.payload->>'sourceTitle', ''))) = 0
+                    AND position('{tvdb-' in lower(coalesce(g.payload->>'sourceTitle', ''))) = 0)
   ), by_legacy AS (
     SELECT DISTINCT p.id FROM pool p
     JOIN legacy_release_names l ON l.arr_kind = 'radarr' AND l.record_kind = 'file'
       AND l.external_id = p.tmdb_id AND l.size_bytes = p.size_on_disk
     WHERE p.size_on_disk > 0
+      AND position('{tmdb-' in lower(l.release_name)) = 0
+      AND position('{imdb-' in lower(l.release_name)) = 0
+      AND position('{tvdb-' in lower(l.release_name)) = 0
   )
   SELECT count(*) AS pool,
          count(*) FILTER (WHERE on_disk_file_count = 0) AS no_file,
