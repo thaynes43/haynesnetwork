@@ -7,19 +7,77 @@
 // (PROMETHEUS_URL) by composeRuntimeEnv; specs script it via POST /_stub/state:
 //   { mode: 'down' }  ⇒ query_range answers 500 (the trend's `unavailable` degrade);
 //   { mode: 'ok' }    ⇒ back to the synthesized series (the default).
+// DESIGN-013 D-09 (story 819) — the Capacity Forecast's fixtures ride the same state, as
+// `{ freespace: ... }` (kept across a mode change; `'steady'` is the default and the shape above):
+//   'steady'    the straight lines: HaynesTower filling, the music pool level (no forecast: flat);
+//   'recorded'  the free-space history recorded 2026-11-13 (D-08), replayed to end at the stub
+//               /diskspace level: a noisy fill with a late rise, and a slow fill with sudden drops;
+//   'draining'  HaynesTower's free space rising unevenly (use falling); the music pool level;
+//   'short'     only the last 21 days of the straight lines (no forecast: too short).
 import { createServer, type Server } from 'node:http';
 
 const TB = 1_000_000_000_000;
+const GB = 1_000_000_000;
+const DAY = 86_400;
+/** The forecast read's sample step (D-08). The replayed shapes are spaced at it. */
+const SHAPE_STEP = 3 * DAY;
+
+export type StubFreespace = 'steady' | 'recorded' | 'draining' | 'short';
+const FREESPACE: readonly StubFreespace[] = ['steady', 'recorded', 'draining', 'short'];
+/** How much history the 'short' fixture has. */
+const SHORT_HISTORY = 21 * DAY;
+
+/** The 3-day series recorded 2026-11-13T16:36Z (DESIGN-013 D-08), oldest first, tenths of a GB. */
+const RECORDED_TOWER = [
+  971709, 964877, 955346, 950960, 935237, 925151, 927166, 909636, 904467, 900046, 894423, 896047,
+  889830, 886365, 879700, 868257, 864984, 854667, 856544, 844281, 847110, 839418, 829209, 820475,
+  809325, 801983, 800667, 785002, 782770, 801383, 881408,
+].map((tenths) => tenths / 10);
+const RECORDED_MUSIC = [
+  1214118, 1213169, 1212888, 1209840, 1207060, 1205315, 1202635, 1202145, 1201366, 1201082,
+  1200751, 1200219, 1199279, 1198476, 1198674, 1196101, 1205684, 1206496, 1204688, 1202451,
+  1200624, 1200007, 1197603, 1197175, 1194347, 1206545, 1137950, 1099512, 1087678, 1087277,
+  1103788,
+].map((tenths) => tenths / 10);
+/** Free space rising about 156 GB a day, unevenly: thirty 3-day changes in GB, then their levels. */
+const DRAINING_TOWER = [
+  520, 380, 610, 290, 450, 700, 330, 480, 560, 410, 250, 640, 470, 390, 530, 600, 310, 440, 580,
+  360, 490, 420, 660, 300, 540, 460, 370, 510, 430, 590,
+].reduce<number[]>((levels, change) => [...levels, levels[levels.length - 1]! + change], [0]);
+
+/**
+ * A shape (GB, oldest first, one value per `SHAPE_STEP`) read `age` seconds before its last value,
+ * as the change in bytes from that last value. Older than the shape, it keeps its first slope.
+ */
+function shapeOffset(shape: readonly number[], age: number): number {
+  const last = shape.length - 1;
+  const position = last - age / SHAPE_STEP; // fractional index, counted from the oldest value
+  if (position >= last) return 0;
+  const lo = Math.floor(position);
+  const value =
+    position < 0
+      ? shape[0]! + position * (shape[1]! - shape[0]!)
+      : shape[lo]! + (position - lo) * (shape[lo + 1]! - shape[lo]!);
+  return (value - shape[last]!) * GB;
+}
 
 /** Linear fill/drain per series over the queried range (values are deterministic in t, so a
  *  re-query of the same range yields identical samples). End values mirror the stub *arr
  *  /diskspace numbers, so chart, legend, and meters all agree on the current reading. */
-const SERIES: { name: string; path: string; startFree: number; endFree: number }[] = [
+const SERIES: {
+  name: string;
+  path: string;
+  startFree: number;
+  endFree: number;
+  /** The replayed shapes (GB), ending at `endFree`; a fixture without one keeps the straight line. */
+  shapes: Partial<Record<StubFreespace, readonly number[]>>;
+}[] = [
   {
     name: 'radarr_rootfolder_freespace_bytes',
     path: '/data/haynestower/Media/Movies',
     startFree: 120 * TB,
     endFree: 112.4304 * TB,
+    shapes: { recorded: RECORDED_TOWER, draining: DRAINING_TOWER },
   },
   {
     // Sonarr reports the SAME physical array (identical readings) — proves the radarr-first dedupe.
@@ -27,12 +85,14 @@ const SERIES: { name: string; path: string; startFree: number; endFree: number }
     path: '/data/haynestower/Media/TV Shows',
     startFree: 120 * TB,
     endFree: 112.4304 * TB,
+    shapes: { recorded: RECORDED_TOWER, draining: DRAINING_TOWER },
   },
   {
     name: 'lidarr_rootfolder_freespace_bytes',
     path: '/data/media/music',
     startFree: 130.45 * TB,
     endFree: 130.45 * TB, // the music pool holds steady — a flat line among drains
+    shapes: { recorded: RECORDED_MUSIC },
   },
 ];
 
@@ -43,6 +103,7 @@ export interface StubPrometheusServer {
 
 export async function startStubPrometheus(): Promise<StubPrometheusServer> {
   let mode: 'ok' | 'down' = 'ok';
+  let freespace: StubFreespace = 'steady';
 
   const server: Server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -56,9 +117,11 @@ export async function startStubPrometheus(): Promise<StubPrometheusServer> {
       req.on('data', (c: Buffer) => (raw += c.toString()));
       req.on('end', () => {
         try {
-          const next = (JSON.parse(raw) as { mode?: string }).mode;
-          if (next === 'ok' || next === 'down') mode = next;
-          json(200, { mode });
+          const body = JSON.parse(raw) as { mode?: string; freespace?: string };
+          if (body.mode === 'ok' || body.mode === 'down') mode = body.mode;
+          const shape = FREESPACE.find((f) => f === body.freespace);
+          if (shape) freespace = shape;
+          json(200, { mode, freespace });
         } catch {
           json(400, { error: 'bad state body' });
         }
@@ -356,11 +419,19 @@ export async function startStubPrometheus(): Promise<StubPrometheusServer> {
       if (rangeQuery.includes('smartctl_device_percentage_used')) {
         return json(200, { status: 'success', data: { resultType: 'matrix', result: [] } });
       }
+      // A replayed shape is anchored on the forecast read's grid (the last whole SHAPE_STEP), so
+      // the trend's finer windows and the forecast draw the same history; after the anchor the
+      // series holds the /diskspace level it ends at.
+      const anchor = Math.floor(end / SHAPE_STEP) * SHAPE_STEP;
       const result = SERIES.map((s) => {
+        const shape = s.shapes[freespace];
         const values: [number, string][] = [];
         for (let t = start; t <= end; t += step) {
+          if (freespace === 'short' && t < end - SHORT_HISTORY) continue; // no reading that old
           const frac = end === start ? 1 : (t - start) / (end - start);
-          const v = s.startFree + (s.endFree - s.startFree) * frac;
+          const v = shape
+            ? s.endFree + shapeOffset(shape, Math.max(anchor - t, 0))
+            : s.startFree + (s.endFree - s.startFree) * frac;
           values.push([t, String(Math.round(v))]);
         }
         return { metric: { __name__: s.name, path: s.path }, values };
