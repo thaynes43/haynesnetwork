@@ -242,6 +242,7 @@ A full seasonal year is not estimated. Since July 6 the ranges that have opened 
 - **Q-04.** In Theaters is already gone from git and still has 41 monitored movies with no file, plus 515.4 GB on disk. Recommendation: leave the files. Decide the 41 with Q-02.
 - **Q-05.** Daily counts of titles the exclusion list stopped are not in this report. Recommendation: run `{namespace="media", pod=~"kometa-collections.*"}` for the window and count Radarr-add lines and exclusion-skip lines per collection. This session had no Grafana tools and did not use another log route.
 - **Q-06.** October's 654.3 GB and November's 526.4 GB each sit on two lists at once. Recommendation: judge the wave, not one holiday name. The member rows that would split November were not stored (child counts 232 and 138, member rows 0).
+- **Q-07.** Rank 4 in the options table: stop adding for Universe, the hand movie franchises and the TV lists (show franchises and show collections), where one monitored series is a whole show. Recommendation: yes, with ranks 1 and 2. Added by the coordinator at intake, because the report recommends this option and the advisory review found no question asking the owner to rule on it.
 
 ## Checks
 
