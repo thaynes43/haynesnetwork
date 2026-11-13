@@ -323,6 +323,10 @@ export interface RunSyncOptions {
   /** Incremental bootstrap page walk tuning (tests). */
   historyPageSize?: number;
   maxHistoryPages?: number;
+  /** DESIGN-008 D-03 — the household Tautulli history page size and cap (tests). Defaults are the
+   *  measured page size and the lifetime cap. */
+  tautulliPageSize?: number;
+  tautulliMaxPages?: number;
 }
 
 export interface SourceRunReport {
@@ -1829,7 +1833,13 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
   // re-scan Tautulli three times. Degrades internally — never throws for a tier failure.
   const metadataContext =
     options.mode === 'metadata-refresh' && options.metadataSources
-      ? await buildMetadataContext({ sources: options.metadataSources, logger })
+      ? await buildMetadataContext({
+          sources: options.metadataSources,
+          logger,
+          db,
+          tautulliPageSize: options.tautulliPageSize,
+          tautulliMaxPages: options.tautulliMaxPages,
+        })
       : undefined;
 
   for (const source of sources) {
