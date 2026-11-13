@@ -1,0 +1,18 @@
+app,profile_id,profile_name,upgrade_allowed,cutoff_id,cutoff_name,min_format_score,cutoff_format_score,min_upgrade_format_score,language,allowed_worst_to_best,titles_live,bytes_live,managed_in
+radarr,1,Any,False,20,Bluray-480p,0,0,1,Original,WORKPRINT > CAM > TELESYNC > TELECINE > REGIONAL > DVDSCR > SDTV > DVD > DVD-R > WEB 480p > Bluray-480p > Bluray-576p > HDTV-720p > WEB 720p > Bluray-720p > HDTV-1080p > WEB 1080p > Bluray-1080p > Remux-1080p > HDTV-2160p > WEB 2160p > Bluray-2160p > Remux-2160p > BR-DISK,0,0,"not in recyclarr; built-in, upgrades off, no titles"
+radarr,2,SD,False,20,Bluray-480p,0,0,1,Original,WORKPRINT > CAM > TELESYNC > TELECINE > REGIONAL > DVDSCR > SDTV > DVD > WEB 480p > Bluray-480p > Bluray-576p,0,0,"not in recyclarr; built-in, upgrades off, no titles"
+radarr,3,HD-720p,False,6,Bluray-720p,0,0,1,Original,HDTV-720p > WEB 720p > Bluray-720p,0,0,"not in recyclarr; built-in, upgrades off, no titles"
+radarr,4,HD-1080p,False,7,Bluray-1080p,0,0,1,Original,HDTV-1080p > WEB 1080p > Bluray-1080p > Remux-1080p,0,0,"not in recyclarr; built-in, upgrades off, no titles"
+radarr,5,Ultra-HD,False,31,Remux-2160p,0,0,1,Original,HDTV-2160p > WEB 2160p > Bluray-2160p > Remux-2160p,0,0,"not in recyclarr; built-in, upgrades off, no titles"
+radarr,6,HD - 720p/1080p,False,6,Bluray-720p,0,0,1,Original,HDTV-720p > WEB 720p > Bluray-720p > HDTV-1080p > WEB 1080p > Bluray-1080p > Remux-1080p,0,0,"not in recyclarr; built-in, upgrades off, no titles"
+radarr,9,FHD-UHD,True,31,Remux-2160p,0,8450,100,Original,WEB 1080p > Bluray-1080p > HDTV-2160p > Remux-1080p > WEB 2160p > Bluray-2160p > Remux-2160p,9630,169056335272828,recyclarr.yml FHD-UHD
+sonarr,1,Any,False,1,SDTV,0,0,1,,SDTV > WEB 480p > DVD > Bluray-480p > Bluray-576p > HDTV-720p > HDTV-1080p > WEB 720p > Bluray-720p > WEB 1080p > Bluray-1080p,0,0,"not in recyclarr; built-in, upgrades off, no titles"
+sonarr,2,SD,False,1,SDTV,0,0,1,,SDTV > WEB 480p > DVD > Bluray-480p > Bluray-576p,0,0,"not in recyclarr; built-in, upgrades off, no titles"
+sonarr,3,HD-720p,False,4,HDTV-720p,0,0,1,,HDTV-720p > WEB 720p > Bluray-720p,0,0,"not in recyclarr; built-in, upgrades off, no titles"
+sonarr,4,HD-1080p,False,9,HDTV-1080p,0,0,1,,HDTV-1080p > WEB 1080p > Bluray-1080p,0,0,"not in recyclarr; built-in, upgrades off, no titles"
+sonarr,5,Ultra-HD,False,16,HDTV-2160p,0,0,1,,HDTV-2160p > WEB 2160p > Bluray-2160p,0,0,"not in recyclarr; built-in, upgrades off, no titles"
+sonarr,6,HD - 720p/1080p,False,4,HDTV-720p,0,0,1,,HDTV-720p > HDTV-1080p > WEB 720p > Bluray-720p > WEB 1080p > Bluray-1080p,0,0,"not in recyclarr; built-in, upgrades off, no titles"
+sonarr,9,FHD-UHD,True,21,Bluray-2160p Remux,0,500,100,,WEB 1080p > Bluray-1080p > Bluray-1080p Remux > WEB 2160p > Bluray-2160p > Bluray-2160p Remux,1085,217410551307841,recyclarr.yml FHD-UHD
+lidarr,1,Any,True,1005,Lossless,0,0,,,Unknown > Trash Quality Lossy > Poor Quality Lossy > Low Quality Lossy > Mid Quality Lossy > High Quality Lossy > Lossless,7735,8761366955294,not in git; Lidarr API only
+lidarr,2,Lossless,False,1005,Lossless,0,0,,,Lossless,0,0,not in git; Lidarr API only; no live artists
+lidarr,3,Standard,False,1002,Low Quality Lossy,0,0,,,Low Quality Lossy > Mid Quality Lossy > High Quality Lossy,0,0,not in git; Lidarr API only; no live artists

@@ -1,0 +1,16 @@
+rank,series_id,title,year,upgrade_imports,download_bytes,net_bytes,rule
+1,310,Guy's Grocery Games,2013,454,1174447261210,-175119635294,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
+2,703,Stranger Things,2016,25,1124583924551,843316791311,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
+3,375,Law & Order,1990,158,1046384977411,384182145947,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
+4,655,South Park,1997,327,646037826834,65931559276,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
+5,443,Midsomer Murders,1997,96,644620982994,39337372412,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
+6,890,The Simpsons,1989,633,568678113112,-363066384346,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
+7,150,Cheers,1982,124,557239304995,389197288547,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
+8,200,Deadliest Catch,2005,149,446831998851,-83063702706,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
+9,52,American Dad!,2005,470,438640295468,69339313339,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
+10,482,NCIS,2003,214,331150852008,-260702103670,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
+11,644,Sister Wives,2010,145,300251597149,-93430867280,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
+12,138,Breaking Bad,2008,49,282400198655,11889626122,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
+13,501,One Piece,1999,168,278813457077,74162859063,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
+14,100,Bering Sea Gold,2012,110,276100013143,156125087266,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
+15,15,60 Days In,2016,77,270575693229,172235296995,sum of paired upgrade-import bytes for every episode of the series; not one episode chain
