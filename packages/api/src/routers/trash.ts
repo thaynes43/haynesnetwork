@@ -42,6 +42,7 @@ import {
   requestPoolRefreshAfterSave,
   restoreDeleted,
   saveExclusion,
+  setAgeGuardIgnoreLibraryFill,
   setAppSetting,
   setBatchItemSaved,
   sweepExpiredBatches,
@@ -159,7 +160,11 @@ export const trashRouter = router({
       z.object({
         media: trashMedia,
         query: z.string().optional(),
-        /** Candidate-wall view only; hidden items retain all deletion protections. */
+        /**
+         * Candidate-wall view only; hidden items retain all deletion protections.
+         * `false` is the default wall: titles Wall Protection would keep are omitted.
+         * Omitted and `true` return every title (the library page omits it).
+         */
         includeWatchlisted: z.boolean().optional(),
         genres: z.array(z.string()).optional(),
         resolutions: z.array(z.string()).optional(),
@@ -751,6 +756,9 @@ export const trashRouter = router({
                 .max(FINAL_WARNING_HOURS_MAX),
             })
             .optional(),
+          // ADR-119 — set the Age Guard library-fill switch, or set it back. Audited through
+          // setAgeGuardIgnoreLibraryFill. This route does not turn the setting on by itself.
+          ageGuardIgnoreLibraryFill: z.boolean().optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -786,6 +794,13 @@ export const trashRouter = router({
               db: ctx.db,
               key: 'final_warning',
               value: input.finalWarning,
+              actorId: ctx.user.id,
+            });
+          }
+          if (input.ageGuardIgnoreLibraryFill !== undefined) {
+            await setAgeGuardIgnoreLibraryFill({
+              db: ctx.db,
+              enabled: input.ageGuardIgnoreLibraryFill,
               actorId: ctx.user.id,
             });
           }

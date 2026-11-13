@@ -11,9 +11,10 @@
 // - TV: any episode import of the series protects the show the pool holds;
 // - the batch wall's kept reason, the space policy's deletable count and the Start-a-batch preview follow.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import {
   SEEDED_PLEX_SERVER_IDS,
+  appSettings,
   ledgerEvents,
   mediaItems,
   mediaPlexMatches,
@@ -35,10 +36,12 @@ import {
   eligiblePlexAddedAt,
   isLibraryFillDay,
   judgeAge,
+  ledgerCoversAgeWindow,
   listTrashPending,
   loadAgeEvidence,
   listTrashPendingCandidates,
   refreshTrashCandidates,
+  setAgeGuardIgnoreLibraryFill,
   setAppSetting,
   silentDomainLogger,
   sweepExpiredBatches,
@@ -60,6 +63,49 @@ const { arr: releaseArr } = createStaticReleaseBlockArr();
 const DAY = 86_400_000;
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY);
 
+function nyParts(date: Date): { year: number; month: number; day: number; hour: number; minute: number } {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(date).map((p) => [p.type, p.value]));
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+  };
+}
+
+/** UTC instant of a wall-clock time in America/New_York. One offset correction is enough away from a DST jump. */
+function nyInstant(year: number, month: number, day: number, hour: number, minute: number): Date {
+  const guess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+  const seen = nyParts(guess);
+  const seenUtc = Date.UTC(seen.year, seen.month - 1, seen.day, seen.hour, seen.minute);
+  const target = Date.UTC(year, month - 1, day, hour, minute);
+  return new Date(guess.getTime() + (target - seenUtc));
+}
+
+function nyMidnightContaining(instant: Date): Date {
+  const p = nyParts(instant);
+  return nyInstant(p.year, p.month, p.day, 0, 0);
+}
+
+function nyDateKey(date: Date): string {
+  const p = nyParts(date);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+}
+
+function utcDateKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
 /** A movie pool of four items. */
 function pool() {
   return movieCollection({
@@ -78,6 +124,7 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
   let opsMovies: string;
   let towerMovies: string;
   let opsShows: string;
+  let towerShows: string;
   const ids = new Map<number, string>(); // tmdb / tvdb id → media_items.id
   let eventSeq = 0;
 
@@ -96,7 +143,10 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     await upsertPlexLibraries({
       db: t.db,
       slug: 'haynestower',
-      libraries: [{ sectionKey: '1', name: 'HNet Movies', mediaType: 'movie' }],
+      libraries: [
+        { sectionKey: '1', name: 'HNet Movies', mediaType: 'movie' },
+        { sectionKey: '2', name: 'HNet Shows', mediaType: 'show' },
+      ],
     });
     const libs = await t.db.select().from(plexLibraries);
     const lib = (server: string, key: string) =>
@@ -104,6 +154,7 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     opsMovies = lib(SEEDED_PLEX_SERVER_IDS.haynesops, '1');
     opsShows = lib(SEEDED_PLEX_SERVER_IDS.haynesops, '2');
     towerMovies = lib(SEEDED_PLEX_SERVER_IDS.haynestower, '1');
+    towerShows = lib(SEEDED_PLEX_SERVER_IDS.haynestower, '2');
 
     const common = { monitored: true, qualityProfileId: 1, qualityProfileName: 'Any' };
     await upsertMediaItemsBatch({
@@ -130,7 +181,7 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
         rootFolder: '/tv',
       })),
     });
-    // ADR-117 — one hundred extra movies so a library-day can meet the fill cutoff of 100.
+    // ADR-119 — one hundred extra movies, and one hundred shows, so a library-day can meet the fill cutoff.
     await upsertMediaItemsBatch({
       db: t.db,
       arrKind: 'radarr',
@@ -141,6 +192,18 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
         title: `Fill ${9201 + i}`,
         sortTitle: `fill ${9201 + i}`,
         rootFolder: '/movies',
+      })),
+    });
+    await upsertMediaItemsBatch({
+      db: t.db,
+      arrKind: 'sonarr',
+      items: Array.from({ length: 100 }, (_, i) => ({
+        ...common,
+        arrItemId: 101 + i,
+        tvdbId: 8201 + i,
+        title: `Show ${8201 + i}`,
+        sortTitle: `show ${8201 + i}`,
+        rootFolder: '/tv',
       })),
     });
     for (const r of await t.db.select().from(mediaItems)) ids.set((r.tmdbId ?? r.tvdbId)!, r.id);
@@ -162,7 +225,7 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     await t.db.delete(mediaPlexMatches);
     await setAppSetting({ db: t.db, key: 'trash_skip_admin_gate', value: true, actorId: admin });
     await seedVerifiedWatchlistRegistry(t.db);
-    // ADR-117 ships off. Reset it so a library-fill test cannot leak into the D-26 cases.
+    // ADR-119 ships off. Reset it so a library-fill test cannot leak into the D-26 cases.
     await setAppSetting({
       db: t.db,
       key: 'age_guard_ignore_library_fill',
@@ -252,7 +315,7 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
       ),
     );
 
-  /** ADR-117 — tmdb ids 9201..9300. A shared added instant is one America/New_York library-day. */
+  /** ADR-119 — tmdb ids 9201..9300. A shared added instant is one America/New_York library-day. */
   const COHORT = Array.from({ length: 100 }, (_, i) => 9201 + i);
 
   async function setFillRule(on: boolean) {
@@ -262,6 +325,20 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
       value: on,
       actorId: admin,
     });
+  }
+
+  /**
+   * One download import old enough that this *arr's ledger covers the 180-day window. Without it the fill rule
+   * leaves every stamp in place, so a test of the rule itself would pass for the wrong reason.
+   */
+  async function coverLedger(source: 'radarr' | 'sonarr' = 'radarr', ageDays = TRASH_AGE_GUARD_DAYS + 1) {
+    const ext = source === 'radarr' ? 9104 : 8002;
+    await imported(ext, daysAgo(ageDays), 'downloadFolderImported', source);
+  }
+
+  async function armFill() {
+    await setFillRule(true);
+    await coverLedger('radarr');
   }
 
   /** Stamp the first `n` cohort movies. `towerAt` null leaves them on one server. */
@@ -279,11 +356,35 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     await plexDates(rows);
   }
 
-  async function ageOf(ext: number) {
+  async function ageOfKind(ext: number, arrKind: 'radarr' | 'sonarr') {
     const id = ids.get(ext)!;
-    const evidence = await loadAgeEvidence({ db: t.db, arrKind: 'radarr', mediaItemIds: [id] });
+    const evidence = await loadAgeEvidence({ db: t.db, arrKind, mediaItemIds: [id] });
     const row = evidence.get(id);
     return { row, judgement: judgeAge(row, Date.now()) };
+  }
+
+  async function ageOf(ext: number) {
+    return ageOfKind(ext, 'radarr');
+  }
+
+  const SHOW_COHORT = Array.from({ length: 100 }, (_, i) => 8201 + i);
+
+  async function stampShows(n: number, opsAt: Date, towerAt: Date | null) {
+    const rows: Array<{ ext: number; lib: string; at: Date | null }> = [];
+    for (const ext of SHOW_COHORT.slice(0, n)) {
+      rows.push({ ext, lib: opsShows, at: opsAt });
+      if (towerAt) rows.push({ ext, lib: towerShows, at: towerAt });
+    }
+    await plexDates(rows);
+  }
+
+  async function stampHalf(exts: number[], at: Date, towerAt: Date) {
+    const rows: Array<{ ext: number; lib: string; at: Date | null }> = [];
+    for (const ext of exts) {
+      rows.push({ ext, lib: opsMovies, at });
+      rows.push({ ext, lib: towerMovies, at: towerAt });
+    }
+    await plexDates(rows);
   }
 
   it('judgeAge: newest date wins; a recent signal beats an undated match; old and dated is clear', () => {
@@ -317,8 +418,14 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
       judgeAge(ev({ newestPlexAddedAt: daysAgo(400), plexMatches: 2, plexUndated: 1 }), now)
         .ageGuard,
     ).toBe('unknown');
-    // No Plex match at all: judged on imports alone.
-    expect(judgeAge(ev({ plexMatches: 0 }), now).ageGuard).toBe('clear');
+    // No Plex match, and no import inside the window: unknown keeps the title (ADR-119). A recent import still wins.
+    expect(judgeAge(ev({ plexMatches: 0 }), now).ageGuard).toBe('unknown');
+    expect(judgeAge(ev({ plexMatches: 0, newestImportAt: daysAgo(400) }), now).ageGuard).toBe(
+      'unknown',
+    );
+    expect(judgeAge(ev({ plexMatches: 0, newestImportAt: daysAgo(10) }), now).ageGuard).toBe(
+      'recent',
+    );
     // Q-14 — the guardian itself carries the Age Guard, after tag / recently watched / watchlisted.
     const g = (o: Partial<Parameters<typeof classifyGuardian>[0]>) => ({
       protectedByTag: false,
@@ -353,7 +460,7 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
       keep: true,
       reason: 'watchlisted',
     });
-    // ADR-117 does not weaken the earlier keeps: a clear age still loses to a tag and to a watchlist.
+    // ADR-119 does not weaken the earlier keeps: a clear age still loses to a tag and to a watchlist.
     expect(classifyGuardian(g({ ageGuard: 'clear', protectedByTag: true }))).toEqual({
       keep: true,
       reason: 'tag',
@@ -526,8 +633,8 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     expect(state.exclusions.has('ms-9102')).toBe(false);
   });
 
-  it('ADR-117: a fill-only date does not protect when an older date exists on another server', async () => {
-    await setFillRule(true);
+  it('ADR-119: a fill-only date does not protect when an older date exists on another server', async () => {
+    await armFill();
     const recent = daysAgo(30);
     const older = daysAgo(400);
     await stampCohort(100, recent, older);
@@ -569,7 +676,7 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     ).toMatchObject({ key: 'age_guard_ignore_library_fill', after: true });
   });
 
-  it('ADR-117: the setting off keeps today, including a fill date that is the newest', async () => {
+  it('ADR-119: the setting off keeps today, including a fill date that is the newest', async () => {
     const recent = daysAgo(30);
     const older = daysAgo(400);
     await stampCohort(100, recent, older);
@@ -590,8 +697,8 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     });
   });
 
-  it('ADR-117: a download import inside 180 days still protects on a fill day', async () => {
-    await setFillRule(true);
+  it('ADR-119: a download import inside 180 days still protects on a fill day', async () => {
+    await armFill();
     await stampCohort(100, daysAgo(30), daysAgo(400));
     const importedAt = daysAgo(10);
     await imported(9201, importedAt);
@@ -599,16 +706,16 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     expect(judgement).toEqual({ ageGuard: 'recent', newestAddedAt: importedAt.toISOString() });
   });
 
-  it('ADR-117: a title on one server only keeps the fill date', async () => {
-    await setFillRule(true);
+  it('ADR-119: a title on one server only keeps the fill date', async () => {
+    await armFill();
     const recent = daysAgo(30);
     await stampCohort(100, recent, null);
     const { judgement } = await ageOf(9201);
     expect(judgement).toEqual({ ageGuard: 'recent', newestAddedAt: recent.toISOString() });
   });
 
-  it('ADR-117: a one-title arrival on a second server still protects when the setting is on', async () => {
-    await setFillRule(true);
+  it('ADR-119: a one-title arrival on a second server still protects when the setting is on', async () => {
+    await armFill();
     const added = daysAgo(120);
     await plexDates([{ ext: 9102, lib: towerMovies, at: added }]);
     const { judgement } = await ageOf(9102);
@@ -616,8 +723,8 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     expect(judgement.newestAddedAt).toBe(added.toISOString());
   });
 
-  it('ADR-117: a day under the cutoff is not a fill (the pre-history trickle, and a midnight split)', async () => {
-    await setFillRule(true);
+  it('ADR-119: a day under the cutoff is not a fill (the pre-history trickle, and a midnight split)', async () => {
+    await armFill();
     const recent = daysAgo(30);
     await stampCohort(12, recent, daysAgo(400));
     expect((await ageOf(9201)).judgement.ageGuard).toBe('recent');
@@ -628,8 +735,8 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     expect(split.row?.newestPlexAddedAt?.toISOString()).toBe(recent.toISOString());
   });
 
-  it('ADR-117: a mass day where every title has a nearby import is not a fill', async () => {
-    await setFillRule(true);
+  it('ADR-119: a mass day where every title has a nearby import is not a fill', async () => {
+    await armFill();
     const recent = daysAgo(30);
     await stampCohort(100, recent, daysAgo(400));
     for (const ext of COHORT) await imported(ext, new Date(recent.getTime() - 60_000));
@@ -638,8 +745,8 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     expect(row?.newestPlexAddedAt?.toISOString()).toBe(recent.toISOString());
   });
 
-  it('ADR-117: an older date that is still inside 180 days keeps the title', async () => {
-    await setFillRule(true);
+  it('ADR-119: an older date that is still inside 180 days keeps the title', async () => {
+    await armFill();
     const older = daysAgo(100);
     await stampCohort(100, daysAgo(30), older);
     const { row, judgement } = await ageOf(9201);
@@ -647,16 +754,16 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     expect(row?.newestPlexAddedAt?.toISOString()).toBe(older.toISOString());
   });
 
-  it('ADR-117: the same instant on the other server is not an older date, so the fill date stays', async () => {
-    await setFillRule(true);
+  it('ADR-119: the same instant on the other server is not an older date, so the fill date stays', async () => {
+    await armFill();
     const at = daysAgo(30);
     await stampCohort(100, at, at);
     const { judgement } = await ageOf(9201);
     expect(judgement).toEqual({ ageGuard: 'recent', newestAddedAt: at.toISOString() });
   });
 
-  it('ADR-117: an undated other server does not retire a fill date', async () => {
-    await setFillRule(true);
+  it('ADR-119: an undated other server does not retire a fill date', async () => {
+    await armFill();
     const recent = daysAgo(30);
     await stampCohort(100, recent, null);
     await plexDates([{ ext: 9201, lib: towerMovies, at: null }]);
@@ -665,8 +772,8 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     expect(judgement).toEqual({ ageGuard: 'recent', newestAddedAt: recent.toISOString() });
   });
 
-  it('ADR-117: a second library on the same server does not retire a fill date', async () => {
-    await setFillRule(true);
+  it('ADR-119: a second library on the same server does not retire a fill date', async () => {
+    await armFill();
     const recent = daysAgo(30);
     await stampCohort(100, recent, null, opsShows);
     await plexDates([{ ext: 9201, lib: opsMovies, at: daysAgo(400) }]);
@@ -674,15 +781,15 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     expect(judgement).toEqual({ ageGuard: 'recent', newestAddedAt: recent.toISOString() });
   });
 
-  it('ADR-117: a show-library fill date does not protect a movie that is older on another server', async () => {
-    await setFillRule(true);
+  it('ADR-119: a show-library fill date does not protect a movie that is older on another server', async () => {
+    await armFill();
     await stampCohort(100, daysAgo(30), daysAgo(400), opsShows);
     const { judgement } = await ageOf(9201);
     expect(judgement.ageGuard).toBe('clear');
   });
 
-  it("ADR-117: one nearby import keeps that title's stamp on an otherwise fill day", async () => {
-    await setFillRule(true);
+  it("ADR-119: one nearby import keeps that title's stamp on an otherwise fill day", async () => {
+    await armFill();
     const recent = daysAgo(30);
     await stampCohort(100, recent, daysAgo(400));
     await imported(9201, new Date(recent.getTime() - 60_000));
@@ -690,10 +797,232 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     expect(judgement.ageGuard).toBe('recent');
     expect(row?.newestPlexAddedAt?.toISOString()).toBe(recent.toISOString());
   });
+
+  it('ADR-119: ledger history that starts inside the window leaves every fill stamp in place', async () => {
+    await setFillRule(true);
+    await coverLedger('radarr', TRASH_AGE_GUARD_DAYS - 1);
+    const recent = daysAgo(30);
+    await stampCohort(100, recent, daysAgo(400));
+    const { judgement } = await ageOf(9201);
+    expect(judgement).toEqual({ ageGuard: 'recent', newestAddedAt: recent.toISOString() });
+  });
+
+  it('ADR-119: no download import at all leaves every fill stamp in place', async () => {
+    await setFillRule(true);
+    const recent = daysAgo(30);
+    await stampCohort(100, recent, daysAgo(400));
+    const { judgement } = await ageOf(9201);
+    expect(judgement).toEqual({ ageGuard: 'recent', newestAddedAt: recent.toISOString() });
+  });
+
+  it('ADR-119: an absent row and a non-boolean value both read as off', async () => {
+    const recent = daysAgo(30);
+    const older = daysAgo(400);
+    await armFill();
+    await stampCohort(100, recent, older);
+    expect((await ageOf(9201)).judgement.ageGuard).toBe('clear');
+
+    await t.db.delete(appSettings).where(eq(appSettings.key, 'age_guard_ignore_library_fill'));
+    expect((await ageOf(9201)).judgement).toEqual({
+      ageGuard: 'recent',
+      newestAddedAt: recent.toISOString(),
+    });
+
+    await t.db.insert(appSettings).values({
+      key: 'age_guard_ignore_library_fill',
+      value: 'yes',
+    });
+    expect((await ageOf(9201)).judgement).toEqual({
+      ageGuard: 'recent',
+      newestAddedAt: recent.toISOString(),
+    });
+    await t.db.execute(sql`
+      update app_settings
+      set value = '1'::jsonb
+      where key = 'age_guard_ignore_library_fill'
+    `);
+    expect((await ageOf(9201)).judgement.ageGuard).toBe('recent');
+  });
+
+  it('ADR-119: 99 titles are not a fill and 100 titles are, at the database', async () => {
+    await armFill();
+    const recent = daysAgo(30);
+    await stampCohort(99, recent, daysAgo(400));
+    expect((await ageOf(9201)).judgement.ageGuard).toBe('recent');
+    await t.db.delete(mediaPlexMatches);
+    await stampCohort(100, recent, daysAgo(400));
+    expect((await ageOf(9201)).judgement.ageGuard).toBe('clear');
+  });
+
+  it('ADR-119: 6 hours keeps the stamp and 6 hours 1 second does not, at the database', async () => {
+    await armFill();
+    const recent = daysAgo(30);
+    const older = daysAgo(400);
+    await stampCohort(100, recent, older);
+    const sixHours = 6 * 60 * 60 * 1000;
+    await imported(9201, new Date(recent.getTime() - sixHours));
+    await imported(9202, new Date(recent.getTime() - sixHours - 1000));
+    const kept = await ageOf(9201);
+    expect(kept.row?.newestPlexAddedAt?.toISOString()).toBe(recent.toISOString());
+    expect(kept.judgement.ageGuard).toBe('recent');
+    // The import sits next to a stamp inside the window, so it still protects the title. The boundary
+    // shows up on the stamp: exactly 6 hours keeps it, one second further leaves the older date.
+    const dropped = await ageOf(9202);
+    expect(dropped.row?.newestPlexAddedAt?.toISOString()).toBe(older.toISOString());
+    expect(dropped.judgement.ageGuard).toBe('recent');
+  });
+
+  it('ADR-119: a scan across New York midnight is two days, and one New York day across UTC midnight is a fill', async () => {
+    await armFill();
+    const older = daysAgo(400);
+    const split = nyMidnightContaining(daysAgo(30));
+    const before = new Date(split.getTime() - 30 * 60 * 1000);
+    const after = new Date(split.getTime() + 30 * 60 * 1000);
+    expect(nyDateKey(before)).not.toBe(nyDateKey(after));
+    expect(utcDateKey(before)).toBe(utcDateKey(after));
+    await t.db.delete(mediaPlexMatches);
+    await stampHalf(COHORT.slice(0, 50), before, older);
+    await stampHalf(COHORT.slice(50), after, older);
+    expect((await ageOf(9201)).judgement.ageGuard).toBe('recent');
+    expect((await ageOf(9251)).judgement.ageGuard).toBe('recent');
+
+    const midnight = nyMidnightContaining(daysAgo(40));
+    const early = new Date(midnight.getTime() + 30 * 60 * 1000);
+    const late = new Date(midnight.getTime() + (22 * 60 + 30) * 60 * 1000);
+    expect(nyDateKey(early)).toBe(nyDateKey(late));
+    expect(utcDateKey(early)).not.toBe(utcDateKey(late));
+    await t.db.delete(mediaPlexMatches);
+    await stampHalf(COHORT.slice(0, 50), early, older);
+    await stampHalf(COHORT.slice(50), late, older);
+    expect((await ageOf(9201)).judgement.ageGuard).toBe('clear');
+    expect((await ageOf(9251)).judgement.ageGuard).toBe('clear');
+  });
+
+  it('ADR-119: a wrong-type match is not the older date that retires a fill stamp', async () => {
+    await armFill();
+    const recent = daysAgo(30);
+    await stampCohort(100, recent, null);
+    await plexDates([{ ext: 9201, lib: towerShows, at: daysAgo(400) }]);
+    const { judgement } = await ageOf(9201);
+    expect(judgement).toEqual({ ageGuard: 'recent', newestAddedAt: recent.toISOString() });
+  });
+
+  it('ADR-119: a Sonarr show is released by a fill, and one episode import keeps it', async () => {
+    await setFillRule(true);
+    // A Radarr import does not open Sonarr's window.
+    await coverLedger('radarr');
+    const recent = daysAgo(30);
+    const showOlder = daysAgo(400);
+    await stampShows(100, recent, showOlder);
+    expect((await ageOfKind(8201, 'sonarr')).judgement).toEqual({
+      ageGuard: 'recent',
+      newestAddedAt: recent.toISOString(),
+    });
+    await coverLedger('sonarr');
+    const released = await ageOfKind(8201, 'sonarr');
+    expect(released.judgement.ageGuard).toBe('clear');
+    expect(released.row?.newestPlexAddedAt?.toISOString()).toBe(showOlder.toISOString());
+    const importedAt = daysAgo(12);
+    await imported(8202, importedAt, 'downloadFolderImported', 'sonarr');
+    expect((await ageOfKind(8202, 'sonarr')).judgement).toEqual({
+      ageGuard: 'recent',
+      newestAddedAt: importedAt.toISOString(),
+    });
+  });
+
+  it('ADR-119: a pool member with no Plex match is unknown, with the setting off or on', async () => {
+    await t.db.delete(mediaPlexMatches).where(eq(mediaPlexMatches.mediaItemId, ids.get(9101)!));
+    expect((await ageOf(9101)).judgement.ageGuard).toBe('unknown');
+    await imported(9101, daysAgo(400));
+    expect((await ageOf(9101)).judgement.ageGuard).toBe('unknown');
+    await setFillRule(true);
+    expect((await ageOf(9101)).judgement.ageGuard).toBe('unknown');
+    const importedAt = daysAgo(10);
+    await imported(9101, importedAt);
+    expect((await ageOf(9101)).judgement).toEqual({
+      ageGuard: 'recent',
+      newestAddedAt: importedAt.toISOString(),
+    });
+  });
+
+  it('ADR-119: setAgeGuardIgnoreLibraryFill audits the value on and back', async () => {
+    const on = await setAgeGuardIgnoreLibraryFill({ db: t.db, enabled: true, actorId: admin });
+    expect(on).toMatchObject({ before: false, after: true, changed: true });
+    const back = await setAgeGuardIgnoreLibraryFill({ db: t.db, enabled: false, actorId: admin });
+    expect(back).toMatchObject({ before: true, after: false, changed: true });
+    await expect(
+      setAgeGuardIgnoreLibraryFill({
+        db: t.db,
+        enabled: 'yes' as unknown as boolean,
+        actorId: admin,
+      }),
+    ).rejects.toThrow(/boolean/);
+  });
+
+  function fillPool(idsIn: number[]) {
+    return baseState({
+      collections: [
+        movieCollection({
+          items: idsIn.map((tmdbId) => ({
+            mediaServerId: `ms-${tmdbId}`,
+            tmdbId,
+            sizeBytes: 1_000,
+            addDate: '2020-01-01T00:00:00Z',
+          })),
+        }),
+      ],
+    });
+  }
+
+  it('ADR-119: with the setting on, the sweep deletes a released fill title and keeps an import', async () => {
+    await armFill();
+    await stampCohort(100, daysAgo(30), daysAgo(400));
+    await imported(9202, daysAgo(10));
+    const state = fillPool([9201, 9202]);
+    const { batchId } = await createBatch(state);
+    await expire(batchId);
+    await sweep(state);
+    expect(await itemStates(batchId)).toEqual({
+      'ms-9201': { state: 'deleted', keepReason: null },
+      'ms-9202': { state: 'skipped', keepReason: 'recently_added' },
+    });
+  });
+
+  it('ADR-119: with the setting on, Expedite deletes a released fill title and keeps an import', async () => {
+    await armFill();
+    await stampCohort(100, daysAgo(30), daysAgo(400));
+    await imported(9202, daysAgo(10));
+    const state = fillPool([9201, 9202]);
+    const { bundle } = makeMaintainerr(state);
+    const all = await expediteDeletion({
+      arr: releaseArr,
+      db: t.db,
+      maintainerr: bundle,
+      scope: 'all',
+      media: 'movie',
+      actorId: admin,
+      snapshotMediaIds: ['ms-9201', 'ms-9202'],
+      logger: silentDomainLogger,
+    });
+    expect(all.protectedCount).toBe(1);
+    expect([...all.expeditedIds].sort()).toEqual(['ms-9201']);
+  });
 });
 
-describe('the library-fill predicate (ADR-117)', () => {
+describe('the library-fill predicate (ADR-119)', () => {
   const at = (iso: string) => new Date(iso);
+  const stamp = (
+    serverId: string,
+    addedAt: Date,
+    over: Partial<{ fillDay: boolean; nearImport: boolean; fitsTitle: boolean }> = {},
+  ) => ({
+    serverId,
+    addedAt,
+    fillDay: false,
+    nearImport: false,
+    fitsTitle: true,
+    ...over,
+  });
 
   it('labels only a large day with almost no nearby imports', () => {
     expect(isLibraryFillDay(8, 0)).toBe(false);
@@ -709,21 +1038,38 @@ describe('the library-fill predicate (ADR-117)', () => {
   it('drops a fill stamp only when another server is strictly older and the stamp has no nearby import', () => {
     const fill = at('2026-07-02T22:00:00.000Z');
     const older = at('2024-01-01T00:00:00.000Z');
-    const stamps = [
-      { serverId: 'ops', addedAt: fill, fillDay: true, nearImport: false },
-      { serverId: 'tower', addedAt: older, fillDay: false, nearImport: false },
-    ];
-    expect(eligiblePlexAddedAt(stamps)?.toISOString()).toBe(older.toISOString());
     expect(
       eligiblePlexAddedAt([
-        { serverId: 'ops', addedAt: fill, fillDay: true, nearImport: false },
+        stamp('ops', fill, { fillDay: true }),
+        stamp('tower', older),
       ])?.toISOString(),
-    ).toBe(fill.toISOString());
+    ).toBe(older.toISOString());
+    expect(eligiblePlexAddedAt([stamp('ops', fill, { fillDay: true })])?.toISOString()).toBe(
+      fill.toISOString(),
+    );
     expect(
       eligiblePlexAddedAt([
-        { serverId: 'ops', addedAt: fill, fillDay: true, nearImport: true },
-        { serverId: 'tower', addedAt: older, fillDay: false, nearImport: false },
+        stamp('ops', fill, { fillDay: true, nearImport: true }),
+        stamp('tower', older),
       ])?.toISOString(),
     ).toBe(fill.toISOString());
+  });
+
+  it('a wrong-type stamp is not the older date', () => {
+    const fill = at('2026-07-02T22:00:00.000Z');
+    const older = at('2024-01-01T00:00:00.000Z');
+    expect(
+      eligiblePlexAddedAt([
+        stamp('ops', fill, { fillDay: true }),
+        stamp('tower', older, { fitsTitle: false }),
+      ])?.toISOString(),
+    ).toBe(fill.toISOString());
+  });
+
+  it('covers the window only when the first import is at least 180 days old', () => {
+    const now = Date.UTC(2026, 10, 13);
+    expect(ledgerCoversAgeWindow(new Date(now - 180 * DAY), now)).toBe(true);
+    expect(ledgerCoversAgeWindow(new Date(now - 180 * DAY + 1), now)).toBe(false);
+    expect(ledgerCoversAgeWindow(null, now)).toBe(false);
   });
 });

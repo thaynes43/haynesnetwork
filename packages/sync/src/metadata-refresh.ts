@@ -44,7 +44,13 @@ import {
   type WatchStat,
 } from './adapt-metadata';
 import { requireClient, type MetadataSourceClients, type SyncClients } from './clients';
-import { selectMetadataTargets, type MetadataTarget } from './db-reads';
+import {
+  loadPlexRatingGuids,
+  plexRatingGuidKey,
+  selectMetadataTargets,
+  type MetadataTarget,
+  type PlexRatingGuids,
+} from './db-reads';
 import type { SyncLogger } from './logger';
 
 export const METADATA_STALE_THRESHOLD_MS = 6 * 60 * 60 * 1000; // D-03 — 6h
@@ -60,9 +66,32 @@ export const METADATA_STALE_THRESHOLD_MS = 6 * 60 * 60 * 1000; // D-03 — 6h
 export const METADATA_STALE_SLACK_MS = 30 * 60 * 1000;
 const DEFAULT_BATCH = 500;
 
+/**
+ * DESIGN-008 D-03 (2026-11-13). Page size measured the same day: a walk of HaynesTower's episode
+ * history returned full pages of 500 and then a short page, and the rows read equalled
+ * `recordsFiltered` (32,661). Kept at 500.
+ */
+export const TAUTULLI_HISTORY_PAGE_SIZE = 500;
+/**
+ * Safety cap on history pages per instance. Measured 2026-11-13: the largest grouped history
+ * (HaynesTower, every media type) was 39,010 rows, which is ceil(39010/500) = 79 pages. The cap
+ * is twice that (158). A walk that reaches the cap is incomplete, and the harvest does not store
+ * a zero for a title it did not see.
+ */
+export const TAUTULLI_HISTORY_PAGE_CAP = 158;
+
+/** Movies and shows are the kinds whose history rows this harvest joins. Music is left unknown. */
+const WATCH_ZERO_KINDS: ReadonlySet<ArrKind> = new Set(['radarr', 'sonarr']);
+
 /** The cross-kind indices harvested once and shared by every per-kind run. */
 export interface MetadataContext {
   watchIndex: WatchIndex;
+  /**
+   * True when every configured Tautulli instance returned its history through a short or empty
+   * page, under the cap, and no `get_metadata` lookup threw. A stored zero is written only then.
+   */
+  watchComplete: boolean;
+  watchInstances: HouseholdWatchInstance[];
   maintainerrByTmdb: Map<number, string[]>;
   /** tiers that threw and were degraded-past while building the context. */
   degraded: string[];
@@ -71,6 +100,13 @@ export interface MetadataContext {
 export interface BuildMetadataContextInput {
   sources: MetadataSourceClients;
   logger: SyncLogger;
+  /** Present in the sync runner so a rating key already matched to the ledger skips `get_metadata`. */
+  db?: DbClient;
+  /**
+   * Test hook. When set, the harvest uses this map and does not read `media_plex_matches`.
+   * Absent: load the map from `db` when `db` is set, otherwise resolve every key with `get_metadata`.
+   */
+  ratingKeyGuids?: ReadonlyMap<string, PlexRatingGuids>;
   tautulliPageSize?: number;
   tautulliMaxPages?: number;
 }
@@ -81,9 +117,16 @@ export async function buildMetadataContext(
 ): Promise<MetadataContext> {
   const degraded: string[] = [];
   let watchIndex = emptyWatchIndex();
+  let watchComplete = false;
+  let watchInstances: HouseholdWatchInstance[] = [];
   if (input.sources.tautulli.length > 0) {
     try {
-      watchIndex = await harvestWatchStats(input);
+      const ratingKeyGuids =
+        input.ratingKeyGuids ?? (input.db ? await loadPlexRatingGuids(input.db) : new Map());
+      const read = await readHouseholdWatch({ ...input, ratingKeyGuids });
+      watchIndex = read.index;
+      watchComplete = read.complete;
+      watchInstances = read.instances;
     } catch (err) {
       input.logger.error('metadata-refresh: tautulli tier failed', { error: msg(err) });
       degraded.push('tautulli');
@@ -98,7 +141,7 @@ export async function buildMetadataContext(
       degraded.push('maintainerr');
     }
   }
-  return { watchIndex, maintainerrByTmdb, degraded };
+  return { watchIndex, watchComplete, watchInstances, maintainerrByTmdb, degraded };
 }
 
 export interface MetadataKindRefreshInput {
@@ -131,6 +174,10 @@ export interface MetadataRefreshStats extends Record<string, unknown> {
   userWatchMappedUsers: number;
   /** ADR-053 — per-user watch rows (user_media_watch) upserted this run; 0 when nobody is mapped. */
   userWatchWritten: number;
+  /** True when this run's history read may store a zero. */
+  watchComplete: boolean;
+  /** Movies and shows with no joined history row on a complete read. */
+  watchZeros: number;
   degraded: string[];
 }
 
@@ -194,6 +241,8 @@ export async function runMetadataRefreshForKind(
     tierMaintainerr: 0,
     userWatchMappedUsers: plexUserMap.size,
     userWatchWritten: 0,
+    watchComplete: input.context.watchComplete,
+    watchZeros: 0,
     degraded,
   };
 
@@ -252,6 +301,10 @@ export async function runMetadataRefreshForKind(
 
     const extra: Record<string, unknown> = {};
     const watch = matchWatch(input.context.watchIndex, target);
+    // A finished read stores 0 for a movie or show with no joined row. Null stays "unknown":
+    // the read stopped early, a lookup threw, or this kind's plays are not in the history grain.
+    const knownZero = !watch && input.context.watchComplete && WATCH_ZERO_KINDS.has(arrKind);
+    if (knownZero) stats.watchZeros += 1;
     if (watch) {
       sourcesFlags.tautulli = true;
       stats.tierTautulli += 1;
@@ -286,11 +339,12 @@ export async function runMetadataRefreshForKind(
       resolution,
       requesters,
       sourceCollections,
-      playCount: watch?.household.playCount ?? null,
+      playCount: watch ? watch.household.playCount : knownZero ? 0 : null,
       lastViewedAt: watch?.household.lastViewedAt ?? null,
       // DESIGN-010 D-12 — the watch-visibility pair: the SAME cross-server MAX instant as
       // lastViewedAt, stored with the server that owns it so the walls/detail can show
       // "Last watched on <server> · <Mon YYYY>". Info only — protection reads lastViewedAt.
+      // A known zero has a null instant: the household has no joined play to date.
       lastWatchedAt: watch?.household.lastViewedAt ?? null,
       lastWatchedServer: watch?.household.lastWatchedServer ?? null,
       sources: sourcesFlags,
@@ -319,7 +373,8 @@ export async function runMetadataRefreshForKind(
 // ── helpers ────────────────────────────────────────────────────────────────────────────
 
 function msg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  const text = err instanceof Error ? err.message : String(err);
+  return text.replace(/apikey=[^&\s]+/gi, 'apikey=redacted').slice(0, 300);
 }
 
 async function fetchArrList(
@@ -421,7 +476,7 @@ async function tryDirect(
 
 // ── Tautulli watch-stats aggregation (cross-server) ──────────────────────────────────────
 
-interface TitleWatch {
+export interface TitleWatch {
   instanceSlug: string;
   guids: ParsedGuids;
   playCount: number;
@@ -441,7 +496,7 @@ function plexUserIdString(value: number | string | null | undefined): string | n
   return null;
 }
 
-interface WatchIndex {
+export interface WatchIndex {
   byTmdb: Map<number, Set<TitleWatch>>;
   byImdb: Map<string, Set<TitleWatch>>;
   byTvdb: Map<number, Set<TitleWatch>>;
@@ -463,22 +518,76 @@ function indexTitle(index: WatchIndex, tw: TitleWatch): void {
   add(index.byTvdb, tw.guids.tvdbId);
 }
 
-async function harvestWatchStats(input: BuildMetadataContextInput): Promise<WatchIndex> {
+/** One Tautulli instance's history walk. Dates are household instants (ISO), never one account's row. */
+export interface HouseholdWatchInstance {
+  slug: string;
+  pages: number;
+  rows: number;
+  oldest: string | null;
+  newest: string | null;
+  /** The walk ended on an empty or short page, under the cap. */
+  finished: boolean;
+  /** History keys that did not join a title (gone from Plex, or no external id). */
+  unjoined: number;
+  /** `get_metadata` calls that threw. Any throw makes the whole read incomplete. */
+  metadataErrors: number;
+  error: string | null;
+}
+
+/** The grouped household history, plus whether it is complete enough to store a zero. */
+export interface HouseholdWatchRead {
+  index: WatchIndex;
+  complete: boolean;
+  instances: HouseholdWatchInstance[];
+}
+
+/**
+ * DESIGN-008 D-03 — read every configured Tautulli history, one page at a time, and group it by
+ * title. Movies join on `rating_key`; episodes join on the show (`grandparent_rating_key`); other
+ * rows still advance the oldest/newest instants and the page count. A rating key the plex-match
+ * table already resolved skips `get_metadata`.
+ */
+export async function readHouseholdWatch(input: BuildMetadataContextInput): Promise<HouseholdWatchRead> {
   const { logger } = input;
-  const pageSize = input.tautulliPageSize ?? 500;
-  const maxPages = input.tautulliMaxPages ?? 20;
+  const pageSize = input.tautulliPageSize ?? TAUTULLI_HISTORY_PAGE_SIZE;
+  const maxPages = input.tautulliMaxPages ?? TAUTULLI_HISTORY_PAGE_CAP;
+  const ratingKeyGuids = input.ratingKeyGuids ?? new Map<string, PlexRatingGuids>();
   const index = emptyWatchIndex();
+  const instances: HouseholdWatchInstance[] = [];
 
   for (const inst of input.sources.tautulli) {
+    const report: HouseholdWatchInstance = {
+      slug: inst.slug,
+      pages: 0,
+      rows: 0,
+      oldest: null,
+      newest: null,
+      finished: false,
+      unjoined: 0,
+      metadataErrors: 0,
+      error: null,
+    };
+    instances.push(report);
     try {
       const groups = new Map<string, { plays: number; last: Date | null }>();
       // ADR-053 / DESIGN-026 D-07 — the per-user breakdown per title: ratingKey → (plex user id →
-      // contribution). Built alongside the household aggregate from the same history pages (no extra reads).
+      // contribution). Built alongside the household aggregate from the same history pages.
       const perUserGroups = new Map<string, Map<string, UserWatchContribution>>();
       for (let page = 0; page < maxPages; page++) {
         const rows = await inst.client.getHistory({ length: pageSize, start: page * pageSize });
-        if (rows.length === 0) break;
+        report.pages += 1;
+        report.rows += rows.length;
+        if (rows.length === 0) {
+          report.finished = true;
+          break;
+        }
         for (const row of rows) {
+          const when = tautulliDate(row.stopped ?? row.date);
+          if (when) {
+            const iso = when.toISOString();
+            if (!report.oldest || iso < report.oldest) report.oldest = iso;
+            if (!report.newest || iso > report.newest) report.newest = iso;
+          }
           const type = row.media_type ?? '';
           const key =
             type === 'movie'
@@ -490,10 +599,8 @@ async function harvestWatchStats(input: BuildMetadataContextInput): Promise<Watc
           const k = String(key);
           const g = groups.get(k) ?? { plays: 0, last: null };
           g.plays += 1;
-          const when = tautulliDate(row.stopped ?? row.date);
           if (when && (!g.last || when > g.last)) g.last = when;
           groups.set(k, g);
-          // Per-user attribution (additive): key the same play by its plex user id.
           const userId = plexUserIdString(row.user_id);
           if (userId !== null) {
             let byUser = perUserGroups.get(k);
@@ -512,20 +619,45 @@ async function harvestWatchStats(input: BuildMetadataContextInput): Promise<Watc
             byUser.set(userId, u);
           }
         }
-        if (rows.length < pageSize) break;
+        if (rows.length < pageSize) {
+          report.finished = true;
+          break;
+        }
+      }
+      if (!report.finished) {
+        logger.warn('metadata-refresh: tautulli history hit the page cap', {
+          instance: inst.slug,
+          pages: report.pages,
+          pageSize,
+        });
       }
       for (const [ratingKey, g] of groups) {
-        let meta: TautulliMetadata | null;
-        try {
-          meta = await inst.client.getMetadata(ratingKey);
-        } catch {
-          continue; // one unresolved title never fails the instance
+        const cached = ratingKeyGuids.get(plexRatingGuidKey(inst.slug, ratingKey));
+        let guids: PlexRatingGuids | null = cached ?? null;
+        if (!guids) {
+          let meta: TautulliMetadata | null;
+          try {
+            meta = await inst.client.getMetadata(ratingKey);
+          } catch (err) {
+            report.metadataErrors += 1;
+            report.unjoined += 1;
+            if (report.metadataErrors === 1) {
+              logger.warn('metadata-refresh: tautulli metadata lookup failed', {
+                instance: inst.slug,
+                error: msg(err),
+              });
+            }
+            continue;
+          }
+          // Gone from Plex (HTTP 400 / empty data — DESIGN-049 D-09): nothing to join on.
+          if (!meta) {
+            report.unjoined += 1;
+            continue;
+          }
+          guids = guidsFromMetadata(meta);
         }
-        // Gone from Plex (Tautulli's HTTP 400 / empty data — DESIGN-049 D-09): nothing to join on. Same
-        // outcome as before (a 400 used to throw into the catch above, an empty object yielded no guids).
-        if (!meta) continue;
-        const guids = guidsFromMetadata(meta);
         if (guids.tmdbId === undefined && guids.imdbId === undefined && guids.tvdbId === undefined) {
+          report.unjoined += 1;
           continue;
         }
         indexTitle(index, {
@@ -536,23 +668,56 @@ async function harvestWatchStats(input: BuildMetadataContextInput): Promise<Watc
           perUser: perUserGroups.get(ratingKey) ?? new Map(),
         });
       }
+      if (report.metadataErrors > 0) {
+        logger.warn('metadata-refresh: tautulli metadata lookups failed', {
+          instance: inst.slug,
+          metadataErrors: report.metadataErrors,
+        });
+      }
     } catch (err) {
+      report.error = msg(err);
+      report.finished = false;
       logger.warn('metadata-refresh: tautulli instance failed', {
         instance: inst.slug,
-        error: msg(err),
+        error: report.error,
       });
     }
   }
-  return index;
+
+  const complete =
+    instances.length > 0 &&
+    instances.every((inst) => inst.finished && inst.error === null && inst.metadataErrors === 0);
+  logger.info('metadata-refresh: tautulli history read', {
+    complete,
+    instances: instances.map((inst) => ({
+      slug: inst.slug,
+      pages: inst.pages,
+      rows: inst.rows,
+      finished: inst.finished,
+      oldest: inst.oldest,
+      newest: inst.newest,
+    })),
+  });
+  return { index, complete, instances };
 }
 
 /** The household watch signal for a target PLUS the per-user (plex user id → stat) breakdown (ADR-053). */
-interface TargetWatch {
+export interface TargetWatch {
   household: WatchStat;
   perUser: Map<string, UserWatchStat>;
 }
 
-function matchWatch(index: WatchIndex, target: MetadataTarget): TargetWatch | null {
+export function lookupHouseholdWatch(
+  index: WatchIndex,
+  target: { tmdbId: number | null; imdbId: string | null; tvdbId: number | null },
+): TargetWatch | null {
+  return matchWatch(index, target);
+}
+
+function matchWatch(
+  index: WatchIndex,
+  target: { tmdbId: number | null; imdbId: string | null; tvdbId: number | null },
+): TargetWatch | null {
   const matched = new Set<TitleWatch>();
   if (target.tmdbId !== null) for (const tw of index.byTmdb.get(target.tmdbId) ?? []) matched.add(tw);
   if (target.imdbId) for (const tw of index.byImdb.get(target.imdbId) ?? []) matched.add(tw);

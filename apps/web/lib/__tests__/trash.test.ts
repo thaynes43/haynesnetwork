@@ -2,7 +2,7 @@
 // PREVIEW must partition exactly like @hnet/domain classifyGuardian + the expedite 'all' loop
 // (an optimistic preview that under-counts "deleted" would make the confirm Modal lie).
 import { describe, expect, it } from 'vitest';
-import { classifyForExpedite } from '@hnet/domain';
+import { classifyForExpedite, TRASH_WALL_PROTECTION_REASONS } from '@hnet/domain';
 import {
   candidatesAsOfLabel,
   daysLeftLabel,
@@ -48,6 +48,16 @@ import {
   exclusionCountValue,
   oldestBlockLabel,
   readdSummaryLine,
+  withPinnedTiles,
+  type PinnedTile,
+  PENDING_VIEWS,
+  WALL_REASON_COPY,
+  WALL_REASON_FALLBACK,
+  pendingEmptyLabel,
+  pendingTotalLabel,
+  shownWallReason,
+  wallReasonCopy,
+  wallReasonIsSave,
 } from '../trash';
 
 const base: GuardianPreviewInput = {
@@ -340,6 +350,19 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     expect(pendingWallGlyph({ ...recent, onWatchlist: true }, undefined)).toBe('trash');
     expect(pendingWallGlyph({ ...cold, ageGuard: 'unknown' as const }, undefined)).toBe('trash');
     expect(releaseNeedsConfirm('skip')).toBe(false);
+    // Story 832 — the server reason drives the skip. Null means the server says the title is
+    // offered, so a stale age flag does not paint the badge. A missing field keeps the old check.
+    expect(pendingWallGlyph({ ...recent, protectionReason: 'recently_added' }, undefined)).toBe('skip');
+    expect(pendingWallGlyph({ ...recent, protectionReason: null }, undefined)).toBe('trash');
+    expect(pendingWallGlyph({ ...recent, protectionReason: 'tag' }, undefined)).toBe('trash');
+    // A title with no Maintainerr id is `unactionable` first, but inside the Age Guard it keeps the
+    // kept badge it wore before story 832 (the corners stay as ruled). Outside it, the plain trash can.
+    expect(pendingWallGlyph({ ...recent, protectionReason: 'unactionable' }, undefined)).toBe('skip');
+    expect(pendingWallGlyph({ ...cold, protectionReason: 'unactionable' }, undefined)).toBe('trash');
+    // The other first reasons still win over the Age Guard, as before.
+    expect(
+      pendingWallGlyph({ ...recent, recentlyWatched: true, protectionReason: 'unactionable' }, undefined),
+    ).toBe('trash');
   });
   it('unprotected cold ⇒ trash (slated); tappable to SAVE only with save_exclude', () => {
     expect(pendingWallGlyph(cold, undefined)).toBe('trash');
@@ -452,6 +475,61 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, undefined)).toBe('trash');
     // unprotected + watched (either state) ⇒ the slated, saveable trash-can — the eye corner is gone.
     expect(pendingWallGlyph(cold, undefined)).toBe('trash');
+  });
+});
+
+// DESIGN-052 D-10 amendment (story 832) / ADR-015 — the default view lists only titles that can be
+// deleted, so the read after a Save no longer returns the saved title. Its tile is put back where it
+// was, so no neighbour moves on the tap (hard rule 9).
+describe('withPinnedTiles (a title saved from the default view keeps its place)', () => {
+  type Tile = { maintainerrMediaId: string | null; collectionId: number };
+  const tile = (id: string, collectionId = 7): Tile => ({ maintainerrMediaId: id, collectionId });
+  const [a, b, c, d, e] = ['a', 'b', 'c', 'd', 'e'].map((id) => tile(id)) as [Tile, Tile, Tile, Tile, Tile];
+  const ids = (tiles: Tile[]) => tiles.map((t) => t.maintainerrMediaId).join('');
+  const pin = (item: Tile, index: number): PinnedTile<Tile> => ({ item, index });
+
+  it('no pins: the server list is returned as it is', () => {
+    const server = [a, b, c];
+    expect(withPinnedTiles(server, [])).toBe(server);
+  });
+
+  it('a saved tile the server dropped goes back to its index; every neighbour keeps its place', () => {
+    expect(ids(withPinnedTiles([a, c, d, e], [pin(b, 1)]))).toBe('abcde');
+    expect(ids(withPinnedTiles([b, c, d, e], [pin(a, 0)]))).toBe('abcde');
+    expect(ids(withPinnedTiles([a, b, c, d], [pin(e, 4)]))).toBe('abcde');
+  });
+
+  it('the only tile on the wall stays when it is saved (the wall never falls to its empty state)', () => {
+    expect(ids(withPinnedTiles([], [pin(a, 0)]))).toBe('a');
+  });
+
+  it('several saves rebuild the wall whichever was tapped first', () => {
+    // Each index is the tile's place in the wall as it stood at that tap, earlier pins included.
+    expect(ids(withPinnedTiles([a, c, e], [pin(b, 1), pin(d, 3)]))).toBe('abcde');
+    expect(ids(withPinnedTiles([a, c, e], [pin(d, 3), pin(b, 1)]))).toBe('abcde');
+  });
+
+  it('a tile the server still returns is never duplicated: the server copy wins, in its place', () => {
+    // b was un-saved, so the server lists it again; d is still saved.
+    expect(ids(withPinnedTiles([a, b, c, e], [pin(b, 1), pin(d, 3)]))).toBe('abcde');
+    const server = [a, b, c];
+    expect(withPinnedTiles(server, [pin(b, 2)])).toBe(server);
+  });
+
+  it('an index past the end (the list shrank for another reason) appends rather than throws', () => {
+    expect(ids(withPinnedTiles([a], [pin(e, 4)]))).toBe('ae');
+    expect(ids(withPinnedTiles([a], [pin(e, -3)]))).toBe('ea');
+  });
+
+  it('the same Maintainerr id in another collection is a different tile', () => {
+    const other = tile('b', 9);
+    expect(withPinnedTiles([a, other, c], [pin(b, 1)])).toEqual([a, b, other, c]);
+  });
+
+  it('does not change the list it was given', () => {
+    const server = [a, c];
+    withPinnedTiles(server, [pin(b, 1)]);
+    expect(ids(server)).toBe('ac');
   });
 });
 
@@ -641,6 +719,97 @@ describe('reclaimLabel', () => {
     expect(reclaimLabel(4200, 3, fmt)).toBe('Reclaiming 4200 B across 3 items');
     expect(reclaimLabel(1, 1, fmt)).toBe('Reclaiming 1 B across 1 item');
     expect(reclaimLabel(0, 0, fmt)).toBe('Nothing pending');
+  });
+});
+
+// DESIGN-052 D-10 amendment (story 821) — the wall's two views and everything they say in words.
+describe('the pending wall views: Deletable | All (story 821)', () => {
+  const fmt = (b: number) => `${b} B`;
+
+  it('two segments, Deletable first (the default), then All', () => {
+    expect(PENDING_VIEWS.map((v) => v.view)).toEqual(['deletable', 'all']);
+    expect(PENDING_VIEWS.map((v) => v.label)).toEqual(['Deletable', 'All']);
+    for (const v of PENDING_VIEWS) expect(v.hint.length).toBeGreaterThan(0);
+  });
+
+  it('has words for every reason the server can return, and for no other', () => {
+    // The client cannot import the server's list into the bundle, so parity is this test.
+    expect(Object.keys(WALL_REASON_COPY).sort()).toEqual([...TRASH_WALL_PROTECTION_REASONS].sort());
+  });
+
+  it('the tile line fits a phone tile; the detail says "Kept:" and neither uses a dash or jargon', () => {
+    for (const [reason, copy] of Object.entries(WALL_REASON_COPY)) {
+      // A third of a 390 px phone is about 111 px: 18 characters at the tile's 10 px text.
+      expect(copy.label.length, reason).toBeLessThanOrEqual(18);
+      expect(copy.detail.startsWith('Kept: '), reason).toBe(true);
+      for (const text of [copy.label, copy.detail]) {
+        expect(text, reason).not.toMatch(/[—–]/);
+        expect(text, reason).not.toMatch(/ledger|guardian|exclusion|Maintainerr|dnd|unevaluable|evaluat/i);
+      }
+    }
+  });
+
+  it('one reason keeps one wording on both walls (the batch wall kept tooltips)', () => {
+    expect(WALL_REASON_COPY.watchlisted.detail).toBe(KEPT_REASON_TOOLTIPS.watchlisted);
+    expect(WALL_REASON_COPY.recently_watched.detail).toBe(KEPT_REASON_TOOLTIPS.recently_watched);
+    expect(WALL_REASON_COPY.recently_added.detail).toBe(KEPT_REASON_TOOLTIPS.recently_added);
+    expect(WALL_REASON_COPY.saved.detail).toBe(KEPT_REASON_TOOLTIPS.saved);
+    expect(WALL_REASON_COPY.live_excluded.detail).toBe(KEPT_REASON_TOOLTIPS.live_excluded);
+  });
+
+  it('a reason this build does not know still says the title is kept', () => {
+    expect(wallReasonCopy('recently_added')).toBe(WALL_REASON_COPY.recently_added);
+    expect(wallReasonCopy('something_new')).toBe(WALL_REASON_FALLBACK);
+    expect(WALL_REASON_FALLBACK.label).toBe('Kept');
+  });
+
+  it('a Save is the app record or a live exclusion, nothing else', () => {
+    expect(wallReasonIsSave('saved')).toBe(true);
+    expect(wallReasonIsSave('live_excluded')).toBe(true);
+    // The do-not-delete tag keeps a title, but it is not a Save the wall can vouch for (ADR-086 D-5).
+    expect(wallReasonIsSave('tag')).toBe(false);
+    expect(wallReasonIsSave('watchlisted')).toBe(false);
+  });
+
+  it('shownWallReason: the server reason, moved by a tap the server has answered', () => {
+    expect(shownWallReason({ protectionReason: null }, undefined)).toBeNull();
+    expect(shownWallReason({}, undefined)).toBeNull(); // an older server
+    expect(shownWallReason({ protectionReason: 'watchlisted' }, undefined)).toBe('watchlisted');
+    // A confirmed Save reads saved at once, whatever the last read said.
+    expect(shownWallReason({ protectionReason: null }, 'saved')).toBe('saved');
+    expect(shownWallReason({ protectionReason: 'recently_watched' }, 'saved')).toBe('saved');
+    // A confirmed un-save clears a Save reason at once...
+    expect(shownWallReason({ protectionReason: 'saved' }, 'unsaved')).toBeNull();
+    expect(shownWallReason({ protectionReason: 'live_excluded' }, 'unsaved')).toBeNull();
+    // ...but never a reason an un-save cannot lift.
+    expect(shownWallReason({ protectionReason: 'watchlisted' }, 'unsaved')).toBe('watchlisted');
+    expect(shownWallReason({ protectionReason: 'recently_added' }, 'unsaved')).toBe('recently_added');
+  });
+
+  it('pendingTotalLabel: Deletable says what a delete frees; All counts titles and never says Reclaiming', () => {
+    expect(pendingTotalLabel('deletable', 4200, 3, 9, fmt)).toBe('Reclaiming 4200 B across 3 items');
+    expect(pendingTotalLabel('deletable', 1, 1, 1, fmt)).toBe('Reclaiming 1 B across 1 item');
+    expect(pendingTotalLabel('all', 4200, 3, 3, fmt)).toBe('3 titles in all · 4200 B');
+    expect(pendingTotalLabel('all', 1, 1, 1, fmt)).toBe('1 title in all · 1 B');
+    expect(pendingTotalLabel('all', 9, 9, 9, fmt)).not.toContain('Reclaiming');
+    // Nothing deletable while the rules still flag titles is not "nothing pending".
+    expect(pendingTotalLabel('deletable', 0, 0, 4, fmt)).toBe('Nothing to delete');
+    expect(pendingTotalLabel('deletable', 0, 0, 0, fmt)).toBe('Nothing pending');
+    expect(pendingTotalLabel('all', 0, 0, 0, fmt)).toBe('Nothing pending');
+  });
+
+  it('pendingEmptyLabel: filters first, then the way to the kept titles, then nothing pending', () => {
+    const base = { view: 'deletable' as const, hasFilters: false, poolTotal: 4, kind: 'movies' };
+    expect(pendingEmptyLabel({ ...base, hasFilters: true })).toBe('Nothing matches the filters.');
+    expect(pendingEmptyLabel(base)).toBe(
+      'Nothing here can be deleted right now. Choose All to see what is kept, and why.',
+    );
+    expect(pendingEmptyLabel({ ...base, poolTotal: 0 })).toBe(
+      'Nothing pending — no movies are scheduled for deletion.',
+    );
+    expect(pendingEmptyLabel({ ...base, view: 'all', kind: 'tv' })).toBe(
+      'Nothing pending — no tv are scheduled for deletion.',
+    );
   });
 });
 

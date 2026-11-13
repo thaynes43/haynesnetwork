@@ -104,6 +104,7 @@ describe('metadata-refresh per-user watch attribution (ADR-053 / DESIGN-026 D-07
   let t: TestDb;
   let amigos: string;
   let seventyOne: string;
+  let cake: string;
 
   beforeAll(async () => {
     t = await bootMigratedDb();
@@ -119,6 +120,7 @@ describe('metadata-refresh per-user watch attribution (ADR-053 / DESIGN-026 D-07
       .from(mediaItems);
     amigos = rows.find((r) => r.tmdbId === 8388)!.id;
     seventyOne = rows.find((r) => r.tmdbId === 252178)!.id;
+    cake = rows.find((r) => r.tmdbId === 1233620)!.id;
   });
 
   afterAll(async () => {
@@ -161,6 +163,8 @@ describe('metadata-refresh per-user watch attribution (ADR-053 / DESIGN-026 D-07
       tierTautulli: 2,
       userWatchMappedUsers: 0,
       userWatchWritten: 0,
+      watchComplete: true,
+      watchZeros: 1,
     });
     expect(await t.db.select().from(userMediaWatch)).toEqual([]);
     const householdBefore = await household();
@@ -169,6 +173,14 @@ describe('metadata-refresh per-user watch attribution (ADR-053 / DESIGN-026 D-07
       playCount: 3,
       lastViewedAt: new Date('2026-09-15T21:40:00Z'),
       lastWatchedServer: 'haynesops',
+    });
+    // A finished read stores 0 for a movie the history does not join. Null would mean the read
+    // never reached it.
+    expect(householdBefore.find((r) => r.mediaItemId === cake)).toMatchObject({
+      playCount: 0,
+      lastViewedAt: null,
+      lastWatchedAt: null,
+      lastWatchedServer: null,
     });
 
     // 2) The id_tokens Better Auth stored at each user's last sign-in: only the owner's carries the

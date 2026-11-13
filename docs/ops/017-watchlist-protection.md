@@ -135,8 +135,8 @@ Run it by hand once fixed (section 2); a `busy` answer means another run holds t
 
 ## 7. The operator scripts (in-cluster)
 
-All four run in the web pod, which holds the same secret and the `/sync` tree (OPS-004 §4). Each prints counts and
-library titles only.
+These run in the web pod, which holds the same secret and the `/sync` tree (OPS-004 §4). Each prints counts.
+The watch-history report names no title and no account. The others may print library titles.
 
 ```bash
 POD=deploy/haynesnetwork-main
@@ -149,6 +149,9 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/seerr-watchlist.ts
 # ADR-097 / DESIGN-052 D-28 — the Title Exclusion backfill: always --dry-run first, then --apply
 kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/title-exclusion-backfill.ts --dry-run
 kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/title-exclusion-backfill.ts --apply
+# DESIGN-008 D-03 (story 837) — household watch history, after the image that contains it is deployed
+kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/watch-history-backfill.ts --dry-run
+kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/watch-history-backfill.ts --apply
 ```
 
 - **`--pool`** prints, per kind, the pool size, the items recordable and their records by shape (`group` / `exact` /
@@ -164,6 +167,15 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/title-exclusion-ba
   committed. Copy it into the pod for the run and delete it after:
   `kubectl -n frontend cp ./sab.tsv <pod>:/tmp/sab.tsv -c app`, run with `--legacy-sab=/tmp/sab.tsv`, then
   `kubectl -n frontend exec <pod> -c app -- rm /tmp/sab.tsv`. The same holds for a `--manual` file.
+- **`watch-history-backfill.ts`** (DESIGN-008 D-03, story 837; one-off, after the release that carries it is
+  deployed) pages each configured Tautulli history and stores the household play count on live movies
+  and shows that already have a metadata row. A finished read stores 0 where no play joined. `--dry-run`
+  writes nothing and prints household counts plus each instance's oldest and newest instant. `--apply`
+  writes, 500 rows at a time, and refuses to write when the read did not finish (exit 1). No Tautulli
+  instance configured exits 2. A second `--apply` writes nothing when the stored watch columns already
+  match. Expect about two minutes (the 2026-11-13 history walk was 23.0 s; the estimate adds the
+  metadata lookups). It names no account and no title. The 6-hourly metadata refresh does the same
+  read after this release, so a later cycle restores a zero that a failed cycle cleared.
 - **`title-exclusion-backfill.ts`** (ADR-097, D-28; one-off, after the release that carries it is deployed) adds a
   Radarr or Sonarr import-list exclusion for every title Trash deleted, so Kometa and the import lists never add it
   again. It leaves out a title the *arr has in its library now (re-added since; the owner keeps those, 2026-10-03)
@@ -222,9 +234,10 @@ image writes it).
 
 When an array is over target but the space policy reports `skipped_min_candidates`, compare the
 live actionable count with the raw pool before changing rules. Watchlisted titles, open Saves,
-protective tags and recent Age Guard dates do not provide reclaim capacity. ADR-117's
-`age_guard_ignore_library_fill` setting ships off, so this section is unchanged until a later story
-turns it on. A small final pool
+protective tags and recent Age Guard dates do not provide reclaim capacity. ADR-119's
+`age_guard_ignore_library_fill` setting ships off. The one change that alters today's behaviour is a
+title with no Plex match, which is kept, so it adds no reclaim. This section stays as it is until
+story 823 turns the setting on. A small final pool
 can remain blocked by a higher configured minimum even when the jobs and integrations are healthy.
 
 The 2026-10-30 operating choice (OpenProject #296; execution was still pending when documented)
@@ -232,7 +245,9 @@ raises only the movie IMDb cutoff from 6.0 to 6.5, uses the largest-first movie 
 50-item cap, and lowers the policy minimum from 10 to 1. It retains IMDb votes > 99, never watched,
 the `mediarequests` exclusion, the 180-day rule and app Age Guard, all Save/watchlist/tag/watch
 protections, the seven-day save window and the 75% ceiling. TV's rule and five-item cap stay as they
-were. Source defaults do not change. Read-only projections put the largest 50 at 3.587 nominal TB;
+were on that date. A later ruling (2026-11-13, story 835, DESIGN-014 D-15) specifies a different TV
+rule body and leaves the five-item cap as it is; that body is not applied by the design change.
+Source defaults do not change. Read-only projections put the largest 50 at 3.587 nominal TB;
 native rule membership and the actual batch must be checked before reporting this as selected
 capacity. It is not a physical reclaim or sustained-rate guarantee. The measurements and remaining
 one-title preview discrepancy are in

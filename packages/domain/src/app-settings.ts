@@ -336,8 +336,8 @@ export interface AppSettingValueMap {
   // that is never Seerr user 1), written through setSeerrIssueBridge.
   seerr_issue_bridge: SeerrIssueBridgeSetting;
   seerr_issue_bridge_smoke: SeerrBridgeSmokeState | null;
-  // ADR-117 / DESIGN-052 D-29 — library-fill dates stop extending the Age Guard. Boolean, default false, so a
-  // missing or non-boolean row is the 2026-10-03 newest-date rule.
+  // ADR-119 / DESIGN-052 D-31 — library-fill dates stop extending the Age Guard. Boolean, default false, so a
+  // missing or non-boolean row keeps the 2026-10-03 newest Plex date. The no-match verdict is unknown either way.
   age_guard_ignore_library_fill: boolean;
 }
 
@@ -454,7 +454,7 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   // ADR-111 C-03 — absent key: no bridge user and both writes off, so nothing is ever written to Seerr.
   seerr_issue_bridge: { comment: false, resolve: false, bridgeUserId: null, commentFrom: null },
   seerr_issue_bridge_smoke: null,
-  // ADR-117 — off until a later story turns it on. Off is the 2026-10-03 Age Guard, exactly.
+  // ADR-119 — off until story 823 turns it on. Off keeps the 2026-10-03 newest Plex date.
   age_guard_ignore_library_fill: false,
 };
 

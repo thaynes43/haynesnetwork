@@ -1,0 +1,73 @@
+app,direction,format_name,upgrades
+radarr,gained,Remux Tier 01,72
+radarr,gained,DV Boost,44
+radarr,gained,HDR10+ Boost,43
+radarr,gained,Repack/Proper,33
+radarr,gained,WEB Tier 01,27
+radarr,gained,DTS-HD MA,21
+radarr,gained,MA,18
+radarr,gained,DD+,18
+radarr,gained,HDR,18
+radarr,gained,DD+ ATMOS,17
+radarr,gained,Remux Tier 03,15
+radarr,gained,iT,14
+radarr,gained,AMZN,12
+radarr,gained,TrueHD ATMOS,11
+radarr,gained,WEB Tier 02,9
+radarr,gained,Remux Tier 02,7
+radarr,gained,TrueHD,7
+radarr,lost,DD+,29
+radarr,lost,HDR10+ Boost,20
+radarr,lost,DTS-HD MA,16
+radarr,lost,AMZN,16
+radarr,lost,Remux Tier 02,14
+radarr,lost,DD,14
+radarr,lost,HDR,10
+radarr,lost,Repack/Proper,10
+radarr,lost,Remux Tier 03,10
+radarr,lost,DV Boost,9
+radarr,lost,DD+ ATMOS,8
+radarr,lost,WEB Tier 02,8
+radarr,lost,iT,6
+radarr,lost,AAC,6
+radarr,lost,Generated Dynamic HDR,6
+radarr,lost,WEB Tier 01,5
+sonarr,gained,WEB Tier 01,1987
+sonarr,gained,DSNP,1292
+sonarr,gained,WEB Tier 02,1167
+sonarr,gained,HD Streaming Boost,1145
+sonarr,gained,AMZN,804
+sonarr,gained,DSCP,767
+sonarr,gained,HMAX,654
+sonarr,gained,UHD Streaming Boost,644
+sonarr,gained,NF,545
+sonarr,gained,MAX,531
+sonarr,gained,Repack/Proper,188
+sonarr,gained,PMTP,124
+sonarr,gained,HDR,119
+sonarr,gained,HULU,74
+sonarr,gained,PCOK,72
+sonarr,gained,ATVP,64
+sonarr,gained,WEB Tier 03,51
+sonarr,gained,STAN,32
+sonarr,gained,SHO,13
+sonarr,gained,iT,7
+sonarr,lost,WEB Tier 02,744
+sonarr,lost,x265 (HD),518
+sonarr,lost,Repack/Proper,340
+sonarr,lost,WEB Tier 01,281
+sonarr,lost,AMZN,258
+sonarr,lost,LQ,234
+sonarr,lost,WEB Tier 03,211
+sonarr,lost,HDR,200
+sonarr,lost,MAX,82
+sonarr,lost,PMTP,45
+sonarr,lost,Language: Not English or Original,45
+sonarr,lost,NF,36
+sonarr,lost,AV1,34
+sonarr,lost,HULU,19
+sonarr,lost,HMAX,16
+sonarr,lost,DSNP,13
+sonarr,lost,HD Streaming Boost,9
+sonarr,lost,STAN,5
+sonarr,lost,UHD Streaming Boost,5

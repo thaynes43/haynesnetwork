@@ -2,15 +2,35 @@
 
 ## 2026-11-13: story #836 Age Guard library fill (proposed, setting off)
 
-- ADR-117 and DESIGN-052 D-29. The audited setting `age_guard_ignore_library_fill` defaults off. Off is the 2026-10-03 newest-date rule. On, a library-fill Plex date does not protect a title that is strictly older on another Plex server. A download import inside 180 days still protects. No other keep changes.
-- Evidence and the paper census (429 titles, Age Guard only) are in `.agents/context/2026-11-13-age-guard-library-fill.md`. The setting was not turned on. No live write.
-- Next safe step is review, then a later story to turn the setting on after a person has looked at the twenty largest shows and the movie list in D-29. Q-15 (Radarr rows matched into the TV library) does not block that.
+- ADR-119 and DESIGN-052 D-31. The audited setting `age_guard_ignore_library_fill` defaults off. Off keeps the 2026-10-03 newest-date rule, except one case: a pool member with no Plex match and no download import inside 180 days is `unknown` (kept). That is the one change that alters today's behaviour, and it only ever keeps more. Measured 2026-11-13 on replica postgres16-11 (`SELECT` on `trash_candidates`, `refreshed_at` 2026-11-13 15:15:05.495-05): 0 of 524 movie candidates have no Plex match, and the TV pool has 0 members. The ten shows that pass story 835's predicates all have a Plex match (same replica, same day).
+- On, a library-fill Plex date does not protect a title that is strictly older on another Plex server in a library of the fitting type, and only when that *arr's first download import is at least 180 days old. With that guard the July 2026 fill is left alone. Its stamps stop protecting on their own on 2026-12-29. A download import inside 180 days still protects. No other keep changes.
+- The census of 389 shows and 40 movies is the Age Guard alone. Under the live pools and under story 835's rule the switch changes no deletion today. Evidence: `.agents/context/2026-11-13-age-guard-library-fill.md`. The setting was not turned on. No live write.
+- The audited way to set the value and set it back is the admin mutation `trash.settings.set` with `ageGuardIgnoreLibraryFill`, through `setAgeGuardIgnoreLibraryFill`. Story 823's other conditions are in D-31.
+- Next safe step is the coordinator's check of these corrections against the diff, then merge with the setting still off. Q-24 (wrong-type matches; the matcher is story 847) and Q-25 (the 2026-10-30 "7 movies" row) do not block.
 
+## 2026-11-13: story #835 TV Trash rule body (not applied; review corrections in)
+
+- DESIGN-014 D-15 records the show-level TV rule. The four clauses from story 822 comment 7992 stay,
+  and story 835 comment 8099 (2026-11-13T18:55Z, "Add the votes floor") adds Sonarr `ratingVotes`
+  greater than 99. Clause order is rating, votes, tags, ended, aired. The air-date clause tests the
+  last episode HaynesOps holds in its highest-numbered season. Evidence:
+  `.agents/context/2026-11-13-tv-trash-rule-correction.md`.
+- Nothing was written to Maintainerr or Sonarr. Ten shows still pass the predicates
+  (412,648,319,552 bytes; lowest votes 1,276). The expected collection after an apply is three:
+  Star Wars Resistance (tvdb 351575), Muppets Now (368781), Tales of the Walking Dead (411314),
+  55,304,752,845 bytes. The other seven are global exclusions. The air date in the note is Sonarr
+  `previousAiring`, a stand-in.
+- Replacing the added-date clause does not make the aging audit refuse the pool. It does remove the
+  cover the Age Guard's comment assumes for a title with no Plex match. No superseding ADR. No code.
+- Q-05 is ruled. Q-04 (the name "unwatched" would become a Plex collection name) and Q-06 (a
+  list-added show is in the three) stay open and go to story 823.
+- Next safe step: the coordinator checks these corrections and merges. Story 823 applies nothing
+  until that merge, then follows D-15's read-back. Do not apply the rule from this note.
 ## 2026-11-13: story #822 TV Trash audit (report only)
 
 - Read-only audit of the empty TV Trash pool. Note: `.agents/context/2026-11-13-tv-trash-audit.md`, with the show and season CSVs beside it. No rule, cap, or cluster setting was changed.
 - The live Maintainerr TV rule is show-level. Its 180-day HaynesOps date-added clause matches 0 of 953 shows, because that library was filled on 2026-07-02. The pool and the candidate snapshot are both empty. Questions for the owner are Q-01 through Q-08 in the note.
-- Next safe step is the owner's ruling. A rule change is a later story.
+- The ruling landed the same day (story 822, comment 7992). The rule body is story 835, above.
 
 ## 2026-10-26: #208 dev-tl1 tool-lift measurement (done)
 
