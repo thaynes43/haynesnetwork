@@ -1799,8 +1799,9 @@ ledger row.
   (`releaseUnverified` says how many), and the client mirror `previewGuardian` follows (parity test).
 - `trashWallProtection` returns `release_unverified`: the default Deletable view omits the title, and All shows it
   with "Download unknown" ("Kept: the name of its download isn't on record"). No new layout.
-- `selectBatchCandidates`, the space policy's candidate count and the Start-a-batch preview leave it out: it takes
-  no slot, as with the Age Guard.
+- `selectBatchCandidates`, the proposal filter the space policy and Dynamic Pace share (`isPaceDeletable`, ADR-120:
+  the candidate count and the pool's bytes) and the Start-a-batch preview leave it out: it takes no slot and is not
+  counted as space a batch can free, as with the Age Guard.
 
 The delete path then reads the *arr and decides again by point 1. It can only keep more: a file replaced outside the
 *arr's history, a name with no term, no room under the cap. Such a title was offered and is kept at the sweep with

@@ -39,6 +39,7 @@ import {
   expediteDeletion,
   getTrashSweepStatus,
   identifyRelease,
+  isPaceDeletable,
   keepReasonForUnrecorded,
   ledgerPostedReleases,
   listTrashPending,
@@ -875,6 +876,10 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
       expect(classifyGuardian({ ...item, onWatchlist: true })).toEqual({ keep: true, reason: 'watchlisted' });
       expect(classifyGuardian({ ...item, ageGuard: 'unknown' })).toEqual({ keep: true, reason: 'unevaluable' });
       expect(trashWallProtection({ ...item, ageGuard: 'recent' })).toBe('recently_added');
+      // The proposal filter the space policy and Dynamic Pace share (ADR-120): never proposed, not in the pool.
+      expect(isPaceDeletable(item)).toBe(false);
+      expect(isPaceDeletable({ ...item, releaseName: 'verified' })).toBe(true);
+      expect(isPaceDeletable({ ...item, releaseName: 'unchecked' })).toBe(true);
     });
 
     it('the pending read carries the verdict and the Expedite preview counts the titles kept for want of a name', async () => {
