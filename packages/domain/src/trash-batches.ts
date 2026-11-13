@@ -1734,13 +1734,50 @@ export interface TrashSweepStatusView {
   lastOkAt: string | null;
   /** Set only when no sweep of a due batch has succeeded for SWEEP_PAUSE_BANNER_AFTER_H hours (any reason). */
   banner: TrashSweepBanner | null;
+  /**
+   * ADR-117 / DESIGN-052 D-29 — in the batch swept most recently (any kind; the scheduled sweep or Expire now): how
+   * many titles it kept because a file on disk has no verified posted release name, and because their terms would
+   * not fit under the Release Block's cap. Counts only. Null when no batch has been swept yet.
+   */
+  lastSweepKept: { sweptAt: string; releaseUnverified: number; releaseBlockFull: number } | null;
 }
 
 /** DESIGN-052 D-10 — the scheduled sweep's status for the Trash page (read-only). */
 export async function getTrashSweepStatus(input: { db?: DbClient; now?: Date }): Promise<TrashSweepStatusView> {
-  const [row] = await resolveDb(input.db).select().from(trashSweepStatus).where(eq(trashSweepStatus.id, 1));
+  const db = resolveDb(input.db);
+  // D-29 — read from the batch itself, so an Expire now (which writes no status row) is counted too.
+  const [swept] = await db
+    .select({ id: trashBatches.id, deletedAt: trashBatches.deletedAt })
+    .from(trashBatches)
+    .where(and(eq(trashBatches.state, 'deleted'), isNotNull(trashBatches.deletedAt)))
+    .orderBy(desc(trashBatches.deletedAt))
+    .limit(1);
+  let lastSweepKept: TrashSweepStatusView['lastSweepKept'] = null;
+  if (swept?.deletedAt) {
+    const [kept] = await db
+      .select({
+        releaseUnverified: sql<number>`count(*) filter (where ${trashBatchItems.keepReason} = 'release_unverified')::int`,
+        releaseBlockFull: sql<number>`count(*) filter (where ${trashBatchItems.keepReason} = 'release_block_full')::int`,
+      })
+      .from(trashBatchItems)
+      .where(and(eq(trashBatchItems.batchId, swept.id), eq(trashBatchItems.state, 'skipped')));
+    lastSweepKept = {
+      sweptAt: swept.deletedAt.toISOString(),
+      releaseUnverified: kept?.releaseUnverified ?? 0,
+      releaseBlockFull: kept?.releaseBlockFull ?? 0,
+    };
+  }
+  const [row] = await db.select().from(trashSweepStatus).where(eq(trashSweepStatus.id, 1));
   if (!row) {
-    return { lastOutcome: null, lastReason: null, lastAt: null, pausedSince: null, lastOkAt: null, banner: null };
+    return {
+      lastOutcome: null,
+      lastReason: null,
+      lastAt: null,
+      pausedSince: null,
+      lastOkAt: null,
+      banner: null,
+      lastSweepKept,
+    };
   }
   const now = (input.now ?? new Date()).getTime();
   let banner: TrashSweepBanner | null = null;
@@ -1759,6 +1796,7 @@ export async function getTrashSweepStatus(input: { db?: DbClient; now?: Date }):
     pausedSince: row.pausedSince?.toISOString() ?? null,
     lastOkAt: row.lastOkAt?.toISOString() ?? null,
     banner,
+    lastSweepKept,
   };
 }
 

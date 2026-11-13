@@ -37,6 +37,7 @@ import {
   deriveTerm,
   draftForVerifiedName,
   expediteDeletion,
+  getTrashSweepStatus,
   identifyRelease,
   keepReasonForUnrecorded,
   ledgerPostedReleases,
@@ -539,6 +540,11 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
         releaseBlockFullKept: 0,
         skippedNames: 0,
       });
+      // The status the Trash page reads carries the count (from the swept batch itself).
+      expect((await getTrashSweepStatus({ db: t.db })).lastSweepKept).toMatchObject({
+        releaseUnverified: 1,
+        releaseBlockFull: 0,
+      });
     });
 
     it('the sweep: when the ledger cannot tell, the delete path`s own read of the file keeps it the same way', async () => {
@@ -574,6 +580,8 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
       expect(report.batches[0]!.keptByReason).toEqual({ release_unverified: 1 });
       expect(report.batches[0]!.deletedCount).toBe(0);
       expect(handled(calls)).toBe(false);
+      // Expire now writes no status row; the count is read from the batch.
+      expect((await getTrashSweepStatus({ db: t.db })).lastSweepKept).toMatchObject({ releaseUnverified: 1 });
     });
 
     it('Expedite, one item: refused by the guardian, and by the delete path when the ledger cannot tell', async () => {

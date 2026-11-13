@@ -104,7 +104,9 @@ export const trashRouter = router({
       ]);
       // ADR-093 / DESIGN-052 D-10 — the paused banner's reason, set only once no scheduled sweep of a due batch has
       // succeeded for 6 hours (any reason); a shorter pause shows nothing. Counts and reasons only.
-      return { ...audit, sweepPause: sweep.banner };
+      // ADR-117 / D-29 — and what the most recent sweep kept for want of a verified release name, or of room under
+      // the Release Block's cap (counts only; no page shows it yet).
+      return { ...audit, sweepPause: sweep.banner, lastSweepKept: sweep.lastSweepKept };
     });
   }),
 

@@ -1814,6 +1814,7 @@ its reason on the batch tile, as `release_unrecorded` always was.
 | `[trash] sweep_summary` log | `releaseUnverifiedKept`, `releaseBlockFullKept`, `skippedNames`, beside `kept` |
 | Batch-close event payload | `keptByReason`, `skippedNames` |
 | `ExpediteDeletionResult` | `unverifiedNameCount`, `blockFullCount`, `skippedNames` (both scopes) |
+| `trash.status` (the read the Trash page makes on load) | `lastSweepKept`: what the most recently swept batch kept (`releaseUnverified`, `releaseBlockFull`), read from the batch, so Expire now counts too |
 | First pending page (`expeditePreview`) | `releaseUnverified`: pool titles the guardian keeps for want of a name |
 | Batch wall | each kept tile's reason (`keepReason`) |
 | `release-block-seed.ts --pool` | per reason, what the delete path would keep; live and added terms against the cap |
