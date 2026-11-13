@@ -1,7 +1,7 @@
 # DESIGN-008: Library metadata enrichment, poster proxy, and the shared filter/sort contract
 
 - **Status:** Draft
-- **Last updated:** 2026-09-23 <!-- D-03 amendment: default staleness cut is 6h minus a 30-min slack (the 6h threshold = 6h schedule made every other run near-empty, so rows refreshed every 12h); the mode runs the ADR-053 Plex Account Map reconcile first. Prior: 2026-07-06 -->
+- **Last updated:** 2026-11-13 <!-- D-03 amendment: the household history is paged to a short page, and a finished read stores play_count 0. Prior: 2026-09-23 (staleness slack). -->
 - **Satisfies:** PRD-001 R-40..R-42 (extended) + new **R-67..R-72**; governed by **ADR-018**
   (metadata modeling), **ADR-019** (poster proxy), ADR-008 (one-way sync), ADR-003
   (Postgres/Drizzle + transactional audit), ADR-015 (no reorientation). Bounded context DDD-002
@@ -104,6 +104,63 @@ context is built ONCE and shared. `selectMetadataTargets` picks rows missing OR
 > re-harvests the previous tick's rows, which is the designed 6h cadence (about a minute per run in
 > cluster). An explicit `staleThresholdMs` (tests) is still exact. Also since ADR-053, the mode runs
 > the Plex Account Map reconcile before harvesting (DESIGN-026 D-07 status note).
+
+> **D-03 amendment (2026-11-13): page the whole grouped history, and store a zero only for a finished read.**
+> Story 837. The household harvest had stopped after 20 pages of 500 (`maxPages` 20, 10,000 rows),
+> newest first. ADR-088 C-08 left lifting that window as a separate fix; this is that fix. The Trash
+> keep still reads `last_viewed_at` (30 days). Nothing about what Trash may delete changes.
+>
+> **Choice.** Page Tautulli's grouped `get_history` for each configured instance until a short or empty
+> page. Do not switch the household signal to Plex `lastViewedAt` / `viewCount`. Those fields are the
+> token account's, omitted when that account has no stamp, and a show's `lastViewedAt` is not the
+> household's. Measured 2026-11-13 from the web pod (one request at a time, token in the header, not
+> the URL): HaynesOps show section, 990 items, 15 with `lastViewedAt`, 90 with `viewedLeafCount` (76 of
+> those without `lastViewedAt`). HaynesTower show section, 989 items, 97 with `lastViewedAt`, 93 with
+> `viewedLeafCount`. The same day's Tautulli walk had 496 distinct show keys on HaynesTower and 16 on
+> HaynesOps. Plex is the wrong source for "nobody in the household watched."
+>
+> **What a stored value means.** `play_count` 0 and a null `last_viewed_at` mean the read finished and
+> no history row joined this movie or show: known, never played, as far as this history goes. Null
+> `play_count` means unknown: the read stopped early, a `get_metadata` lookup threw, no Tautulli
+> instance is configured, or the kind is music (Q-11). The database had been storing no zeros; an
+> absent title was written null, which is the same shape as "not read." A finished read now writes 0
+> for radarr and sonarr only. `sources.tautulli` stays absent on a zero (it is set only when a row
+> joined). ADR-018 still holds for a tier that did not finish: that cycle writes null, not 0.
+>
+> **Page size and cap, from the measurement.** Page size stays 500. On 2026-11-13 a walk of each
+> instance's grouped history, one page of 500 at a time until a short page, returned: HaynesTower
+> episodes 32,661 rows (66 pages), movies 4,033 rows (9 pages); HaynesOps episodes 175 and movies 42
+> (one page each); HaynesKube episodes 0 and movies 0. The unfiltered grouped history, which is the
+> call this harvest makes, is the sum of those rows plus HaynesTower's 2,316 track rows and
+> HaynesKube's 22 track rows: 39,010 on HaynesTower, equal to that instance's unfiltered
+> `recordsFiltered`. ceil(39010/500) = 79 pages. The cap is twice that, 158 (`TAUTULLI_HISTORY_PAGE_CAP`).
+> Reaching the cap, or any instance throwing, or any `get_metadata` throw, means the read is not
+> finished. Pages already read are still indexed, so a play inside the newest pages keeps its
+> `last_viewed_at`. Titles only in the unread tail become null for that cycle. Those plays are older
+> than the page window. A zero is not stored. `recordsTotal` is not the cap (Q-12).
+>
+> **Join.** Movies join on `rating_key`, episodes on `grandparent_rating_key` (the show). Other rows
+> still move the instance's oldest and newest instants. A `(server slug, rating key)` already in
+> `media_plex_matches` supplies the ledger item's tmdb/imdb/tvdb ids and skips `get_metadata`. A miss
+> falls back to `get_metadata`. One such call on HaynesTower, 2026-11-13T17:56:31Z, returned HTTP 200
+> in 18 ms. The overlap of history keys with the match table was not measured.
+>
+> **What the history cannot see.** A play before the oldest row (HaynesTower track 2023-09-18,
+> episode 2023-09-24; HaynesOps episode 2026-07-04). A server that was rebuilt, whose history starts
+> over. A title that was removed and added again: the old rating key does not resolve, so those plays
+> do not join. Plays on an instance whose key is not configured. Track plays are not joined to an
+> artist.
+>
+> **Backfill.** `packages/sync/src/scripts/watch-history-backfill.ts` (`--dry-run` then `--apply`)
+> reads the same history and rewrites only the watch columns of live movies and shows that already
+> have a metadata row, through `upsertMediaMetadataBatch`. It copies every other column through, so
+> a refresh does not blank ratings. It writes nothing when the read is not finished, and a second
+> apply writes nothing when the stored watch columns already match. Items with no metadata row are
+> skipped. The coordinator runs it after this release, from the web pod. Expect about two minutes:
+> the filtered walk of 2026-11-13 took 23.0 s, the unfiltered walk is 79 pages of the same size, and
+> a `get_metadata` for every distinct video key (496 + 1,891 + 16 + 28 = 2,431, summed from that
+> walk's unique keys) at 18 ms is about 44 s. The match table makes the metadata leg shorter. That
+> duration is an estimate from those measurements, not a timed backfill.
 
 ```mermaid
 sequenceDiagram
@@ -388,7 +445,11 @@ so a filter/sort visibly CHANGES the result set.
 Unit: the pure metadata mappers + tag parsing + watch-stat SUM/MAX merge
 (`packages/sync/__tests__/adapt-metadata.test.ts`), the single writer + CHECK constraints
 (`packages/domain`/`packages/db`), the *arr `/lookup` + Tautulli clients
-(`packages/arr/__tests__/metadata-clients.test.ts`). Integration: the `ledger.search` sort/filter
+(`packages/arr/__tests__/metadata-clients.test.ts`). The lifetime harvest
+(`packages/sync/__tests__/lifetime-watch-harvest.test.ts`) pages past the old 20-page window,
+stores 0 for a movie with no joined play, skips `get_metadata` when the rating key is already
+resolved, and checks the backfill: a dry run writes nothing, an apply stores the 0, a second apply
+writes nothing, and an unfinished read writes nothing. Integration: the `ledger.search` sort/filter
 + **keyset across the null boundary in both directions** + `filterFacets`
 (`packages/api/__tests__/ledger-metadata.test.ts`). Component: the ported filter-engine suite
 runs verbatim in `@hnet/ui` (`src/filters/*.test.*` — jsdom via per-file docblocks, D-10). e2e:
@@ -401,3 +462,5 @@ the stubs above + the poster-proxy contract spec + the D-10/D-11 grid/filter jou
 |----|----------|------------|
 | Q-09 | Backfill real per-file resolution (vs profile-derived) | **Resolved** (live-validation fix 2026-07-06): the harvest now reads Radarr `movieFile.quality.quality.resolution` (inline) + Sonarr per-series `episodefile` dominant tier; Lidarr → null. Profile-derivation retired (mapped every live row to 'unknown'). See D-02. |
 | Q-10 | Dedupe one account watching a title on two servers | Deferred — SUM across servers is the current signal (PLAN-006 refines if needed). |
+| Q-11 | Should Lidarr (music) receive `play_count` 0 on a finished read? | **Open.** Recommendation: no. History rows for tracks are not joined to an artist, so a 0 would say "never played" for a library this harvest does not read. Music stays null (unknown) until a join exists. |
+| Q-12 | Tautulli `recordsTotal` is larger than the grouped rows the walk returns. HaynesTower, 2026-11-13: `recordsTotal` 49,262, unfiltered `recordsFiltered` 39,010, and the walk returned 39,010 rows. Episode `group_count` summed to 39,629 and movie `group_count` to 6,977 (46,606 together). Track `group_count` was not summed, so the remaining 2,656 (49,262 − 46,606, calculated) is unexplained. | **Open.** Recommendation: page `data` until a short or empty page, and size the cap from the walked rows (`recordsFiltered`), not from `recordsTotal`. The cap of 158 is 2 × ceil(39010/500). |
