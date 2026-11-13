@@ -60,7 +60,7 @@ import { CHIP_LABELS, RatingChip } from '@/components/filter-chips';
 import { type TrashAccess } from '@/components/trash-shield';
 import {
   PendingWall,
-  WatchlistVisibilityControl,
+  PendingViewSelector,
   usePinnedSaves,
   useInfiniteScroll,
   usePendingSaves,
@@ -78,11 +78,13 @@ import {
   EXPEDITE_UNVERIFIABLE_REASON,
   expediteErrorAction,
   overviewBadge,
-  reclaimLabel,
+  pendingEmptyLabel,
+  pendingTotalLabel,
   sweepTimeLabel,
   windowClosed,
   WATCHLIST_BREAKDOWN_TERM,
   RECENT_BREAKDOWN_TERM,
+  type PendingView,
 } from '@/lib/trash';
 
 export type { TrashAccess };
@@ -203,6 +205,9 @@ function PendingTab({
 
   // ── URL → state (same param contract as /library and /ledger) ──
   const qParam = searchParams.get('q') ?? '';
+  // DESIGN-052 D-10 amendment (story 821) — the wall's view: `deletable` (the default, no param) or
+  // `all`. The URL keeps the param the retired checkbox wrote (`?protected=show` is All), so every
+  // saved link, and the back-link that returns to the wall with its state, still opens the same view.
   const protectedParam = searchParams.get('protected') === 'show';
   const viewUrl = searchParams.toString();
   // Reflect a tap immediately while navigation settles, and follow URL/back navigation.
@@ -211,6 +216,7 @@ function PendingTab({
     setProtectedView({ url: viewUrl, show: protectedParam });
   }
   const showProtected = protectedView.show;
+  const view: PendingView = showProtected ? 'all' : 'deletable';
   const filters = useMemo<FilterMap<PendingField>>(() => {
     const out: FilterMap<PendingField> = {};
     for (const f of FILTER_FIELDS) {
@@ -440,10 +446,29 @@ function PendingTab({
     patchParams({ sort: next === DEFAULT_SORT ? null : next });
   };
 
+  // The counts bar's line. Its slot has a fixed width (app.css), so the full text also rides the
+  // title attribute for the rare line that ellipsizes.
+  const totalLabel = pending.isLoading
+    ? 'Totaling…'
+    : `${pendingTotalLabel(view, filteredBytes, filteredCount, total, formatBytes)}${
+        hasFilters ? ` · filtered from ${total} pending` : ''
+      }`;
+
   return (
     <>
       <div className="library-toolbar">
         <div className="library-controls">
+          {/* DESIGN-052 D-10 amendment (story 821) — the Library's view selector, in the Library's
+              place: first in the controls row, before the search. */}
+          <PendingViewSelector
+            view={view}
+            onChange={(next) => {
+              const show = next === 'all';
+              if (show === showProtected) return;
+              setProtectedView({ url: viewUrl, show });
+              patchParams({ protected: show ? 'show' : null });
+            }}
+          />
           <input
             type="search"
             className="library-search"
@@ -454,13 +479,6 @@ function PendingTab({
           />
         </div>
         <div className="library-chipbar" role="group" aria-label="Filters">
-          <WatchlistVisibilityControl
-            checked={showProtected}
-            onChange={(checked) => {
-              setProtectedView({ url: viewUrl, show: checked });
-              patchParams({ protected: checked ? 'show' : null });
-            }}
-          />
           {FILTER_FIELDS.map((f) => (
             <FilterChip
               key={f.field}
@@ -520,16 +538,12 @@ function PendingTab({
       {/* The filter-aware reclaim counts bar — persistent, constant-height, ABOVE the wall
           (ADR-015); it carries the bulk Expedite-all pill. */}
       <div className="trash-countsbar" role="toolbar" aria-label="Pending totals and actions">
-        <span className="trash-countsbar__total" data-testid="trash-total">
-          {pending.isLoading
-            ? 'Totaling…'
-            : `${reclaimLabel(filteredBytes, filteredCount, formatBytes)}${
-                hasFilters ? ` · filtered from ${total} pending` : ''
-              }`}
+        <span className="trash-countsbar__total" data-testid="trash-total" title={totalLabel}>
+          {totalLabel}
         </span>
         {/* ADR-035 — snapshot honesty: age + manage-gated Refresh. Constant-slot text (ADR-015:
             the muted span sits inline in the flex bar; refreshing only swaps its label). */}
-        <span className="muted" data-testid="trash-asof">
+        <span className="muted trash-countsbar__asof" data-testid="trash-asof">
           {refreshCandidates.isPending
             ? 'refreshing candidates…'
             : (() => {
@@ -600,13 +614,13 @@ function PendingTab({
           onToggle={toggle}
           loading={pending.isLoading}
           refreshing={refreshing}
-          emptyLabel={
-            hasFilters
-              ? 'Nothing matches the filters.'
-              : showProtected || total === 0
-                ? `Nothing pending — no ${label.toLowerCase()} are scheduled for deletion.`
-                : 'No candidates to show. Use Show protected to include titles that cannot be deleted.'
-          }
+          emptyLabel={pendingEmptyLabel({
+            view,
+            hasFilters,
+            poolTotal: total,
+            kind: label.toLowerCase(),
+          })}
+          showReasons={view === 'all'}
           wallLabel={`Pending ${label} deletions`}
           sentinelRef={sentinelRef}
           hasNextPage={pending.hasNextPage === true}
