@@ -1,0 +1,25 @@
+collection_a,collection_b,shared_ledger_movies,library,measured
+IMDB Top 250,Top Rated,82,HOps Movies,2026-11-13
+Golden Globes Best Picture Winners,Oscars Best Picture Winners,57,HOps Movies,2026-11-13
+Golden Globes Best Picture Winners,IMDB Top 250,43,HOps Movies,2026-11-13
+IMDB Top 250,Oscars Best Picture Winners,35,HOps Movies,2026-11-13
+IMDB Popular,Popular Now,25,HOps Movies,2026-11-13
+Popular Now,Top Rated,21,HOps Movies,2026-11-13
+Popular Now,Top Grossing,19,HOps Movies,2026-11-13
+IMDB Top 250,Popular Now,19,HOps Movies,2026-11-13
+IMDB Top 250,Top Grossing,17,HOps Movies,2026-11-13
+Golden Globes Best Picture Winners,Top Rated,15,HOps Movies,2026-11-13
+Top Grossing,Top Rated,13,HOps Movies,2026-11-13
+Oscars Best Picture Winners,Top Rated,12,HOps Movies,2026-11-13
+IMDB Popular,Top Rated,11,HOps Movies,2026-11-13
+IMDB Popular,IMDB Top 250,10,HOps Movies,2026-11-13
+Golden Globes Best Picture Winners,Top Grossing,9,HOps Movies,2026-11-13
+Golden Globes Best Picture Winners,Popular Now,5,HOps Movies,2026-11-13
+IMDB Popular,Top Grossing,5,HOps Movies,2026-11-13
+Oscars Best Picture Winners,Popular Now,4,HOps Movies,2026-11-13
+Oscars Best Picture Winners,Top Grossing,3,HOps Movies,2026-11-13
+Christmas HNet,IMDB Top 250,3,HOps Movies,2026-11-13
+Christmas HNet,Top Rated,2,HOps Movies,2026-11-13
+IMDB Popular,Oscars Best Picture Winners,1,HOps Movies,2026-11-13
+Golden Globes Best Picture Winners,IMDB Popular,1,HOps Movies,2026-11-13
+Christmas HNet,Popular Now,1,HOps Movies,2026-11-13
