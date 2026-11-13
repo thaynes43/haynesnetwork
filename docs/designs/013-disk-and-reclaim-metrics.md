@@ -206,7 +206,7 @@ audience the drivers prioritized; owner-greenlit replacement):
 ### D-08 — Capacity Forecast (2026-11-13; method corrected the same day)
 
 When each array's free space will reach its target floor, and when it will reach zero, from the
-same exportarr free-space history D-07 already reads. The chart that draws this is a later story;
+same exportarr free-space history D-07 already reads. The chart that draws this is D-09 (story 819);
 this decision is the function and the read. **ADR-030 is unchanged.** The history stays the
 exportarr series in Prometheus (no second store, option 2 of ADR-030 stays rejected). The forecast
 consumes free bytes plus the existing free-byte floor (`targetFreeBytes`). It does not add a
@@ -535,7 +535,7 @@ down with distance:
 The two cuts are estimates from D-08's measured standard errors of the rate, 18% (HaynesTower)
 and 29% (music), each carried to the date by division: one standard error moves a date about half
 a month (15 days) when it is 83 days away at 18% and 52 days at 29%, and about half a year (183
-days) when it is 1014 days away at 18% and 630 at 29%. 60 days and 2 years (730 days) sit between
+days) when it is 1017 days away at 18% and 631 at 29%. 60 days and 2 years (730 days) sit between
 each pair. They are not measured limits. A pace is printed to two significant figures ("about
 210 GB a day") for the same reason. Dates are UTC, as on the trend's axis.
 

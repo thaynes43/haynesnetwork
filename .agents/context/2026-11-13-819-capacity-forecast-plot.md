@@ -32,7 +32,7 @@ and `jumps`. `forecastFreeSpace` and the method (D-08) were not touched.
 | ---- | ----- | --- |
 | Plot width at a 390px viewport | 278px | `getBoundingClientRect` of `.storage-forecast__plotarea`, local stack, Playwright |
 | Plot width at 360px and 1280px | 248px, 832px | same |
-| Axis label width | 4.75 to 6.49px a character (six labels: "Today", "Jul 2027", "Apr 2028", "2030", "2035") | `getBoundingClientRect` of each label |
+| Axis label width | 4.75 to 6.49px a character (six labels on the two plots, five different texts: "Today" twice, "Jul 2027", "Apr 2028", "2030", "2035") | `getBoundingClientRect` of each label |
 | Tile height | 88px, all four tiles, at 360, 390 and 1280px | same |
 | Sideways scroll at 360 and 390px | none (`scrollWidth` = `innerWidth`) | `document.documentElement.scrollWidth` |
 | Colour-vision separation of the two tones | ΔE 10.1 dark, 17.8 light (target 8) | validator, deuteranopia the worse case |
@@ -56,7 +56,7 @@ reading (the chip's word, the tiles, the sentence, the card's key).
 - **The date-precision cuts (60 days, 2 years)** are estimates, not measurements. D-08 measured
   the rate's standard error at 18% (HaynesTower, 38.18 of 212.24 GB/day) and 29% (music, 11.25 of
   39.3). One standard error moves a date by that share of its distance: 15 days at 15 / 0.18 = 83
-  days out and 15 / 0.29 = 52; 183 days at 183 / 0.18 = 1014 days out and 183 / 0.29 = 630. 60 and
+  days out and 15 / 0.29 = 52; 183 days at 183 / 0.18 = 1017 days out and 183 / 0.29 = 631. 60 and
   730 sit between each pair.
 - **"About half of it after six weeks, all of it within three months"** restates D-08's table: a
   change of rate is 50% reported after 15 of 30 steps (45 days) and 100% by the 30th (90 days).

@@ -39,7 +39,7 @@ export function forecastDayLabel(atSec: number, nowSec: number): string {
 /**
  * Dates this far out are printed to the day, the month, and beyond that the year. Estimated from
  * D-08's measured standard errors of the rate (18% and 29%): one standard error moves a date half
- * a month at 52 to 83 days out, and half a year at 630 to 1014 days out (D-09).
+ * a month at 52 to 83 days out, and half a year at 631 to 1017 days out (D-09).
  */
 const DAY_PRECISION_DAYS = 60;
 const MONTH_PRECISION_DAYS = 2 * 365.25;
