@@ -185,6 +185,12 @@ export {
   type StorageTrendSeries,
   type StorageTrendReport,
 } from './storage-trend';
+// DESIGN-013 D-08 — the capacity forecast wire types. Re-exported so the server caller can name them.
+export {
+  getStorageForecast,
+  type StorageForecastSeries,
+  type StorageForecastReport,
+} from './storage-forecast';
 export {
   createPrometheusClient,
   prometheusClientFromEnv,

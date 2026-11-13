@@ -9,6 +9,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { users } from '@hnet/db';
 import {
+  FORECAST_STEP_SECONDS,
+  FORECAST_WINDOW_SECONDS,
+  type StorageArrayUtilization,
+} from '@hnet/domain';
+import {
   bootMigratedDb,
   caller,
   createUser,
@@ -18,7 +23,11 @@ import {
   type TestDb,
 } from './helpers';
 import { stubArrBundle } from './arr-stubs';
-import { createPrometheusClient, prometheusClientFromEnv, PROMETHEUS_DEFAULT_URL } from '../src/prometheus';
+import {
+  createPrometheusClient,
+  prometheusClientFromEnv,
+  PROMETHEUS_DEFAULT_URL,
+} from '../src/prometheus';
 import type { PromMatrixSeries, PrometheusRangeReader } from '../src/prometheus';
 import {
   FREESPACE_TREND_QUERY,
@@ -27,7 +36,7 @@ import {
   TREND_WINDOWS,
   TREND_WINDOW_SPECS,
 } from '../src/storage-trend';
-import type { StorageArrayUtilization } from '@hnet/domain';
+import { getStorageForecast } from '../src/storage-forecast';
 
 const TB = 1_000_000_000_000;
 
@@ -47,7 +56,10 @@ describe('createPrometheusClient — GET /api/v1/query_range + zod matrix valida
     const seen: string[] = [];
     const series: PromMatrixSeries[] = [
       {
-        metric: { __name__: 'radarr_rootfolder_freespace_bytes', path: '/data/haynestower/Media/Movies' },
+        metric: {
+          __name__: 'radarr_rootfolder_freespace_bytes',
+          path: '/data/haynestower/Media/Movies',
+        },
         values: [[1_783_000_000, '112505914261504']],
       },
     ];
@@ -78,9 +90,12 @@ describe('createPrometheusClient — GET /api/v1/query_range + zod matrix valida
     const misshapen = createPrometheusClient({
       baseUrl: 'http://prom.test:9090',
       fetchImpl: (async () =>
-        new Response(JSON.stringify({ status: 'success', data: { resultType: 'vector', result: [] } }), {
-          status: 200,
-        })) as typeof fetch,
+        new Response(
+          JSON.stringify({ status: 'success', data: { resultType: 'vector', result: [] } }),
+          {
+            status: 200,
+          },
+        )) as typeof fetch,
     });
     await expect(misshapen.queryRange('up', 0, 1, 1)).rejects.toThrow(/unexpected shape/);
   });
@@ -237,8 +252,14 @@ function stubPrometheus(handler: PrometheusRangeReader['queryRange']): Prometheu
 
 function diskspaceStub() {
   return stubArrBundle([
-    { path: '/api/v3/diskspace', body: [{ path: '/data/haynestower', freeSpace: 112.4304 * TB, totalSpace: 529.96 * TB }] },
-    { path: '/api/v1/diskspace', body: [{ path: '/data/cephfs-hdd', freeSpace: 130.45 * TB, totalSpace: 174.84 * TB }] },
+    {
+      path: '/api/v3/diskspace',
+      body: [{ path: '/data/haynestower', freeSpace: 112.4304 * TB, totalSpace: 529.96 * TB }],
+    },
+    {
+      path: '/api/v1/diskspace',
+      body: [{ path: '/data/cephfs-hdd', freeSpace: 130.45 * TB, totalSpace: 174.84 * TB }],
+    },
   ]);
 }
 
@@ -260,14 +281,20 @@ function callerWith(user: typeof users.$inferSelect, prom: PrometheusRangeReader
 
 describe('storage.trend — the router read', () => {
   it('a member is FORBIDDEN (adminProcedure, like the rest of the Storage tab reads)', async () => {
-    const memberCaller = callerWith(member, stubPrometheus(async () => []));
+    const memberCaller = callerWith(
+      member,
+      stubPrometheus(async () => []),
+    );
     await expect(memberCaller.storage.trend({ window: '30d' })).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
   });
 
   it('returns the mapped per-array series with a step-aligned window and the target floor', async () => {
-    await callerWith(admin, stubPrometheus(async () => [])).storage.targets.set({
+    await callerWith(
+      admin,
+      stubPrometheus(async () => []),
+    ).storage.targets.set({
       targets: { haynestower: 80 },
     });
 
@@ -279,7 +306,9 @@ describe('storage.trend — the router read', () => {
           [start, `${120 * TB}`],
           [end, `${112 * TB}`],
         ]),
-        promSeries('lidarr_rootfolder_freespace_bytes', '/data/media/music', [[end, `${130 * TB}`]]),
+        promSeries('lidarr_rootfolder_freespace_bytes', '/data/media/music', [
+          [end, `${130 * TB}`],
+        ]),
       ];
     });
 
@@ -302,7 +331,10 @@ describe('storage.trend — the router read', () => {
   });
 
   it('defaults the window to 30d', async () => {
-    const report = await callerWith(admin, stubPrometheus(async () => [])).storage.trend({});
+    const report = await callerWith(
+      admin,
+      stubPrometheus(async () => []),
+    ).storage.trend({});
     expect(report.window).toBe('30d');
   });
 
@@ -327,6 +359,159 @@ describe('getStorageTrend — direct (no router)', () => {
         throw new Error('down');
       }),
       window: '90d',
+    });
+    expect(report.unavailable).toBe(true);
+    expect(report.series).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// storage.forecast (DESIGN-013 D-08) — same gate, same arrays, same degrade
+// ---------------------------------------------------------------------------------------------------
+
+const DAY = 86_400;
+
+describe('storage.forecast — the router read', () => {
+  it('a member is FORBIDDEN', async () => {
+    const memberCaller = callerWith(
+      member,
+      stubPrometheus(async () => []),
+    );
+    await expect(memberCaller.storage.forecast()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('groups the same arrays, carries the target floor, and fits the 90-day window', async () => {
+    await callerWith(
+      admin,
+      stubPrometheus(async () => []),
+    ).storage.targets.set({
+      targets: { haynestower: 80 },
+    });
+
+    let asked: { query: string; start: number; end: number; step: number } | undefined;
+    const prom = stubPrometheus(async (query, start, end, step) => {
+      asked = { query, start, end, step };
+      const points: [number, string][] = [];
+      // 1 TB/day fill from 120 TB, still positive at the end of the 90-day window.
+      for (let t = start; t <= end; t += step) {
+        points.push([t, `${120 * TB - ((t - start) / DAY) * 1e12}`]);
+      }
+      return [
+        promSeries('radarr_rootfolder_freespace_bytes', '/data/haynestower/Media/Movies', points),
+        promSeries('lidarr_rootfolder_freespace_bytes', '/data/media/music', points),
+      ];
+    });
+
+    const report = await callerWith(admin, prom).storage.forecast();
+    expect(report.unavailable).toBe(false);
+    expect(asked!.query).toBe(FREESPACE_TREND_QUERY);
+    expect(asked!.step).toBe(FORECAST_STEP_SECONDS);
+    expect(asked!.end - asked!.start).toBe(FORECAST_WINDOW_SECONDS);
+    expect(asked!.end % asked!.step).toBe(0);
+    expect(report).toMatchObject({
+      start: asked!.start,
+      end: asked!.end,
+      stepSeconds: FORECAST_STEP_SECONDS,
+    });
+
+    const tower = report.series.find((s) => s.key === 'haynestower')!;
+    expect(tower.targetPct).toBe(80);
+    expect(tower.targetFreeBytes).toBe(Math.round(529.96 * TB * 0.2));
+    expect(tower.forecast.forecast).toBe(true);
+    expect(tower.forecast.direction).toBe('filling');
+    expect(tower.forecast.rateBytesPerDay).toBeCloseTo(-1e12, -3);
+    // The dates start from the live /diskspace reading, stamped now, not from the last aligned sample.
+    const towerOrigin = tower.forecast.origin!;
+    expect(towerOrigin.freeBytes).toBe(112.4304 * TB);
+    expect(towerOrigin.t).toBeGreaterThanOrEqual(asked!.end);
+    expect(towerOrigin.t - asked!.end).toBeLessThan(FORECAST_STEP_SECONDS);
+    expect(tower.forecast.fullAt).toBe(Math.round(towerOrigin.t + 112.4304 * DAY));
+    // 112.4304 TB free is above the 105.992 TB floor: (112.4304 − 105.992) / 1 = 6.4384 days.
+    expect(tower.forecast.targetAt).toBe(Math.round(towerOrigin.t + 6.4384 * DAY));
+
+    const music = report.series.find((s) => s.key === 'cephfs')!;
+    expect(music.targetPct).toBeNull();
+    expect(music.targetFreeBytes).toBeNull();
+    expect(music.forecast.targetAt).toBeNull();
+    expect(music.forecast.origin!.freeBytes).toBe(130.45 * TB);
+    expect(music.forecast.fullAt).toBe(Math.round(music.forecast.origin!.t + 130.45 * DAY));
+  });
+
+  it('degrades to `unavailable` when Prometheus is down — never a throw', async () => {
+    const prom = stubPrometheus(async () => {
+      throw new Error('connect ECONNREFUSED');
+    });
+    const report = await callerWith(admin, prom).storage.forecast();
+    expect(report.unavailable).toBe(true);
+    expect(report.series).toEqual([]);
+    expect(report.stepSeconds).toBe(FORECAST_STEP_SECONDS);
+    expect(report.end - report.start).toBe(FORECAST_WINDOW_SECONDS);
+  });
+});
+
+describe('getStorageForecast — direct (no router)', () => {
+  // 2026-11-13T16:36:00Z. The 3-day grid's last instant before it is 2026-11-12T00:00:00Z, 40.6 h back.
+  const NOW = new Date('2026-11-13T16:36:00.000Z');
+  const NOW_SEC = NOW.getTime() / 1000;
+  const ALIGNED_END = Date.parse('2026-11-12T00:00:00.000Z') / 1000;
+  /** 1 TB/day fill that ends at 120 TB free on the last aligned sample. */
+  const fillingProm = () =>
+    stubPrometheus(async (_query, start, end, step) => {
+      const points: [number, string][] = [];
+      for (let t = start; t <= end; t += step) {
+        points.push([t, `${120 * TB + ((end - t) / DAY) * 1e12}`]);
+      }
+      return [
+        promSeries('radarr_rootfolder_freespace_bytes', '/data/haynestower/Media/Movies', points),
+      ];
+    });
+
+  it('reads the rate from the aligned history and the level from the live free space, at now', async () => {
+    const report = await getStorageForecast({
+      db: testDb.db,
+      arr: diskspaceStub().bundle,
+      prometheus: fillingProm(),
+      now: NOW,
+    });
+    expect(report.end).toBe(ALIGNED_END);
+    expect(NOW_SEC - report.end).toBe(40.6 * 3600);
+
+    const tower = report.series.find((s) => s.key === 'haynestower')!;
+    expect(tower.forecast.rateBytesPerDay).toBeCloseTo(-1e12, -3);
+    expect(tower.forecast.origin).toEqual({ t: NOW_SEC, freeBytes: 112.4304 * TB });
+    expect(tower.forecast.fullAt).toBe(Math.round(NOW_SEC + 112.4304 * DAY));
+  });
+
+  it('falls back to the last aligned sample when the *arr cannot be read', async () => {
+    const deadArr = stubArrBundle([]); // every /diskspace 404s ⇒ no live free space, no total
+    const report = await getStorageForecast({
+      db: testDb.db,
+      arr: deadArr.bundle,
+      prometheus: fillingProm(),
+      now: NOW,
+    });
+    expect(report.unavailable).toBe(false);
+
+    const tower = report.series.find((s) => s.key === 'haynestower')!;
+    expect(tower.totalBytes).toBeNull();
+    expect(tower.targetFreeBytes).toBeNull();
+    expect(tower.forecast.origin).toEqual({ t: ALIGNED_END, freeBytes: 120 * TB });
+    expect(tower.forecast.fullAt).toBe(ALIGNED_END + 120 * DAY);
+    expect(tower.forecast.targetAt).toBeNull();
+
+    // An array with no history at all is too short, with nothing to start from.
+    const music = report.series.find((s) => s.key === 'cephfs')!;
+    expect(music.forecast).toMatchObject({ forecast: false, reason: 'too_short', origin: null });
+  });
+
+  it('stays unavailable when Prometheus and every *arr are both down', async () => {
+    const deadArr = stubArrBundle([]);
+    const report = await getStorageForecast({
+      db: testDb.db,
+      arr: deadArr.bundle,
+      prometheus: stubPrometheus(async () => {
+        throw new Error('down');
+      }),
     });
     expect(report.unavailable).toBe(true);
     expect(report.series).toEqual([]);
