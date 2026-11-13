@@ -60,11 +60,10 @@ export const LEAVING_SOON_NAMES: Record<'movie' | 'tv', string> = {
  * - `gone`   — deleted by the sweep.
  *
  * The person-shield `requested` glyph was RETIRED (owner ruling 2026-07-09 — "Maintainerr rules
- * decide what gets promoted; the app controls how much and when it's deleted"). A requester is
- * informational only: it changes NO glyph and NO actionability. A requested item snapshots per its
- * real state (pending unless tag/exclusion-protected) and reads as the ordinary `trash`/`shield`;
- * its requester attribution moves OUT to the meta line as an info badge (a person icon + "Requested
- * by <name>" — the RequestedByBadge component), co-existing with the watch note.
+ * decide what gets promoted; the app controls how much and when it's deleted"). The requester line
+ * stays a meta badge. ADR-118 then makes the `mediarequests` tag a keep: a new batch leaves that
+ * title out, the way a Save is left out, and the sweep keeps a row already pending. A personal
+ * requester tag is still informational. The badge is the RequestedByBadge component.
  *
  * The `eye` glyph was likewise RETIRED from the corner (owner ruling 2026-07-09 — the eye-corner bug
  * fix): a recently-watched pending item reads as the slated trash-can and is saveable; the watch fact

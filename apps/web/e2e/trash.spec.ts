@@ -50,6 +50,18 @@ function releaseOpenSaves(): void {
   if (res.status !== 0) throw new Error(`reset-saves failed:\n${res.stdout}\n${res.stderr}`);
 }
 
+/** ADR-118 — the TV pool's only title is tagged, and a batch leaves that tag out. */
+function trashFixture(command: 'request-tag' | 'skip-gate', value: 'on' | 'off'): void {
+  const res = spawnSync(
+    join(process.cwd(), 'node_modules', '.bin', 'tsx'),
+    [join(process.cwd(), 'e2e', 'support', 'trash-e2e-fixture.ts'), command, value],
+    { env: { ...process.env, ...env() }, encoding: 'utf8' },
+  );
+  if (res.status !== 0) {
+    throw new Error(`trash-e2e-fixture ${command} ${value} failed:\n${res.stdout}\n${res.stderr}`);
+  }
+}
+
 async function maintainerrCalls(page: Page): Promise<RecordedMaintainerrWrite[]> {
   const res = await page.request.get(`${env().STUB_MAINTAINERR_URL}/_stub/calls`);
   return ((await res.json()) as { calls: RecordedMaintainerrWrite[] }).calls;
@@ -2072,24 +2084,32 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await armAndConfirm(page.getByTestId('gate-disable'));
     await expect(page.getByTestId('skipgate-state')).toContainText('Admin gate is OFF');
 
-    // A fresh TV batch skips admin review entirely: born Leaving Soon, flagged gate-skipped.
-    await page.goto('/trash?tab=tv');
-    await expect(page.getByTestId('batch-candidates')).toContainText('TV candidate');
-    // Ellipsis purge (build A): the action button reads "Start a batch", no trailing "…".
-    await expect(page.getByTestId('batch-start')).toHaveText('Start a batch');
-    await startBatchAll(page);
-    await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
-    await expect(page.getByTestId('batch-gate-skipped')).toBeVisible();
-    await expect(page.getByTestId('batch-countdown')).toContainText('window closes');
-    await armAndConfirm(page.getByTestId('batch-cancel'));
-    // Breaking Prod is Age Guard, so the returning default wall hides it until All is chosen.
-    await showAllTitles(page);
-    await expect(page.getByTestId('trash-wall')).toBeVisible(); // terminal ⇒ TV pending wall returns
+    try {
+      // A fresh TV batch skips admin review entirely: born Leaving Soon, flagged gate-skipped.
+      // ADR-118 — Breaking Prod carries mediarequests, and a new batch leaves that tag out, so the
+      // tag is cleared for this start and put back after. The Age Guard still keeps the title.
+      await page.goto('/trash?tab=tv');
+      await expect(page.getByTestId('batch-candidates')).toContainText('TV candidate');
+      // Ellipsis purge (build A): the action button reads "Start a batch", no trailing "…".
+      await expect(page.getByTestId('batch-start')).toHaveText('Start a batch');
+      trashFixture('request-tag', 'off');
+      await startBatchAll(page);
+      await expect(page.getByTestId('batch-state')).toHaveText('Leaving Soon');
+      await expect(page.getByTestId('batch-gate-skipped')).toBeVisible();
+      await expect(page.getByTestId('batch-countdown')).toContainText('window closes');
+      await armAndConfirm(page.getByTestId('batch-cancel'));
+      // Breaking Prod is Age Guard, so the returning default wall hides it until All is chosen.
+      await showAllTitles(page);
+      await expect(page.getByTestId('trash-wall')).toBeVisible(); // terminal ⇒ TV pending wall returns
 
-    // Restore the gate — "Enable" turns it back ON (the safe direction, a plain button).
-    await page.goto('/settings/trash');
-    await page.getByTestId('gate-enable').click();
-    await expect(page.getByTestId('skipgate-state')).toContainText('Admin gate is ON');
+      // Restore the gate — "Enable" turns it back ON (the safe direction, a plain button).
+      await page.goto('/settings/trash');
+      await page.getByTestId('gate-enable').click();
+      await expect(page.getByTestId('skipgate-state')).toContainText('Admin gate is ON');
+    } finally {
+      trashFixture('skip-gate', 'off');
+      trashFixture('request-tag', 'on');
+    }
   });
 
   test('batch policy: the single Save round-trips mode + minCandidates + per-kind caps', async ({
