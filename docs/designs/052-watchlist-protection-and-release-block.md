@@ -1,7 +1,7 @@
 # DESIGN-052: Watchlist protection for Trash — the Watchlist Registry, the Registry Gate, the Watchlist Keep, the Release Block, and everyone's Seerr watchlist
 
 - **Status:** Accepted (2026-09-28; live since v0.101.0, PLAN-072 S6–S10 verified)
-- **Last updated:** 2026-11-13 (D-10 amendment, story 832: Wall Protection, one definition of a title the pending wall will not offer; the default view holds none, and a title saved from it keeps its tile until the view is opened again; Q-15, Q-16, Q-17 opened). Prior: 2026-10-03 (Q-14 answered: the Age Guard moves into `classifyGuardian`, so Expedite never deletes a title inside it, and the pending walls show such a title kept, D-26). Prior: 2026-10-03 (ADR-097, owner ruling "Block automation only": D-27 adds the Title Exclusion, an import-list exclusion the app writes on Radarr or Sonarr for every title Trash is about to delete, after identity and before Phase A; D-28 adds its one-off backfill for the titles deleted before; D-14, D-21, D-22, D-23, the overview and the test strategy updated). Prior: 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
+- **Last updated:** 2026-11-13 (D-26 cross-reference: DESIGN-014 D-15's TV predicates include the votes floor, and the removed TV date-added clause is what a title with no Plex match relied on). Prior: 2026-11-13 (D-10 amendment, story 832: Wall Protection, one definition of a title the pending wall will not offer; the default view holds none, and a title saved from it keeps its tile until the view is opened again; Q-15, Q-16, Q-17 opened). Prior: 2026-10-03 (Q-14 answered: the Age Guard moves into `classifyGuardian`, so Expedite never deletes a title inside it, and the pending walls show such a title kept, D-26). Prior: 2026-10-03 (ADR-097, owner ruling "Block automation only": D-27 adds the Title Exclusion, an import-list exclusion the app writes on Radarr or Sonarr for every title Trash is about to delete, after identity and before Phase A; D-28 adds its one-off backfill for the titles deleted before; D-14, D-21, D-22, D-23, the overview and the test strategy updated). Prior: 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
   the rulings they needed: a term now matches the raw release title Radarr and Sonarr test (an apostrophe inside a word
   is an optional separator, an accented letter an alternation, an inner `and` optional), because S6(e) found 345 of
   19,434 Sonarr names and 3 of 1,159 Radarr names the *arr would not have blocked; the owner leaves managed Home users
@@ -1375,10 +1375,13 @@ clear    otherwise (a title no Plex library is matched to is judged on its impor
 - **The Maintainerr rules stay as they are** (requirement 3 of the ruling's work order, optional): Maintainerr reads
   only HaynesOps' date added, and its Radarr dates carry the rebuild, so no rule clause can express the guard
   without emptying the pool. The app check is the guarantee. **Later ruling (2026-11-13, story 835,
-  [DESIGN-014 D-15](014-rules-tuning-space-policy.md)):** the TV pool's own predicates change (ended, last
-  episode aired, rating below 6.0, not tagged `mediarequests`; the HaynesOps views clause removed). That
-  change does not express this guard and does not replace it. The movie pool's added-date clause stays.
-  D-15 is the spec; it is not applied to the live Maintainerr in story 835.
+  [DESIGN-014 D-15](014-rules-tuning-space-policy.md)):** the TV pool's own predicates change (rating
+  below 6.0, rating votes greater than 99, not tagged `mediarequests`, ended, and the last episode
+  HaynesOps holds in its highest-numbered season aired at least 180 days ago; the HaynesOps views
+  clause and the HaynesOps date-added clause removed). That change does not express this guard and
+  does not replace it. Removing the TV date-added clause removes the cover `judgeAge` assumes for a
+  title with no Plex match; the movie pool's added-date clause stays and is still that cover for a
+  movie. D-15 is the spec; it is not applied to the live Maintainerr in story 835.
 
 **Data:** migration **0086** (`0086_trash_age_guard.sql`, journal idx 85): `media_plex_matches.plex_added_at`
 (nullable) and `trash_batch_items.keep_reason` admitting `recently_added`. The previous image runs unchanged against

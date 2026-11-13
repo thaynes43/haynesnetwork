@@ -2,7 +2,9 @@
 
 - **Status:** Draft (backend vertical shipped; **UX shipped 2026-07-06** — D-09 records the
   as-built; **pending tables → poster walls 2026-07-07**, see the D-09 amendment)
-- **Last updated:** 2026-10-03 (ADR-099: a person's Save is recorded first and the Maintainerr exclusion follows
+- **Last updated:** 2026-11-13 (the Age Guard bullet no longer calls the guard the guarantee for a
+  title with no Plex match; DESIGN-014 D-15 removes the TV date-added clause that case relied on).
+  Prior: 2026-10-03 (ADR-099: a person's Save is recorded first and the Maintainerr exclusion follows
   it, under an 8 s deadline and then the 15-minute save keeper; the app's record is the protection every deletion
   path reads; D-05 amendment. Prior: ADR-096 — the wall tap-toggle flips only on the server's answer,
   shows a busy ring meanwhile and marks a failed tap on the tile; D-09 amendment. Prior: 2026-09-14
@@ -13,10 +15,14 @@
 - **Age Guard (2026-10-03):** [DESIGN-052 D-26](052-watchlist-protection-and-release-block.md#d-26--the-age-guard-nothing-new-is-deleted-owner-ruling-2026-10-03)
   (owner ruling "Yes, newest date wins"): the app never deletes, nor proposes into a targeted batch, a title downloaded, upgraded or added to
   any Plex server in the last 180 days, taking the newest of the ledger's download imports and every Plex server's
-  date added. The movie pool's Maintainerr "Plex date added older than 180 days" clause (2026-09-14) stays.
-  The TV pool's predicates are specified by [DESIGN-014 D-15](014-rules-tuning-space-policy.md) (2026-11-13,
-  story 835) and are not applied until a later story; until that apply, the live TV clause is still the
-  HaynesOps added date. Either way the app Age Guard is the guarantee, and it reads every server.
+  date added. The movie pool's Maintainerr "Plex date added older than 180 days" clause (2026-09-14) stays,
+  and that clause is what still covers a movie with no Plex match. The TV pool's predicates are specified by
+  [DESIGN-014 D-15](014-rules-tuning-space-policy.md) (2026-11-13, story 835, including the votes floor ruled
+  the same day) and are not applied until a later story; until that apply, the live TV clause is still the
+  HaynesOps added date. The Age Guard reads every server. It is not, by itself, the cover for a title with
+  no Plex match: `judgeAge` returns `clear` when a pool member has no `media_plex_matches` row and no
+  download import inside 180 days. The TV date-added clause is what that case relies on today, and D-15
+  removes it.
 - **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26; in effect since 2026-09-28): Trash
   also needs a verified Watchlist Registry before any delete, the guardian keeps a title on any read Plex watchlist,
   the safety audit also requires `listExclusions` and `forceSeerr` on the rule pools, and the deleted release is
