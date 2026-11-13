@@ -3,7 +3,7 @@
 // of the level. No I/O and no clock read.
 //
 // It lives in `@hnet/domain` so `packages/api` (which already depends on this package) and
-// `space-policy.ts` (story 820) can both call it. Putting it in `@hnet/api` would cycle when
+// `space-policy-pace.ts` (story 820) can both call it. Putting it in `@hnet/api` would cycle when
 // story 820 imports it; `@hnet/metrics` is the Prometheus client, and this function does not do I/O.
 //
 // Method (D-08, measured on the series recorded 2026-11-13). A step is the change in free bytes per

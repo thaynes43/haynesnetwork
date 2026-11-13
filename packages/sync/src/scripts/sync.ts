@@ -46,6 +46,7 @@ import {
   type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
   type QueueCleanupClients,
+  readArrayFreeSpaceSamples,
   type UtilizationArrBundle,
 } from '@hnet/domain';
 import { prometheusClientFromEnv } from '@hnet/metrics';
@@ -750,6 +751,16 @@ async function main(): Promise<number> {
     ...(metadataSources ? { metadataSources } : {}),
     ...(maintainerr ? { maintainerr } : {}),
     ...(arr ? { arr } : {}),
+    ...(args.mode === 'space-policy'
+      ? {
+          readFreeSpace: (arrayKey: string) =>
+            readArrayFreeSpaceSamples(
+              prometheusClientFromEnv(),
+              arrayKey,
+              Math.floor(Date.now() / 1000),
+            ),
+        }
+      : {}),
     ...(maintainerrRead ? { maintainerrRead } : {}),
     ...(smartReader ? { smartReader } : {}),
     ...(mamGovernor ? { mamGovernor } : {}),
