@@ -1,10 +1,10 @@
 # DESIGN-013: Disk-utilization + reclaim-metrics vertical
 
 - **Status:** Draft
-- **Last updated:** 2026-11-13 (D-08 capacity forecast; its method corrected the same day)
+- **Last updated:** 2026-11-13 (D-08 capacity forecast; its method corrected the same day; D-09 its plot)
 - **Satisfies:** PRD-001 **R-108..R-111**; governed by **ADR-030** (HYBRID surface). Consumes ADR-025 /
   DESIGN-011 deletion snapshots, ADR-018 `media_metadata.resolution`, ADR-023 attribution. Grafana
-  side recorded in **OPS-007**; glossary **T-95..T-97**, **T-332**.
+  side recorded in **OPS-007**; glossary **T-95..T-97**, **T-332**, **T-337**.
 
 ## Overview
 
@@ -15,7 +15,7 @@ get/set. The fill/drain **time-series** shipped first as a Grafana deep-link (AD
 now **native** — `storage.trend` off in-cluster Prometheus (**D-07**, ADR-030 C-04 amendment
 2026-07-09; the LAN-only deep-link demoted to a footnote). **D-08** (2026-11-13) adds the Capacity
 Forecast on that same series: when each array's free space reaches its target floor and when it
-reaches zero. The native Storage page shipped as
+reaches zero; **D-09** (2026-11-13) is its plot on the Storage tab. The native Storage page shipped as
 **`/admin/storage`** (same branch, Fable UX pass 2026-07-07) against the D-02/D-03/D-05 wire
 contracts below, and later moved onto the `/settings/trash` Storage tab (IA reshuffle, build B).
 
@@ -206,7 +206,7 @@ audience the drivers prioritized; owner-greenlit replacement):
 ### D-08 — Capacity Forecast (2026-11-13; method corrected the same day)
 
 When each array's free space will reach its target floor, and when it will reach zero, from the
-same exportarr free-space history D-07 already reads. The chart that draws this is a later story;
+same exportarr free-space history D-07 already reads. The chart that draws this is D-09 (story 819);
 this decision is the function and the read. **ADR-030 is unchanged.** The history stays the
 exportarr series in Prometheus (no second store, option 2 of ADR-030 stays rejected). The forecast
 consumes free bytes plus the existing free-byte floor (`targetFreeBytes`). It does not add a
@@ -478,6 +478,180 @@ because the method needs it: `FORECAST_MIN_POINTS` 8 → 13 and `FORECAST_MIN_SP
 days. `FORECAST_TRIM_SHARE` (0.25) is new. `FORECAST_STEP_HOLD_SECONDS` and `FORECAST_STEP_SIGMAS`
 belonged to the first method and are removed.
 
+### D-09 — The Capacity Forecast plot (2026-11-13, story 819)
+
+A card, **Capacity forecast**, on the Storage tab above **Free-space trend**: one panel per media
+array of the D-08 read, each saying and drawing when the array reaches its space target and when
+it is full. Component `apps/web/app/(app)/settings/trash/capacity-forecast.tsx`; everything it
+says and draws is the pure mapping in `apps/web/lib/storage-forecast.ts`. **ADR-030 is
+unchanged**: free bytes and the target as a free-byte floor, never a percent trend (C-06); no
+charting library. The method and `forecastFreeSpace` (D-08) are unchanged.
+
+**What the read gained.** The plot needs four things D-08's read did not return, so
+`storage.forecast` now also carries:
+
+- `now` — the instant the forecast was made. It is "today" on the plot and the start of every
+  "in about …".
+- per array `points` — the samples the rate was read from (the 3-day grid, up to 31). They are
+  the history the plot draws and what the jump note below is read from.
+- per array `jumps` — the Forecast Jumps (T-337) the rate set aside, or null. Rule below.
+- `minPoints` and `minSpanSeconds` — the method's two floors (13 samples, 36 days), so the page
+  can say what a too-short history lacks without restating the method's numbers.
+
+**The words.** They come first, for a reader who will not read a chart; the plot holds nothing
+that is not also in them. Each panel has a chip, two tiles that are present in every state, and
+one sentence. `{date}` and `{away}` are the date wording below; `X` is a capacity
+(`formatCapacity`, the page's decimal units).
+
+| State of the array | Chip | Tile "Target (N% used)" | Tile "Full (100% used)" | Sentence |
+| --- | --- | --- | --- | --- |
+| Use rising, under target | Filling | `{date}` / over target `{away}` | `{date}` / `{away}` | Filling by about X a day (X a week). |
+| Use rising, over target | Filling | Over now / by X, and rising | `{date}` / `{away}` | as above |
+| Use rising, nothing left | Filling | as its side of the target | Now / no free space left | as above |
+| Use falling, over target | Freeing up | `{date}` / back under `{away}` | Not ahead / space is freeing up | Freeing up about X a day (X a week). |
+| Use falling, under target | Freeing up | Under now / X to spare, and growing | Not ahead / space is freeing up | as above |
+| No target (any direction) | by direction | tile "Target": Not set / no space target for this array | by direction | by direction |
+| No forecast: flat | Steady | Over now / by X · Under now / X to spare · At target / no room to spare | No date / holding steady | No forecast: free space has not clearly risen or fallen over the last 90 days, so there is no date to predict. |
+| No forecast: too few days | No forecast | as flat | No date yet / not enough history | No forecast yet: it needs 36 days of readings and this array has N so far. |
+| No forecast: readings missing | No forecast | as flat | No date yet / not enough history | No forecast yet: too many readings are missing from the last 90 days (N of the 13 it needs). |
+| No reading at all | No forecast | Unknown / the array could not be read | No date yet / not enough history | No forecast: there are no free-space readings for this array yet. |
+| Prometheus down (`unavailable`) | No forecast | No date / forecast unavailable | No date / forecast unavailable | Forecast unavailable: couldn’t reach Prometheus right now. The meters above still show live utilization. |
+| The read failed | No forecast | No date / forecast unavailable | No date / forecast unavailable | Failed to load the forecast: `{message}` |
+| A refresh failed (a forecast is on the page) | Not refreshed | as last read | as last read | Couldn’t refresh the forecast (`{message}`). The dates here are from the last read. |
+| Loading | … | … / loading | … / loading | Loading forecast… |
+
+A target with no array size to place it (the *arr unreachable) reads "Unknown / the array could
+not be read". The 90, 36 and 13 are the read's own values, not copies in the page. A refresh that
+fails while a forecast is on the page (a saved target refetches it) keeps that forecast and says
+it is old: the chip reads "Not refreshed", the projection loses the direction's colour, and the
+sentence says the dates are from the last read. The last read is never shown as the current one
+(advisory review on PR 1072).
+
+**Date wording.** The read carries no error band (D-08: the function does not return the standard
+error), so the page states a date no finer than the forecast supports and steps the precision
+down with distance:
+
+- up to 60 days away: the day ("Dec 3", "Jan 12, 2027" once the year changes);
+- up to 2 years: the month ("Dec 2027");
+- beyond: the year ("2034"); a date over 1,000 years off is "Far off".
+- `{away}`: in less than a day; in N days (under 14); in about N weeks (under 63 days); in about
+  N months (under 24 months); in about N years, to the half year.
+
+The two cuts are estimates from D-08's measured standard errors of the rate, 18% (HaynesTower)
+and 29% (music), each carried to the date by division: one standard error moves a date about half
+a month (15 days) when it is 83 days away at 18% and 52 days at 29%, and about half a year (183
+days) when it is 1017 days away at 18% and 631 at 29%. 60 days and 2 years (730 days) sit between
+each pair. They are not measured limits. A pace is printed to two significant figures ("about
+210 GB a day") for the same reason. Dates are UTC, as on the trend's axis.
+
+**The plot.** The trend chart's school (D-07): dependency-free inline SVG, x in percent of the
+width and y in pixels of a fixed 160px height, every label HTML at the same numbers, nothing
+behind a pointer. It draws:
+
+- **free space so far** — the read's samples and then the level, in the muted ink, gap-aware as on
+  the trend;
+- **the projection** — one straight line from the level (`origin`) at the rate, to zero while use
+  is rising, to the target floor while use is falling below it;
+- **the target** — the trend's own dashed rule and "Target · X free" label (dashes still mean a
+  threshold and nothing else);
+- **marks** — a dot where the projection meets the target floor and one where it meets zero, with
+  the date under each mark in the axis band; today's level is a dot in text ink;
+- **the byte axis from zero**, because zero is the level the forecast is about; the baseline is
+  labelled "0 · full". (The trend's axis is fitted, because its job is the shape of the history.)
+  The axis has a gutter of its own, 46px: with a horizon of years today sits at the plot's left
+  edge, where ticks laid over the plot would cover it.
+
+**Horizon.** Decided from the data, not fixed. The plot starts at the oldest sample and ends 6%
+of that span after the last date the forecast gives, so the answer is on the chart whether it is
+weeks or years away, and the history it stands on is always drawn at its true share of the width
+(a nine-year projection from 90 days of history looks as thin as it is). The calendar ticks
+change unit with the span: days (1, 2, 7 or 14 apart), months (1, 2, 3 or 6), years (1, 2, 5, 10
+and on), the finest that gives at most 4.5 labels. A rate with no date ahead (use falling with
+no target to reach) is drawn as far forward as the history looks back, and never past the
+array's size. No forecast draws the history alone; under two readings there is no plot and the
+place says "Nothing to plot yet."
+
+**Axis labels.** In order of importance: the last forecast date, the other one, "Today" (the
+reading's day when the level is not live), then the calendar. A label that would touch one
+already placed is not drawn. Whether two touch is decided at the narrowest plot the page draws,
+278px (measured 2026-11-13 in the local stack at a 390px viewport: `getBoundingClientRect` of the
+plot area), with a label taken as 6.4px a character plus 4px (measured labels were 4.75 to 6.49px
+a character) and an 8px gap. What fits there fits at every wider width.
+
+**Colour.** The projection, its marks and the chip's dot wear the direction: `--color-danger`
+while use is rising, `--color-accent` while it is falling, the two tones the meter above already
+uses for over and under target (the owner's wording: green for a downward trend, red for upward,
+"same colors we use on the page now"). Text stays in text tokens. The direction is never colour
+alone: the chip says "Filling" or "Freeing up", the tiles say it in words, the line itself runs
+down or up, and the card's key names both. Checked 2026-11-13 with the dataviz validator
+(`validate_palette.js`, the two tones against each theme's `--color-surface`): colour-vision
+separation ΔE 10.1 dark and 17.8 light (target 8), normal-vision 31.3 and 33.9 (floor 15); the
+accent's contrast on the light surface is 2.29:1, under 3:1, which is why the words carry every
+reading; the accent's lightness is outside the validator's dark band (0.727 against 0.48 to
+0.67). Both are properties of the brand token the trend line already uses, kept on the owner's
+instruction.
+
+**Forecast Jump (T-337), the display rule.** D-08's method sets aside a jump in the level; the
+page says so where one is in the window. `forecastJumps` (`packages/api/src/storage-forecast.ts`,
+pure) reads the same samples:
+
+1. A step (D-08) is **far** when it lies more than 3 scaled median deviations from the median
+   step (a deviation is the step's distance from the median step; the scale is 1.4826 times the
+   median deviation). This is the measure D-08 counted jumps with: on the recorded series the
+   largest ordinary step is 1.96 and the smallest jump 4.42.
+2. A far step is **named** when free space really moved that way (a rise is above the median and
+   positive, a fall below it and negative) and its departure from the median step is at least one
+   day of the rate. One day of rate is one day on the dates, the finest the page prints; the test
+   also stops a perfectly regular series, whose deviation is zero, from naming its rounding.
+3. Far steps are the extreme ones on their side, so the method's trim holds them while there are
+   no more of them than it sets aside there (`floor(steps × 0.25)`, 7 of 30). More than that on
+   one side is `partlyCounted`: some are inside the rate (D-08, Q-05).
+4. `bytes` is the plain change in free space across the named steps, the amount a reader sees on
+   the chart. No projection (flat, too short) means nothing to qualify, and `jumps` is null.
+
+On the recorded series this names exactly the eight steps D-08 lists (tested): HaynesTower two
+rises, 9863.8 GB; music three falls, 11886.7 GB, and three rises, 3829.2 GB. The note under the
+plot reads, for example: "Free space jumped up by 9.9 TB in the last 90 days (2 jumps, the latest
+just before Nov 12). The projection treats them as one-offs: they move the starting point, not
+the pace. If jumps like these keep coming, the array will have more free space than projected."
+A fall reads "dropped suddenly by … (N drops …)" and ends "… less free space than projected."
+When partly counted, the middle sentence is "There were more of them than the projection sets
+aside, so some now count toward its pace."
+
+**The music array (Q-03), decided for the page.** The page shows the method's forecast for it,
+unchanged, and qualifies it. When the named jumps moved free space more than the rate did over
+the window (net jump bytes greater than rate × 90 days), the notes open with: "Read this
+forecast with care: sudden changes moved free space more than the steady pace did." On the
+recorded series that is true of the music array (8057.5 GB net down against 39.3 × 90 = 3537 GB)
+and not of HaynesTower (9863.8 GB against 212.24 × 90 = 19102 GB). Why this and not something
+else: the method is not this story's to change; a second date "at the recent pace" needs a second
+rate, and choosing one is the method (D-08 removed exactly the defect of counting a jump as
+trend); hiding the forecast needs a threshold nobody has measured. The comparison used here has
+no tunable number: it asks which moved the level more over the window, the jumps or the pace.
+Whether the array should show a date at all while its refill runs is the owner's call (Q-07).
+
+**Other limits the page states.** The caption: "When each media array reaches its space target
+and when it is full, if free space keeps changing at the pace of the last 90 days. An estimate,
+not a schedule." The footnote: "The pace is the usual daily change in free space, with sudden
+jumps set aside, carried forward from today’s level. A real change of pace shows up slowly: about
+half of it after six weeks, all of it within three months." (D-08's measured trade: 50% of a
+change after 15 of 30 steps, 45 days; all of it by the 30th, 90 days.) When the level is not live
+(the *arr could not be read, so the dates start from the last sample): "The starting point is the
+reading from Nov 12: the live free space could not be read."
+
+**ADR-015.** The card has no control of its own. What a reader can do to it is save a target on
+the meter above: the save now also refetches `storage.forecast`, and the panel swaps its words
+and marks in place. Every state has the same two tiles, each with one value line and two reserved
+lines of detail; the sentence keeps three lines in every state (the longest it holds takes three
+at the narrowest column, and a longer error is cut at three); and the plot region is 160px in
+every state (plot, history only, nothing to plot, loading, unavailable). While the read is away the card keeps one panel per array the page
+already knows from `storage.utilization`. The card's key is static text. Measured 2026-11-13 in
+the local stack: the four tiles are 88px high at 360, 390 and 1280px viewports, and the page has
+no sideways scroll at 360 or 390px (`scrollWidth` equals `innerWidth`).
+
+**Not done here.** The trend chart is untouched: after a target is saved its own dashed line
+still refreshes only on reload, as before (Q-09). No error band is drawn (Q-08).
+
 ### D-06 — Expedite forward-capture (reclaim data quality)
 
 The direct-Expedite path (`expediteOneSurvivor`) now freezes `{sizeBytes, resolution, imdbRating,
@@ -529,6 +703,27 @@ fall back to the last aligned sample when the *arr cannot be read, and `unavaila
 Prometheus is down (including when every *arr read fails too). No e2e change: the chart is a later
 story.
 
+**D-09 additions:** the mapping from the read to what is said and drawn
+(`apps/web/lib/__tests__/storage-forecast.test.ts`) — every row of the D-09 table (use rising
+under and over target and with nothing left, use falling over and under target, no target in
+both directions, flat on each side of a target, each kind of too short, no reading, Prometheus
+down, loading, a failed read, a failed refresh), the date and pace wording at each cut, the jump note in its three
+forms and the read-with-care comparison on both recorded arrays, a level that is not live, and
+the plot: the horizon, the marks, the projection ending on zero or on the floor, a rise capped at
+the array's size, the axis units from days to centuries and which labels give way. The jump rule
+(`packages/api/__tests__/storage-forecast-jumps.test.ts`, no database) — the recorded series
+names exactly D-08's eight steps with their byte totals; a regular series with a one-byte wobble
+names nothing; a jump under one day of the rate, and a far step that only slowed the fill, are
+not named; eight rises against seven set aside is partly counted; flat and too short give null.
+The router read (`packages/api/__tests__/storage-trend.test.ts`) — `now`, the samples, the two
+floors, and a jump named beside the forecast it was set aside from. e2e (`storage.spec.ts`) — the
+card sits above the trend; HaynesTower's two dates, pace, projection and both marks, and the
+music array's "no forecast" with its reason, off the default stub; a saved target moves the
+forecast in place while the trend card below does not move; the stub Prometheus's scripted
+free-space fixtures (`{ freespace: 'recorded' | 'draining' | 'short' }`, default `'steady'`) for
+the named jumps and the read-with-care line, use falling under and over target, and a 21-day
+history; Prometheus down keeps the panels; the card fits a 390px phone.
+
 ## Open questions
 
 - **Q-01 (resolved, ADR-030):** HYBRID — native reclaim + deep-linked Grafana trend.
@@ -542,7 +737,11 @@ story.
   libraries. Recommendation: keep the method as it is, because the rule that would follow this
   fall sooner (setting aside fewer steps) is the rule that lets a jump into the rate; find what
   is writing to the pool; and have the chart draw the level, so the fall is visible while the
-  rate holds.
+  rate holds. **For the page (D-09, 2026-11-13):** the plot draws the level and the history, names
+  the three falls and three rises it set aside, and opens the array's notes with a
+  read-with-care line because those jumps outweigh its pace. Whether the fall is a new rate, and
+  what is writing to the pool, stay open; so does whether the page should show this array a date
+  at all (Q-07).
 - **Q-04 (answered 2026-11-13):** the step. The first method was measured only at 3 days. This
   change measured 12 hours, 1 day, 3 days and 7 days (D-08, "Where each number comes from").
   12 hours, 1 day and 3 days are within the noise of each other and 7 days is worse. The 3-day
@@ -556,7 +755,9 @@ story.
   3-day rate (−212.2 GB/day) is lower than the fill between them (−259.8 at the 12-hour step).
   For the chart (819): story 834's "when over target and falling" shows only when rising steps
   outweigh falling ones in the middle 16. Recommendation: accept that, and draw the level and the
-  line from `origin`, so a batch shows as the level stepping up. For the Trash pace (820): once
+  line from `origin`, so a batch shows as the level stepping up. **Done in D-09:** the plot draws
+  the history and the level, a batch that is set aside is named in the note under the plot, and
+  more batches than the method sets aside are said to count toward the pace. For the Trash pace (820): once
   its own batches are frequent, this rate is no longer purely the fill it must offset.
   Recommendation: pass the function a series with its own recorded deletions added back (free
   space minus the cumulative bytes of the deletion snapshots). That makes the rate the fill by
@@ -567,3 +768,21 @@ story.
   way to read `/diskspace` and did not compare them. Recommendation: compare the Storage page's
   meter with the trend chart's last point once. If they differ by more than a day's fill (212 GB
   on HaynesTower), take the level from a Prometheus instant query instead.
+- **Q-07 (open, for the owner; D-09):** should an array whose set-aside jumps outweigh its pace
+  show a date at all? Today that is the music array: the method reports full in 2034 at
+  −39.3 GB/day while free space fell 13240.9 GB in 19.5 days (Q-03). As built, the page shows the
+  date with "Read this forecast with care" above the jump note. The alternatives are to show no
+  date for such an array ("No forecast: free space is moving in jumps") until the jumps leave the
+  window, or to add a second date at the recent pace. Recommendation: keep it as built. Hiding
+  the date needs a rule for when to hide it, and a second date needs a second rate; both belong
+  with the method (Q-03), not the page.
+- **Q-08 (open; D-09):** an error band. The page steps a date's precision down with distance
+  because the read does not carry the rate's standard error (D-08). With it, the plot could draw
+  the range and the tile could say "Oct 2027 to Apr 2028". Recommendation: a follow-up story adds
+  the standard error to `forecastFreeSpace`'s result (the function is outside story 819) and the
+  band to the plot.
+- **Q-09 (open; D-09):** after a target is saved, the forecast refetches and the trend chart
+  does not, so until a reload the trend's dashed line can show the old target under a forecast
+  that shows the new one. The trend's behaviour was outside story 819. Recommendation: refetch
+  `storage.trend` on the same save, after checking that its legend cannot rewrap (its target entry
+  changes length with the value, which is why this change left it alone).
