@@ -421,10 +421,10 @@ eight is 4.42. A quarter is twice the worst measured, plus one. 20% gives the sa
   fill sit inside that band or near it: −224.9 GB/day is the plain mean from 2026-08-14 to
   2026-11-06, and the intake inventory (`.agents/context/2026-11-13-intake-inventory.md`) puts
   the *arr file history's net write at about 22.3 TB in 92 days, about 242 GB/day.
-- **Deletion in batches does not turn the direction.** The rate is the typical 3-day change. A
-  few large rises move the level and both dates and leave the rate and `filling` as they were.
-  Use reads as falling only when rising steps reach the middle of the order: more than 7 of 30
-  begin to count, and more than half make the rate positive. See Q-05.
+- **Deletion in a few large batches does not turn the direction.** Up to 7 rising steps are set
+  aside whatever their size, so they move the level and both dates and leave the rate and
+  `filling` as they were. The 8th enters the mean of 16, and from there deletions are partly
+  inside the rate. See Q-05.
 - **The music array's fall is being held as a jump.** At 12 hours it is not one instant: free
   space fell from 119434.7 GB on 2026-10-25T00:00Z to 106193.8 GB on 2026-11-13T12:00Z, −679.0
   GB/day against −27.5 GB/day over the 72 days before, with a rise of 8044.1 GB at the
@@ -521,8 +521,8 @@ reading: the dates start from it, the rate does not move, and an unusable one fa
 last sample. The recorded 2026-11-13 series is a fixture whose HaynesTower and music dates equal
 the hand calculation above. The same series continued for 180 days at its pre-jump rate is the
 defect's reproduction: the rate must stay within one standard error (38.2 GB/day) of −212.17
-GB/day at every sample, and thirteen rows are locked to the values in the table above. The first
-method fails that test from day 9 to day 84. The router read
+GB/day at every sample, and thirteen rows are locked to their values (the nine in the table above
+and days 15, 39, 51 and 180). The first method fails that test from day 9 to day 84. The router read
 (`packages/api/__tests__/storage-trend.test.ts`) — admin gate, the 90-day / 3-day query, the same
 array grouping and target floor, the level taken from the live `/diskspace` reading at `now`, the
 fall back to the last aligned sample when the *arr cannot be read, and `unavailable` when
@@ -547,14 +547,21 @@ story.
   change measured 12 hours, 1 day, 3 days and 7 days (D-08, "Where each number comes from").
   12 hours, 1 day and 3 days are within the noise of each other and 7 days is worse. The 3-day
   step stays.
-- **Q-05 (open, for stories 819 and 820):** story 834 asks for a target date "when over target
-  and falling". With this method use reads as falling only when most 3-day steps rise. Trash
-  deleting in a few large batches moves the level and both dates, and leaves the rate and
-  `filling` as they were: each batch pushes the 100% day out and no target date appears.
-  Recommendation: accept that. The chart draws the level and the line from `origin`, so a batch
-  shows as the level stepping up. The Trash pace decides whether it needs this rate (the fill,
-  which is what it must offset) or the net of its own deletions, which it knows from the
-  deletion snapshots. Counting a jump as trend is the defect this change removes.
+- **Q-05 (open, for stories 819 and 820):** what deletions do to the rate. Up to 7 rising steps
+  in the window are set aside whatever their size; from the 8th they enter the mean of 16. So
+  deletion in a few large batches (7 or fewer in 90 days, one every 13 days or rarer) moves the
+  level and both dates and leaves the rate and `filling` as they were: each batch pushes the 100%
+  day out and no target date appears. Deletion that touches more steps than that is partly inside
+  the rate. The eleven weekly-sized rises measured on HaynesTower are the visible reason its
+  3-day rate (−212.2 GB/day) is lower than the fill between them (−259.8 at the 12-hour step).
+  For the chart (819): story 834's "when over target and falling" shows only when rising steps
+  outweigh falling ones in the middle 16. Recommendation: accept that, and draw the level and the
+  line from `origin`, so a batch shows as the level stepping up. For the Trash pace (820): once
+  its own batches are frequent, this rate is no longer purely the fill it must offset.
+  Recommendation: pass the function a series with its own recorded deletions added back (free
+  space minus the cumulative bytes of the deletion snapshots). That makes the rate the fill by
+  construction and still sets every other jump aside. Counting a jump as trend is the defect this
+  change removes.
 - **Q-06 (open):** the level is the *arr's `/diskspace` free space and the history is the
   exportarr root-folder series. D-07 already treats them as one filesystem. This session had no
   way to read `/diskspace` and did not compare them. Recommendation: compare the Storage page's
