@@ -54,6 +54,31 @@ Propose 20 min grooming plus 105 min across three sessions; 12 runs maximum, one
 API/training cap is **$0** until separately approved. Record actual subscription
 usage/time and any unavailable cost fields under the saga's shared evidence contract.
 
+## Ungroomed spike: media-inspection toolkit (paused)
+
+Owner lesson, 2026-10-14, from the suspended PLAN-077 R1 Mickey case (checkpoint issue #992, file 80066, Fix `37685a87-1e02-4cd4-bce7-1600c9a55c33`). Cheaper and text-only agents need a shared inspection toolkit before a model-family comparison is fair. **Implementation is paused.** This section is not a story, not acceptance that work has started, and not permission to benchmark or install tools.
+
+Provider-neutral capabilities to groom later, each capability-tested per provider, model, and harness. Do not assume Qwen or any other model has or lacks a modality.
+
+- Bounded decode of a named file: a few frames and a short audio slice, with sample limits recorded up front.
+- Supported interpretation of audio and language, separate from filename, codec tags, and subtitle cues.
+- Story boundaries and completeness for every story a file claims, including a later story in a pair. Two frames or a short clip do not prove the whole file.
+- Multi-episode mapping evidence: Sonarr assignment and what Plex actually exposes, kept distinct from file content.
+- Structured provenance (tool, version, input, output, hash) and an explicit uncertainty when a check was not done.
+
+Case distinctions already learned: a missing inspection codec is not corrupt or unplayable media. A correct file with a wrong Sonarr or Plex assignment is a mapping question, not an automatic blocklist, delete, and search. Supported replacement stays a later, recovery-aware repair decision, separate from inspection.
+
+Future acceptance considerations only. They do not authorize a benchmark or an implementation now.
+
+- Privacy: no unapproved media upload and no third-party transcription of library files.
+- Explicit resource, time, and sample limits. CPU first. A bounded GPU only when a groomed story justifies it and the owner approves it.
+- Tool, input, and output provenance, plus stated uncertainty.
+- Temporary artifacts removed after proof copies and hashes are retained.
+- Recovery-aware supported replacement kept separate from inspection.
+- Cross-model and cross-harness checks for accuracy, unsupported claims, cost or latency, and tool coverage. Unknown cost stays unknown.
+
+The current R1 gates stay in force: both Fixes remain completed without `owned_import_intent`, Pokémon finish serial 64 stays undelivered, and no repair mutation is part of this spike.
+
 Stop if verified truth is missing, evaluation leaks into tuning, budgets differ, a provider needs unapproved spend/access, or a model cannot use the common tool contract. Record failure instead of expanding the experiment. At a cap or blocker, save the partial artifact and safe state, then stop.
 No automatic rerun, review loop, expanded case set, or model/access substitution.
 
