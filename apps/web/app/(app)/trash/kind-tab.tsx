@@ -28,6 +28,7 @@ import {
   WatchlistVisibilityControl,
   useInfiniteScroll,
   usePendingSaves,
+  usePinnedSaves,
   type PendingWallItem,
 } from '@/components/pending-wall';
 import { formatBytes, formatDay, formatRating, ratingOrNull } from '@/lib/media';
@@ -1079,14 +1080,22 @@ function FutureCandidatesWall({
     },
   );
   const pages = q.data?.pages ?? [];
-  const items: PendingWallItem[] = pages.flatMap((p) => p.items);
+  const pageItems: PendingWallItem[] = pages.flatMap((p) => p.items);
   const total = pages[0]?.filteredCount ?? 0;
   const poolTotal = pages[0]?.total ?? 0;
   // ADR-035 — the strip serves the candidate snapshot; carry its honest age in the head line.
   const asOf = candidatesAsOfLabel(pages[0]?.refreshedAt ?? null);
   const refreshing = q.isPlaceholderData && q.isFetching;
 
-  const { overrides, busy, failed, error, toggle } = usePendingSaves(kind);
+  const { overrides, busy, failed, error, toggle: sendToggle } = usePendingSaves(kind);
+  // DESIGN-052 D-10 amendment (story 832) — a title saved from the strip's default view keeps its tile
+  // until the view is opened again (hard rule 9).
+  const { items, toggle } = usePinnedSaves(
+    pageItems,
+    `${kind}:${showProtected ? 'all' : 'deletable'}`,
+    overrides,
+    sendToggle,
+  );
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const canLoadMore = q.hasNextPage === true && !q.isFetchingNextPage && !q.isPlaceholderData;
   useInfiniteScroll(sentinelRef, canLoadMore, () => void q.fetchNextPage());

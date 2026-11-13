@@ -28,6 +28,7 @@ import {
   classifyForExpedite,
   hasMediaRequestTag,
   fetchLiveExclusions,
+  trashWallProtection,
   fetchMaintainerrPending,
   shapePendingItems,
   type FlatPending,
@@ -266,7 +267,11 @@ export interface TrashPendingSort {
 
 /** The facet filters the pending wall's chips narrow by (OR within a field, AND across fields). */
 export interface TrashPendingFilters {
-  /** View preference only; the full-set Expedite preview and guardian stay unchanged. */
+  /**
+   * View preference only; the full-set Expedite preview and guardian stay unchanged.
+   * `false` keeps titles `trashWallProtection` would offer (plus a page-scoped live exclusion, which is
+   * dropped after the page read). `true` and omitted return every title. The library page omits it.
+   */
   includeWatchlisted?: boolean;
   query?: string;
   genres?: string[];
@@ -534,15 +539,21 @@ export async function listTrashPendingPage(input: {
   const totalSizeBytes = universe.reduce((n, i) => n + i.sizeBytes, 0);
 
   const filters = input.filters ?? {};
+  // DESIGN-052 D-10 amendment (story 832) — one definition of "cannot be deleted" for the default
+  // wall. Omitted and true still return the whole set (the library page omits the flag).
   const filtered = universe.filter(
-    (i) => (filters.includeWatchlisted !== false || !i.onWatchlist) && matchesFilters(i, filters),
+    (i) =>
+      (filters.includeWatchlisted !== false || trashWallProtection(i) === null) &&
+      matchesFilters(i, filters),
   );
-  const filteredCount = filtered.length;
-  const filteredSizeBytes = filtered.reduce((n, i) => n + i.sizeBytes, 0);
+  let filteredCount = filtered.length;
+  let filteredSizeBytes = filtered.reduce((n, i) => n + i.sizeBytes, 0);
 
   const sorted = [...filtered].sort((a, b) => comparePending(a, b, sort, strategy));
   const offset = Math.max(0, input.offset);
   const slice = sorted.slice(offset, offset + input.limit);
+  // The cursor walks this list before live exclusions are dropped, so a dropped title is not
+  // repeated and a later deletable title is not skipped (DESIGN-052 Q-15).
   const nextCursor = offset + input.limit < filteredCount ? offset + input.limit : null;
 
   // Page-scoped LIVE-exclusion cross-check — ≤ limit reads, never one per item in the entire kind
@@ -552,11 +563,26 @@ export async function listTrashPendingPage(input: {
     input.maintainerr,
     slice.map((i) => i.maintainerrMediaId).filter((id): id is string => id !== null),
   );
-  const items = slice.map((i) => ({
-    ...i,
-    protectedByExclusion:
-      i.maintainerrMediaId !== null && liveExcluded.has(i.maintainerrMediaId),
-  }));
+  let items = slice.map((i) => {
+    const protectedByExclusion =
+      i.maintainerrMediaId !== null && liveExcluded.has(i.maintainerrMediaId);
+    const known = trashWallProtection(i);
+    return {
+      ...i,
+      protectedByExclusion,
+      protectionReason: known ?? (protectedByExclusion ? ('live_excluded' as const) : null),
+    };
+  });
+  // A live exclusion is known only for this page. Drop those titles from the default view and from
+  // this response's count. A later page can still be inside the count (Q-15).
+  if (filters.includeWatchlisted === false) {
+    const held = items.filter((i) => i.protectionReason !== null);
+    if (held.length > 0) {
+      filteredCount -= held.length;
+      filteredSizeBytes -= held.reduce((n, i) => n + i.sizeBytes, 0);
+      items = items.filter((i) => i.protectionReason === null);
+    }
+  }
 
   const firstPage = offset === 0;
   return {

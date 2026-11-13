@@ -254,8 +254,14 @@ export function pendingWallGlyph(
     ageGuard?: 'recent' | 'clear' | 'unknown';
     /** ADR-099 D-4 — an open save intent: saved, whether or not Maintainerr holds the exclusion yet. */
     saveIntent?: boolean;
-    /** ADR-117 — the ledger tags. Absent ⇒ not requested. */
+    /** ADR-117 — the ledger tags. Absent means an older payload that did not send them. */
     arrTags?: readonly string[];
+    /**
+     * DESIGN-052 D-10 amendment (story 832) — Wall Protection from the server.
+     * Absent means an older server: the Age Guard and the Request Keep fall back to the item.
+     * Null means the server says the title may be offered, so those fallbacks do not run.
+     */
+    protectionReason?: string | null;
   },
   override: 'saved' | 'unsaved' | undefined,
 ): PendingWallGlyph {
@@ -280,10 +286,22 @@ export function pendingWallGlyph(
   if (override !== 'unsaved' && (item.protectedByExclusion || item.saveIntent === true)) return 'check';
   // DESIGN-052 D-26 / Q-14 — a title the Age Guard keeps is never offered for deletion: the inert `skip` (kept),
   // as on the batch wall. A Save stays one tap away on its Library page.
-  if (recentlyAddedKeep(item)) return 'skip';
-  // ADR-117 — a requested title is kept the same way: the inert skip, never the slated trash can. Only when the
-  // Request Keep would be the guardian's first reason, so a Save, a watchlist note or the Age Guard still wins.
-  if (mediaRequestKeep(item)) return 'skip';
+  // Story 832 — the server reason is the definition. Other holds keep the corners already ruled
+  // (a tag and a recent watch stay tappable; a live exclusion and a Save stay the check).
+  if (item.protectionReason === 'recently_added') return 'skip';
+  // Two cases still read the Age Guard from the item itself, so the corner stays as ruled:
+  // an older server that sends no reason, and a title with no Maintainerr id. That check comes first
+  // in Wall Protection, so its reason is `unactionable`, but a title inside the Age Guard wore the
+  // kept badge before story 832 whether or not it had an id, and it still does.
+  if (
+    (item.protectionReason === undefined || item.protectionReason === 'unactionable') &&
+    recentlyAddedKeep(item)
+  ) {
+    return 'skip';
+  }
+  // ADR-117 — a requested title is the inert skip when that keep would be the guardian's first reason.
+  if (item.protectionReason === 'media_request') return 'skip';
+  if (item.protectionReason === undefined && mediaRequestKeep(item)) return 'skip';
   return 'trash';
 }
 
@@ -316,6 +334,45 @@ export function releaseNeedsConfirm(
   glyph: 'trash' | 'shield' | 'check' | 'skip' | 'gone',
 ): boolean {
   return glyph === 'shield' || glyph === 'check';
+}
+
+/**
+ * DESIGN-052 D-10 amendment (story 832) / ADR-015 — a tile the viewer saved from the default view, and
+ * the place it had in the wall when they tapped it.
+ */
+export interface PinnedTile<T> {
+  item: T;
+  /** Its index in the wall as shown at the tap. */
+  index: number;
+}
+
+/**
+ * DESIGN-052 D-10 amendment (story 832) / ADR-015 — keep a title the viewer just saved where it was.
+ *
+ * The default view lists only titles that can be deleted, so the read that follows a Save no longer
+ * returns the saved title. Dropping its tile would move every tile after it (hard rule 9) and would
+ * take the un-save tap away with it. So the wall puts each such tile back at the index it had, until
+ * the view is opened again. A tile the server still returns is never duplicated: the server's copy
+ * wins, in the server's place.
+ *
+ * `pins` are in the order they were tapped. Each index was taken from the wall as it stood at that
+ * tap (earlier pins already in it), so putting the missing ones back lowest index first rebuilds
+ * that wall exactly.
+ */
+export function withPinnedTiles<T extends { maintainerrMediaId: string | null; collectionId: number }>(
+  serverItems: readonly T[],
+  pins: readonly PinnedTile<T>[],
+): T[] {
+  if (pins.length === 0) return serverItems as T[];
+  const keyOf = (i: T) => `${i.collectionId}:${i.maintainerrMediaId ?? ''}`;
+  const present = new Set(serverItems.map(keyOf));
+  const missing = pins
+    .filter((p) => !present.has(keyOf(p.item)))
+    .sort((a, b) => a.index - b.index);
+  if (missing.length === 0) return serverItems as T[];
+  const out = [...serverItems];
+  for (const pin of missing) out.splice(Math.min(Math.max(pin.index, 0), out.length), 0, pin.item);
+  return out;
 }
 
 // ── cross-server watch visibility (DESIGN-010 D-12 amendment 2026-07-09, build C) ─────────────

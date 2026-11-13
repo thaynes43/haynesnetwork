@@ -48,6 +48,8 @@ import {
   exclusionCountValue,
   oldestBlockLabel,
   readdSummaryLine,
+  withPinnedTiles,
+  type PinnedTile,
 } from '../trash';
 
 const base: GuardianPreviewInput = {
@@ -356,6 +358,23 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     expect(pendingWallGlyph({ ...recent, onWatchlist: true }, undefined)).toBe('trash');
     expect(pendingWallGlyph({ ...cold, ageGuard: 'unknown' as const }, undefined)).toBe('trash');
     expect(releaseNeedsConfirm('skip')).toBe(false);
+    // Story 832 — the server reason drives the skip. Null means the server says the title is
+    // offered, so a stale age flag does not paint the badge. A missing field keeps the old check.
+    expect(pendingWallGlyph({ ...recent, protectionReason: 'recently_added' }, undefined)).toBe('skip');
+    expect(pendingWallGlyph({ ...cold, protectionReason: 'media_request' }, undefined)).toBe('skip');
+    expect(
+      pendingWallGlyph({ ...cold, protectionReason: null, arrTags: ['mediarequests'] }, undefined),
+    ).toBe('trash');
+    expect(pendingWallGlyph({ ...recent, protectionReason: null }, undefined)).toBe('trash');
+    expect(pendingWallGlyph({ ...recent, protectionReason: 'tag' }, undefined)).toBe('trash');
+    // A title with no Maintainerr id is `unactionable` first, but inside the Age Guard it keeps the
+    // kept badge it wore before story 832 (the corners stay as ruled). Outside it, the plain trash can.
+    expect(pendingWallGlyph({ ...recent, protectionReason: 'unactionable' }, undefined)).toBe('skip');
+    expect(pendingWallGlyph({ ...cold, protectionReason: 'unactionable' }, undefined)).toBe('trash');
+    // The other first reasons still win over the Age Guard, as before.
+    expect(
+      pendingWallGlyph({ ...recent, recentlyWatched: true, protectionReason: 'unactionable' }, undefined),
+    ).toBe('trash');
   });
   it('unprotected cold ⇒ trash (slated); tappable to SAVE only with save_exclude', () => {
     expect(pendingWallGlyph(cold, undefined)).toBe('trash');
@@ -480,6 +499,61 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, undefined)).toBe('trash');
     // unprotected + watched (either state) ⇒ the slated, saveable trash-can — the eye corner is gone.
     expect(pendingWallGlyph(cold, undefined)).toBe('trash');
+  });
+});
+
+// DESIGN-052 D-10 amendment (story 832) / ADR-015 — the default view lists only titles that can be
+// deleted, so the read after a Save no longer returns the saved title. Its tile is put back where it
+// was, so no neighbour moves on the tap (hard rule 9).
+describe('withPinnedTiles (a title saved from the default view keeps its place)', () => {
+  type Tile = { maintainerrMediaId: string | null; collectionId: number };
+  const tile = (id: string, collectionId = 7): Tile => ({ maintainerrMediaId: id, collectionId });
+  const [a, b, c, d, e] = ['a', 'b', 'c', 'd', 'e'].map((id) => tile(id)) as [Tile, Tile, Tile, Tile, Tile];
+  const ids = (tiles: Tile[]) => tiles.map((t) => t.maintainerrMediaId).join('');
+  const pin = (item: Tile, index: number): PinnedTile<Tile> => ({ item, index });
+
+  it('no pins: the server list is returned as it is', () => {
+    const server = [a, b, c];
+    expect(withPinnedTiles(server, [])).toBe(server);
+  });
+
+  it('a saved tile the server dropped goes back to its index; every neighbour keeps its place', () => {
+    expect(ids(withPinnedTiles([a, c, d, e], [pin(b, 1)]))).toBe('abcde');
+    expect(ids(withPinnedTiles([b, c, d, e], [pin(a, 0)]))).toBe('abcde');
+    expect(ids(withPinnedTiles([a, b, c, d], [pin(e, 4)]))).toBe('abcde');
+  });
+
+  it('the only tile on the wall stays when it is saved (the wall never falls to its empty state)', () => {
+    expect(ids(withPinnedTiles([], [pin(a, 0)]))).toBe('a');
+  });
+
+  it('several saves rebuild the wall whichever was tapped first', () => {
+    // Each index is the tile's place in the wall as it stood at that tap, earlier pins included.
+    expect(ids(withPinnedTiles([a, c, e], [pin(b, 1), pin(d, 3)]))).toBe('abcde');
+    expect(ids(withPinnedTiles([a, c, e], [pin(d, 3), pin(b, 1)]))).toBe('abcde');
+  });
+
+  it('a tile the server still returns is never duplicated: the server copy wins, in its place', () => {
+    // b was un-saved, so the server lists it again; d is still saved.
+    expect(ids(withPinnedTiles([a, b, c, e], [pin(b, 1), pin(d, 3)]))).toBe('abcde');
+    const server = [a, b, c];
+    expect(withPinnedTiles(server, [pin(b, 2)])).toBe(server);
+  });
+
+  it('an index past the end (the list shrank for another reason) appends rather than throws', () => {
+    expect(ids(withPinnedTiles([a], [pin(e, 4)]))).toBe('ae');
+    expect(ids(withPinnedTiles([a], [pin(e, -3)]))).toBe('ea');
+  });
+
+  it('the same Maintainerr id in another collection is a different tile', () => {
+    const other = tile('b', 9);
+    expect(withPinnedTiles([a, other, c], [pin(b, 1)])).toEqual([a, b, other, c]);
+  });
+
+  it('does not change the list it was given', () => {
+    const server = [a, c];
+    withPinnedTiles(server, [pin(b, 1)]);
+    expect(ids(server)).toBe('ac');
   });
 });
 

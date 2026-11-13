@@ -61,6 +61,7 @@ import { type TrashAccess } from '@/components/trash-shield';
 import {
   PendingWall,
   WatchlistVisibilityControl,
+  usePinnedSaves,
   useInfiniteScroll,
   usePendingSaves,
   type PendingWallItem,
@@ -284,7 +285,7 @@ function PendingTab({
   );
   const pages = pending.data?.pages ?? [];
   const first = pages[0];
-  const items: PendingWallItem[] = pages.flatMap((p) => p.items);
+  const pageItems: PendingWallItem[] = pages.flatMap((p) => p.items);
   const refreshing = pending.isPlaceholderData && pending.isFetching;
 
   // Server totals (the first page carries the whole-set aggregates; every page repeats total/
@@ -338,7 +339,24 @@ function PendingTab({
   };
 
   // ── save / un-save (the shared tap-toggle; a tile flips only on the server's answer, ADR-096) + infinite scroll ──
-  const { overrides, busy: shieldBusy, failed, error: rowError, toggle } = usePendingSaves(media);
+  const { overrides, busy: shieldBusy, failed, error: rowError, toggle: sendToggle } =
+    usePendingSaves(media);
+  // DESIGN-052 D-10 amendment (story 832) — a title saved from the default view keeps its tile until
+  // the view is opened again (hard rule 9). The key is everything that decides which titles the wall
+  // reads: a change to any of it is a fresh view.
+  const viewKey = JSON.stringify([
+    media,
+    showProtected,
+    trimmedQuery,
+    genres,
+    resolutions,
+    requesters,
+    sourceCollections,
+    ratingMin ?? null,
+    ratingMax ?? null,
+    sortToken,
+  ]);
+  const { items, toggle } = usePinnedSaves(pageItems, viewKey, overrides, sendToggle);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const canLoadMore =
     pending.hasNextPage === true && !pending.isFetchingNextPage && !pending.isPlaceholderData;
@@ -591,7 +609,7 @@ function PendingTab({
               ? 'Nothing matches the filters.'
               : showProtected || total === 0
                 ? `Nothing pending — no ${label.toLowerCase()} are scheduled for deletion.`
-                : 'No candidates to show. Use Show protected to include watchlisted titles.'
+                : 'No candidates to show. Use Show protected to include titles that cannot be deleted.'
           }
           wallLabel={`Pending ${label} deletions`}
           sentinelRef={sentinelRef}
