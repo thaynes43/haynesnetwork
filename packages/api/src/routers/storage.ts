@@ -4,6 +4,7 @@
 //   storage.utilization       — current disk utilization per media array (*arr /diskspace, resilient).
 //   storage.trend({window})   — the native free-space trend (Prometheus exportarr history + targets;
 //                               ADR-030 amendment 2026-07-09 — replaces the Grafana deep-link).
+//   storage.forecast          — when each array reaches its target floor and 100% (DESIGN-013 D-08).
 //   storage.reclaim({window}) — reclaim attribution over a window (PG deletion snapshots + expedite).
 //   storage.targets.get       — the per-server space_targets map (drives the reference line).
 //   storage.targets.set       — set the targets (audited via the app_settings single-writer).
@@ -22,6 +23,7 @@ import {
 } from '@hnet/domain';
 import { mapDomainErrors, resolveArrBundle, resolvePrometheusReader, router } from '../trpc';
 import { adminProcedure } from '../middleware/role';
+import { getStorageForecast } from '../storage-forecast';
 import { getStorageTrend, TREND_WINDOWS } from '../storage-trend';
 
 /**
@@ -124,6 +126,20 @@ export const storageRouter = router({
         }),
       ),
     ),
+
+  /**
+   * When each array's free space reaches its target floor and 100% (DESIGN-013 D-08). Same arrays
+   * and targets as `trend`. Prometheus down ⇒ `unavailable: true`, never a thrown read.
+   */
+  forecast: adminProcedure.query(({ ctx }) =>
+    mapDomainErrors(() =>
+      getStorageForecast({
+        db: ctx.db,
+        arr: resolveArrBundle(ctx),
+        prometheus: resolvePrometheusReader(ctx),
+      }),
+    ),
+  ),
 
   /** Reclaim attribution over a window (30d/90d/365d/all) — category × resolution, curve, per batch. */
   reclaim: adminProcedure
