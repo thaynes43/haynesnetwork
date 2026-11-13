@@ -1,0 +1,7 @@
+arr,reason,pairing,events,bytes,events_missing_size
+lidarr,Upgrade,paired,810,19891873262,0
+lidarr,Upgrade,unpaired,460,11034490788,0
+radarr,Upgrade,paired,500,13720695086359,0
+sonarr,Manual,not an upgrade,154,196583195796,0
+sonarr,MissingFromDisk,not an upgrade,81,78886428828,0
+sonarr,Upgrade,paired,8448,19457391094476,0

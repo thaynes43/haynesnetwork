@@ -1,5 +1,11 @@
 # HANDOFF — cold-start resume point
 
+## 2026-11-13: story #822 TV Trash audit (report only)
+
+- Read-only audit of the empty TV Trash pool. Note: `.agents/context/2026-11-13-tv-trash-audit.md`, with the show and season CSVs beside it. No rule, cap, or cluster setting was changed.
+- The live Maintainerr TV rule is show-level. Its 180-day HaynesOps date-added clause matches 0 of 953 shows, because that library was filled on 2026-07-02. The pool and the candidate snapshot are both empty. Questions for the owner are Q-01 through Q-08 in the note.
+- Next safe step is the owner's ruling. A rule change is a later story.
+
 ## 2026-10-26: #208 dev-tl1 tool-lift measurement (done)
 
 - Coordinator: Claude Code `claude-opus-5-5`, session https://claude.ai/code/session_017Mz4kKcxwNy41sCHoJKJVu, for Tom via dev-env-1019-205125. Tracker: OpenProject haynes-media-repair #208 (epic #48, saga #43). #207 (tool usage report, PR #1041) and #209 (must-ask handover and llamacpp adapter, PR #1042) are merged.
