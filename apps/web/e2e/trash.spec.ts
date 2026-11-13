@@ -277,7 +277,7 @@ test.describe('trash — watchlist protection on the page (ADR-093)', () => {
       await expect(confirm).toContainText('3 protected');
       // D-25bk / D-25cy — the app keeps them (never "Maintainerr keeps"), and a request is no keep.
       await expect(confirm).toContainText(
-        '3 protected: saved, recently watched, added or upgraded recently, whitelisted, or on a watchlist; they are kept.',
+        '3 protected: saved, recently watched, added or upgraded recently, whitelisted, on a watchlist, or requested; they are kept.',
       );
       await expect(confirm).not.toContainText('Maintainerr keeps');
       await expect(confirm).not.toContainText('requested');
@@ -877,7 +877,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const confirm = page.getByTestId('trash-expedite-all-confirm');
     await expect(confirm).toContainText('0 will be deleted NOW');
     await expect(confirm).toContainText(
-      '1 protected: saved, recently watched, added or upgraded recently, whitelisted, or on a watchlist; they are kept.',
+      '1 protected: saved, recently watched, added or upgraded recently, whitelisted, on a watchlist, or requested; they are kept.',
     );
     await expect(page.getByTestId('trash-expedite-recent')).toHaveText('1 added or upgraded recently');
     await expect(page.getByTestId('trash-expedite-all-submit')).toBeDisabled();
