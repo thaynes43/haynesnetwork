@@ -1314,7 +1314,11 @@ clear    otherwise (a title no Plex library is matched to is judged on its impor
   reflows (hard rule 9); no new colors.
 - **The Maintainerr rules stay as they are** (requirement 3 of the ruling's work order, optional): Maintainerr reads
   only HaynesOps' date added, and its Radarr dates carry the rebuild, so no rule clause can express the guard
-  without emptying the pool. The app check is the guarantee.
+  without emptying the pool. The app check is the guarantee. **Later ruling (2026-11-13, story 835,
+  [DESIGN-014 D-15](014-rules-tuning-space-policy.md)):** the TV pool's own predicates change (ended, last
+  episode aired, rating below 6.0, not tagged `mediarequests`; the HaynesOps views clause removed). That
+  change does not express this guard and does not replace it. The movie pool's added-date clause stays.
+  D-15 is the spec; it is not applied to the live Maintainerr in story 835.
 
 **Data:** migration **0086** (`0086_trash_age_guard.sql`, journal idx 85): `media_plex_matches.plex_added_at`
 (nullable) and `trash_batch_items.keep_reason` admitting `recently_added`. The previous image runs unchanged against

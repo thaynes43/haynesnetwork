@@ -1,10 +1,23 @@
 # HANDOFF — cold-start resume point
 
+## 2026-11-13: story #835 TV Trash rule body (not applied)
+
+- DESIGN-014 D-15 records the approved show-level TV rule: ended, last episode aired at least 180
+  days ago, rating below 6.0, not tagged `mediarequests`, views clause removed, cap 5 and
+  worst-rated unchanged. Evidence: `.agents/context/2026-11-13-tv-trash-rule-correction.md`.
+- Nothing was written to Maintainerr or Sonarr. The projection matches the audit's ten shows
+  (412,648,319,552 bytes) and the three after `dnd` and the watchlist (55,304,752,845 bytes). It
+  uses Sonarr `previousAiring` as a stand-in for the Plex air-date property.
+- Replacing the added-date clause does not make the aging audit refuse the pool. No superseding ADR.
+- Q-04: the group name still says "unwatched". Recommendation is to leave it.
+- Next safe step: review and merge the design PR, then story 823's gate. Do not apply the rule
+  from this note.
+
 ## 2026-11-13: story #822 TV Trash audit (report only)
 
 - Read-only audit of the empty TV Trash pool. Note: `.agents/context/2026-11-13-tv-trash-audit.md`, with the show and season CSVs beside it. No rule, cap, or cluster setting was changed.
 - The live Maintainerr TV rule is show-level. Its 180-day HaynesOps date-added clause matches 0 of 953 shows, because that library was filled on 2026-07-02. The pool and the candidate snapshot are both empty. Questions for the owner are Q-01 through Q-08 in the note.
-- Next safe step is the owner's ruling. A rule change is a later story.
+- The ruling landed the same day (story 822, comment 7992). The rule body is story 835, above.
 
 ## 2026-10-26: #208 dev-tl1 tool-lift measurement (done)
 
