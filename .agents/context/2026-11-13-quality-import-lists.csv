@@ -1,0 +1,26 @@
+app,name,implementation,list_type,enable_automatic_add,should_monitor,should_monitor_existing,should_search,monitor_new_items,quality_profile_id,metadata_profile_id
+lidarr,Apple Music New Albums,LidarrLists,other,True,entireArtist,false,False,all,1,1
+lidarr,Apple Music Top Albums,LidarrLists,other,True,entireArtist,false,False,all,1,1
+lidarr,Billboard Top Albums,LidarrLists,other,True,entireArtist,false,False,all,1,1
+lidarr,Billboard Top Artists,LidarrLists,other,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - alternative,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - Best Albums Ever,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - blues,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - classic rock,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - country,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - electronic,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - folk,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - hip-hop,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - indie,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - indie-pop,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - jazz,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - metal,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - pop,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - punk,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - rock,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - singer-songwriter,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Tag - soul,LastFmTag,lastFm,True,entireArtist,false,False,all,1,1
+lidarr,Last.fm Top Artists,LidarrLists,other,True,entireArtist,false,False,all,1,1
+lidarr,Spotify Followed Artists,SpotifyFollowedArtists,spotify,True,entireArtist,false,False,all,1,1
+lidarr,Spotify Playlists,SpotifyPlaylist,spotify,True,entireArtist,false,False,all,1,1
+lidarr,Spotify Saved Albums,SpotifySavedAlbums,spotify,True,entireArtist,false,False,all,1,1
