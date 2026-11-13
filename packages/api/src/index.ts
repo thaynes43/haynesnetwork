@@ -188,6 +188,9 @@ export {
 // DESIGN-013 D-08 — the capacity forecast wire types. Re-exported so the server caller can name them.
 export {
   getStorageForecast,
+  forecastJumps,
+  FORECAST_JUMP_DEVIATIONS,
+  type StorageForecastJumps,
   type StorageForecastSeries,
   type StorageForecastReport,
 } from './storage-forecast';

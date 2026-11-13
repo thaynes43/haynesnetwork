@@ -44,12 +44,11 @@ import {
   termMatchesRaw,
   setAppSetting,
   sweepExpiredBatches,
-  upsertMediaItemsBatch,
   type DomainLogger,
   type StaticArrMovie,
 } from '../src/index';
 import { baseState, makeMaintainerr, movieCollection, type MaintState } from './maintainerr-stub';
-import { bootMigratedDb, createUser, seedVerifiedWatchlistRegistry, type TestDb } from './helpers';
+import { bootMigratedDb, createUser, seedVerifiedWatchlistRegistry, type TestDb , upsertDeletableMediaItems } from './helpers';
 
 const BABYGIRL = 'Babygirl.2024.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.REMUX-FraMeSToR';
 
@@ -123,7 +122,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
   beforeAll(async () => {
     t = await bootMigratedDb();
     admin = (await createUser(t.db, { email: 'rb@example.com', displayName: 'RB Admin' })).id;
-    await upsertMediaItemsBatch({
+    await upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'radarr',
       items: [9001, 9002, 9003].map((tmdbId, i) => ({
@@ -138,7 +137,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
         rootFolder: '/movies',
       })),
     });
-    await upsertMediaItemsBatch({
+    await upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'sonarr',
       items: [
@@ -269,7 +268,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
         qualityProfileName: 'Any',
         rootFolder: '/movies',
       });
-      await upsertMediaItemsBatch({
+      await upsertDeletableMediaItems({
         db: t.db,
         arrKind: 'radarr',
         items: [killer(7636, 970347, 2024), killer(7635, 800158, 2023)],
@@ -537,7 +536,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
         qualityProfileName: 'Any',
         rootFolder: '/tv',
       });
-      await upsertMediaItemsBatch({
+      await upsertDeletableMediaItems({
         db: t.db,
         arrKind: 'sonarr',
         items: [ghosts(61, 8061, 2021), ghosts(62, 8062, 2022)],
@@ -1839,7 +1838,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
         ]),
       });
       // D-25cr: the ledger holds another "Babygirl" (2023), so movie 3's renamed-only window leaves 2023 out.
-      await upsertMediaItemsBatch({
+      await upsertDeletableMediaItems({
         db: t.db,
         arrKind: 'radarr',
         items: [
@@ -1935,7 +1934,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
         rootFolder: '/movies',
       });
       // First synced 200 days ago as Radarr 101; Trash deleted it and the sync tombstoned the row.
-      await upsertMediaItemsBatch({ db: t.db, arrKind: 'radarr', items: [ledgerItem(101)] });
+      await upsertDeletableMediaItems({ db: t.db, arrKind: 'radarr', items: [ledgerItem(101)] });
       const [row0] = await t.db.select().from(mediaItems).where(eq(mediaItems.tmdbId, 5101));
       await t.db
         .update(mediaItems)
@@ -1958,7 +1957,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
         })
         .returning();
       // A re-request re-adds it as Radarr 201; the full sync RE-MATCHES the same row by tmdb id (first_seen_at kept).
-      await upsertMediaItemsBatch({ db: t.db, arrKind: 'radarr', items: [ledgerItem(201)] });
+      await upsertDeletableMediaItems({ db: t.db, arrKind: 'radarr', items: [ledgerItem(201)] });
       const rows = await t.db.select().from(mediaItems).where(eq(mediaItems.tmdbId, 5101));
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ id: row0!.id, arrItemId: 201, deletedFromArrAt: null });

@@ -8,6 +8,10 @@
 //     lines + the dashed target floor + the values legend render off the stub Prometheus, the
 //     window switcher redrives storage.trend without reflow, Prometheus-down degrades to a note
 //     (never a crashed tab), and Grafana survives only as the LAN footnote link (never an iframe);
+//   • the Capacity Forecast (DESIGN-013 D-09, story 819) sits above the trend, one panel per array:
+//     the target and 100% dates in words beside a plot of the projection and its marks, "no
+//     forecast" with its reason, a saved target moving the forecast in place (ADR-015), the
+//     set-aside jumps named from the recorded fixture, and the same panels when Prometheus is down;
 //   • Reclaim tab: production-faithfully EMPTY, and the window switcher redrives the query;
 //   • the Storage tab fits a phone (AC-10 spot check at 390×844).
 // Leaves the seeded target back at 80 (and the stub Prometheus back in 'ok' mode) so later specs
@@ -25,6 +29,17 @@ async function setPrometheusMode(mode: 'ok' | 'down'): Promise<void> {
     body: JSON.stringify({ mode }),
   });
   if (!res.ok) throw new Error(`stub prometheus state change failed: HTTP ${res.status}`);
+}
+
+/** Pick the stub Prometheus's free-space fixture (DESIGN-013 D-09; `steady` is the default). */
+async function setFreespace(freespace: 'steady' | 'recorded' | 'draining' | 'short'): Promise<void> {
+  const env = readRuntimeEnv();
+  const res = await fetch(`${env.STUB_PROMETHEUS_URL}/_stub/state`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ freespace }),
+  });
+  if (!res.ok) throw new Error(`stub prometheus fixture change failed: HTTP ${res.status}`);
 }
 
 /** Open a tab of the Trash Settings hub directly (admins pass the trash-edit page gate). */
@@ -183,12 +198,187 @@ test.describe('storage metrics (ADR-030 HYBRID, native half) — on the Trash Se
     await expect(page.locator('iframe')).toHaveCount(0);
   });
 
+  test('capacity forecast: one panel per array above the trend — the dates in words, the projection and its marks, and why there is no forecast', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await openTab(page, 'storage');
+
+    const card = page.getByTestId('storage-forecast');
+    await expect(card.getByRole('heading', { name: 'Capacity forecast' })).toBeVisible();
+    await expect(card).toContainText('An estimate, not a schedule.');
+
+    // HaynesTower in the stub: 112.43 TB free, falling 7.57 TB in 90 days (84 GB a day), under its
+    // 80% target (106 TB free). Use is rising and the array is still under target, so BOTH dates
+    // show: the target in 6.44 TB / 84.1 GB = 77 days, 100% in 112.43 TB / 84.1 GB = 3.66 years.
+    const tower = page.getByTestId('forecast-haynestower');
+    await expect(tower).toHaveAttribute('data-tone', 'filling');
+    await expect(page.getByTestId('forecast-chip-haynestower')).toHaveText('Filling');
+    await expect(page.getByTestId('forecast-sentence-haynestower')).toHaveText(
+      'Filling by about 84 GB a day (590 GB a week).',
+    );
+    const target = page.getByTestId('forecast-target-haynestower');
+    await expect(target).toContainText('Target (80% used)');
+    await expect(target).toContainText(/[A-Z][a-z]{2} 20\d\d/); // a month: it is over 60 days away
+    await expect(target).toContainText(/over target in about \d months/);
+    const full = page.getByTestId('forecast-full-haynestower');
+    await expect(full).toContainText('Full (100% used)');
+    await expect(full).toContainText(/20\d\d/); // a year only: it is over 2 years away
+    await expect(full).toContainText('in about 3.5 years');
+
+    // The plot: the history, then the projection from today's level down to zero (y = 159 of the
+    // 160px plot), a mark where it meets the dashed target floor and one where it meets zero.
+    await expect(page.getByTestId('forecast-plot-haynestower')).toBeVisible();
+    await expect(page.getByTestId('forecast-history-haynestower')).toHaveAttribute('d', /^M 0 [\d.]+ L /);
+    await expect(page.getByTestId('forecast-projection-haynestower')).toHaveAttribute(
+      'd',
+      /^M [\d.]+ [\d.]+ L [\d.]+ 159$/,
+    );
+    await expect(page.getByTestId('forecast-mark-target-haynestower')).toBeVisible();
+    await expect(page.getByTestId('forecast-mark-full-haynestower')).toBeVisible();
+    await expect(page.getByTestId('forecast-target-line-haynestower')).toBeVisible();
+    await expect(tower.getByText('Target · 106 TB free')).toBeVisible();
+    await expect(page.getByTestId('forecast-notes-haynestower')).toHaveCount(0); // a straight fill: no jump
+
+    // The music pool holds level in the stub: no forecast, and the panel says why. The history is
+    // still drawn (a flat path, so assert it is attached, as the trend test does).
+    const music = page.getByTestId('forecast-cephfs');
+    await expect(music).toHaveAttribute('data-tone', 'steady');
+    await expect(page.getByTestId('forecast-chip-cephfs')).toHaveText('Steady');
+    await expect(page.getByTestId('forecast-sentence-cephfs')).toHaveText(
+      'No forecast: free space has not clearly risen or fallen over the last 90 days, so there is no date to predict.',
+    );
+    await expect(page.getByTestId('forecast-target-cephfs')).toContainText('Not set');
+    await expect(page.getByTestId('forecast-full-cephfs')).toContainText('No date');
+    await expect(page.getByTestId('forecast-full-cephfs')).toContainText('holding steady');
+    await expect(page.getByTestId('forecast-history-cephfs')).toBeAttached();
+    await expect(page.getByTestId('forecast-projection-cephfs')).toHaveCount(0);
+    await expect(page.getByTestId('forecast-mark-full-cephfs')).toHaveCount(0);
+
+    // The key names both directions (the colours are never the only cue), and the card sits
+    // above the free-space trend.
+    const legend = page.getByTestId('forecast-legend');
+    await expect(legend).toContainText('Projection while filling');
+    await expect(legend).toContainText('Projection while freeing up');
+    const cardBox = (await card.boundingBox())!;
+    const trendBox = (await page.getByTestId('storage-trend').boundingBox())!;
+    expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(trendBox.y);
+  });
+
+  test('capacity forecast: a saved target moves the target date and the dashed floor in place (ADR-015)', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    await openTab(page, 'storage');
+    await expect(page.getByTestId('forecast-mark-target-haynestower')).toBeVisible();
+    const trend = page.getByTestId('storage-trend');
+    const before = (await trend.boundingBox())!;
+
+    try {
+      // 75% used is a 132.49 TB floor: the array (112.43 TB free) is now OVER target and still
+      // filling, so the target date gives way to "over now" and only the 100% date is left.
+      await saveTarget(page, '75');
+      const target = page.getByTestId('forecast-target-haynestower');
+      await expect(target).toContainText('Target (75% used)');
+      await expect(target).toContainText('Over now');
+      await expect(target).toContainText('by 20.1 TB, and rising');
+      await expect(page.getByTestId('forecast-mark-target-haynestower')).toHaveCount(0);
+      await expect(page.getByTestId('forecast-mark-full-haynestower')).toBeVisible();
+      await expect(
+        page.getByTestId('forecast-haynestower').getByText('Target · 132.5 TB free'),
+      ).toBeVisible();
+
+      // The card below did not move: the tiles and the plot swapped inside a fixed footprint.
+      const after = (await trend.boundingBox())!;
+      expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+      expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(1);
+    } finally {
+      await saveTarget(page, '80'); // the seeded target, for later specs and re-runs
+    }
+    await expect(page.getByTestId('forecast-target-haynestower')).toContainText('Target (80% used)');
+    await expect(page.getByTestId('forecast-mark-target-haynestower')).toBeVisible();
+  });
+
+  test('capacity forecast: set-aside jumps are named, use falling shows no 100% date, and a short history says what it lacks', async ({
+    page,
+  }) => {
+    await signIn(page, 'admin');
+    try {
+      // The history recorded 2026-11-13 (DESIGN-013 D-08), replayed by the stub: HaynesTower fills
+      // at 212 GB a day with two late rises set aside; the music pool fills at 39 GB a day with
+      // three drops and three rises set aside, which outweigh that pace (the Q-03 case).
+      await setFreespace('recorded');
+      await openTab(page, 'storage');
+      await expect(page.getByTestId('forecast-sentence-haynestower')).toHaveText(
+        'Filling by about 210 GB a day (1.5 TB a week).',
+      );
+      const towerNotes = page.getByTestId('forecast-notes-haynestower');
+      await expect(towerNotes).toContainText('Free space jumped up by 9.9 TB in the last 90 days (2 jumps');
+      await expect(towerNotes).toContainText('The projection treats them as one-offs');
+      await expect(towerNotes).not.toContainText('Read this forecast with care');
+
+      await expect(page.getByTestId('forecast-sentence-cephfs')).toHaveText(
+        'Filling by about 39 GB a day (280 GB a week).',
+      );
+      const musicNotes = page.getByTestId('forecast-notes-cephfs');
+      await expect(musicNotes).toContainText('Read this forecast with care');
+      await expect(musicNotes).toContainText(
+        'dropped suddenly by 11.9 TB (3 drops) and jumped up by 3.8 TB (3 jumps)',
+      );
+      await expect(page.getByTestId('forecast-target-cephfs')).toContainText('Not set');
+      await expect(page.getByTestId('forecast-mark-full-cephfs')).toBeVisible();
+
+      // Use falling: free space rises toward nothing it has to reach (the array is under target),
+      // so there is a pace and no date, and never a 100% date.
+      await setFreespace('draining');
+      await page.reload();
+      await expect(page.getByTestId('forecast-haynestower')).toHaveAttribute('data-tone', 'draining');
+      await expect(page.getByTestId('forecast-chip-haynestower')).toHaveText('Freeing up');
+      await expect(page.getByTestId('forecast-sentence-haynestower')).toHaveText(
+        /^Freeing up about \d+ GB a day \(\d+(\.\d)? [GT]B a week\)\.$/,
+      );
+      await expect(page.getByTestId('forecast-full-haynestower')).toContainText('Not ahead');
+      await expect(page.getByTestId('forecast-target-haynestower')).toContainText('Under now');
+      await expect(page.getByTestId('forecast-target-haynestower')).toContainText(
+        '6.4 TB to spare, and growing',
+      );
+      await expect(page.getByTestId('forecast-projection-haynestower')).toBeAttached();
+      await expect(page.getByTestId('forecast-mark-full-haynestower')).toHaveCount(0);
+
+      // Over target and falling (a 75% target is a 132.49 TB floor): the date it is back under
+      // target, with its mark on the dashed floor, and still no 100% date.
+      await saveTarget(page, '75');
+      const target = page.getByTestId('forecast-target-haynestower');
+      await expect(target).toContainText(/back under in about \d+ (weeks|months)/);
+      await expect(page.getByTestId('forecast-mark-target-haynestower')).toBeVisible();
+      await expect(page.getByTestId('forecast-mark-full-haynestower')).toHaveCount(0);
+      await expect(page.getByTestId('forecast-full-haynestower')).toContainText('Not ahead');
+      await saveTarget(page, '80');
+
+      // 21 days of history: under the 36 the method needs.
+      await setFreespace('short');
+      await page.reload();
+      await expect(page.getByTestId('forecast-chip-haynestower')).toHaveText('No forecast');
+      await expect(page.getByTestId('forecast-sentence-haynestower')).toHaveText(
+        'No forecast yet: it needs 36 days of readings and this array has 21 so far.',
+      );
+      await expect(page.getByTestId('forecast-full-haynestower')).toContainText('No date yet');
+      await expect(page.getByTestId('forecast-projection-haynestower')).toHaveCount(0);
+    } finally {
+      await setFreespace('steady'); // later specs + re-runs see the default fixture
+    }
+  });
+
   test('trend window switcher redrives storage.trend without reflow (ADR-015)', async ({
     page,
   }) => {
     await signIn(page, 'admin');
     await openTab(page, 'storage');
     await expect(page.getByTestId('trend-chart')).toBeVisible();
+    // The Capacity Forecast card above (DESIGN-013 D-09) puts the trend below the first screen.
+    // Bring its switcher into view first: boundingBox is relative to the viewport, so a click that
+    // scrolled the page between the two measurements would read as a reflow.
+    await page.getByTestId('trend-window-7d').scrollIntoViewIfNeeded();
     const before = await page.getByTestId('trend-chart').boundingBox();
 
     await Promise.all([
@@ -220,6 +410,15 @@ test.describe('storage metrics (ADR-030 HYBRID, native half) — on the Trash Se
       await expect(note).toBeVisible();
       await expect(note).toContainText('couldn’t reach Prometheus');
       await expect(page.getByTestId('trend-chart')).toHaveCount(0);
+      // The forecast reads the same source: its panels stay, each saying the forecast is
+      // unavailable, with no plot (DESIGN-013 D-09).
+      await expect(page.getByTestId('storage-forecast')).toHaveAttribute('data-unavailable', 'true');
+      await expect(page.getByTestId('forecast-sentence-haynestower')).toContainText(
+        'Forecast unavailable: couldn’t reach Prometheus right now.',
+      );
+      await expect(page.getByTestId('forecast-full-cephfs')).toContainText('No date');
+      await expect(page.getByTestId('forecast-plot-haynestower')).toHaveCount(0);
+      await expect(page.getByTestId('forecast-noplot-haynestower')).toBeVisible();
       // The rest of the tab is untouched by the trend source being down (C-03 posture).
       await expect(page.getByTestId('array-stats-haynestower')).toHaveText(
         '78.8% used · 112.4 TB free of 530 TB',
@@ -236,6 +435,9 @@ test.describe('storage metrics (ADR-030 HYBRID, native half) — on the Trash Se
     await signIn(page, 'admin');
     await openTab(page, 'storage');
     await expect(page.getByTestId('array-stats-haynestower')).toBeVisible();
+    // The forecast stacks its words over its plot and stays inside the viewport at phone width.
+    await expect(page.getByTestId('forecast-plot-haynestower')).toBeVisible();
+    await expect(page.getByTestId('forecast-full-haynestower')).toBeVisible();
     // The trend chart stays legible + inside the viewport at phone width too.
     await expect(page.getByTestId('trend-chart')).toBeVisible();
     await expect(page.getByTestId('trend-legend')).toBeVisible();

@@ -42,6 +42,7 @@ import {
   requestPoolRefreshAfterSave,
   restoreDeleted,
   saveExclusion,
+  setAgeGuardIgnoreLibraryFill,
   setAppSetting,
   setBatchItemSaved,
   sweepExpiredBatches,
@@ -755,6 +756,9 @@ export const trashRouter = router({
                 .max(FINAL_WARNING_HOURS_MAX),
             })
             .optional(),
+          // ADR-119 — set the Age Guard library-fill switch, or set it back. Audited through
+          // setAgeGuardIgnoreLibraryFill. This route does not turn the setting on by itself.
+          ageGuardIgnoreLibraryFill: z.boolean().optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -790,6 +794,13 @@ export const trashRouter = router({
               db: ctx.db,
               key: 'final_warning',
               value: input.finalWarning,
+              actorId: ctx.user.id,
+            });
+          }
+          if (input.ageGuardIgnoreLibraryFill !== undefined) {
+            await setAgeGuardIgnoreLibraryFill({
+              db: ctx.db,
+              enabled: input.ageGuardIgnoreLibraryFill,
               actorId: ctx.user.id,
             });
           }

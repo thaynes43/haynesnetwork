@@ -17,14 +17,16 @@ import {
   type SeerrEnrollClients,
   getTrashSweepStatus,
   greenlightBatch,
+  syncPlexMatches,
   upsertMediaItemsBatch,
+  upsertPlexLibraries,
   type MaintainerrClientBundle,
   RELEASE_BLOCK_PROFILE_NAME,
   RELEASE_BLOCK_SENTINEL,
   insertReleaseRecords,
   silentDomainLogger,
 } from '@hnet/domain';
-import { trashDeletedReleases } from '@hnet/db/schema';
+import { mediaItems, plexLibraries, trashDeletedReleases } from '@hnet/db/schema';
 import { runSync } from '../src/orchestrator';
 import { bootMigratedDb, type TestDb } from './helpers';
 
@@ -101,13 +103,35 @@ describe('runSync — trash-batch-sweep mode (ADR-025, ADR-093)', () => {
   let t: TestDb;
   beforeAll(async () => {
     t = await bootMigratedDb();
-    // The pool item is known to the ledger (else the guardian keeps it `unevaluable`).
+    // The pool item is known to the ledger (else the guardian keeps it `unevaluable`). ADR-119 also
+    // keeps a title with no Plex match, so the item carries a date older than 180 days.
     await upsertMediaItemsBatch({
       db: t.db,
       arrKind: 'radarr',
       items: [
         { arrItemId: 1, tmdbId: 1, title: 'One', sortTitle: 'one', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/movies' },
       ],
+    });
+    await upsertPlexLibraries({
+      db: t.db,
+      slug: 'haynesops',
+      libraries: [{ sectionKey: 'age-guard-dated', name: 'Age Guard Dated', mediaType: 'movie' }],
+    });
+    const library = (await t.db.select().from(plexLibraries)).find((l) => l.sectionKey === 'age-guard-dated');
+    const item = (await t.db.select().from(mediaItems)).find((row) => row.tmdbId === 1);
+    if (!library || !item) throw new Error('sweep fixture missing its library or ledger item');
+    await syncPlexMatches({
+      db: t.db,
+      matches: [
+        {
+          mediaItemId: item.id,
+          plexLibraryId: library.id,
+          ratingKey: 'old-1',
+          matchedVia: 'tmdb',
+          plexAddedAt: new Date(Date.now() - 400 * 86_400_000),
+        },
+      ],
+      scopedLibraryIds: [],
     });
   });
   afterAll(async () => t?.stop());

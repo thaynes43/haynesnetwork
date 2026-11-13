@@ -42,13 +42,12 @@ import {
   LIVE_POOL_PROJECTION_MAX_AGE_MS,
   sweepExpiredBatches,
   unprotectBatchItem,
-  upsertMediaItemsBatch,
   upsertMediaMetadataBatch,
   type MaintainerrClientBundle,
   type TrashPendingItem,
   createStaticReleaseBlockArr,
 } from '../src/index';
-import { seedVerifiedWatchlistRegistry, bootMigratedDb, createUser, type TestDb } from './helpers';
+import { seedVerifiedWatchlistRegistry, bootMigratedDb, createUser, type TestDb , upsertDeletableMediaItems } from './helpers';
 
 /** ADR-093 / DESIGN-052 D-14 — the in-memory Release Block *arr (every item synthesized recordable). */
 const { arr: releaseArr } = createStaticReleaseBlockArr();
@@ -455,7 +454,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     t = await bootMigratedDb();
     await seedVerifiedWatchlistRegistry(t.db);
     actorId = (await createUser(t.db, { email: 'batch-admin@example.com' })).id;
-    await upsertMediaItemsBatch({
+    await upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'radarr',
       items: [
@@ -1248,7 +1247,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
   it('F3 — the sweep aborts after 3 consecutive handle failures and resumes on the next sweep', async () => {
     // Four cold, ledger-resolved movies in their own collection; every per-item handle fails.
     const tmdbs = [9101, 9102, 9103, 9104];
-    await upsertMediaItemsBatch({
+    await upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'radarr',
       items: tmdbs.map((tmdb, i) => ({

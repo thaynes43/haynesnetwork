@@ -133,6 +133,20 @@ export interface SpacePolicy {
   /** Per-kind composition caps (movie, tv). Always fully populated by getSpacePolicy (defaults + the
    *  graceful migration of the retired flat `targetBytesPerBatch` key). */
   perKind: SpacePolicyPerKind;
+  /**
+   * ADR-120 / DESIGN-014 D-16 — Dynamic Pace. Absent on rows written before it; getSpacePolicy
+   * fills the measured defaults with `enabled: false`. While it is off, the per-kind caps and the
+   * over-target gate are unchanged.
+   */
+  dynamicPace?: DynamicPaceConfig;
+}
+
+/** The audited Dynamic Pace bounds. `enabled` ships false. Horizon, floor and ceiling are the D-16 defaults. */
+export interface DynamicPaceConfig {
+  enabled: boolean;
+  horizonDays: number;
+  floorBytes: number;
+  ceilingBytes: number;
 }
 
 /** The default cap value floor for a targetBytes cap the admin newly enables (100 GiB). */
@@ -336,6 +350,9 @@ export interface AppSettingValueMap {
   // that is never Seerr user 1), written through setSeerrIssueBridge.
   seerr_issue_bridge: SeerrIssueBridgeSetting;
   seerr_issue_bridge_smoke: SeerrBridgeSmokeState | null;
+  // ADR-119 / DESIGN-052 D-31 — library-fill dates stop extending the Age Guard. Boolean, default false, so a
+  // missing or non-boolean row keeps the 2026-10-03 newest Plex date. The no-match verdict is unknown either way.
+  age_guard_ignore_library_fill: boolean;
 }
 
 /** DESIGN-055 P7 decision 11: durable staff-test ownership, checkpoints and the recoverable external-call intent. */
@@ -451,6 +468,8 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   // ADR-111 C-03 — absent key: no bridge user and both writes off, so nothing is ever written to Seerr.
   seerr_issue_bridge: { comment: false, resolve: false, bridgeUserId: null, commentFrom: null },
   seerr_issue_bridge_smoke: null,
+  // ADR-119 — off until story 823 turns it on. Off keeps the 2026-10-03 newest Plex date.
+  age_guard_ignore_library_fill: false,
 };
 
 /**
