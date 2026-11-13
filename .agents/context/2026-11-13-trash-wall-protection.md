@@ -108,4 +108,12 @@ because it is a choice between two of the owner's rules.
 | Domain | `vitest run __tests__/trash-protection-filter.test.ts __tests__/trash-watchlist-guard.test.ts --maxWorkers=2` | 36 passed of 36 |
 | Web unit | `vitest run lib/__tests__/trash.test.ts --maxWorkers=2` | 76 passed of 76 (re-run after the glyph fix) |
 | Types | `pnpm typecheck` | clean |
-| Lint | `pnpm lint`, `pnpm lint:css` | no errors; 3 warnings, all in two test files this change does not touch |
+| Lint | `pnpm lint`, `pnpm lint:css` | no errors; 4 warnings, in three files this change does not touch (corrected 2026-11-13: the first count, 3 in two test files, missed one in `packages/metrics`) |
+
+### Glossary id (2026-11-13, after `main` moved)
+
+While this change was open, `main` took glossary id T-332 for Capacity Forecast (story 834, PR
+1063). This change had used T-332 for Wall Protection. Git merged the two without a conflict, which
+would have left two terms with one id. `main` was merged into this branch and Wall Protection is
+now **T-333**, in the glossary, DESIGN-052 and the code comment. An id on `main` is never
+renumbered; this one had not reached `main`.

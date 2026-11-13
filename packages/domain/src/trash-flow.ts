@@ -1476,7 +1476,7 @@ export function classifyForExpedite(item: ExpediteVerdictInput): ExpediteVerdict
 }
 
 /**
- * DESIGN-052 D-10 amendment (2026-11-13, story 832) — Wall Protection (DDD-001 T-332).
+ * DESIGN-052 D-10 amendment (2026-11-13, story 832) — Wall Protection (DDD-001 T-333).
  * Why the pending wall will not offer this title for deletion, or null when it will.
  * The same order as `classifyGuardian`, with `unevaluable` named by the check that failed.
  * A page-scoped live exclusion is applied by the caller after this returns null (`live_excluded`);
