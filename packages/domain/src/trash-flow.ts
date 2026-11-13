@@ -415,6 +415,11 @@ export interface TrashPendingItem {
    * batch ever proposes it, and the walls show it saved.
    */
   saveIntent: boolean;
+  /**
+   * DESIGN-052 D-10 amendment (2026-11-13, story 832) — Wall Protection for this row, or null when the
+   * wall may offer it. Set by `listTrashPendingPage`. Reads that do not run that page leave it absent.
+   */
+  protectionReason?: TrashWallProtectionReason | null;
 }
 
 export interface TrashPendingResult {
@@ -1468,6 +1473,43 @@ export function classifyForExpedite(item: ExpediteVerdictInput): ExpediteVerdict
   if (verdict.reason === 'watchlisted') return 'protected_watchlist';
   if (verdict.reason === 'recently_added') return 'protected_recent';
   return 'unverifiable'; // 'unevaluable' — kept because it cannot be cleared, not whitelisted.
+}
+
+/**
+ * DESIGN-052 D-10 amendment (2026-11-13, story 832) — Wall Protection (DDD-001 T-332).
+ * Why the pending wall will not offer this title for deletion, or null when it will.
+ * The same order as `classifyGuardian`, with `unevaluable` named by the check that failed.
+ * A page-scoped live exclusion is applied by the caller after this returns null (`live_excluded`);
+ * it is not an input here because ADR-035 keeps that read off the whole set.
+ * This does not decide a delete. The sweep and Expedite keep using `classifyGuardian`.
+ */
+export const TRASH_WALL_PROTECTION_REASONS = [
+  'saved',
+  'tag',
+  'recently_watched',
+  'watchlisted',
+  'recently_added',
+  'not_in_ledger',
+  'watchlist_unknown',
+  'rules_unknown',
+  'age_unknown',
+  'unactionable',
+  'live_excluded',
+] as const;
+export type TrashWallProtectionReason = (typeof TRASH_WALL_PROTECTION_REASONS)[number];
+
+export function trashWallProtection(item: ExpediteVerdictInput): TrashWallProtectionReason | null {
+  if (item.maintainerrMediaId === null) return 'unactionable';
+  if (item.saveIntent) return 'saved';
+  if (item.protectedByTag) return 'tag';
+  if (item.recentlyWatched) return 'recently_watched';
+  if (item.onWatchlist) return 'watchlisted';
+  if (item.ageGuard === 'recent') return 'recently_added';
+  if (item.mediaItemId === null) return 'not_in_ledger';
+  if (item.watchlistEvaluable !== true) return 'watchlist_unknown';
+  if (item.ruleEvaluationFailed) return 'rules_unknown';
+  if (item.ageGuard === 'unknown') return 'age_unknown';
+  return null;
 }
 
 /**

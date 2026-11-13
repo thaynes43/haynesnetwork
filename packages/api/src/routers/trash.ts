@@ -159,7 +159,11 @@ export const trashRouter = router({
       z.object({
         media: trashMedia,
         query: z.string().optional(),
-        /** Candidate-wall view only; hidden items retain all deletion protections. */
+        /**
+         * Candidate-wall view only; hidden items retain all deletion protections.
+         * `false` is the default wall: titles Wall Protection would keep are omitted.
+         * Omitted and `true` return every title (the library page omits it).
+         */
         includeWatchlisted: z.boolean().optional(),
         genres: z.array(z.string()).optional(),
         resolutions: z.array(z.string()).optional(),

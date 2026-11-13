@@ -340,6 +340,11 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     expect(pendingWallGlyph({ ...recent, onWatchlist: true }, undefined)).toBe('trash');
     expect(pendingWallGlyph({ ...cold, ageGuard: 'unknown' as const }, undefined)).toBe('trash');
     expect(releaseNeedsConfirm('skip')).toBe(false);
+    // Story 832 — the server reason drives the skip. Null means the server says the title is
+    // offered, so a stale age flag does not paint the badge. A missing field keeps the old check.
+    expect(pendingWallGlyph({ ...recent, protectionReason: 'recently_added' }, undefined)).toBe('skip');
+    expect(pendingWallGlyph({ ...recent, protectionReason: null }, undefined)).toBe('trash');
+    expect(pendingWallGlyph({ ...recent, protectionReason: 'tag' }, undefined)).toBe('trash');
   });
   it('unprotected cold ⇒ trash (slated); tappable to SAVE only with save_exclude', () => {
     expect(pendingWallGlyph(cold, undefined)).toBe('trash');

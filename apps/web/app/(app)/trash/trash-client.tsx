@@ -587,7 +587,7 @@ function PendingTab({
               ? 'Nothing matches the filters.'
               : showProtected || total === 0
                 ? `Nothing pending — no ${label.toLowerCase()} are scheduled for deletion.`
-                : 'No candidates to show. Use Show protected to include watchlisted titles.'
+                : 'No candidates to show. Use Show protected to include titles that cannot be deleted.'
           }
           wallLabel={`Pending ${label} deletions`}
           sentinelRef={sentinelRef}

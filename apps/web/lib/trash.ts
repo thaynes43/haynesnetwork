@@ -239,6 +239,12 @@ export function pendingWallGlyph(
     ageGuard?: 'recent' | 'clear' | 'unknown';
     /** ADR-099 D-4 — an open save intent: saved, whether or not Maintainerr holds the exclusion yet. */
     saveIntent?: boolean;
+    /**
+     * DESIGN-052 D-10 amendment (story 832) — Wall Protection from the server.
+     * Absent means an older server: the Age Guard skip falls back to `recentlyAddedKeep`.
+     * Null means the server says the title may be offered, so that fallback does not run.
+     */
+    protectionReason?: string | null;
   },
   override: 'saved' | 'unsaved' | undefined,
 ): PendingWallGlyph {
@@ -263,7 +269,10 @@ export function pendingWallGlyph(
   if (override !== 'unsaved' && (item.protectedByExclusion || item.saveIntent === true)) return 'check';
   // DESIGN-052 D-26 / Q-14 — a title the Age Guard keeps is never offered for deletion: the inert `skip` (kept),
   // as on the batch wall. A Save stays one tap away on its Library page.
-  if (recentlyAddedKeep(item)) return 'skip';
+  // Story 832 — the server reason is the definition. Other holds keep the corners already ruled
+  // (a tag and a recent watch stay tappable; a live exclusion and a Save stay the check).
+  if (item.protectionReason === 'recently_added') return 'skip';
+  if (item.protectionReason === undefined && recentlyAddedKeep(item)) return 'skip';
   return 'trash';
 }
 

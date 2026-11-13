@@ -508,6 +508,57 @@ and guardian checks are unchanged. This is a view preference, never deletion aut
 Batch audit walls retain their saved/kept records. Saved tiles do not disappear after
 an in-place Save; other protection types retain their existing presentation.
 
+#### D-10 amendment — one definition of a title the wall will not offer (2026-11-13, story 832)
+
+The sentence above that the walls hide known watchlisted titles only is superseded for the
+pending wall and the future-candidate strip. ADR-035 and ADR-096 are unchanged: the read
+model stays display-only, and a Save is still only a confirmed save.
+
+`trashWallProtection` (DDD-001 T-332) is why a pending title cannot be deleted. It follows
+`classifyGuardian`'s order and names which check failed when that verdict is `unevaluable`:
+
+1. no Maintainerr id → `unactionable`
+2. an open save intent → `saved`
+3. the `dnd` tag → `tag`
+4. watched within 30 days → `recently_watched`
+5. on a watchlist → `watchlisted`
+6. Age Guard `recent` → `recently_added`
+7. no ledger row → `not_in_ledger`
+8. the watchlist cannot be decided → `watchlist_unknown`
+9. Maintainerr `ruleEvaluationFailed` → `rules_unknown`
+10. Age Guard `unknown` → `age_unknown`
+11. otherwise the title may be offered (`null`)
+
+After the page is read, a live Maintainerr exclusion on a title that is otherwise deletable
+sets `live_excluded`. ADR-035 keeps that read page-scoped. `protectionReason` is on every
+item the page returns, for story 821 to show. A requester is not a reason.
+
+`includeWatchlisted: false` (Show protected off, on the wall and on the strip's own checkbox)
+keeps a title only when the reason is null. The displayed count and bytes follow that set,
+except a live exclusion on a later page can still be inside the count (Q-15). `true` and an
+omitted flag return every title, each with its reason. The library page omits the flag and
+keeps seeing every pending title.
+
+The checkbox label stays **Show protected**. Its description covers every held title. This
+change does not restyle the control. Story 821 replaces it.
+
+Corner glyphs stay as already ruled. The inert skip is the Age Guard
+(`protectionReason === 'recently_added'`; a missing field still uses the previous client
+check, so an older server keeps the badge). A `dnd` tag and a recent watch stay a tappable
+trash can (ADR-086 D-5 and the 2026-07-09 ruling). A live exclusion and a Save stay the
+check. The complete candidate population, the Expedite preview, `allActionableIds`, and
+every delete-path guard are unchanged. `release_unrecorded` stays a delete-time keep (Q-16).
+
+An in-place Save on the protected view leaves the tile in the result set, so the row does
+not reflow. A fresh default view does not contain a saved title.
+
+Measured 2026-11-13 on the movie snapshot (replica `postgres16-11`; `refreshed_at`
+2026-11-13 12:30:04-05, 524 movie rows, 0 TV; the same counts at 12:15:05-05). The previous
+filter hid 34 watchlisted titles and left 55 Age Guard titles and 4 recently watched titles
+on the default wall. The six titles named in story 832 were Age Guard, not watchlisted.
+Evidence:
+`.agents/context/2026-11-13-trash-wall-protection.md`.
+
 ### D-11 — The Deleted-Release Record: what identity exists
 
 Recorded for every item the sweep or Expedite is about to delete, before the handle (D-14). Sources, in order of
@@ -1558,4 +1609,6 @@ already excluded 0, **to exclude 13**; no row without a key.
 | Q-11 | The remediation releases were inferred by size from a copy of the legacy HaynesTower SAB history; Terrifier's ledger year (2018) differs from its release's (2016). | **Answered (PLAN-072 S8, 2026-09-28):** the live legacy SAB histories were re-read read-only and the names confirmed by size (0.969 of the download) with tmdb 1097549 (Babygirl), 420634 (Terrifier) and 974573 (Another Simple Favor); the manual terms took the *arr's years too (Terrifier `(?:2016|2018)`). Silent Night (2023) has no release in any of the five histories and stays unblockable. |
 | Q-12 | What does `releaseGroup` look like for the 163 disk-imported pool movies (how many are null, so only an exact name or nothing can be blocked)? | **Answered (PLAN-072 S6(e), D-25df):** of the 164 in the pool on 2026-09-27, 158 are disk imports and none has a null group; 156 get a group term (`low_confidence`, renamed-only) and 2 none (DVD files with no resolution token), kept `release_unrecorded`. |
 | Q-13 | If many pool items have no recordable term, may they be deleted unblocked (a re-request would then fetch the same release), or do they stay kept? | **Not asked (D-25df):** S6(e) kept 2 of 164 (1.2%), not a material share, so they stay kept (`release_unrecorded`, D-11, D-24g). It is asked if a later pool shows a material share. |
-| Q-14 | Should Expedite (item and all) honor the Age Guard (D-26), and should the pending walls mark or hide a title inside the window? The 2026-10-03 work order scoped the guard to batch build and the sweep; Expedite is an admin's deliberate delete, and covering it means a new `ExpediteVerdict`, the client mirror `previewGuardian`, its parity test and the Expedite confirm copy; a wall note is new UI. | **Answered (2026-10-03, by the owner's ruling itself, relayed by the coordinator):** "Trash ignores anything downloaded, upgraded or added to any server in the last 180 days", and Expedite is part of Trash. Expedite never deletes a title inside the window, and the pending walls show it kept ("Kept: added or upgraded recently") instead of offering it for deletion. Built as D-26's Expedite and pending-wall bullets. |
+| Q-14 | Should Expedite (item and all) honor the Age Guard (D-26), and should the pending walls mark or hide a title inside the window? The 2026-10-03 work order scoped the guard to batch build and the sweep; Expedite is an admin's deliberate delete, and covering it means a new `ExpediteVerdict`, the client mirror `previewGuardian`, its parity test and the Expedite confirm copy; a wall note is new UI. | **Answered (2026-10-03, by the owner's ruling itself, relayed by the coordinator):** "Trash ignores anything downloaded, upgraded or added to any server in the last 180 days", and Expedite is part of Trash. Expedite never deletes a title inside the window, and the pending walls show it kept ("Kept: added or upgraded recently") instead of offering it for deletion. Built as D-26's Expedite and pending-wall bullets. The 2026-11-13 amendment then also omits that title from the default view (T-332). |
+| Q-15 | A live Maintainerr exclusion is known only for the page just read (ADR-035). The default view omits those titles from the page it returns. The reported count can still include a live-excluded title on a later page, and a page made entirely of them can come back empty while a later page still holds a deletable title. | **Open. Recommendation, shipped with story 832:** keep the page-scoped read. Do not crawl every exclusion for the whole pool. The cursor walks the list from before the drop, so a dropped title is not repeated and a later deletable title is not skipped. |
+| Q-16 | `release_unrecorded` is decided when a delete runs, from the *arr's files. The wall cannot know it without that read, so a title can look deletable and still be kept at the sweep. | **Open. Recommendation, shipped with story 832:** leave it on the delete path. Do not copy it into the wall filter, and do not change the guard. |

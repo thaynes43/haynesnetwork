@@ -68,6 +68,8 @@ export interface PendingWallItem {
   ageGuard?: 'recent' | 'clear' | 'unknown';
   /** ADR-099 D-4 — somebody saved it (an open save intent): saved, whether or not Maintainerr has caught up. */
   saveIntent?: boolean;
+  /** DESIGN-052 D-10 amendment (story 832) — why this title cannot be deleted, or null when it can. */
+  protectionReason?: string | null;
 }
 
 const itemRating = (item: PendingWallItem): number | null =>
@@ -84,7 +86,7 @@ export function WatchlistVisibilityControl({
   return (
     <label
       className="trash-protected-toggle"
-      title="Include watchlisted titles. They remain protected from deletion."
+      title="Include titles that cannot be deleted. They stay protected."
     >
       <input
         type="checkbox"
@@ -92,7 +94,7 @@ export function WatchlistVisibilityControl({
         onChange={(event) => onChange(event.target.checked)}
       />
       Show protected
-      <span className="sr-only"> watchlisted titles. They remain protected from deletion.</span>
+      <span className="sr-only"> titles that cannot be deleted. They stay protected.</span>
     </label>
   );
 }
