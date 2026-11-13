@@ -56,14 +56,13 @@ import {
   sweepExpiredBatches,
   termMatchesRaw,
   trashWallProtection,
-  upsertMediaItemsBatch,
   type DomainLogger,
   type ReleaseIdentity,
   type StaticArrMovie,
   type StaticArrSeries,
 } from '../src/index';
 import { baseState, makeMaintainerr, movieCollection, type MaintState } from './maintainerr-stub';
-import { bootMigratedDb, createUser, seedVerifiedWatchlistRegistry, type TestDb } from './helpers';
+import { bootMigratedDb, createUser, seedVerifiedWatchlistRegistry, upsertDeletableMediaItems, type TestDb } from './helpers';
 
 const FILE_SIZE = 9_000_000_000;
 const POSTED = (tmdb: number) => `Movie.${tmdb}.2024.1080p.BluRay.x264-NEWGRP`;
@@ -106,8 +105,10 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
   };
 
   /** Radarr 1..3 ⇄ tmdb 9001..9003 (the stub collection's ms-9001..9003); `files` is the ledger's on-disk count. */
+  // ADR-119 — a ledger row with no Plex match is `unknown` and the guardian keeps it. Date the
+  // match so these tests reach the release-name rule.
   const seedMovies = async (files: number) =>
-    upsertMediaItemsBatch({
+    upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'radarr',
       items: [9001, 9002, 9003].map((tmdbId, i) => ({
@@ -130,7 +131,7 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
     t = await bootMigratedDb();
     admin = (await createUser(t.db, { email: 'rule@example.com', displayName: 'Rule Admin' })).id;
     await seedMovies(0);
-    await upsertMediaItemsBatch({
+    await upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'sonarr',
       items: [
@@ -202,6 +203,67 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
       expect(keepReasonForUnrecorded('unverified_name')).toBe('release_unverified');
       expect(keepReasonForUnrecorded('cap')).toBe('release_block_full');
       expect(keepReasonForUnrecorded('no_term')).toBe('release_unrecorded');
+    });
+
+    it('an original path or scene name that is the current file is not a verified name', async () => {
+      const base = diskMovie(1);
+      const current = base.file!.relativePath!;
+      const withPath = (over: { originalFilePath?: string | null; sceneName?: string | null }) =>
+        diskMovie(1, { file: { ...base.file!, ...over } });
+      // The review's probe: originalFilePath set to the current relative path. The rename template includes a
+      // resolution and a group, so the rebuilt name would otherwise verify the delete.
+      for (const movie of [
+        withPath({ originalFilePath: current }),
+        withPath({ originalFilePath: current.toUpperCase() }),
+        withPath({ sceneName: current }),
+      ]) {
+        const { arr } = createStaticReleaseBlockArr({ movies: new Map([[1, movie]]) });
+        expect(await identify('radarr', 1, arr)).toEqual({ status: 'unrecordable', reason: 'unverified_name' });
+      }
+      expect(await records()).toHaveLength(0);
+    });
+
+    it('an episode file whose original path is its current path keeps the series', async () => {
+      const relativePath = 'Season 01/Night Shift - S01E01 [WEBDL-1080p]-TVGRP.mkv';
+      const series: StaticArrSeries = {
+        title: 'Night Shift',
+        year: 2019,
+        tvdbId: 8050,
+        files: [
+          {
+            seriesId: 50,
+            seasonNumber: 1,
+            relativePath,
+            sceneName: null,
+            originalFilePath: relativePath,
+            releaseGroup: 'TVGRP',
+            quality: { quality: { id: 3, name: 'WEBDL-1080p', resolution: 1080, source: 'web', modifier: 'none' } },
+            size: 1_000_000_001,
+          },
+        ],
+        history: [],
+      };
+      const { arr } = createStaticReleaseBlockArr({ series: new Map([[50, series]]) });
+      expect(await identify('sonarr', 50, arr)).toEqual({ status: 'unrecordable', reason: 'unverified_name' });
+      expect(await records()).toHaveLength(0);
+    });
+
+    it('a different original name still verifies the file', async () => {
+      const base = diskMovie(1);
+      const current = base.file!.relativePath!;
+      const original = 'incoming/Movie.9001.2024.1080p.BluRay.x264-OLDSRC';
+      const movie = diskMovie(1, {
+        file: { ...base.file!, sceneName: current, originalFilePath: original },
+      });
+      const { arr } = createStaticReleaseBlockArr({ movies: new Map([[1, movie]]) });
+      const identity = await identify('radarr', 1, arr);
+      expect(identity.status).toBe('recordable');
+      expect(drafts(identity)[0]).toMatchObject({
+        identitySource: 'arr_file',
+        releaseTitle: 'Movie.9001.2024.1080p.BluRay.x264-OLDSRC',
+        termConfidence: 'verified',
+      });
+      expect(drafts(identity).some((d) => d.releaseTitle === current)).toBe(false);
     });
 
     it('a legacy file record of the same title with the IDENTICAL byte size names it; one byte off, or another title, does not', async () => {
@@ -546,6 +608,38 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
         releaseUnverified: 1,
         releaseBlockFull: 0,
       });
+    });
+
+    it('a failed read of the legacy tables keeps the title', async () => {
+      const base = diskMovie(1);
+      // A real scene name would verify the file if the legacy read finished. The ledger still shows no file, so
+      // the guardian passes it and the delete path is the one that reads the table.
+      const named = diskMovie(1, { file: { ...base.file!, sceneName: POSTED(9001) } });
+      const { arr } = createStaticReleaseBlockArr({ movies: new Map([[1, named]]) });
+      expect((await identify('radarr', 1, arr)).status).toBe('recordable');
+      const state = one();
+      const batchId = await expiredBatch(state);
+      await t.db.execute(sql`ALTER TABLE legacy_release_names DROP COLUMN quality`);
+      try {
+        const { bundle, calls } = makeMaintainerr(state);
+        const report = await sweepExpiredBatches({
+          db: t.db,
+          maintainerr: bundle,
+          arr,
+          registry: 'gate-only',
+          logger,
+        });
+        expect(report.batches[0]).toMatchObject({ deletedCount: 0, aborted: false });
+        expect(report.batches[0]!.keptByReason).toEqual({ release_unrecorded: 1 });
+        expect(await itemStates(batchId)).toEqual({
+          'ms-9001': { state: 'skipped', keepReason: 'release_unrecorded' },
+        });
+        expect(handled(calls)).toBe(false);
+        expect(await records()).toHaveLength(0);
+        expect(logs.some((l) => l.msg === '[release-block] identity_read_failed')).toBe(true);
+      } finally {
+        await t.db.execute(sql`ALTER TABLE legacy_release_names ADD COLUMN quality text`);
+      }
     });
 
     it('the sweep: when the ledger cannot tell, the delete path`s own read of the file keeps it the same way', async () => {

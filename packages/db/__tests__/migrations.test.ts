@@ -4090,16 +4090,37 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(sqlText).toContain("'seerr_issue_bridge'");
   });
 
-  // ADR-117 / DESIGN-052 D-29 gate — the legacy release names migration is journaled after 0107.
-  it('lists 0110_legacy_release_names strictly after 0107_seerr_bridge_smoke', () => {
+  // ADR-117 / DESIGN-052 D-29 gate — 0110 follows 0109 (idx 107, when 1791460000000 on main).
+  it('lists 0110_legacy_release_names at idx 108, strictly after 0109_age_guard_library_fill', () => {
     const entry = journal.entries.find((e) => e.tag === '0110_legacy_release_names');
-    const prev = journal.entries.find((e) => e.tag === '0107_seerr_bridge_smoke');
-    expect(entry!.idx).toBeGreaterThan(prev!.idx);
+    const prev = journal.entries.find((e) => e.tag === '0109_age_guard_library_fill');
+    expect(prev?.idx).toBe(107);
+    expect(prev?.when).toBe(1791460000000);
+    expect(entry?.idx).toBe(108);
     expect(entry!.when).toBeGreaterThan(prev!.when);
+    expect(entry!.when).toBe(1791470000000);
     const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0110_legacy_release_names.sql'), 'utf8');
     expect(sqlText).toContain('CREATE TABLE "legacy_release_names"');
     expect(sqlText).toContain('CREATE TABLE "legacy_download_jobs"');
     expect(sqlText).toContain("'release_unverified','release_block_full'");
+    // Every keep reason on main, plus the two this migration adds. media_request is not on main.
+    for (const reason of [
+      'tag',
+      'recently_watched',
+      'watchlisted',
+      'unevaluable',
+      'not_in_pool',
+      'live_excluded',
+      'release_unrecorded',
+      'recently_added',
+      'saved',
+    ]) {
+      expect(sqlText).toContain(`'${reason}'`);
+    }
+    expect(sqlText).not.toContain('media_request');
+    for (const source of ['arr_grab_history', 'arr_file', 'ledger_grab', 'legacy_sab', 'none', 'legacy_arr']) {
+      expect(sqlText).toContain(`'${source}'`);
+    }
   });
 
   // PLAN-077 P5 gate — the Release Pick's lists are journaled (idx 102), after 0102.

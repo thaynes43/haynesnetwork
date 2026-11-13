@@ -311,6 +311,39 @@ function nameFromOriginalPath(path: string | null | undefined): string | null {
   return null;
 }
 
+/** The last path segment, compared so a renamed file is not mistaken for a posted name. */
+function pathBaseName(path: string): string {
+  const segments = path.split(/[\\/]/).filter((segment) => segment.length > 0);
+  return (segments[segments.length - 1] ?? path).trim().toLowerCase();
+}
+
+/**
+ * ADR-117 correction — the library's rename template includes a resolution and a group, so `looksLikeRelease`
+ * accepts the rebuilt file. An original path or a scene name whose base name is the file's current relative path
+ * is that rebuilt file. Ignore it: it must never verify a delete. Case and surrounding space on the base name do
+ * not make it a different file, so they do not verify one either. A grab title is not tested here.
+ */
+function isCurrentFileBase(recorded: string | null | undefined, relativePath: string | null | undefined): boolean {
+  if (!recorded || !relativePath) return false;
+  const recordedBase = pathBaseName(recorded);
+  const currentBase = pathBaseName(relativePath);
+  return recordedBase.length > 0 && recordedBase === currentBase;
+}
+
+/** The *arr's names for one file, with a current-path scene name or original path left out. */
+function arrRecordedNames(
+  relativePath: string | null | undefined,
+  sceneName: string | null | undefined,
+  originalFilePath: string | null | undefined,
+  grabTitle: string | null | undefined,
+): Array<string | null> {
+  const scene = isCurrentFileBase(sceneName, relativePath) ? null : (sceneName ?? null);
+  const original = isCurrentFileBase(originalFilePath, relativePath)
+    ? null
+    : nameFromOriginalPath(originalFilePath);
+  return [grabTitle ?? null, scene, original];
+}
+
 const GRAB = 'grabbed';
 const IMPORT_EVENTS = new Set(['downloadFolderImported']);
 
@@ -1042,7 +1075,9 @@ async function identifyMovie(
   const [ledger] = await ledgerReleases(db, mediaItemId, before, 1);
   // A string containing "://" is never a name, whichever record holds it.
   const arrNames = distinct(
-    [grab?.sourceTitle, file.sceneName, nameFromOriginalPath(file.originalFilePath)].map(postedReleaseName),
+    arrRecordedNames(file.relativePath, file.sceneName, file.originalFilePath, grab?.sourceTitle).map(
+      postedReleaseName,
+    ),
   );
   const q = file.quality?.quality;
   const fileGroup = file.releaseGroup ?? grab?.releaseGroup ?? imported?.releaseGroup ?? null;
@@ -1182,7 +1217,7 @@ async function identifySeries(
   const facts: FileFacts[] = files.map((f) => {
     const { grab, imported } = joinFileToGrab(f, history);
     const arrNames = distinct(
-      [grab?.sourceTitle, f.sceneName, nameFromOriginalPath(f.originalFilePath)].map(postedReleaseName),
+      arrRecordedNames(f.relativePath, f.sceneName, f.originalFilePath, grab?.sourceTitle).map(postedReleaseName),
     );
     // D-29 — a legacy file record of this series, in the file's season, with its IDENTICAL byte size names it too.
     const legacyFile = legacyNamesOfFile(legacy, { sizeBytes: f.size, season: f.seasonNumber as number });

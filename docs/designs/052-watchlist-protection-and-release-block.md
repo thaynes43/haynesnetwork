@@ -1,7 +1,7 @@
 # DESIGN-052: Watchlist protection for Trash — the Watchlist Registry, the Registry Gate, the Watchlist Keep, the Release Block, and everyone's Seerr watchlist
 
 - **Status:** Accepted (2026-09-28; live since v0.101.0, PLAN-072 S6–S10 verified)
-- **Last updated:** 2026-11-13 (ADR-117, D-29, story 838, owner ruling: Trash deletes a title only when each file on disk has a verified posted release name, and writes a term for every posted name of the title first; the legacy release names of the old Radarr and Sonarr databases are loaded into the app; a delete never prunes an older term; migration 0110; Q-19..Q-22 decided, Q-23, Q-26 and Q-27 opened). Prior: 2026-11-13 (ADR-119, D-31: a library-fill Plex date does not extend the Age Guard when the setting is on and that *arr's ledger covers 180 days; a title with no Plex match is unknown, the one change that alters today's behaviour, and it only ever keeps more). Prior: 2026-11-13 (D-26 cross-reference: DESIGN-014 D-15's TV predicates include the votes floor, and the removed TV date-added clause is what a title with no Plex match relied on). Prior: 2026-11-13 (D-10 amendment, story 821: the Show protected checkbox becomes the Library's segmented control, Deletable | All; in All a kept tile says why in plain words; Q-18 opened). Prior: 2026-11-13 (D-10 amendment, story 832: Wall Protection, one definition of a title the pending wall will not offer; the default view holds none, and a title saved from it keeps its tile until the view is opened again; Q-15, Q-16, Q-17 opened). Prior: 2026-10-03 (Q-14 answered: the Age Guard moves into `classifyGuardian`, so Expedite never deletes a title inside it, and the pending walls show such a title kept, D-26). Prior: 2026-10-03 (ADR-097, owner ruling "Block automation only": D-27 adds the Title Exclusion, an import-list exclusion the app writes on Radarr or Sonarr for every title Trash is about to delete, after identity and before Phase A; D-28 adds its one-off backfill for the titles deleted before; D-14, D-21, D-22, D-23, the overview and the test strategy updated). Prior: 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
+- **Last updated:** 2026-11-13 (ADR-117, D-29, story 838, owner ruling: Trash deletes a title only when each file on disk has a verified posted release name, and writes a term for every posted name of the title first; the legacy release names of the old Radarr and Sonarr databases are loaded into the app; a delete never prunes an older term; migration 0110 is journal index 108 after 0109; Q-19..Q-22 decided, Q-23 and Q-26..Q-30 open. The second review of PR 1070: a current-path original name or scene name is not verified, and the 17:00 ET pool read is recorded beside the earlier one). Prior: 2026-11-13 (ADR-119, D-31: a library-fill Plex date does not extend the Age Guard when the setting is on and that *arr's ledger covers 180 days; a title with no Plex match is unknown, the one change that alters today's behaviour, and it only ever keeps more). Prior: 2026-11-13 (D-26 cross-reference: DESIGN-014 D-15's TV predicates include the votes floor, and the removed TV date-added clause is what a title with no Plex match relied on). Prior: 2026-11-13 (D-10 amendment, story 821: the Show protected checkbox becomes the Library's segmented control, Deletable | All; in All a kept tile says why in plain words; Q-18 opened). Prior: 2026-11-13 (D-10 amendment, story 832: Wall Protection, one definition of a title the pending wall will not offer; the default view holds none, and a title saved from it keeps its tile until the view is opened again; Q-15, Q-16, Q-17 opened). Prior: 2026-10-03 (Q-14 answered: the Age Guard moves into `classifyGuardian`, so Expedite never deletes a title inside it, and the pending walls show such a title kept, D-26). Prior: 2026-10-03 (ADR-097, owner ruling "Block automation only": D-27 adds the Title Exclusion, an import-list exclusion the app writes on Radarr or Sonarr for every title Trash is about to delete, after identity and before Phase A; D-28 adds its one-off backfill for the titles deleted before; D-14, D-21, D-22, D-23, the overview and the test strategy updated). Prior: 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
   the rulings they needed: a term now matches the raw release title Radarr and Sonarr test (an apostrophe inside a word
   is an optional separator, an accented letter an alternation, an inner `and` optional), because S6(e) found 345 of
   19,434 Sonarr names and 3 of 1,159 Radarr names the *arr would not have blocked; the owner leaves managed Home users
@@ -1726,8 +1726,12 @@ basis for a delete. The 365-day life (D-13), which titles Maintainerr proposes, 
 
 **1. What names a file on disk** (`identifyRelease`, the delete path's own read of the *arr):
 
-- the *arr's own record of the file: the grab its import history joins it to, its scene name, or its original path
-  (D-11, unchanged);
+- the *arr's own record of the file: the grab its import history joins it to, its scene name, or its original path.
+  A scene name or an original path whose base name is the file's current relative path is the renamed file, not a
+  verified name. The comparison ignores case and surrounding space on that base name, so neither difference verifies
+  a delete. The library's rename template includes a resolution and a group, so `looksLikeRelease` accepts the rebuilt
+  name (the second review of PR 1070, 2026-11-13: the original base name equals the relative base name on 0 of 1,176
+  files, and the same equality is 0 for `sceneName`; all 468 renamed base names in the pool pass `looksLikeRelease`);
 - the ledger's newest download import of the title, with its grab, when it agrees with the file (D-25bd, unchanged).
   A folder import (`movieFolderImported`, `seriesFolderImported`) is a library scan: its name is the renamed file,
   so it is no import here. The ledger holds none today (measured below);
@@ -1736,7 +1740,15 @@ basis for a delete. The 365-day life (D-13), which titles Maintainerr proposes, 
 
 A movie whose file has none of these is `unverified_name`: kept `release_unverified`. A series needs a name for
 **every** episode file in a season of 1 or more; one file without is enough to keep the series (a group term
-guessed from its siblings is not a verified name). A title with no file on disk has nothing to name and is deletable
+guessed from its siblings is not a verified name).
+
+**Open (Q-28).** `identifySeries` does not use the ledger's import to name an episode file, which the design says it
+does, so a series the ledger could name is kept; required before TV Trash resumes.
+
+**Open (Q-29).** A second file on one movie is not checked (0 of 9,630 titles have one today). `identifyMovie` reads
+the file Radarr names, or else the first file.
+
+A title with no file on disk has nothing to name and is deletable
 as before (D-25ag), with a term for every posted name it has. A title already gone from the *arr has no file to
 read: it is recordable only when the ledger's imports name its release (as before ADR-117), else kept `gone`.
 
@@ -1773,7 +1785,10 @@ coordinator's extract is private and never enters git.
 each survivor's new terms against the live ones, in order: a survivor whose terms would not all fit under 3,000 is
 kept `release_block_full`, and a later one that fits still goes. Phase A's reconcile runs with `prune: false`: over
 the cap it throws `cap` and rolls back, so a concurrent delete cannot make it prune either. The hourly upkeep keeps
-D-13's prune; no delete and no backfill can now push the profile over the cap. A series yields 3 terms at the median,
+D-13's prune; no delete and no backfill can now push the profile over the cap.
+
+**Open (Q-30).** The hourly upkeep still prunes the oldest terms once the profile passes 3,000 and still expires
+terms after 365 days, and story 845 (terms never expire) owns both. A series yields 3 terms at the median,
 15 at the 90th percentile and 165 at most from the ledger alone, and every series with a ledger name sums to 4,528
 against the cap of 3,000 (review F7, 2026-11-13), so a long series can be kept for want of room. A whole-name term
 for TV and the cap's successor are a later story.
@@ -1786,7 +1801,7 @@ delete path. What each source could name for the 468 pool movies the ledger cann
 
 | Source | Reaches back to | Names for those 468 |
 | --- | --- | ---: |
-| Ledger `grabbed` and `download_failed` | 2026-07-02 | 0 (it names the other 56) |
+| Ledger `grabbed` and `download_failed` | 2026-07-02 | 0 of these 468 (its import names 55 other pool movies at 17:00 ET, 54 in the earlier read) |
 | Live download client | 2026-07-03 (19,951 jobs, 401 named by a URL) | 1, and that match is wrong |
 | Radarr's file record (`sceneName`, `originalFilePath`) | set on 1,175 of 5,243 files | 0 |
 | Radarr history | empty for 6 of 6 sampled | 0 |
@@ -1840,26 +1855,34 @@ records `in_flight`, reconciles with `prune: false` and reads back, and only the
 abandons them and takes their terms back out, so a second apply starts clean. `--dry-run` reads the database only and
 builds no *arr client. One of the two flags is required.
 
-**Measured 2026-11-13**, replica `postgres16-11`, `SELECT` only (queries in `docs/ops/017`):
+**Measured 2026-11-13**, replica `postgres16-11`, `SELECT` only (queries in `docs/ops/017`). Two reads the same day.
+The earlier one is the figures this decision first recorded; no clock time was written with them. The later one is
+the review of the corrected PR, the ops/017 statement with the `by_legacy` arm omitted, at 17:00 ET. The kept count
+did not change. The extra movie is one the ledger names. A cell the later read did not restate stays in the earlier
+column only.
 
-| What | Count |
-| --- | ---: |
-| Pool movies (`trash_candidates`, all in the ledger) | 524 |
-| No file on disk | 2 |
-| File on disk, the ledger names its import | 54 |
-| File on disk, no verified name (kept until the legacy load) | 468 |
-| **Deletable by the Release Name Check with the legacy tables empty** | **56** |
-| Pool movies with any ledger grab or failed download | 56 |
-| TV pool | 0 |
-| Ledger imports that are folder imports (Radarr 1,611 and Sonarr 25,352 imports read) | 0 |
-| Live terms, Radarr (rows / distinct) | 638 / 619 |
-| Live terms, Sonarr | 63 / 63 |
+| What | Earlier the same day | 17:00 ET |
+| --- | ---: | ---: |
+| Pool movies (`trash_candidates`, all in the ledger) | 524 | 525 |
+| No file on disk | 2 | 2 |
+| File on disk, the ledger names its import | 54 | 55 |
+| File on disk, no verified name (kept until the legacy load) | 468 | 468 |
+| **Deletable by the Release Name Check with the legacy tables empty** | **56** | **57** |
+| Pool movies with any ledger grab or failed download | 56 | not restated |
+| TV pool | 0 | 0 |
+| Ledger imports that are folder imports (Radarr 1,611 and Sonarr 25,352 imports read) | 0 | not restated |
+| Live terms, Radarr (rows / distinct) | 638 / 619 | 638 / 619 |
+| Live terms, Sonarr | 63 / 63 | 63 / 63 |
 
-The 56 and the 54 + 2 are different sets of the same size: two pool movies have a failed download and no import
-(not named), and two have no file. After the load the coordinator's measurement on the extract gives 472 pool files
-named by exact size, 523 pool movies with a grab name and 1,012 distinct grabbed or failed names (median 2, at most
-8), so about 1,012 terms beside the 619, under the cap. The loader's dry run prints the same three figures from the
-files it is given (`pool.movies`), to be compared before the load is applied.
+Rule for the two pool columns: the ops/017 statement, legacy arm omitted. 525 = 55 + 2 + 468, and 57 = 55 + 2.
+The live-term rows in the later column are that review's same replica read at 2026-11-13 17:00:01 America/New_York.
+The earlier 56 and the 54 + 2 are different sets of the same size: two pool movies have a failed download and no
+import (not named), and two have no file. At 17:00 ET the deletable 57 are the 55 the ledger names plus the 2 with
+no file, and those two movies with a grab and no import are in the 468 the check keeps. After the load the
+coordinator's measurement on the extract gives 472 pool files named by exact size, 523 pool movies with a grab name
+and 1,012 distinct grabbed or failed names (median 2, at most 8), so about 1,012 terms beside the 619, under the
+cap. The loader's dry run prints the same three figures from the files it is given (`pool.movies`), to be compared
+before the load is applied.
 
 The backfill's classes, mirrored by `SELECT` (not a run of the script):
 
@@ -1896,7 +1919,9 @@ Release Block's grammar takes that form is the later story's (Q-26).
 and Expire now, and no batch proposes it; each name source, the legacy tables included; exact size against one byte
 off; a size-matched job from another group and from the same group adds a term and names nothing; a failed grab is
 termed; an untrimmed name; a name with a release mark and no term; the ledger read across pages and past its bound;
-the cap keeps a title and prunes nothing; a failed write or read-back deletes nothing. `release-block-backfill.test.ts`:
+the cap keeps a title and prunes nothing; a failed write or read-back deletes nothing. `release-name-rule.test.ts`:
+an original path or scene name equal to the current file keeps a movie and an episode file; a different original
+name still verifies; a failed read of the legacy tables keeps the title. `release-block-backfill.test.ts`:
 each class, the F5 class, the cap refusal, a failed reconcile, a second apply. `legacy-release-load.test.ts`: every
 file format and line outcome, a URL refused, the dry run, a second load. `trash-release-name.test.ts`: the check's
 three ways to verify and its `unverified` and `unchecked` answers.
@@ -2170,3 +2195,6 @@ those years. Music-library days are large and are not read by the Age Guard.
 | Q-25 | The 2026-10-30 Trash catch-up counted 7 movies kept "recent only". Which titles were they, and were they a library fill? | **Not re-identified, and it does not block.** That row means kept by the Age Guard and not by a watchlist, not kept by a fill. The review of PR 1067 measured, the same day, 60 pool movies kept by the Age Guard: 54 by an import, 6 by a Plex date, none by a fill day. |
 | Q-26 | A posted name that carries a mark of a release and that the grammar cannot write (a leading bracket or quote, a part counter, a fansub layout) now keeps its title for good. The review counted 7 such names on 3 movies and 253 on 8 series that were skipped before, none in today's pool. | **Open. Recommendation, shipped with story 838:** keep the title, because a skipped name is a grabbed release with no block. The same holds for a legacy `imported` name, which can be the name of the file inside the download and not the posted name; how many pool titles that keeps is not known until the load, and `release-block-seed.ts --pool` then lists them under `no_term`. The later story decides whether the Release Block takes the janitor's whole-name form (ADR-094), which matched every such name in the review's test and would let these titles go. |
 | Q-27 | After the legacy load, a pool movie can have grab names in the old database and no file record with the file's exact size (the coordinator's measurement leaves 52 of 524 without an exact-size record; some of those the ledger names). Its file was replaced, re-encoded or never recorded. | **Open. Recommendation, shipped with story 838:** it stays kept. Do not fall back to a size ratio, a title match or the grab names alone to name the file. The coordinator reads the count from `release-block-seed.ts --pool` after the load and decides whether the remainder is worth a per-title look. |
+| Q-28 | `identifySeries` does not use the ledger's import to name an episode file, which the design says it does, so a series the ledger could name is kept; required before TV Trash resumes. | **Open.** Recorded from the review of the corrected PR, 2026-11-13. The TV pool is 0. This does not delete on a rebuilt name. |
+| Q-29 | A second file on one movie is not checked (0 of 9,630 titles have one today). | **Open.** `identifyMovie` reads `movieFileId`, or else the first file. Measured by that review, 2026-11-13, replica `postgres16-11`: 0 of 9,630 Radarr titles have `on_disk_file_count` greater than 1. No change while that count is 0. |
+| Q-30 | The hourly upkeep still prunes the oldest terms once the profile passes 3,000 and still expires terms after 365 days, and story 845 (terms never expire) owns both. | **Open.** A delete and the backfill still reconcile with `prune: false`. Recorded from the review of the corrected PR, 2026-11-13. |
