@@ -54,6 +54,7 @@ async function triggerColdStartPlexMatch(): Promise<void> {
           db,
           matches: snapshot.matches,
           scopedLibraryIds: snapshot.scopedLibraryIds,
+          excludeCrossTypeLibraryIds: snapshot.typeDisagreementLibraryIds,
         });
       },
     });

@@ -88,8 +88,10 @@ const ALLOWED_FILES = new Set<string>([
 // of record lives in Kavita/ABS, so the writer appends no ledger/audit row (documented exemption).
 // Upserted + tombstoned, so the INSERT / UPDATE / .insert / .update forms are guarded (never hard-deleted).
 // ADR-047 / DESIGN-025 (PLAN-028) adds media_plex_matches (the *arr→Plex match cache the plex-match sync
-// mode writes — syncPlexMatches in plex-match.ts is the sole writer; it upserts the resolved matches and
-// HARD-DELETES the ones a fully-read library no longer serves, in one transaction). A rebuildable derived
+// mode writes — syncPlexMatches in plex-match.ts is the sole writer, and repairCrossTypePlexMatches in the
+// same file is the cross-type delete it also runs; it upserts the resolved matches and
+// HARD-DELETES the ones a fully-read library no longer serves, plus any row whose library type does not
+// fit the ledger kind, in one transaction). A rebuildable derived
 // cache like trash_candidates — the *arrs + Plex are the sources of truth, so no ledger/audit row
 // (documented exemption). Upserted + reconciled, so the INSERT / UPDATE / DELETE (+ Drizzle) forms are all
 // guarded.

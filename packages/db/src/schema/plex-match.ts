@@ -27,7 +27,9 @@ const MATCH_VIA_SQL_LIST = PLEX_MATCH_GUID_SOURCES.map((s) => `'${s}'`).join(','
  * items Plex has not imported yet — a NULLABLE, one-to-many side-table models "no match yet" and
  * "in several libraries" honestly and keeps media_items a pure *arr mirror. Rebuildable READ-MODEL
  * (the ai_usage_chats / books_items class): written ONLY by the @hnet/domain `syncPlexMatches`
- * single-writer (guard-listed) which the `plex-match` sync mode drives; no per-row audit event
+ * single-writer (guard-listed) which the `plex-match` sync mode drives. ADR-123 adds
+ * `repairCrossTypePlexMatches` in that same module: it deletes a row whose library type does not
+ * fit the ledger kind, and no other row. No per-row audit event
  * (synced/derived data, the documented no-ledger-row exemption). Unmatched items are gated by their
  * (arr_kind, arr_instance) HOME library — hidden ONLY by access, never by match state (THE INVARIANT).
  */
