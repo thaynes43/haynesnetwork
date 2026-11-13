@@ -188,7 +188,7 @@ function freshRules(): Array<Record<string, unknown>> {
           ruleGroupId: 11,
           section: 0,
           isActive: true,
-          // ADR-117 — the request clause the audit requires on an armed movie group (Radarr tags, NOT_CONTAINS).
+          // ADR-118 — the request clause the audit requires on an armed movie group (Radarr tags, NOT_CONTAINS).
           ruleJson: JSON.stringify({
             operator: 0,
             action: 9,

@@ -44,7 +44,7 @@ export interface StubRuleGroup {
   libraryId: string;
   dataType: string;
   collectionId: number;
-  /** ADR-117 — present only when a test models the clause list. Omitted means the stub does not model rules. */
+  /** Clause list. The default armed group carries the request clause. Omitted means the list was not modeled. */
   rules?: unknown[];
 }
 export interface MaintState {
@@ -418,6 +418,24 @@ export function tvCollection(over: Partial<StubCollection> = {}): StubCollection
   };
 }
 
+/** The request clause an armed group must carry (Radarr tags for a movie, Sonarr show tags otherwise). */
+function requestKeepClause(dataType: string): Record<string, unknown> {
+  const show =
+    dataType === 'show' || dataType === 'season' || dataType === 'episode' || dataType === '2';
+  return {
+    id: 1,
+    isActive: true,
+    section: 0,
+    ruleJson: JSON.stringify({
+      operator: 0,
+      action: 9,
+      firstVal: show ? [2, 2] : [1, 2],
+      customVal: { ruleTypeId: 2, value: 'mediarequests' },
+      section: 0,
+    }),
+  };
+}
+
 export const baseState = (over: Partial<MaintState> = {}): MaintState => {
   const collections = over.collections ?? [movieCollection()];
   return {
@@ -443,6 +461,7 @@ export const baseState = (over: Partial<MaintState> = {}): MaintState => {
         libraryId: String(c.libraryId),
         dataType: c.type,
         collectionId: c.id,
+        rules: [requestKeepClause(c.type)],
       })),
   };
 };

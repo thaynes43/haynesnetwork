@@ -302,7 +302,7 @@ export interface TrashExpeditePreview {
   watchlisted: number;
   /** DESIGN-052 D-26 / Q-14 — how many of `protected` the Age Guard keeps (added or upgraded recently). A subset. */
   recentlyAdded: number;
-  /** ADR-117 — how many of `protected` the Request Keep holds. A subset. */
+  /** ADR-118 — how many of `protected` the Request Keep holds. A subset. */
   requested: number;
 }
 
@@ -617,7 +617,7 @@ export interface TrashPendingCandidate {
   onWatchlist: boolean;
   /** DESIGN-052 D-26 — inside the Age Guard's 180 days: no batch takes it, so the preview leaves it out too. */
   recentlyAdded: boolean;
-  /** ADR-117 — the ledger tags include mediarequests: a targeted batch leaves it out. */
+  /** ADR-118 — the ledger tags include mediarequests: every batch leaves it out. */
   requested: boolean;
 }
 
@@ -645,7 +645,9 @@ export async function listTrashPendingCandidates(input: {
   const base = await materializeSnapshotPending(input);
   const watchlistFiltered = await isProposalWatchlistFiltered({ db: input.db });
   const candidates = base.items
-    .filter((i): i is TrashPendingItem & { maintainerrMediaId: string } => i.maintainerrMediaId !== null)
+    .filter(
+      (i): i is TrashPendingItem & { maintainerrMediaId: string } => i.maintainerrMediaId !== null,
+    )
     .map((i) => ({
       maintainerrMediaId: i.maintainerrMediaId,
       mediaItemId: i.mediaItemId,

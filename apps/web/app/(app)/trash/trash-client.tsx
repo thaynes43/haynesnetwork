@@ -427,7 +427,7 @@ function PendingTab({
   const watchlistedCount = (partition as { watchlisted?: number }).watchlisted ?? 0;
   // DESIGN-052 D-26 / Q-14 — the Age Guard's share of `protected` (an older server omits it ⇒ 0).
   const recentCount = (partition as { recentlyAdded?: number }).recentlyAdded ?? 0;
-  // ADR-117 — the Request Keep's share of `protected` (an older server omits it ⇒ 0).
+  // ADR-118 — the Request Keep's share of `protected` (an older server omits it ⇒ 0).
   const requestedCount = (partition as { requested?: number }).requested ?? 0;
 
   // ── the sort bar (shared nextSort/arrowFor cycle over SORT_COLUMNS) ──

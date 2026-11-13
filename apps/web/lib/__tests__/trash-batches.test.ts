@@ -403,7 +403,7 @@ describe('previewTargetSelection — the Start-a-batch client preview (mirrors s
     });
   });
 
-  it('ADR-117 — a requested title takes no targeted slot and frees nothing; an untargeted batch still counts it', () => {
+  it('ADR-118 — a requested title is left out of every batch and frees nothing', () => {
     const requested = [
       c(4e9, { requested: true }),
       c(3e9),
@@ -411,8 +411,8 @@ describe('previewTargetSelection — the Start-a-batch client preview (mirrors s
       c(1e9),
     ];
     expect(previewTargetSelection(requested, {})).toMatchObject({
-      count: 3,
-      bytes: 8e9,
+      count: 2,
+      bytes: 4e9,
       freesBytes: 4e9,
       poolCount: 2,
     });

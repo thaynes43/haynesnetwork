@@ -80,7 +80,7 @@ export function ExpediteItemConfirm({
           deleted.
         </p>
       ) : verdict === 'protected_request' ? (
-        // ADR-117 — the Request Keep: refused like a watchlisted item, never auto-saved. The tag lasts until it is removed.
+        // ADR-118 — the Request Keep: refused like a watchlisted item, never auto-saved. The tag lasts until it is removed.
         <p className="status-note" data-testid="trash-expedite-item-request">
           This item was requested, so it won&apos;t be deleted while that request stands. Nothing
           will be deleted.

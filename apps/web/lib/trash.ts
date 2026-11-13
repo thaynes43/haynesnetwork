@@ -8,7 +8,7 @@
  *  client can't import the server package; keep the literals in sync). */
 export const PROTECTED_TAG = 'dnd';
 
-/** ADR-117 — the Seerr add tag. Mirrors @hnet/domain MEDIA_REQUEST_TAG. A personal requester tag is not this. */
+/** ADR-118 — the Seerr add tag. Mirrors @hnet/domain MEDIA_REQUEST_TAG. A personal requester tag is not this. */
 export const MEDIA_REQUEST_TAG = 'mediarequests';
 
 function hasMediaRequestTag(tags: readonly string[] | null | undefined): boolean {
@@ -63,7 +63,7 @@ export interface GuardianPreviewInput {
   /** ADR-099 D-4 — somebody saved it (an open save intent): the server keeps it, exclusion or not. Absent ⇒ not
    *  saved (an older server). */
   saveIntent?: boolean;
-  /** ADR-117 — the ledger tags. Includes `mediarequests` ⇒ kept. Absent ⇒ not requested (an older server). */
+  /** ADR-118 — the ledger tags. Includes `mediarequests` ⇒ kept. Absent ⇒ not requested (an older server). */
   arrTags?: readonly string[];
 }
 
@@ -79,7 +79,7 @@ export interface GuardianPreviewInput {
  * The partition:
  * - `deletable`       — cold + positively evaluated ⇒ the server WILL delete it. A personal requester
  *                       tag stays informational (owner ruling 2026-07-09). A `mediarequests` tag is
- *                       `protected_request` (owner ruling 2026-11-13, ADR-117).
+ *                       `protected_request` (owner ruling 2026-11-13, ADR-118).
  * - `protected_*`     — kept deliberately (whitelist / watch guardian).
  * - `unverifiable`    — kept because it CANNOT be verified safe (no Maintainerr id, unknown to our
  *                       ledger, watchlist status not evaluable, or Maintainerr's rule data unavailable;
@@ -107,7 +107,7 @@ export function previewGuardian(item: GuardianPreviewInput): GuardianPreview {
   if (item.onWatchlist) return 'protected_watchlist';
   // DESIGN-052 D-26 / Q-14 — the Age Guard: added or upgraded recently ⇒ kept (never auto-saved).
   if (item.ageGuard === 'recent') return 'protected_recent';
-  // ADR-117 — the Request Keep, after every earlier keep. A personal requester tag is not this.
+  // ADR-118 — the Request Keep, after every earlier keep. A personal requester tag is not this.
   if (hasMediaRequestTag(item.arrTags)) return 'protected_request';
   // Fail closed: unknown to our ledger, watchlist status not evaluable, Maintainerr's rule data unavailable, or the
   // title's dates not readable yet ⇒ kept (skipped).
@@ -136,7 +136,7 @@ export function unverifiableReason(item: GuardianPreviewInput): string {
 }
 
 /**
- * D-25bk / D-25cy, narrowed by ADR-117 — the Expedite-all confirm's line for the protected count. The app keeps these
+ * D-25bk / D-25cy, narrowed by ADR-118 — the Expedite-all confirm's line for the protected count. The app keeps these
  * (the guardian, the Watchlist Keep, the Request Keep), not Maintainerr. A personal requester tag is still not a keep.
  */
 export const EXPEDITE_PROTECTED_REASON =
@@ -159,7 +159,7 @@ export interface ExpeditePartition {
   watchlisted: number;
   /** DESIGN-052 D-26 / Q-14 — how many of `protected` the Age Guard keeps (a subset, for the confirm's breakdown). */
   recentlyAdded: number;
-  /** ADR-117 — how many of `protected` the Request Keep holds (a subset, for the confirm's breakdown). */
+  /** ADR-118 — how many of `protected` the Request Keep holds (a subset, for the confirm's breakdown). */
   requested: number;
 }
 
@@ -254,7 +254,7 @@ export function pendingWallGlyph(
     ageGuard?: 'recent' | 'clear' | 'unknown';
     /** ADR-099 D-4 — an open save intent: saved, whether or not Maintainerr holds the exclusion yet. */
     saveIntent?: boolean;
-    /** ADR-117 — the ledger tags. Absent means an older payload that did not send them. */
+    /** ADR-118 — the ledger tags. Absent means an older payload that did not send them. */
     arrTags?: readonly string[];
     /**
      * DESIGN-052 D-10 amendment (story 832) — Wall Protection from the server.
@@ -299,7 +299,7 @@ export function pendingWallGlyph(
   ) {
     return 'skip';
   }
-  // ADR-117 — a requested title is the inert skip when that keep would be the guardian's first reason.
+  // ADR-118 — a requested title is the inert skip when that keep would be the guardian's first reason.
   if (item.protectionReason === 'media_request') return 'skip';
   if (item.protectionReason === undefined && mediaRequestKeep(item)) return 'skip';
   return 'trash';
@@ -936,7 +936,7 @@ export const WATCHLIST_BREAKDOWN_TERM = 'on a watchlist';
 /** DESIGN-052 D-26 / Q-14 — the Expedite-all confirm's breakdown term for the Age Guard's share of `protected`. */
 export const RECENT_BREAKDOWN_TERM = 'added or upgraded recently';
 
-/** ADR-117 — the Expedite-all confirm's breakdown term for the Request Keep's share of `protected`. */
+/** ADR-118 — the Expedite-all confirm's breakdown term for the Request Keep's share of `protected`. */
 export const REQUEST_BREAKDOWN_TERM = 'requested';
 
 /**
@@ -961,7 +961,7 @@ export function recentlyAddedKeep(item: {
 }
 
 /**
- * ADR-117 — the pending walls show a requested title as the inert `skip` only when the Request Keep would be the
+ * ADR-118 — the pending walls show a requested title as the inert `skip` only when the Request Keep would be the
  * guardian's first reason. A Save, the `dnd` tag, a recent watch, a watchlist and the Age Guard still win.
  */
 export function mediaRequestKeep(item: {
@@ -1004,7 +1004,7 @@ export function trashNoticeText(input: {
   sizeLabel: string;
   /** DESIGN-052 D-26 / Q-14 — the Age Guard keeps it (downloaded, upgraded or added in the last 180 days). */
   recentlyAdded?: boolean;
-  /** ADR-117 — the Request Keep holds it. The note stays on a Save so the panel does not reflow. */
+  /** ADR-118 — the Request Keep holds it. The note stays on a Save so the panel does not reflow. */
   requested?: boolean;
 }): {
   meta: string;
@@ -1068,7 +1068,7 @@ export const KEPT_REASON_TOOLTIPS: Record<TrashKeepReasonName, string> = {
   recently_added: 'Kept: added or upgraded recently',
   // ADR-099 D-4 — saved from another surface (the pending wall, the library) while the row was still pending.
   saved: 'Kept: saved',
-  // ADR-117 — the Request Keep lasts while the ledger tags include mediarequests.
+  // ADR-118 — the Request Keep lasts while the ledger tags include mediarequests.
   media_request: 'Kept: requested',
 };
 

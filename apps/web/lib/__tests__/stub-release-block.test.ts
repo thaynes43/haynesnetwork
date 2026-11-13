@@ -86,7 +86,7 @@ describe('stub Maintainerr — the pool flags a rule PUT stored (D-16)', () => {
           ...flags,
           rules: [
             { operator: null, action: 0, firstVal: [1, 0], lastVal: [0, 4], section: 0 },
-            // ADR-117: the PUT replaces the group's clauses, so it must keep the request clause or the
+            // ADR-118: the PUT replaces the group's clauses, so it must keep the request clause or the
             // audit stays unsafe after listExclusions is put back.
             {
               operator: 0,

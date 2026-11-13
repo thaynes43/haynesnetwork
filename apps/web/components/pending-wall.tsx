@@ -76,7 +76,7 @@ export interface PendingWallItem {
   ageGuard?: 'recent' | 'clear' | 'unknown';
   /** ADR-099 D-4 — somebody saved it (an open save intent): saved, whether or not Maintainerr has caught up. */
   saveIntent?: boolean;
-  /** ADR-117 — the ledger tags. The wire item already carries them; absent means not requested. */
+  /** ADR-118 — the ledger tags. The wire item already carries them; absent means not requested. */
   arrTags?: readonly string[];
   /** DESIGN-052 D-10 amendment (story 832) — why this title cannot be deleted, or null when it can. */
   protectionReason?: string | null;

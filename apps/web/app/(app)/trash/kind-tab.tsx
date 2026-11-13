@@ -176,7 +176,7 @@ interface PendingCandidate {
   onWatchlist?: boolean;
   /** DESIGN-052 D-26 — inside the Age Guard's 180 days: no batch takes it. Absent ⇒ false (older server). */
   recentlyAdded?: boolean;
-  /** ADR-117 — tagged mediarequests: a targeted batch leaves it out. Absent ⇒ false. */
+  /** ADR-118 — tagged mediarequests: every batch leaves it out. Absent ⇒ false. */
   requested?: boolean;
 }
 

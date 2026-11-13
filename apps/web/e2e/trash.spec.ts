@@ -321,7 +321,7 @@ test.describe('trash — watchlist protection on the page (ADR-093)', () => {
       const confirm = page.getByTestId('trash-expedite-all-confirm');
       await expect(confirm).toContainText('0 will be deleted NOW');
       await expect(confirm).toContainText('3 protected');
-      // D-25bk / D-25cy — the app keeps them (never "Maintainerr keeps"). ADR-117 names a requested title here.
+      // D-25bk / D-25cy — the app keeps them (never "Maintainerr keeps"). ADR-118 names a requested title here.
       await expect(confirm).toContainText(
         '3 protected: saved, recently watched, added or upgraded recently, whitelisted, on a watchlist, or requested; they are kept.',
       );

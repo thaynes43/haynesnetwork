@@ -76,7 +76,7 @@ export const trashBatchItems = pgTable(
     // ADR-093 / DESIGN-052 D-05 / D-09 (migration 0081) — why the sweep KEPT this item (it landed `skipped`):
     // the guardian's reason (tag / recently_watched / watchlisted / unevaluable), a pre-guardian skip
     // (not_in_pool / live_excluded), release_unrecorded (D-11), the Age Guard's recently_added (D-26, migration
-    // 0086), or the Request Keep's media_request (ADR-117, migration 0108). Null on rows the sweep never skipped,
+    // 0086), or the Request Keep's media_request (ADR-118, migration 0108). Null on rows the sweep never skipped,
     // and on rows skipped before 0081. The batch wall's kept tooltip names it (D-10).
     keepReason: text('keep_reason').$type<TrashKeepReason>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

@@ -90,7 +90,7 @@ describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail clos
   it('recently watched ⇒ protected', () => {
     expect(previewGuardian({ ...base, recentlyWatched: true })).toBe('protected_watched');
   });
-  it('a personal requester tag is DELETABLE (owner ruling 2026-07-09); mediarequests is a keep (ADR-117)', () => {
+  it('a personal requester tag is DELETABLE (owner ruling 2026-07-09); mediarequests is a keep (ADR-118)', () => {
     expect(previewGuardian({ ...base, requesters: ['manofoz'] })).toBe('deletable');
     expect(previewGuardian({ ...base, arrTags: ['13-member'] })).toBe('deletable');
     expect(previewGuardian({ ...base, arrTags: ['mediarequests'] })).toBe('protected_request');
@@ -480,7 +480,7 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     // a save this session still wins — the requested item can be deliberately saved by you.
     expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, 'saved')).toBe('shield');
   });
-  it('ADR-117 — mediarequests is the inert skip; a personal requester tag is still the slated trash can', () => {
+  it('ADR-118 — mediarequests is the inert skip; a personal requester tag is still the slated trash can', () => {
     expect(pendingWallGlyph({ ...cold, arrTags: ['mediarequests'] }, undefined)).toBe('skip');
     expect(pendingWallTappable('skip', true, false)).toBe(false);
     expect(pendingWallGlyph({ ...cold, arrTags: ['13-member'] }, undefined)).toBe('trash');

@@ -470,7 +470,7 @@ async function proposeForKind(input: {
       media: input.mediaKind as TrashMedia,
       watchlist,
     });
-    // D-08 / ADR-099 D-4 / ADR-117 — minCandidates excludes Saves (even before their exclusion is enforced), `dnd`,
+    // D-08 / ADR-099 D-4 / ADR-118 — minCandidates excludes Saves (even before their exclusion is enforced), `dnd`,
     // watchlisted titles, the Age Guard's recent dates and `mediarequests`, matching the batch builder.
     actionable = pending.items.filter(
       (p): p is TrashPendingItem & { maintainerrMediaId: string } =>

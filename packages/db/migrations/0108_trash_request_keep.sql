@@ -1,4 +1,4 @@
--- ADR-117 / DESIGN-052 D-29: the sweep may record keep_reason `media_request` when a pending batch
+-- ADR-118 / DESIGN-052 D-30: the sweep may record keep_reason `media_request` when a pending batch
 -- row's title carries the mediarequests tag. Journal idx 107. ADDITIVE: the CHECK gains one value.
 -- The previous image never writes the new reason, so it runs unchanged against this schema.
 ALTER TABLE "trash_batch_items" DROP CONSTRAINT "trash_batch_items_keep_reason_enum";--> statement-breakpoint

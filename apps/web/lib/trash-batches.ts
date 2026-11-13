@@ -317,7 +317,7 @@ export interface TargetCandidate {
   /** DESIGN-052 D-26 — inside the Age Guard's 180 days: a TARGETED batch leaves it out, and it frees nothing while it
    *  stays inside the window (the sweep keeps it). Absent ⇒ false. */
   recentlyAdded?: boolean;
-  /** ADR-117 — tagged mediarequests: a targeted batch leaves it out, and it frees nothing while the tag stays. */
+  /** ADR-118 — tagged mediarequests: every batch leaves it out, and it frees nothing while the tag stays. */
   requested?: boolean;
 }
 
@@ -359,8 +359,9 @@ export function previewTargetSelection(
   // (mirrors selectBatchCandidates, DESIGN-052 D-08) — unless the server's proposal is unfiltered (D-25cx).
   // DESIGN-052 D-26 — a title inside the Age Guard's 180 days is handled like a watchlisted one: a targeted pick leaves
   // it out (always: the age needs no registry), an untargeted batch snapshots it, and it frees nothing.
-  // ADR-117 — a requested title is handled the same way. It frees nothing while the tag stays.
+  // ADR-118 — a requested title is left out of every batch, the way a Save is, so it is not counted here.
   const pending = candidates.filter((c) => !c.protectedByTag);
+  const entering = pending.filter((c) => c.requested !== true);
   const filtered = spec.watchlistFiltered !== false;
   const deletable = (filtered ? pending.filter((c) => c.onWatchlist !== true) : pending).filter(
     (c) => c.recentlyAdded !== true && c.requested !== true,
@@ -373,9 +374,9 @@ export function previewTargetSelection(
   const capped = spec.targetBytes !== undefined || spec.maxItems !== undefined;
   if (!capped) {
     return {
-      count: pending.length,
-      bytes: pending.reduce((n, c) => n + c.sizeBytes, 0),
-      freesBytes: frees(pending),
+      count: entering.length,
+      bytes: entering.reduce((n, c) => n + c.sizeBytes, 0),
+      freesBytes: frees(entering),
       poolCount: deletable.length,
       poolBytes,
     };
