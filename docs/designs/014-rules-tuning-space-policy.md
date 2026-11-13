@@ -4,17 +4,21 @@
   space policy now PROPOSES **AND PROMOTES** its batches straight to Leaving Soon (autonomous cycle, no
   admin-review gate, no cooldown). The cooldown knob (`cooldownDays`) is retired everywhere. See the
   **D-14** amendment below; the original D-01..D-09 text describes the pre-073 propose-only behavior.
-  **Amended 2026-11-13 by [ADR-117](../adrs/117-dynamic-trash-pace.md)** (D-15): while Dynamic Pace is
+  **D-15 (2026-11-13, story 835)** specifies the TV rule body. The owner approved the four-clause
+  rule that day (story 822, comment 7992) and, later the same day, added the votes floor (story 835,
+  comment 8099). It is not applied to the live Maintainerr in that story. The same-day adversarial
+  review's corrections C1–C6 are folded into D-15.
+  **Amended 2026-11-13 by [ADR-120](../adrs/120-dynamic-trash-pace.md)** (D-16): while Dynamic Pace is
   on, the byte ask comes from the gap and the intake. The switch ships off, and while it is off D-09
-  and D-14 are unchanged.
-- **Last updated:** 2026-11-13
+  and D-14 are unchanged. The 2026-11-13 adversarial review's merge corrections are folded into D-16.
+- **Last updated:** 2026-11-13 (D-16, story 820: Dynamic Pace review corrections; D-15 is the TV rule).
 - **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26; in effect since 2026-09-28): the
   space policy's proposal leaves out a title on any read Plex watchlist (it takes no cap slot), and `minCandidates`
   counts deletable candidates only (DESIGN-052 D-08).
 - **Author:** Fable 5 (autonomous run, PLAN-014); D-14 amendment by an Opus autonomous run
 - **Implements:** [ADR-031](../adrs/031-space-driven-batch-policy.md),
   [ADR-073](../adrs/073-autonomous-trash-cycle.md),
-  [ADR-117](../adrs/117-dynamic-trash-pace.md). Consumes ADR-030 / DESIGN-013
+  [ADR-120](../adrs/120-dynamic-trash-pace.md). Consumes ADR-030 / DESIGN-013
   (`getUtilization`, `space_targets`, `STORAGE_ARRAYS`) and ADR-025 / DESIGN-011 (`createBatchFromPending`,
   `promoteToLeavingSoon`, `trash_batch_items`/`trash_batch_saves`, the sync-mode orchestrator pattern).
   Governs PRD **R-112..R-114**; glossary **T-98..T-99**. Migration **0022**.
@@ -31,7 +35,7 @@ Two additive, read-mostly surfaces closing the PLAN-013 loop:
    rescue-vs-delete stats + skip-gate graduation readiness. Read-only; the owner tunes Maintainerr rules
    by hand (ADR-031 C-06).
 
-The original surfaces add no deletion path. D-15 changes how many bytes a batch asks for, behind a
+The original surfaces add no deletion path. D-16 changes how many bytes a batch asks for, behind a
 switch that ships off. The sweep is still the only delete.
 
 ## Detailed design
@@ -244,22 +248,73 @@ Sync: `runSync` `space-policy` mode wiring (report shape, requires both bundles,
 - **Q-01 (resolved, ADR-031 C-05):** graduation thresholds — ≥3 batches, ≤10% save-rate, 0 restores.
 - **Q-02 (resolved, ADR-031 C-06):** rule attribution — collection-grain; rule-group-exact is a future map.
 - **Q-03 (resolved, ADR-031 C-06):** no auto-tuning — the report is human-driven.
-- **Q-04 (open):** the HaynesTower free-space step of about +8.7 TB at the 2026-11-12 sample is not
-  intake and not Trash. The forecast sets that one step aside. The cause is the owner's question.
-  Recommendation: do not treat it as intake, which is what D-15 does.
-- **Q-05 (open):** the save rate is not stationary. The last movie batch (swept 2026-11-13) saved
-  about 34% of its bytes; the 90-day byte-weighted rate is 0.1195. Recommendation: keep the 90-day
-  rate, which inflates the ask less, until the owner says the recent rate is the new one.
-- **Q-06 (open):** whether the Maintainerr rules refill the eligible pool after a pace run empties
-  it. The projection assumes they do not. Recommendation: judge the shortfall against the stock
-  measured on 2026-11-13.
-- **Q-07 (open):** whether guardian skips (about 5.0% of movie proposed bytes over those 90 days)
-  should reduce the expected yield. Recommendation: no. The eligible pool already excludes the
-  guards, and the next batch picks different titles. The projection's deleted figure is therefore
-  slightly high, and the shortfall is not smaller than the number in D-15.
-- **Q-08 (open):** whether the floor should ignore the pool-short 19-item batch and use the smallest
-  full 50-item proposed total, 800,535,856,306 bytes (closed 2026-08-22). Recommendation: use the
-  smaller observed total, 130,604,353,957 bytes, because a higher floor deletes more.
+- **Q-04 (open, D-15):** the TV group's stored name is still "hnet — unwatched low-value TV".
+  Maintainerr creates a Plex collection with the group's name once the pool has a member. Measured
+  this correction session (`GET /api/rules`, 2026-11-13, before the 19:21:34Z Sonarr read): the movie
+  collection's `mediaServerId` is 98837, and the TV collection's `mediaServerId` is null (collection
+  id 3). After an apply that leaves a member, "unwatched" would be shown on HaynesOps for shows that
+  may have been watched. Recommendation: do not rename in this story; story 823 puts the name to the
+  owner before the apply. Coordinator comment 8099 (2026-11-13T18:55Z) carries Q-04 to that gate and
+  does not ask it here. A rename is not part of either 2026-11-13 ruling. It is not a collection wipe
+  (the running image wipes only on `dataType`, `manualCollection`, `manualCollectionName`, or
+  `libraryId`).
+- **Q-05 (resolved, 2026-11-13T18:55Z, story 835 comment 8099):** an unrated show must not count as
+  "rating below 6.0". The owner's answer was "Add the votes floor". D-15's fifth clause is that floor.
+- **Q-06 (open, carried to story 823):** is a list-added, never-requested show fair game, as the
+  ruling already includes it? Star Wars Resistance (tvdb 351575) is one of the three expected
+  collection members. The adversarial review (2026-11-13, 18:32Z–18:50Z) measured a list add on
+  2026-11-04 (Sonarr tag `pmm-added`) and 35 files still downloading, and 267 of 373 ended,
+  unrequested HaynesOps shows carrying `pmm-added`. Recommendation: yes, no change now; record it
+  for the larger-pool design. Comment 8099 carries this to the 823 gate and does not ask it here.
+- **Q-07 (open, D-16):** the HaynesTower free-space step of about +8.7 TB at the 2026-11-12 sample
+  is not intake and not Trash. The adversarial review of 2026-11-13 timed a rise of 8,851 GB between
+  14:00 and 16:00 UTC on 2026-11-11, with no deletion recorded by the app. The forecast sets that one
+  step aside. Recommendation: leave it set aside, which is what D-16 does.
+- **Q-08 (open, D-16):** the save rate is not stationary. The last movie batch (swept 2026-11-13)
+  saved about 34% of its bytes; the 90-day byte-weighted rate is 0.119480. Recommendation: keep the
+  90-day rate, which inflates the ask less, until the owner says the recent rate is the new one.
+- **Q-09 (open, D-16):** whether the Maintainerr rules refill the eligible pool after a pace run
+  empties it. The corrected projection assumes they do not. The review (2026-11-13) found no stored
+  history of pool membership. From the current snapshot it estimated that refill adds about 1.2 TB
+  to the 60-day deletions, which would put the shortfall near 55.2 TB. Recommendation: judge the
+  56.419 TB shortfall against the stock measured on 2026-11-13.
+- **Q-10 (open, D-16):** whether guardian skips (about 5.0% of movie proposed bytes over those 90
+  days) should reduce the expected yield. The review measured a yield of 0.8334 when skips are
+  counted, and 0.790 since the 2026-10-30 rule load (the last batch 0.641). Recommendation: no. The
+  eligible pool already excludes the guards, and the next batch picks different titles. The
+  projection uses yield 0.880520.
+- **Q-11 (open, D-16):** whether the floor should ignore the pool-short 19-item batch and use the
+  smallest full 50-item proposed total, 800,535,856,306 bytes (closed 2026-08-22). Recommendation:
+  use the smaller observed total, 130,604,353,957 bytes, because a higher floor deletes more.
+- **Q-12 (open, D-16; the review's Q-R01):** under target, what is the steady pace? The story asked
+  for a steady maintenance pace. The code asks for the intake over one window, the same amount at
+  any level under the target, and at a target of 100 percent. Recommendation (the review,
+  2026-11-13): post nothing until the trend would cross the target inside the horizon, then only
+  what holds the target. The formula the review recommends is
+  `max(0, (targetFree − free) − rate × horizon) × min(1, window / horizon)`.
+- **Q-13 (open, D-16; the review's Q-R02):** is the horizon a deadline or a time constant? The
+  shipped horizon is a rolling time constant. At the default ceiling, with an unlimited pool, the
+  review's simulation leaves a 39.4 TB gap at day 60 and reaches the target after about a year.
+  With no ceiling the 60-day horizon leaves 19.8 TB at day 60 and 6.4 TB at day 120. A 30-day
+  horizon leaves 8.2 TB at day 60; 21 days leaves 3.9 TB. Those figures are the review's simulation
+  of 2026-11-13 (intake 329.8 GB/day, yield 0.8805). This correction did not re-run it.
+  Recommendation: keep the rolling rule, call it a time constant, and set it to 21 to 30 days so
+  that 60 days closes most of the gap.
+- **Q-14 (open, D-16; the review's Q-R03):** what is the largest batch acceptable in one 7-day
+  window, in bytes and in titles? The code's ceiling is 3,591,025,375,575 bytes and there is no
+  title cap. On today's pool the review counted a first batch of 155 titles (3.604 TB) and a second
+  of 229. Recommendation: keep 3.59 TB until story 823, add a title cap, and decide both against
+  the pool that exists then.
+- **Q-15 (open, D-16; the review's Q-R04):** does TV keep its 5-title cap while the pace is on? The
+  code drops `maxItems` when the pace applies. The review's example: a 20 TB TV pool beside today's
+  movies would take 2.59 TB of a 3.59 TB ask, worst-rated first. Recommendation: yes, keep the
+  5-title cap until story 835 decides.
+
+Pace questions start at Q-07. Main's D-15 already holds Q-04, Q-05 and Q-06. The review numbered
+its four questions Q-R01 to Q-R04. This change assigns them Q-12 to Q-15, after this change's own
+Q-07 to Q-11. The coordinator's intake (story 820, comment 8175, 2026-11-13T20:15Z) states the
+review's recommendation for Q-12 and Q-15, a 30-day horizon for Q-13, and leaves Q-14 to story 823.
+Those stay open for the owner.
 
 ## D-09 — Amendment 2026-07-09 (owner-directed, build A) — modes + per-kind caps, relocated config
 
@@ -361,13 +416,421 @@ Tests: `packages/domain/__tests__/space-policy.test.ts` proves auto-promote to `
 **self-heal of a stuck `admin_review` system batch** (the reproduced prod stall → `promoted`), that a
 MANUAL admin_review batch is left untouched, and that a healthy `leaving_soon` batch is not duplicated.
 
-## D-15 — Amendment 2026-11-13 (ADR-117) — Dynamic Pace sizes the byte ask
+## D-15 — TV rule body (owner rulings 2026-11-13, story 835)
 
-The owner (2026-11-13): Trash recommendations should follow the capacity target. The live movie cap
-is a static 50 titles per save window, minus whatever is saved. The batch should grow when the array
-is falling behind and hold a steady pace when it is under the target. It does not have to be back on
-target in one week. It should be able to get there in a month or two. Story 820's acceptance horizon
-is 60 days.
+The ruling recorded on story 822 (comment 7992) adopts the recommendation in
+[`.agents/context/2026-11-13-tv-trash-audit.md`](../../.agents/context/2026-11-13-tv-trash-audit.md).
+Story 835's written scope still lists those four clauses. A later ruling on story 835 (comment 8099,
+2026-11-13T18:55Z) answers the adversarial review's Q-05 with "Add the votes floor" and adds the fifth
+clause below. This section follows that later ruling. It is not applied here. Applying it is story
+823. The movie rule is unchanged. The pool stays whole-show. The cap, the ranking, the Age Guard, the
+watchlist keep, Saves, the `dnd` tag and the `mediarequests` exclusion are unchanged.
+
+No new glossary term. The pool, the Age Guard (T-273) and the aging invariant (T-105) keep their names.
+The votes floor is the movie rule's existing clause, not a new term. No superseding ADR.
+[ADR-036](../adrs/036-maintainerr-aging-invariant.md) does not read rule predicates, and replacing the
+added-date clause does not make `auditMaintainerr` refuse the pool. The check is below. That audit
+still does not read predicates; a predicate check in it is a dependency of story 823, not a change
+in this story.
+
+Evidence for the live reads, the image comparator, and the shows that pass the predicates:
+[`.agents/context/2026-11-13-tv-trash-rule-correction.md`](../../.agents/context/2026-11-13-tv-trash-rule-correction.md).
+
+### The body
+
+Group id **2**, `dataType` `"show"`, `libraryId` `"2"` (both strings, as `GET /api/rules` returns them),
+`useRules` true, `isActive` true. Collection id **3**, type `show`, `deleteAfterDays` **9999**,
+`arrAction` **0**, `listExclusions` true, `forceSeerr` true, `manualCollection` false. Section **0**
+only. The first clause's `operator` is null. Each later clause's `operator` is `0` (`AND`).
+
+Maintainerr 3.32.0 (`commitTag` `latest-e6327bb`). Property ids are from `GET /api/rules/constants`
+for media type show (`MediaType.SHOW` = 2). Comparator ids are the image's `RulePossibility`, which
+matches the action numbers on the live clauses. The constants payload lists possibility numbers and
+does not name them. `BIGGER` is `0` in the running image's
+`packages/contracts/dist/rules/constants.js` (read 2026-11-13, this correction). Property 20's
+possibility list is `[0, 1, 2, 3, 18, 19]`, so `0` is a legal action on `ratingVotes`. Number tests
+are strict: `BIGGER` is `val1 > val2` and `SMALLER` is `val1 < val2` (`doRuleAction` in
+`rule.comparator.service.js`, same read). `BEFORE` on a date property whose custom value is a number
+of seconds is `value <= now - seconds`.
+
+A null or undefined value does not pass. For an AND clause the comparator drops the show without
+comparing (`firstVal != null` is required). The first clause, whose operator is null, adds a show
+only when the comparison is true, so a missing value is not added. That is not the unrated case.
+Sonarr reports an unrated show as rating `0` with `0` votes, not null. `0` is present, and `0 < 6.0`
+is true, so an unrated show passes the rating clause. The votes clause then drops it, because `0` is
+not greater than `99`. The getter is `showResponse.ratings?.value ?? null` and
+`showResponse.ratings?.votes ?? null` (`sonarr-getter.service.js`, same read).
+
+The rating, votes and tag clauses stay Sonarr properties. `ended`, `firstAirDate` and `seasons` are
+the only Sonarr properties `tryMetadataFallback` will answer when Sonarr has no series id; `rating`,
+`ratingVotes` and `tags` are not in that set. For a show Sonarr does not track, `ended` can come from
+the metadata provider. The adversarial review (2026-11-13, 18:32Z–18:50Z) measured 31 HaynesOps shows
+with no Sonarr match in the 15:00Z run. Those three Sonarr clauses are what keep that class out.
+
+| # | Application | Property | Action | `customVal` |
+| --- | --- | --- | --- | --- |
+| 1 | Sonarr `2` | `19` `rating`, "Show rating (IMDb) (scale 0-10)", number | `SMALLER` `1` | `{ "ruleTypeId": 0, "value": "6.0" }` |
+| 2 | Sonarr `2` | `20` `ratingVotes`, "Show rating (IMDb) vote count", number | `BIGGER` `0` | `{ "ruleTypeId": 0, "value": "99" }` |
+| 3 | Sonarr `2` | `2` `tags`, "[list] Tags (show)", text list | `NOT_CONTAINS` `9` | `{ "ruleTypeId": 2, "value": "mediarequests" }` |
+| 4 | Sonarr `2` | `7` `ended`, "Show ended", boolean | `EQUALS` `2` | `{ "ruleTypeId": 3, "value": "1" }` |
+| 5 | Plex `0` | `27` `sw_lastEpisodeAiredAt`, "Last episode aired at", date | `BEFORE` `5` | `{ "ruleTypeId": 0, "value": "15552000" }` |
+
+Clause 1 is the live row 1 (id 156) and clause 3 is the live row 3 (id 158), values unchanged. Clause
+2 is the movie rule's floor on the show property: movie group 1's live votes clause, read this
+session from `GET /api/rules` before 19:21:34Z, is action `0`, `firstVal` `[1, 19]`,
+`customVal` `{ "ruleTypeId": 0, "value": "99" }` (Radarr property 19). The show property is Sonarr
+`20`, not `19`. A count of exactly 99 does not pass. The order is the one a cut-short write must
+leave: rating, then votes, then tags, then ended, then aired. `updateRules` deletes every rule row
+for the group and inserts one at a time, with no transaction around that loop
+(`rules.service.js`, read 2026-11-13). A write that stops leaves a prefix of this list.
+
+Removed, and not stored as an inactive clause: Plex property `17` `sw_amountOfViews` ("Total views")
+`SMALLER` `1`. That clause reads HaynesOps only.
+
+There is no Sonarr property for "last episode aired". The nearest Sonarr dates are `firstAirDate`
+(id 4) and the booleans `seriesFinale` (id 17) and `ended` (id 7). The air-date clause uses the Plex
+property whose human name is "Last episode aired at". Do not substitute a Sonarr date.
+
+Why these `ruleTypeId`s, from the running image (not from the property's type key alone):
+
+- `ended` is boolean (type key `3`). `validateRule` accepts a custom value only when its `ruleTypeId`
+  equals that key, except the date/number and text-list/text cases below. The Sonarr getter returns
+  `1` or `0`, not a boolean. `EQUALS` then uses strict `===`. `ruleTypeId` 3 coerces the custom value
+  with `+value`, so the value must be the string `"1"`. `"true"` becomes `NaN` and matches nothing.
+  The UI writes `"1"` for a boolean custom value unless the value is already `"0"`.
+- `sw_lastEpisodeAiredAt` is a date. The live added-date clause, and the seconds path in the
+  comparator, use `ruleTypeId` **0** (`NUMBER`) with action `BEFORE`. The comparator then sets the
+  right-hand side to `now - seconds` and `BEFORE` keeps a left-hand side at or before that instant.
+  `15552000` is `180 * 86400`. A date `ruleTypeId` of 1 with the same digits is a timestamp in 1970,
+  not "180 days ago". Copy the live added-date encoding and change only `firstVal` from `[0, 0]` to
+  `[0, 27]`.
+- `rating` stays the live clause: type key and `ruleTypeId` are both 0, value `"6.0"`. `SMALLER` is
+  `<`, so a rating of 6.0 does not pass. The getter reads Sonarr `ratings.value`. The ledger stores
+  that same number in `media_metadata.tmdb_rating`. An unrated show's `0` passes this clause; the
+  votes clause is what excludes it.
+- `ratingVotes` uses the same number encoding as the movie votes clause and as `rating`: type key and
+  `ruleTypeId` are both 0, value `"99"`, action `BIGGER` (`0`). The getter reads Sonarr
+  `ratings.votes`.
+- `tags` stays the live clause. The property type is text list (key 4). `validateRule` also accepts
+  `ruleTypeId` 2 (`TEXT`) on a text list, which is what the live clause stores. `NOT_CONTAINS` is the
+  negation of `includes`. `doRuleAction` lowercases both string sides, and the string elements of an
+  array, before it compares (same file, read 2026-11-13). The stored value stays `mediarequests`. A
+  different case would still match. The earlier claim that the custom string is not lowercased was
+  wrong; it does not change this label.
+
+`sw_lastEpisodeAiredAt` is not "the show's last episode aired". The Plex getter
+(`plex-getter.service.js`, `case 'sw_lastEpisodeAiredAt'`, read 2026-11-13) loads the show's children
+on the one Plex server Maintainerr is configured with (HaynesOps), sorts those seasons by `index`,
+takes the last season, sorts that season's episodes by `index`, and reads the last episode's
+`originallyAvailableAt`. Plex lists only what HaynesOps holds. The date is the last episode, by
+number, of the highest-numbered season on that server. It is not the maximum air date across
+episodes, and it is not Sonarr's finale.
+
+That differs from the true finale in both directions:
+
+- The highest-numbered season on disk can be older than the finale. An ended show whose final season
+  is not on HaynesOps is tested on that older date and can pass while its real finale is recent. The
+  adversarial review measured 30 of 661 ended HaynesOps shows with a higher-numbered season in Sonarr
+  and no files, and 13 ended shows with a finale inside 180 days. None of those was below 6.0 and
+  untagged on that read (2026-11-13, 18:32Z–18:50Z). A Plex date earlier than the true finale admits
+  a show.
+- A Plex date that is null, or later than the Sonarr stand-in used in the projection, drops a show
+  the projection keeps. A null date fails the clause.
+
+Specials are season index 0. The sort takes the highest index, so a special is not the episode under
+test when HaynesOps holds any higher-numbered season. The review measured a Muppets Now special dated
+2025-03-06; that date is not the one this clause reads. The season property
+`sw_seasonLastEpisodeAiredAt` (Plex id 29) is not used.
+
+The Sonarr stand-in in the evidence note is `previousAiring`. The review's closer stand-in (the last
+episode with a file, in the highest season that has files) also passes all ten. Neither is a Plex
+read. Story 823's collection read is the check.
+
+The stored description replaces the current one. The name stays (Q-04). Description, 629 characters:
+
+```text
+Show-level candidates on HOps TV Shows. A show passes only when its Sonarr rating is below 6.0, its Sonarr rating votes are greater than 99, its Sonarr tags do not contain mediarequests, Sonarr says it has ended, and the last episode HaynesOps Plex holds, in its highest-numbered season, aired at least 180 days ago. Plays are not a Maintainerr predicate. The app still keeps a show with a household view in the last 30 days, and it still applies the cap, the Age Guard, the watchlist, Saves and the dnd tag. This collection does not delete on its own: arrAction 0 and deleteAfterDays 9999, with listExclusions and forceSeerr on.
+```
+
+Plays are not a Maintainerr predicate. The app's guardian still keeps a show whose household
+`last_viewed_at` is inside `RECENTLY_WATCHED_WINDOW_DAYS` (30) via `classifyGuardian`
+(`packages/domain/src/trash-flow.ts`). The description says so. It does not say plays are absent
+from every keep.
+
+Decoded rules, in order. `upsertTrashRule` sends this shape (no `ruleJson`, no old ids):
+
+```json
+[
+  {
+    "operator": null,
+    "action": 1,
+    "firstVal": [2, 19],
+    "customVal": { "ruleTypeId": 0, "value": "6.0" },
+    "section": 0
+  },
+  {
+    "operator": 0,
+    "action": 0,
+    "firstVal": [2, 20],
+    "customVal": { "ruleTypeId": 0, "value": "99" },
+    "section": 0
+  },
+  {
+    "operator": 0,
+    "action": 9,
+    "firstVal": [2, 2],
+    "customVal": { "ruleTypeId": 2, "value": "mediarequests" },
+    "section": 0
+  },
+  {
+    "operator": 0,
+    "action": 2,
+    "firstVal": [2, 7],
+    "customVal": { "ruleTypeId": 3, "value": "1" },
+    "section": 0
+  },
+  {
+    "operator": 0,
+    "action": 5,
+    "firstVal": [0, 27],
+    "customVal": { "ruleTypeId": 0, "value": "15552000" },
+    "section": 0
+  }
+]
+```
+
+### What the cap still does
+
+`app_settings.space_policy`, read 2026-11-13 17:49:20Z from replica `postgres16-11`, TV
+`maxItems` 5 enabled, `targetBytes` disabled, no `strategy` key, `minCandidates` 1, mode
+`over-target`, `updated_at` 2026-10-30 11:07:46-04. An absent strategy resolves to `worst-rated`
+(`activeBatchStrategy` in `packages/domain/src/app-settings.ts`). This story does not write that row.
+
+`selectBatchCandidates` drops an open Save, a `dnd` tag, a watchlisted title and an Age Guard
+`recent` title **before** it counts to 5. The cap does not choose five of the raw pool and then
+discover that four of them are kept. With three shows left after `dnd` and the watchlist, and all
+three still inside the Age Guard, the cap's deletable input is empty until those dates clear. Once
+they clear, three is under five, so the cap drops none of them.
+
+### Aging invariant
+
+`evaluateAgingInvariants` (`packages/domain/src/trash-flow.ts`) refuses an active rule pool when
+`deleteAfterDays` is below `AGING_HORIZON_MIN_DAYS` (3650), `arrAction` is not 0, `listExclusions`
+is not true, or (for a non-episode pool) `forceSeerr` is not true. It does not read `rules[]`.
+`auditMaintainerr` folds those violations into `safe`. `sweepExpiredBatches` refuses the sweep when
+`safe` is false. Replacing the added-date clause leaves every field that function reads as it is
+(measured on group 2's collection: `deleteAfterDays` 9999, `arrAction` 0, `listExclusions` true,
+`forceSeerr` true, type `show`). The audit will not refuse the pool for this predicate change.
+ADR-036 stays Accepted and is not edited. No superseding ADR.
+
+`ruleGroupDrift` compares the same flags and not the predicates. After the day of the apply, nothing
+in the sweep re-reads the five clauses. Story 823 depends on a predicate check in that audit before
+the new body is left in place across later days. This story does not write that check.
+
+The Age Guard is a separate check. It still uses the newest of a download import and any server's
+Plex added date, 180 times 86,400,000 ms (`judgeAge`). D-15 does not change the function. Removing
+the TV date-added clause removes what the guard's own comment relies on for a title with no Plex
+match (`packages/domain/src/trash-age-guard.ts`: a title no Plex library is matched to is judged on
+its imports alone, "the Maintainerr rule's own HaynesOps date-added clause still applies to it").
+`judgeAge` returns `clear` when there is no `media_plex_matches` row and no download import inside
+180 days. For TV, after this body is applied, that comment is no longer true. The movie added-date
+clause stays, and it is still that cover for a movie. DESIGN-010 no longer calls the Age Guard the
+guarantee for this case. DESIGN-052 D-26's "the rules stay" sentence is narrowed: the movie
+added-date clause stays; the TV predicates are this section; the guard stays in the app and does not
+replace the removed TV date-added clause.
+
+The adversarial review measured, on 2026-11-13 (18:32Z–18:50Z), that this bites nothing in today's
+pools: 0 of 524 movie candidates and 0 of the ten shows below have no Plex match. It matters more
+once story 836 lands: that review measured 339 of 661 ended HaynesOps shows with no download import
+inside 180 days. The code question for 836, already passed on by the coordinator (comment 8099), is
+that a pool member with no Plex match should be `unknown`, not `clear`. This story does not change
+`judgeAge`.
+
+### Apply and read back
+
+The writer is `upsertTrashRule` (`packages/domain/src/trash-flow.ts`). It can express every clause.
+A rule in the payload is a decoded `RuleDto` (`operator`, `action`, `firstVal`, `customVal`,
+`section`). The writer does not strip those fields. No code change in this story.
+
+The entry point is `trash.saveRule` (`packages/api/src/routers/trash.ts`). It calls `upsertTrashRule`
+and then `triggerCandidateRefresh`, which re-reads the candidate snapshot. It does not itself call
+`POST /api/rules/execute`. The 2026-10-30 movie apply used `upsertTrashRule` and then armed
+`requestPoolRefreshAfterSave`, which the incremental sync turned into that POST
+(`packages/domain/src/pool-refresh.ts`). This apply does not arm that refresh. A one-off script in
+the app pod is the other way the 2026-10-30 change was reached; either way the payload is the one
+below, and the writer is `upsertTrashRule`.
+
+The payload carries numeric `id: 2`. `upsertTrashRule` treats any other id, including a missing id
+or a string, as a create (`typeof decoded.id === 'number'` is the update test) and POSTs a second
+TV group. Do not omit it.
+
+The update path:
+
+1. `GET /api/rules`, find group 2. The first PUT is allowed only when that live body is the
+   pre-image below. If it is not, stop. Do not finish a prefix by appending the missing clauses.
+   The only PUT onto a body other than the pre-image is the put-back of the pre-image itself, after
+   a failed read-back of this write, or when the live body is a prefix of these five clauses.
+2. Build the PUT from that group. Change only `description` and `rules` (the five objects above).
+   Copy `dataType`, `libraryId`, `name`, `useRules`, `isActive`, `notifications`,
+   `ruleHandlerCronSchedule` and `collection` verbatim, and set `id` to the number `2`. `libraryId`
+   stays the string `"2"`. `dataType` stays the string `"show"`. `manualCollection` stays false and
+   `manualCollectionName` stays the empty string the GET returned. The running image wipes the
+   collection's media and its specific exclusions when any of those four differ.
+3. `buildRuleGroupUpdate` lifts top-level flags the payload omits (`arrAction`, `listExclusions`,
+   `forceSeerr`, the server ids, and the rest of `RULE_GROUP_TOP_LEVEL_FIELDS`) from the live
+   collection, and refuses `useRules: false` while `rules` is non-empty. Send `useRules: true`.
+4. `PUT /api/rules` through that writer. The image deletes every rule row for the group, then
+   inserts one row per payload rule. New ids are assigned. Membership is not wiped by that delete.
+   Do not call rule test, rule execute, or collection handle.
+5. Read back **straight after** the PUT, before any handler run. `ruleGroupDrift` compares
+   `arrAction`, `listExclusions`, `forceSeerr`, `tagInArr`, the Radarr and Sonarr server ids, and
+   `collection.deleteAfterDays` only. A successful `upsertTrashRule` is not a predicate read-back.
+   The predicate read-back is the fresh `GET` in the next list.
+
+Predicate read-back, same `GET /api/rules`, immediately after the PUT:
+
+- Group 2: `description` equals the 629-character text above, `name` unchanged, `dataType`
+  `"show"`, `libraryId` `"2"`, `useRules` true, `isActive` true, `id` 2.
+- Collection id still **3**. `collection.description` equals the same text (the adversarial review
+  found Maintainerr writes the group description there; this session's GET showed both lengths
+  equal, 748, on the live pre-image).
+  `deleteAfterDays` 9999, `arrAction` 0, `listExclusions` true, `forceSeerr` true,
+  `manualCollection` false, `type` `show`, `sonarrSettingsId` 1.
+- Exactly five rules, section 0, in the order above. For each: `operator`, `action`, `firstVal`,
+  `customVal.ruleTypeId`, `customVal.value` (string), and no `lastVal`. Ignore the new row ids.
+- Group 1's five movie clauses are the movie pre-image below. If they are not, the TV write is
+  treated as failed even when group 2 matches.
+- Exclusion count still **360**, the count at `GET /api/rules/exclusion?rulegroupId=2` on
+  2026-11-13T19:24:49Z (all `ruleGroupId` null; 8 of type `show`). A lower count, or the loss of one
+  of the seven `dnd` shows' HaynesOps rating keys listed in the evidence note, is a stop. A higher
+  count is a new exclusion and is explained, not a put-back by itself.
+- No `trash_batches` row with `media_kind = 'tv'` and `created_at` between the PUT and this
+  read-back.
+
+If any of that differs, PUT the saved pre-image back through the same writer (numeric `id: 2`,
+decoded rules, original description, same verbatim flags) and read it back the same way. If the
+rollback also differs, disarm group 2 and stop.
+
+"Do not sweep" is not an action. The sweep and the space policy are CronJobs. The handler is not
+held by skipping them. The adversarial review's Loki read (2026-11-13, last 24 hours) showed the TV
+group running four times: three on the 8-hour schedule and one at 15:00Z. A pending-item Save can
+also ask for `POST /api/rules/execute` through `pool-refresh.ts`. The lever is to disarm group 2
+through the same writer (`isActive: false`, numeric `id: 2`). The executor skips an inactive group
+(`executeForRuleGroups`: "is not active. Skipping rule execution."). `createOrUpdateGroup` writes
+that flag on the rule group, not on the collection row. `fetchMaintainerrPending` keeps collections
+whose own `isActive` is true, so a disarm stops the next handler run and does not by itself empty a
+collection a handler has already filled. Disarm before any handler run when the read-back fails.
+The put-back of the pre-image is still required.
+
+Before the handler is allowed to build the collection, the read-back above has matched. The Age
+Guard still holds a show whose newest download import or Plex added date is inside 180 days. The
+three expected members below are in that window; the dates are in the evidence note. Nothing in
+this section deletes a file. `auditMaintainerr` being `safe` is the flag check only. It is not the
+predicate check story 823 depends on.
+
+### Pre-image (measured this session; re-read before any PUT)
+
+Group 2, four clauses, from `GET /api/rules` on 2026-11-13. Ids 156–159 are what that GET returned.
+A later GET that does not match this body, including the description, is a stop, not a thing to overwrite.
+
+Description, 748 characters:
+
+```text
+hnet production junk rule (Sonarr / HOps TV Shows). Candidates = IMDb show rating < 6.0 AND never watched on HOps Plex (total episode views 0) AND NOT Sonarr-tagged mediarequests AND Plex date added older than 180 days (age guard added 2026-09-14 by owner ruling). Non-deleting rule collection: arrAction=0 (SAFE-audited baseline) + deleteAfterDays=9999 (ADR-036 aging invariant) — the app batch pipeline + guardian own deletion. listExclusions=true (2026-09-14, owner ruling): the delete also writes the Sonarr import-list exclusion so Kometa list runs cannot silently re-add a trashed series; Seerr and direct adds bypass that list. Requester + cross-server watch protection enforced by the app guardian. dnd tag/exclusion whitelists saved items.
+```
+
+| # | id | `operator` | `action` | `firstVal` | `customVal` |
+| --- | ---: | --- | ---: | --- | --- |
+| 1 | 156 | null | 1 `SMALLER` | `[2, 19]` rating | `{ "ruleTypeId": 0, "value": "6.0" }` |
+| 2 | 157 | 0 | 1 `SMALLER` | `[0, 17]` total views | `{ "ruleTypeId": 0, "value": "1" }` |
+| 3 | 158 | 0 | 9 `NOT_CONTAINS` | `[2, 2]` tags | `{ "ruleTypeId": 2, "value": "mediarequests" }` |
+| 4 | 159 | 0 | 5 `BEFORE` | `[0, 0]` date added | `{ "ruleTypeId": 0, "value": "15552000" }` |
+
+Group 1, movie, from the same kind of `GET /api/rules` on 2026-11-13 during this correction, before
+the 19:21:34Z Sonarr read. Collection id 1, `mediaServerId` 98837, `isActive` true. Description
+length 872; the text is not copied here. Clauses:
+
+| # | id | `operator` | `action` | `firstVal` | `customVal` |
+| --- | ---: | --- | ---: | --- | --- |
+| 1 | 160 | null | 1 `SMALLER` | `[1, 16]` rating | `{ "ruleTypeId": 0, "value": "6.5" }` |
+| 2 | 161 | 0 | 0 `BIGGER` | `[1, 19]` votes | `{ "ruleTypeId": 0, "value": "99" }` |
+| 3 | 162 | 0 | 1 `SMALLER` | `[0, 5]` total views | `{ "ruleTypeId": 0, "value": "1" }` |
+| 4 | 163 | 0 | 9 `NOT_CONTAINS` | `[1, 2]` tags | `{ "ruleTypeId": 2, "value": "mediarequests" }` |
+| 5 | 164 | 0 | 5 `BEFORE` | `[0, 0]` date added | `{ "ruleTypeId": 0, "value": "15552000" }` |
+
+A later GET that does not match these five clauses is a stop for the TV write.
+
+### Shows that pass the predicates
+
+Not a Maintainerr evaluation, and not the collection Maintainerr will hold. The ten are the shows
+that pass the predicates on the Sonarr stand-in. Clock of the recompute **2026-11-13T19:21:34Z**.
+"180 days" is `previousAiring <= clock - 15552000s` (cutoff 2026-05-17T19:21:34Z). Universe: the
+953 live Sonarr series on HaynesOps library section `2` (replica `postgres16-11`,
+2026-11-13T19:20:38Z, still 953 distinct tvdb). Full table: the evidence note.
+
+With the fifth clause the same ten shows pass, **412,648,319,552 bytes** (0.413 TB at bytes/10^12).
+Lowest vote count among them is 1,276 (Total DramaRama). Nothing in the ten changed from the
+17:49:20Z four-predicate projection or from the audit. After `dnd` (tag id 27) and the watchlist,
+the same three shows and **55,304,752,845 bytes** (0.055 TB). The watchlist re-read at
+2026-11-13T19:24:02Z is still 201 distinct show tvdb ids, and of the ten only Mickey Mouse Clubhouse
+is listed.
+
+A cut-short write leaves a prefix. Sizes are shows in the 953, air date by the Sonarr stand-in.
+The adversarial review measured the old body order (ended, aired, rating, tags) as 661 shows
+(126.7 TB), then 648, 32, and 10. It measured rating-then-tag, without a votes clause, as 54 shows
+(7.8 TB), then 12, 10, and 10. This correction recomputed the instructed order (rating, votes, tags,
+ended, aired) at 19:21:34Z:
+
+| Prefix | Shows | Bytes |
+| --- | ---: | ---: |
+| Rating below 6.0 | 54 | 7,838,701,560,290 |
+| And votes greater than 99 | 51 | 7,626,460,152,772 |
+| And no `mediarequests` tag | 12 | 838,724,127,581 |
+| And ended | 10 | 412,648,319,552 |
+| And aired at or before the cutoff | 10 | 412,648,319,552 |
+
+The votes clause removes 3 of the 54 (212,241,407,518 bytes). Two are unrated (rating 0, votes 0):
+Condor (tvdb 342107, 95,093,226,610 bytes) and Nightmare Tenants, Slum Landlords (tvdb 297091,
+89,873,803,876 bytes). The third is 90 Day: The Last Resort Between The Sheets (tvdb 457446, rating
+5.9, 56 votes, 27,274,377,032 bytes), which is not ended. All three carry `mediarequests`, so the
+tag prefix stays 12 and the ten stay 10. The two-clause prefix is 51 shows, larger than the
+review's rating-then-tag prefix of 12, because the votes floor removes only those three. The order
+still puts votes immediately after rating, so a prefix that has not reached the tag already
+excludes an unrated show.
+
+### Expected collection, for story 823
+
+After the handler runs, the collection is expected to hold three shows: Star Wars Resistance
+(tvdb 351575), Muppets Now (368781), and Tales of the Walking Dead (411314). The other seven that
+pass the predicates are excluded by Maintainerr's global exclusions, matched on the HaynesOps
+rating key (evidence note): Total DramaRama, The Acolyte, Ironheart, She-Hulk: Attorney at Law,
+Willow, Secret Invasion, and Mickey Mouse Clubhouse. An eighth global show exclusion is The
+Baldwins (tvdb 459465), which is not one of the ten.
+
+Story 823's rules, before any other action on the collection:
+
+- Any member outside those three is a stop and a put-back of the pre-image, then the same read-back.
+  Disarm if that put-back does not match.
+- A missing one of the three is explained per show before anything else. Do not put the rule back
+  merely because one is missing, until that show has an explanation.
+- Every collection member has a dated HaynesOps row in `media_plex_matches`, else stop. At
+  2026-11-13T19:24:02Z each of the ten has one dated row on HaynesOps section `2`.
+- The three are a projection until 823 reads the collection. Plex `originallyAvailableAt` was not
+  read. A Plex date that is null or later than `previousAiring` drops a show this projection keeps.
+  A Plex date earlier than the true finale can admit one, as the air-date section says.
+
+## D-16 — Amendment 2026-11-13 (ADR-120) — Dynamic Pace sizes the byte ask
+
+The owner (2026-11-13) asked for Trash recommendations that follow the capacity target. The live
+movie cap is a static 50 titles per save window, minus whatever is saved. The batch should grow
+when the array is falling behind and hold a steady pace when it is under the target. The owner
+asked that the return not have to happen in one week, and that the pace be capable of reaching the
+target in a month or two. The shipped defaults do not do that. What they do is under "What the
+defaults can do" below. Story 820's acceptance horizon is 60 days: the projection returns the array
+to 75 percent, or it names the pool shortfall. It names the shortfall.
+
+An earlier draft of this section was numbered D-15. Main already holds D-15 for the TV rule. This
+decision is D-16, and its decision record is ADR-120.
 
 This amendment changes **how many bytes** a policy batch asks for. It does not change which titles
 are eligible. Watchlist, Age Guard, Save, the request tag, `dnd`, the Release Block and the Title
@@ -381,6 +844,10 @@ over-target gate behave as they do today (`packages/domain/__tests__/space-polic
 is no migration: the object lives in the existing audited `space_policy` jsonb. The next save of the
 existing Trash settings card round-trips it and persists the defaults with the switch off. This
 change does not write the live row.
+
+The adversarial review of 2026-11-13 (PR 1071, reads between 19:55Z and 20:40Z) is the source of the
+corrected projection and of the default-capability figures below. This correction did not re-query
+the replica or Prometheus.
 
 ### How intake is measured
 
@@ -401,11 +868,16 @@ still closed, and the intake term is omitted. A missing series (Prometheus down,
 the reader throws) also keeps today's caps.
 
 Measured 2026-11-13 by running `explainDynamicPace` on the coordinator's HaynesTower series
-(Prometheus, 2026-11-13T16:36Z, GB = 1e9 bytes) and the sweep bytes below: the unadjusted rate is
-−212.244 GB/day (the published D-08 figure is −212.2). After the deletions are added back the rate
-is −329.767 GB/day, so intake is 329.767 GB/day. The +8.7 TB step at 2026-11-12 stays in the series
-and is set aside (Q-04). The sweep of 3,246,674,077,176 bytes at 2026-11-06T15:46:13Z is removed
-from the step that contained it.
+(Prometheus, 2026-11-13T16:36Z, GB = 1e9 bytes) and the sweep bytes in the evidence note: the
+unadjusted rate is −212.244 GB/day (the published D-08 figure is −212.2). After the deletions are
+added back the rate is −329.767 GB/day, so intake is 329.767 GB/day. The review re-derived 329.770
+GB/day (275 to 385 at two standard errors). The +8.7 TB step stays in the series and is set aside
+(Q-07). The sweep of 3,246,674,077,176 bytes at 2026-11-06T15:46:13Z is removed from the step that
+contained it.
+
+The review corrected the window start. Ninety days before the 2026-11-13T18:43Z reading is
+2026-08-15T18:43Z, not 2026-08-14. The same 13 batches fall inside the corrected window, so the
+floor, the ceiling and the save rate below are unchanged.
 
 ### How the batch is sized
 
@@ -416,45 +888,70 @@ Over target means live free space is strictly below that floor. `gap = max(0, ta
 code default when the key is unset is 21). `horizonDays` defaults to 60.
 
 - **Over target.** Required deletion this window is
-  `max(0, gap − rate × horizon) × (window / horizon)`. A library that is filling adds the intake
-  for one window on top of the gap's share. A library that is draining reduces the requirement. If
-  the trend already reaches the floor inside the horizon, the requirement is 0 and no batch is
-  posted (`pace: 'none'`), even though `usedPct > target`. That is the smaller batch.
-- **Under target, switch on.** The requirement is `max(0, −rate × window)`: match the intake, and
-  do not spend the surplus. A drain, or an unmeasured intake, requires 0. This is the only place
-  ADR-073 C-04 changes, and only while the pace applies. While the switch is off, under target is
-  still `skipped_under_target`.
+  `max(0, gap − rate × horizon) × min(1, window / horizon)`. The ratio is clamped at 1 (the review's
+  M4): a window longer than the horizon asks for the horizon's requirement once, not for
+  `window / horizon` of it. A library that is filling adds the intake for the horizon, scaled by
+  that ratio. A library that is draining reduces the requirement. If the trend already reaches the
+  floor inside the horizon, the requirement is 0 and no batch is posted (`pace: 'none'`), even
+  though `usedPct > target`.
+- **Settings edge.** `storage.policy.set` refuses a horizon shorter than the current
+  `trash_default_window_days` (`dynamicPaceHorizonFitsWindow`). A horizon equal to the window is
+  allowed. The shipped default horizon is 60, which is longer than the live window of 7 and the
+  code default of 21. A window lengthened after that save is still covered by the clamp. The window
+  setter itself is unchanged.
+- **Under target, switch on.** The code's requirement is `max(0, −rate × window)`: match the intake,
+  the same amount at any level under the target and at a target of 100 percent, and do not spend
+  the surplus. A drain, or an unmeasured intake, requires 0. This is the behavior the code has. It
+  is Q-12, an open question for the owner. While the switch is off, under target is still
+  `skipped_under_target`.
 - **Save rate.** Byte-weighted over the same 90 days, movies and TV together, because they share
   the array: `saved size_bytes / (saved size_bytes + deleted deleted_size_bytes)` on completed
-  batches. Skips are not in the ratio (Q-07). Null, or a rate outside `[0, 1)`, does not inflate
+  batches. Skips are not in the ratio (Q-10). Null, or a rate outside `[0, 1)`, does not inflate
   (yield 1). Otherwise `unclamped = required / (1 − saveRate)`.
 - **Floor and ceiling, on the ask.** A requirement of 0 stays 0: the floor does not force a batch.
   A positive ask is `min(ceiling, max(floor, floor(unclamped)))`, then limited by the eligible
   pool. `expectedDeleted = chosen × yield`. `shortfall = max(0, required − expected)`.
-  `poolShortfall = max(0, ask − pool)`.
+  `poolShortfall = max(0, ask − pool)`. The shortfall on the status read is this one-window figure.
+  The horizon shortfall is finding 5, still open.
 - **One ceiling for the array.** The ask is split across movie and TV in proportion to eligible
   bytes, largest pool first for the remainder, and no kind is asked for more than its pool. A kind
-  with a 0 ask is not proposed (`skipped_pace`). The per-kind `maxItems` and `targetBytes` caps are
-  not also applied. The kind's strategy is kept.
+  with a 0 ask is not proposed (`skipped_pace`). While the pace applies, the code does not also
+  apply the per-kind `maxItems` and `targetBytes` caps. The kind's strategy is kept. Dropping those
+  caps, and the missing title cap, are Q-14 and Q-15.
 - **Not applicable** (ceiling below the floor, no disk, too short, no series, or the preload
   throws): today's caps and today's gate. `chosenBytes` on that explanation is 0.
 
 Eligible bytes are the same titles the proposal already keeps: a Maintainerr id, not a save, not
 `dnd`, not on the watchlist, and not age-recent. The proposal reads that set live. The status read
 uses the candidate snapshot, which lags, and says so (`poolSource: 'snapshot'`). The snapshot does
-not feed the proposal.
+not feed the proposal. A title already in an open batch stays in the Maintainerr collection, so the
+status read still counts it (finding 5). The projection below leaves those titles out of the pool
+that is not yet posted.
 
 ### Defaults, from the measurements
 
 | Bound | Value | Where it comes from |
 | --- | --- | --- |
-| Horizon | 60 days | The owner's bound and story 820's acceptance window. Not a disk statistic. |
-| Floor | 130,604,353,957 bytes | Smallest proposed-byte total of a completed HaynesTower batch with `deleted_at` on or after 2026-08-14, measured 2026-11-13T18:45:08Z. That batch closed 2026-10-19 with 19 movies. The smallest full 50-item total in the same window was 800,535,856,306 (2026-08-22). The smaller number is the floor (Q-08). |
-| Ceiling | 3,591,025,375,575 bytes | Largest proposed-byte total in that window: 50 movies, closed 2026-11-06, deleted 3,246,674,077,176 bytes. |
-| Save rate | measured at run time | Not a stored default. On 2026-11-13T18:43:26Z, completed batches since 2026-08-14: saved 1,897,158,268,845 bytes, deleted 13,609,206,491,654 (movies) + 372,082,386,455 (the one TV batch). Rate 0.119480. |
+| Horizon | 60 days | Story 820's acceptance window. Not a disk statistic. What this horizon does is Q-13. |
+| Floor | 130,604,353,957 bytes | Smallest proposed-byte total of a completed HaynesTower batch in the review's corrected window (90 days before 2026-11-13T18:43Z, so on or after 2026-08-15T18:43Z). That batch closed 2026-10-19 with 19 movies. The smallest full 50-item total in the same window was 800,535,856,306 (2026-08-22). The smaller number is the floor (Q-11). |
+| Ceiling | 3,591,025,375,575 bytes | Largest proposed-byte total in that window: 50 movies, closed 2026-11-06, deleted 3,246,674,077,176 bytes. It is the code's safety bound. Whether it is the right batch size is Q-14. |
+| Save rate | measured at run time | Not a stored default. On 2026-11-13T18:43:26Z, the same 13 completed batches: saved 1,897,158,268,845 bytes, deleted 13,609,206,491,654 (movies) + 372,082,386,455 (the one TV batch). Rate 0.119480. |
 
 A stored bound that is not a safe integer is replaced by the default above. `ceiling < floor` after
 that does not size a batch.
+
+### What the defaults can do
+
+The review simulated the formula with an unlimited pool, intake 329.8 GB a day and yield 0.8805.
+This correction did not re-run that simulation. At the default ceiling, the gap at day 60 is
+39.4 TB and the target is reached after about a year (the review's net progress is 0.85 TB a week
+against a 43.4 TB gap). With no ceiling, the rolling 60-day horizon still leaves 19.8 TB at day 60
+and 6.4 TB at day 120, because the horizon restarts every window: it is a time constant, not a
+deadline. A 30-day horizon leaves 8.2 TB at day 60; 21 days leaves 3.9 TB.
+
+The first required ask on the live disk is 8.37 TB (the review). The ceiling is 3.59 TB. That
+ceiling is the single largest batch ever posted. It is a safety bound. If the rules deliver a
+larger pool, the ceiling and the horizon are the limit. Q-13 and Q-14 ask the owner to rule them.
 
 ### What the read returns, and the card
 
@@ -465,43 +962,104 @@ could be sized. Prometheus or the disk failing leaves `pace` null and the existi
 
 The card is not changed. Showing those figures on the existing status block (`data-testid="policy-status"`)
 needs a Fable worker: the current block is "Last proposal" plus one line per kind, and adding the
-reasoning would be a new layout. That page work is the follow-up.
+reasoning would be a new layout. That page work is the follow-up. Story 820's scope asked for the
+card to show the reasoning. This change returns the fields and leaves the layout, which is the
+follow-up the original order allowed when a new layout was required.
 
 ### Projection (not a forecast the app stores)
 
-Labelled a projection. It holds the measured intake fixed, applies the 90-day yield to the open
-batch as well as the pool, and posts a new batch only when the previous one has been swept (one
-open batch per kind). Day 0 is the disk reading 2026-11-13T18:43Z. The open movie batch
-(1,881,676,268,710 proposed bytes, 0 saved at that reading, expires 2026-11-20T17:17Z) deletes on
-the day-7 step. The first dynamic batch can be posted then and deletes one window later. TB below
-is 1e12 bytes. The code's first-window ask on these inputs is the ceiling, 3.591 TB, all of it movies.
+Labelled a projection. The figures are the adversarial review's measurement and projection of
+2026-11-13. TB is 1e12 bytes. The method is the first projection's method with the open batch
+removed from the pool that is not yet posted.
 
-HaynesTower does **not** return to 75% within 60 days. Required deletion over 60 days, if intake
-continues, is 63.180 TB. The eligible movie pool (7.678 TB) plus the open batch, at the measured
-yield, delete 8.417 TB. The shortfall is **54.762 TB** of free space still missing at day 60
-(free 77.727 TB, used 85.333%). The pool is fully committed on the batch posted at day 21
-(2026-12-04) and those bytes delete at day 28 (2026-12-11). After that the measured stock is gone
-and use climbs, because intake continues (19.786 TB over 60 days) and deletions stop. Raising the
-ceiling does not change the day-60 total: the pool, not the ceiling, is the limit. Q-06: this
-assumes the rules do not refill the pool. Q-07: skips are not in the yield, so this shortfall is
-not a high estimate.
+Rule for the central figures, checked in this correction on 2026-11-13
+(`python3`, exact integer arithmetic, not a new live read):
 
-| Day | UTC | Posted TB | Deleted that step TB | Free TB | Used % | Gap TB | Pool left TB |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 0 | 2026-11-13 | — | — | 89.096 | 83.188 | 43.394 | 7.678 |
-| 7 | 2026-11-20 | 3.591 | 1.657 | 88.444 | 83.311 | 44.045 | 4.087 |
-| 14 | 2026-11-27 | 3.591 | 3.162 | 89.298 | 83.150 | 43.192 | 0.496 |
-| 21 | 2026-12-04 | 0.496 | 3.162 | 90.152 | 82.989 | 42.338 | 0 |
-| 28 | 2026-12-11 | 0 | 0.437 | 88.280 | 83.342 | 44.210 | 0 |
-| 60 | 2027-01-12 | 0 | 0 | 77.727 | 85.333 | 54.762 | 0 |
+- The review reproduced the first pool: 524 snapshot titles, 60 age-recent, 35 watchlisted, 5 both,
+  434 eligible, 7,677,954,075,421 bytes. Of those, 50 titles and 1,881,676,268,710 bytes are the
+  open `leaving_soon` batch. A posted title stays in the Maintainerr collection, so the first note
+  was wrong to say the open batch was outside the eligible pool.
+- Eligible pool not yet posted = 434 − 50 = 384 titles, and
+  7,677,954,075,421 − 1,881,676,268,710 = 5,796,277,806,711 bytes = 5.796 TB.
+- Deleted in 60 days = yield 0.880520 × (5,796,277,806,711 + 1,881,676,268,710) =
+  6,760,592,122,490 bytes = 6.761 TB. The open batch is counted once, inside that sum.
+- Required deletion over 60 days stays the first projection's 63.180 TB (gap 43.394 TB plus intake
+  over 60 days, 19.786 TB). This correction did not remeasure that requirement. The review used it.
+- Shortfall = 63.180 − 6.761 = 56.419 TB.
+- Day-60 free space is the review's stated 76.07 TB. This correction did not re-simulate the week
+  path that produces it. Used percent = 1 − 76.07 / 529.959 = 85.65% at two decimals. 529.959 TB is
+  the review's rounding of the measured total 529,958,515,245,056 bytes.
+- The ceiling is 3,591,025,375,575 bytes = 3.591 TB. The remainder of the not-yet-posted pool is
+  5,796,277,806,711 − 3,591,025,375,575 = 2,205,252,431,136 bytes = 2.205 TB. Day 7 (2026-11-20)
+  posts 3.591 TB. Day 14 (2026-11-27) posts the last 2.205 TB. Those bytes delete on 2026-12-04.
+  The pool is used up by the batch posted on 2026-11-27.
 
-Every cell is that formula rounded to 3 decimals. The 0.496 TB step is the remainder of the
-7.678 TB pool. The day-60 gap equals the 54.762 TB shortfall.
+HaynesTower does not return to 75% within 60 days. The array is at 85.65 percent at day 60.
+
+With today's pool the pace deletes 0.04 TB more by day 60 than today's cap. The review's comparison
+is today's fixed cap at 6.72 TB and Dynamic Pace at 6.76 TB (6.76 − 6.72 = 0.04). The precise pace
+total above is 6.761 TB. The 6.72 TB cap figure is the review's; this correction did not recompute
+the eight-batch cap path. The pace empties the eligible list in two batches (155 and 229 titles)
+instead of eight.
+
+The review's table of the most and least favourable readings, cited as printed on 2026-11-13. This
+correction did not re-derive the rows other than the central one. The central row's 6.76 TB,
+56.4 TB and 85.6% are that table's rounding of 6.761 TB, 56.419 TB and 85.65%.
+
+| Reading | Deleted in 60 days | Shortfall | Used at day 60 |
+| --- | --- | --- | --- |
+| Most favourable: intake 294 GB/day (last 27 days before the jump), nothing saved, every snapshot title becomes eligible, refill | 11.48 TB | 49.6 TB | 84.4% |
+| Corrected central | 6.76 TB | 56.4 TB | 85.6% |
+| Least favourable: intake 394 GB/day (first 30 days), last batch's yield 0.641 | 4.92 TB | 62.1 TB | 86.7% |
+| Least favourable, and the 8.85 TB jump reverses | 4.92 TB | 70.9 TB | 88.4% |
+
+Q-09: the central shortfall assumes the rules do not refill the pool. The review's refill estimate
+is about 1.2 TB more deleted, shortfall about 55.2 TB.
+
+### Open questions, and work required before the switch
+
+Q-07 to Q-15 are in the open-questions list above. Q-12, Q-13, Q-14 and Q-15 are the review's
+questions for the owner. The code's under-target pace, the dropped per-kind caps, and the ceiling
+and the horizon are those questions. They are not owner rulings.
+
+The review's findings 5 to 10 are work required before the switch may be turned on. This change
+does not build them.
+
+1. **Finding 5.** The status read has no open-batch filter, so the pool is overstated by about one
+   batch (1.88 TB of 7.68 TB on the review's day). `poolShortfallBytes` is the one-window ask after
+   the ceiling. The horizon requirement is `gap + intake × horizon`, and its shortfall is that
+   requirement against `pool × yield`.
+2. **Finding 6.** Per-kind caps are dropped and nothing bounds the title count (Q-14, Q-15). The
+   review's first batch on today's pool is 155 titles (3.604 TB) and the second is 229.
+3. **Finding 7.** The reasoning that sized a real batch is not stored. `skipped_pace` writes
+   nothing. A fall back to today's caps shows only as `pace: null` in a pod log. The status read
+   can say `applied: true` while the job fell back.
+4. **Finding 8.** Under target, the floor raises a small steady ask. The review's example: 1 GB a
+   day of intake requires 7 GB and the ask is 130.6 GB.
+5. **Finding 9.** A rate the forecast calls flat drops the intake term, reports `catch-up`, and
+   computes the shortfall without intake.
+6. **Finding 10.** Deletions are read from `now − 90 days` while the series can start up to 3 days
+   earlier. There is no staleness check. The ceiling is not a hard cap: the crossing title is
+   added (3.604 against 3.591 TB on the review's day). Recorded deletions and the save rate are not
+   scoped to an array. `enabled: true` with an unreadable bound runs at the default bounds. The
+   status read queries Prometheus, the three *arrs and the full snapshot on every load, switch on
+   or off.
+
+The review also requires, before the switch: owner rulings on Q-12 to Q-15 and code changed to
+match; an observe-only step that records the ask while today's caps still build the batch (nothing
+has shown that the CronJob pod can read Prometheus); stories 838, 843 and 844 done; and a
+non-Claude review if a Fable worker makes those later corrections. The first batch after switch-on,
+on the pool the review measured, would be about 155 titles (3.6 TB) against today's 50, and the
+eligible list would be posted within two weeks.
+
+Finding 4, the unclamped ratio, is the code change in this correction: the clamp, the settings-edge
+refusal, and a test for each.
 
 Tests: `packages/domain/__tests__/space-policy-pace.test.ts` (over target and falling, over target
 and rising, the drain that closes the gap, under target, the floor not lifting a zero, an empty
 pool, a save-heavy ceiling, frequent deletions whose sized intake is the true fill, a level jump
-that is not intake, a flat series, a too-short series, a ceiling below the floor, one ceiling
-shared by both kinds). `space-policy.test.ts` proves the switch off equals today's `maxItems`, a
-missing or too-short series keeps that cap, the switch on replaces it, under target proposes only
-when the pace has intake, a closing drain posts nothing, and an open batch still holds the slot.
+that is not intake, a flat series, a too-short series, a ceiling below the floor, the ratio clamped
+at 1, a horizon shorter than the window refused, one ceiling shared by both kinds).
+`space-policy.test.ts` proves the switch off equals today's `maxItems`, a missing or too-short
+series keeps that cap, the switch on replaces it, under target proposes only when the pace has
+intake, a closing drain posts nothing, and an open batch still holds the slot.

@@ -8,12 +8,15 @@
 //   storage.reclaim({window}) — reclaim attribution over a window (PG deletion snapshots + expedite).
 //   storage.targets.get       — the per-server space_targets map (drives the reference line).
 //   storage.targets.set       — set the targets (audited via the app_settings single-writer).
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import {
+  APP_SETTING_DEFAULTS,
   getReclaim,
   getUtilization,
   getAppSetting,
   getNotifyWindow,
+  dynamicPaceHorizonFitsWindow,
   explainLiveDynamicPace,
   getSpacePolicy,
   getSpacePolicyStatus,
@@ -84,8 +87,9 @@ export const SpacePolicyInput = z
     // DESIGN-014 amendment (2026-07-09, build A) — per-kind caps (replaces the retired flat
     // targetBytesPerBatch, which getSpacePolicy still migrates when reading an old stored row).
     perKind: z.object({ movie: spacePolicyKindCaps, tv: spacePolicyKindCaps }).strict(),
-    // ADR-117 — optional so a row from before Dynamic Pace still saves. getSpacePolicy always
-    // emits it, and the cards round-trip the object they were given.
+    // ADR-120 — optional so a row from before Dynamic Pace still saves. getSpacePolicy always
+    // emits it, and the cards round-trip the object they were given. policy.set refuses a horizon
+    // shorter than the save window (dynamicPaceHorizonFitsWindow).
     dynamicPace: z
       .object({
         enabled: z.boolean(),
@@ -186,7 +190,7 @@ export const storageRouter = router({
     /**
      * Ledger-derived status, plus the Dynamic Pace reasoning (gap, intake, required, chosen,
      * shortfall). The pace read fails soft: a downed Prometheus or disk leaves `pace` null and
-     * the existing card still loads. The card does not render the new fields (DESIGN-014 D-15).
+     * the existing card still loads. The card does not render the new fields (DESIGN-014 D-16).
      */
     status: adminProcedure.query(async ({ ctx }) => {
       const status = await getSpacePolicyStatus({ db: ctx.db });
@@ -210,16 +214,29 @@ export const storageRouter = router({
      * The whole object is replaced (like targets.set); the UI sends the merged object. Enabling is a
      * config change only: the propose-only sync job (which never deletes) acts on it out-of-band.
      */
-    set: adminProcedure.input(SpacePolicyInput).mutation(({ ctx, input }) =>
-      mapDomainErrors(() =>
+    set: adminProcedure.input(SpacePolicyInput).mutation(async ({ ctx, input }) => {
+      if (input.dynamicPace) {
+        const windowRaw = await getAppSetting(ctx.db, 'trash_default_window_days');
+        const windowDays =
+          typeof windowRaw === 'number' && Number.isFinite(windowRaw) && windowRaw >= 1
+            ? Math.trunc(windowRaw)
+            : APP_SETTING_DEFAULTS.trash_default_window_days;
+        if (!dynamicPaceHorizonFitsWindow(input.dynamicPace.horizonDays, windowDays)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'horizonDays must be at least the save window',
+          });
+        }
+      }
+      return mapDomainErrors(() =>
         setAppSetting({
           db: ctx.db,
           key: 'space_policy',
           value: input,
           actorId: ctx.user.id,
         }),
-      ),
-    ),
+      );
+    }),
   }),
 
   // ADR-034 / DESIGN-015 (PLAN-016) — the Pushover delivery window (the owner's quiet-hours control).

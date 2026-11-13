@@ -174,7 +174,7 @@ export async function getSpacePolicy(db?: DbClient): Promise<SpacePolicy> {
     perArray: resolvePerArray(stored),
     // DESIGN-014 amendment (2026-07-09, build A) — per-kind caps, migrating the retired flat key.
     perKind: resolvePerKind(stored),
-    // ADR-117 — absent on older rows. Off unless the stored switch is exactly true.
+    // ADR-120 — absent on older rows. Off unless the stored switch is exactly true.
     dynamicPace: resolveDynamicPace(stored?.dynamicPace),
   };
 }
@@ -253,7 +253,7 @@ export interface SpacePolicyArrayResult {
   unavailable: boolean;
   proposals: SpacePolicyProposal[];
   /**
-   * ADR-117 — the pace explanation when this run computed one. Null when the switch is off, the
+   * ADR-120 — the pace explanation when this run computed one. Null when the switch is off, the
    * array is opted out, or the free-space series could not be read. A non-applicable explanation
    * is still attached so the log shows why today's caps were kept.
    */
@@ -311,7 +311,7 @@ export async function evaluateSpacePolicy(input: {
   actorId?: string | null;
   now?: Date;
   /**
-   * ADR-117 — free-space history for one array. Called only when Dynamic Pace is switched on.
+   * ADR-120 — free-space history for one array. Called only when Dynamic Pace is switched on.
    * Null or a throw keeps today's caps. The sync script passes the chart's Prometheus query.
    */
   readFreeSpace?: (arrayKey: string) => Promise<readonly FreeSpaceSample[] | null>;
@@ -363,7 +363,7 @@ export async function evaluateSpacePolicy(input: {
         ? true
         : !util.unavailable && util.target !== null && overTarget;
 
-    // ADR-117 — size from the gap and the intake only when the switch is on AND the series was
+    // ADR-120 — size from the gap and the intake only when the switch is on AND the series was
     // read. Anything else keeps today's caps and today's gate. The reader is not called while off.
     const kinds = trashKindsForArray(util.key);
     let explanation: DynamicPaceExplanation | null = null;
@@ -488,11 +488,11 @@ async function proposeForKind(input: {
   /** DESIGN-014 amendment — per-kind composition caps (maxItems/targetBytes, worst-rated-first);
    *  absent ⇒ ALL candidates. */
   targeting?: BatchTargeting;
-  /** ADR-117 — set when the pace applied and this kind's ask is 0. The open-batch heal still runs. */
+  /** ADR-120 — set when the pace applied and this kind's ask is 0. The open-batch heal still runs. */
   paceSkip?: { reason: string };
-  /** ADR-117 — the deletable pending set already loaded for the pace. Skips a second Maintainerr read. */
+  /** ADR-120 — the deletable pending set already loaded for the pace. Skips a second Maintainerr read. */
   actionable?: Array<TrashPendingItem & { maintainerrMediaId: string }>;
-  /** ADR-117 — appended to a proposal's reason when the pace sized the ask. */
+  /** ADR-120 — appended to a proposal's reason when the pace sized the ask. */
   paceNote?: string;
 }): Promise<SpacePolicyProposal> {
   const base = {
@@ -853,7 +853,7 @@ export interface DynamicPaceRead {
 }
 
 /**
- * ADR-117 — the reasoning for each batchable array (gap, intake, required, chosen, shortfall),
+ * ADR-120 — the reasoning for each batchable array (gap, intake, required, chosen, shortfall),
  * including while the switch is off. A missing series comes back as not applicable with a zero
  * ask. Throws only if the disk or the snapshot read throws; the router turns that into a null
  * pace so the existing card still loads.

@@ -134,14 +134,14 @@ export interface SpacePolicy {
    *  graceful migration of the retired flat `targetBytesPerBatch` key). */
   perKind: SpacePolicyPerKind;
   /**
-   * ADR-117 / DESIGN-014 D-15 — Dynamic Pace. Absent on rows written before it; getSpacePolicy
+   * ADR-120 / DESIGN-014 D-16 — Dynamic Pace. Absent on rows written before it; getSpacePolicy
    * fills the measured defaults with `enabled: false`. While it is off, the per-kind caps and the
    * over-target gate are unchanged.
    */
   dynamicPace?: DynamicPaceConfig;
 }
 
-/** The audited Dynamic Pace bounds. `enabled` ships false. Horizon, floor and ceiling are the D-15 defaults. */
+/** The audited Dynamic Pace bounds. `enabled` ships false. Horizon, floor and ceiling are the D-16 defaults. */
 export interface DynamicPaceConfig {
   enabled: boolean;
   horizonDays: number;

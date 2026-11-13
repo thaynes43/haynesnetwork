@@ -1,4 +1,4 @@
-// ADR-117 / DESIGN-014 D-15 (story 820) — Dynamic Pace. How many bytes a Trash batch asks for,
+// ADR-120 / DESIGN-014 D-16 (story 820) — Dynamic Pace. How many bytes a Trash batch asks for,
 // from the capacity gap and the intake. It never chooses titles: the existing guards still do.
 //
 // The switch ships off. While it is off, nothing in this file decides a batch.
@@ -256,6 +256,21 @@ export function resolveDynamicPace(raw: unknown): DynamicPaceConfig {
   };
 }
 
+/**
+ * Settings edge (ADR-120). Saving a horizon shorter than the save window is refused.
+ * The sizing formula also clamps `window / horizon` at 1, so a window lengthened after
+ * a legal save cannot multiply one window's requirement by more than one.
+ */
+export function dynamicPaceHorizonFitsWindow(horizonDays: number, windowDays: number): boolean {
+  return (
+    Number.isInteger(horizonDays) &&
+    Number.isInteger(windowDays) &&
+    windowDays >= 1 &&
+    horizonDays >= windowDays &&
+    horizonDays <= 3660
+  );
+}
+
 /** The proposal filter, shared so the status snapshot and the live proposal count the same titles. */
 export function isPaceDeletable<
   T extends {
@@ -433,8 +448,10 @@ export function explainDynamicPace(input: {
   const intakeBytesPerDay = rateKnown ? (rate < 0 ? -rate : 0) : null;
   const saveOk = input.saveRate != null && input.saveRate >= 0 && input.saveRate < 1;
   const yieldRate = saveOk ? 1 - input.saveRate! : 1;
+  // A window longer than the horizon must not ask for more than the horizon's requirement.
+  const windowShare = Math.min(1, input.windowDays / input.horizonDays);
   const requiredDeletedBytes = overTarget
-    ? Math.max(0, gapBytes - rate * input.horizonDays) * (input.windowDays / input.horizonDays)
+    ? Math.max(0, gapBytes - rate * input.horizonDays) * windowShare
     : Math.max(0, -rate * input.windowDays);
   const unclampedBytes = requiredDeletedBytes <= 0 ? 0 : requiredDeletedBytes / yieldRate;
   const ask =
@@ -460,7 +477,7 @@ export function explainDynamicPace(input: {
     windowDays: input.windowDays,
     horizonDays: input.horizonDays,
     intakePerWindowBytes: intakeBytesPerDay == null ? 0 : intakeBytesPerDay * input.windowDays,
-    gapPerWindowBytes: overTarget ? (gapBytes * input.windowDays) / input.horizonDays : 0,
+    gapPerWindowBytes: overTarget ? gapBytes * windowShare : 0,
     requiredDeletedBytes,
     saveRate: input.saveRate,
     yieldRate,

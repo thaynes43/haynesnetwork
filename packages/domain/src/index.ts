@@ -73,7 +73,7 @@ export * from './storage-metrics';
 export * from './storage-forecast';
 // ADR-031 / DESIGN-014 (PLAN-014) — space-driven policy (propose-only) + rules-tuning report
 export * from './space-policy';
-// ADR-117 / DESIGN-014 D-15 — Dynamic Pace (byte ask; the switch ships off)
+// ADR-120 / DESIGN-014 D-16 — Dynamic Pace (byte ask; the switch ships off)
 export * from './space-policy-pace';
 export * from './trash-tuning';
 // ADR-027 / DESIGN-004 D-15 (PLAN-010) — Message-of-the-Day: reader + single-writers over app_settings

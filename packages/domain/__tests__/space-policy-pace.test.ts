@@ -1,4 +1,4 @@
-// ADR-117 / DESIGN-014 D-15 — Dynamic Pace is a pure function of the disk, a free-space series,
+// ADR-120 / DESIGN-014 D-16 — Dynamic Pace is a pure function of the disk, a free-space series,
 // Trash's own recorded deletions, the save rate and the eligible pools. These tests do not boot
 // a database. The setting-off path is in space-policy.test.ts.
 import { describe, expect, it } from 'vitest';
@@ -7,6 +7,7 @@ import {
   DYNAMIC_PACE_FLOOR_BYTES,
   DYNAMIC_PACE_HORIZON_DAYS,
   addRecordedDeletions,
+  dynamicPaceHorizonFitsWindow,
   explainDynamicPace,
   forecastFreeSpace,
   resolveDynamicPace,
@@ -211,6 +212,15 @@ describe('explainDynamicPace', () => {
     expect(paced.gapBytes).toBe(100);
   });
 
+  it('clamps the window-to-horizon ratio at 1', () => {
+    const longWindow = explain({ windowDays: 90, horizonDays: 60, samples: series(-10) });
+    const ratioOne = explain({ windowDays: 60, horizonDays: 60, samples: series(-10) });
+    // Same horizon and the same series: a 90-day window must not ask for 90/60 of the 60-day window.
+    expect(longWindow.requiredDeletedBytes).toBeCloseTo(ratioOne.requiredDeletedBytes, 5);
+    expect(longWindow.gapPerWindowBytes).toBeCloseTo(longWindow.gapBytes, 6);
+    expect(longWindow.applicable).toBe(true);
+  });
+
   it('a ceiling below the floor does not size a batch', () => {
     const paced = explain({ ceilingBytes: 10, floorBytes: 20 });
     expect(paced.applicable).toBe(false);
@@ -234,6 +244,16 @@ describe('explainDynamicPace', () => {
     expect(paced.chosenBytes).toBe(100);
     expect(paced.kinds.reduce((sum, kind) => sum + kind.chosenBytes, 0)).toBe(100);
     expect(paced.kinds.every((kind) => kind.chosenBytes <= kind.poolBytes)).toBe(true);
+  });
+});
+
+describe('dynamicPaceHorizonFitsWindow', () => {
+  it('refuses a horizon shorter than the save window', () => {
+    expect(dynamicPaceHorizonFitsWindow(60, 7)).toBe(true);
+    expect(dynamicPaceHorizonFitsWindow(7, 7)).toBe(true);
+    expect(dynamicPaceHorizonFitsWindow(1, 7)).toBe(false);
+    expect(dynamicPaceHorizonFitsWindow(60, 90)).toBe(false);
+    expect(dynamicPaceHorizonFitsWindow(3661, 7)).toBe(false);
   });
 });
 

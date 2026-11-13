@@ -577,7 +577,7 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(movieKind.hasOpenBatch).toBe(true);
   });
 
-  // ADR-117 / DESIGN-014 D-15. The switch ships off. While it is off the reader is not called and
+  // ADR-120 / DESIGN-014 D-16. The switch ships off. While it is off the reader is not called and
   // the per-kind caps decide the batch. While it is on and the series can be sized, the byte ask
   // replaces those caps. movieCollection is 4e9 + 3e9 + 2e9, so a 5e9 ask takes two titles and a
   // maxItems of 1 takes one.

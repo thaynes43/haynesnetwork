@@ -221,7 +221,7 @@ export interface RunSyncOptions {
    *  utilization from (getUtilization). Required only for that mode; tests inject a stubbed bundle. */
   arr?: UtilizationArrBundle;
   /**
-   * ADR-117 — free-space history for Dynamic Pace. The sync script passes the chart's Prometheus
+   * ADR-120 — free-space history for Dynamic Pace. The sync script passes the chart's Prometheus
    * query. Called only when the pace switch is on; omitted in tests, which keep today's caps.
    */
   readFreeSpace?: (arrayKey: string) => Promise<ReadonlyArray<{ t: number; freeBytes: number }> | null>;
