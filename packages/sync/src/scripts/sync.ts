@@ -910,9 +910,11 @@ async function main(): Promise<number> {
           plexMatch: {
             upserted: report.plexMatch.upserted,
             removed: report.plexMatch.removed,
+            crossTypeRemoved: report.plexMatch.crossTypeRemoved,
             byKind: report.plexMatch.stats.byKind,
             plexTitlesIndexed: report.plexMatch.stats.plexTitlesIndexed,
             unmappedSections: report.plexMatch.stats.unmappedSections,
+            typeDisagreements: report.plexMatch.stats.typeDisagreements,
           },
         }
       : {}),

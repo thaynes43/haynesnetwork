@@ -11,10 +11,12 @@ import {
   upsertPlexLibraries,
   type PlexClientBundle,
 } from '@hnet/domain';
-import { parseCrossTypeRepairArgs } from '../src/scripts/plex-match-type-repair';
+import { formatCrossTypeRepairReport, parseCrossTypeRepairArgs } from '../src/scripts/plex-match-type-repair';
 import type { PlexReadClient } from '@hnet/plex/read';
 import type { PlexSectionItem } from '@hnet/plex';
+import { lookupHouseholdWatch, type TitleWatch, type WatchIndex } from '../src/metadata-refresh';
 import { fetchPlexMatchSnapshot, parsePlexGuids } from '../src/plex-match';
+import type { SyncLogger } from '../src/logger';
 import { bootMigratedDb, type TestDb } from './helpers';
 
 describe('parsePlexGuids', () => {
@@ -275,6 +277,8 @@ describe('fetchPlexMatchSnapshot + syncPlexMatches (ADR-047)', () => {
     ]);
     expect(snap.scopedLibraryIds.sort()).toEqual([moviesLib, showLib, artistLib].sort());
     expect(snap.scopedLibraryIds).not.toContain(mislabeled);
+    expect(snap.stats.typeDisagreements).toBe(1);
+    expect(snap.typeDisagreementLibraryIds).toEqual([mislabeled]);
 
     const report = await syncPlexMatches({
       db: t.db,
@@ -328,6 +332,98 @@ describe('fetchPlexMatchSnapshot + syncPlexMatches (ADR-047)', () => {
   });
 });
 
+describe('a library whose live type disagrees with the registry', () => {
+  it('keeps a row that fits the live type through a run', async () => {
+    await upsertPlexLibraries({
+      db: t.db,
+      slug: 'haynestower',
+      libraries: [{ sectionKey: '8', name: 'Stale type', mediaType: 'show' }],
+    });
+    const [lib] = await t.db
+      .select({ id: plexLibraries.id })
+      .from(plexLibraries)
+      .where(
+        and(
+          eq(plexLibraries.serverId, SEEDED_PLEX_SERVER_IDS.haynestower),
+          eq(plexLibraries.sectionKey, '8'),
+        ),
+      );
+    const [movie] = await t.db
+      .select({ id: mediaItems.id })
+      .from(mediaItems)
+      .where(and(eq(mediaItems.arrKind, 'radarr'), eq(mediaItems.arrItemId, 1)));
+    await t.db.insert(mediaPlexMatches).values({
+      mediaItemId: movie!.id,
+      plexLibraryId: lib!.id,
+      ratingKey: 'fits-live',
+      matchedVia: 'tmdb',
+      plexAddedAt: new Date('2024-01-01T00:00:00.000Z'),
+    });
+    const errors: string[] = [];
+    const logger: SyncLogger = {
+      info: () => {},
+      warn: () => {},
+      error: (message) => {
+        errors.push(message);
+      },
+    };
+    const plex = {
+      read: {
+        haynestower: {
+          machineIdentifier: 'mach-tower',
+          async listSections() {
+            return [{ key: '8', title: 'Stale type', type: 'movie' }];
+          },
+          async listSectionContentsPage() {
+            return { items: [], totalSize: 0 };
+          },
+        },
+      },
+    } as unknown as Pick<PlexClientBundle, 'read'>;
+    const snap = await fetchPlexMatchSnapshot({ db: t.db, plex, logger });
+    expect(snap.stats.typeDisagreements).toBe(1);
+    expect(snap.typeDisagreementLibraryIds).toEqual([lib!.id]);
+    expect(snap.scopedLibraryIds).not.toContain(lib!.id);
+    expect(errors).toEqual([
+      'plex-match: section type disagrees with the registry (skipped, not scoped)',
+    ]);
+    const report = await syncPlexMatches({
+      db: t.db,
+      matches: snap.matches,
+      scopedLibraryIds: snap.scopedLibraryIds,
+      excludeCrossTypeLibraryIds: snap.typeDisagreementLibraryIds,
+    });
+    expect(report.crossTypeRemoved).toBe(0);
+    const kept = await t.db
+      .select({ ratingKey: mediaPlexMatches.ratingKey })
+      .from(mediaPlexMatches)
+      .where(eq(mediaPlexMatches.ratingKey, 'fits-live'));
+    expect(kept).toHaveLength(1);
+  });
+});
+
+describe('household plays are joined by id number', () => {
+  it('gives a movie and a show that share a TMDB number the same play, with no match row involved', () => {
+    const played: TitleWatch = {
+      instanceSlug: 'haynestower',
+      guids: { tmdbId: 500501 },
+      playCount: 7,
+      lastViewedAt: new Date('2026-09-28T00:00:00.000Z'),
+      perUser: new Map(),
+    };
+    const index: WatchIndex = {
+      byTmdb: new Map([[500501, new Set([played])]]),
+      byImdb: new Map(),
+      byTvdb: new Map(),
+    };
+    const movie = lookupHouseholdWatch(index, { tmdbId: 500501, imdbId: null, tvdbId: null });
+    const show = lookupHouseholdWatch(index, { tmdbId: 500501, imdbId: null, tvdbId: 801 });
+    expect(movie?.household.playCount).toBe(7);
+    expect(show?.household.playCount).toBe(7);
+    expect(show?.household.lastViewedAt?.toISOString()).toBe('2026-09-28T00:00:00.000Z');
+  });
+});
+
 describe('parseCrossTypeRepairArgs', () => {
   it('requires exactly one of --dry-run or --apply', () => {
     expect(parseCrossTypeRepairArgs(['--dry-run'])).toEqual({ dryRun: true });
@@ -336,6 +432,27 @@ describe('parseCrossTypeRepairArgs', () => {
     expect(() => parseCrossTypeRepairArgs([])).toThrow(/exactly one/);
     expect(() => parseCrossTypeRepairArgs(['--dry-run', '--apply'])).toThrow(/exactly one/);
     expect(() => parseCrossTypeRepairArgs(['--dry-run', '--extra'])).toThrow(/exactly one/);
+  });
+
+  it('prints title, year, kind and library for each selected row', () => {
+    const text = formatCrossTypeRepairReport({
+      dryRun: true,
+      selected: 1,
+      removed: 0,
+      groups: [],
+      titles: [
+        {
+          title: 'A Simple Plan',
+          year: 1998,
+          arrKind: 'radarr',
+          serverSlug: 'haynesops',
+          libraryName: 'HOps TV Shows',
+        },
+      ],
+    });
+    expect(text.split('\n')[0]).toBe('A Simple Plan\t1998\tradarr\thaynesops/HOps TV Shows');
+    expect(text).toContain('"selected":1');
+    expect(text).toContain('"dryRun":true');
   });
 });
 

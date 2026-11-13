@@ -2,9 +2,10 @@
 // A second run is a no-op. The sync writer does the same delete, including for a library it did not read.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { mediaItems, mediaPlexMatches, plexLibraries, type Database } from '@hnet/db';
+import { mediaItems, mediaMetadata, mediaPlexMatches, plexLibraries, type Database } from '@hnet/db';
 import {
   FITTING_PLEX_MEDIA_TYPE,
+  judgeAge,
   repairCrossTypePlexMatches,
   syncPlexMatches,
   upsertMediaItemsBatch,
@@ -130,6 +131,36 @@ describe('repairCrossTypePlexMatches (ADR-123)', () => {
     expect(dry.selected).toBe(4);
     expect(dry.removed).toBe(0);
     expect(dry.groups.map((group) => group.rows).reduce((sum, n) => sum + n, 0)).toBe(4);
+    expect(dry.titles).toEqual([
+      {
+        title: 'Artist',
+        year: null,
+        arrKind: 'lidarr',
+        serverSlug: 'haynestower',
+        libraryName: 'Movies',
+      },
+      {
+        title: 'Movie',
+        year: null,
+        arrKind: 'radarr',
+        serverSlug: 'haynestower',
+        libraryName: 'Photos',
+      },
+      {
+        title: 'Movie',
+        year: null,
+        arrKind: 'radarr',
+        serverSlug: 'haynestower',
+        libraryName: 'TV',
+      },
+      {
+        title: 'Show',
+        year: null,
+        arrKind: 'sonarr',
+        serverSlug: 'haynestower',
+        libraryName: 'Movies',
+      },
+    ]);
     expect(await ratingKeys()).toEqual([
       'a1',
       'bad-artist',
@@ -149,6 +180,7 @@ describe('repairCrossTypePlexMatches (ADR-123)', () => {
     expect(second.selected).toBe(0);
     expect(second.removed).toBe(0);
     expect(second.groups).toEqual([]);
+    expect(second.titles).toEqual([]);
     expect(await ratingKeys()).toEqual(['a1', 'm1', 's1']);
   });
 
@@ -193,6 +225,140 @@ describe('repairCrossTypePlexMatches (ADR-123)', () => {
       scopedLibraryIds: [movieLib, showLib, artistLib],
     });
     expect(report.crossTypeRemoved).toBe(1);
+    expect(report.crossTypeGroups).toEqual([
+      expect.objectContaining({
+        serverSlug: 'haynestower',
+        libraryName: 'TV',
+        mediaType: 'show',
+        arrKind: 'radarr',
+        matchedVia: 'imdb',
+        rows: 1,
+      }),
+    ]);
     expect(await ratingKeys()).toEqual(['a1', 'm1', 's1']);
+  });
+
+  it('a healthy run counts a stale wrong row as crossTypeRemoved, and the Age Guard goes from recent to clear', async () => {
+    const recent = new Date('2026-10-01T00:00:00.000Z');
+    const old = new Date('2024-01-01T00:00:00.000Z');
+    const now = Date.parse('2026-11-13T17:00:00.000Z');
+    await t.db
+      .update(mediaPlexMatches)
+      .set({ plexAddedAt: old })
+      .where(
+        and(eq(mediaPlexMatches.mediaItemId, movieId), eq(mediaPlexMatches.plexLibraryId, movieLib)),
+      );
+    await t.db.insert(mediaPlexMatches).values({
+      mediaItemId: movieId,
+      plexLibraryId: showLib,
+      ratingKey: 'stale-wrong',
+      matchedVia: 'tmdb',
+      plexAddedAt: recent,
+      lastSeenAt: new Date('2020-01-01T00:00:00.000Z'),
+    });
+    await t.db.insert(mediaMetadata).values({
+      mediaItemId: movieId,
+      playCount: 4,
+      lastViewedAt: new Date('2026-09-01T00:00:00.000Z'),
+    });
+    expect(
+      judgeAge(
+        { newestImportAt: null, newestPlexAddedAt: recent, plexMatches: 2, plexUndated: 0 },
+        now,
+      ).ageGuard,
+    ).toBe('recent');
+
+    const report = await syncPlexMatches({
+      db: t.db,
+      matches: [
+        {
+          mediaItemId: movieId,
+          plexLibraryId: movieLib,
+          ratingKey: 'm1',
+          matchedVia: 'tmdb',
+          plexAddedAt: old,
+        },
+        {
+          mediaItemId: showId,
+          plexLibraryId: showLib,
+          ratingKey: 's1',
+          matchedVia: 'tvdb',
+          plexAddedAt: old,
+        },
+        {
+          mediaItemId: artistId,
+          plexLibraryId: artistLib,
+          ratingKey: 'a1',
+          matchedVia: 'musicbrainz',
+        },
+      ],
+      scopedLibraryIds: [movieLib, showLib, artistLib],
+      now: new Date(now),
+    });
+    expect(report.removed).toBe(0);
+    expect(report.crossTypeRemoved).toBe(1);
+    expect(report.crossTypeGroups).toEqual([
+      expect.objectContaining({ arrKind: 'radarr', mediaType: 'show', rows: 1 }),
+    ]);
+    expect(await ratingKeys()).toEqual(['a1', 'm1', 's1']);
+    expect(
+      judgeAge(
+        { newestImportAt: null, newestPlexAddedAt: old, plexMatches: 1, plexUndated: 0 },
+        now,
+      ).ageGuard,
+    ).toBe('clear');
+    const [stored] = await t.db
+      .select({ playCount: mediaMetadata.playCount, lastViewedAt: mediaMetadata.lastViewedAt })
+      .from(mediaMetadata)
+      .where(eq(mediaMetadata.mediaItemId, movieId));
+    expect(stored).toEqual({
+      playCount: 4,
+      lastViewedAt: new Date('2026-09-01T00:00:00.000Z'),
+    });
+  });
+
+  it('removes a cross-type IMDb row and keeps the fitting IMDb row', async () => {
+    await t.db
+      .update(mediaPlexMatches)
+      .set({ matchedVia: 'imdb', ratingKey: 'show-imdb' })
+      .where(
+        and(eq(mediaPlexMatches.mediaItemId, showId), eq(mediaPlexMatches.plexLibraryId, showLib)),
+      );
+    await t.db.insert(mediaPlexMatches).values({
+      mediaItemId: showId,
+      plexLibraryId: movieLib,
+      ratingKey: 'movie-imdb',
+      matchedVia: 'imdb',
+    });
+    const applied = await repairCrossTypePlexMatches({ db: t.db, dryRun: false });
+    expect(applied.removed).toBe(1);
+    expect(applied.titles).toEqual([
+      expect.objectContaining({
+        title: 'Show',
+        arrKind: 'sonarr',
+        libraryName: 'Movies',
+      }),
+    ]);
+    expect(await ratingKeys()).toEqual(['a1', 'm1', 'show-imdb']);
+  });
+
+  it('leaves an excluded library out of the cross-type delete', async () => {
+    await t.db.insert(mediaPlexMatches).values({
+      mediaItemId: movieId,
+      plexLibraryId: showLib,
+      ratingKey: 'kept-live',
+      matchedVia: 'tmdb',
+    });
+    const report = await syncPlexMatches({
+      db: t.db,
+      matches: [
+        { mediaItemId: movieId, plexLibraryId: movieLib, ratingKey: 'm1', matchedVia: 'tmdb' },
+      ],
+      scopedLibraryIds: [movieLib],
+      excludeCrossTypeLibraryIds: [showLib],
+    });
+    expect(report.crossTypeRemoved).toBe(0);
+    expect(await ratingKeys()).toContain('kept-live');
+    await t.db.delete(mediaPlexMatches).where(eq(mediaPlexMatches.ratingKey, 'kept-live'));
   });
 });

@@ -2,7 +2,26 @@
 // ledger kind. Dry-run is the default path to inspect; apply deletes only those rows, through the
 // domain writer. It does not read or write Plex.
 import { getPool } from '@hnet/db';
-import { repairCrossTypePlexMatches } from '@hnet/domain';
+import {
+  repairCrossTypePlexMatches,
+  type CrossTypePlexMatchRepairReport,
+} from '@hnet/domain';
+
+/** One readable line per selected row: title, year, kind, and server library. */
+export function formatCrossTypeRepairReport(report: CrossTypePlexMatchRepairReport): string {
+  const lines = report.titles.map((row) => {
+    const year = row.year === null ? '' : String(row.year);
+    const library = `${row.serverSlug}/${row.libraryName}`;
+    return [row.title, year, row.arrKind, library].join('\t');
+  });
+  const summary = {
+    dryRun: report.dryRun,
+    selected: report.selected,
+    removed: report.removed,
+    groups: report.groups,
+  };
+  return [...lines, JSON.stringify(summary)].join('\n');
+}
 
 const USAGE = `Usage: plex-match-type-repair.ts --dry-run|--apply
 Env: DATABASE_URL. Selects rows where the library type is not radarr/movie, sonarr/show or lidarr/artist.
@@ -29,7 +48,7 @@ async function main(): Promise<number> {
   getPool();
   poolStarted = true;
   const report = await repairCrossTypePlexMatches({ dryRun: args.dryRun });
-  console.log(JSON.stringify(report));
+  console.log(formatCrossTypeRepairReport(report));
   return 0;
 }
 

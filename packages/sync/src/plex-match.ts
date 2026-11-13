@@ -68,6 +68,11 @@ export interface PlexMatchStats {
   scopedLibraryIds: string[];
   /** Plex sections present on a server but absent from the plex_libraries registry (skipped). */
   unmappedSections: number;
+  /**
+   * Sections skipped because the live type disagrees with the registry. Their library ids are
+   * `PlexMatchSnapshot.typeDisagreementLibraryIds` and are left out of the cross-type delete.
+   */
+  typeDisagreements: number;
   /** Total Plex titles indexed across all matchable libraries. */
   plexTitlesIndexed: number;
 }
@@ -75,6 +80,11 @@ export interface PlexMatchStats {
 export interface PlexMatchSnapshot {
   matches: PlexMatchInput[];
   scopedLibraryIds: string[];
+  /**
+   * plex_libraries.id skipped because the live section type disagrees with the registry.
+   * `syncPlexMatches` leaves these out of the cross-type delete.
+   */
+  typeDisagreementLibraryIds: string[];
   stats: PlexMatchStats;
 }
 
@@ -139,7 +149,9 @@ export async function fetchPlexMatchSnapshot(input: {
   // A title mirrored across libraries of its own type yields several hits.
   const guidIndex = new Map<string, PlexHit[]>();
   const scopedLibraryIds = new Set<string>();
+  const typeDisagreementLibraryIds = new Set<string>();
   let unmappedSections = 0;
+  let typeDisagreements = 0;
   let plexTitlesIndexed = 0;
 
   const slugs = Object.keys(input.plex.read) as PlexServerSlug[];
@@ -168,13 +180,17 @@ export async function fetchPlexMatchSnapshot(input: {
         continue; // no plex_libraries row — cannot FK a match; run a registry refresh first
       }
       if (section.type !== lib.mediaType) {
-        // The registry and the live section disagree. Do not index it and do not scope it: a partial
-        // type would let reconcile drop fitting rows, or let a show section answer a movie lookup.
-        logger.info('plex-match: section type disagrees with the registry (skipped, not scoped)', {
+        // The registry and the live section disagree. Do not index it and do not scope it, and leave
+        // the library out of the cross-type delete: the registry type would remove rows that fit the
+        // live type, and this skip would not put them back.
+        typeDisagreements += 1;
+        typeDisagreementLibraryIds.add(lib.libraryId);
+        logger.error('plex-match: section type disagrees with the registry (skipped, not scoped)', {
           server: slug,
           section: section.key,
           sectionType: section.type,
           registryType: lib.mediaType,
+          libraryId: lib.libraryId,
         });
         continue;
       }
@@ -264,9 +280,17 @@ export async function fetchPlexMatchSnapshot(input: {
   }
 
   const scoped = [...scopedLibraryIds];
+  const disagreed = [...typeDisagreementLibraryIds];
   return {
     matches,
     scopedLibraryIds: scoped,
-    stats: { byKind, scopedLibraryIds: scoped, unmappedSections, plexTitlesIndexed },
+    typeDisagreementLibraryIds: disagreed,
+    stats: {
+      byKind,
+      scopedLibraryIds: scoped,
+      unmappedSections,
+      typeDisagreements,
+      plexTitlesIndexed,
+    },
   };
 }

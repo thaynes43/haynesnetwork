@@ -2,8 +2,8 @@
 // (`media_plex_matches`). The `plex-match` sync mode resolves each ledger media_item to its exact Plex
 // {library, ratingKey} by shared-GUID match inside the fitting library type (ADR-123: radarr→movie,
 // sonarr→show, lidarr→artist). The @hnet/sync fetcher knows the Plex wire shape and hands the resolved
-// rows here to be UPSERTED (one row per media_item), RECONCILED (a title that dropped out of a fully-read
-// library is removed) and stripped of any cross-type row — all in one transaction. Rebuildable derived cache (the *arrs + Plex
+// rows here to be UPSERTED (one row per media_item), stripped of any cross-type row, then RECONCILED (a
+// title that dropped out of a fully-read library is removed) — all in one transaction. Rebuildable derived cache (the *arrs + Plex
 // are the sources of truth), so no per-row audit event; the no-direct-state-writes guard forbids any other
 // module from touching the table.
 import {
@@ -49,6 +49,12 @@ export interface SyncPlexMatchesInput {
    */
   scopedLibraryIds: string[];
   now?: Date;
+  /**
+   * plex_libraries.id whose live section type disagreed with the registry this run. Left out of the
+   * cross-type delete: the registry type would call a live-fitting row wrong, and the skipped
+   * section will not put it back.
+   */
+  excludeCrossTypeLibraryIds?: readonly string[];
 }
 
 export interface SyncPlexMatchesReport {
@@ -56,11 +62,14 @@ export interface SyncPlexMatchesReport {
   /** Stale matches removed (matched before into a scoped library, absent from this run's set). */
   removed: number;
   /**
-   * ADR-123 — cross-type rows deleted in the same transaction. A row whose library type does not fit
-   * the ledger kind, including one this run just upserted and one in a library that was not read.
-   * A fitting row is never deleted here.
+   * ADR-123 — cross-type rows deleted after the upsert and before the reconcile, so a stale wrong
+   * row in a fully read library is counted here rather than as `removed`. Includes one this run
+   * just upserted and one in a library that was not read. A library whose live section type
+   * disagreed with the registry is left out. A fitting row is never deleted here.
    */
   crossTypeRemoved: number;
+  /** The groups behind `crossTypeRemoved`. Empty when that count is 0. */
+  crossTypeGroups: CrossTypePlexMatchGroup[];
 }
 
 /** One cross-type row the repair would delete, grouped the way the census counts them. */
@@ -80,6 +89,17 @@ export interface CrossTypePlexMatchRepairReport {
   /** Rows deleted. 0 when `dryRun` is true. */
   removed: number;
   groups: CrossTypePlexMatchGroup[];
+  /** One line per selected row, so a dry run can be read as a list. */
+  titles: CrossTypePlexMatchTitle[];
+}
+
+/** One selected cross-type row, named so a person can read the dry run. */
+export interface CrossTypePlexMatchTitle {
+  title: string;
+  year: number | null;
+  arrKind: ArrKind;
+  serverSlug: string;
+  libraryName: string;
 }
 
 const CHUNK = 500;
@@ -106,6 +126,8 @@ function crossTypeCondition(): SQL {
 
 interface CrossTypeRow {
   id: string;
+  title: string;
+  year: number | null;
   serverSlug: string;
   libraryName: string;
   mediaType: PlexMediaType;
@@ -113,10 +135,21 @@ interface CrossTypeRow {
   matchedVia: PlexMatchGuidSource;
 }
 
-async function selectCrossTypeRows(tx: DbClient): Promise<CrossTypeRow[]> {
+async function selectCrossTypeRows(
+  tx: DbClient,
+  excludeLibraryIds: readonly string[],
+): Promise<CrossTypeRow[]> {
+  const fitting = crossTypeCondition();
+  const where =
+    excludeLibraryIds.length === 0
+      ? fitting
+      : and(fitting, not(inArray(mediaPlexMatches.plexLibraryId, [...excludeLibraryIds])));
+  if (where === undefined) throw new Error('plex-match cross-type filter did not build');
   const rows = await tx
     .select({
       id: mediaPlexMatches.id,
+      title: mediaItems.title,
+      year: mediaItems.year,
       serverSlug: plexServers.slug,
       libraryName: plexLibraries.name,
       mediaType: plexLibraries.mediaType,
@@ -127,9 +160,11 @@ async function selectCrossTypeRows(tx: DbClient): Promise<CrossTypeRow[]> {
     .innerJoin(mediaItems, eq(mediaItems.id, mediaPlexMatches.mediaItemId))
     .innerJoin(plexLibraries, eq(plexLibraries.id, mediaPlexMatches.plexLibraryId))
     .innerJoin(plexServers, eq(plexServers.id, plexLibraries.serverId))
-    .where(crossTypeCondition());
+    .where(where);
   return rows.map((row) => ({
     id: row.id,
+    title: row.title,
+    year: row.year,
     serverSlug: row.serverSlug,
     libraryName: row.libraryName,
     mediaType: row.mediaType,
@@ -167,20 +202,41 @@ function groupCrossTypeRows(rows: readonly CrossTypeRow[]): CrossTypePlexMatchGr
   );
 }
 
+function listCrossTypeTitles(rows: readonly CrossTypeRow[]): CrossTypePlexMatchTitle[] {
+  return rows
+    .map((row) => ({
+      title: row.title,
+      year: row.year,
+      arrKind: row.arrKind,
+      serverSlug: row.serverSlug,
+      libraryName: row.libraryName,
+    }))
+    .sort(
+      (a, b) =>
+        a.title.localeCompare(b.title) ||
+        (a.year ?? 0) - (b.year ?? 0) ||
+        a.arrKind.localeCompare(b.arrKind) ||
+        a.serverSlug.localeCompare(b.serverSlug) ||
+        a.libraryName.localeCompare(b.libraryName),
+    );
+}
+
 /**
  * ADR-123 / DESIGN-025 D-10 — delete cross-type `media_plex_matches` rows and nothing else.
  * `dryRun` selects and writes nothing. A second apply selects nothing. The plex-match sync calls this
- * with `dryRun: false` in its own transaction, so the next match run removes rows a partial Plex read
- * would otherwise leave in an unscanned library.
+ * with `dryRun: false` after its upsert and before its reconcile, so a stale wrong row in a fully
+ * read library is counted as `crossTypeRemoved`. `excludeLibraryIds` leaves out a library whose live
+ * section type disagreed with the registry.
  */
 export async function repairCrossTypePlexMatches(input: {
   db?: DbClient;
   dryRun: boolean;
+  excludeLibraryIds?: readonly string[];
 }): Promise<CrossTypePlexMatchRepairReport> {
   let selected: CrossTypeRow[] = [];
   let removed = 0;
   await inTransaction(input.db, async (tx) => {
-    selected = await selectCrossTypeRows(tx);
+    selected = await selectCrossTypeRows(tx, input.excludeLibraryIds ?? []);
     if (input.dryRun || selected.length === 0) return;
     const ids = selected.map((row) => row.id);
     for (let i = 0; i < ids.length; i += CHUNK) {
@@ -197,6 +253,7 @@ export async function repairCrossTypePlexMatches(input: {
     selected: selected.length,
     removed,
     groups: groupCrossTypeRows(selected),
+    titles: listCrossTypeTitles(selected),
   };
 }
 
@@ -221,6 +278,7 @@ export async function syncPlexMatches(input: SyncPlexMatchesInput): Promise<Sync
 
   let removed = 0;
   let crossTypeRemoved = 0;
+  let crossTypeGroups: CrossTypePlexMatchGroup[] = [];
 
   await inTransaction(input.db, async (tx) => {
     for (let i = 0; i < values.length; i += CHUNK) {
@@ -242,6 +300,19 @@ export async function syncPlexMatches(input: SyncPlexMatchesInput): Promise<Sync
         });
     }
 
+    // ADR-123 — before reconcile, so a stale wrong row in a fully read library is counted here
+    // (reconcile would otherwise delete it as `removed` and this count would stay 0). A library
+    // whose live type disagreed with the registry is left out.
+    const repair = await repairCrossTypePlexMatches({
+      db: tx,
+      dryRun: false,
+      ...(input.excludeCrossTypeLibraryIds !== undefined
+        ? { excludeLibraryIds: input.excludeCrossTypeLibraryIds }
+        : {}),
+    });
+    crossTypeRemoved = repair.removed;
+    crossTypeGroups = repair.groups;
+
     if (input.scopedLibraryIds.length > 0) {
       const result = await tx
         .delete(mediaPlexMatches)
@@ -254,12 +325,7 @@ export async function syncPlexMatches(input: SyncPlexMatchesInput): Promise<Sync
         .returning({ id: mediaPlexMatches.id });
       removed = result.length;
     }
-
-    // ADR-123 — drop cross-type rows even when their library was not read this run, and drop one this
-    // upsert just wrote (its last_seen_at is the run start, so reconcile leaves it).
-    const repair = await repairCrossTypePlexMatches({ db: tx, dryRun: false });
-    crossTypeRemoved = repair.removed;
   });
 
-  return { upserted: values.length, removed, crossTypeRemoved };
+  return { upserted: values.length, removed, crossTypeRemoved, crossTypeGroups };
 }
