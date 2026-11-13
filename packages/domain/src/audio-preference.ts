@@ -131,10 +131,10 @@ const SERVER_NAMES: Record<PlexServerName, string> = {
 const isServerSlug = (slug: string): slug is PlexServerName => (PLEX_SERVERS as readonly string[]).includes(slug);
 
 /**
- * The title's Plex items (ADR-047 match), one per server. A title can match in two libraries of one server, a show in
- * its TV library and a same-named movie in a movie library (12 Sonarr titles live, 2026-10-13: Love, Death & Robots on
- * HaynesOps matched movie 11764 before show 55811). The item in a library of the title's own kind wins (`show` for
- * Sonarr, `movie` for Radarr), then the lowest rating key.
+ * The title's Plex items (ADR-047 match), one per server. ADR-123 stops the matcher storing a cross-type row.
+ * A stale row can remain until the repair runs: a show in its TV library and a same-named movie in a movie library
+ * (Love, Death & Robots on HaynesOps, read 2026-10-13, movie key below the show key). The item in a library of the
+ * title's own kind wins (`show` for Sonarr, `movie` for Radarr), then the lowest rating key.
  */
 async function plexItemsFor(db: DbClient | undefined, mediaItemId: string, kind: 'show' | 'movie') {
   const rows = await resolveDb(db)

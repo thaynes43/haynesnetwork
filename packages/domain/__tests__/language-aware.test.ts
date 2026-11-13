@@ -9,7 +9,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { arrReleaseSchema, type ArrRelease } from '@hnet/arr';
-import { fixRequests, ledgerEvents, plexLibraries, repairRequests } from '@hnet/db/schema';
+import { fixRequests, ledgerEvents, mediaPlexMatches, plexLibraries, repairRequests } from '@hnet/db/schema';
 import {
   FixPlanChangedError,
   FixRefusedError,
@@ -459,11 +459,17 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
       matches: [
         { mediaItemId: showId, plexLibraryId: libOf('haynestower', '2'), ratingKey: '552877', matchedVia: 'tvdb' as const, plexAddedAt: null },
         { mediaItemId: showId, plexLibraryId: libOf('haynesops', '2'), ratingKey: '106050', matchedVia: 'tvdb' as const, plexAddedAt: null },
-        // A same-named movie in HaynesOps' movie library with a lower key (Love, Death & Robots, live): never the show's item.
-        { mediaItemId: showId, plexLibraryId: libOf('haynesops', '1'), ratingKey: '10000', matchedVia: 'tmdb' as const, plexAddedAt: null },
         { mediaItemId: movieId, plexLibraryId: libOf('haynestower', '1'), ratingKey: '8452', matchedVia: 'tmdb' as const, plexAddedAt: null },
       ],
       scopedLibraryIds: [],
+    });
+    // ADR-123 — the writer no longer keeps a cross-type row. Plant the stale one the preference still
+    // has to ignore: a same-named movie in HaynesOps' movie library with a lower key.
+    await t.db.insert(mediaPlexMatches).values({
+      mediaItemId: showId,
+      plexLibraryId: libOf('haynesops', '1'),
+      ratingKey: '10000',
+      matchedVia: 'tmdb',
     });
   }, 240_000);
 

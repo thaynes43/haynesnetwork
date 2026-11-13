@@ -7,8 +7,8 @@
 import type { PlexReadClient } from '@hnet/plex/read';
 import type { PlexSectionItem } from '@hnet/plex';
 import type { PlexClientBundle } from '@hnet/domain';
-import type { ArrKind, PlexMatchGuidSource, PlexServerSlug } from '@hnet/db';
-import type { PlexMatchInput } from '@hnet/domain';
+import type { ArrKind, PlexMatchGuidSource, PlexMediaType, PlexServerSlug } from '@hnet/db';
+import { FITTING_PLEX_MEDIA_TYPE, type PlexMatchInput } from '@hnet/domain';
 import {
   selectMatchCandidateItems,
   selectPlexLibraryRefs,
@@ -83,7 +83,8 @@ export interface PlexMatchSnapshot {
  * Trash Age Guard reads a null as "cannot tell", never as "old".
  */
 export function plexAddedAt(epochSeconds: number | undefined): Date | null {
-  if (epochSeconds === undefined || !Number.isFinite(epochSeconds) || epochSeconds <= 0) return null;
+  if (epochSeconds === undefined || !Number.isFinite(epochSeconds) || epochSeconds <= 0)
+    return null;
   return new Date(epochSeconds * 1000);
 }
 
@@ -108,9 +109,12 @@ function itemGuidValue(item: MatchCandidateItem, source: PlexMatchGuidSource): s
   }
 }
 
-/** The Plex GUID index key for a (source, value) pair — the same normalization both sides use. */
-function indexKey(source: PlexMatchGuidSource, value: string): string {
-  return `${source}\u0000${value}`;
+/**
+ * ADR-123 / DESIGN-025 D-10 — the index key is library type plus GUID. The same tmdb or tvdb number on a
+ * movie and a show is two titles; a lookup uses only the ledger kind's fitting type.
+ */
+function indexKey(mediaType: PlexMediaType, source: PlexMatchGuidSource, value: string): string {
+  return `${mediaType}\u0000${source}\u0000${value}`;
 }
 
 /**
@@ -118,9 +122,11 @@ function indexKey(source: PlexMatchGuidSource, value: string): string {
  * then match each live ledger item. Servers/sections that error or are absent from the registry are
  * skipped (not scoped) — a partial read never lets the writer reconcile-drop what it couldn't see.
  */
-export async function fetchPlexMatchSnapshot(
-  input: { db: DbClient; plex: Pick<PlexClientBundle, 'read'>; logger?: SyncLogger },
-): Promise<PlexMatchSnapshot> {
+export async function fetchPlexMatchSnapshot(input: {
+  db: DbClient;
+  plex: Pick<PlexClientBundle, 'read'>;
+  logger?: SyncLogger;
+}): Promise<PlexMatchSnapshot> {
   const logger = input.logger ?? noopLogger;
   const items = await selectMatchCandidateItems(input.db);
   const libRefs = await selectPlexLibraryRefs(input.db);
@@ -129,8 +135,8 @@ export async function fetchPlexMatchSnapshot(
   const libByKey = new Map<string, PlexLibraryRef>();
   for (const l of libRefs) libByKey.set(`${l.serverSlug}\u0000${l.sectionKey}`, l);
 
-  // The GUID index: `${source}\u0000${value}` → { plexLibraryId, ratingKey }.
-  // A title mirrored across libraries yields several hits → one gated "Watch on Plex — <library>" button each.
+  // The GUID index: `${mediaType}\u0000${source}\u0000${value}` → hits in libraries of that type only.
+  // A title mirrored across libraries of its own type yields several hits.
   const guidIndex = new Map<string, PlexHit[]>();
   const scopedLibraryIds = new Set<string>();
   let unmappedSections = 0;
@@ -161,6 +167,17 @@ export async function fetchPlexMatchSnapshot(
         });
         continue; // no plex_libraries row — cannot FK a match; run a registry refresh first
       }
+      if (section.type !== lib.mediaType) {
+        // The registry and the live section disagree. Do not index it and do not scope it: a partial
+        // type would let reconcile drop fitting rows, or let a show section answer a movie lookup.
+        logger.info('plex-match: section type disagrees with the registry (skipped, not scoped)', {
+          server: slug,
+          section: section.key,
+          sectionType: section.type,
+          registryType: lib.mediaType,
+        });
+        continue;
+      }
       try {
         let start = 0;
         for (let page = 0; page < MAX_PAGES; page += 1) {
@@ -168,7 +185,7 @@ export async function fetchPlexMatchSnapshot(
             start,
             size: PLEX_PAGE_SIZE,
           });
-          for (const it of pageItems) indexPlexItem(it, lib.libraryId);
+          for (const it of pageItems) indexPlexItem(it, lib.libraryId, lib.mediaType);
           plexTitlesIndexed += pageItems.length;
           start += pageItems.length;
           if (pageItems.length === 0 || (totalSize !== null && start >= totalSize)) break;
@@ -185,11 +202,15 @@ export async function fetchPlexMatchSnapshot(
     }
   }
 
-  function indexPlexItem(it: PlexSectionItem, plexLibraryId: string): void {
+  function indexPlexItem(
+    it: PlexSectionItem,
+    plexLibraryId: string,
+    mediaType: PlexMediaType,
+  ): void {
     const guids = parsePlexGuids(it);
     const add = (source: PlexMatchGuidSource, value: string | undefined) => {
       if (value === undefined) return;
-      const key = indexKey(source, value);
+      const key = indexKey(mediaType, source, value);
       const hits = guidIndex.get(key) ?? guidIndex.set(key, []).get(key)!;
       // One hit per library — a section is listed once, so a duplicate library here would be a Plex dupe.
       if (!hits.some((h) => h.plexLibraryId === plexLibraryId)) {
@@ -216,17 +237,28 @@ export async function fetchPlexMatchSnapshot(
       string,
       { ratingKey: string; matchedVia: PlexMatchGuidSource; addedAt: Date | null }
     >();
+    const mediaType = FITTING_PLEX_MEDIA_TYPE[item.arrKind];
     for (const source of MATCH_ORDER[item.arrKind]) {
       const value = itemGuidValue(item, source);
       if (value === null) continue;
-      for (const hit of guidIndex.get(indexKey(source, value)) ?? []) {
+      for (const hit of guidIndex.get(indexKey(mediaType, source, value)) ?? []) {
         if (!perLibrary.has(hit.plexLibraryId)) {
-          perLibrary.set(hit.plexLibraryId, { ratingKey: hit.ratingKey, matchedVia: source, addedAt: hit.addedAt });
+          perLibrary.set(hit.plexLibraryId, {
+            ratingKey: hit.ratingKey,
+            matchedVia: source,
+            addedAt: hit.addedAt,
+          });
         }
       }
     }
     for (const [plexLibraryId, { ratingKey, matchedVia, addedAt }] of perLibrary) {
-      matches.push({ mediaItemId: item.id, plexLibraryId, ratingKey, matchedVia, plexAddedAt: addedAt });
+      matches.push({
+        mediaItemId: item.id,
+        plexLibraryId,
+        ratingKey,
+        matchedVia,
+        plexAddedAt: addedAt,
+      });
     }
     if (perLibrary.size > 0) byKind[item.arrKind].matched += 1;
   }

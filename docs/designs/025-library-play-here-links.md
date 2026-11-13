@@ -1,12 +1,13 @@
 # DESIGN-025: Library "Watch/Listen/Read here" — the *arr→Plex match, the access gate, and the availability resolver
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-07 (D-08: an admin opens a linked request's Request Events in the History, issue #792). Prior: 2026-07-28 (D-09 added — the ADR-081 library-access bootstrap seed + registration
+- **Last updated:** 2026-11-13 (D-10 / ADR-123, story 847: a match is only inside the fitting library type). Prior: 2026-10-07 (D-08: an admin opens a linked request's Request Events in the History, issue #792). Prior: 2026-07-28 (D-09 added — the ADR-081 library-access bootstrap seed + registration
   auto-grant, the boot-triggered first plex-match sync, and the honest cold-start empty-reason on the gate;
   R-237, glossary T-232..T-234)
 - **Satisfies:** PRD-001 R-157, **R-221** (D-08 — books detail-page parity), **R-237** (D-09 — bootstrap +
   cold-start contract); glossary T-139..T-141, **T-232..T-234**; governed by [ADR-047](../adrs/047-library-play-here-access-aware-deep-links.md)
-  and **[ADR-081](../adrs/081-library-access-bootstrap-and-cold-start.md)** (the bootstrap/cold-start contract layered on top)
+  and **[ADR-081](../adrs/081-library-access-bootstrap-and-cold-start.md)** (the bootstrap/cold-start contract layered on top).
+  **[ADR-123](../adrs/123-plex-match-fits-the-library-type.md)** narrows the match to the fitting library type (D-10).
   (reusing [ADR-024](../adrs/024-role-scoped-all-libraries.md)/[ADR-017](../adrs/017-plex-library-sharing.md) access,
   [ADR-018](../adrs/018-library-metadata-and-posters.md)/[DESIGN-008](008-library-metadata-posters-filters.md) Library
   read model, [ADR-038](../adrs/038-ytdlsub-library-direct-plex-read.md) ytdl-sub reads, [ADR-046](../adrs/046-books-library-ledger-source.md)
@@ -29,6 +30,7 @@ rows) → `plex_library_id` (FK `plex_libraries`), `rating_key`, `matched_via` �
 (CHECK), plus `first/last_seen_at`. A rebuildable derived cache (the books_items/ai_usage_chats class): written
 ONLY by `syncPlexMatches`; guard-listed for INSERT/UPDATE/DELETE (it reconciles by hard-delete); no per-row audit.
 `sync_runs.run_kind` CHECK grows `plex-match` (parity — the mode writes no `sync_runs` row; its trail is the table).
+ADR-123 adds `repairCrossTypePlexMatches` in the same module: it deletes a cross-type row only (D-10).
 `machineIdentifier` is NOT denormalized — it is joined off `plex_servers` when building a deep link (single source
 of truth).
 
@@ -44,6 +46,8 @@ that errors is not "scoped" (never reconcile-dropped). The snapshot → `syncPle
 `media_item_id`, then RECONCILE (delete rows of a fully-read library whose `last_seen_at` predates the run — the
 title left Plex). Reports the per-kind `{total, matched}` **match rate**. Wired into the orchestrator + CLI
 (`--mode=plex-match`, no `--source`) exactly like `books-sync`. Needs only `DATABASE_URL` + `PLEX_*_TOKEN`.
+ADR-123 / D-10 amends the index: each GUID is stored under its library type, and a lookup uses only the
+ledger kind's fitting type. A section whose live type disagrees with the registry is not indexed and not scoped.
 
 ### D-03 — the access gate (THE INVARIANT)  ·  `packages/domain/src/library-access.ts`
 
@@ -204,6 +208,41 @@ stays the failure direction; the only thing that widens Default is an explicit, 
   the existing `setRoleLibraries` (all in `packages/domain`, guarded); the gate change is additive (a new field +
   a pure helper), so every existing gate consumer is unaffected.
 
+### D-10 — a match stays inside the fitting library type (ADR-123, story 847)
+
+TMDB and TVDB number movies and shows separately. The same number in the other library is a different title.
+The matcher indexes every GUID it reads (`tmdb`, `imdb`, `tvdb`, `musicbrainz`) under the Plex section's
+library type, and looks a ledger item up only in the type that fits its kind:
+
+| Ledger kind | Fitting library type |
+| ----------- | -------------------- |
+| radarr | movie |
+| sonarr | show |
+| lidarr | artist |
+
+A photo library fits nothing. The constant is `FITTING_PLEX_MEDIA_TYPE` (`packages/domain/src/plex-match.ts`).
+The lookup order is unchanged (radarr `tmdb` then `imdb`, sonarr `tvdb` then `imdb`, lidarr `musicbrainz`).
+
+A section whose live `type` disagrees with the registry `media_type` is skipped and not scoped: it is not
+indexed, and reconcile does not delete fitting rows in it.
+
+`syncPlexMatches` still upserts, then reconciles stale rows only in libraries it fully read. In the same
+transaction it calls `repairCrossTypePlexMatches({ dryRun: false })`. That delete uses the same fitting pairs.
+It removes a cross-type row even when this run just upserted it (reconcile leaves a row whose `last_seen_at`
+is the run start) and even when its library was not read. It never removes a fitting row. The reconcile count
+stays `removed`. The cross-type count is `crossTypeRemoved`.
+
+The one-off `packages/sync/src/scripts/plex-match-type-repair.ts` calls the same writer. `--dry-run` selects
+and writes nothing. `--apply` deletes the selected rows in chunks of 500 and nothing else. A second apply
+selects nothing. This story does not run it against production. A replica `SELECT` that uses the fitting-pair
+predicate above is the dry-run count.
+
+The Age Guard, the Trash walls and the watch reads are unchanged. What changes for a title is only which
+`media_plex_matches` rows remain. Removing a row cannot make the newest remaining date newer, so it cannot
+move a title from `clear` to `recent`. It can move `recent` or `unknown` to `clear` when the date or the
+undated row that held it was the wrong type. Household play counts on `media_metadata` are not rewritten
+here (Q-04).
+
 ## Alternatives considered
 
 Media-type-correspondence gating (leaks across same-type libraries) and storing the Plex link on `media_items`
@@ -222,7 +261,10 @@ first login, so the seed is a true one-shot with no marker table.
 - **Unit / integration (embedded PG16):** `packages/api/__tests__/library-access.test.ts` — a role lacking a
   library's grant gets ZERO items across search/detail/wanted/filterFacets/poster-proxy and the ytdl-sub per-library
   gate, incl. admin-implies-all, server-all grant, no-grants, matched-vs-unmatched. `packages/sync/__tests__/plex-match.test.ts`
-  — `parsePlexGuids`, the GUID match rate, and reconcile.
+  — `parsePlexGuids`, the GUID match rate, reconcile, and a movie and a show that share an id number
+  (each matches only its own library). `packages/domain/__tests__/plex-match-type.test.ts` — the repair
+  deletes exactly the cross-type rows, a second apply deletes nothing, and the sync deletes a cross-type
+  row in a library it did not read.
 - **Live:** as hnet-e2e-member with a deliberately-withheld library — the walls return 0 items from it and the tab
   is hidden; 390px + desktop screenshots (a play button on an accessible item; a withheld library absent).
 
@@ -233,3 +275,4 @@ first login, so the seed is a true one-shot with no marker table.
 | Q-01 | Hide vs teaser inaccessible content? | HIDE — a security invariant (ADR-047 Q-01). |
 | Q-02 | Gate ytdl-sub per-library or keep the section-only gate? | Per-library (k8plex grant), section knob layered on top (ADR-047 Q-A / D-05). |
 | Q-03 | Cold-start (a kind with no matches yet)? | Deny-by-default until `plex-match` derives ≥1 match; run the sync at deploy; admins unrestricted (C-06). |
+| Q-04 | After a cross-type row is removed, the next metadata refresh maps `(server, rating key)` to ledger ids and the last row wins. A household play count or last-viewed time stored on one of a collided pair can move to the other title. This change does not rewrite `media_metadata` and does not re-read Tautulli. | **Open.** Recommendation: leave the recent-watch rule as it is. After the repair has run and one metadata refresh has finished, re-census household `last_viewed_at` for the titles that lose Age Guard protection but still show a view inside 30 days, before treating that stored view as the title's own. |

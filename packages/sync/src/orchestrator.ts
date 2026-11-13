@@ -1599,6 +1599,7 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
       logger.info('plex-match complete', {
         upserted: report.upserted,
         removed: report.removed,
+        crossTypeRemoved: report.crossTypeRemoved,
         byKind: snapshot.stats.byKind,
         scopedLibraries: snapshot.scopedLibraryIds.length,
         unmappedSections: snapshot.stats.unmappedSections,
