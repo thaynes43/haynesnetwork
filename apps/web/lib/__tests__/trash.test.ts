@@ -2,7 +2,7 @@
 // PREVIEW must partition exactly like @hnet/domain classifyGuardian + the expedite 'all' loop
 // (an optimistic preview that under-counts "deleted" would make the confirm Modal lie).
 import { describe, expect, it } from 'vitest';
-import { classifyForExpedite } from '@hnet/domain';
+import { classifyForExpedite, TRASH_WALL_PROTECTION_REASONS } from '@hnet/domain';
 import {
   candidatesAsOfLabel,
   daysLeftLabel,
@@ -50,6 +50,14 @@ import {
   readdSummaryLine,
   withPinnedTiles,
   type PinnedTile,
+  PENDING_VIEWS,
+  WALL_REASON_COPY,
+  WALL_REASON_FALLBACK,
+  pendingEmptyLabel,
+  pendingTotalLabel,
+  shownWallReason,
+  wallReasonCopy,
+  wallReasonIsSave,
 } from '../trash';
 
 const base: GuardianPreviewInput = {
@@ -711,6 +719,97 @@ describe('reclaimLabel', () => {
     expect(reclaimLabel(4200, 3, fmt)).toBe('Reclaiming 4200 B across 3 items');
     expect(reclaimLabel(1, 1, fmt)).toBe('Reclaiming 1 B across 1 item');
     expect(reclaimLabel(0, 0, fmt)).toBe('Nothing pending');
+  });
+});
+
+// DESIGN-052 D-10 amendment (story 821) — the wall's two views and everything they say in words.
+describe('the pending wall views: Deletable | All (story 821)', () => {
+  const fmt = (b: number) => `${b} B`;
+
+  it('two segments, Deletable first (the default), then All', () => {
+    expect(PENDING_VIEWS.map((v) => v.view)).toEqual(['deletable', 'all']);
+    expect(PENDING_VIEWS.map((v) => v.label)).toEqual(['Deletable', 'All']);
+    for (const v of PENDING_VIEWS) expect(v.hint.length).toBeGreaterThan(0);
+  });
+
+  it('has words for every reason the server can return, and for no other', () => {
+    // The client cannot import the server's list into the bundle, so parity is this test.
+    expect(Object.keys(WALL_REASON_COPY).sort()).toEqual([...TRASH_WALL_PROTECTION_REASONS].sort());
+  });
+
+  it('the tile line fits a phone tile; the detail says "Kept:" and neither uses a dash or jargon', () => {
+    for (const [reason, copy] of Object.entries(WALL_REASON_COPY)) {
+      // A third of a 390 px phone is about 111 px: 18 characters at the tile's 10 px text.
+      expect(copy.label.length, reason).toBeLessThanOrEqual(18);
+      expect(copy.detail.startsWith('Kept: '), reason).toBe(true);
+      for (const text of [copy.label, copy.detail]) {
+        expect(text, reason).not.toMatch(/[—–]/);
+        expect(text, reason).not.toMatch(/ledger|guardian|exclusion|Maintainerr|dnd|unevaluable|evaluat/i);
+      }
+    }
+  });
+
+  it('one reason keeps one wording on both walls (the batch wall kept tooltips)', () => {
+    expect(WALL_REASON_COPY.watchlisted.detail).toBe(KEPT_REASON_TOOLTIPS.watchlisted);
+    expect(WALL_REASON_COPY.recently_watched.detail).toBe(KEPT_REASON_TOOLTIPS.recently_watched);
+    expect(WALL_REASON_COPY.recently_added.detail).toBe(KEPT_REASON_TOOLTIPS.recently_added);
+    expect(WALL_REASON_COPY.saved.detail).toBe(KEPT_REASON_TOOLTIPS.saved);
+    expect(WALL_REASON_COPY.live_excluded.detail).toBe(KEPT_REASON_TOOLTIPS.live_excluded);
+  });
+
+  it('a reason this build does not know still says the title is kept', () => {
+    expect(wallReasonCopy('recently_added')).toBe(WALL_REASON_COPY.recently_added);
+    expect(wallReasonCopy('something_new')).toBe(WALL_REASON_FALLBACK);
+    expect(WALL_REASON_FALLBACK.label).toBe('Kept');
+  });
+
+  it('a Save is the app record or a live exclusion, nothing else', () => {
+    expect(wallReasonIsSave('saved')).toBe(true);
+    expect(wallReasonIsSave('live_excluded')).toBe(true);
+    // The do-not-delete tag keeps a title, but it is not a Save the wall can vouch for (ADR-086 D-5).
+    expect(wallReasonIsSave('tag')).toBe(false);
+    expect(wallReasonIsSave('watchlisted')).toBe(false);
+  });
+
+  it('shownWallReason: the server reason, moved by a tap the server has answered', () => {
+    expect(shownWallReason({ protectionReason: null }, undefined)).toBeNull();
+    expect(shownWallReason({}, undefined)).toBeNull(); // an older server
+    expect(shownWallReason({ protectionReason: 'watchlisted' }, undefined)).toBe('watchlisted');
+    // A confirmed Save reads saved at once, whatever the last read said.
+    expect(shownWallReason({ protectionReason: null }, 'saved')).toBe('saved');
+    expect(shownWallReason({ protectionReason: 'recently_watched' }, 'saved')).toBe('saved');
+    // A confirmed un-save clears a Save reason at once...
+    expect(shownWallReason({ protectionReason: 'saved' }, 'unsaved')).toBeNull();
+    expect(shownWallReason({ protectionReason: 'live_excluded' }, 'unsaved')).toBeNull();
+    // ...but never a reason an un-save cannot lift.
+    expect(shownWallReason({ protectionReason: 'watchlisted' }, 'unsaved')).toBe('watchlisted');
+    expect(shownWallReason({ protectionReason: 'recently_added' }, 'unsaved')).toBe('recently_added');
+  });
+
+  it('pendingTotalLabel: Deletable says what a delete frees; All counts titles and never says Reclaiming', () => {
+    expect(pendingTotalLabel('deletable', 4200, 3, 9, fmt)).toBe('Reclaiming 4200 B across 3 items');
+    expect(pendingTotalLabel('deletable', 1, 1, 1, fmt)).toBe('Reclaiming 1 B across 1 item');
+    expect(pendingTotalLabel('all', 4200, 3, 3, fmt)).toBe('3 titles in all · 4200 B');
+    expect(pendingTotalLabel('all', 1, 1, 1, fmt)).toBe('1 title in all · 1 B');
+    expect(pendingTotalLabel('all', 9, 9, 9, fmt)).not.toContain('Reclaiming');
+    // Nothing deletable while the rules still flag titles is not "nothing pending".
+    expect(pendingTotalLabel('deletable', 0, 0, 4, fmt)).toBe('Nothing to delete');
+    expect(pendingTotalLabel('deletable', 0, 0, 0, fmt)).toBe('Nothing pending');
+    expect(pendingTotalLabel('all', 0, 0, 0, fmt)).toBe('Nothing pending');
+  });
+
+  it('pendingEmptyLabel: filters first, then the way to the kept titles, then nothing pending', () => {
+    const base = { view: 'deletable' as const, hasFilters: false, poolTotal: 4, kind: 'movies' };
+    expect(pendingEmptyLabel({ ...base, hasFilters: true })).toBe('Nothing matches the filters.');
+    expect(pendingEmptyLabel(base)).toBe(
+      'Nothing here can be deleted right now. Choose All to see what is kept, and why.',
+    );
+    expect(pendingEmptyLabel({ ...base, poolTotal: 0 })).toBe(
+      'Nothing pending — no movies are scheduled for deletion.',
+    );
+    expect(pendingEmptyLabel({ ...base, view: 'all', kind: 'tv' })).toBe(
+      'Nothing pending — no tv are scheduled for deletion.',
+    );
   });
 });
 

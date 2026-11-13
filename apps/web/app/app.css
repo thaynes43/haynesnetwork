@@ -120,6 +120,27 @@ body {
   color: var(--color-accent-contrast);
   font-weight: 600;
 }
+/* DESIGN-052 D-10 amendment (story 821) — a segment's label is bold only while it is selected, and
+   bold text is a little wider, so a plain `.seg` pill changes width by a fraction of a pixel when the
+   selection moves and nudges whatever sits beside it. `.seg--steady` gives each segment the width of
+   its bold label at all times: an invisible bold copy of the label (from `data-label`) shares the
+   label's grid cell, so the cell is always as wide as the wider of the two. Choosing a segment then
+   only recolors it (ADR-015). The label itself goes in a <span>. */
+.seg--steady button {
+  display: inline-grid;
+  justify-items: center;
+}
+.seg--steady button > span,
+.seg--steady button::after {
+  grid-area: 1 / 1;
+}
+.seg--steady button::after {
+  content: attr(data-label);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-weight: 600;
+}
 
 .tag {
   display: inline-block;
@@ -5026,6 +5047,30 @@ input[aria-invalid='true'] {
   white-space: nowrap;
   margin-left: auto;
 }
+/* DESIGN-052 D-10 amendment (story 821) — the total's words change with the view (and with every
+   filter), and what follows it in the bar must not move when they do (ADR-015). So the total's slot
+   never depends on its text. On a wide screen the bar is one line and the total has a fixed slot,
+   long enough for the longest line the page writes and shrinking with the bar, never with the text.
+   Below that the total takes a line of its own, so where the rest wraps is the same whatever it
+   says. An ellipsized total keeps its full text in its title attribute. */
+@media (min-width: 1000px) {
+  .trash-countsbar {
+    flex-wrap: nowrap;
+  }
+  .trash-countsbar__total {
+    flex: 0 1 30rem;
+  }
+  /* Only the total gives way when the bar is tight: the "as of" line keeps its one line. */
+  .trash-countsbar__asof {
+    flex: none;
+    white-space: nowrap;
+  }
+}
+@media (max-width: 999px) {
+  .trash-countsbar__total {
+    flex-basis: 100%;
+  }
+}
 /* Reserved-height empty slot — the empty message swaps in without moving the counts bar. */
 .trash-wall-empty {
   min-height: 40px;
@@ -5635,14 +5680,6 @@ input[aria-invalid='true'] {
   display: block;
   position: relative;
 }
-.trash-protected-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  font-size: 12px;
-  cursor: pointer;
-}
 .bwall-notes {
   position: absolute;
   bottom: 6px;
@@ -5939,6 +5976,26 @@ button.bwall-tap:hover .bwall-overlay[data-armed='true'] {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* DESIGN-052 D-10 amendment (story 821) — why a title is kept, in a few words, under the facts (the
+   pending walls' All view). FIXED height and one clamped line, like the caption above it: every tile
+   of a wall that shows reasons carries the line, empty when the title can be deleted, so the rows are
+   one height and a reason that appears after a Save moves nothing (ADR-015). The full sentence rides
+   the title attribute and the tile's accessible name. */
+.bwall-kept {
+  display: block;
+  height: 15px;
+  font-size: 11px;
+  line-height: 15px;
+  font-weight: 600;
+  color: var(--color-warning);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A Save is the viewer's own doing and wears the Save's green everywhere else on the tile. */
+.bwall-kept[data-tone='saved'] {
+  color: var(--color-accent);
+}
 /* Only size may shrink defensively; the year and rating always retain their width. */
 .bwall-meta-text {
   min-width: 0;
@@ -6042,6 +6099,10 @@ button.bwall-tap:hover .bwall-overlay[data-armed='true'] {
   .bwall-meta {
     font-size: 10px;
     gap: 2px;
+  }
+  /* Three tiles across a phone: the reason keeps the facts' size, and its fixed line height. */
+  .bwall-kept {
+    font-size: 10px;
   }
 }
 
