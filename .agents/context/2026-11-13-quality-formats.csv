@@ -1,0 +1,83 @@
+app,profile_name,format_name,score
+radarr,FHD-UHD,TrueHD ATMOS,5000
+radarr,FHD-UHD,DTS X,4500
+radarr,FHD-UHD,ATMOS (undefined),3000
+radarr,FHD-UHD,DD+ ATMOS,3000
+radarr,FHD-UHD,TrueHD,2750
+radarr,FHD-UHD,DTS-HD MA,2500
+radarr,FHD-UHD,FLAC,2250
+radarr,FHD-UHD,PCM,2250
+radarr,FHD-UHD,DTS-HD HRA,2000
+radarr,FHD-UHD,Remux Tier 01,1950
+radarr,FHD-UHD,Remux Tier 02,1900
+radarr,FHD-UHD,Remux Tier 03,1850
+radarr,FHD-UHD,HD Bluray Tier 01,1800
+radarr,FHD-UHD,UHD Bluray Tier 01,1800
+radarr,FHD-UHD,DD+,1750
+radarr,FHD-UHD,HD Bluray Tier 02,1750
+radarr,FHD-UHD,UHD Bluray Tier 02,1750
+radarr,FHD-UHD,HD Bluray Tier 03,1700
+radarr,FHD-UHD,UHD Bluray Tier 03,1700
+radarr,FHD-UHD,WEB Tier 01,1700
+radarr,FHD-UHD,WEB Tier 02,1650
+radarr,FHD-UHD,WEB Tier 03,1600
+radarr,FHD-UHD,DTS-ES,1500
+radarr,FHD-UHD,DTS,1250
+radarr,FHD-UHD,AAC,1000
+radarr,FHD-UHD,DV Boost,1000
+radarr,FHD-UHD,DD,750
+radarr,FHD-UHD,HDR,500
+radarr,FHD-UHD,HDR10+ Boost,100
+radarr,FHD-UHD,CRiT,20
+radarr,FHD-UHD,MA,20
+radarr,FHD-UHD,BCORE,15
+radarr,FHD-UHD,Repack3,7
+radarr,FHD-UHD,Repack2,6
+radarr,FHD-UHD,Repack/Proper,5
+radarr,FHD-UHD,3D,-10000
+radarr,FHD-UHD,AV1,-10000
+radarr,FHD-UHD,BR-DISK,-10000
+radarr,FHD-UHD,DV (w/o HDR fallback),-10000
+radarr,FHD-UHD,Extras,-10000
+radarr,FHD-UHD,Generated Dynamic HDR,-10000
+radarr,FHD-UHD,LQ,-10000
+radarr,FHD-UHD,LQ (Release Title),-10000
+radarr,FHD-UHD,Language: Not Original,-10000
+radarr,FHD-UHD,SDR (no WEBDL),-10000
+radarr,FHD-UHD,Sing-Along Versions,-10000
+radarr,FHD-UHD,Upscaled,-10000
+radarr,FHD-UHD,x265 (HD),-10000
+sonarr,FHD-UHD,WEB Tier 01,1700
+sonarr,FHD-UHD,WEB Tier 02,1650
+sonarr,FHD-UHD,WEB Scene,1600
+sonarr,FHD-UHD,WEB Tier 03,1600
+sonarr,FHD-UHD,HDR,500
+sonarr,FHD-UHD,AMZN,75
+sonarr,FHD-UHD,ATVP,75
+sonarr,FHD-UHD,CC,75
+sonarr,FHD-UHD,DCU,75
+sonarr,FHD-UHD,DSCP,75
+sonarr,FHD-UHD,DSNP,75
+sonarr,FHD-UHD,HBO,75
+sonarr,FHD-UHD,HD Streaming Boost,75
+sonarr,FHD-UHD,HMAX,75
+sonarr,FHD-UHD,HULU,75
+sonarr,FHD-UHD,MAX,75
+sonarr,FHD-UHD,NF,75
+sonarr,FHD-UHD,PCOK,75
+sonarr,FHD-UHD,PMTP,75
+sonarr,FHD-UHD,SHO,75
+sonarr,FHD-UHD,STAN,75
+sonarr,FHD-UHD,SYFY,75
+sonarr,FHD-UHD,UHD Streaming Boost,75
+sonarr,FHD-UHD,iT,75
+sonarr,FHD-UHD,Repack3,7
+sonarr,FHD-UHD,Repack2,6
+sonarr,FHD-UHD,Repack/Proper,5
+sonarr,FHD-UHD,AV1,-10000
+sonarr,FHD-UHD,BR-DISK,-10000
+sonarr,FHD-UHD,Extras,-10000
+sonarr,FHD-UHD,LQ,-10000
+sonarr,FHD-UHD,LQ (Release Title),-10000
+sonarr,FHD-UHD,Language: Not English or Original,-10000
+sonarr,FHD-UHD,x265 (HD),-10000
