@@ -87,6 +87,42 @@ describe('trashWallProtection agrees with classifyForExpedite', () => {
     expect(trashWallProtection(item)).toBe(reason);
     expect(classifyForExpedite(item)).toBe(verdictFor(reason));
   });
+
+  // The cases above are samples. This walks every combination of the nine inputs, so the wall can
+  // never offer a title Expedite would keep, or hide one Expedite would delete, whatever is added
+  // to either function later.
+  it('offers a title exactly when Expedite would delete it, for every combination of inputs', () => {
+    const flags = [false, true] as const;
+    let checked = 0;
+    for (const maintainerrMediaId of ['ms', null])
+      for (const mediaItemId of ['ledger', null])
+        for (const saveIntent of flags)
+          for (const protectedByTag of flags)
+            for (const recentlyWatched of flags)
+              for (const onWatchlist of flags)
+                for (const watchlistEvaluable of flags)
+                  for (const ruleEvaluationFailed of flags)
+                    for (const ageGuard of ['clear', 'recent', 'unknown'] as const) {
+                      const item: ExpediteVerdictInput = {
+                        maintainerrMediaId,
+                        mediaItemId,
+                        saveIntent,
+                        protectedByTag,
+                        recentlyWatched,
+                        onWatchlist,
+                        watchlistEvaluable,
+                        ruleEvaluationFailed,
+                        ageGuard,
+                      };
+                      const reason = trashWallProtection(item);
+                      const verdict = classifyForExpedite(item);
+                      expect(verdict, JSON.stringify(item)).toBe(verdictFor(reason));
+                      expect(reason === null, JSON.stringify(item)).toBe(verdict === 'deletable');
+                      checked += 1;
+                    }
+    // Eight two-valued inputs and the three Age Guard verdicts.
+    expect(checked).toBe(2 ** 8 * 3);
+  });
 });
 
 describe('the pending views follow Wall Protection (DESIGN-052 D-10, story 832)', () => {

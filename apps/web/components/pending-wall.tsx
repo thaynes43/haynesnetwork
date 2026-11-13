@@ -39,7 +39,9 @@ import {
   releaseNeedsConfirm,
   watchNote,
   WATCHLIST_NOTE_DETAIL,
+  withPinnedTiles,
   type PendingWallGlyph,
+  type PinnedTile,
 } from '@/lib/trash';
 
 /** The pending-item surface a tile renders (a structural mirror of the trash.pending wire item). */
@@ -202,6 +204,72 @@ export function usePendingSaves(media: 'movie' | 'tv') {
     error: taps.error,
     toggle,
   };
+}
+
+/**
+ * DESIGN-052 D-10 amendment (story 832) / ADR-015 — a title saved from the default view keeps its tile.
+ *
+ * The default view lists only titles that can be deleted. A Save makes its title undeletable, so the
+ * read that follows the Save no longer returns it, and without this its tile would vanish and every
+ * tile after it would move up (hard rule 9), taking the un-save tap with it. The wall therefore keeps
+ * that tile at the place it had, wearing the saved shield, until the view is opened again: another
+ * segment, filter, sort or search (`viewKey` changes), or a new visit to the page.
+ *
+ * Wrap the host's page items and its `usePendingSaves` toggle with this, and render what it returns.
+ */
+export function usePinnedSaves(
+  serverItems: PendingWallItem[],
+  viewKey: string,
+  overrides: ReadonlyMap<string, 'saved' | 'unsaved'>,
+  toggle: (item: PendingWallItem, glyph: PendingWallGlyph) => void,
+): { items: PendingWallItem[]; toggle: (item: PendingWallItem, glyph: PendingWallGlyph) => void } {
+  const [pinned, setPinned] = useState<{ key: string; pins: PinnedTile<PendingWallItem>[] }>({
+    key: viewKey,
+    pins: [],
+  });
+  const sameTile = (a: PendingWallItem, b: PendingWallItem) =>
+    a.maintainerrMediaId === b.maintainerrMediaId && a.collectionId === b.collectionId;
+  // A changed view is a fresh read: nothing is pinned in it.
+  const current = pinned.key === viewKey ? pinned.pins : [];
+  // An un-saved title the server lists again is an ordinary tile once more. Forget its pin, so that
+  // if it is deleted later its tile goes too. (Until the server lists it, the pin holds the tile in
+  // place: the un-save is confirmed a moment before the read that brings the title back.)
+  const kept = current.filter(
+    (p) =>
+      !(
+        p.item.maintainerrMediaId !== null &&
+        overrides.get(p.item.maintainerrMediaId) === 'unsaved' &&
+        serverItems.some((i) => sameTile(i, p.item))
+      ),
+  );
+  if (pinned.key !== viewKey || kept.length !== current.length) {
+    setPinned({ key: viewKey, pins: kept });
+  }
+  // Only a tap the server has answered holds its tile. A save still out, or one that failed, is
+  // still in the server's list, and leaves with it if a refresh drops it for another reason.
+  const items = withPinnedTiles(
+    serverItems,
+    kept.filter((p) => p.item.maintainerrMediaId !== null && overrides.has(p.item.maintainerrMediaId)),
+  );
+
+  const pinAndToggle = (item: PendingWallItem, glyph: PendingWallGlyph) => {
+    // A slated `trash` tile saves on tap: remember where it is before the save is sent.
+    if (glyph === 'trash' && item.maintainerrMediaId !== null) {
+      const index = items.findIndex((i) => sameTile(i, item));
+      if (index >= 0) {
+        setPinned((prev) => ({
+          key: viewKey,
+          pins: [
+            ...(prev.key === viewKey ? prev.pins : []).filter((p) => !sameTile(p.item, item)),
+            { item, index },
+          ],
+        }));
+      }
+    }
+    toggle(item, glyph);
+  };
+
+  return { items, toggle: pinAndToggle };
 }
 
 function PendingTile({

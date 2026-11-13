@@ -42,3 +42,69 @@ Shelter and Drop are the pool rows with those exact titles.
 Q-15. A live exclusion on a later page can still be inside the reported count. Recommendation: do not crawl exclusions for the whole pool.
 
 Q-16. `release_unrecorded` is decided at delete time from the *arr's files. Recommendation: leave it off the wall. The delete path was not changed.
+
+## Finishing pass (2026-11-13, second worker)
+
+The first worker ended before its checks finished and the required check `e2e-gate` was red. This
+pass found why, fixed it, and checked the claims above. Display and read model only; no delete-path
+guard was touched.
+
+### Why `e2e-gate` was red
+
+The read model and the page were right. The tests were wrong, in three places, all in
+`apps/web/e2e/trash.spec.ts`. Each was reproduced locally before it was changed (measured
+2026-11-13, `pnpm --filter web e2e trash.spec.ts`, one worker):
+
+| # | Test (line on the branch as delivered) | What happened | Fix |
+| - | -------------------------------------- | ------------- | --- |
+| 1 | D-12 cross-server watch visibility (489) | The new `showHeldTitles` helper ran straight after the click on the TV tab. A tab switch keeps only `?tab`, but the Movies wall, with its box ticked from `protected=show`, was still mounted when the helper read it. It saw a ticked box, did nothing, and the TV wall then mounted on its default view, which omits the Age Guard title. | `switchTrashTab` clicks the tab and waits until it is the selected one. |
+| 2 | Expire now, then the sweep (1638) | After the cancel the test expected the wall's tiles at once. Saves left open by the earlier tests held every title, so the default view was empty. | Show the held titles first, as the same test already did further down. |
+| 3 | The same test, after fix 2 | `showHeldTitles` looked the box up by its name on the whole page. An open batch's future strip has a box with the same name and was still on the page for a moment after the cancel, so the helper ticked that one. | The helper is scoped to the pending wall's own filter bar. |
+
+Defects 2 and 3 sat behind defect 1: the block is serial, so CI skipped the 33 tests after the first
+failure. Result after the fixes, before any other change: 38 passed of 38.
+
+### A tile saved from the default view vanished (hard rule 9)
+
+Found while checking the claims, and not covered by any test: every save-tap test opens the wall with
+`protected=show`. On the default view a Save makes its title undeletable, so the read that follows
+the Save no longer returned it. The tile vanished a moment after it turned green, every tile after it
+moved up, and the un-save tap went with it. Proved with a new e2e case run against the branch as
+delivered: `expect(vanished).toHaveCount(1)` failed with `Received: 0`.
+
+Fix, client only: `usePinnedSaves` (`apps/web/components/pending-wall.tsx`) over the pure
+`withPinnedTiles` (`apps/web/lib/trash.ts`). The wall keeps a tile the viewer saved from this view at
+the place it had, wearing the saved shield, until the view is opened again. The counts bar follows
+the server at once. A freshly opened default view never contains a saved title. Both the pending wall
+and the future-candidate strip use it. The server read is unchanged. Recorded as DESIGN-052 Q-17,
+because it is a choice between two of the owner's rules.
+
+### Claims checked
+
+- **One definition.** `trashWallProtection` returns null exactly when `classifyForExpedite` returns
+  `deletable`. The first worker's test sampled 13 cases. A new test walks every combination of the
+  nine inputs: 2^8 x 3 = 768 combinations, all agreeing (`trash-protection-filter.test.ts`).
+- **Each reason, both views.** The database test seeds one title per reason. The default view returns
+  the one deletable title; the protected view returns all twelve rows, eleven with a distinct reason
+  and one with none. Read and re-run; it passes.
+- **Nothing the sweep or Expedite reads has changed.** `git diff origin/main...HEAD --
+  packages/domain/src/trash-flow.ts` has no removed line: the change there is one function, one
+  constant, one type and one optional field. `listTrashPendingPage` is called only by the
+  `trash.pending` read. `protectionReason` is read only by that function and by the tile's glyph. The
+  Expedite preview and `allActionableIds` are still built from the unfiltered set, and the guard test
+  asserts they are equal with the flag on and off.
+- **One display difference from `main`, in the protected view only.** The kept badge now follows the
+  reason `recently_added`. A title that has no Maintainerr id and is also inside the Age Guard used to
+  wear the kept badge and now wears the plain (not tappable) trash can, because its first reason is
+  `unactionable`. It could not be deleted before and cannot be now. Story 821 gives every held tile
+  its reason in words, which covers it.
+
+### Checks (measured 2026-11-13, local, one suite at a time)
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Trash e2e | `pnpm --filter web e2e trash.spec.ts` | 39 passed of 39 (38 existing, 1 new) |
+| Domain | `vitest run __tests__/trash-protection-filter.test.ts __tests__/trash-watchlist-guard.test.ts --maxWorkers=2` | 36 passed of 36 |
+| Web unit | `vitest run lib/__tests__/trash.test.ts --maxWorkers=2` | 76 passed of 76 |
+| Types | `pnpm typecheck` | clean |
+| Lint | `pnpm lint`, `pnpm lint:css` | no errors; 3 warnings, all in two test files this change does not touch |

@@ -307,6 +307,45 @@ export function releaseNeedsConfirm(
   return glyph === 'shield' || glyph === 'check';
 }
 
+/**
+ * DESIGN-052 D-10 amendment (story 832) / ADR-015 — a tile the viewer saved from the default view, and
+ * the place it had in the wall when they tapped it.
+ */
+export interface PinnedTile<T> {
+  item: T;
+  /** Its index in the wall as shown at the tap. */
+  index: number;
+}
+
+/**
+ * DESIGN-052 D-10 amendment (story 832) / ADR-015 — keep a title the viewer just saved where it was.
+ *
+ * The default view lists only titles that can be deleted, so the read that follows a Save no longer
+ * returns the saved title. Dropping its tile would move every tile after it (hard rule 9) and would
+ * take the un-save tap away with it. So the wall puts each such tile back at the index it had, until
+ * the view is opened again. A tile the server still returns is never duplicated: the server's copy
+ * wins, in the server's place.
+ *
+ * `pins` are in the order they were tapped. Each index was taken from the wall as it stood at that
+ * tap (earlier pins already in it), so putting the missing ones back lowest index first rebuilds
+ * that wall exactly.
+ */
+export function withPinnedTiles<T extends { maintainerrMediaId: string | null; collectionId: number }>(
+  serverItems: readonly T[],
+  pins: readonly PinnedTile<T>[],
+): T[] {
+  if (pins.length === 0) return serverItems as T[];
+  const keyOf = (i: T) => `${i.collectionId}:${i.maintainerrMediaId ?? ''}`;
+  const present = new Set(serverItems.map(keyOf));
+  const missing = pins
+    .filter((p) => !present.has(keyOf(p.item)))
+    .sort((a, b) => a.index - b.index);
+  if (missing.length === 0) return serverItems as T[];
+  const out = [...serverItems];
+  for (const pin of missing) out.splice(Math.min(Math.max(pin.index, 0), out.length), 0, pin.item);
+  return out;
+}
+
 // ── cross-server watch visibility (DESIGN-010 D-12 amendment 2026-07-09, build C) ─────────────
 // INFO, NOT protection. `lastWatchedAt`/`lastWatchedServer` are the harvested cross-server MAX
 // last-watch instant (full history) + its estate server. Watch info NEVER occupies the action
