@@ -8,6 +8,21 @@
 - The audited way to set the value and set it back is the admin mutation `trash.settings.set` with `ageGuardIgnoreLibraryFill`, through `setAgeGuardIgnoreLibraryFill`. Story 823's other conditions are in D-31.
 - Next safe step is the coordinator's check of these corrections against the diff, then merge with the setting still off. Q-24 (wrong-type matches; the matcher is story 847) and Q-25 (the 2026-10-30 "7 movies" row) do not block.
 
+## 2026-11-13: story #820 Dynamic Pace (switch off; review corrections in PR 1071)
+
+- DESIGN-014 D-16 and ADR-120. Main already holds D-15 for the TV rule, so this decision is D-16.
+  An earlier draft used ADR-117 and D-15.
+- The switch `space_policy.dynamicPace.enabled` ships off. No live setting, rule or sweep was written.
+- The projection is the 2026-11-13 adversarial review's correction: pool not yet posted 5.796 TB in
+  384 titles; deleted in 60 days 6.761 TB; shortfall 56.419 TB; 85.65 percent used at day 60; the
+  pool is used up by the batch posted 2026-11-27. With today's pool the pace deletes 0.04 TB more
+  by day 60 than today's cap. Evidence: `.agents/context/2026-11-13-820-dynamic-pace.md`.
+- The shipped defaults, with an unlimited pool, leave a 39.4 TB gap at day 60 (the review's
+  simulation). The horizon is a time constant. Q-07 to Q-15 are open. Findings 5 to 10 are work
+  required before the switch. Story 823 turns it on, after 838, 843 and 844.
+- Next safe step: the coordinator checks these corrections and merges PR 1071. Do not turn the
+  switch on from this note.
+
 ## 2026-11-13: story #835 TV Trash rule body (not applied; review corrections in)
 
 - DESIGN-014 D-15 records the show-level TV rule. The four clauses from story 822 comment 7992 stay,

@@ -220,6 +220,11 @@ export interface RunSyncOptions {
   /** ADR-031 / DESIGN-014 — the diskspace-only *arr read bundle the `space-policy` mode reads
    *  utilization from (getUtilization). Required only for that mode; tests inject a stubbed bundle. */
   arr?: UtilizationArrBundle;
+  /**
+   * ADR-120 — free-space history for Dynamic Pace. The sync script passes the chart's Prometheus
+   * query. Called only when the pace switch is on; omitted in tests, which keep today's caps.
+   */
+  readFreeSpace?: (arrayKey: string) => Promise<ReadonlyArray<{ t: number; freeBytes: number }> | null>;
   /** ADR-035 — the OPTIONAL Maintainerr READ handle: when present, the full/incremental modes end
    *  by rebuilding the Trash candidate snapshot (the walls' read-model) so it stays ≤ one sync tick
    *  stale. Absent (a Maintainerr-less env) ⇒ the step is skipped cleanly. */
@@ -851,6 +856,7 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
         maintainerr: options.maintainerr,
         arr: options.arr,
         actorId: null,
+        ...(options.readFreeSpace ? { readFreeSpace: options.readFreeSpace } : {}),
       });
       logger.info('space policy evaluated', {
         enabled: spacePolicy.enabled,
@@ -860,6 +866,14 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
           usedPct: a.usedPct,
           target: a.target,
           overTarget: a.overTarget,
+          pace: a.pace
+            ? {
+                applicable: a.pace.applicable,
+                pace: a.pace.pace,
+                chosenBytes: a.pace.chosenBytes,
+                shortfallBytes: a.pace.shortfallBytes,
+              }
+            : null,
           proposals: a.proposals.map((p) => ({ mediaKind: p.mediaKind, outcome: p.outcome })),
         })),
       });

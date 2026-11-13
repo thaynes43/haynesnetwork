@@ -132,7 +132,13 @@ under `next dev` (hot reload) where the suite serves a production build (§5, AD
   synthesizes the exportarr free-space matrix across any `query_range` window, so the
   Storage tab's **native free-space trend chart** renders full 7d–1y lines locally.
   `POST <stub-prometheus>/_stub/state` with `{"mode":"down"}` flips it unreachable (the
-  chart's `unavailable` degrade); `{"mode":"ok"}` restores it.
+  chart's `unavailable` degrade); `{"mode":"ok"}` restores it. The same state takes
+  `{"freespace": ...}` for the **Capacity Forecast** above the trend (DESIGN-013 D-09): `"steady"`
+  (the default: HaynesTower filling in a straight line with both dates, the music pool level, so
+  "no forecast: flat"), `"recorded"` (the history recorded 2026-11-13: a noisy fill with a late
+  rise set aside, and a slow fill whose sudden drops outweigh its pace), `"draining"` (use falling:
+  the green projection; save a target below 78.8% on the meter to see the date it is back under
+  target) and `"short"` (21 days of history: "no forecast yet"). Reload the tab after a change.
 - **Stub Gatus** (`GATUS_URL` points at it; ADR-079 / DESIGN-004 D-25) serves the apex
   check's plain-text uptime ratios + JSON statuses, so the Home **uptime badge** renders
   its up state locally. `POST <stub-gatus>/_stub/state` with `{"mode":"down"}` /

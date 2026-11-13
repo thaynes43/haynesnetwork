@@ -5,9 +5,11 @@
 // /admin/storage page (the storage.* + trash.* routers/procedures are UNCHANGED — only the UI moved):
 //   1. Utilization — one capacity meter per media array + the inline space-TARGET editor (each array
 //      keeps its own optimistic, reflow-free tick save — a direct manipulation, ADR-015, not a form).
-//   2. Free-space trend — the fill/drain TIME-SERIES, now a NATIVE chart off in-cluster Prometheus
+//   2. Capacity forecast — when each array reaches its space target and 100%, projected from the
+//      last 90 days (DESIGN-013 D-08 the read, D-09 the plot; story 819).
+//   3. Free-space trend — the fill/drain TIME-SERIES, now a NATIVE chart off in-cluster Prometheus
 //      (ADR-030 C-04 amendment 2026-07-09 — the LAN-only Grafana deep-link retired to a footnote).
-//   3. Space policy — the propose-only automatic policy: enable ceremony + per-array opt-in + the
+//   4. Space policy — the propose-only automatic policy: enable ceremony + per-array opt-in + the
 //      rules-tuning / graduation block (ADR-031).
 // Admin-only (this whole tab is adminProcedure reads). The Batch policy form (#134) MOVED to the
 // General tab (build C, 2026-07-09) — batch composition is pipeline behavior, not storage.
@@ -23,6 +25,7 @@ import {
   utilizationTone,
   type StorageArrayUtilization,
 } from '@/lib/storage';
+import { CapacityForecast } from './capacity-forecast';
 import { FreespaceTrend } from './freespace-trend';
 import {
   POLICY_ARRAY_KEY,
@@ -85,8 +88,14 @@ function ArrayCard({ array }: { array: StorageArrayUtilization }) {
       const savedText = savedValue == null ? '' : String(savedValue);
       setDraft((cur) => (cur === null || cur.trim() === savedText ? null : cur));
     },
+    // The forecast's target date and dashed floor follow the target (DESIGN-013 D-09): its panel
+    // keeps its geometry and swaps the words and marks in place (ADR-015).
     onSettled: () =>
-      Promise.all([utils.storage.targets.get.invalidate(), utils.storage.utilization.invalidate()]),
+      Promise.all([
+        utils.storage.targets.get.invalidate(),
+        utils.storage.utilization.invalidate(),
+        utils.storage.forecast.invalidate(),
+      ]),
   });
 
   function submit(e: FormEvent) {
@@ -483,6 +492,10 @@ export function StorageTab() {
           <ArrayCard key={array.key} array={array} />
         ))}
       </section>
+
+      {/* DESIGN-013 D-09 (story 819) — when each array reaches its target and 100%, above the
+          history it is projected from. */}
+      <CapacityForecast arrays={utilization.data} />
 
       {/* ADR-030 C-04 amendment (2026-07-09) — the fill/drain history is now a NATIVE chart off
           in-cluster Prometheus; the LAN-only Grafana dashboard survives as the card's footnote. */}

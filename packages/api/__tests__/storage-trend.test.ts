@@ -9,6 +9,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { users } from '@hnet/db';
 import {
+  FORECAST_MIN_POINTS,
+  FORECAST_MIN_SPAN_SECONDS,
   FORECAST_STEP_SECONDS,
   FORECAST_WINDOW_SECONDS,
   type StorageArrayUtilization,
@@ -412,7 +414,13 @@ describe('storage.forecast — the router read', () => {
       start: asked!.start,
       end: asked!.end,
       stepSeconds: FORECAST_STEP_SECONDS,
+      // D-09: the method's floors, so the page can say what "too short" lacks.
+      minPoints: FORECAST_MIN_POINTS,
+      minSpanSeconds: FORECAST_MIN_SPAN_SECONDS,
     });
+    // D-09: the instant the forecast was made ("today" on the plot), inside the last step.
+    expect(report.now).toBeGreaterThanOrEqual(asked!.end);
+    expect(report.now - asked!.end).toBeLessThan(FORECAST_STEP_SECONDS);
 
     const tower = report.series.find((s) => s.key === 'haynestower')!;
     expect(tower.targetPct).toBe(80);
@@ -428,6 +436,12 @@ describe('storage.forecast — the router read', () => {
     expect(tower.forecast.fullAt).toBe(Math.round(towerOrigin.t + 112.4304 * DAY));
     // 112.4304 TB free is above the 105.992 TB floor: (112.4304 − 105.992) / 1 = 6.4384 days.
     expect(tower.forecast.targetAt).toBe(Math.round(towerOrigin.t + 6.4384 * DAY));
+    // D-09: the plot's history is the 31 samples the rate was read from, and "today" is the level's time.
+    expect(tower.points).toHaveLength(31);
+    expect(tower.points[0]).toEqual({ t: asked!.start, freeBytes: 120 * TB });
+    expect(tower.points[30]!.t).toBe(asked!.end);
+    expect(towerOrigin.t).toBe(report.now);
+    expect(tower.jumps).toBeNull(); // a straight fill holds no jump
 
     const music = report.series.find((s) => s.key === 'cephfs')!;
     expect(music.targetPct).toBeNull();
@@ -446,6 +460,8 @@ describe('storage.forecast — the router read', () => {
     expect(report.series).toEqual([]);
     expect(report.stepSeconds).toBe(FORECAST_STEP_SECONDS);
     expect(report.end - report.start).toBe(FORECAST_WINDOW_SECONDS);
+    expect(report.minSpanSeconds).toBe(FORECAST_MIN_SPAN_SECONDS);
+    expect(report.now).toBeGreaterThanOrEqual(report.end);
   });
 });
 
@@ -480,6 +496,39 @@ describe('getStorageForecast — direct (no router)', () => {
     expect(tower.forecast.rateBytesPerDay).toBeCloseTo(-1e12, -3);
     expect(tower.forecast.origin).toEqual({ t: NOW_SEC, freeBytes: 112.4304 * TB });
     expect(tower.forecast.fullAt).toBe(Math.round(NOW_SEC + 112.4304 * DAY));
+    expect(report.now).toBe(NOW_SEC);
+    expect(tower.points[tower.points.length - 1]).toEqual({ t: ALIGNED_END, freeBytes: 120 * TB });
+  });
+
+  it('names a jump in the history beside the forecast it was set aside from (D-09)', async () => {
+    // The same 1 TB/day fill with one 9 TB rise across the step that ends 12 days before the last sample.
+    const jumpAt = ALIGNED_END - 12 * DAY;
+    const report = await getStorageForecast({
+      db: testDb.db,
+      arr: diskspaceStub().bundle,
+      prometheus: stubPrometheus(async (_query, start, end, step) => {
+        const points: [number, string][] = [];
+        for (let t = start; t <= end; t += step) {
+          const lift = t >= jumpAt ? 0 : -9 * TB;
+          points.push([t, `${120 * TB + ((end - t) / DAY) * 1e12 + lift}`]);
+        }
+        return [
+          promSeries('radarr_rootfolder_freespace_bytes', '/data/haynestower/Media/Movies', points),
+        ];
+      }),
+      now: NOW,
+    });
+    const tower = report.series.find((s) => s.key === 'haynestower')!;
+    expect(tower.forecast.rateBytesPerDay).toBeCloseTo(-1e12, -3); // the rise is not in the rate
+    // The step fell 3 TB as usual and rose 9 TB: free space is 6 TB higher across it.
+    expect(tower.jumps).toEqual({
+      rises: { count: 1, bytes: 6 * TB },
+      falls: { count: 0, bytes: 0 },
+      latestAt: jumpAt,
+      partlyCounted: false,
+    });
+    // The array with no history has no forecast and so no jumps.
+    expect(report.series.find((s) => s.key === 'cephfs')!.jumps).toBeNull();
   });
 
   it('falls back to the last aligned sample when the *arr cannot be read', async () => {
