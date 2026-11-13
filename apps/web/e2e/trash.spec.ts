@@ -782,7 +782,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await signIn(page, 'admin');
 
     // The control it must be: Library > Movies. Read its green from the page rather than assume it.
-    await page.goto('/library');
+    // The tab is named, so the reference never depends on which Library tab opens first.
+    await page.goto('/library?tab=movies');
     const libraryView = page.getByTestId('view-selector');
     await expect(libraryView).toBeVisible();
     const segStyle = (pill: Locator) =>
