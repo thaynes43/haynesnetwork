@@ -1,7 +1,7 @@
 # DESIGN-013: Disk-utilization + reclaim-metrics vertical
 
 - **Status:** Draft
-- **Last updated:** 2026-11-13 (D-08 capacity forecast)
+- **Last updated:** 2026-11-13 (D-08 capacity forecast; its method corrected the same day)
 - **Satisfies:** PRD-001 **R-108..R-111**; governed by **ADR-030** (HYBRID surface). Consumes ADR-025 /
   DESIGN-011 deletion snapshots, ADR-018 `media_metadata.resolution`, ADR-023 attribution. Grafana
   side recorded in **OPS-007**; glossary **T-95..T-97**, **T-332**.
@@ -203,7 +203,7 @@ audience the drivers prioritized; owner-greenlit replacement):
 - **Placement:** replaces the Grafana deep-link card on the Storage tab; the old dashboard URL
   survives as the muted footnote (Grafana stays the LAN power tool — OPS-007 unchanged).
 
-### D-08 — Capacity Forecast (2026-11-13)
+### D-08 — Capacity Forecast (2026-11-13; method corrected the same day)
 
 When each array's free space will reach its target floor, and when it will reach zero, from the
 same exportarr free-space history D-07 already reads. The chart that draws this is a later story;
@@ -216,112 +216,267 @@ percent trend (C-06).
 exported from `@hnet/domain`. `@hnet/api` already depends on `@hnet/domain`, and story 820 calls
 the same function from `packages/domain/src/space-policy.ts`. A home in `@hnet/api` would cycle
 when that call lands. `@hnet/metrics` is the Prometheus client; this function does no I/O. It
-takes the samples, the free-byte target floor (`null` when the array has no target), and the
-current time as unix seconds. It does not read a clock.
+takes the samples, the free-byte target floor (`null` when the array has no target), the current
+time as unix seconds and, optionally, a newer reading of the level. It does not read a clock.
 
 **The read.** `storage.forecast` (adminProcedure, `packages/api/src/storage-forecast.ts`) runs the
 D-07 PromQL once over **90 days at a 3-day step**, maps series with `mapTrendSeries` (the same
 arrays, dedupe, and target floor as `storage.trend`), and calls `forecastFreeSpace` per array.
 Prometheus down ⇒ `{ unavailable: true, series: [] }`, never a throw. The chart's own window
-(7d/30d/90d/1y) does not change this fit.
+(7d/30d/90d/1y) does not change this window. Two readings feed each forecast:
 
-**Chosen method.** Ordinary least squares of free bytes on time. The rate is free bytes per day
-(negative while the array is filling). The level the dates start from is the latest sample. When
-that sample lies more than **4 residual standard deviations** off the line fitted to the samples
-**at least 6 days earlier**, the rate is that earlier line and the level is still the latest
-sample (a step hold). Fewer than **8** points, or a span under **21 days**, is too short. A slope
-within **2** standard errors of zero is flat. Too short and flat are no forecast.
+- **The rate** comes from the history, on the step-aligned grid (close refetches share samples).
+- **The level** the dates start from is the live `/diskspace` free space that the same call
+  already reads for the totals, stamped `now`. The grid's last sample can be a whole step old: at
+  the coordinator's read on 2026-11-13T16:36Z it was 2026-11-12T00:00Z, 40.6 hours back, and by
+  2026-11-13T12:00Z HaynesTower had fallen 537.5 GB and the music array 4185.0 GB from it
+  (measured, 12-hour series below). When the *arr cannot be read, the level is the last sample.
 
-While free space is falling: a date for zero, and a date for the target floor when the latest
-sample is still above that floor. While free space is rising and the latest sample is below the
-floor: a date for the floor, and no date for zero. No target ⇒ the zero date only. A floor that
-is not ahead of the slope, and a crossing at or before `now`, are omitted. A sample after `now`
-is dropped before the fit.
+**Method.**
 
-**Why these cuts.** The numbers below were computed 2026-11-13 from the series the coordinator
-recorded the same day (Prometheus, 90 days, 3-day step, GB = 1e9 bytes). Ordinary least squares,
-float64. They are not a fresh Prometheus query. Slopes are GB/day. Every 100% date is anchored at
-the 2026-11-12 sample (HaynesTower 88140.8 GB, music 110378.8 GB) and is the UTC day free space
-would reach 0.
+1. A **step** is the change in free bytes per day between two consecutive samples.
+2. The **rate** is the **interquartile mean** of the steps: sort them, set aside a quarter
+   (rounded down) at each end, and average the rest. The read's 31 samples give 30 steps: 7 are
+   set aside at each end and the middle 16 are averaged. A level jump is one or a few steps far
+   from the others, so it falls in a set-aside quarter wherever it sits in the window, up or down.
+3. The **level** is the newer reading when the caller gives one, else the last sample. The level
+   never enters the rate. A jump therefore moves both dates at once, through the level, and
+   leaves the rate alone.
+4. While free space is falling: a date for zero, and a date for the target floor when the level
+   is still above that floor. While free space is rising and the level is below the floor: a date
+   for the floor, and no date for zero. No target ⇒ the zero date only. A floor that is not
+   ahead of the rate, and a crossing at or before `now`, are omitted. A sample after `now` is
+   dropped.
+5. **No forecast** is one of two things. *Too short*: fewer than **13** samples, or a span under
+   **36 days**. *Flat*: the rate is within **2 standard errors** of zero. The standard error is
+   Tukey and McLaughlin's for a trimmed mean: replace each set-aside step by the nearest kept one,
+   take that list's sum of squares about its mean, divide by `h (h − 1)` where `h` is the number
+   of kept steps, and take the square root.
 
-HaynesTower:
+**The defect this replaces.** The first method on this branch fitted a least-squares line over
+the 90 days and, when the newest sample lay more than 4 standard deviations off the line through
+the samples at least 6 days older, kept that older line's rate. That holds a jump only while the
+jump is the newest sample. The coordinator continued the recorded HaynesTower series from its
+2026-11-12 level at its own pre-jump rate (−212.17 GB/day, so the true rate and the true 100% day,
+2028-01-01, never change) and read it 90 days back at each later sample. Rates are GB/day
+(GB = 1e9 bytes); the day is when free space reaches 0.
 
-| Window | Last six days in the slope | Slope | 100% date |
-| ------ | -------------------------- | ----: | --------- |
-| 90d | included | −186.51 | 2028-02-27 |
-| 90d | excluded (the step hold) | −212.17 | 2028-01-01 |
-| 60d | included | −161.84 | 2028-05-09 |
-| 60d | excluded | −217.19 | 2027-12-22 |
-| 30d | included, least squares | −60.48 (0.63 se) | the flat rule would refuse it (a raw extension lands on 2030-11-08) |
-| 30d | included, first and last sample only | +114.33 | no 100% date |
-| 30d | excluded | −275.66 | 2027-09-27 |
-| 90d | Theil-Sen, last six days included | −207.67 | 2028-01-10 |
+| Days after 2026-11-12 | First method | its 100% day | This method | its 100% day |
+| --------------------: | -----------: | ------------ | ----------: | ------------ |
+| 0 | −212.2 | 2028-01-01 | −212.2 | 2028-01-01 |
+| 3 | −205.6 | 2028-01-14 | −211.3 | 2028-01-03 |
+| 6 | −179.5 | 2028-03-15 | −204.7 | 2028-01-16 |
+| 9 | −127.2 | 2028-09-29 | −208.8 | 2028-01-07 |
+| 18 | −85.3 | 2029-08-13 | −201.6 | 2028-01-22 |
+| 30 | −54.6 | 2031-01-18 | −204.8 | 2028-01-15 |
+| 42 | −42.4 | 2032-02-05 | −217.0 | 2027-12-24 |
+| 66 | −80.3 | 2029-07-27 | −212.2 | 2028-01-01 |
+| 90 | −212.2 | 2028-01-01 | −212.2 | 2028-01-01 |
 
-The 30-day window cannot carry the step. Least squares over those 30 days is 0.63 standard
-errors from zero. The first-to-last slope is +114.33 GB/day, so there is no 100% date; against a
-scenario floor of 100000 GB (above the latest sample, so the array counts as over target) that
-positive slope would date the floor at 2027-02-23. That is the wrong reading of a series that
-fell for 84 days and then rose. The 100000 GB floor is a scenario input for that comparison. It
-is not a measured live target.
+Over all 61 samples from day 0 to day 180 the first method is off by up to 170.1 GB/day (80%).
+This method is off by up to 19.1 GB/day (9.0%, at day 15: −193.0, 100% on 2028-02-10) and its
+earliest day is 2027-12-23 (day 39). What still moves it is which recorded steps remain in the
+window, not the rise. From day 51 the continued steps fill the middle 16 and the rate is exact.
 
-The 90-day and 60-day rates agree once the last six days are out of the slope (−212.17 and
-−217.19). The 90-day window is the whole recorded history. On the prefix through 2026-11-06, the
-first 14 samples (2026-08-14 through 2026-09-22) slope at −228.57 GB/day and the next 15
-(2026-09-25 through 2026-11-06) slope at −228.28 GB/day. One line through all 29 is −212.17
-GB/day, residual σ = 571.14 GB. A 24-day slice at the end of that prefix is −275.66 GB/day. The
-long line is the historical rate; the short slice is a faster patch.
+**Evidence.** Every number below was computed on 2026-11-13 by
+`.agents/context/2026-11-13-834-forecast-candidates.mjs` (no dependency, seeded, prints the same
+tables on every run) from two measurements: the 3-day series the coordinator recorded at
+2026-11-13T16:36Z, and the same two arrays at a 12-hour step, read by this session the same day
+through the Grafana MCP server (queries and range in the script and in the evidence note
+`.agents/context/2026-11-13-834-storage-forecast.md`). Prometheus returned nothing older than
+2026-08-07T12:00Z, 98 days back.
 
-The step hold is how the last six days are treated. The 2026-11-12 HaynesTower sample is 10753.8 GB
-above the 29-point line, **18.83σ**. The largest in-sample standardized residual of that prefix
-is **1.86**. Four standard deviations sits between those two. Including the six days moves the
-90-day slope from −212.17 to −186.51 and the date from 2028-01-01 to 2028-02-27. The level stays
-the latest sample: the prefix line at 2026-11-12 is 77387.0 GB, and the measured free space is
-88140.8 GB. Dates start from the measured level.
+Candidates. A: least squares over 90 days. B: the first method. C: Theil-Sen on the levels.
+D: the median step. E: the mean of the steps after setting aside 10%, 20%, 25% or 33% at each
+end. F: the mean of the steps that lie within 3 scaled median deviations of the median step (a
+step's distance from the median step, divided by 1.4826 times the median such distance).
+G: least squares after removing those flagged steps from the levels.
 
-Theil-Sen on the full HaynesTower series lands on 2028-01-10, close to the hold. On the music
-array the same estimator dates 100% at 2035-10-18, against a least-squares date of 2029-12-23.
-The music level shift on 2026-10-31 is still a minority of the pairwise slopes, so Theil-Sen
-treats twelve days of a new level as if it were not the rate. The hold is only for a break in
-the last six days. Least squares, not the first-to-last slope: that slope on the full 90 days is
-−100.33 GB/day and dates 100% at 2029-04-08, because it has only the stepped last sample to go
-on, and it has no residual with which to see the step.
+| Candidate | HaynesTower, as of 2026-11-12 | Music, as of 2026-11-12 | Worst error on the continued series |
+| --------- | ----------------------------- | ----------------------- | ----------------------------------: |
+| A | −186.5 → 2028-02-27 | −97.0 → 2029-12-23 | 170.1 (80.2%) |
+| B (first method) | −212.2 → 2028-01-01 | −97.0 → 2029-12-23 | 170.1 (80.2%) |
+| C | −207.7 → 2028-01-10 | −33.8 → 2035-10-18 | 138.1 (65.1%) |
+| D | −214.7 → 2027-12-27 | −29.0 → 2037-04-07 | 2.5 (1.2%) |
+| E 10% | −198.4 → 2028-01-30 | −41.3 → 2034-03-05 | 29.4 (13.9%) |
+| E 20% | −210.2 → 2028-01-05 | −40.4 → 2034-05-04 | 19.2 (9.1%) |
+| **E 25% (chosen)** | **−212.2 → 2028-01-01** | **−39.3 → 2034-07-21** | **19.1 (9.0%)** |
+| E 33% | −210.3 → 2028-01-05 | −35.0 → 2035-07-04 | 12.4 (5.9%) |
+| F | −224.9 → 2027-12-08 | −41.3 → 2034-03-05 | 17.8 (8.4%) |
+| G | −213.7 → 2027-12-29 | −37.9 → 2034-11-01 | 16.8 (7.9%) |
 
-Music, same anchor rule. The 2026-11-12 sample is **2.21σ** from the line through 2026-11-06
-(prefix in-sample maximum 3.03σ), so the hold does not apply and the slope is the full 31-point
-fit.
+The continued series has no noise after 2026-11-12, which flatters D: its exact steps sit at the
+middle of the order, where the median reads them alone. So the candidates were also compared
+under the measured noise. The 12-hour HaynesTower series before its two large rises
+(2026-08-07T12:00Z to 2026-10-30T12:00Z, 12 whole weeks) was resampled in weekly blocks: each of
+4000 replicates draws 13 of those weeks, is read at the 3-day step, and has a known true rate,
+−252.1 GB/day. The table is the root-mean-square error against that rate, GB/day. These are
+estimates from resampling, not measurements of the future.
 
-| Window | Last six days in the slope | Slope | 100% date |
-| ------ | -------------------------- | ----: | --------- |
-| 90d | included (chosen) | −97.00 | 2029-12-23 |
-| 90d | excluded | −72.11 | 2031-01-20 |
-| 30d | included | −459.58 | 2027-07-10 |
-| 90d | Theil-Sen, included | −33.84 | 2035-10-18 |
+| Candidate | No jump | The recorded rise (+1861.3, +8002.5 GB), placed anywhere | The recorded music fall (−6859.5, −3843.8, −1183.4 GB), placed anywhere | Both |
+| --------- | ------: | ------: | ------: | ------: |
+| Plain mean, (last − first) / days | 41.1 | 116.5 | 137.3 | 45.3 |
+| A | 44.8 | 126.8 | 153.7 | 80.9 |
+| B (first method) | 45.0 | 126.2 | 153.2 | 84.9 |
+| C | 45.1 | 98.4 | 122.3 | 64.7 |
+| D | 48.6 | 54.2 | 52.3 | 50.3 |
+| E 10% | 39.7 | 51.0 | 53.0 | 42.6 |
+| E 20% | 38.1 | 48.1 | 44.2 | 39.4 |
+| **E 25% (chosen)** | **38.4** | **47.3** | **43.1** | **38.9** |
+| E 33% | 42.1 | 48.3 | 44.8 | 41.9 |
+| F | 42.2 | 46.3 | 44.8 | 45.0 |
+| G | 44.2 | 48.5 | 47.5 | 47.4 |
 
-The flat cut is 2 standard errors. The HaynesTower prefix slope is 50.2 se; the music full-window
-slope is 5.13 se; the 30-day HaynesTower window with the step included is 0.63 se. The too-short
-floor is the shortest slice measured on the HaynesTower prefix that still has 8 samples: 21 days
-(slope −271.56 GB/day, 16.8 se). The 15-day slice of that prefix has 6 samples. Twenty-one days is
-the refusal floor. The fit window stays 90 days.
+Even with no jump, 90 days of this history give the rate to about 40 GB/day: the fill is not
+steady. That is the floor every candidate sits on. A, B and C are two to four times worse once a
+jump is in the window. D holds jumps and is the noisiest of the rest. E at 20% or 25%, F and G
+cannot be told apart by this table.
 
-**Hand calculation the tests lock** (GB = 1e9 bytes).
+Following a real change of rate: the percent of the change the rate reports after `m` of the 30
+steps are at the new rate.
 
-HaynesTower prefix, x = 0, 3, …, 84 days from 2026-08-14, n = 29. Mean x = 42. Sxx = 18270
-(x = 3k for k = 0..28, Σ(k−14)² = 2030, times 9). The free-space values in tenths of a GB sum to
-25395652, so mean y = 87571.2137931035 GB. Sxy = −3876367.5 GB·day. Slope = −3876367.5 / 18270
-= −172283/812 = **−212.17118226600985 GB/day**. The 2026-11-12 residual is +10753.802956 GB =
-18.83σ. Days from 88140.8 GB to 0 = 88140.8 / 212.17118226600985 = 415.423051606949 days =
-35892551.65884 s after 2026-11-12T00:00:00Z, which rounds to **2028-01-01T10:09:12Z**.
+| Case | m = 4 | 7 | 8 | 10 | 15 | 20 | 23 | 30 |
+| ---- | ----: | -: | -: | -: | -: | -: | -: | -: |
+| No noise, new rate far outside the old steps: plain mean | 13 | 23 | 27 | 33 | 50 | 67 | 77 | 100 |
+| — D, and F | 0 | 0 | 0 | 0 | 50 | 100 | 100 | 100 |
+| — E 20% | 0 | 6 | 11 | 22 | 50 | 78 | 94 | 100 |
+| — **E 25% (chosen)** | **0** | **0** | **6** | **19** | **50** | **81** | **100** | **100** |
+| — E 33% | 0 | 0 | 0 | 0 | 50 | 100 | 100 | 100 |
+| Measured noise, the fill doubles (−252 GB/day more): chosen | 11 | 21 | 24 | 31 | 50 | 68 | 78 | 100 |
+| Measured noise, the fill stops (+252 GB/day): chosen | 11 | 21 | 25 | 32 | 51 | 68 | 79 | 100 |
+| Measured noise, +1000 GB/day: chosen | 4 | 9 | 14 | 23 | 49 | 75 | 89 | 100 |
 
-Music, full window, x = 0, 3, …, 90, n = 31. Mean x = 45. Sxx = 22320. Sxy = −2164976.1 GB·day.
-Slope = −2164976.1 / 22320 = −2405529/24800 = **−96.9971370967742 GB/day**. Days from 110378.8 GB
-to 0 = 1137.95935945898 = 98319688.657 s after 2026-11-12T00:00:00Z, which rounds to
-**2029-12-23T23:01:29Z**.
+**Why the interquartile mean.** It holds its rate through the recorded rise at every age (first
+table), it is as quiet as anything measured (third table), and it follows a change of rate
+gradually: D and F report nothing of a far change until half the window carries it and then
+report all of it within three samples. F and G also need two more numbers, a cut and a scale
+taken from the same contaminated steps, and their answer depends on whether a step lands just
+inside or just outside the cut. The interquartile mean has one number, the share set aside, and
+that number says the same thing in both directions.
+
+**The trade.** Setting aside 7 of 30 steps at each end is what ignores a jump, and it is also
+what delays a real change. A new rate that is far outside the old steps is held for 7 samples
+(21 days), starts to count on the 8th (24 days), is half reported on the 15th (45 days) and
+fully on the 23rd (69 days). A new rate inside the usual spread of the steps, such as the fill
+doubling or stopping on HaynesTower, is not set aside: it is followed from the first sample in
+proportion to how much of the window carries it, 50% at 45 days, the same as a plain 90-day mean.
+In the other direction, up to 7 jump steps one way are ignored. The recorded series hold 2
+(HaynesTower, up) and 3 down plus 3 up (music), counting steps more than 3 scaled median
+deviations from the median step; the largest ordinary step is 1.96 and the smallest of those
+eight is 4.42. A quarter is twice the worst measured, plus one. 20% gives the same errors and
+6 steps. 33% holds a far change three samples longer; it is closer on the continued series
+(5.9%) and noisier under resampling (42.1 against 38.4 GB/day with no jump).
+
+**Where each number comes from.**
+
+- **90-day window.** Prometheus keeps 98 days (measured above). Shorter windows are noisier and
+  set aside fewer steps. Root-mean-square error of this method, same resampling, GB/day:
+
+  | Samples (days) | Set aside at each end | No jump | With the rise | With the music fall |
+  | -------------- | --------------------: | ------: | ------: | ------: |
+  | 8 (21) | 1 | 81.7 | 196.3 | 392.4 |
+  | 11 (30) | 2 | 66.4 | 110.2 | 157.9 |
+  | 12 (33) | 2 | 63.3 | 101.5 | 145.1 |
+  | 13 (36) | 3 | 60.5 | 86.7 | 123.3 |
+  | 16 (45) | 3 | 56.1 | 84.3 | 88.5 |
+  | 21 (60) | 5 | 46.7 | 62.8 | 63.1 |
+  | 31 (90) | 7 | 37.9 | 47.9 | 43.4 |
+
+- **Too short: 13 samples, 36 days.** The widest jump in the recorded series is the music fall,
+  3 steps. 13 samples are 12 steps, the fewest that set aside 3 at each end. The first method's
+  floor (8 samples, 21 days) sets aside 1 and is off by 196 to 392 GB/day with a recorded jump in
+  it. At 13 samples the error with a jump is still 87 to 123 GB/day: a forecast that young is
+  rough, and it firms up as the window fills.
+- **3-day step.** The step is part of the method. Read at other steps, the measured series to
+  2026-11-12 gives HaynesTower −259.8 (12 hours), −265.8 (1 day), **−212.2 (3 days)**, −234.1
+  (7 days), and music −44.2, −45.6, **−39.3**, −37.1. Under resampling (true rate −252.1):
+
+  | Step | Steps in 90 days | Mean rate | Error, no jump | Error, one 9863.8 GB rise |
+  | ---- | ---------------: | --------: | -------------: | ------------------------: |
+  | 12 hours | 180 | −275.6 | 38.8 | 37.6 |
+  | 1 day | 90 | −269.7 | 36.2 | 34.6 |
+  | **3 days** | **30** | **−241.1** | **37.1** | **40.9** |
+  | 7 days | 12 | −231.5 | 46.7 | 54.8 |
+
+  The cause of the spread in the mean is visible at 12 hours: HaynesTower free space rises by 428
+  to 1209 GB eleven times, nine of them about a week apart from 2026-08-16 to 2026-10-12. At 12
+  hours and 1 day those rises are set aside and the rate is the fill between them, 7% to 9% above
+  the true net rate. At 3 days most of them sit inside ordinary steps and the rate comes out 4%
+  under it. 7 days is the noisiest. 12 hours, 1 day and 3 days are within the noise of each other
+  (1 day is 6.3 GB/day better with a rise in the window, 0.9 with none). The 3-day step stays
+  because the recorded series, the defect table and every other number here were measured at it,
+  and nothing measured argues for moving. A caller passes samples at this step.
+- **Flat at 2 standard errors.** No recorded array is flat, so the cut cannot be measured on
+  one. Measured instead: HaynesTower's rate is 5.56 standard errors from zero (38.18 GB/day) and
+  the music array's 3.49 (11.25 GB/day). With the HaynesTower noise re-centred on zero, 8.0% of
+  30-step replicates are called a trend at 2 standard errors, 3.5% at 2.5 and 2.1% at 3. The cut
+  stays at 2, the value the first method used. The formula's standard error agrees with the
+  spread of the resampled rate (37.4 against 37.8 GB/day).
+
+**Limits.**
+
+- **The rate is good to about one standard error**, 38 GB/day or 18% on HaynesTower. Carried to
+  the date, 88140.8 GB at 212.24 ± 38.18 GB/day is 2027-10-29 to 2028-04-01 around 2028-01-01
+  (an estimate: the rate moved one standard error each way). Independent readings of the same
+  fill sit inside that band or near it: −224.9 GB/day is the plain mean from 2026-08-14 to
+  2026-11-06, and the intake inventory (`.agents/context/2026-11-13-intake-inventory.md`) puts
+  the *arr file history's net write at about 22.3 TB in 92 days, about 242 GB/day.
+- **Deletion in batches does not turn the direction.** The rate is the typical 3-day change. A
+  few large rises move the level and both dates and leave the rate and `filling` as they were.
+  Use reads as falling only when rising steps reach the middle of the order: more than 7 of 30
+  begin to count, and more than half make the rate positive. See Q-05.
+- **The music array's fall is being held as a jump.** At 12 hours it is not one instant: free
+  space fell from 119434.7 GB on 2026-10-25T00:00Z to 106193.8 GB on 2026-11-13T12:00Z, −679.0
+  GB/day against −27.5 GB/day over the 72 days before, with a rise of 8044.1 GB at the
+  2026-11-11T00:00Z sample.
+  Three of its steps are in the recorded window. Five more like them, 15 days, are needed before
+  the eighth starts to count. If −679.0 GB/day is the new rate, 106193.8 GB lasts 156 days, to
+  about April 2027, not to 2034 (an estimate, by division). See Q-03.
+- **The level and the history are two readings of one filesystem**, by the same assumption
+  D-07 makes when it draws the `/diskspace` total against this series. This session could not
+  read `/diskspace` to compare them. See Q-06.
+- **A missing sample** makes one longer step, still a change per day. Many missing samples leave
+  too few steps and the answer is too short.
+
+**Hand calculation the tests lock** (GB = 1e9 bytes; a step is one sample minus the one before,
+in GB per 3 days).
+
+HaynesTower, the 30 steps of the recorded series, sorted:
+
+- set aside: −1753.0, −1572.3, −1566.5, −1226.3, −1144.3, −1115.0, −1031.7
+- middle 16: −1020.9, −1008.6, −953.1, −873.4, −769.2, −734.2, −683.2, −666.5, −621.7, −562.3,
+  −516.9, −442.1, −438.6, −346.5, −327.3, −223.2
+- set aside: −131.6, +162.4, +187.7, +201.5, +282.9, **+1861.3, +8002.5** (the rise)
+
+The middle 16 sum to −10187.7 GB. Mean −636.73125 GB per 3 days. Rate = −636.73125 / 3 =
+**−212.24375 GB/day**. Days from 88140.8 GB to 0 = 88140.8 / 212.24375 = 415.281015342 =
+35880279.7256 s after 2026-11-12T00:00:00Z (unix 1794441600), which rounds to unix 1830321880,
+**2028-01-01T06:44:40Z**. A floor of 50000 GB: (88140.8 − 50000) / 212.24375 = 179.702818104 days
+→ 2027-05-10T16:52:03Z. From the level measured on 2026-11-13T12:00Z, 87603.3 GB: 87603.3 /
+212.24375 = 412.748549722 days → 2027-12-31T05:57:55Z.
+
+Music, sorted:
+
+- set aside: **−6859.5, −3843.8, −1183.4** (the fall), −304.8, −282.8, −278.0, −268.0
+- middle 16: −257.3, −240.4, −223.7, −182.7, −180.8, −174.5, −94.9, −94.0, −80.3, −77.9, −61.7,
+  −53.2, −49.0, −42.8, −40.1, −33.1
+- set aside: −28.4, −28.1, +19.8, +81.2, **+958.3, +1219.8, +1651.1** (three rises)
+
+The middle 16 sum to −1886.4 GB. Mean −117.9 GB per 3 days. Rate = **−39.3 GB/day**. Days from
+110378.8 GB to 0 = 110378.8 / 39.3 = 2808.62086514 → unix 2037106443, **2034-07-21T14:54:03Z**.
 
 **Output, per array.** `direction` (`filling` when the rate is negative, `draining` when it is
-positive), `rateBytesPerDay`, `fullAt` and `targetAt` as unix seconds, and `forecast: false` with
-`reason: 'too_short' | 'flat'` when there is no forecast. A draining array that is already above
-its floor has a rate and no date. That is a forecast of the rate. No forecast is only too short
-or flat.
+positive), `rateBytesPerDay`, `fullAt` and `targetAt` as unix seconds, `forecast: false` with
+`reason: 'too_short' | 'flat'` when there is no forecast, and **`origin`**, the reading
+(`{ t, freeBytes }`) the dates are measured from: the chart draws the projection from that point
+at that rate. A draining array that is already above its floor has a rate and no date. That is a
+forecast of the rate. No forecast is only too short or flat.
+
+**What changed from the first method's interface.** The result's fields and names are kept and
+`origin` is added. The input gains the optional `level`. Two exported constants changed value
+because the method needs it: `FORECAST_MIN_POINTS` 8 → 13 and `FORECAST_MIN_SPAN_SECONDS` 21 → 36
+days. `FORECAST_TRIM_SHARE` (0.25) is new. `FORECAST_STEP_HOLD_SECONDS` and `FORECAST_STEP_SIGMAS`
+belonged to the first method and are removed.
 
 ### D-06 — Expedite forward-capture (reclaim data quality)
 
@@ -355,24 +510,53 @@ redrives `storage.trend` reflow-free, Prometheus-down shows the degrade note whi
 working, and the Grafana footnote stays a link (never an iframe).
 
 **D-08 additions:** the pure function (`packages/domain/__tests__/storage-forecast.test.ts`) — use
-rising under and over the target, use falling over and under the target, no target, flat, too
-short, a last-six-days step, a sample after `now`, and a crossing already past `now`. The recorded
-2026-11-13 series is a fixture whose HaynesTower and music dates equal the hand calculation above.
-The router read (`packages/api/__tests__/storage-trend.test.ts`) — admin gate, the 90-day / 3-day
-query, the same array grouping and target floor, and `unavailable` when Prometheus is down
-(including when every *arr read fails too). No e2e change: the chart is a later story.
+rising under and over the target, use falling over and under the target, no target, flat (a level
+series, and a noisy one on each side of the 2-standard-error cut), too short (the 13-sample and
+36-day floors), a missing sample, a sample after `now`, and a crossing already past `now`. Level
+jumps on a noise-free series: one jump up at each of the 30 positions, one jump down at each, a
+fall spread over three steps, two jumps in opposite directions, and seven jumps one way set aside
+while the eighth reaches the rate. A real change of rate: held for 7 samples, 1/16 of it on the
+8th, half on the 15th, all of it on the 23rd; and a fill that turns into a drain. A newer level
+reading: the dates start from it, the rate does not move, and an unusable one falls back to the
+last sample. The recorded 2026-11-13 series is a fixture whose HaynesTower and music dates equal
+the hand calculation above. The same series continued for 180 days at its pre-jump rate is the
+defect's reproduction: the rate must stay within one standard error (38.2 GB/day) of −212.17
+GB/day at every sample, and thirteen rows are locked to the values in the table above. The first
+method fails that test from day 9 to day 84. The router read
+(`packages/api/__tests__/storage-trend.test.ts`) — admin gate, the 90-day / 3-day query, the same
+array grouping and target floor, the level taken from the live `/diskspace` reading at `now`, the
+fall back to the last aligned sample when the *arr cannot be read, and `unavailable` when
+Prometheus is down (including when every *arr read fails too). No e2e change: the chart is a later
+story.
 
 ## Open questions
 
 - **Q-01 (resolved, ADR-030):** HYBRID — native reclaim + deep-linked Grafana trend.
 - **Q-02:** whether to split `haynesops`/`hayneskube` (CephFS-backed in-cluster Plex) into their own
   utilization rows later, or keep music as one `cephfs` array. Deferred — no owner ask yet.
-- **Q-03 (open):** the music array's free space fell 6859.5 GB between the 2026-10-28 and
-  2026-10-31 samples of the recorded series, twelve days before the last sample. The 6-day step
-  hold leaves that drop inside the 90-day slope. Recommendation: leave it there. The hold was set
-  from the last six days, which are the samples that reverse HaynesTower. A longer hold would
-  also drop the music samples after 2026-10-31, and this story does not establish the cause.
-- **Q-04 (open):** the fit was measured on a 3-day step, and the read uses that step. The chart's
-  12-hour samples were not compared. Recommendation: keep the 3-day step. An estimate of the
-  effect of a finer step, residual σ divided by the HaynesTower prefix slope, is 571.14 / 212.17
-  ≈ 2.7 days on that date. That is residual/slope, not a second measurement.
+- **Q-03 (open, restated 2026-11-13):** is the music array's fall since 2026-10-25 a new rate or
+  a one-off? Measured at 12 hours it is 13240.9 GB in 19.5 days, −679.0 GB/day against −27.5
+  GB/day before, and it had not stopped at the last sample read (2026-11-13T12:00Z). The method
+  holds it as a jump and reports −39.3 GB/day; it starts to follow after five more such steps.
+  This array is the CephFS pool, which holds more than music, so the cause may be outside the
+  libraries. Recommendation: keep the method as it is, because the rule that would follow this
+  fall sooner (setting aside fewer steps) is the rule that lets a jump into the rate; find what
+  is writing to the pool; and have the chart draw the level, so the fall is visible while the
+  rate holds.
+- **Q-04 (answered 2026-11-13):** the step. The first method was measured only at 3 days. This
+  change measured 12 hours, 1 day, 3 days and 7 days (D-08, "Where each number comes from").
+  12 hours, 1 day and 3 days are within the noise of each other and 7 days is worse. The 3-day
+  step stays.
+- **Q-05 (open, for stories 819 and 820):** story 834 asks for a target date "when over target
+  and falling". With this method use reads as falling only when most 3-day steps rise. Trash
+  deleting in a few large batches moves the level and both dates, and leaves the rate and
+  `filling` as they were: each batch pushes the 100% day out and no target date appears.
+  Recommendation: accept that. The chart draws the level and the line from `origin`, so a batch
+  shows as the level stepping up. The Trash pace decides whether it needs this rate (the fill,
+  which is what it must offset) or the net of its own deletions, which it knows from the
+  deletion snapshots. Counting a jump as trend is the defect this change removes.
+- **Q-06 (open):** the level is the *arr's `/diskspace` free space and the history is the
+  exportarr root-folder series. D-07 already treats them as one filesystem. This session had no
+  way to read `/diskspace` and did not compare them. Recommendation: compare the Storage page's
+  meter with the trend chart's last point once. If they differ by more than a day's fill (212 GB
+  on HaynesTower), take the level from a Prometheus instant query instead.

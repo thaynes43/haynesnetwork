@@ -1,6 +1,12 @@
 // DESIGN-013 D-08 (story 834) — the Storage forecast read (`storage.forecast`).
-// Same array grouping and targets as `storage.trend`. The fit itself is `forecastFreeSpace`
+// Same array grouping and targets as `storage.trend`. The method itself is `forecastFreeSpace`
 // in `@hnet/domain` (no I/O). Prometheus down ⇒ `unavailable: true`, never a throw.
+//
+// Two readings feed each array's forecast. The RATE comes from the Prometheus history, queried on
+// the step-aligned grid so close refetches share samples. The LEVEL the dates start from is the
+// live `/diskspace` free space this call already reads for the totals, stamped `now`: the last
+// aligned sample can be up to one step (3 days) old. When that *arr is unreachable the level
+// falls back to the last sample.
 import {
   forecastFreeSpace,
   getUtilization,
@@ -24,7 +30,7 @@ export interface StorageForecastSeries {
 }
 
 export interface StorageForecastReport {
-  /** Queried range, unix seconds. `end` is step-aligned. */
+  /** Queried range of the history, unix seconds. `end` is step-aligned, so it can trail `now`. */
   start: number;
   end: number;
   stepSeconds: number;
@@ -35,8 +41,8 @@ export interface StorageForecastReport {
 
 /**
  * `storage.forecast`: one Prometheus range query over the D-08 window, plus the live utilization
- * read (totals + targets), then `forecastFreeSpace` per array. Prometheus failing ⇒ `unavailable`,
- * never a throw — the Storage tab keeps rendering.
+ * read (totals, targets and the current free space), then `forecastFreeSpace` per array.
+ * Prometheus failing ⇒ `unavailable`, never a throw — the Storage tab keeps rendering.
  */
 export async function getStorageForecast(input: {
   db?: DbClient;
@@ -64,17 +70,21 @@ export async function getStorageForecast(input: {
     end,
     stepSeconds: FORECAST_STEP_SECONDS,
     unavailable: false,
-    series: mapTrendSeries(matrix, utilization).map((series) => ({
-      key: series.key,
-      label: series.label,
-      totalBytes: series.totalBytes,
-      targetPct: series.targetPct,
-      targetFreeBytes: series.targetFreeBytes,
-      forecast: forecastFreeSpace({
-        samples: series.points,
+    series: mapTrendSeries(matrix, utilization).map((series) => {
+      const liveFree = utilization.find((u) => u.key === series.key)?.freeSpace ?? null;
+      return {
+        key: series.key,
+        label: series.label,
+        totalBytes: series.totalBytes,
+        targetPct: series.targetPct,
         targetFreeBytes: series.targetFreeBytes,
-        now: nowSec,
-      }),
-    })),
+        forecast: forecastFreeSpace({
+          samples: series.points,
+          targetFreeBytes: series.targetFreeBytes,
+          now: nowSec,
+          level: liveFree === null ? null : { t: nowSec, freeBytes: liveFree },
+        }),
+      };
+    }),
   };
 }

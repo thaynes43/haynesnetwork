@@ -419,13 +419,22 @@ describe('storage.forecast — the router read', () => {
     expect(tower.targetFreeBytes).toBe(Math.round(529.96 * TB * 0.2));
     expect(tower.forecast.forecast).toBe(true);
     expect(tower.forecast.direction).toBe('filling');
-    expect(tower.forecast.fullAt).not.toBeNull();
+    expect(tower.forecast.rateBytesPerDay).toBeCloseTo(-1e12, -3);
+    // The dates start from the live /diskspace reading, stamped now, not from the last aligned sample.
+    const towerOrigin = tower.forecast.origin!;
+    expect(towerOrigin.freeBytes).toBe(112.4304 * TB);
+    expect(towerOrigin.t).toBeGreaterThanOrEqual(asked!.end);
+    expect(towerOrigin.t - asked!.end).toBeLessThan(FORECAST_STEP_SECONDS);
+    expect(tower.forecast.fullAt).toBe(Math.round(towerOrigin.t + 112.4304 * DAY));
+    // 112.4304 TB free is above the 105.992 TB floor: (112.4304 − 105.992) / 1 = 6.4384 days.
+    expect(tower.forecast.targetAt).toBe(Math.round(towerOrigin.t + 6.4384 * DAY));
 
     const music = report.series.find((s) => s.key === 'cephfs')!;
     expect(music.targetPct).toBeNull();
     expect(music.targetFreeBytes).toBeNull();
     expect(music.forecast.targetAt).toBeNull();
-    expect(music.forecast.fullAt).not.toBeNull();
+    expect(music.forecast.origin!.freeBytes).toBe(130.45 * TB);
+    expect(music.forecast.fullAt).toBe(Math.round(music.forecast.origin!.t + 130.45 * DAY));
   });
 
   it('degrades to `unavailable` when Prometheus is down — never a throw', async () => {
@@ -441,6 +450,60 @@ describe('storage.forecast — the router read', () => {
 });
 
 describe('getStorageForecast — direct (no router)', () => {
+  // 2026-11-13T16:36:00Z. The 3-day grid's last instant before it is 2026-11-12T00:00:00Z, 40.6 h back.
+  const NOW = new Date('2026-11-13T16:36:00.000Z');
+  const NOW_SEC = NOW.getTime() / 1000;
+  const ALIGNED_END = Date.parse('2026-11-12T00:00:00.000Z') / 1000;
+  /** 1 TB/day fill that ends at 120 TB free on the last aligned sample. */
+  const fillingProm = () =>
+    stubPrometheus(async (_query, start, end, step) => {
+      const points: [number, string][] = [];
+      for (let t = start; t <= end; t += step) {
+        points.push([t, `${120 * TB + ((end - t) / DAY) * 1e12}`]);
+      }
+      return [
+        promSeries('radarr_rootfolder_freespace_bytes', '/data/haynestower/Media/Movies', points),
+      ];
+    });
+
+  it('reads the rate from the aligned history and the level from the live free space, at now', async () => {
+    const report = await getStorageForecast({
+      db: testDb.db,
+      arr: diskspaceStub().bundle,
+      prometheus: fillingProm(),
+      now: NOW,
+    });
+    expect(report.end).toBe(ALIGNED_END);
+    expect(NOW_SEC - report.end).toBe(40.6 * 3600);
+
+    const tower = report.series.find((s) => s.key === 'haynestower')!;
+    expect(tower.forecast.rateBytesPerDay).toBeCloseTo(-1e12, -3);
+    expect(tower.forecast.origin).toEqual({ t: NOW_SEC, freeBytes: 112.4304 * TB });
+    expect(tower.forecast.fullAt).toBe(Math.round(NOW_SEC + 112.4304 * DAY));
+  });
+
+  it('falls back to the last aligned sample when the *arr cannot be read', async () => {
+    const deadArr = stubArrBundle([]); // every /diskspace 404s ⇒ no live free space, no total
+    const report = await getStorageForecast({
+      db: testDb.db,
+      arr: deadArr.bundle,
+      prometheus: fillingProm(),
+      now: NOW,
+    });
+    expect(report.unavailable).toBe(false);
+
+    const tower = report.series.find((s) => s.key === 'haynestower')!;
+    expect(tower.totalBytes).toBeNull();
+    expect(tower.targetFreeBytes).toBeNull();
+    expect(tower.forecast.origin).toEqual({ t: ALIGNED_END, freeBytes: 120 * TB });
+    expect(tower.forecast.fullAt).toBe(ALIGNED_END + 120 * DAY);
+    expect(tower.forecast.targetAt).toBeNull();
+
+    // An array with no history at all is too short, with nothing to start from.
+    const music = report.series.find((s) => s.key === 'cephfs')!;
+    expect(music.forecast).toMatchObject({ forecast: false, reason: 'too_short', origin: null });
+  });
+
   it('stays unavailable when Prometheus and every *arr are both down', async () => {
     const deadArr = stubArrBundle([]);
     const report = await getStorageForecast({
