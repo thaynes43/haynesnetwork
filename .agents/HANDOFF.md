@@ -1,5 +1,11 @@
 # HANDOFF — cold-start resume point
 
+## 2026-11-13: story #836 Age Guard library fill (proposed, setting off)
+
+- ADR-117 and DESIGN-052 D-29. The audited setting `age_guard_ignore_library_fill` defaults off. Off is the 2026-10-03 newest-date rule. On, a library-fill Plex date does not protect a title that is strictly older on another Plex server. A download import inside 180 days still protects. No other keep changes.
+- Evidence and the paper census (429 titles, Age Guard only) are in `.agents/context/2026-11-13-age-guard-library-fill.md`. The setting was not turned on. No live write.
+- Next safe step is review, then a later story to turn the setting on after a person has looked at the twenty largest shows and the movie list in D-29. Q-15 (Radarr rows matched into the TV library) does not block that.
+
 ## 2026-11-13: story #822 TV Trash audit (report only)
 
 - Read-only audit of the empty TV Trash pool. Note: `.agents/context/2026-11-13-tv-trash-audit.md`, with the show and season CSVs beside it. No rule, cap, or cluster setting was changed.

@@ -2964,6 +2964,7 @@ describe('migrations against embedded Postgres 16', () => {
       }
       expect(SYNC_RUN_KINDS).toContain('watchlist-registry');
       expect(APP_SETTING_KEYS).toContain('seerr_watchlist_enroll');
+      expect(APP_SETTING_KEYS).toContain('age_guard_ignore_library_fill');
     });
 
     it('rejects a malformed discover id, a bogus status, a second sweep-status row; cascades an account', async () => {
