@@ -41,4 +41,4 @@ Chosen option: **the tag is a guardian keep, and the audit requires the clause**
 
 ## More information
 
-DESIGN-052 D-29. Glossary T-334. The measured counts and the live clauses are recorded in D-29 (read-only, 2026-11-13).
+DESIGN-052 D-29. Glossary T-335. The measured counts and the live clauses are recorded in D-29 (read-only, 2026-11-13).

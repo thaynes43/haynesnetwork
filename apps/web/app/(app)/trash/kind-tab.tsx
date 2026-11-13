@@ -24,8 +24,8 @@ import { Modal } from '@/components/modal';
 import { TrashCard, TrashWall, TrashWallSkeleton } from '@/components/cards';
 import { type TrashAccess } from '@/components/trash-shield';
 import {
+  PendingViewSelector,
   PendingWall,
-  WatchlistVisibilityControl,
   useInfiniteScroll,
   usePendingSaves,
   usePinnedSaves,
@@ -1110,7 +1110,12 @@ function FutureCandidatesWall({
         Potential in future batches ({total}){canSave ? '; tap a poster to save it out' : ''}.
         {asOf !== null ? ` ${asOf}.` : ''}
       </p>
-      <WatchlistVisibilityControl checked={showProtected} onChange={setShowProtected} />
+      {/* DESIGN-052 D-10 amendment (story 821) — the strip's own view, the same selector as the wall. */}
+      <PendingViewSelector
+        view={showProtected ? 'all' : 'deletable'}
+        onChange={(next) => setShowProtected(next === 'all')}
+        testId="future-view"
+      />
       <p
         className="bwall-error"
         role="alert"
@@ -1131,7 +1136,12 @@ function FutureCandidatesWall({
         onToggle={toggle}
         loading={q.isLoading}
         refreshing={refreshing}
-        emptyLabel="Nothing else is eligible for a future batch."
+        emptyLabel={
+          showProtected || total > 0
+            ? 'Nothing else is eligible for a future batch.'
+            : 'Nothing else here can be deleted right now. Choose All to see what is kept, and why.'
+        }
+        showReasons={showProtected}
         wallLabel={`Potential future-batch ${label}`}
         sentinelRef={sentinelRef}
         hasNextPage={q.hasNextPage === true}

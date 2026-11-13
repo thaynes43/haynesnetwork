@@ -34,13 +34,18 @@ import {
   daysLeftLabel,
   daysUntil,
   KEPT_REASON_TOOLTIPS,
+  PENDING_VIEWS,
   pendingWallGlyph,
   skipKeepTooltip,
   pendingWallTappable,
   releaseNeedsConfirm,
+  shownWallReason,
+  wallReasonCopy,
+  wallReasonIsSave,
   watchNote,
   WATCHLIST_NOTE_DETAIL,
   withPinnedTiles,
+  type PendingView,
   type PendingWallGlyph,
   type PinnedTile,
 } from '@/lib/trash';
@@ -80,45 +85,70 @@ export interface PendingWallItem {
 const itemRating = (item: PendingWallItem): number | null =>
   ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating);
 
-/** A view preference, never a release of watchlist protection. */
-export function WatchlistVisibilityControl({
-  checked,
+/**
+ * DESIGN-052 D-10 amendment (story 821) — which titles the wall lists: `Deletable | All`.
+ *
+ * The Library's view selector ("Collections | All movies"): the same `.seg` pill, the same markup
+ * and the same pressed-button semantics, so the selected segment is the green one here as it is
+ * there. It replaces the "Show protected" checkbox. A view is a way of looking, never a release of
+ * protection: a title kept in one view is kept in the other. `.seg--steady` holds each segment at
+ * the width of its bold label, so choosing one recolors the pill and moves nothing (ADR-015).
+ */
+export function PendingViewSelector({
+  view,
   onChange,
+  testId = 'trash-view',
 }: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
+  view: PendingView;
+  onChange: (view: PendingView) => void;
+  testId?: string;
 }) {
   return (
-    <label
-      className="trash-protected-toggle"
-      title="Include titles that cannot be deleted. They stay protected."
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      Show protected
-      <span className="sr-only"> titles that cannot be deleted. They stay protected.</span>
-    </label>
+    <div className="seg seg--steady" role="group" aria-label="View" data-testid={testId}>
+      {PENDING_VIEWS.map((v) => {
+        const isActive = v.view === view;
+        return (
+          <button
+            key={v.view}
+            type="button"
+            className={isActive ? 'is-active' : undefined}
+            aria-pressed={isActive}
+            title={v.hint}
+            data-label={v.label}
+            onClick={() => onChange(v.view)}
+          >
+            <span>{v.label}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
 /** The tile tooltip — the detail the retired table columns carried; the full history is one tap
  *  away on /library/[id]. */
-function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph, armed = false): string {
+function tileInfo(
+  item: PendingWallItem,
+  glyph: PendingWallGlyph,
+  armed = false,
+  reason: string | null = null,
+): string {
   const lines: string[] = [
     // ADR-014 — while the release is armed the tooltip leads with the ask + the window, so a
     // pointer user sees the same thing the aria-label tells a screen-reader user.
     ...(armed ? ['Tap again to un-save — 3 seconds'] : []),
-    // DESIGN-052 D-26 / Q-14 — a title the Age Guard keeps leads with the batch wall's kept reason, never a date.
-    item.onWatchlist === true
-      ? KEPT_REASON_TOOLTIPS.watchlisted
-      : glyph === 'skip'
-        ? skipKeepTooltip(item)
-        : item.scheduledDeleteAt !== null
-          ? `Deletes ${formatDay(item.scheduledDeleteAt)} (${daysLeftLabel(daysUntil(item.scheduledDeleteAt))})`
-          : 'No scheduled delete date',
+    // DESIGN-052 D-10 amendment (story 821) — a kept title leads with why it is kept, never with a
+    // delete date it will not meet. The checks below cover a server that sends no reason
+    // (the Age Guard or the Request Keep, then the watchlist).
+    reason !== null
+      ? wallReasonCopy(reason).detail
+      : item.onWatchlist === true
+        ? KEPT_REASON_TOOLTIPS.watchlisted
+        : glyph === 'skip'
+          ? skipKeepTooltip(item)
+          : item.scheduledDeleteAt !== null
+            ? `Deletes ${formatDay(item.scheduledDeleteAt)} (${daysLeftLabel(daysUntil(item.scheduledDeleteAt))})`
+            : 'No scheduled delete date',
   ];
   if (glyph === 'shield') lines.push('Saved by you — protected from deletion');
   else if (glyph === 'check' && item.saveIntent === true) lines.push("Saved, so it won't be deleted");
@@ -285,6 +315,7 @@ function PendingTile({
   canSave,
   canUnsave,
   onToggle,
+  showReasons,
 }: {
   item: PendingWallItem;
   media: 'movie' | 'tv';
@@ -295,11 +326,14 @@ function PendingTile({
   canSave: boolean;
   canUnsave: boolean;
   onToggle: (item: PendingWallItem, glyph: PendingWallGlyph) => void;
+  showReasons: boolean;
 }) {
   const rating = formatRating(itemRating(item));
   const override =
     item.maintainerrMediaId === null ? undefined : overrides.get(item.maintainerrMediaId);
   const glyph = pendingWallGlyph(item, override);
+  // DESIGN-052 D-10 amendment (story 821) — why the title is kept, or null when it can be deleted.
+  const reason = shownWallReason(item, override);
   const tappable =
     item.maintainerrMediaId !== null && pendingWallTappable(glyph, canSave, canUnsave);
   // ADR-014 (2026-09-14) — SAVING stays one tap (protective, fast); RELEASING a save is the
@@ -323,7 +357,7 @@ function PendingTile({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needsConfirm, isBusy]);
   const armed = release.armed && needsConfirm && !isBusy;
-  const info = tileInfo(item, glyph, armed);
+  const info = tileInfo(item, glyph, armed, reason);
   // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone eye (recently watched) or muted
   // eye (watched a while ago). Null when there is no watch signal. NEVER in the action corner.
   const note = watchNote(item);
@@ -339,10 +373,13 @@ function PendingTile({
         : item.onWatchlist === true
           ? `${item.title} is protected while on a watchlist${tappable ? ' — tap to save it permanently' : ''}`
           : glyph === 'skip'
-            ? `${item.title}. ${skipKeepTooltip(item)}`
-            : tappable
-              ? `${item.title} is slated to delete — tap to save it`
-              : `${item.title} is slated to delete`;
+            ? `${item.title}. ${reason !== null ? wallReasonCopy(reason).detail : skipKeepTooltip(item)}`
+            : reason !== null
+              ? // A kept title is not "slated to delete": say why it is kept, then what a tap does.
+                `${item.title}. ${wallReasonCopy(reason).detail}${tappable ? '. Tap to save it' : ''}`
+              : tappable
+                ? `${item.title} is slated to delete — tap to save it`
+                : `${item.title} is slated to delete`;
   const toggleLabel = isBusy
     ? wallTapBusyLabel(busyAction, item.title)
     : failedAction !== undefined
@@ -385,6 +422,13 @@ function PendingTile({
       watchNote={note !== null ? { label: note.label, tone: note.tone } : null}
       onWatchlist={item.onWatchlist === true}
       failedNote={failedAction !== undefined ? wallTapFailedNote(failedAction) : null}
+      keptNote={
+        showReasons
+          ? reason !== null
+            ? { ...wallReasonCopy(reason), saved: wallReasonIsSave(reason) }
+            : null
+          : undefined
+      }
     />
   );
 }
@@ -443,6 +487,7 @@ export function PendingWall({
   hasNextPage,
   isFetchingNextPage,
   onLoadMore,
+  showReasons = false,
   testId = 'trash-wall',
 }: {
   items: PendingWallItem[];
@@ -464,6 +509,8 @@ export function PendingWall({
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   onLoadMore: () => void;
+  /** DESIGN-052 D-10 amendment (story 821) — the All view: each kept tile says why, under its facts. */
+  showReasons?: boolean;
   testId?: string;
 }) {
   return (
@@ -488,6 +535,7 @@ export function PendingWall({
               canSave={canSave}
               canUnsave={canUnsave}
               onToggle={onToggle}
+              showReasons={showReasons}
             />
           ))}
         </TrashWall>
