@@ -252,3 +252,48 @@ describe('forecastFreeSpace — recorded 2026-11-13 series', () => {
     expect(result.targetAt).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------------------------------
+// The recorded HaynesTower series continued at its own pre-jump rate (the coordinator's defect table,
+// story 834 comment 8018). Every later sample lies on one line from the 2026-11-12 level, so the true
+// rate and the true 100% date never change. Only the age of the 2026-11-06..12 rise changes.
+// ---------------------------------------------------------------------------------------------------
+
+/** Least-squares rate of the 29 samples through 2026-11-06, before the rise: −172283/812 GB/day. */
+const PRE_JUMP_RATE = (-172_283 / 812) * GB;
+/**
+ * One standard error of the rate on the recorded series, 38.2 GB/day (D-08). A rate inside it cannot
+ * be told from sampling noise; a rate outside it is wrong.
+ */
+const RATE_TOLERANCE = 38.2 * GB;
+
+/** The 90 days ending `steps` samples after 2026-11-12, as the read would query them. */
+function continued(steps: number): FreeSpaceSample[] {
+  const base = recorded('ht');
+  const last = base[base.length - 1]!;
+  const out = [...base];
+  for (let i = 1; i <= steps; i++) {
+    out.push({ t: last.t + i * 3 * DAY, freeBytes: last.freeBytes + PRE_JUMP_RATE * 3 * i });
+  }
+  const end = out[out.length - 1]!.t;
+  return out.filter((sample) => sample.t >= end - 90 * DAY);
+}
+
+describe('forecastFreeSpace — the recorded rise as it ages through the window', () => {
+  it('keeps the rate within one standard error at every sample for 180 days after the rise', () => {
+    const offenders: { daysAfter: number; gbPerDay: number }[] = [];
+    for (let steps = 0; steps <= 60; steps++) {
+      const samples = continued(steps);
+      const result = forecastFreeSpace({
+        samples,
+        targetFreeBytes: null,
+        now: samples[samples.length - 1]!.t,
+      });
+      const rate = result.rateBytesPerDay ?? Number.NaN;
+      if (!(Math.abs(rate - PRE_JUMP_RATE) <= RATE_TOLERANCE)) {
+        offenders.push({ daysAfter: steps * 3, gbPerDay: Math.round((rate / GB) * 10) / 10 });
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
