@@ -1,0 +1,12 @@
+collection,arr,adds_since_2026_07_06,with_file,monitored_no_file,bytes,no_watch_record,first_added_et,last_added_et,readded_after_earlier_trash,readd_bytes,trashed_after_this_add_and_still_live
+imdbpopular,radarr,156,95,61,2052404033999,110,2026-07-06,2026-11-10,2,37739651023,1
+seasonalcollection,radarr,344,82,262,1233947016480,331,2026-07-06,2026-11-10,25,567238287090,0
+popularnow,radarr,13,13,0,702708399577,6,2026-07-06,2026-11-01,0,0,0
+intheaters,radarr,69,28,41,515356308770,64,2026-07-06,2026-07-10,0,0,0
+imdbtop250,radarr,15,13,2,209195306961,15,2026-07-06,2026-09-22,0,0,0
+universecollection,radarr,45,6,39,201731214232,42,2026-07-06,2026-11-03,2,50059691785,0
+toprated,radarr,3,3,0,86094339816,3,2026-07-06,2026-10-19,0,0,0
+oscarscollection,radarr,8,5,3,43737834648,8,2026-07-06,2026-07-06,0,0,0
+goldenglobecollection,radarr,21,2,19,40055533341,21,2026-07-06,2026-07-06,0,0,0
+moviecollection,radarr,4,0,4,0,4,2026-07-06,2026-07-19,0,0,0
+showcollection,sonarr,11,2,9,58908636876,,2026-07-06,2026-10-09,,,

@@ -4,7 +4,11 @@
   space policy now PROPOSES **AND PROMOTES** its batches straight to Leaving Soon (autonomous cycle, no
   admin-review gate, no cooldown). The cooldown knob (`cooldownDays`) is retired everywhere. See the
   **D-14** amendment below; the original D-01..D-09 text describes the pre-073 propose-only behavior.
-- **Last updated:** 2026-07-18
+  **D-15 (2026-11-13, story 835)** specifies the TV rule body. The owner approved the four-clause
+  rule that day (story 822, comment 7992) and, later the same day, added the votes floor (story 835,
+  comment 8099). It is not applied to the live Maintainerr in that story. The same-day adversarial
+  review's corrections C1–C6 are folded into D-15.
+- **Last updated:** 2026-11-13
 - **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26; in effect since 2026-09-28): the
   space policy's proposal leaves out a title on any read Plex watchlist (it takes no cap slot), and `minCandidates`
   counts deletable candidates only (DESIGN-052 D-08). Amended 2026-11-13 (ADR-117 / DESIGN-052 D-29): `minCandidates`
@@ -240,6 +244,24 @@ Sync: `runSync` `space-policy` mode wiring (report shape, requires both bundles,
 - **Q-01 (resolved, ADR-031 C-05):** graduation thresholds — ≥3 batches, ≤10% save-rate, 0 restores.
 - **Q-02 (resolved, ADR-031 C-06):** rule attribution — collection-grain; rule-group-exact is a future map.
 - **Q-03 (resolved, ADR-031 C-06):** no auto-tuning — the report is human-driven.
+- **Q-04 (open, D-15):** the TV group's stored name is still "hnet — unwatched low-value TV".
+  Maintainerr creates a Plex collection with the group's name once the pool has a member. Measured
+  this correction session (`GET /api/rules`, 2026-11-13, before the 19:21:34Z Sonarr read): the movie
+  collection's `mediaServerId` is 98837, and the TV collection's `mediaServerId` is null (collection
+  id 3). After an apply that leaves a member, "unwatched" would be shown on HaynesOps for shows that
+  may have been watched. Recommendation: do not rename in this story; story 823 puts the name to the
+  owner before the apply. Coordinator comment 8099 (2026-11-13T18:55Z) carries Q-04 to that gate and
+  does not ask it here. A rename is not part of either 2026-11-13 ruling. It is not a collection wipe
+  (the running image wipes only on `dataType`, `manualCollection`, `manualCollectionName`, or
+  `libraryId`).
+- **Q-05 (resolved, 2026-11-13T18:55Z, story 835 comment 8099):** an unrated show must not count as
+  "rating below 6.0". The owner's answer was "Add the votes floor". D-15's fifth clause is that floor.
+- **Q-06 (open, carried to story 823):** is a list-added, never-requested show fair game, as the
+  ruling already includes it? Star Wars Resistance (tvdb 351575) is one of the three expected
+  collection members. The adversarial review (2026-11-13, 18:32Z–18:50Z) measured a list add on
+  2026-11-04 (Sonarr tag `pmm-added`) and 35 files still downloading, and 267 of 373 ended,
+  unrequested HaynesOps shows carrying `pmm-added`. Recommendation: yes, no change now; record it
+  for the larger-pool design. Comment 8099 carries this to the 823 gate and does not ask it here.
 
 ## D-09 — Amendment 2026-07-09 (owner-directed, build A) — modes + per-kind caps, relocated config
 
@@ -342,3 +364,406 @@ Tests: `packages/domain/__tests__/space-policy.test.ts` proves auto-promote to `
 MANUAL admin_review batch is left untouched, and that a healthy `leaving_soon` batch is not duplicated.
 
 **Request Keep (ADR-117, 2026-11-13).** `minCandidates` counts the same titles a targeted batch can take. A title tagged `mediarequests` is not one of them (DESIGN-052 D-29). A personal requester tag still counts.
+
+## D-15 — TV rule body (owner rulings 2026-11-13, story 835)
+
+The ruling recorded on story 822 (comment 7992) adopts the recommendation in
+[`.agents/context/2026-11-13-tv-trash-audit.md`](../../.agents/context/2026-11-13-tv-trash-audit.md).
+Story 835's written scope still lists those four clauses. A later ruling on story 835 (comment 8099,
+2026-11-13T18:55Z) answers the adversarial review's Q-05 with "Add the votes floor" and adds the fifth
+clause below. This section follows that later ruling. It is not applied here. Applying it is story
+823. The movie rule is unchanged. The pool stays whole-show. The cap, the ranking, the Age Guard, the
+watchlist keep, Saves, the `dnd` tag and the `mediarequests` exclusion are unchanged.
+
+No new glossary term. The pool, the Age Guard (T-273) and the aging invariant (T-105) keep their names.
+The votes floor is the movie rule's existing clause, not a new term. No superseding ADR.
+[ADR-036](../adrs/036-maintainerr-aging-invariant.md) does not read rule predicates, and replacing the
+added-date clause does not make `auditMaintainerr` refuse the pool. The check is below. That audit
+still does not read predicates; a predicate check in it is a dependency of story 823, not a change
+in this story.
+
+Evidence for the live reads, the image comparator, and the shows that pass the predicates:
+[`.agents/context/2026-11-13-tv-trash-rule-correction.md`](../../.agents/context/2026-11-13-tv-trash-rule-correction.md).
+
+### The body
+
+Group id **2**, `dataType` `"show"`, `libraryId` `"2"` (both strings, as `GET /api/rules` returns them),
+`useRules` true, `isActive` true. Collection id **3**, type `show`, `deleteAfterDays` **9999**,
+`arrAction` **0**, `listExclusions` true, `forceSeerr` true, `manualCollection` false. Section **0**
+only. The first clause's `operator` is null. Each later clause's `operator` is `0` (`AND`).
+
+Maintainerr 3.32.0 (`commitTag` `latest-e6327bb`). Property ids are from `GET /api/rules/constants`
+for media type show (`MediaType.SHOW` = 2). Comparator ids are the image's `RulePossibility`, which
+matches the action numbers on the live clauses. The constants payload lists possibility numbers and
+does not name them. `BIGGER` is `0` in the running image's
+`packages/contracts/dist/rules/constants.js` (read 2026-11-13, this correction). Property 20's
+possibility list is `[0, 1, 2, 3, 18, 19]`, so `0` is a legal action on `ratingVotes`. Number tests
+are strict: `BIGGER` is `val1 > val2` and `SMALLER` is `val1 < val2` (`doRuleAction` in
+`rule.comparator.service.js`, same read). `BEFORE` on a date property whose custom value is a number
+of seconds is `value <= now - seconds`.
+
+A null or undefined value does not pass. For an AND clause the comparator drops the show without
+comparing (`firstVal != null` is required). The first clause, whose operator is null, adds a show
+only when the comparison is true, so a missing value is not added. That is not the unrated case.
+Sonarr reports an unrated show as rating `0` with `0` votes, not null. `0` is present, and `0 < 6.0`
+is true, so an unrated show passes the rating clause. The votes clause then drops it, because `0` is
+not greater than `99`. The getter is `showResponse.ratings?.value ?? null` and
+`showResponse.ratings?.votes ?? null` (`sonarr-getter.service.js`, same read).
+
+The rating, votes and tag clauses stay Sonarr properties. `ended`, `firstAirDate` and `seasons` are
+the only Sonarr properties `tryMetadataFallback` will answer when Sonarr has no series id; `rating`,
+`ratingVotes` and `tags` are not in that set. For a show Sonarr does not track, `ended` can come from
+the metadata provider. The adversarial review (2026-11-13, 18:32Z–18:50Z) measured 31 HaynesOps shows
+with no Sonarr match in the 15:00Z run. Those three Sonarr clauses are what keep that class out.
+
+| # | Application | Property | Action | `customVal` |
+| --- | --- | --- | --- | --- |
+| 1 | Sonarr `2` | `19` `rating`, "Show rating (IMDb) (scale 0-10)", number | `SMALLER` `1` | `{ "ruleTypeId": 0, "value": "6.0" }` |
+| 2 | Sonarr `2` | `20` `ratingVotes`, "Show rating (IMDb) vote count", number | `BIGGER` `0` | `{ "ruleTypeId": 0, "value": "99" }` |
+| 3 | Sonarr `2` | `2` `tags`, "[list] Tags (show)", text list | `NOT_CONTAINS` `9` | `{ "ruleTypeId": 2, "value": "mediarequests" }` |
+| 4 | Sonarr `2` | `7` `ended`, "Show ended", boolean | `EQUALS` `2` | `{ "ruleTypeId": 3, "value": "1" }` |
+| 5 | Plex `0` | `27` `sw_lastEpisodeAiredAt`, "Last episode aired at", date | `BEFORE` `5` | `{ "ruleTypeId": 0, "value": "15552000" }` |
+
+Clause 1 is the live row 1 (id 156) and clause 3 is the live row 3 (id 158), values unchanged. Clause
+2 is the movie rule's floor on the show property: movie group 1's live votes clause, read this
+session from `GET /api/rules` before 19:21:34Z, is action `0`, `firstVal` `[1, 19]`,
+`customVal` `{ "ruleTypeId": 0, "value": "99" }` (Radarr property 19). The show property is Sonarr
+`20`, not `19`. A count of exactly 99 does not pass. The order is the one a cut-short write must
+leave: rating, then votes, then tags, then ended, then aired. `updateRules` deletes every rule row
+for the group and inserts one at a time, with no transaction around that loop
+(`rules.service.js`, read 2026-11-13). A write that stops leaves a prefix of this list.
+
+Removed, and not stored as an inactive clause: Plex property `17` `sw_amountOfViews` ("Total views")
+`SMALLER` `1`. That clause reads HaynesOps only.
+
+There is no Sonarr property for "last episode aired". The nearest Sonarr dates are `firstAirDate`
+(id 4) and the booleans `seriesFinale` (id 17) and `ended` (id 7). The air-date clause uses the Plex
+property whose human name is "Last episode aired at". Do not substitute a Sonarr date.
+
+Why these `ruleTypeId`s, from the running image (not from the property's type key alone):
+
+- `ended` is boolean (type key `3`). `validateRule` accepts a custom value only when its `ruleTypeId`
+  equals that key, except the date/number and text-list/text cases below. The Sonarr getter returns
+  `1` or `0`, not a boolean. `EQUALS` then uses strict `===`. `ruleTypeId` 3 coerces the custom value
+  with `+value`, so the value must be the string `"1"`. `"true"` becomes `NaN` and matches nothing.
+  The UI writes `"1"` for a boolean custom value unless the value is already `"0"`.
+- `sw_lastEpisodeAiredAt` is a date. The live added-date clause, and the seconds path in the
+  comparator, use `ruleTypeId` **0** (`NUMBER`) with action `BEFORE`. The comparator then sets the
+  right-hand side to `now - seconds` and `BEFORE` keeps a left-hand side at or before that instant.
+  `15552000` is `180 * 86400`. A date `ruleTypeId` of 1 with the same digits is a timestamp in 1970,
+  not "180 days ago". Copy the live added-date encoding and change only `firstVal` from `[0, 0]` to
+  `[0, 27]`.
+- `rating` stays the live clause: type key and `ruleTypeId` are both 0, value `"6.0"`. `SMALLER` is
+  `<`, so a rating of 6.0 does not pass. The getter reads Sonarr `ratings.value`. The ledger stores
+  that same number in `media_metadata.tmdb_rating`. An unrated show's `0` passes this clause; the
+  votes clause is what excludes it.
+- `ratingVotes` uses the same number encoding as the movie votes clause and as `rating`: type key and
+  `ruleTypeId` are both 0, value `"99"`, action `BIGGER` (`0`). The getter reads Sonarr
+  `ratings.votes`.
+- `tags` stays the live clause. The property type is text list (key 4). `validateRule` also accepts
+  `ruleTypeId` 2 (`TEXT`) on a text list, which is what the live clause stores. `NOT_CONTAINS` is the
+  negation of `includes`. `doRuleAction` lowercases both string sides, and the string elements of an
+  array, before it compares (same file, read 2026-11-13). The stored value stays `mediarequests`. A
+  different case would still match. The earlier claim that the custom string is not lowercased was
+  wrong; it does not change this label.
+
+`sw_lastEpisodeAiredAt` is not "the show's last episode aired". The Plex getter
+(`plex-getter.service.js`, `case 'sw_lastEpisodeAiredAt'`, read 2026-11-13) loads the show's children
+on the one Plex server Maintainerr is configured with (HaynesOps), sorts those seasons by `index`,
+takes the last season, sorts that season's episodes by `index`, and reads the last episode's
+`originallyAvailableAt`. Plex lists only what HaynesOps holds. The date is the last episode, by
+number, of the highest-numbered season on that server. It is not the maximum air date across
+episodes, and it is not Sonarr's finale.
+
+That differs from the true finale in both directions:
+
+- The highest-numbered season on disk can be older than the finale. An ended show whose final season
+  is not on HaynesOps is tested on that older date and can pass while its real finale is recent. The
+  adversarial review measured 30 of 661 ended HaynesOps shows with a higher-numbered season in Sonarr
+  and no files, and 13 ended shows with a finale inside 180 days. None of those was below 6.0 and
+  untagged on that read (2026-11-13, 18:32Z–18:50Z). A Plex date earlier than the true finale admits
+  a show.
+- A Plex date that is null, or later than the Sonarr stand-in used in the projection, drops a show
+  the projection keeps. A null date fails the clause.
+
+Specials are season index 0. The sort takes the highest index, so a special is not the episode under
+test when HaynesOps holds any higher-numbered season. The review measured a Muppets Now special dated
+2025-03-06; that date is not the one this clause reads. The season property
+`sw_seasonLastEpisodeAiredAt` (Plex id 29) is not used.
+
+The Sonarr stand-in in the evidence note is `previousAiring`. The review's closer stand-in (the last
+episode with a file, in the highest season that has files) also passes all ten. Neither is a Plex
+read. Story 823's collection read is the check.
+
+The stored description replaces the current one. The name stays (Q-04). Description, 629 characters:
+
+```text
+Show-level candidates on HOps TV Shows. A show passes only when its Sonarr rating is below 6.0, its Sonarr rating votes are greater than 99, its Sonarr tags do not contain mediarequests, Sonarr says it has ended, and the last episode HaynesOps Plex holds, in its highest-numbered season, aired at least 180 days ago. Plays are not a Maintainerr predicate. The app still keeps a show with a household view in the last 30 days, and it still applies the cap, the Age Guard, the watchlist, Saves and the dnd tag. This collection does not delete on its own: arrAction 0 and deleteAfterDays 9999, with listExclusions and forceSeerr on.
+```
+
+Plays are not a Maintainerr predicate. The app's guardian still keeps a show whose household
+`last_viewed_at` is inside `RECENTLY_WATCHED_WINDOW_DAYS` (30) via `classifyGuardian`
+(`packages/domain/src/trash-flow.ts`). The description says so. It does not say plays are absent
+from every keep.
+
+Decoded rules, in order. `upsertTrashRule` sends this shape (no `ruleJson`, no old ids):
+
+```json
+[
+  {
+    "operator": null,
+    "action": 1,
+    "firstVal": [2, 19],
+    "customVal": { "ruleTypeId": 0, "value": "6.0" },
+    "section": 0
+  },
+  {
+    "operator": 0,
+    "action": 0,
+    "firstVal": [2, 20],
+    "customVal": { "ruleTypeId": 0, "value": "99" },
+    "section": 0
+  },
+  {
+    "operator": 0,
+    "action": 9,
+    "firstVal": [2, 2],
+    "customVal": { "ruleTypeId": 2, "value": "mediarequests" },
+    "section": 0
+  },
+  {
+    "operator": 0,
+    "action": 2,
+    "firstVal": [2, 7],
+    "customVal": { "ruleTypeId": 3, "value": "1" },
+    "section": 0
+  },
+  {
+    "operator": 0,
+    "action": 5,
+    "firstVal": [0, 27],
+    "customVal": { "ruleTypeId": 0, "value": "15552000" },
+    "section": 0
+  }
+]
+```
+
+### What the cap still does
+
+`app_settings.space_policy`, read 2026-11-13 17:49:20Z from replica `postgres16-11`, TV
+`maxItems` 5 enabled, `targetBytes` disabled, no `strategy` key, `minCandidates` 1, mode
+`over-target`, `updated_at` 2026-10-30 11:07:46-04. An absent strategy resolves to `worst-rated`
+(`activeBatchStrategy` in `packages/domain/src/app-settings.ts`). This story does not write that row.
+
+`selectBatchCandidates` drops an open Save, a `dnd` tag, a watchlisted title and an Age Guard
+`recent` title **before** it counts to 5. The cap does not choose five of the raw pool and then
+discover that four of them are kept. With three shows left after `dnd` and the watchlist, and all
+three still inside the Age Guard, the cap's deletable input is empty until those dates clear. Once
+they clear, three is under five, so the cap drops none of them.
+
+### Aging invariant
+
+`evaluateAgingInvariants` (`packages/domain/src/trash-flow.ts`) refuses an active rule pool when
+`deleteAfterDays` is below `AGING_HORIZON_MIN_DAYS` (3650), `arrAction` is not 0, `listExclusions`
+is not true, or (for a non-episode pool) `forceSeerr` is not true. It does not read `rules[]`.
+`auditMaintainerr` folds those violations into `safe`. `sweepExpiredBatches` refuses the sweep when
+`safe` is false. Replacing the added-date clause leaves every field that function reads as it is
+(measured on group 2's collection: `deleteAfterDays` 9999, `arrAction` 0, `listExclusions` true,
+`forceSeerr` true, type `show`). The audit will not refuse the pool for this predicate change.
+ADR-036 stays Accepted and is not edited. No superseding ADR.
+
+`ruleGroupDrift` compares the same flags and not the predicates. After the day of the apply, nothing
+in the sweep re-reads the five clauses. Story 823 depends on a predicate check in that audit before
+the new body is left in place across later days. This story does not write that check.
+
+The Age Guard is a separate check. It still uses the newest of a download import and any server's
+Plex added date, 180 times 86,400,000 ms (`judgeAge`). D-15 does not change the function. Removing
+the TV date-added clause removes what the guard's own comment relies on for a title with no Plex
+match (`packages/domain/src/trash-age-guard.ts`: a title no Plex library is matched to is judged on
+its imports alone, "the Maintainerr rule's own HaynesOps date-added clause still applies to it").
+`judgeAge` returns `clear` when there is no `media_plex_matches` row and no download import inside
+180 days. For TV, after this body is applied, that comment is no longer true. The movie added-date
+clause stays, and it is still that cover for a movie. DESIGN-010 no longer calls the Age Guard the
+guarantee for this case. DESIGN-052 D-26's "the rules stay" sentence is narrowed: the movie
+added-date clause stays; the TV predicates are this section; the guard stays in the app and does not
+replace the removed TV date-added clause.
+
+The adversarial review measured, on 2026-11-13 (18:32Z–18:50Z), that this bites nothing in today's
+pools: 0 of 524 movie candidates and 0 of the ten shows below have no Plex match. It matters more
+once story 836 lands: that review measured 339 of 661 ended HaynesOps shows with no download import
+inside 180 days. The code question for 836, already passed on by the coordinator (comment 8099), is
+that a pool member with no Plex match should be `unknown`, not `clear`. This story does not change
+`judgeAge`.
+
+### Apply and read back
+
+The writer is `upsertTrashRule` (`packages/domain/src/trash-flow.ts`). It can express every clause.
+A rule in the payload is a decoded `RuleDto` (`operator`, `action`, `firstVal`, `customVal`,
+`section`). The writer does not strip those fields. No code change in this story.
+
+The entry point is `trash.saveRule` (`packages/api/src/routers/trash.ts`). It calls `upsertTrashRule`
+and then `triggerCandidateRefresh`, which re-reads the candidate snapshot. It does not itself call
+`POST /api/rules/execute`. The 2026-10-30 movie apply used `upsertTrashRule` and then armed
+`requestPoolRefreshAfterSave`, which the incremental sync turned into that POST
+(`packages/domain/src/pool-refresh.ts`). This apply does not arm that refresh. A one-off script in
+the app pod is the other way the 2026-10-30 change was reached; either way the payload is the one
+below, and the writer is `upsertTrashRule`.
+
+The payload carries numeric `id: 2`. `upsertTrashRule` treats any other id, including a missing id
+or a string, as a create (`typeof decoded.id === 'number'` is the update test) and POSTs a second
+TV group. Do not omit it.
+
+The update path:
+
+1. `GET /api/rules`, find group 2. The first PUT is allowed only when that live body is the
+   pre-image below. If it is not, stop. Do not finish a prefix by appending the missing clauses.
+   The only PUT onto a body other than the pre-image is the put-back of the pre-image itself, after
+   a failed read-back of this write, or when the live body is a prefix of these five clauses.
+2. Build the PUT from that group. Change only `description` and `rules` (the five objects above).
+   Copy `dataType`, `libraryId`, `name`, `useRules`, `isActive`, `notifications`,
+   `ruleHandlerCronSchedule` and `collection` verbatim, and set `id` to the number `2`. `libraryId`
+   stays the string `"2"`. `dataType` stays the string `"show"`. `manualCollection` stays false and
+   `manualCollectionName` stays the empty string the GET returned. The running image wipes the
+   collection's media and its specific exclusions when any of those four differ.
+3. `buildRuleGroupUpdate` lifts top-level flags the payload omits (`arrAction`, `listExclusions`,
+   `forceSeerr`, the server ids, and the rest of `RULE_GROUP_TOP_LEVEL_FIELDS`) from the live
+   collection, and refuses `useRules: false` while `rules` is non-empty. Send `useRules: true`.
+4. `PUT /api/rules` through that writer. The image deletes every rule row for the group, then
+   inserts one row per payload rule. New ids are assigned. Membership is not wiped by that delete.
+   Do not call rule test, rule execute, or collection handle.
+5. Read back **straight after** the PUT, before any handler run. `ruleGroupDrift` compares
+   `arrAction`, `listExclusions`, `forceSeerr`, `tagInArr`, the Radarr and Sonarr server ids, and
+   `collection.deleteAfterDays` only. A successful `upsertTrashRule` is not a predicate read-back.
+   The predicate read-back is the fresh `GET` in the next list.
+
+Predicate read-back, same `GET /api/rules`, immediately after the PUT:
+
+- Group 2: `description` equals the 629-character text above, `name` unchanged, `dataType`
+  `"show"`, `libraryId` `"2"`, `useRules` true, `isActive` true, `id` 2.
+- Collection id still **3**. `collection.description` equals the same text (the adversarial review
+  found Maintainerr writes the group description there; this session's GET showed both lengths
+  equal, 748, on the live pre-image).
+  `deleteAfterDays` 9999, `arrAction` 0, `listExclusions` true, `forceSeerr` true,
+  `manualCollection` false, `type` `show`, `sonarrSettingsId` 1.
+- Exactly five rules, section 0, in the order above. For each: `operator`, `action`, `firstVal`,
+  `customVal.ruleTypeId`, `customVal.value` (string), and no `lastVal`. Ignore the new row ids.
+- Group 1's five movie clauses are the movie pre-image below. If they are not, the TV write is
+  treated as failed even when group 2 matches.
+- Exclusion count still **360**, the count at `GET /api/rules/exclusion?rulegroupId=2` on
+  2026-11-13T19:24:49Z (all `ruleGroupId` null; 8 of type `show`). A lower count, or the loss of one
+  of the seven `dnd` shows' HaynesOps rating keys listed in the evidence note, is a stop. A higher
+  count is a new exclusion and is explained, not a put-back by itself.
+- No `trash_batches` row with `media_kind = 'tv'` and `created_at` between the PUT and this
+  read-back.
+
+If any of that differs, PUT the saved pre-image back through the same writer (numeric `id: 2`,
+decoded rules, original description, same verbatim flags) and read it back the same way. If the
+rollback also differs, disarm group 2 and stop.
+
+"Do not sweep" is not an action. The sweep and the space policy are CronJobs. The handler is not
+held by skipping them. The adversarial review's Loki read (2026-11-13, last 24 hours) showed the TV
+group running four times: three on the 8-hour schedule and one at 15:00Z. A pending-item Save can
+also ask for `POST /api/rules/execute` through `pool-refresh.ts`. The lever is to disarm group 2
+through the same writer (`isActive: false`, numeric `id: 2`). The executor skips an inactive group
+(`executeForRuleGroups`: "is not active. Skipping rule execution."). `createOrUpdateGroup` writes
+that flag on the rule group, not on the collection row. `fetchMaintainerrPending` keeps collections
+whose own `isActive` is true, so a disarm stops the next handler run and does not by itself empty a
+collection a handler has already filled. Disarm before any handler run when the read-back fails.
+The put-back of the pre-image is still required.
+
+Before the handler is allowed to build the collection, the read-back above has matched. The Age
+Guard still holds a show whose newest download import or Plex added date is inside 180 days. The
+three expected members below are in that window; the dates are in the evidence note. Nothing in
+this section deletes a file. `auditMaintainerr` being `safe` is the flag check only. It is not the
+predicate check story 823 depends on.
+
+### Pre-image (measured this session; re-read before any PUT)
+
+Group 2, four clauses, from `GET /api/rules` on 2026-11-13. Ids 156–159 are what that GET returned.
+A later GET that does not match this body, including the description, is a stop, not a thing to overwrite.
+
+Description, 748 characters:
+
+```text
+hnet production junk rule (Sonarr / HOps TV Shows). Candidates = IMDb show rating < 6.0 AND never watched on HOps Plex (total episode views 0) AND NOT Sonarr-tagged mediarequests AND Plex date added older than 180 days (age guard added 2026-09-14 by owner ruling). Non-deleting rule collection: arrAction=0 (SAFE-audited baseline) + deleteAfterDays=9999 (ADR-036 aging invariant) — the app batch pipeline + guardian own deletion. listExclusions=true (2026-09-14, owner ruling): the delete also writes the Sonarr import-list exclusion so Kometa list runs cannot silently re-add a trashed series; Seerr and direct adds bypass that list. Requester + cross-server watch protection enforced by the app guardian. dnd tag/exclusion whitelists saved items.
+```
+
+| # | id | `operator` | `action` | `firstVal` | `customVal` |
+| --- | ---: | --- | ---: | --- | --- |
+| 1 | 156 | null | 1 `SMALLER` | `[2, 19]` rating | `{ "ruleTypeId": 0, "value": "6.0" }` |
+| 2 | 157 | 0 | 1 `SMALLER` | `[0, 17]` total views | `{ "ruleTypeId": 0, "value": "1" }` |
+| 3 | 158 | 0 | 9 `NOT_CONTAINS` | `[2, 2]` tags | `{ "ruleTypeId": 2, "value": "mediarequests" }` |
+| 4 | 159 | 0 | 5 `BEFORE` | `[0, 0]` date added | `{ "ruleTypeId": 0, "value": "15552000" }` |
+
+Group 1, movie, from the same kind of `GET /api/rules` on 2026-11-13 during this correction, before
+the 19:21:34Z Sonarr read. Collection id 1, `mediaServerId` 98837, `isActive` true. Description
+length 872; the text is not copied here. Clauses:
+
+| # | id | `operator` | `action` | `firstVal` | `customVal` |
+| --- | ---: | --- | ---: | --- | --- |
+| 1 | 160 | null | 1 `SMALLER` | `[1, 16]` rating | `{ "ruleTypeId": 0, "value": "6.5" }` |
+| 2 | 161 | 0 | 0 `BIGGER` | `[1, 19]` votes | `{ "ruleTypeId": 0, "value": "99" }` |
+| 3 | 162 | 0 | 1 `SMALLER` | `[0, 5]` total views | `{ "ruleTypeId": 0, "value": "1" }` |
+| 4 | 163 | 0 | 9 `NOT_CONTAINS` | `[1, 2]` tags | `{ "ruleTypeId": 2, "value": "mediarequests" }` |
+| 5 | 164 | 0 | 5 `BEFORE` | `[0, 0]` date added | `{ "ruleTypeId": 0, "value": "15552000" }` |
+
+A later GET that does not match these five clauses is a stop for the TV write.
+
+### Shows that pass the predicates
+
+Not a Maintainerr evaluation, and not the collection Maintainerr will hold. The ten are the shows
+that pass the predicates on the Sonarr stand-in. Clock of the recompute **2026-11-13T19:21:34Z**.
+"180 days" is `previousAiring <= clock - 15552000s` (cutoff 2026-05-17T19:21:34Z). Universe: the
+953 live Sonarr series on HaynesOps library section `2` (replica `postgres16-11`,
+2026-11-13T19:20:38Z, still 953 distinct tvdb). Full table: the evidence note.
+
+With the fifth clause the same ten shows pass, **412,648,319,552 bytes** (0.413 TB at bytes/10^12).
+Lowest vote count among them is 1,276 (Total DramaRama). Nothing in the ten changed from the
+17:49:20Z four-predicate projection or from the audit. After `dnd` (tag id 27) and the watchlist,
+the same three shows and **55,304,752,845 bytes** (0.055 TB). The watchlist re-read at
+2026-11-13T19:24:02Z is still 201 distinct show tvdb ids, and of the ten only Mickey Mouse Clubhouse
+is listed.
+
+A cut-short write leaves a prefix. Sizes are shows in the 953, air date by the Sonarr stand-in.
+The adversarial review measured the old body order (ended, aired, rating, tags) as 661 shows
+(126.7 TB), then 648, 32, and 10. It measured rating-then-tag, without a votes clause, as 54 shows
+(7.8 TB), then 12, 10, and 10. This correction recomputed the instructed order (rating, votes, tags,
+ended, aired) at 19:21:34Z:
+
+| Prefix | Shows | Bytes |
+| --- | ---: | ---: |
+| Rating below 6.0 | 54 | 7,838,701,560,290 |
+| And votes greater than 99 | 51 | 7,626,460,152,772 |
+| And no `mediarequests` tag | 12 | 838,724,127,581 |
+| And ended | 10 | 412,648,319,552 |
+| And aired at or before the cutoff | 10 | 412,648,319,552 |
+
+The votes clause removes 3 of the 54 (212,241,407,518 bytes). Two are unrated (rating 0, votes 0):
+Condor (tvdb 342107, 95,093,226,610 bytes) and Nightmare Tenants, Slum Landlords (tvdb 297091,
+89,873,803,876 bytes). The third is 90 Day: The Last Resort Between The Sheets (tvdb 457446, rating
+5.9, 56 votes, 27,274,377,032 bytes), which is not ended. All three carry `mediarequests`, so the
+tag prefix stays 12 and the ten stay 10. The two-clause prefix is 51 shows, larger than the
+review's rating-then-tag prefix of 12, because the votes floor removes only those three. The order
+still puts votes immediately after rating, so a prefix that has not reached the tag already
+excludes an unrated show.
+
+### Expected collection, for story 823
+
+After the handler runs, the collection is expected to hold three shows: Star Wars Resistance
+(tvdb 351575), Muppets Now (368781), and Tales of the Walking Dead (411314). The other seven that
+pass the predicates are excluded by Maintainerr's global exclusions, matched on the HaynesOps
+rating key (evidence note): Total DramaRama, The Acolyte, Ironheart, She-Hulk: Attorney at Law,
+Willow, Secret Invasion, and Mickey Mouse Clubhouse. An eighth global show exclusion is The
+Baldwins (tvdb 459465), which is not one of the ten.
+
+Story 823's rules, before any other action on the collection:
+
+- Any member outside those three is a stop and a put-back of the pre-image, then the same read-back.
+  Disarm if that put-back does not match.
+- A missing one of the three is explained per show before anything else. Do not put the rule back
+  merely because one is missing, until that show has an explanation.
+- Every collection member has a dated HaynesOps row in `media_plex_matches`, else stop. At
+  2026-11-13T19:24:02Z each of the ten has one dated row on HaynesOps section `2`.
+- The three are a projection until 823 reads the collection. Plex `originallyAvailableAt` was not
+  read. A Plex date that is null or later than `previousAiring` drops a show this projection keeps.
+  A Plex date earlier than the true finale can admit one, as the air-date section says.

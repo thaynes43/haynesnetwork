@@ -1,10 +1,29 @@
 # HANDOFF — cold-start resume point
 
+## 2026-11-13: story #835 TV Trash rule body (not applied; review corrections in)
+
+- DESIGN-014 D-15 records the show-level TV rule. The four clauses from story 822 comment 7992 stay,
+  and story 835 comment 8099 (2026-11-13T18:55Z, "Add the votes floor") adds Sonarr `ratingVotes`
+  greater than 99. Clause order is rating, votes, tags, ended, aired. The air-date clause tests the
+  last episode HaynesOps holds in its highest-numbered season. Evidence:
+  `.agents/context/2026-11-13-tv-trash-rule-correction.md`.
+- Nothing was written to Maintainerr or Sonarr. Ten shows still pass the predicates
+  (412,648,319,552 bytes; lowest votes 1,276). The expected collection after an apply is three:
+  Star Wars Resistance (tvdb 351575), Muppets Now (368781), Tales of the Walking Dead (411314),
+  55,304,752,845 bytes. The other seven are global exclusions. The air date in the note is Sonarr
+  `previousAiring`, a stand-in.
+- Replacing the added-date clause does not make the aging audit refuse the pool. It does remove the
+  cover the Age Guard's comment assumes for a title with no Plex match. No superseding ADR. No code.
+- Q-05 is ruled. Q-04 (the name "unwatched" would become a Plex collection name) and Q-06 (a
+  list-added show is in the three) stay open and go to story 823.
+- Next safe step: the coordinator checks these corrections and merges. Story 823 applies nothing
+  until that merge, then follows D-15's read-back. Do not apply the rule from this note.
+
 ## 2026-11-13: story #822 TV Trash audit (report only)
 
 - Read-only audit of the empty TV Trash pool. Note: `.agents/context/2026-11-13-tv-trash-audit.md`, with the show and season CSVs beside it. No rule, cap, or cluster setting was changed.
 - The live Maintainerr TV rule is show-level. Its 180-day HaynesOps date-added clause matches 0 of 953 shows, because that library was filled on 2026-07-02. The pool and the candidate snapshot are both empty. Questions for the owner are Q-01 through Q-08 in the note.
-- Next safe step is the owner's ruling. A rule change is a later story.
+- The ruling landed the same day (story 822, comment 7992). The rule body is story 835, above.
 
 ## 2026-10-26: #208 dev-tl1 tool-lift measurement (done)
 

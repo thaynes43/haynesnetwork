@@ -1,0 +1,67 @@
+app,quality,min,preferred,max,unit
+radarr,HDTV-720p,17.1,,,MB per minute (quality_definition type movie)
+radarr,WEBDL-720p,12.5,,,MB per minute (quality_definition type movie)
+radarr,WEBRip-720p,12.5,,,MB per minute (quality_definition type movie)
+radarr,Bluray-720p,25.7,,,MB per minute (quality_definition type movie)
+radarr,HDTV-1080p,33.8,,,MB per minute (quality_definition type movie)
+radarr,WEBDL-1080p,12.5,,,MB per minute (quality_definition type movie)
+radarr,WEBRip-1080p,12.5,,,MB per minute (quality_definition type movie)
+radarr,Bluray-1080p,50.8,,,MB per minute (quality_definition type movie)
+radarr,Remux-1080p,102,,,MB per minute (quality_definition type movie)
+radarr,HDTV-2160p,85,,,MB per minute (quality_definition type movie)
+radarr,WEBDL-2160p,34.5,,,MB per minute (quality_definition type movie)
+radarr,WEBRip-2160p,34.5,,,MB per minute (quality_definition type movie)
+radarr,Bluray-2160p,102,,,MB per minute (quality_definition type movie)
+radarr,Remux-2160p,187.4,,,MB per minute (quality_definition type movie)
+sonarr,HDTV-720p,10,,,MB per minute (quality_definition type series)
+sonarr,HDTV-1080p,15,,,MB per minute (quality_definition type series)
+sonarr,WEBRip-720p,10,,,MB per minute (quality_definition type series)
+sonarr,WEBDL-720p,10,,,MB per minute (quality_definition type series)
+sonarr,Bluray-720p,17.1,,,MB per minute (quality_definition type series)
+sonarr,WEBRip-1080p,15,,,MB per minute (quality_definition type series)
+sonarr,WEBDL-1080p,15,,,MB per minute (quality_definition type series)
+sonarr,Bluray-1080p,50.4,,,MB per minute (quality_definition type series)
+sonarr,Bluray-1080p Remux,69.1,,,MB per minute (quality_definition type series)
+sonarr,HDTV-2160p,25,,,MB per minute (quality_definition type series)
+sonarr,WEBRip-2160p,25,,,MB per minute (quality_definition type series)
+sonarr,WEBDL-2160p,25,,,MB per minute (quality_definition type series)
+sonarr,Bluray-2160p,94.6,,,MB per minute (quality_definition type series)
+sonarr,Bluray-2160p Remux,187.4,,,MB per minute (quality_definition type series)
+lidarr,Unknown,0,195,350,API min/preferred/max; not MB per minute
+lidarr,MP3-8,0,5,10,API min/preferred/max; not MB per minute
+lidarr,MP3-16,0,15,20,API min/preferred/max; not MB per minute
+lidarr,MP3-24,0,25,30,API min/preferred/max; not MB per minute
+lidarr,MP3-32,0,35,40,API min/preferred/max; not MB per minute
+lidarr,MP3-40,0,40,45,API min/preferred/max; not MB per minute
+lidarr,MP3-48,0,50,55,API min/preferred/max; not MB per minute
+lidarr,MP3-56,0,60,65,API min/preferred/max; not MB per minute
+lidarr,MP3-64,0,70,75,API min/preferred/max; not MB per minute
+lidarr,MP3-80,0,90,95,API min/preferred/max; not MB per minute
+lidarr,MP3-96,0,95,110,API min/preferred/max; not MB per minute
+lidarr,MP3-112,0,95,125,API min/preferred/max; not MB per minute
+lidarr,MP3-128,0,95,140,API min/preferred/max; not MB per minute
+lidarr,OGG Vorbis Q5,0,95,175,API min/preferred/max; not MB per minute
+lidarr,MP3-160,0,95,175,API min/preferred/max; not MB per minute
+lidarr,MP3-192,0,95,210,API min/preferred/max; not MB per minute
+lidarr,OGG Vorbis Q6,0,95,210,API min/preferred/max; not MB per minute
+lidarr,AAC-192,0,95,210,API min/preferred/max; not MB per minute
+lidarr,WMA,0,195,350,API min/preferred/max; not MB per minute
+lidarr,MP3-224,0,95,245,API min/preferred/max; not MB per minute
+lidarr,OGG Vorbis Q7,0,95,245,API min/preferred/max; not MB per minute
+lidarr,MP3-VBR-V2,0,95,280,API min/preferred/max; not MB per minute
+lidarr,MP3-256,0,95,280,API min/preferred/max; not MB per minute
+lidarr,OGG Vorbis Q8,0,95,280,API min/preferred/max; not MB per minute
+lidarr,AAC-256,0,95,280,API min/preferred/max; not MB per minute
+lidarr,MP3-VBR-V0,0,195,350,API min/preferred/max; not MB per minute
+lidarr,AAC-VBR,0,195,350,API min/preferred/max; not MB per minute
+lidarr,MP3-320,0,195,350,API min/preferred/max; not MB per minute
+lidarr,OGG Vorbis Q9,0,195,350,API min/preferred/max; not MB per minute
+lidarr,AAC-320,0,195,350,API min/preferred/max; not MB per minute
+lidarr,OGG Vorbis Q10,0,295,550,API min/preferred/max; not MB per minute
+lidarr,FLAC,0,895,,API min/preferred/max; not MB per minute
+lidarr,ALAC,0,895,,API min/preferred/max; not MB per minute
+lidarr,APE,0,895,,API min/preferred/max; not MB per minute
+lidarr,WavPack,0,895,,API min/preferred/max; not MB per minute
+lidarr,FLAC 24bit,0,895,,API min/preferred/max; not MB per minute
+lidarr,ALAC 24bit,0,895,,API min/preferred/max; not MB per minute
+lidarr,WAV,0,895,,API min/preferred/max; not MB per minute
