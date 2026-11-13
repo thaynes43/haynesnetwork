@@ -4,6 +4,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import {
+  mediaItems,
+  plexLibraries,
   trashBatchItems,
   trashBatches,
   trashDeletedReleases,
@@ -25,7 +27,9 @@ import {
   setAppSetting,
   silentDomainLogger,
   sweepExpiredBatches,
+  syncPlexMatches,
   upsertMediaItemsBatch,
+  upsertPlexLibraries,
 } from '../src/index';
 import {
   baseState,
@@ -406,6 +410,32 @@ describe('the Request Keep on the four deletion paths (ADR-118)', () => {
           arrTags: [],
         },
       ],
+    });
+    // ADR-119 keeps a title with no Plex match. Date these titles 400 days ago so the Age Guard is
+    // clear and the Request Keep is the reason under test.
+    await upsertPlexLibraries({
+      db: t.db,
+      slug: 'haynesops',
+      libraries: [
+        { sectionKey: '1', name: 'HOps Movies', mediaType: 'movie' },
+        { sectionKey: '2', name: 'HOps Shows', mediaType: 'show' },
+      ],
+    });
+    const libs = await t.db.select().from(plexLibraries);
+    const movies = libs.find((l) => l.name === 'HOps Movies')!.id;
+    const shows = libs.find((l) => l.name === 'HOps Shows')!.id;
+    const old = new Date(Date.now() - 400 * 86_400_000);
+    const rows = await t.db.select().from(mediaItems);
+    await syncPlexMatches({
+      db: t.db,
+      scopedLibraryIds: [],
+      matches: rows.map((r) => ({
+        mediaItemId: r.id,
+        plexLibraryId: r.arrKind === 'sonarr' ? shows : movies,
+        ratingKey: `${r.arrKind}-${r.arrItemId}`,
+        matchedVia: r.arrKind === 'sonarr' ? ('tvdb' as const) : ('tmdb' as const),
+        plexAddedAt: old,
+      })),
     });
   });
   afterAll(async () => t?.stop());

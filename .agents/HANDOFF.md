@@ -1,5 +1,13 @@
 # HANDOFF — cold-start resume point
 
+## 2026-11-13: story #836 Age Guard library fill (proposed, setting off)
+
+- ADR-119 and DESIGN-052 D-31. The audited setting `age_guard_ignore_library_fill` defaults off. Off keeps the 2026-10-03 newest-date rule, except one case: a pool member with no Plex match and no download import inside 180 days is `unknown` (kept). That is the one change that alters today's behaviour, and it only ever keeps more. Measured 2026-11-13 on replica postgres16-11 (`SELECT` on `trash_candidates`, `refreshed_at` 2026-11-13 15:15:05.495-05): 0 of 524 movie candidates have no Plex match, and the TV pool has 0 members. The ten shows that pass story 835's predicates all have a Plex match (same replica, same day).
+- On, a library-fill Plex date does not protect a title that is strictly older on another Plex server in a library of the fitting type, and only when that *arr's first download import is at least 180 days old. With that guard the July 2026 fill is left alone. Its stamps stop protecting on their own on 2026-12-29. A download import inside 180 days still protects. No other keep changes.
+- The census of 389 shows and 40 movies is the Age Guard alone. Under the live pools and under story 835's rule the switch changes no deletion today. Evidence: `.agents/context/2026-11-13-age-guard-library-fill.md`. The setting was not turned on. No live write.
+- The audited way to set the value and set it back is the admin mutation `trash.settings.set` with `ageGuardIgnoreLibraryFill`, through `setAgeGuardIgnoreLibraryFill`. Story 823's other conditions are in D-31.
+- Next safe step is the coordinator's check of these corrections against the diff, then merge with the setting still off. Q-24 (wrong-type matches; the matcher is story 847) and Q-25 (the 2026-10-30 "7 movies" row) do not block.
+
 ## 2026-11-13: story #820 Dynamic Pace (switch off; review corrections in PR 1071)
 
 - DESIGN-014 D-16 and ADR-120. Main already holds D-15 for the TV rule, so this decision is D-16.
@@ -33,7 +41,6 @@
   list-added show is in the three) stay open and go to story 823.
 - Next safe step: the coordinator checks these corrections and merges. Story 823 applies nothing
   until that merge, then follows D-15's read-back. Do not apply the rule from this note.
-
 ## 2026-11-13: story #822 TV Trash audit (report only)
 
 - Read-only audit of the empty TV Trash pool. Note: `.agents/context/2026-11-13-tv-trash-audit.md`, with the show and season CSVs beside it. No rule, cap, or cluster setting was changed.

@@ -10,7 +10,6 @@ import {
   refreshTrashCandidates,
   syncPlexMatches,
   trashWallProtection,
-  upsertMediaItemsBatch,
   upsertMediaMetadataBatch,
   upsertPlexLibraries,
   type ExpediteVerdict,
@@ -19,7 +18,7 @@ import {
 } from '../src/index';
 import { inTransaction } from '../src/db-client';
 import { baseState, makeMaintainerr, movieCollection, type StubItem } from './maintainerr-stub';
-import { bootMigratedDb, createUser, seedVerifiedWatchlistRegistry, type TestDb } from './helpers';
+import { bootMigratedDb, createUser, seedVerifiedWatchlistRegistry, type TestDb , upsertDeletableMediaItems } from './helpers';
 
 const LISTED = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const UNMAPPED = 'bbbbbbbbbbbbbbbbbbbbbbbb';
@@ -154,7 +153,7 @@ describe('the pending views follow Wall Protection (DESIGN-052 D-10, story 832)'
       (l) => l.serverId === SEEDED_PLEX_SERVER_IDS.haynesops && l.sectionKey === '1',
     )!.id;
 
-    await upsertMediaItemsBatch({
+    await upsertDeletableMediaItems({
       db: t.db,
       arrKind: 'radarr',
       items: [

@@ -931,6 +931,11 @@ export const APP_SETTING_KEYS = [
   'seerr_issue_bridge',
   // DESIGN-055 P7 decision 11: staff's one bounded, audited bridge smoke fixture (migration 0107).
   'seerr_issue_bridge_smoke',
+  // ADR-119 / DESIGN-052 D-31 — the Age Guard library-fill switch. Absent ⇒ off, which is the 2026-10-03
+  // newest-date rule. On, and only when that *arr's ledger covers 180 days: a library-fill Plex date does not
+  // protect a title that is older on another server in a library of the fitting type. A title with no Plex
+  // match is unknown either way (judgeAge), which only ever keeps more. migration 0109.
+  'age_guard_ignore_library_fill',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 

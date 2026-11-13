@@ -417,6 +417,25 @@ async function main(): Promise<void> {
     scopedLibraryIds: [...new Set(matchSpecs.map((m) => m.libraryId))],
   });
 
+  // ADR-119 — a title with no dated Plex match is unknown, so the trash wall keeps it. Vanished
+  // Heist is the cold deletable tile, watched a year ago and not recently added. It stays
+  // tombstoned, so this match is not one of the live items the library gate reads. An empty scope
+  // only inserts; it does not drop the live matches above.
+  if (vanishedItemId) {
+    await syncPlexMatches({
+      matches: [
+        {
+          mediaItemId: vanishedItemId,
+          plexLibraryId: libId('haynestower', '1'),
+          ratingKey: '604',
+          matchedVia: 'tmdb',
+          plexAddedAt: new Date(Date.now() - 400 * 86_400_000),
+        },
+      ],
+      scopedLibraryIds: [],
+    });
+  }
+
   // ADR-021 / DESIGN-009 — two roles for the Ledger-section access e2e (AC-13): a Read-Only role
   // (browse + export, no Add-&-search) and a Disabled role (no nav, no route). The Default role
   // keeps the NO-ROW default — which is DISABLED since ADR-032 (members see no Ledger anywhere

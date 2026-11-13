@@ -3,14 +3,19 @@ import { Pool } from 'pg';
 import { startPostgres, trackPoolClose } from '@hnet/test-utils';
 import { runMigrations } from '@hnet/db/migrate';
 import * as schema from '@hnet/db/schema';
-import type { Database } from '@hnet/db';
+import type { Database, DbClient } from '@hnet/db';
 import {
   EMPTY_WATCHLIST_KEYS,
   createStaticWatchlistSources,
   refreshWatchlistRegistry,
   silentDomainLogger,
+  syncPlexMatches,
+  upsertMediaItemsBatch,
+  upsertPlexLibraries,
   type DeleteWatchlistSnapshot,
   type StaticWatchlistFixture,
+  type UpsertMediaItemsBatchInput,
+  type UpsertMediaItemsBatchResult,
   type WatchlistRegistryRefreshReport,
   type WatchlistSnapshot,
 } from '../src/index';
@@ -95,4 +100,49 @@ export async function seedVerifiedWatchlistRegistry(
   });
   if (report.status !== 'ok') throw new Error(`seed registry run failed: ${report.status}`);
   return report;
+}
+
+/**
+ * ADR-119 — a ledger item with no Plex match is `unknown` (kept). Deletion tests were written when
+ * that case was `clear`. Stamp each still-unmatched item with a date older than 180 days so the
+ * Age Guard can clear it. An item that already has a match, including an undated one, is left as
+ * the test set it up.
+ */
+export async function stampOldPlexMatches(db: DbClient): Promise<void> {
+  await upsertPlexLibraries({
+    db,
+    slug: 'haynesops',
+    libraries: [{ sectionKey: 'age-guard-dated', name: 'Age Guard Dated', mediaType: 'movie' }],
+  });
+  const libs = await db.select().from(schema.plexLibraries);
+  const library = libs.find((l) => l.sectionKey === 'age-guard-dated');
+  if (!library) throw new Error('age-guard-dated library was not upserted');
+  const items = await db.select({ id: schema.mediaItems.id }).from(schema.mediaItems);
+  const matched = await db
+    .select({ id: schema.mediaPlexMatches.mediaItemId })
+    .from(schema.mediaPlexMatches);
+  const have = new Set(matched.map((m) => m.id));
+  const missing = items.filter((item) => !have.has(item.id));
+  if (missing.length === 0) return;
+  const old = new Date(Date.now() - 400 * 86_400_000);
+  await syncPlexMatches({
+    db,
+    matches: missing.map((item) => ({
+      mediaItemId: item.id,
+      plexLibraryId: library.id,
+      ratingKey: `old-${item.id}`,
+      matchedVia: 'tmdb',
+      plexAddedAt: old,
+    })),
+    scopedLibraryIds: [],
+  });
+}
+
+/** Insert ledger items, then date any of them the Age Guard would otherwise keep for lack of a match. */
+export async function upsertDeletableMediaItems(
+  input: UpsertMediaItemsBatchInput,
+): Promise<UpsertMediaItemsBatchResult> {
+  const result = await upsertMediaItemsBatch(input);
+  if (input.db) await stampOldPlexMatches(input.db);
+  return result;
 }
