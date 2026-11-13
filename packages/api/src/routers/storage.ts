@@ -14,8 +14,10 @@ import {
   getUtilization,
   getAppSetting,
   getNotifyWindow,
+  explainLiveDynamicPace,
   getSpacePolicy,
   getSpacePolicyStatus,
+  readArrayFreeSpaceSamples,
   setAppSetting,
   BATCH_STRATEGIES,
   RECLAIM_WINDOWS,
@@ -82,6 +84,17 @@ export const SpacePolicyInput = z
     // DESIGN-014 amendment (2026-07-09, build A) — per-kind caps (replaces the retired flat
     // targetBytesPerBatch, which getSpacePolicy still migrates when reading an old stored row).
     perKind: z.object({ movie: spacePolicyKindCaps, tv: spacePolicyKindCaps }).strict(),
+    // ADR-117 — optional so a row from before Dynamic Pace still saves. getSpacePolicy always
+    // emits it, and the cards round-trip the object they were given.
+    dynamicPace: z
+      .object({
+        enabled: z.boolean(),
+        horizonDays: z.number().int().min(1).max(3660),
+        floorBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+        ceilingBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -170,8 +183,27 @@ export const storageRouter = router({
     /** The effective space-policy config (defaults merged — always fully populated, DEFAULT OFF). */
     get: adminProcedure.query(({ ctx }) => getSpacePolicy(ctx.db)),
 
-    /** Ledger-derived status: last proposal (global + per kind) + each kind's open-batch state. */
-    status: adminProcedure.query(({ ctx }) => getSpacePolicyStatus({ db: ctx.db })),
+    /**
+     * Ledger-derived status, plus the Dynamic Pace reasoning (gap, intake, required, chosen,
+     * shortfall). The pace read fails soft: a downed Prometheus or disk leaves `pace` null and
+     * the existing card still loads. The card does not render the new fields (DESIGN-014 D-15).
+     */
+    status: adminProcedure.query(async ({ ctx }) => {
+      const status = await getSpacePolicyStatus({ db: ctx.db });
+      let pace: Awaited<ReturnType<typeof explainLiveDynamicPace>> | null = null;
+      try {
+        const nowSec = Math.floor(Date.now() / 1000);
+        const prometheus = resolvePrometheusReader(ctx);
+        pace = await explainLiveDynamicPace({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          readSamples: (arrayKey) => readArrayFreeSpaceSamples(prometheus, arrayKey, nowSec),
+        });
+      } catch {
+        pace = null;
+      }
+      return { ...status, pace };
+    }),
 
     /**
      * Replace the space-policy config — audited via the app_settings single-writer (update_app_setting).

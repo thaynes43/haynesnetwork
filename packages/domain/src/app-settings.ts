@@ -133,6 +133,20 @@ export interface SpacePolicy {
   /** Per-kind composition caps (movie, tv). Always fully populated by getSpacePolicy (defaults + the
    *  graceful migration of the retired flat `targetBytesPerBatch` key). */
   perKind: SpacePolicyPerKind;
+  /**
+   * ADR-117 / DESIGN-014 D-15 — Dynamic Pace. Absent on rows written before it; getSpacePolicy
+   * fills the measured defaults with `enabled: false`. While it is off, the per-kind caps and the
+   * over-target gate are unchanged.
+   */
+  dynamicPace?: DynamicPaceConfig;
+}
+
+/** The audited Dynamic Pace bounds. `enabled` ships false. Horizon, floor and ceiling are the D-15 defaults. */
+export interface DynamicPaceConfig {
+  enabled: boolean;
+  horizonDays: number;
+  floorBytes: number;
+  ceilingBytes: number;
 }
 
 /** The default cap value floor for a targetBytes cap the admin newly enables (100 GiB). */

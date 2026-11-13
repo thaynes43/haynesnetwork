@@ -4,13 +4,17 @@
   space policy now PROPOSES **AND PROMOTES** its batches straight to Leaving Soon (autonomous cycle, no
   admin-review gate, no cooldown). The cooldown knob (`cooldownDays`) is retired everywhere. See the
   **D-14** amendment below; the original D-01..D-09 text describes the pre-073 propose-only behavior.
-- **Last updated:** 2026-07-18
+  **Amended 2026-11-13 by [ADR-117](../adrs/117-dynamic-trash-pace.md)** (D-15): while Dynamic Pace is
+  on, the byte ask comes from the gap and the intake. The switch ships off, and while it is off D-09
+  and D-14 are unchanged.
+- **Last updated:** 2026-11-13
 - **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26; in effect since 2026-09-28): the
   space policy's proposal leaves out a title on any read Plex watchlist (it takes no cap slot), and `minCandidates`
   counts deletable candidates only (DESIGN-052 D-08).
 - **Author:** Fable 5 (autonomous run, PLAN-014); D-14 amendment by an Opus autonomous run
 - **Implements:** [ADR-031](../adrs/031-space-driven-batch-policy.md),
-  [ADR-073](../adrs/073-autonomous-trash-cycle.md). Consumes ADR-030 / DESIGN-013
+  [ADR-073](../adrs/073-autonomous-trash-cycle.md),
+  [ADR-117](../adrs/117-dynamic-trash-pace.md). Consumes ADR-030 / DESIGN-013
   (`getUtilization`, `space_targets`, `STORAGE_ARRAYS`) and ADR-025 / DESIGN-011 (`createBatchFromPending`,
   `promoteToLeavingSoon`, `trash_batch_items`/`trash_batch_saves`, the sync-mode orchestrator pattern).
   Governs PRD **R-112..R-114**; glossary **T-98..T-99**. Migration **0022**.
@@ -27,7 +31,8 @@ Two additive, read-mostly surfaces closing the PLAN-013 loop:
    rescue-vs-delete stats + skip-gate graduation readiness. Read-only; the owner tunes Maintainerr rules
    by hand (ADR-031 C-06).
 
-No deletion behavior changes; no new deletion code path exists.
+The original surfaces add no deletion path. D-15 changes how many bytes a batch asks for, behind a
+switch that ships off. The sweep is still the only delete.
 
 ## Detailed design
 
@@ -239,6 +244,22 @@ Sync: `runSync` `space-policy` mode wiring (report shape, requires both bundles,
 - **Q-01 (resolved, ADR-031 C-05):** graduation thresholds — ≥3 batches, ≤10% save-rate, 0 restores.
 - **Q-02 (resolved, ADR-031 C-06):** rule attribution — collection-grain; rule-group-exact is a future map.
 - **Q-03 (resolved, ADR-031 C-06):** no auto-tuning — the report is human-driven.
+- **Q-04 (open):** the HaynesTower free-space step of about +8.7 TB at the 2026-11-12 sample is not
+  intake and not Trash. The forecast sets that one step aside. The cause is the owner's question.
+  Recommendation: do not treat it as intake, which is what D-15 does.
+- **Q-05 (open):** the save rate is not stationary. The last movie batch (swept 2026-11-13) saved
+  about 34% of its bytes; the 90-day byte-weighted rate is 0.1195. Recommendation: keep the 90-day
+  rate, which inflates the ask less, until the owner says the recent rate is the new one.
+- **Q-06 (open):** whether the Maintainerr rules refill the eligible pool after a pace run empties
+  it. The projection assumes they do not. Recommendation: judge the shortfall against the stock
+  measured on 2026-11-13.
+- **Q-07 (open):** whether guardian skips (about 5.0% of movie proposed bytes over those 90 days)
+  should reduce the expected yield. Recommendation: no. The eligible pool already excludes the
+  guards, and the next batch picks different titles. The projection's deleted figure is therefore
+  slightly high, and the shortfall is not smaller than the number in D-15.
+- **Q-08 (open):** whether the floor should ignore the pool-short 19-item batch and use the smallest
+  full 50-item proposed total, 800,535,856,306 bytes (closed 2026-08-22). Recommendation: use the
+  smaller observed total, 130,604,353,957 bytes, because a higher floor deletes more.
 
 ## D-09 — Amendment 2026-07-09 (owner-directed, build A) — modes + per-kind caps, relocated config
 
@@ -339,3 +360,148 @@ the propose-only parts of D-01..D-03 and D-07/D-09c.
 Tests: `packages/domain/__tests__/space-policy.test.ts` proves auto-promote to `leaving_soon`, the
 **self-heal of a stuck `admin_review` system batch** (the reproduced prod stall → `promoted`), that a
 MANUAL admin_review batch is left untouched, and that a healthy `leaving_soon` batch is not duplicated.
+
+## D-15 — Amendment 2026-11-13 (ADR-117) — Dynamic Pace sizes the byte ask
+
+The owner (2026-11-13): Trash recommendations should follow the capacity target. The live movie cap
+is a static 50 titles per save window, minus whatever is saved. The batch should grow when the array
+is falling behind and hold a steady pace when it is under the target. It does not have to be back on
+target in one week. It should be able to get there in a month or two. Story 820's acceptance horizon
+is 60 days.
+
+This amendment changes **how many bytes** a policy batch asks for. It does not change which titles
+are eligible. Watchlist, Age Guard, Save, the request tag, `dnd`, the Release Block and the Title
+Exclusion are untouched. The batch is still built by `selectBatchCandidates`. The one title that
+crosses the ask is still included. The policy still never sweeps.
+
+The switch is `space_policy.dynamicPace.enabled`. It ships **off**. `getSpacePolicy` fills a missing
+object with `enabled: false` and the bounds below. A non-boolean `enabled` reads as off. While the
+switch is off, `evaluateSpacePolicy` does not read Prometheus and the per-kind caps and the
+over-target gate behave as they do today (`packages/domain/__tests__/space-policy.test.ts`). There
+is no migration: the object lives in the existing audited `space_policy` jsonb. The next save of the
+existing Trash settings card round-trips it and persists the defaults with the switch off. This
+change does not write the live row.
+
+### How intake is measured
+
+`forecastFreeSpace` (DESIGN-013 D-08) is called on a copy of the chart's series
+(`FREESPACE_SERIES_QUERY`, 90 days, 3-day step) after `addRecordedDeletions`: each sample at or
+after a recorded sweep has that sweep's `deleted_size_bytes` subtracted. The step is then the
+observed free-space change minus the Trash that happened inside it, so the rate is intake and not
+intake minus Trash. The interquartile mean still sets a level jump aside. The live `/diskspace`
+reading is the level for the gap and does not enter the rate.
+
+Only completed batches (`trash_batches.state = 'deleted'`, `deleted_at` inside the 90-day window)
+are added back, summed from items in state `deleted`. Direct expedites in that window with scope
+`item` or `all` and a `sizeBytes` payload were 0 rows on 2026-11-13, so they are not added back.
+
+A series that is too short (D-08: under 13 samples or a span under 36 days) does not size a batch.
+Today's caps remain. A rate the forecast calls flat is treated as no measured intake: the gap is
+still closed, and the intake term is omitted. A missing series (Prometheus down, empty matrix, or
+the reader throws) also keeps today's caps.
+
+Measured 2026-11-13 by running `explainDynamicPace` on the coordinator's HaynesTower series
+(Prometheus, 2026-11-13T16:36Z, GB = 1e9 bytes) and the sweep bytes below: the unadjusted rate is
+−212.244 GB/day (the published D-08 figure is −212.2). After the deletions are added back the rate
+is −329.767 GB/day, so intake is 329.767 GB/day. The +8.7 TB step at 2026-11-12 stays in the series
+and is set aside (Q-04). The sweep of 3,246,674,077,176 bytes at 2026-11-06T15:46:13Z is removed
+from the step that contained it.
+
+### How the batch is sized
+
+`targetFree = round(total × (1 − targetPct/100))`, the same free-byte floor as the chart.
+Over target means live free space is strictly below that floor. `gap = max(0, targetFree − free)`.
+
+`windowDays` is `trash_default_window_days` at run time (7 on the live row, read 2026-11-13; the
+code default when the key is unset is 21). `horizonDays` defaults to 60.
+
+- **Over target.** Required deletion this window is
+  `max(0, gap − rate × horizon) × (window / horizon)`. A library that is filling adds the intake
+  for one window on top of the gap's share. A library that is draining reduces the requirement. If
+  the trend already reaches the floor inside the horizon, the requirement is 0 and no batch is
+  posted (`pace: 'none'`), even though `usedPct > target`. That is the smaller batch.
+- **Under target, switch on.** The requirement is `max(0, −rate × window)`: match the intake, and
+  do not spend the surplus. A drain, or an unmeasured intake, requires 0. This is the only place
+  ADR-073 C-04 changes, and only while the pace applies. While the switch is off, under target is
+  still `skipped_under_target`.
+- **Save rate.** Byte-weighted over the same 90 days, movies and TV together, because they share
+  the array: `saved size_bytes / (saved size_bytes + deleted deleted_size_bytes)` on completed
+  batches. Skips are not in the ratio (Q-07). Null, or a rate outside `[0, 1)`, does not inflate
+  (yield 1). Otherwise `unclamped = required / (1 − saveRate)`.
+- **Floor and ceiling, on the ask.** A requirement of 0 stays 0: the floor does not force a batch.
+  A positive ask is `min(ceiling, max(floor, floor(unclamped)))`, then limited by the eligible
+  pool. `expectedDeleted = chosen × yield`. `shortfall = max(0, required − expected)`.
+  `poolShortfall = max(0, ask − pool)`.
+- **One ceiling for the array.** The ask is split across movie and TV in proportion to eligible
+  bytes, largest pool first for the remainder, and no kind is asked for more than its pool. A kind
+  with a 0 ask is not proposed (`skipped_pace`). The per-kind `maxItems` and `targetBytes` caps are
+  not also applied. The kind's strategy is kept.
+- **Not applicable** (ceiling below the floor, no disk, too short, no series, or the preload
+  throws): today's caps and today's gate. `chosenBytes` on that explanation is 0.
+
+Eligible bytes are the same titles the proposal already keeps: a Maintainerr id, not a save, not
+`dnd`, not on the watchlist, and not age-recent. The proposal reads that set live. The status read
+uses the candidate snapshot, which lags, and says so (`poolSource: 'snapshot'`). The snapshot does
+not feed the proposal.
+
+### Defaults, from the measurements
+
+| Bound | Value | Where it comes from |
+| --- | --- | --- |
+| Horizon | 60 days | The owner's bound and story 820's acceptance window. Not a disk statistic. |
+| Floor | 130,604,353,957 bytes | Smallest proposed-byte total of a completed HaynesTower batch with `deleted_at` on or after 2026-08-14, measured 2026-11-13T18:45:08Z. That batch closed 2026-10-19 with 19 movies. The smallest full 50-item total in the same window was 800,535,856,306 (2026-08-22). The smaller number is the floor (Q-08). |
+| Ceiling | 3,591,025,375,575 bytes | Largest proposed-byte total in that window: 50 movies, closed 2026-11-06, deleted 3,246,674,077,176 bytes. |
+| Save rate | measured at run time | Not a stored default. On 2026-11-13T18:43:26Z, completed batches since 2026-08-14: saved 1,897,158,268,845 bytes, deleted 13,609,206,491,654 (movies) + 372,082,386,455 (the one TV batch). Rate 0.119480. |
+
+A stored bound that is not a safe integer is replaced by the default above. `ceiling < floor` after
+that does not size a batch.
+
+### What the read returns, and the card
+
+`storage.policy.status` adds `pace`. Each batchable array gets the explanation: gap, intake (null
+when it was not measured), required deletion this window, chosen size, shortfall, and the fields
+around them (`DynamicPaceExplanation`). `applied` is true only when the switch is on and an array
+could be sized. Prometheus or the disk failing leaves `pace` null and the existing card still loads.
+
+The card is not changed. Showing those figures on the existing status block (`data-testid="policy-status"`)
+needs a Fable worker: the current block is "Last proposal" plus one line per kind, and adding the
+reasoning would be a new layout. That page work is the follow-up.
+
+### Projection (not a forecast the app stores)
+
+Labelled a projection. It holds the measured intake fixed, applies the 90-day yield to the open
+batch as well as the pool, and posts a new batch only when the previous one has been swept (one
+open batch per kind). Day 0 is the disk reading 2026-11-13T18:43Z. The open movie batch
+(1,881,676,268,710 proposed bytes, 0 saved at that reading, expires 2026-11-20T17:17Z) deletes on
+the day-7 step. The first dynamic batch can be posted then and deletes one window later. TB below
+is 1e12 bytes. The code's first-window ask on these inputs is the ceiling, 3.591 TB, all of it movies.
+
+HaynesTower does **not** return to 75% within 60 days. Required deletion over 60 days, if intake
+continues, is 63.180 TB. The eligible movie pool (7.678 TB) plus the open batch, at the measured
+yield, delete 8.417 TB. The shortfall is **54.762 TB** of free space still missing at day 60
+(free 77.727 TB, used 85.333%). The pool is fully committed on the batch posted at day 21
+(2026-12-04) and those bytes delete at day 28 (2026-12-11). After that the measured stock is gone
+and use climbs, because intake continues (19.786 TB over 60 days) and deletions stop. Raising the
+ceiling does not change the day-60 total: the pool, not the ceiling, is the limit. Q-06: this
+assumes the rules do not refill the pool. Q-07: skips are not in the yield, so this shortfall is
+not a high estimate.
+
+| Day | UTC | Posted TB | Deleted that step TB | Free TB | Used % | Gap TB | Pool left TB |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2026-11-13 | — | — | 89.096 | 83.188 | 43.394 | 7.678 |
+| 7 | 2026-11-20 | 3.591 | 1.657 | 88.444 | 83.311 | 44.045 | 4.087 |
+| 14 | 2026-11-27 | 3.591 | 3.162 | 89.298 | 83.150 | 43.192 | 0.496 |
+| 21 | 2026-12-04 | 0.496 | 3.162 | 90.152 | 82.989 | 42.338 | 0 |
+| 28 | 2026-12-11 | 0 | 0.437 | 88.280 | 83.342 | 44.210 | 0 |
+| 60 | 2027-01-12 | 0 | 0 | 77.727 | 85.333 | 54.762 | 0 |
+
+Every cell is that formula rounded to 3 decimals. The 0.496 TB step is the remainder of the
+7.678 TB pool. The day-60 gap equals the 54.762 TB shortfall.
+
+Tests: `packages/domain/__tests__/space-policy-pace.test.ts` (over target and falling, over target
+and rising, the drain that closes the gap, under target, the floor not lifting a zero, an empty
+pool, a save-heavy ceiling, frequent deletions whose sized intake is the true fill, a level jump
+that is not intake, a flat series, a too-short series, a ceiling below the floor, one ceiling
+shared by both kinds). `space-policy.test.ts` proves the switch off equals today's `maxItems`, a
+missing or too-short series keeps that cap, the switch on replaces it, under target proposes only
+when the pace has intake, a closing drain posts nothing, and an open batch still holds the slot.

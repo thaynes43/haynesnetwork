@@ -8,12 +8,17 @@ import { afterEach, beforeAll, beforeEach, afterAll, describe, expect, it } from
 import { eq, inArray } from 'drizzle-orm';
 import { ledgerEvents, mediaItems, notifications, permissionAudit, trashBatchItems, trashBatches } from '@hnet/db/schema';
 import {
+  DYNAMIC_PACE_CEILING_BYTES,
+  DYNAMIC_PACE_FLOOR_BYTES,
+  DYNAMIC_PACE_HORIZON_DAYS,
   buildArrClientBundle,
   createBatchFromPending,
   defaultPerKind,
   evaluateSpacePolicy,
   getSpacePolicy,
   getSpacePolicyStatus,
+  measureTrashYield,
+  recordedSweepDeletions,
   saveExclusion,
   setAppSetting,
   type ArrClientBundle,
@@ -570,5 +575,153 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(movieKind.lastProposal).not.toBeNull();
     // A movie batch is now open (leaving_soon, auto-promoted) — the status reflects the slot being held.
     expect(movieKind.hasOpenBatch).toBe(true);
+  });
+
+  // ADR-117 / DESIGN-014 D-15. The switch ships off. While it is off the reader is not called and
+  // the per-kind caps decide the batch. While it is on and the series can be sized, the byte ask
+  // replaces those caps. movieCollection is 4e9 + 3e9 + 2e9, so a 5e9 ask takes two titles and a
+  // maxItems of 1 takes one.
+  const DAY = 86_400;
+  const paceNow = new Date('2026-11-13T18:43:26Z');
+  const paceNowSec = Math.floor(paceNow.getTime() / 1000);
+  const paceSeries = (perDay: number) => {
+    const start = paceNowSec - 90 * DAY;
+    const out: { t: number; freeBytes: number }[] = [];
+    for (let i = 0; i <= 30; i++) {
+      out.push({ t: start + i * 3 * DAY, freeBytes: 400 * TB + perDay * i * 3 });
+    }
+    return out;
+  };
+  const pacePolicy = (enabled: boolean, maxItems: number): SpacePolicy => ({
+    ...withMovieCaps({ maxItems: { enabled: true, value: maxItems } }),
+    dynamicPace: {
+      enabled,
+      horizonDays: 60,
+      floorBytes: 1,
+      ceilingBytes: 5_000_000_000,
+    },
+  });
+  const proposePaced = async (
+    policy: SpacePolicy,
+    samples: { t: number; freeBytes: number }[] | 'throw' | 'none',
+    disk: 'over' | 'under',
+  ) => {
+    await setPolicy(policy);
+    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+    return evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: disk === 'over' ? overBundle() : underBundle(),
+      actorId,
+      now: paceNow,
+      ...(samples === 'none'
+        ? {}
+        : {
+            readFreeSpace: async () => {
+              if (samples === 'throw') throw new Error('pace read while off');
+              return samples;
+            },
+          }),
+    });
+  };
+
+  it('an absent dynamic pace reads off, with the measured bounds', async () => {
+    await setPolicy(ENABLED);
+    const policy = await getSpacePolicy(t.db);
+    expect(policy.dynamicPace?.enabled).toBe(false);
+    expect(policy.dynamicPace?.horizonDays).toBe(DYNAMIC_PACE_HORIZON_DAYS);
+    expect(policy.dynamicPace?.floorBytes).toBe(DYNAMIC_PACE_FLOOR_BYTES);
+    expect(policy.dynamicPace?.ceilingBytes).toBe(DYNAMIC_PACE_CEILING_BYTES);
+  });
+
+  it('the switch off equals today: maxItems 1, and the free-space reader is not called', async () => {
+    const report = await proposePaced(pacePolicy(false, 1), 'throw', 'over');
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie.outcome).toBe('proposed');
+    expect(movie.candidateCount).toBe(1);
+    expect(report.arrays.find((a) => a.key === 'haynestower')!.pace).toBeNull();
+  });
+
+  it('the switch on with no series keeps today\'s cap', async () => {
+    const report = await proposePaced(pacePolicy(true, 1), 'none', 'over');
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie.outcome).toBe('proposed');
+    expect(movie.candidateCount).toBe(1);
+  });
+
+  it('the switch on with a too-short series keeps today\'s cap', async () => {
+    const report = await proposePaced(pacePolicy(true, 1), paceSeries(0).slice(0, 3), 'over');
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie.outcome).toBe('proposed');
+    expect(movie.candidateCount).toBe(1);
+    expect(report.arrays.find((a) => a.key === 'haynestower')!.pace?.applicable).toBe(false);
+  });
+
+  it('the switch on replaces maxItems with the byte ask (a flat series still closes the gap)', async () => {
+    const report = await proposePaced(pacePolicy(true, 1), paceSeries(0), 'over');
+    const tower = report.arrays.find((a) => a.key === 'haynestower')!;
+    const movie = tower.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(tower.pace?.applicable).toBe(true);
+    expect(movie.outcome).toBe('proposed');
+    expect(movie.candidateCount).toBe(2);
+    expect(await batchIds(movie.batchId!)).toEqual(['ms-9001', 'ms-9002']);
+  });
+
+  it('under target with the switch off proposes nothing', async () => {
+    const report = await proposePaced(pacePolicy(false, 1), 'throw', 'under');
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie.outcome).toBe('skipped_under_target');
+    expect(report.proposedCount).toBe(0);
+  });
+
+  it('under target with the switch on and a filling library proposes a steady batch', async () => {
+    const report = await proposePaced(pacePolicy(true, 1), paceSeries(-2_000_000_000_000), 'under');
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie.outcome).toBe('proposed');
+    expect(movie.candidateCount).toBe(2);
+    expect(report.arrays.find((a) => a.key === 'haynestower')!.pace?.pace).toBe('steady');
+  });
+
+  it('a drain that reaches the floor inside the horizon proposes nothing', async () => {
+    const report = await proposePaced(pacePolicy(true, 50), paceSeries(2_000_000_000_000), 'over');
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie.outcome).toBe('skipped_pace');
+    expect(report.proposedCount).toBe(0);
+    const [batch] = await t.db.select().from(trashBatches);
+    expect(batch).toBeUndefined();
+  });
+
+  it('an open batch still holds the slot when the pace is on', async () => {
+    const first = await proposePaced(pacePolicy(false, 1), 'none', 'over');
+    const created = first.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!.batchId;
+    const second = await proposePaced(pacePolicy(true, 1), paceSeries(0), 'over');
+    const movie = second.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie.outcome).toBe('skipped_open_batch');
+    expect(movie.batchId).toBe(created);
+    expect(second.proposedCount).toBe(0);
+  });
+
+  it('the save rate is saved bytes over saved plus deleted, and a sweep is one deletion', async () => {
+    const [batch] = await t.db
+      .insert(trashBatches)
+      .values({ mediaKind: 'movie', state: 'deleted', deletedAt: paceNow })
+      .returning();
+    await t.db.insert(trashBatchItems).values([
+      { batchId: batch!.id, maintainerrMediaId: 'saved-1', title: 'saved', state: 'saved', sizeBytes: 200 },
+      {
+        batchId: batch!.id,
+        maintainerrMediaId: 'deleted-1',
+        title: 'deleted',
+        state: 'deleted',
+        sizeBytes: 800,
+        deletedSizeBytes: 800,
+        deletedAt: paceNow,
+      },
+    ]);
+    expect(await measureTrashYield(t.db, paceNow)).toBeCloseTo(0.2, 6);
+    const deletions = await recordedSweepDeletions(t.db, paceNow);
+    expect(deletions).toEqual([{ t: paceNowSec, bytes: 800 }]);
   });
 });

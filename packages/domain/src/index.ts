@@ -69,10 +69,12 @@ export * from './janitor-release-block';
 // DESIGN-010 amendment — the Trash Overview landing aggregate (composes the reads above)
 export * from './trash-overview';
 export * from './storage-metrics';
-// DESIGN-013 D-08 — Capacity Forecast (pure; story 820 calls it from space-policy.ts)
+// DESIGN-013 D-08 — Capacity Forecast (pure; story 820 calls it from space-policy-pace.ts)
 export * from './storage-forecast';
 // ADR-031 / DESIGN-014 (PLAN-014) — space-driven policy (propose-only) + rules-tuning report
 export * from './space-policy';
+// ADR-117 / DESIGN-014 D-15 — Dynamic Pace (byte ask; the switch ships off)
+export * from './space-policy-pace';
 export * from './trash-tuning';
 // ADR-027 / DESIGN-004 D-15 (PLAN-010) — Message-of-the-Day: reader + single-writers over app_settings
 export * from './motd';
