@@ -23,8 +23,8 @@ The owner restated the rule the same day: a release already grabbed is never fet
 
 - **A. Keep recording only the file on disk.** Rejected: it is the behaviour the review measured, and it leaves earlier grabs unblocked.
 - **B. Record every verified posted name, and the renamed file only when that file has no verified name of its own.** Chosen.
-- **C. Stop deleting any title that has no verified name.** Not chosen here. That is the owner's decision (DESIGN-052 Q-18). Until it is answered, a file with no verified name keeps today's renamed-file term and is still deleted.
-- **D. Drop the renamed-file term whenever any grab of the title has a verified name.** Rejected for this story: the file on disk may be a different release from the grabs we can name, and dropping its term would block less. DESIGN-052 Q-15 records the choice.
+- **C. Stop deleting any title that has no verified name.** Not chosen here. That is the owner's decision (DESIGN-052 Q-21). Until it is answered, a file with no verified name keeps today's renamed-file term and is still deleted.
+- **D. Drop the renamed-file term whenever any grab of the title has a verified name.** Rejected for this story: the file on disk may be a different release from the grabs we can name, and dropping its term would block less. DESIGN-052 Q-18 records the choice.
 
 ## Decision
 
@@ -48,8 +48,8 @@ The one-off backfill `packages/sync/src/scripts/release-block-backfill.ts` adds 
 ## Consequences
 
 - A failed grab and a grab an upgrade replaced are blocked when the app can still show their posted names.
-- The renamed-file term remains for a file with no verified name, and still misses the share measured in ADR-093 C-22 until Q-18 is answered.
+- The renamed-file term remains for a file with no verified name, and still misses the share measured in ADR-093 C-22 until Q-21 is answered.
 - More terms are written per title. On 2026-11-13 the live Radarr profile held 619 distinct terms against a cap of 3,000 (DESIGN-052 D-29). The measured additions are far under that cap. The cap's behaviour is unchanged: the newest terms are kept.
 - A ledger read that fills its page keeps that title, so a grabbed name past the page cannot be dropped. A download-history read that fills its last page is logged and the jobs already read are still used: refusing every movie delete would stop Trash, and this decision does not change the pace. The bound is 40 pages; the history measured the same day was 21 and was not truncated. A missing key or a failed read omits that source and does not stop the sweep.
-- The six deleted shows the review names have no posted name in the ledger, and the size match does not apply to a series (Q-16). They stay without a term until a per-episode source exists.
+- The six deleted shows the review names have no posted name in the ledger, and the size match does not apply to a series (Q-19). They stay without a term until a per-episode source exists.
 - Term life, eligibility, pace, restore, and request protection are untouched.
