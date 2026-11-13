@@ -114,7 +114,7 @@ Watch limits, measured the same day:
 
 - Household `play_count` / `last_viewed_at` come from the metadata harvest, which reads at most 20 pages of 500 Tautulli history rows per instance (`packages/sync/src/metadata-refresh.ts`). Among movies and shows that have a play, the oldest last view is **2026-06-07 20:31-04** and every TV last view is in 2026. An empty `household_plays` cell means "no play inside that harvest," which is about five months, not a lifetime. 192 live shows have a household play (188 with a HaynesTower breakdown, 15 with a HaynesOps breakdown). 893 have none.
 - `user_media_watch` covers 164 shows. Fifteen shows have someone in progress, across 6 app users. That flag is not itself a guardian keep.
-- `watch_titles` and `watch_events` are one tracked account. Episode events: 1,753 rows, 2023-09-24 through 2026-11-12. The season columns named `tracked_account_*` are that account only.
+- `watch_titles` and `watch_events` are one tracked account. Episode events: 1,753 rows, 2023-09-24 through 2026-11-12. That account's four per-season columns (`tracked_account_*`) were in the season CSV as first written and were removed before merge, because they are one account's viewing times and this repository is public. The statements below that rest on that account were measured from those columns.
 - Watchlist registry runs finished `ok` at 2026-11-13 11:45-05. 201 distinct show TVDB ids are on some watchlist.
 
 HOps shows by Sonarr status: 661 ended, 292 continuing. Download imports (`downloadFolderImported` only, the Age Guard's event): 561 of 953 have one inside 180 days, 392 do not. The app would clear **0** shows today, because every HOps added date is inside 180 days.
