@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   QbittorrentClient,
   ProwlarrReadClient,
+  SabnzbdReadClient,
   computeUnsatisfied,
   MAM_SEED_OBLIGATION_SECONDS,
 } from '../src/read';
@@ -415,6 +416,48 @@ describe('assertGovernorClientsEnv', () => {
     expect(cfg.prowlarr.baseUrl).toContain('prowlarr.downloads.svc.cluster.local:9696');
     expect(cfg.prowlarr.indexerId).toBe(17);
     expect(cfg.prowlarr.apiKey).toBe('k');
+  });
+
+  it('listReleaseJobs keeps name, bytes and completion and drops a URL', async () => {
+    const fetchImpl: typeof fetch = async () =>
+      jsonResponse({
+        history: {
+          slots: [
+            {
+              nzo_id: 'a',
+              name: 'Movie.2020.1080p.BluRay.x264-GRP',
+              bytes: '100',
+              completed: 1_700_000_000,
+              status: 'Completed',
+              storage: '/downloads/secret',
+              url: 'https://download.example/get?id=1',
+            },
+            {
+              nzo_id: 'b',
+              name: 'https://download.example/get?id=1',
+              bytes: 100,
+              completed: 1_700_000_000,
+            },
+            { nzo_id: 'c', name: 'No Size', bytes: 0, completed: 1_700_000_000 },
+          ],
+        },
+      });
+    const client = new SabnzbdReadClient({
+      baseUrl: 'http://sab.local',
+      apiKey: 'test-key',
+      fetchImpl,
+    });
+    const page = await client.listReleaseJobs({ archive: true, start: 0, limit: 1000 });
+    expect(page.slotCount).toBe(3);
+    expect(page.jobs).toEqual([
+      {
+        name: 'Movie.2020.1080p.BluRay.x264-GRP',
+        bytes: 100,
+        completedAt: new Date(1_700_000_000 * 1000),
+      },
+    ]);
+    expect(JSON.stringify(page.jobs)).not.toContain('download.example');
+    expect(JSON.stringify(page.jobs)).not.toContain('secret');
   });
 
   it('throws DownloadsConfigError naming the missing key (never a value)', () => {

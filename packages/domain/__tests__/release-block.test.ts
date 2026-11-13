@@ -162,6 +162,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
     await t.db.delete(trashDeletedReleases);
     await t.db.delete(trashBatches);
     await t.db.delete(trashSweepStatus);
+    await t.db.delete(ledgerEvents);
     await setAppSetting({ db: t.db, key: 'trash_skip_admin_gate', value: true, actorId: admin });
     await seedVerifiedWatchlistRegistry(t.db);
   });
@@ -829,14 +830,29 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
     try {
       await ledgerImport('Movie.9003.2024.720p.WEB-DL.DDP5.1.H.264-OLDGRP', 'OLDGRP', 'WEBDL-720p');
       const stale = await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: mid });
-      const d = stale.status === 'recordable' ? stale.drafts[0]! : null;
-      expect(d).toMatchObject({ identitySource: 'arr_file', shape: 'group', termConfidence: 'low_confidence' });
+      const staleDrafts = stale.status === 'recordable' ? stale.drafts : [];
+      // ADR-117 / D-29 — the file still takes the renamed term (the stale import does not name it), and the
+      // earlier grab is blocked too.
+      const d = staleDrafts[0] ?? null;
+      expect(d).toMatchObject({
+        identitySource: 'arr_file',
+        shape: 'group',
+        termConfidence: 'low_confidence',
+        renamedFileFallback: true,
+      });
       expect(termMatches(d!.term!, 'Movie.9003.2024.1080p.BluRay.x264-NEWGRP')).toBe(true);
       expect(termMatches(d!.term!, 'Movie.9003.2024.720p.WEB-DL.DDP5.1.H.264-OLDGRP')).toBe(false);
+      expect(staleDrafts.some((draft) => draft.identitySource === 'ledger_grab' && draft.termConfidence === 'verified')).toBe(
+        true,
+      );
+      expect(
+        staleDrafts.some((draft) => termMatches(draft.term!, 'Movie.9003.2024.720p.WEB-DL.DDP5.1.H.264-OLDGRP')),
+      ).toBe(true);
 
       await t.db.delete(ledgerEvents).where(eq(ledgerEvents.mediaItemId, mid));
       await ledgerImport('Movie.9003.2024.1080p.BluRay.x264-NEWGRP', 'NEWGRP', 'Bluray-1080p');
       const agrees = await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: mid });
+      expect(agrees.status === 'recordable' && agrees.drafts).toHaveLength(1);
       expect(agrees.status === 'recordable' && agrees.drafts[0]).toMatchObject({
         identitySource: 'ledger_grab',
         releaseTitle: 'Movie.9003.2024.1080p.BluRay.x264-NEWGRP',
@@ -2104,6 +2120,286 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
       half.read.radarr.countImportListExclusions = hang;
       const mixed = await getReleaseBlockSummary({ db: t.db, arr: half, exclusionDeadlineMs: 300 });
       expect(mixed.kinds.map((k) => k.importListExclusions)).toEqual([null, 7]);
+    });
+  });
+
+  describe('ADR-117 / D-29 — every verified posted name', () => {
+    const failedGrab = (over: Partial<NonNullable<StaticArrMovie['history']>[number]> = {}) => ({
+      id: 9,
+      eventType: 'downloadFailed',
+      date: '2025-06-01T00:00:00Z',
+      sourceTitle: 'Babygirl.2024.1080p.WEB-DL.H264-OLDGRP',
+      downloadId: 'dl-fail',
+      episodeId: null,
+      qualityName: 'WEBDL-1080p',
+      fileId: null,
+      importedPath: null,
+      releaseGroup: 'OLDGRP',
+      indexer: 'indexer A',
+      releaseSource: null,
+      ...over,
+    });
+
+    it('records the file’s grab and a failed grab of another release', async () => {
+      const movie = grabbedMovie(1);
+      movie.history = [...(movie.history ?? []), failedGrab()];
+      const { arr } = createStaticReleaseBlockArr({ movies: new Map([[1, movie]]) });
+      const id = await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: await mediaItemId('radarr', 1) });
+      const drafts = id.status === 'recordable' ? id.drafts : [];
+      expect(drafts[0]).toMatchObject({ identitySource: 'arr_grab_history', releaseTitle: BABYGIRL });
+      expect(drafts.some((d) => d.releaseTitle === 'Babygirl.2024.1080p.WEB-DL.H264-OLDGRP' && d.indexer === 'indexer A')).toBe(
+        true,
+      );
+      expect(drafts.every((d) => d.termConfidence === 'verified')).toBe(true);
+    });
+
+    it('an upgraded file keeps the latest grab first and still blocks the release it replaced', async () => {
+      const older = 'Babygirl.2024.1080p.WEB-DL.DDP5.1.H.264-OLDGRP';
+      const movie = grabbedMovie(1);
+      movie.history = [
+        {
+          ...movie.history![0]!,
+          id: 10,
+          downloadId: 'dl-old',
+          sourceTitle: older,
+          date: '2025-01-01T00:00:00Z',
+          releaseGroup: 'OLDGRP',
+          qualityName: 'WEBDL-1080p',
+          indexer: 'indexer A',
+        },
+        ...movie.history!,
+      ];
+      const { arr } = createStaticReleaseBlockArr({ movies: new Map([[1, movie]]) });
+      const id = await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: await mediaItemId('radarr', 1) });
+      const drafts = id.status === 'recordable' ? id.drafts : [];
+      expect(drafts[0]!.releaseTitle).toBe(BABYGIRL);
+      expect(drafts.some((d) => d.releaseTitle === older)).toBe(true);
+    });
+
+    it('a grab that does not name the file is blocked beside the renamed-file term', async () => {
+      const mid = await mediaItemId('radarr', 3);
+      const diskImported: StaticArrMovie = {
+        title: 'Movie 9003',
+        year: 2024,
+        tmdbId: 9003,
+        file: {
+          movieId: 3,
+          relativePath: 'Movie 9003 (2024) [Bluray-1080p][x264]-NEWGRP.mkv',
+          sceneName: null,
+          originalFilePath: null,
+          releaseGroup: 'NEWGRP',
+          quality: {
+            quality: { id: 7, name: 'Bluray-1080p', resolution: 1080, source: 'bluray', modifier: 'none' },
+          },
+          size: 9_000_000_000,
+        },
+        history: [],
+      };
+      await t.db.insert(ledgerEvents).values([
+        {
+          mediaItemId: mid,
+          eventType: 'grabbed',
+          source: 'radarr',
+          sourceEventId: 'same-term-grab',
+          occurredAt: new Date('2025-01-01T00:00:00Z'),
+          payload: {
+            sourceTitle: 'Movie.9003.2024.1080p.BluRay.x264-NEWGRP',
+            downloadId: 'same-term',
+            releaseGroup: 'NEWGRP',
+            quality: 'Bluray-1080p',
+            indexer: 'indexer A',
+          },
+        },
+        {
+          mediaItemId: mid,
+          eventType: 'imported',
+          source: 'radarr',
+          sourceEventId: 'same-term-import',
+          occurredAt: new Date('2025-01-01T01:00:00Z'),
+          payload: {
+            sourceTitle: 'Movie.9003.2024.720p.WEB-DL.DDP5.1.H.264-OLDGRP',
+            downloadId: 'other',
+            quality: 'WEBDL-720p',
+          },
+        },
+      ]);
+      const { arr } = createStaticReleaseBlockArr({ movies: new Map([[3, diskImported]]) });
+      const id = await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: mid });
+      const drafts = id.status === 'recordable' ? id.drafts : [];
+      expect(drafts[0]).toMatchObject({
+        identitySource: 'arr_file',
+        termConfidence: 'low_confidence',
+        renamedFileFallback: true,
+      });
+      expect(
+        drafts.some(
+          (d) => d.identitySource === 'ledger_grab' && d.termConfidence === 'verified' && d.indexer === 'indexer A',
+        ),
+      ).toBe(true);
+      // A renamed term widens its year, so it is not the same string as the grab's term. Both stay,
+      // and the delete is not counted as renamed-file only.
+      expect(drafts.every((d) => d.renamedFileFallback === true)).toBe(false);
+    });
+
+    it('a file with no verified name falls back to the renamed file and is marked for the sweep count', async () => {
+      const movie = grabbedMovie(1, { history: [] });
+      movie.file = { ...movie.file!, sceneName: null, originalFilePath: null };
+      const { arr } = createStaticReleaseBlockArr({ movies: new Map([[1, movie]]) });
+      const id = await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: await mediaItemId('radarr', 1) });
+      const drafts = id.status === 'recordable' ? id.drafts : [];
+      expect(drafts).toHaveLength(1);
+      expect(drafts[0]).toMatchObject({
+        identitySource: 'arr_file',
+        termConfidence: 'low_confidence',
+        renamedFileFallback: true,
+      });
+    });
+
+    it('a size-matched download name covers the file, and a URL is not a name', async () => {
+      const movie = grabbedMovie(1, { history: [] });
+      movie.file = { ...movie.file!, sceneName: null, originalFilePath: null };
+      const { arr } = createStaticReleaseBlockArr({ movies: new Map([[1, movie]]) });
+      const before = new Date('2026-11-01T00:00:00Z');
+      const urlOnly = await identifyRelease({
+        db: t.db,
+        arr: arr.read,
+        mediaItemId: await mediaItemId('radarr', 1),
+        before,
+        downloadHistory: [
+          {
+            name: 'https://download.example/get?id=1',
+            bytes: movie.file!.size!,
+            completedAt: new Date('2026-01-01T00:00:00Z'),
+          },
+        ],
+      });
+      const fallback = urlOnly.status === 'recordable' ? urlOnly.drafts : [];
+      expect(fallback).toHaveLength(1);
+      expect(fallback[0]!.renamedFileFallback).toBe(true);
+      const matched = await identifyRelease({
+        db: t.db,
+        arr: arr.read,
+        mediaItemId: await mediaItemId('radarr', 1),
+        before,
+        downloadHistory: [{ name: BABYGIRL, bytes: movie.file!.size!, completedAt: new Date('2026-01-01T00:00:00Z') }],
+      });
+      const drafts = matched.status === 'recordable' ? matched.drafts : [];
+      expect(drafts.some((d) => d.identitySource === 'legacy_sab' && d.termConfidence === 'verified')).toBe(true);
+      expect(drafts.some((d) => d.renamedFileFallback === true)).toBe(false);
+    });
+
+    it('writes every term and reads them back before the delete; a failed write deletes nothing', async () => {
+      const state = baseState({ collections: [movieCollection({ items: movieCollection().items.slice(0, 1) })] });
+      const movie = grabbedMovie(1);
+      movie.history = [...(movie.history ?? []), failedGrab()];
+      const { arr, fixture } = createStaticReleaseBlockArr({ movies: new Map([[1, movie]]) });
+      const { bundle } = makeMaintainerr(state);
+      let termsAtHandle: string[] = [];
+      state.onHandle = (mediaId) => {
+        termsAtHandle = [...(fixture.profiles.radarr[0]?.ignored ?? [])];
+        fixture.calls.push(`maintainerr handle ${mediaId}`);
+        fixture.gone.radarr.add(1);
+      };
+      const res = await expediteDeletion({
+        db: t.db,
+        maintainerr: bundle,
+        arr,
+        scope: 'item',
+        media: 'movie',
+        actorId: admin,
+        item: { collectionId: 7, maintainerrMediaId: 'ms-9001' },
+        logger,
+      });
+      expect(res.expeditedCount).toBe(1);
+      const rows = await records();
+      expect(rows.length).toBeGreaterThan(1);
+      for (const row of rows) expect(termsAtHandle).toContain(row.term);
+      const createAt = fixture.calls.indexOf('radarr create');
+      const handleAt = fixture.calls.indexOf('maintainerr handle ms-9001');
+      expect(createAt).toBeGreaterThan(-1);
+      expect(createAt).toBeLessThan(handleAt);
+
+      await t.db.delete(trashDeletedReleases);
+      const failingState = baseState({
+        collections: [movieCollection({ items: movieCollection().items.slice(0, 1) })],
+      });
+      const failing = createStaticReleaseBlockArr({
+        movies: new Map([[1, movie]]),
+        fail: new Set(['radarr:create']),
+      });
+      const again = makeMaintainerr(failingState);
+      const err = await expediteDeletion({
+        db: t.db,
+        maintainerr: again.bundle,
+        arr: failing.arr,
+        scope: 'item',
+        media: 'movie',
+        actorId: admin,
+        item: { collectionId: 7, maintainerrMediaId: 'ms-9001' },
+        logger,
+      }).catch((error: unknown) => error);
+      expect(err).toBeInstanceOf(ReleaseBlockError);
+      expect(again.calls.some((call) => call.pathname === '/collections/media/handle')).toBe(false);
+      expect((await records()).every((row) => row.state === 'abandoned')).toBe(true);
+    });
+
+    it('a sweep counts a delete whose only record is the renamed file', async () => {
+      const state = baseState({
+        collections: [movieCollection({ items: movieCollection().items.slice(0, 1) })],
+      });
+      const { bundle } = makeMaintainerr(state);
+      const created = await createBatchFromPending({
+        db: t.db,
+        maintainerr: bundle,
+        mediaKind: 'movie',
+        actorId: admin,
+      });
+      await t.db
+        .update(trashBatches)
+        .set({ expiresAt: new Date(Date.now() - 60_000) })
+        .where(eq(trashBatches.id, created.batchId));
+      const movie = grabbedMovie(1, { history: [] });
+      movie.file = { ...movie.file!, sceneName: null, originalFilePath: null };
+      const { arr, fixture } = createStaticReleaseBlockArr({ movies: new Map([[1, movie]]) });
+      state.onHandle = () => {
+        fixture.gone.radarr.add(1);
+      };
+      const report = await sweepExpiredBatches({
+        db: t.db,
+        maintainerr: bundle,
+        arr,
+        registry: 'gate-only',
+        logger,
+      });
+      expect(report.batches[0]).toMatchObject({ deletedCount: 1, renamedFileOnly: 1 });
+      expect(logs.some((line) => line.msg === '[trash] sweep_summary' && line.fields?.renamedFileOnly === 1)).toBe(
+        true,
+      );
+    });
+
+    it('a read-back that does not stick deletes nothing', async () => {
+      const state = baseState({
+        collections: [movieCollection({ items: movieCollection().items.slice(0, 1) })],
+      });
+      const { arr } = createStaticReleaseBlockArr({
+        movies: new Map([[1, grabbedMovie(1)]]),
+        dropWrites: new Set(['radarr:create']),
+      });
+      const { bundle, calls } = makeMaintainerr(state);
+      const err = await expediteDeletion({
+        db: t.db,
+        maintainerr: bundle,
+        arr,
+        scope: 'item',
+        media: 'movie',
+        actorId: admin,
+        item: { collectionId: 7, maintainerrMediaId: 'ms-9001' },
+        logger,
+      }).catch((error: unknown) => error);
+      expect(err).toBeInstanceOf(ReleaseBlockError);
+      expect((err as ReleaseBlockError).step).toBe('read_back');
+      expect(calls.some((call) => call.pathname === '/collections/media/handle')).toBe(false);
+      expect((await records()).every((row) => row.state === 'abandoned')).toBe(true);
     });
   });
 });

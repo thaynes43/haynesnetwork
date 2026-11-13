@@ -56,6 +56,7 @@ import {
   stampReleaseRecords,
   type ReleaseBlockArrClients,
 } from './release-block';
+import { type LegacySabJob } from './release-block-names';
 import { consoleDomainLogger, type DomainLogger } from './domain-logger';
 import {
   evaluateRegistryGate,
@@ -1347,6 +1348,11 @@ export interface BatchSweepResult {
   abortReason: 'handle_breaker' | 'arr_identity' | null;
   /** ADR-093 / DESIGN-052 D-09 / D-21 — the items this sweep KEPT (landed `skipped`), per keep reason. */
   keptByReason: Partial<Record<TrashKeepReason, number>>;
+  /**
+   * ADR-117 / DESIGN-052 D-29 — deletes whose every record is the renamed-file fallback (no verified posted
+   * name for that file). Logged on `[trash] sweep_summary` and on the batch-close event. Not a new page.
+   */
+  renamedFileOnly: number;
 }
 
 /** D-14 — why a sweep paused cleanly: the Registry Gate refused (`gate`), or the Release Block could not be written and
@@ -1427,6 +1433,8 @@ export async function sweepExpiredBatches(
     logger?: DomainLogger;
     /** Clock seam for the gate and the status row (tests). */
     now?: () => Date;
+    /** ADR-117 / D-29 — download-history jobs for the movie size match. Omitted when that read failed. */
+    downloadHistory?: readonly LegacySabJob[];
   } & SweepRegistryInput,
 ): Promise<SweepReport> {
   const actorId = input.actorId ?? null;
@@ -1558,6 +1566,7 @@ export async function sweepExpiredBatches(
             forcedEarly: batch.forcedEarly,
             watchlist,
             logger,
+            downloadHistory: input.downloadHistory,
           }),
         );
       } catch (error) {
@@ -1600,6 +1609,7 @@ export async function sweepExpiredBatches(
       batches: results.length,
       deleted: results.reduce((n, r) => n + r.deletedCount, 0),
       kept: mergeKept(results),
+      renamedFileOnly: results.reduce((n, r) => n + r.renamedFileOnly, 0),
       aborted,
     });
     return { batchesSwept: results.length, batches: results, due: due.length, paused: null, outcome, registryRefresh };
@@ -1754,6 +1764,7 @@ async function expireOneBatch(input: {
   /** ADR-093 / DESIGN-052 D-06 — the Registry Gate's verified `delete` snapshot (a delete path). */
   watchlist: DeleteWatchlistSnapshot;
   logger: DomainLogger;
+  downloadHistory?: readonly LegacySabJob[];
 }): Promise<BatchSweepResult> {
   const db = resolveDb(input.db);
   // Deletion-audit attribution (Recently Deleted "By" + the Activity notification), resolved once.
@@ -1801,6 +1812,7 @@ async function expireOneBatch(input: {
   let consecutiveHandleFailures = 0;
   let aborted = false;
   const keptByReason: Partial<Record<TrashKeepReason, number>> = {};
+  let renamedFileOnly = 0;
   const keep = async (item: { id: string; maintainerrMediaId: string; title: string }, reason: TrashKeepReason) => {
     if (await markItemSkipped(input.db, item.id, reason)) {
       skippedCount += 1;
@@ -1869,6 +1881,7 @@ async function expireOneBatch(input: {
     })),
     origin: 'sweep',
     logger: input.logger,
+    downloadHistory: input.downloadHistory,
     onUnrecorded: async (key) => {
       const s = byKey.get(key);
       if (s) await keep(s.item, 'release_unrecorded');
@@ -1889,6 +1902,7 @@ async function expireOneBatch(input: {
       aborted: true,
       abortReason: 'arr_identity',
       keptByReason,
+      renamedFileOnly,
     };
   }
   const toDelete = survivors.filter((s) => blocked.recordable.has(s.item.id));
@@ -1990,6 +2004,8 @@ async function expireOneBatch(input: {
       continue;
     }
     deletedCount += 1; // the row is durably 'deleted' (intent-first) whether or not the handle lands
+    const recorded = blocked.recordable.get(item.id) ?? [];
+    if (recorded.length > 0 && recorded.every((d) => d.renamedFileFallback === true)) renamedFileOnly += 1;
     sweptMediaIds.push(item.maintainerrMediaId);
     reclaimedBytes += fresh.sizeBytes ?? 0;
     // The destructive per-item handle. A single failure is tolerated (intent + snapshot are durable;
@@ -2066,6 +2082,7 @@ async function expireOneBatch(input: {
       aborted: true,
       abortReason: 'handle_breaker',
       keptByReason,
+      renamedFileOnly,
     };
   }
 
@@ -2114,6 +2131,7 @@ async function expireOneBatch(input: {
         raceSkipped,
         handleErrors,
         counts: finalCounts,
+        renamedFileOnly,
         // DESIGN-011 amendment — an audited admin override that expired the batch mid-window.
         ...(input.forcedEarly ? { forcedEarly: true, forcedBy: input.actorId } : {}),
       },
@@ -2143,6 +2161,7 @@ async function expireOneBatch(input: {
     aborted: false,
     abortReason: null,
     keptByReason,
+    renamedFileOnly,
   };
 }
 

@@ -107,6 +107,7 @@ import {
   // ADR-093 C-07 / C-11 / DESIGN-052 D-14 / D-17 / D-23 (PLAN-072 S2 part 2) — the Release Block clients the sweep
   // records and blocks through, the hourly re-add check, and the Seerr watchlist enrollment step.
   checkReleaseBlockReadds,
+  downloadHistoryFromEnv,
   enrollSeerrWatchlistSync,
   reconcileReleaseBlockIfDue,
   type ReaddCheckReport,
@@ -764,6 +765,7 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
     let sweep: SweepReport | null = null;
     let sweepError: string | undefined;
     try {
+      const downloadHistory = await downloadHistoryFromEnv(process.env, logger);
       sweep = await sweepExpiredBatches({
         db,
         maintainerr: options.maintainerr,
@@ -772,6 +774,7 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
         registrySources: options.watchlistRegistry,
         arr: releaseBlockArr,
         logger,
+        downloadHistory,
       });
       if (sweep.paused !== null) {
         // D-14 — a clean pause (the gate, or the Release Block): nothing was deleted, the batches stay leaving_soon and

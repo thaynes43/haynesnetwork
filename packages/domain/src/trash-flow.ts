@@ -35,6 +35,7 @@ import {
   type ReleaseBlockArrClients,
   type ReleaseRecordDraft,
 } from './release-block';
+import { type LegacySabJob } from './release-block-names';
 import { guardMaintainerrCall, type MaintainerrClientBundle } from './maintainerr-clients';
 import { executeRestore, type ExecuteArrAddResult } from './restore-flow';
 import {
@@ -1613,6 +1614,8 @@ export interface ExpediteDeletionInput {
   logger?: DomainLogger;
   /** Clock seam for the Registry Gate (tests). */
   now?: Date;
+  /** ADR-117 / D-29 — download-history jobs for the movie size match. Omitted when that read failed. */
+  downloadHistory?: readonly LegacySabJob[];
 }
 
 export interface ExpediteDeletionResult {
@@ -1927,7 +1930,7 @@ async function expediteOneSurvivor(
  * the Release Block written and read back (ReleaseBlockError ⇒ PRECONDITION_FAILED, nothing deleted).
  */
 async function recordAndBlockExpediteReleases(
-  input: Pick<ExpediteDeletionInput, 'db' | 'arr' | 'logger'>,
+  input: Pick<ExpediteDeletionInput, 'db' | 'arr' | 'logger' | 'downloadHistory'>,
   survivors: readonly ExpediteSurvivor[],
 ): Promise<{
   deletable: Array<{ survivor: ExpediteSurvivor; recordIds: string[]; arrItemId: number | null }>;
@@ -1943,6 +1946,7 @@ async function recordAndBlockExpediteReleases(
     })),
     origin: 'expedite',
     logger: input.logger,
+    downloadHistory: input.downloadHistory,
   });
   if (blocked.aborted) throw new ReleaseIdentityUnavailableError();
   const drafts = (s: ExpediteSurvivor): ReleaseRecordDraft[] =>

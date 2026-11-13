@@ -1,7 +1,7 @@
 # DESIGN-052: Watchlist protection for Trash — the Watchlist Registry, the Registry Gate, the Watchlist Keep, the Release Block, and everyone's Seerr watchlist
 
 - **Status:** Accepted (2026-09-28; live since v0.101.0, PLAN-072 S6–S10 verified)
-- **Last updated:** 2026-10-03 (Q-14 answered: the Age Guard moves into `classifyGuardian`, so Expedite never deletes a title inside it, and the pending walls show such a title kept, D-26). Prior: 2026-10-03 (ADR-097, owner ruling "Block automation only": D-27 adds the Title Exclusion, an import-list exclusion the app writes on Radarr or Sonarr for every title Trash is about to delete, after identity and before Phase A; D-28 adds its one-off backfill for the titles deleted before; D-14, D-21, D-22, D-23, the overview and the test strategy updated). Prior: 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
+- **Last updated:** 2026-11-13 (ADR-117, D-29: before a delete the Release Block records every verified posted name the app can show was grabbed, including a failed or replaced grab, and the renamed file only when that file has no verified name of its own; Q-15..Q-18). Prior: 2026-10-03 (Q-14 answered: the Age Guard moves into `classifyGuardian`, so Expedite never deletes a title inside it, and the pending walls show such a title kept, D-26). Prior: 2026-10-03 (ADR-097, owner ruling "Block automation only": D-27 adds the Title Exclusion, an import-list exclusion the app writes on Radarr or Sonarr for every title Trash is about to delete, after identity and before Phase A; D-28 adds its one-off backfill for the titles deleted before; D-14, D-21, D-22, D-23, the overview and the test strategy updated). Prior: 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
   the rulings they needed: a term now matches the raw release title Radarr and Sonarr test (an apostrophe inside a word
   is an optional separator, an accented letter an alternation, an inner `and` optional), because S6(e) found 345 of
   19,434 Sonarr names and 3 of 1,159 Radarr names the *arr would not have blocked; the owner leaves managed Home users
@@ -510,8 +510,13 @@ an in-place Save; other protection types retain their existing presentation.
 
 ### D-11 — The Deleted-Release Record: what identity exists
 
+**Amended by D-29 (ADR-117, 2026-11-13).** The file's own identity below is unchanged, and it is no longer the only
+record. Before the delete the app also records every verified posted name it can show was grabbed for the title,
+including a grab that failed or was replaced. An upgraded title still records the release on disk, and records each
+earlier one as well.
+
 Recorded for every item the sweep or Expedite is about to delete, before the handle (D-14). Sources, in order of
-preference:
+preference, for the file's own identity:
 
 **Movies (Radarr)**
 
@@ -1172,7 +1177,7 @@ records the review of D-25dd's fix (PR #599).
 | D-25ba | A `seerr_only` account while Seerr's user list fails (or Seerr is not configured). | It stays current: not marked left, and its Seerr source is decided as failed (`seerr_users` / `seerr_unconfigured`) on every run, so it carries, blocks the gate after 24 hours and freezes `unreadable` at 72 hours exactly like a roster-linked Seerr source (D-25j), instead of never being re-decided and blocking without end. It is marked left only when a successful user list no longer has it. |
 | D-25bb | A series key whose group term fails the self-check with exactly one named file (an SD name with no resolution token, such as `Show.S01E01.HDTV.x264-LOL`) and a nameless sibling. | Whenever the group branch falls back to the exact form, every name of the key gets its own exact record and a nameless file of the key keeps the whole series `release_unrecorded` (D-25ah), however many names happen to be known. Before, one named file gave one exact record and the nameless sibling's release went unblocked. |
 | D-25bc | The ledger path (D-15 seed; a series already gone from Sonarr) kept only the newest import per (season, group, resolution). | Every import of a key counts. The key's group term must match every import name of the key (one record); otherwise each distinct release name gets its own record, and a key where any name yields no term fails the series closed (kept `release_unrecorded`, or counted unblockable by the seed). |
-| D-25bd | A movie whose file the *arr cannot name, with a ledger import that no longer describes that file (replaced by a disk copy or a rescan outside the *arr's history). | The ledger's names join only when its latest import agrees with the file: the same group when both name one (compared by tokens), and the same resolution when both carry one. Otherwise the file's own renamed-path group term (`low_confidence`) is used, so the file actually deleted is the one blocked. |
+| D-25bd | A movie whose file the *arr cannot name, with a ledger import that no longer describes that file (replaced by a disk copy or a rescan outside the *arr's history). | The ledger's names join the file's own identity only when its latest import agrees with the file: the same group when both name one (compared by tokens), and the same resolution when both carry one. Otherwise the file's own renamed-path group term (`low_confidence`) is used, so the file actually deleted is the one blocked. D-29 keeps that renamed term and also records a grabbed or failed posted name when one exists, even if it disagrees with the file. |
 | D-25be | An exact term built from a short name ("Trap.2024.1080p": a title, a year and a resolution, no group). | The exact form is a prefix match, so it needs a parsed group or at least one token past the title, the year or season marker and the resolution (a source, a codec, anything else). Otherwise there is no exact term and the item is kept `release_unrecorded`: the term would block every 1080p release of the title, as the bare "Title (Year)" of D-25ae would block every release. |
 | D-25bf | A pause (the banner, `pausedForH`) outlived its batch: only an ok scheduled sweep of a due batch cleared `paused_since`, so a batch cancelled or expired by hand left the banner up until some later batch swept. | A scheduled sweep with nothing due ends a recorded pause with one conditional UPDATE (`paused_since` null, no outcome row, D-25s otherwise holds), and so does a manual Expire now that swept cleanly (it still writes no outcome row). Both log `[trash] sweep_pause_cleared {via}`. No due batch means reclaim is not paused. |
 | D-25bg | The Watchlists card's "Lists" group mixed the derived account status (an account answering only empty was still "Read") with a count of sources, so it contradicted the headline. | The group counts every current account once, split the same way as the headline (D-25q): Read (= the headline's n), then "Empty or hidden", "Not read yet", "Kept from an old check" and "Not supported" (managed users), which sum to the headline's m. `computeCounts` records it as `byList`; no label reuses "can't be read". |
@@ -1541,6 +1546,81 @@ already excluded 0, **to exclude 13**; no row without a key.
   library read writes nothing; a failed chunk stops that *arr only. The D-14 call-order tests in
   `release-block.test.ts` include the exclusion's three calls. `@hnet/sync`: the script's arguments.
 
+### D-29 — Every verified posted name, not only the file (ADR-117)
+
+Amends D-11 and D-25bd. The file's own identity is unchanged. Before the delete, `recordAndBlockReleases` also records
+every verified posted name, and `reconcileReleaseBlock` writes and reads the terms back before anything is deleted.
+A failed write or read-back still deletes nothing. The 3,000-term cap and the 365-day life are unchanged. No new page;
+the count of deletes that had only a renamed-file term is on `BatchSweepResult.renamedFileOnly`, the
+`[trash] sweep_summary` log, and the batch-close event. Showing it on the Trash page is a follow-up.
+
+A name is verified when it is a non-empty posted title with no `://`, from: every Radarr or Sonarr history event of
+type grabbed or download-failed; every ledger event of those two types at or before the delete (a read that fills its
+page of 200 is incomplete, and the title is kept); for a movie, a download-history job that passes the same size rule
+as the 2026-09-28 seed (`matchLegacySab`: title tokens, year ±1, completed before the delete, file size 90–100% of the
+download); and the file's own scene name or original path when it looks like a release. A URL is never stored. The
+download client's failure message, duplicate key and job id are not names. A series is not size-matched. The renamed
+file is still recorded, low confidence, when that file has no verified name of its own, even if another grab of the
+title does (Q-15). One record per distinct term. When a verified name derives the same term as the renamed
+file, the verified record is the one kept, and that delete is not counted as renamed-file only. A size-matched
+download name is a name of that file, so the renamed-file term is dropped once the size match produces a term,
+even when the two terms differ. A name that looks like a release but yields no term keeps the title.
+
+The sweep reads the download history through `downloadHistoryFromEnv` (pages of 1,000, at most 40 per view, history
+then archive). A missing key or a failed read omits that source and does not stop the sweep. A read that fills the
+last page is logged (`download_history_truncated`) and the jobs already read are still used: the bound is the whole
+client, and refusing every movie delete would stop Trash. The history measured the same day was 21 pages and was not
+truncated. A ledger read that fills its own page of 200 keeps that one title. The one-off
+`release-block-backfill.ts` does not read the live client and does not ask the *arr for history (a deleted id can be
+reused). It adds verified records beside low-confidence rows, and for a tombstoned deleted movie or show with no term
+in `active`, `in_flight`, `expired` or `pruned`. It skips a title still in the library, a term already active or in
+flight, and a delete already 365 days old. `--dry-run` writes nothing and does not construct an *arr client. It was
+not run against production. The counts below are replica `SELECT`s that mirror that selection, plus one same-day
+download-history `GET` that the `SELECT`s cannot see.
+
+**Measured 2026-11-13** on replica `pod/postgres16-11` (`psql -d haynesnetwork`, one statement at a time). Rules:
+
+- **Pool.** `trash_candidates` with `media_kind = movie`: 524.
+- **Low-confidence rows.** `trash_deleted_releases` in `active` or `in_flight`, `identity_source = arr_file`,
+  `term_confidence = low_confidence`: 223. None of their deletes is already 365 days old
+  (`coalesce(batch.deleted_at, recorded_at) + 365 days <= now()`: 0).
+- **Recent deletions.** Deleted movie batch items with `deleted_at >= 2026-10-04`: 183.
+- **Tombstoned movies with no term.** Distinct `tmdb_id` of a deleted movie whose media item has
+  `deleted_from_arr_at` set, and no Radarr row for that id with a non-null term in `active`, `in_flight`, `expired`
+  or `pruned`: 45. None is already 365 days old. The same population still in the library (`deleted_from_arr_at` is
+  null): 5; the backfill counts those as skipped and does not select them.
+- **Tombstoned shows with no term.** The same rule on `tvdb_id`: 6, none already 365 days old.
+- **A posted ledger name.** Non-empty `payload.sourceTitle` with no `://`, event `grabbed` or `download_failed`.
+  For a delete, `occurred_at` is at or before `deleted_at`. For the pool there is no upper bound.
+
+| Population | Size | With a posted ledger name | Rule for the name column |
+| --- | ---: | ---: | --- |
+| Pool movies | 524 | 56 | distinct tmdb, no upper bound on `occurred_at` |
+| Deletions since 2026-10-04 | 183 | 0 | name at or before `deleted_at` |
+| Low-confidence rows | 223 | 0 | name at or before `coalesce(deleted_at, recorded_at)` |
+| Tombstoned movies, no term | 45 | 11 | one name each; each of the 11 also has an `imported` event before the delete; none expired |
+| Tombstoned shows, no term | 6 | 0 | ledger only; size match does not apply |
+| Live terms | Radarr 638 rows / 619 distinct; Sonarr 63 / 63 | — | `state` in `active`, `in_flight`; cap 3,000 |
+
+The download-history figures are a same-day `GET` from the app pod (history, page size 1,000, live then archive), not
+a replica `SELECT`, and not re-run for this paragraph. Archive slots 19,903 and live slots 41, 21 pages, not
+truncated. Jobs whose name is a URL: 401 (the alternate name field was a URL too; not used). Usable jobs: 18,124.
+Size-matched against the pool at 2026-11-13T18:20:00Z: 53 titles, 57 names, 56 distinct terms, all 56 absent from the
+619. Overlap with the 56 ledger names: 4 ledger only, 52 both, 1 size-match only, 467 neither. So 57 of 524 pool
+titles have a verified name from the sources available that day, and 467 would keep today's renamed-file fallback.
+The same match on the 183, the 223 and the 6 was 0. On the 45 it was the same 11 titles, 11 terms, 0 that could not
+be termed. Adding those 11 to the 619 leaves 630. A later deletion of the pool that added the 56 size-match
+terms would leave 686 (619 + 11 + 56). The 4 pool titles with a ledger name and no size match are not in that 56,
+so 686 is a lower sum of those three measurements, not a count of distinct future terms. All of these sit under
+3,000. The 2026-09-28 legacy file was not in this session, so those populations stay unnamed
+until it is passed to the script.
+
+The dry-run the script would print, from the `SELECT`s (no legacy file, no live client): 223 low-confidence
+candidates and 0 new names; 45 movie candidates, 11 with a name and 34 without, 0 already expired, 5 live skipped;
+6 show candidates, 0 with a name, 0 already expired. The script's term count for the 11 is what `deriveTerm` accepts;
+the same-day derivation of those 11 names produced 11 terms. That is a mirror of the selection, not a run of the
+script, and not a production apply.
+
 ## Open questions
 
 | ID | Question | Resolution |
@@ -1559,3 +1639,7 @@ already excluded 0, **to exclude 13**; no row without a key.
 | Q-12 | What does `releaseGroup` look like for the 163 disk-imported pool movies (how many are null, so only an exact name or nothing can be blocked)? | **Answered (PLAN-072 S6(e), D-25df):** of the 164 in the pool on 2026-09-27, 158 are disk imports and none has a null group; 156 get a group term (`low_confidence`, renamed-only) and 2 none (DVD files with no resolution token), kept `release_unrecorded`. |
 | Q-13 | If many pool items have no recordable term, may they be deleted unblocked (a re-request would then fetch the same release), or do they stay kept? | **Not asked (D-25df):** S6(e) kept 2 of 164 (1.2%), not a material share, so they stay kept (`release_unrecorded`, D-11, D-24g). It is asked if a later pool shows a material share. |
 | Q-14 | Should Expedite (item and all) honor the Age Guard (D-26), and should the pending walls mark or hide a title inside the window? The 2026-10-03 work order scoped the guard to batch build and the sweep; Expedite is an admin's deliberate delete, and covering it means a new `ExpediteVerdict`, the client mirror `previewGuardian`, its parity test and the Expedite confirm copy; a wall note is new UI. | **Answered (2026-10-03, by the owner's ruling itself, relayed by the coordinator):** "Trash ignores anything downloaded, upgraded or added to any server in the last 180 days", and Expedite is part of Trash. Expedite never deletes a title inside the window, and the pending walls show it kept ("Kept: added or upgraded recently") instead of offering it for deletion. Built as D-26's Expedite and pending-wall bullets. |
+| Q-15 | When a title has a verified grab and the file on disk has no verified name of its own, is the renamed-file term still written? | **Recommendation, built in D-29:** yes. The file may be a different release from the grabs that have names, and dropping the term would block less. The owner can reverse this without changing the verified-name rule. |
+| Q-16 | The 6 tombstoned shows with no term have no posted ledger name, and the size match does not apply to a series. What names them? | **Recommendation:** leave them without a term until a per-episode source exists. Do not guess a name from the show title. |
+| Q-17 | 401 download-history jobs (measured 2026-11-13, same `GET` as D-29) have a URL for the name and for the alternate name field. May any other field supply a name? | **Decided with the rule that a URL is never stored:** no. The failure message, the duplicate key and the job id are not read and not stored. |
+| Q-18 | After D-29, a delete can still have no verified name: 467 of 524 pool titles, all 183 deletions since 2026-10-04, all 223 low-confidence rows, 34 of the 45 tombstoned movies, and all 6 shows (D-29's table and the same-day size match). What should Trash do with that delete? | **Open. Today's behaviour is unchanged until the owner answers:** the renamed-file term is written and the title is deleted. Recommendation: keep that until the owner says to keep the title instead. The 2026-09-28 legacy file was not available here; it may name some of these, and the backfill accepts it. Do not decide this by shortening or lengthening the 365-day life. |

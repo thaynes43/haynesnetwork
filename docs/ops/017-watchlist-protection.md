@@ -149,6 +149,8 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/seerr-watchlist.ts
 # ADR-097 / DESIGN-052 D-28 — the Title Exclusion backfill: always --dry-run first, then --apply
 kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/title-exclusion-backfill.ts --dry-run
 kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/title-exclusion-backfill.ts --apply
+# ADR-117 / DESIGN-052 D-29 — posted-name backfill: --dry-run first; --apply only after the counts match D-29
+kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/release-block-backfill.ts --dry-run
 ```
 
 - **`--pool`** prints, per kind, the pool size, the items recordable and their records by shape (`group` / `exact` /
@@ -164,6 +166,13 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/title-exclusion-ba
   committed. Copy it into the pod for the run and delete it after:
   `kubectl -n frontend cp ./sab.tsv <pod>:/tmp/sab.tsv -c app`, run with `--legacy-sab=/tmp/sab.tsv`, then
   `kubectl -n frontend exec <pod> -c app -- rm /tmp/sab.tsv`. The same holds for a `--manual` file.
+- **`release-block-backfill.ts`** (ADR-117, DESIGN-052 D-29; one-off, after the release that carries it is deployed) adds a
+  verified Deleted-Release Record for a posted name the ledger still has, beside a low-confidence renamed-file row and
+  for a deleted movie or show that has no term yet. It does not read the live download client and it does not ask
+  Radarr or Sonarr for history. `--dry-run` reads the database only and writes nothing; `--apply` inserts the records
+  and reconciles the profile. Pass `--legacy-sab=<file>` only for the legacy history file, copied into the pod and
+  deleted after, the same way as the seed. Do not run `--apply` until the dry-run counts have been compared with
+  D-29. A second `--apply` adds nothing for a term already active.
 - **`title-exclusion-backfill.ts`** (ADR-097, D-28; one-off, after the release that carries it is deployed) adds a
   Radarr or Sonarr import-list exclusion for every title Trash deleted, so Kometa and the import lists never add it
   again. It leaves out a title the *arr has in its library now (re-added since; the owner keeps those, 2026-10-03)

@@ -1,7 +1,8 @@
 // ADR-093 C-07..C-09 / C-15 / C-19 / DESIGN-052 D-11..D-14 / D-21 / D-23 (PLAN-072 S2) — the DELETED-RELEASE RECORD
 // (T-264) and the RELEASE BLOCK (T-265).
 //
-// Before the sweep or Expedite deletes an item, it records the identity of the release being deleted (D-11), derives a
+// Before the sweep or Expedite deletes an item, it records every verified posted name it can show was grabbed (ADR-117,
+// D-29), plus the renamed file when that file has no verified name of its own, derives a
 // "must not contain" term from it (D-12, release-terms.ts) and writes the term into ONE app-owned release profile per
 // Radarr and Sonarr, reading it back (D-13). Only then does the Maintainerr handle run. A record turns `active` once the
 // *arr answers 404 for the item (the delete really happened); a failed handle, or an item the *arr still has, turns it
@@ -42,6 +43,7 @@ import {
   type TitleExclusionArrClients,
   type TitleExclusionTarget,
 } from './title-exclusion';
+import { matchLegacySab, postedReleaseName, type LegacySabJob } from './release-block-names';
 import {
   RELEASE_BLOCK_PROFILE_NAME,
   RELEASE_BLOCK_SENTINEL,
@@ -164,6 +166,11 @@ export interface ReleaseRecordDraft {
   foldOnly?: boolean;
   /** D-25cr — a renamed-only term's widened years left out because another title of the same name holds them. */
   namesakeYears?: number[];
+  /**
+   * ADR-117 / D-29 — this draft is the renamed file, used only because that file has no verified posted name of
+   * its own. Not stored. A delete whose every draft is one of these is counted `renamedFileOnly`.
+   */
+  renamedFileFallback?: boolean;
 }
 
 export type ReleaseIdentity =
@@ -400,6 +407,8 @@ export async function identifyRelease(input: {
   arr: ReleaseBlockArrClients['read'];
   mediaItemId: string;
   before?: Date;
+  /** ADR-117 / D-29 — download-history jobs (name, bytes, completion). Movies only; omitted when the read failed. */
+  downloadHistory?: readonly LegacySabJob[];
 }): Promise<ReleaseIdentity> {
   const subject = await loadSubject(input.db, input.mediaItemId);
   if (!subject || (subject.arrKind !== 'radarr' && subject.arrKind !== 'sonarr')) {
@@ -407,7 +416,14 @@ export async function identifyRelease(input: {
   }
   const before = input.before ?? new Date();
   return subject.arrKind === 'radarr'
-    ? identifyMovie(input.db, input.arr.radarr, input.mediaItemId, subject, before)
+    ? identifyMovie(
+        input.db,
+        input.arr.radarr,
+        input.mediaItemId,
+        subject,
+        before,
+        input.downloadHistory,
+      )
     : identifySeries(input.db, input.arr.sonarr, input.mediaItemId, subject, before);
 }
 
@@ -588,6 +604,311 @@ export async function identifyFromLedger(input: {
   return ledgerDrafts(input.db, subject.arrKind, input.mediaItemId, subject, input.before);
 }
 
+/**
+ * ADR-117 / DESIGN-052 D-29 — one posted release the app can show was grabbed: a Radarr or Sonarr history
+ * `grabbed` or `downloadFailed` row, a ledger `grabbed` or `download_failed` row, or a download-history job
+ * the size rule matches. A string containing "://" is never a name.
+ */
+export interface PostedRelease {
+  name: string;
+  releaseGroup: string | null;
+  quality: string | null;
+  indexer: string | null;
+  source: Extract<DeletedReleaseIdentitySource, 'arr_grab_history' | 'ledger_grab' | 'legacy_sab'>;
+  sizeBytes: number | null;
+}
+
+/** More ledger rows than this and the delete is kept: a truncated read must not drop a grabbed name (D-29). */
+const POSTED_LEDGER_LIMIT = 200;
+
+function uniquePosted(rows: Array<PostedRelease | null>): PostedRelease[] {
+  const seen = new Set<string>();
+  const out: PostedRelease[] = [];
+  for (const row of rows) {
+    if (!row || seen.has(row.name)) continue;
+    seen.add(row.name);
+    out.push(row);
+  }
+  return out;
+}
+
+function historyPostedReleases(history: readonly ArrReleaseHistoryRecord[]): PostedRelease[] {
+  const byDate = [...history].sort((a, b) => Date.parse(b.date ?? '') - Date.parse(a.date ?? ''));
+  return uniquePosted(
+    byDate
+      .filter((h) => h.eventType === GRAB || h.eventType === 'downloadFailed')
+      .map((h) => {
+        const name = postedReleaseName(h.sourceTitle);
+        if (!name) return null;
+        return {
+          name,
+          releaseGroup: h.releaseGroup ?? null,
+          quality: h.qualityName ?? null,
+          indexer: h.indexer ?? null,
+          source: 'arr_grab_history' as const,
+          sizeBytes: null,
+        };
+      }),
+  );
+}
+
+/** Ledger grabs and failed downloads at or before `before`, newest first. `'truncated'` when the bound is full. */
+async function ledgerPostedReleases(
+  db: DbClient | undefined,
+  mediaItemId: string,
+  before: Date,
+): Promise<PostedRelease[] | 'truncated'> {
+  const rows = await resolveDb(db)
+    .select({ payload: ledgerEvents.payload })
+    .from(ledgerEvents)
+    .where(
+      and(
+        eq(ledgerEvents.mediaItemId, mediaItemId),
+        inArray(ledgerEvents.eventType, ['grabbed', 'download_failed']),
+        lte(ledgerEvents.occurredAt, before),
+      ),
+    )
+    .orderBy(desc(ledgerEvents.occurredAt))
+    .limit(POSTED_LEDGER_LIMIT);
+  if (rows.length >= POSTED_LEDGER_LIMIT) return 'truncated';
+  return uniquePosted(
+    rows.map((row) => {
+      const name = postedReleaseName(payloadString(row.payload, 'sourceTitle'));
+      if (!name) return null;
+      return {
+        name,
+        releaseGroup: payloadString(row.payload, 'releaseGroup'),
+        quality: payloadString(row.payload, 'quality'),
+        indexer: payloadString(row.payload, 'indexer'),
+        source: 'ledger_grab' as const,
+        sizeBytes: null,
+      };
+    }),
+  );
+}
+
+/**
+ * D-29 — one draft for one verified posted name, or `untermed` when the name looks like a release and no term
+ * can be built (the live delete is then kept), or `skip` when the name is not a release (a season-0 special,
+ * a bare title). The backfill counts `untermed` and still records the names that did term.
+ */
+export function draftForVerifiedName(input: {
+  arrKind: ReleaseArrKind;
+  arrItemId: number | null;
+  mediaItemId: string | null;
+  title: string;
+  year: number | null;
+  tmdbId: number | null;
+  tvdbId: number | null;
+  imdbId: string | null;
+  arrYears: Array<number | null>;
+  posted: PostedRelease;
+}): ReleaseRecordDraft | 'untermed' | 'skip' {
+  const years = input.arrYears.filter((y): y is number => typeof y === 'number');
+  const parsed = parseReleaseName(input.posted.name, years);
+  if (input.arrKind === 'sonarr' && parsed.season === 0) return 'skip';
+  const season = input.arrKind === 'sonarr' ? parsed.season : null;
+  const derived = deriveTerm({
+    kind: input.arrKind === 'radarr' ? 'movie' : 'show',
+    arrTitle: input.title,
+    arrYears: input.arrYears,
+    releaseNames: [input.posted.name],
+    renamedFileName: null,
+    releaseGroup: input.posted.releaseGroup ?? parsed.group,
+    resolution: resolutionFromQualityName(input.posted.quality) ?? parsed.resolution,
+    remux: isRemuxQuality(input.posted.quality, null) || parsed.remux === true,
+    season,
+  });
+  if (!derived) return looksLikeRelease(parsed) ? 'untermed' : 'skip';
+  return {
+    arrKind: input.arrKind,
+    arrItemId: input.arrItemId,
+    mediaItemId: input.mediaItemId,
+    tmdbId: input.tmdbId,
+    tvdbId: input.tvdbId,
+    imdbId: input.imdbId,
+    title: input.title,
+    year: input.year,
+    season,
+    identitySource: input.posted.source,
+    releaseTitle: input.posted.name,
+    releaseGroup: input.posted.releaseGroup ?? parsed.group,
+    quality: input.posted.quality,
+    resolution: resolutionFromQualityName(input.posted.quality) ?? parsed.resolution,
+    sizeBytes: input.posted.sizeBytes,
+    fileName: null,
+    indexer: input.posted.indexer,
+    years: derived.years,
+    term: derived.term,
+    termConfidence: derived.confidence,
+    shape: derived.shape,
+    foldOnly: derived.foldOnly,
+    namesakeYears: derived.namesakeYears,
+  };
+}
+
+function markRenamedFallback(draft: ReleaseRecordDraft): ReleaseRecordDraft {
+  if (
+    draft.identitySource === 'arr_file' &&
+    draft.termConfidence === 'low_confidence' &&
+    draft.releaseTitle === null &&
+    draft.term !== null
+  ) {
+    return { ...draft, renamedFileFallback: true };
+  }
+  return draft;
+}
+
+function dedupeDraftsByTerm(drafts: readonly ReleaseRecordDraft[]): ReleaseRecordDraft[] {
+  const seen = new Set<string>();
+  const out: ReleaseRecordDraft[] = [];
+  for (const draft of drafts) {
+    if (draft.term !== null) {
+      const key = `${draft.arrKind}|${draft.season ?? ''}|${draft.term}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    out.push(draft);
+  }
+  return out;
+}
+
+/**
+ * D-29 — keep the file's own drafts, then one draft per verified posted name not already among them. A renamed-file
+ * draft stays when the file itself has no verified name, including when some earlier grab of the title does. A
+ * download-history size match is a verified name of the file, so the renamed draft is dropped once that match
+ * terms. A name that looks like a release and yields no term keeps the item.
+ */
+async function withVerifiedPostedNames(input: {
+  db?: DbClient;
+  mediaItemId: string;
+  before: Date;
+  arrKind: ReleaseArrKind;
+  arrItemId: number | null;
+  title: string;
+  year: number | null;
+  tmdbId: number | null;
+  tvdbId: number | null;
+  imdbId: string | null;
+  arrYears: Array<number | null>;
+  history: readonly ArrReleaseHistoryRecord[];
+  downloadHistory?: readonly LegacySabJob[];
+  /** Movie file size for the download-history size match. Series never match that way. */
+  fileSize?: number | null;
+  drafts: ReleaseRecordDraft[];
+  /** `gone` when the *arr no longer has the item and nothing names a release. */
+  emptyReason: 'no_term' | 'gone';
+  /** Drop the renamed-file draft once a size-matched download name terms (it names this file). */
+  dropRenamedWhenSabCovers: boolean;
+}): Promise<ReleaseIdentity> {
+  const ledger = await ledgerPostedReleases(input.db, input.mediaItemId, input.before);
+  if (ledger === 'truncated') return { status: 'unrecordable', reason: 'no_term' };
+  const sab =
+    input.arrKind === 'radarr' && input.downloadHistory && input.downloadHistory.length > 0
+      ? uniquePosted(
+          matchLegacySab(
+            {
+              title: input.title,
+              year: input.year,
+              deletedAt: input.before,
+              deletedSizeBytes: input.fileSize ?? null,
+            },
+            input.downloadHistory,
+          ).map((job) => {
+            const name = postedReleaseName(job.name);
+            if (!name) return null;
+            return {
+              name,
+              releaseGroup: null,
+              quality: null,
+              indexer: null,
+              source: 'legacy_sab' as const,
+              sizeBytes: job.bytes,
+            };
+          }),
+        )
+      : [];
+  const posted = [...historyPostedReleases(input.history), ...ledger, ...sab];
+  const known = new Set(
+    input.drafts.map((d) => d.releaseTitle).filter((name): name is string => name !== null && name.length > 0),
+  );
+  const extras: ReleaseRecordDraft[] = [];
+  for (const name of posted) {
+    if (known.has(name.name)) continue;
+    const built = draftForVerifiedName({
+      arrKind: input.arrKind,
+      arrItemId: input.arrItemId,
+      mediaItemId: input.mediaItemId,
+      title: input.title,
+      year: input.year,
+      tmdbId: input.tmdbId,
+      tvdbId: input.tvdbId,
+      imdbId: input.imdbId,
+      arrYears: input.arrYears,
+      posted: name,
+    });
+    if (built === 'untermed') return { status: 'unrecordable', reason: 'no_term' };
+    if (built === 'skip') continue;
+    known.add(name.name);
+    extras.push(built);
+  }
+  let base = input.drafts.map(markRenamedFallback);
+  // A size match names this file, so its renamed-file term is the weaker substitute and is dropped.
+  // A verified name that derives the same term replaces the renamed-file draft: one term, and the
+  // record that remains is the verified one, so the delete is not counted as renamed-file only.
+  const verifiedTerm = new Set(
+    extras
+      .filter((d) => d.term !== null)
+      .map((d) => `${d.arrKind}|${d.season ?? ''}|${d.term}`),
+  );
+  const sabCovers = input.dropRenamedWhenSabCovers && extras.some((d) => d.identitySource === 'legacy_sab');
+  base = base.filter((d) => {
+    if (d.renamedFileFallback !== true) return true;
+    if (sabCovers) return false;
+    return d.term === null || !verifiedTerm.has(`${d.arrKind}|${d.season ?? ''}|${d.term}`);
+  });
+  const drafts = dedupeDraftsByTerm([...base, ...extras]);
+  if (drafts.length === 0) return { status: 'unrecordable', reason: input.emptyReason };
+  return { status: 'recordable', drafts };
+}
+
+/**
+ * D-29 — a title already gone from the *arr. The ledger's imports stay the fail-closed path (a nameless import
+ * keeps the title). With no import, grabs and failed downloads that were never imported are recorded. Names
+ * already on an import draft are not repeated.
+ */
+async function identifyGone(input: {
+  db?: DbClient;
+  kind: ReleaseArrKind;
+  mediaItemId: string;
+  s: SubjectRow;
+  before: Date;
+  arrYears: Array<number | null>;
+}): Promise<ReleaseIdentity> {
+  const drafts = await ledgerDrafts(input.db, input.kind, input.mediaItemId, input.s, input.before);
+  if (drafts === null) {
+    const [imported] = await ledgerReleases(input.db, input.mediaItemId, input.before, 1);
+    if (imported) return { status: 'unrecordable', reason: 'gone' };
+  }
+  return withVerifiedPostedNames({
+    db: input.db,
+    mediaItemId: input.mediaItemId,
+    before: input.before,
+    arrKind: input.kind,
+    arrItemId: input.s.arrItemId,
+    title: input.s.title,
+    year: input.s.year,
+    tmdbId: input.s.tmdbId,
+    tvdbId: input.s.tvdbId,
+    imdbId: input.s.imdbId,
+    arrYears: input.arrYears,
+    history: [],
+    drafts: drafts ?? [],
+    emptyReason: 'gone',
+    dropRenamedWhenSabCovers: false,
+  });
+}
+
 /** D-25bd — does the ledger's latest import describe the file the *arr has? Unknown on either side never disagrees. */
 function ledgerAgreesWithFile(
   ledger: LedgerRelease,
@@ -613,22 +934,35 @@ async function identifyMovie(
   mediaItemId: string,
   s: SubjectRow,
   before: Date,
+  downloadHistory?: readonly LegacySabJob[],
 ): Promise<ReleaseIdentity> {
   const movie = await radarr.findMovie(s.arrItemId);
   // D-25ci — another title at this id: record nothing (the item is kept `release_unrecorded`), never its release.
   if (movie !== null && !isSameArrTitle('radarr', movie, s)) return { status: 'unrecordable', reason: 'id_mismatch' };
   const arrYears = [movie?.year ?? s.year ?? null, movie?.secondaryYear ?? null];
   if (movie === null) {
-    // Gone from Radarr already: only the ledger can name what a re-request would fetch.
-    const drafts = await ledgerDrafts(db, 'radarr', mediaItemId, s, before);
-    return drafts ? { status: 'recordable', drafts } : { status: 'unrecordable', reason: 'gone' };
+    // Gone from Radarr already: the ledger's imports, plus every grab the imports do not already name (D-29).
+    return identifyGone({ db, kind: 'radarr', mediaItemId, s, before, arrYears });
   }
   const files = await radarr.listMovieFiles(s.arrItemId);
   const file = files.find((f) => f.id === movie.movieFileId) ?? files[0];
   if (!file) {
-    // No file: nothing to re-fetch. Recorded as evidence with no term (D-11 `none`).
-    return {
-      status: 'recordable',
+    // No file on disk. The evidence row stays, and every grab the history or the ledger can name is blocked too
+    // (D-29): a failed download is still a release a re-request must not fetch.
+    return withVerifiedPostedNames({
+      db,
+      mediaItemId,
+      before,
+      arrKind: 'radarr',
+      arrItemId: s.arrItemId,
+      title: movie.title,
+      year: movie.year,
+      tmdbId: movie.tmdbId ?? s.tmdbId,
+      tvdbId: s.tvdbId,
+      imdbId: movie.imdbId ?? s.imdbId,
+      arrYears,
+      history: await radarr.getMovieReleaseHistory(s.arrItemId),
+      downloadHistory,
       drafts: [
         {
           ...baseDraft('radarr', mediaItemId, s),
@@ -648,7 +982,9 @@ async function identifyMovie(
           shape: 'none',
         },
       ],
-    };
+      emptyReason: 'no_term',
+      dropRenamedWhenSabCovers: false,
+    });
   }
   const history = await radarr.getMovieReleaseHistory(s.arrItemId);
   const { grab, imported } = joinFileToGrab(file, history);
@@ -694,31 +1030,47 @@ async function identifyMovie(
     : useLedger
       ? 'ledger_grab'
       : 'arr_file';
-  return {
-    status: 'recordable',
-    drafts: derivations.map(({ name, derived }) => ({
-      ...baseDraft('radarr', mediaItemId, s),
-      title: movie.title,
-      year: movie.year,
-      tmdbId: movie.tmdbId ?? s.tmdbId,
-      imdbId: movie.imdbId ?? s.imdbId,
-      season: null,
-      identitySource,
-      releaseTitle: name ?? names[0] ?? null,
-      releaseGroup,
-      quality: q?.name ?? null,
-      resolution: q?.resolution ?? resolution,
-      sizeBytes: file.size ?? null,
-      fileName: file.relativePath ?? null,
-      indexer: grab?.indexer ?? (useLedger ? ledger!.indexer : null),
-      years: derived.years,
-      term: derived.term,
-      termConfidence: derived.confidence,
-      shape: derived.shape,
-      foldOnly: derived.foldOnly,
-      namesakeYears: derived.namesakeYears,
-    })),
-  };
+  const fileDrafts = derivations.map(({ name, derived }) => ({
+    ...baseDraft('radarr', mediaItemId, s),
+    title: movie.title,
+    year: movie.year,
+    tmdbId: movie.tmdbId ?? s.tmdbId,
+    imdbId: movie.imdbId ?? s.imdbId,
+    season: null,
+    identitySource,
+    releaseTitle: name ?? names[0] ?? null,
+    releaseGroup,
+    quality: q?.name ?? null,
+    resolution: q?.resolution ?? resolution,
+    sizeBytes: file.size ?? null,
+    fileName: file.relativePath ?? null,
+    indexer: grab?.indexer ?? (useLedger ? ledger!.indexer : null),
+    years: derived.years,
+    term: derived.term,
+    termConfidence: derived.confidence,
+    shape: derived.shape,
+    foldOnly: derived.foldOnly,
+    namesakeYears: derived.namesakeYears,
+  }));
+  return withVerifiedPostedNames({
+    db,
+    mediaItemId,
+    before,
+    arrKind: 'radarr',
+    arrItemId: s.arrItemId,
+    title: movie.title,
+    year: movie.year,
+    tmdbId: movie.tmdbId ?? s.tmdbId,
+    tvdbId: s.tvdbId,
+    imdbId: movie.imdbId ?? s.imdbId,
+    arrYears,
+    history,
+    downloadHistory,
+    fileSize: file.size ?? null,
+    drafts: fileDrafts,
+    emptyReason: 'no_term',
+    dropRenamedWhenSabCovers: true,
+  });
 }
 
 async function identifySeries(
@@ -732,16 +1084,26 @@ async function identifySeries(
   if (series !== null && !isSameArrTitle('sonarr', series, s)) return { status: 'unrecordable', reason: 'id_mismatch' };
   const arrYears = [series?.year ?? s.year ?? null];
   if (series === null) {
-    // Gone from Sonarr already: the ledger's imports, one record per season / group / resolution they name.
-    const drafts = await ledgerDrafts(db, 'sonarr', mediaItemId, s, before);
-    return drafts ? { status: 'recordable', drafts } : { status: 'unrecordable', reason: 'gone' };
+    // Gone from Sonarr already: the ledger's imports, plus every grab they do not already name (D-29).
+    return identifyGone({ db, kind: 'sonarr', mediaItemId, s, before, arrYears });
   }
   const files = (await sonarr.listEpisodeFileReleases(s.arrItemId)).filter(
     (f) => (f.seasonNumber ?? 0) >= 1, // specials (season 0) are skipped (D-11)
   );
   if (files.length === 0) {
-    return {
-      status: 'recordable',
+    return withVerifiedPostedNames({
+      db,
+      mediaItemId,
+      before,
+      arrKind: 'sonarr',
+      arrItemId: s.arrItemId,
+      title: series.title,
+      year: series.year,
+      tmdbId: s.tmdbId,
+      tvdbId: series.tvdbId ?? s.tvdbId,
+      imdbId: s.imdbId,
+      arrYears,
+      history: await sonarr.getSeriesReleaseHistory(s.arrItemId),
       drafts: [
         {
           ...baseDraft('sonarr', mediaItemId, s),
@@ -762,7 +1124,9 @@ async function identifySeries(
           shape: 'none',
         },
       ],
-    };
+      emptyReason: 'no_term',
+      dropRenamedWhenSabCovers: false,
+    });
   }
   const history = await sonarr.getSeriesReleaseHistory(s.arrItemId);
   // D-25cr — read once, and only when a key's term is renamed-only (the only term that widens its years).
@@ -887,7 +1251,23 @@ async function identifySeries(
       });
     }
   }
-  return { status: 'recordable', drafts };
+  return withVerifiedPostedNames({
+    db,
+    mediaItemId,
+    before,
+    arrKind: 'sonarr',
+    arrItemId: s.arrItemId,
+    title: series.title,
+    year: series.year,
+    tmdbId: s.tmdbId,
+    tvdbId: series.tvdbId ?? s.tvdbId,
+    imdbId: s.imdbId,
+    arrYears,
+    history,
+    drafts,
+    emptyReason: 'no_term',
+    dropRenamedWhenSabCovers: false,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1518,6 +1898,8 @@ export async function identifySurvivors(input: {
   arr: ReleaseBlockArrClients['read'];
   survivors: readonly ReleaseSurvivor[];
   logger?: DomainLogger;
+  /** ADR-117 / D-29 — download-history jobs for the movie size match. Omitted when that read failed. */
+  downloadHistory?: readonly LegacySabJob[];
 }): Promise<SurvivorIdentityResult> {
   const logger = input.logger ?? consoleDomainLogger;
   const recordable = new Map<string, ReleaseRecordDraft[]>();
@@ -1530,6 +1912,7 @@ export async function identifySurvivors(input: {
         db: input.db,
         arr: input.arr,
         mediaItemId: s.mediaItemId,
+        downloadHistory: input.downloadHistory,
       });
       consecutive = 0;
     } catch (error) {
@@ -1621,12 +2004,15 @@ export async function recordAndBlockReleases(input: {
   origin: Extract<DeletedReleaseOrigin, 'sweep' | 'expedite'>;
   logger?: DomainLogger;
   onUnrecorded?: (key: string, reason: UnrecordedReason) => Promise<void>;
+  /** ADR-117 / D-29 — download-history jobs for the movie size match. Omitted when that read failed. */
+  downloadHistory?: readonly LegacySabJob[];
 }): Promise<RecordAndBlockResult> {
   const identity = await identifySurvivors({
     db: input.db,
     arr: input.arr.read,
     survivors: input.survivors,
     logger: input.logger,
+    downloadHistory: input.downloadHistory,
   });
   if (identity.aborted) return { aborted: true };
   // ADR-097 / D-27 — the Title Exclusion target of each recordable survivor; one without the *arr's key is kept.
