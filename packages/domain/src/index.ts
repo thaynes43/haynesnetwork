@@ -69,6 +69,8 @@ export * from './janitor-release-block';
 // DESIGN-010 amendment — the Trash Overview landing aggregate (composes the reads above)
 export * from './trash-overview';
 export * from './storage-metrics';
+// DESIGN-013 D-08 — Capacity Forecast (pure; story 820 calls it from space-policy.ts)
+export * from './storage-forecast';
 // ADR-031 / DESIGN-014 (PLAN-014) — space-driven policy (propose-only) + rules-tuning report
 export * from './space-policy';
 export * from './trash-tuning';
