@@ -38,6 +38,16 @@ import {
   type SpacePolicyMode,
   type SpacePolicyPerKind,
 } from './app-settings';
+import {
+  explainDynamicPace,
+  isPaceDeletable,
+  measureDeletableSnapshotPools,
+  measureTrashYield,
+  recordedSweepDeletions,
+  resolveDynamicPace,
+  type DynamicPaceExplanation,
+} from './space-policy-pace';
+import type { FreeSpaceSample } from './storage-forecast';
 import { resolveDb } from './db-client';
 import {
   createBatchFromPending,
@@ -50,12 +60,7 @@ import { TrashBatchEmptyError, TrashBatchOpenError } from './errors';
 import type { MaintainerrClientBundle } from './maintainerr-clients';
 import { getUtilization, STORAGE_ARRAYS, type UtilizationArrBundle } from './storage-metrics';
 import { recordNotification } from './notifications';
-import {
-  countsTowardDeletion,
-  listTrashPending,
-  type TrashMedia,
-  type TrashPendingItem,
-} from './trash-flow';
+import { listTrashPending, type TrashMedia, type TrashPendingItem } from './trash-flow';
 import { evaluateRegistryGate } from './watchlist-registry';
 
 const OPEN_STATES = TRASH_BATCH_OPEN_STATES as readonly TrashBatchState[];
@@ -167,6 +172,8 @@ export async function getSpacePolicy(db?: DbClient): Promise<SpacePolicy> {
     perArray: resolvePerArray(stored),
     // DESIGN-014 amendment (2026-07-09, build A) — per-kind caps, migrating the retired flat key.
     perKind: resolvePerKind(stored),
+    // ADR-120 — absent on older rows. Off unless the stored switch is exactly true.
+    dynamicPace: resolveDynamicPace(stored?.dynamicPace),
   };
 }
 
@@ -188,6 +195,20 @@ export function buildKindTargeting(
   return { ...caps, strategy: activeBatchStrategy(policy, mediaKind) };
 }
 
+/** One line of pace reasoning for a kind, for the skip outcome and the proposal reason. */
+function paceSkipReason(explanation: DynamicPaceExplanation, mediaKind: TrashMediaKind): string {
+  const share = explanation.kinds.find((kind) => kind.mediaKind === mediaKind)?.chosenBytes ?? 0;
+  const intake =
+    explanation.intakeBytesPerDay == null
+      ? 'unmeasured'
+      : `${Math.round(explanation.intakeBytesPerDay)} bytes/day`;
+  return (
+    `Dynamic pace ${explanation.pace}: gap ${Math.round(explanation.gapBytes)} bytes, ` +
+    `intake ${intake}, required ${Math.round(explanation.requiredDeletedBytes)} bytes this window, ` +
+    `${mediaKind} ask ${Math.round(share)} bytes, shortfall ${Math.round(explanation.shortfallBytes)} bytes.`
+  );
+}
+
 // ---------------------------------------------------------------------------
 // evaluateSpacePolicy — the `space-policy` sync mode's core
 // ---------------------------------------------------------------------------
@@ -199,6 +220,7 @@ export type SpacePolicyOutcome =
   | 'skipped_under_target'
   | 'skipped_min_candidates'
   | 'skipped_empty'
+  | 'skipped_pace'
   | 'error';
 
 export interface SpacePolicyProposal {
@@ -228,6 +250,12 @@ export interface SpacePolicyArrayResult {
   /** No source *arr could be read for this array this run. */
   unavailable: boolean;
   proposals: SpacePolicyProposal[];
+  /**
+   * ADR-120 — the pace explanation when this run computed one. Null when the switch is off, the
+   * array is opted out, or the free-space series could not be read. A non-applicable explanation
+   * is still attached so the log shows why today's caps were kept.
+   */
+  pace: DynamicPaceExplanation | null;
 }
 
 export interface SpacePolicyReport {
@@ -280,6 +308,11 @@ export async function evaluateSpacePolicy(input: {
   arr: UtilizationArrBundle;
   actorId?: string | null;
   now?: Date;
+  /**
+   * ADR-120 — free-space history for one array. Called only when Dynamic Pace is switched on.
+   * Null or a throw keeps today's caps. The sync script passes the chart's Prometheus query.
+   */
+  readFreeSpace?: (arrayKey: string) => Promise<readonly FreeSpaceSample[] | null>;
 }): Promise<SpacePolicyReport> {
   const now = input.now ?? new Date();
   const actorId = input.actorId ?? null;
@@ -307,6 +340,7 @@ export async function evaluateSpacePolicy(input: {
       enabled: arrCfg.enabled,
       unavailable: util.unavailable,
       proposals: [],
+      pace: null,
     };
 
     // An OPT-OUT array is never touched — not even to self-heal — so turning the policy on can't
@@ -322,12 +356,85 @@ export async function evaluateSpacePolicy(input: {
     //  - 'continuous': always (opted in is enough — candidates come from Maintainerr, not the disk read).
     // Self-heal of an ALREADY-open stuck batch is independent of this gate (ADR-073 — a mid-cycle death
     // under target must still converge).
-    const canProposeNew =
+    const staticCanPropose =
       policy.mode === 'continuous'
         ? true
         : !util.unavailable && util.target !== null && overTarget;
 
-    for (const mediaKind of trashKindsForArray(util.key)) {
+    // ADR-120 — size from the gap and the intake only when the switch is on AND the series was
+    // read. Anything else keeps today's caps and today's gate. The reader is not called while off.
+    const kinds = trashKindsForArray(util.key);
+    let explanation: DynamicPaceExplanation | null = null;
+    let loaded: Map<TrashMediaKind, Array<TrashPendingItem & { maintainerrMediaId: string }>> | null =
+      null;
+    const paceOn = policy.dynamicPace?.enabled === true;
+    const diskOk =
+      !util.unavailable &&
+      util.freeSpace != null &&
+      util.totalSpace != null &&
+      util.target != null &&
+      util.freeSpace >= 0 &&
+      util.totalSpace > 0;
+    if (paceOn && kinds.length > 0 && diskOk && input.readFreeSpace) {
+      let series: readonly FreeSpaceSample[] | null = null;
+      try {
+        series = await input.readFreeSpace(util.key);
+      } catch {
+        series = null;
+      }
+      if (series != null && series.length > 0) {
+        try {
+          const windowRaw = await getAppSetting(input.db, 'trash_default_window_days');
+          const windowDays =
+            typeof windowRaw === 'number' && Number.isFinite(windowRaw) && windowRaw >= 1
+              ? Math.trunc(windowRaw)
+              : APP_SETTING_DEFAULTS.trash_default_window_days;
+          const deletions = await recordedSweepDeletions(input.db, now);
+          const saveRate = await measureTrashYield(input.db, now);
+          const watchlist = await evaluateRegistryGate({ db: input.db, purpose: 'propose', now });
+          loaded = new Map();
+          for (const mediaKind of kinds) {
+            const pending = await listTrashPending({
+              db: input.db,
+              maintainerr: input.maintainerr,
+              media: mediaKind,
+              watchlist,
+            });
+            loaded.set(
+              mediaKind,
+              pending.items.filter((item) => isPaceDeletable(item)),
+            );
+          }
+          const pace = policy.dynamicPace!;
+          explanation = explainDynamicPace({
+            freeBytes: util.freeSpace!,
+            totalBytes: util.totalSpace!,
+            targetPct: util.target!,
+            samples: series,
+            deletions,
+            now: Math.floor(now.getTime() / 1000),
+            windowDays,
+            horizonDays: pace.horizonDays,
+            floorBytes: pace.floorBytes,
+            ceilingBytes: pace.ceilingBytes,
+            saveRate,
+            pools: kinds.map((mediaKind) => ({
+              mediaKind,
+              poolBytes: (loaded!.get(mediaKind) ?? []).reduce((sum, item) => sum + (item.sizeBytes ?? 0), 0),
+            })),
+          });
+        } catch {
+          explanation = null;
+          loaded = null;
+        }
+      }
+    }
+    result.pace = explanation;
+    const usePace = explanation?.applicable === true;
+
+    for (const mediaKind of kinds) {
+      const share = explanation?.kinds.find((kind) => kind.mediaKind === mediaKind);
+      const kindChosen = share?.chosenBytes ?? 0;
       const proposal = await proposeForKind({
         db: input.db,
         maintainerr: input.maintainerr,
@@ -339,11 +446,18 @@ export async function evaluateSpacePolicy(input: {
         arrayLabel: util.label,
         usedPct: util.usedPct,
         target: util.target,
-        canProposeNew,
+        canProposeNew: usePace ? kindChosen > 0 : staticCanPropose,
         minCandidates: arrCfg.minCandidates,
-        // Per-kind composition caps (maxItems / targetBytes, whichever hits first), worst-rated-first
-        // for policy batches (the owner default — take the least-loved titles). Absent caps ⇒ ALL.
-        targeting: buildKindTargeting(policy, mediaKind),
+        // Per-kind composition caps while the pace is off or not applicable. While it applies, the
+        // byte ask replaces those caps; the kind's strategy is kept.
+        targeting: usePace
+          ? { targetBytes: kindChosen, strategy: activeBatchStrategy(policy, mediaKind) }
+          : buildKindTargeting(policy, mediaKind),
+        ...(usePace && kindChosen <= 0 && explanation != null
+          ? { paceSkip: { reason: paceSkipReason(explanation, mediaKind) } }
+          : {}),
+        ...(usePace && loaded != null ? { actionable: loaded.get(mediaKind) ?? [] } : {}),
+        ...(usePace && explanation != null ? { paceNote: paceSkipReason(explanation, mediaKind) } : {}),
       });
       if (proposal.outcome === 'proposed' || proposal.outcome === 'promoted') proposedCount += 1;
       result.proposals.push(proposal);
@@ -372,6 +486,12 @@ async function proposeForKind(input: {
   /** DESIGN-014 amendment — per-kind composition caps (maxItems/targetBytes, worst-rated-first);
    *  absent ⇒ ALL candidates. */
   targeting?: BatchTargeting;
+  /** ADR-120 — set when the pace applied and this kind's ask is 0. The open-batch heal still runs. */
+  paceSkip?: { reason: string };
+  /** ADR-120 — the deletable pending set already loaded for the pace. Skips a second Maintainerr read. */
+  actionable?: Array<TrashPendingItem & { maintainerrMediaId: string }>;
+  /** ADR-120 — appended to a proposal's reason when the pace sized the ask. */
+  paceNote?: string;
 }): Promise<SpacePolicyProposal> {
   const base = {
     mediaKind: input.mediaKind,
@@ -450,6 +570,9 @@ async function proposeForKind(input: {
   // 2. No open batch: propose a NEW one only when the mode/target gate allows (over-target under its
   //    ceiling proposes nothing; continuous always may). Self-heal above already ran.
   if (!input.canProposeNew) {
+    if (input.paceSkip) {
+      return { ...base, outcome: 'skipped_pace', reason: input.paceSkip.reason };
+    }
     return {
       ...base,
       outcome: 'skipped_under_target',
@@ -461,21 +584,22 @@ async function proposeForKind(input: {
   //    set once for the count + total bytes (createBatchFromPending re-snapshots fresh when it runs).
   let actionable: Array<TrashPendingItem & { maintainerrMediaId: string }> = [];
   try {
-    // ADR-093 / DESIGN-052 D-07 / D-08 — `propose` never refuses: filtered with the newest ok registry run (≤ 24 h),
-    // otherwise unfiltered (the sweep's gate is where deletion is enforced).
-    const watchlist = await evaluateRegistryGate({ db: input.db, purpose: 'propose' });
-    const pending = await listTrashPending({
-      db: input.db,
-      maintainerr: input.maintainerr,
-      media: input.mediaKind as TrashMedia,
-      watchlist,
-    });
-    // D-08 / ADR-099 D-4 / ADR-118 — minCandidates excludes Saves (even before their exclusion is enforced), `dnd`,
-    // watchlisted titles, the Age Guard's recent dates and `mediarequests`, matching the batch builder.
-    actionable = pending.items.filter(
-      (p): p is TrashPendingItem & { maintainerrMediaId: string } =>
-        p.maintainerrMediaId !== null && countsTowardDeletion(p),
-    );
+    if (input.actionable !== undefined) {
+      actionable = input.actionable.filter((item) => isPaceDeletable(item));
+    } else {
+      // ADR-093 / DESIGN-052 D-07 / D-08 — `propose` never refuses: filtered with the newest ok registry run (≤ 24 h),
+      // otherwise unfiltered (the sweep's gate is where deletion is enforced).
+      const watchlist = await evaluateRegistryGate({ db: input.db, purpose: 'propose' });
+      const pending = await listTrashPending({
+        db: input.db,
+        maintainerr: input.maintainerr,
+        media: input.mediaKind as TrashMedia,
+        watchlist,
+      });
+      // D-08 / ADR-099 D-4 / ADR-118 — minCandidates excludes Saves, `dnd`, watchlisted titles, the Age
+      // Guard's recent dates and `mediarequests` (isPaceDeletable), matching the batch builder.
+      actionable = pending.items.filter((item) => isPaceDeletable(item));
+    }
   } catch (err) {
     return {
       ...base,
@@ -566,6 +690,7 @@ async function proposeForKind(input: {
     reason:
       `Proposed a ${input.mediaKind} batch of ${created.itemCount} item(s) — ${rationale} ` +
       '(promoted straight to Leaving Soon — the save window is now open).' +
+      (input.paceNote ? ` ${input.paceNote}` : '') +
       attributionNote,
   };
 }
@@ -714,5 +839,82 @@ export async function getSpacePolicyStatus(input: {
     lastProposalAt: records[0]?.proposedAt ?? null,
     kinds,
     recentProposals: records.slice(0, 10),
+  };
+}
+
+/** The status card's pace read. `applied` is false while the switch is off. */
+export interface DynamicPaceRead {
+  applied: boolean;
+  /** Eligible bytes are the candidate snapshot, which lags the live set the proposal uses. */
+  poolSource: 'snapshot';
+  arrays: Array<{ key: string; explanation: DynamicPaceExplanation }>;
+}
+
+/**
+ * ADR-120 — the reasoning for each batchable array (gap, intake, required, chosen, shortfall),
+ * including while the switch is off. A missing series comes back as not applicable with a zero
+ * ask. Throws only if the disk or the snapshot read throws; the router turns that into a null
+ * pace so the existing card still loads.
+ */
+export async function explainLiveDynamicPace(input: {
+  db?: DbClient;
+  arr: UtilizationArrBundle;
+  readSamples: (arrayKey: string) => Promise<readonly FreeSpaceSample[] | null>;
+  now?: Date;
+}): Promise<DynamicPaceRead> {
+  const now = input.now ?? new Date();
+  const policy = await getSpacePolicy(input.db);
+  const pace = policy.dynamicPace ?? resolveDynamicPace(undefined);
+  const windowRaw = await getAppSetting(input.db, 'trash_default_window_days');
+  const windowDays =
+    typeof windowRaw === 'number' && Number.isFinite(windowRaw) && windowRaw >= 1
+      ? Math.trunc(windowRaw)
+      : APP_SETTING_DEFAULTS.trash_default_window_days;
+  const utilization = await getUtilization({ db: input.db, arr: input.arr });
+  const deletions = await recordedSweepDeletions(input.db, now);
+  const saveRate = await measureTrashYield(input.db, now);
+  const pools = await measureDeletableSnapshotPools(input.db, now);
+  const nowSec = Math.floor(now.getTime() / 1000);
+  const arrays: DynamicPaceRead['arrays'] = [];
+  for (const util of utilization) {
+    const kinds = trashKindsForArray(util.key);
+    if (kinds.length === 0) continue;
+    const diskOk =
+      !util.unavailable &&
+      util.freeSpace != null &&
+      util.totalSpace != null &&
+      util.target != null &&
+      util.totalSpace > 0;
+    let samples: readonly FreeSpaceSample[] = [];
+    if (diskOk) {
+      try {
+        samples = (await input.readSamples(util.key)) ?? [];
+      } catch {
+        samples = [];
+      }
+    }
+    const explanation = explainDynamicPace({
+      freeBytes: util.freeSpace ?? Number.NaN,
+      totalBytes: util.totalSpace ?? Number.NaN,
+      targetPct: util.target ?? Number.NaN,
+      samples,
+      deletions,
+      now: nowSec,
+      windowDays,
+      horizonDays: pace.horizonDays,
+      floorBytes: pace.floorBytes,
+      ceilingBytes: pace.ceilingBytes,
+      saveRate,
+      pools: kinds.map((mediaKind) => ({
+        mediaKind,
+        poolBytes: pools.find((pool) => pool.mediaKind === mediaKind)?.poolBytes ?? 0,
+      })),
+    });
+    arrays.push({ key: util.key, explanation });
+  }
+  return {
+    applied: pace.enabled === true && arrays.some((array) => array.explanation.applicable),
+    poolSource: 'snapshot',
+    arrays,
   };
 }

@@ -41,4 +41,4 @@ Chosen option: **the tag is a guardian keep, and the audit requires the clause**
 
 ## More information
 
-DESIGN-052 D-30. Glossary T-335. The measured counts, the known limits and Q-23 are recorded in D-30. The review's measurements are the ones cited there; this record does not repeat them as a new read.
+DESIGN-052 D-30. Glossary T-336. The measured counts, the known limits and Q-23 are recorded in D-30. The review's measurements are the ones cited there; this record does not repeat them as a new read.

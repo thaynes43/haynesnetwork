@@ -17,6 +17,7 @@
 // Resilient by construction: Prometheus down/misshapen ⇒ `unavailable: true` with empty series —
 // the Storage tab degrades to a note, it never crashes (the C-03 posture, extended to the trend).
 import {
+  FREESPACE_SERIES_QUERY as FREESPACE_TREND_QUERY,
   getUtilization,
   STORAGE_ARRAYS,
   type StorageArrayDescriptor,
@@ -47,9 +48,9 @@ export const TREND_WINDOW_SPECS: Record<TrendWindow, { seconds: number; stepSeco
  * One PromQL round-trip for all three kinds. `max by (__name__, path)` collapses pod-churn label
  * noise (restarts re-label `pod`/`instance`; the freespace reading itself is per-path) while
  * KEEPING the metric name + rootfolder path — exactly the two labels the array mapping needs.
+ * The string lives in `@hnet/domain` (`FREESPACE_SERIES_QUERY`) so Dynamic Pace asks the same query.
  */
-export const FREESPACE_TREND_QUERY =
-  'max by (__name__, path) ({__name__=~"(radarr|sonarr|lidarr)_rootfolder_freespace_bytes"})';
+export { FREESPACE_TREND_QUERY };
 
 const KIND_METRIC: Record<'radarr' | 'sonarr' | 'lidarr', string> = {
   radarr: 'radarr_rootfolder_freespace_bytes',
