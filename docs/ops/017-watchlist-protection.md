@@ -323,7 +323,10 @@ image writes it).
 
 When an array is over target but the space policy reports `skipped_min_candidates`, compare the
 live actionable count with the raw pool before changing rules. Watchlisted titles, open Saves,
-protective tags and recent Age Guard dates do not provide reclaim capacity. A small final pool
+protective tags and recent Age Guard dates do not provide reclaim capacity. ADR-119's
+`age_guard_ignore_library_fill` setting ships off. The one change that alters today's behaviour is a
+title with no Plex match, which is kept, so it adds no reclaim. This section stays as it is until
+story 823 turns the setting on. A small final pool
 can remain blocked by a higher configured minimum even when the jobs and integrations are healthy.
 
 The 2026-10-30 operating choice (OpenProject #296; execution was still pending when documented)

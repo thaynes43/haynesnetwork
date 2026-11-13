@@ -14,6 +14,7 @@ import {
 import {
   bootMigratedDb,
   seedWatchlistRegistry,
+  stampOldPlexMatches,
   caller,
   createUser,
   makeCtx,
@@ -252,6 +253,8 @@ describe('trash router — happy paths (ADR-023 D-02/D-04/D-05)', () => {
         { arrItemId: 1, tmdbId: 55001, title: 'Pending Movie', sortTitle: 'pending movie', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/movies' },
       ],
     });
+    // ADR-119 keeps a ledger title with no Plex match. Date it so Expedite can still delete it.
+    await stampOldPlexMatches(t.db);
   });
   afterAll(async () => t?.stop());
 
@@ -547,6 +550,7 @@ describe('trash router — paginated pending wall + future-batch strip (owner-di
           { arrItemId: 900, tmdbId: 60000, title: 'Doomed Movie', sortTitle: 'doomed movie', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/movies' },
         ],
       });
+      await stampOldPlexMatches(t.db);
       const s = bigState(3);
       s.counters = { exclusionReads: 0, collectionsReads: 0 };
       const c = adminCaller(s);
