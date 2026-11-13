@@ -138,6 +138,7 @@ export function TrashCard({
   watchNote,
   onWatchlist = false,
   failedNote = null,
+  keptNote,
   pwall = false,
   testId,
 }: {
@@ -160,6 +161,15 @@ export function TrashCard({
   /** ADR-096 / D-10 amendment — an accessible failure icon and danger ring, keeping
    *  the fixed facts visible. Null = no failure; the wall retains its error slot. */
   failedNote?: string | null;
+  /**
+   * DESIGN-052 D-10 amendment (story 821) — the line under the facts that says why a title is kept
+   * (the pending walls' All view). `undefined` (the default) renders no line at all. `null` renders
+   * the empty line, so every tile of a wall that shows reasons is the same height and a reason that
+   * appears after a Save never moves a row (ADR-015). `label` is the visible words, `detail` the
+   * same in full for the tooltip. `saved` paints the line in the Save's own green; every other
+   * reason is the kept amber of the skip badge.
+   */
+  keptNote?: { label: string; detail: string; saved?: boolean } | null;
   /** The pending walls' tile marker class (same geometry; kept for selector parity). */
   pwall?: boolean;
   /** data-testid on the tile ('trash-tile' pending / 'wall-tile' batch). */
@@ -273,6 +283,16 @@ export function TrashCard({
         <span aria-hidden="true">·</span>
         <span className="bwall-rating">★{ratingLabel ?? '—'}</span>
       </span>
+      {keptNote !== undefined ? (
+        <span
+          className="bwall-kept"
+          data-testid="wall-kept"
+          data-tone={keptNote !== null ? (keptNote.saved === true ? 'saved' : 'kept') : undefined}
+          title={keptNote !== null ? keptNote.detail : undefined}
+        >
+          {keptNote !== null ? keptNote.label : ''}
+        </span>
+      ) : null}
     </li>
   );
 }

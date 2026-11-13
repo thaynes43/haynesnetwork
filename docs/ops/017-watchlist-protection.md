@@ -242,7 +242,9 @@ raises only the movie IMDb cutoff from 6.0 to 6.5, uses the largest-first movie 
 50-item cap, and lowers the policy minimum from 10 to 1. It retains IMDb votes > 99, never watched,
 the `mediarequests` exclusion, the 180-day rule and app Age Guard, all Save/watchlist/tag/watch
 protections, the seven-day save window and the 75% ceiling. TV's rule and five-item cap stay as they
-were. Source defaults do not change. Read-only projections put the largest 50 at 3.587 nominal TB;
+were on that date. A later ruling (2026-11-13, story 835, DESIGN-014 D-15) specifies a different TV
+rule body and leaves the five-item cap as it is; that body is not applied by the design change.
+Source defaults do not change. Read-only projections put the largest 50 at 3.587 nominal TB;
 native rule membership and the actual batch must be checked before reporting this as selected
 capacity. It is not a physical reclaim or sustained-rate guarantee. The measurements and remaining
 one-title preview discrepancy are in

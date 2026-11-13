@@ -24,10 +24,11 @@ import { Modal } from '@/components/modal';
 import { TrashCard, TrashWall, TrashWallSkeleton } from '@/components/cards';
 import { type TrashAccess } from '@/components/trash-shield';
 import {
+  PendingViewSelector,
   PendingWall,
-  WatchlistVisibilityControl,
   useInfiniteScroll,
   usePendingSaves,
+  usePinnedSaves,
   type PendingWallItem,
 } from '@/components/pending-wall';
 import { formatBytes, formatDay, formatRating, ratingOrNull } from '@/lib/media';
@@ -1077,14 +1078,22 @@ function FutureCandidatesWall({
     },
   );
   const pages = q.data?.pages ?? [];
-  const items: PendingWallItem[] = pages.flatMap((p) => p.items);
+  const pageItems: PendingWallItem[] = pages.flatMap((p) => p.items);
   const total = pages[0]?.filteredCount ?? 0;
   const poolTotal = pages[0]?.total ?? 0;
   // ADR-035 — the strip serves the candidate snapshot; carry its honest age in the head line.
   const asOf = candidatesAsOfLabel(pages[0]?.refreshedAt ?? null);
   const refreshing = q.isPlaceholderData && q.isFetching;
 
-  const { overrides, busy, failed, error, toggle } = usePendingSaves(kind);
+  const { overrides, busy, failed, error, toggle: sendToggle } = usePendingSaves(kind);
+  // DESIGN-052 D-10 amendment (story 832) — a title saved from the strip's default view keeps its tile
+  // until the view is opened again (hard rule 9).
+  const { items, toggle } = usePinnedSaves(
+    pageItems,
+    `${kind}:${showProtected ? 'all' : 'deletable'}`,
+    overrides,
+    sendToggle,
+  );
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const canLoadMore = q.hasNextPage === true && !q.isFetchingNextPage && !q.isPlaceholderData;
   useInfiniteScroll(sentinelRef, canLoadMore, () => void q.fetchNextPage());
@@ -1099,7 +1108,12 @@ function FutureCandidatesWall({
         Potential in future batches ({total}){canSave ? '; tap a poster to save it out' : ''}.
         {asOf !== null ? ` ${asOf}.` : ''}
       </p>
-      <WatchlistVisibilityControl checked={showProtected} onChange={setShowProtected} />
+      {/* DESIGN-052 D-10 amendment (story 821) — the strip's own view, the same selector as the wall. */}
+      <PendingViewSelector
+        view={showProtected ? 'all' : 'deletable'}
+        onChange={(next) => setShowProtected(next === 'all')}
+        testId="future-view"
+      />
       <p
         className="bwall-error"
         role="alert"
@@ -1120,7 +1134,12 @@ function FutureCandidatesWall({
         onToggle={toggle}
         loading={q.isLoading}
         refreshing={refreshing}
-        emptyLabel="Nothing else is eligible for a future batch."
+        emptyLabel={
+          showProtected || total > 0
+            ? 'Nothing else is eligible for a future batch.'
+            : 'Nothing else here can be deleted right now. Choose All to see what is kept, and why.'
+        }
+        showReasons={showProtected}
         wallLabel={`Potential future-batch ${label}`}
         sentinelRef={sentinelRef}
         hasNextPage={q.hasNextPage === true}
