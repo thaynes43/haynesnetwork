@@ -837,6 +837,9 @@ async function withEveryPostedName(input: {
   if (input.drafts.some((d) => d.foldOnly === true)) return { status: 'unrecordable', reason: 'no_term' };
   const ledger = await ledgerPostedReleases(input.db, input.mediaItemId, input.before);
   if (ledger === 'truncated') return { status: 'unrecordable', reason: 'no_term' };
+  const nearSize =
+    input.arrKind === 'radarr' ? await readLegacyJobsForSize(input.db, input.fileSize ?? null) : [];
+  if (nearSize === 'truncated') return { status: 'unrecordable', reason: 'no_term' };
   const jobs =
     input.arrKind === 'radarr'
       ? uniquePosted(
@@ -847,7 +850,7 @@ async function withEveryPostedName(input: {
               deletedAt: input.before,
               deletedSizeBytes: input.fileSize ?? null,
             },
-            await readLegacyJobsForSize(input.db, input.fileSize ?? null),
+            nearSize,
           ).map((job) => {
             const name = postedReleaseName(job.name);
             if (!name) return null;
@@ -1037,11 +1040,10 @@ async function identifyMovie(
   const history = await radarr.getMovieReleaseHistory(s.arrItemId);
   const { grab, imported } = joinFileToGrab(file, history);
   const [ledger] = await ledgerReleases(db, mediaItemId, before, 1);
-  const arrNames = distinct([
-    grab?.sourceTitle,
-    file.sceneName,
-    nameFromOriginalPath(file.originalFilePath),
-  ]);
+  // A string containing "://" is never a name, whichever record holds it.
+  const arrNames = distinct(
+    [grab?.sourceTitle, file.sceneName, nameFromOriginalPath(file.originalFilePath)].map(postedReleaseName),
+  );
   const q = file.quality?.quality;
   const fileGroup = file.releaseGroup ?? grab?.releaseGroup ?? imported?.releaseGroup ?? null;
   const resolution: TermResolution | null =
@@ -1060,7 +1062,7 @@ async function identifyMovie(
   // rebuild, but the old database still has it.
   const legacyFile = legacyNamesOfFile(legacy, { sizeBytes: file.size });
   const names = distinct([
-    ...(useLedger ? ledger!.sourceTitles : arrNames),
+    ...(useLedger ? ledger!.sourceTitles.map(postedReleaseName) : arrNames),
     ...legacyFile.map((l) => postedReleaseName(l.releaseName)),
   ]);
   // D-29 (owner ruling 2026-11-13) — the file on disk has no verified posted name: only the name Radarr rebuilt
@@ -1179,11 +1181,9 @@ async function identifySeries(
   }
   const facts: FileFacts[] = files.map((f) => {
     const { grab, imported } = joinFileToGrab(f, history);
-    const arrNames = distinct([
-      grab?.sourceTitle,
-      f.sceneName,
-      nameFromOriginalPath(f.originalFilePath),
-    ]);
+    const arrNames = distinct(
+      [grab?.sourceTitle, f.sceneName, nameFromOriginalPath(f.originalFilePath)].map(postedReleaseName),
+    );
     // D-29 — a legacy file record of this series, in the file's season, with its IDENTICAL byte size names it too.
     const legacyFile = legacyNamesOfFile(legacy, { sizeBytes: f.size, season: f.seasonNumber as number });
     const names = distinct([...arrNames, ...legacyFile.map((l) => postedReleaseName(l.releaseName))]);

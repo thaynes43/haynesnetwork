@@ -25,7 +25,8 @@ export interface LegacyReleaseName {
 /**
  * More rows than this for one title and the read is `truncated`: the caller keeps the title, because a name it did
  * not read is a release it would not block. Measured 2026-11-13 by the coordinator on the extract: the pool's movies
- * carry 8 grabbed-or-failed names at most; no series figure was measured (D-29, Q-22).
+ * carry 8 grabbed-or-failed names at most. No per-series figure was measured; the whole Sonarr extract is 245,298
+ * history rows and 59,408 file rows over every series.
  */
 export const LEGACY_NAMES_PER_TITLE_LIMIT = 20_000;
 
@@ -75,8 +76,12 @@ export function legacyNamesOfFile(
   );
 }
 
-/** At most this many old download jobs are read for one file's size window. */
-export const LEGACY_JOBS_PER_SIZE_LIMIT = 500;
+/**
+ * At most this many old download jobs are read for one file's size window; past it the read is `truncated` and the
+ * caller keeps the title. The two old histories hold 60,581 jobs in all (the coordinator's extract, 2026-11-13), so
+ * no window can reach the bound on that data.
+ */
+export const LEGACY_JOBS_PER_SIZE_LIMIT = 100_000;
 
 /**
  * The old download jobs whose size could hold a file of `sizeBytes` under D-15's rule (the file is 90% to 100% of
@@ -86,7 +91,8 @@ export const LEGACY_JOBS_PER_SIZE_LIMIT = 500;
 export async function readLegacyJobsForSize(
   db: DbClient | undefined,
   sizeBytes: number | null | undefined,
-): Promise<LegacySabJob[]> {
+  limit: number = LEGACY_JOBS_PER_SIZE_LIMIT,
+): Promise<LegacySabJob[] | 'truncated'> {
   if (typeof sizeBytes !== 'number' || !Number.isFinite(sizeBytes) || sizeBytes <= 0) return [];
   const t = legacyDownloadJobs;
   const rows = await resolveDb(db)
@@ -94,6 +100,7 @@ export async function readLegacyJobsForSize(
     .from(t)
     .where(and(gte(t.bytes, sizeBytes), lte(t.bytes, Math.ceil(sizeBytes / LEGACY_SAB_SIZE_MIN_RATIO))))
     .orderBy(asc(t.completedAt), asc(t.id))
-    .limit(LEGACY_JOBS_PER_SIZE_LIMIT);
+    .limit(limit + 1);
+  if (rows.length > limit) return 'truncated';
   return rows;
 }

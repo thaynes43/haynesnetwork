@@ -61,7 +61,7 @@ export interface PostedNameBackfillClass {
   noNewTerm: number;
   /** New terms that would not all fit under the cap: nothing is inserted for the title, nothing older is pruned. */
   capRefused: number;
-  /** The legacy read for the title did not finish (past its row bound): nothing is inserted for it. */
+  /** A legacy read for the title did not finish (past its row bound): nothing is inserted for it. */
   unread: number;
   namesSeen: number;
   /** New records (one per new term). */
@@ -472,6 +472,8 @@ async function namesFor(
     });
   }
   if (candidate.arrKind === 'radarr') {
+    const nearSize = await readLegacyJobsForSize(db, candidate.sizeBytes);
+    if (nearSize === 'truncated') return 'unread';
     const jobs = matchLegacySab(
       {
         title: candidate.title,
@@ -479,7 +481,7 @@ async function namesFor(
         deletedAt: candidate.deletedAt,
         deletedSizeBytes: candidate.sizeBytes,
       },
-      await readLegacyJobsForSize(db, candidate.sizeBytes),
+      nearSize,
     );
     for (const job of jobs) {
       const name = postedReleaseName(job.name);

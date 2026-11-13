@@ -46,6 +46,8 @@ import {
   matchLegacySab,
   partitionPendingForExpedite,
   postedReleaseName,
+  readLegacyJobsForSize,
+  readLegacyReleaseNames,
   reconcileReleaseBlock,
   reserveTermsUnderCap,
   setAppSetting,
@@ -362,6 +364,20 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
       expect(terms.some((term) => termMatchesRaw(term, otherGroup))).toBe(true);
       expect(drafts(identity).find((d) => d.releaseTitle === otherGroup)).toMatchObject({ identitySource: 'legacy_sab' });
       expect(drafts(identity)[0]).toMatchObject({ identitySource: 'legacy_arr', releaseTitle: POSTED(9001) });
+    });
+
+    it('a read of the old jobs or of the legacy names that does not finish is `truncated`, never a shorter list', async () => {
+      const job = (i: number) => tsv('old-history-a', `Other.Film.${i}.2019.1080p.BluRay.x264-GRP`, 1_000 + i, 1_700_000_000, 'movies', 'Completed');
+      await loadLegacy({
+        sabJobs: [job(1), job(2), job(3)].join('\n'),
+        radarrHistory: [1, 2, 3].map((i) => radarrEvent(9001, 1, `Movie.9001.2024.1080p.WEB-DL.x264-T${i}`)).join('\n'),
+      });
+      expect(await readLegacyJobsForSize(t.db, 1_000)).toHaveLength(3);
+      expect(await readLegacyJobsForSize(t.db, 1_000, 2)).toBe('truncated');
+      expect(await readLegacyJobsForSize(t.db, null)).toEqual([]);
+      expect(await readLegacyReleaseNames(t.db, 'radarr', 9001)).toHaveLength(3);
+      expect(await readLegacyReleaseNames(t.db, 'radarr', 9001, 2)).toBe('truncated');
+      expect(await readLegacyReleaseNames(t.db, 'radarr', null)).toEqual([]);
     });
 
     it('the size rule itself still needs the title, the year and the 90 to 100 percent window', () => {
