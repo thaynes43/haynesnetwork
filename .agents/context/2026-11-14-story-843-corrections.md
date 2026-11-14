@@ -23,11 +23,11 @@ Validation measured 2026-11-14 UTC. Counts are Vitest's per-invocation summaries
 
 | Command | Measured result |
 | --- | --- |
-| `pnpm --filter @hnet/domain exec vitest run --maxWorkers=2` | Final full run: 138 files, 2809 tests passed. Earlier run exposed inherited uncertain claims in independent fixture scenarios; test isolation was corrected without removing the production hold. |
+| `pnpm --filter @hnet/domain exec vitest run --maxWorkers=2` | Initial completed checkpoint: 138 files, 2809 tests passed. Earlier run exposed inherited uncertain claims in independent fixture scenarios; test isolation was corrected without removing the production hold. |
 | `pnpm --filter @hnet/api exec vitest run --maxWorkers=2` | 48 files, 641 tests passed. |
 | `pnpm --filter web exec vitest run --maxWorkers=2` | 61 files, 728 tests passed. |
 | `pnpm --filter @hnet/arr exec vitest run --maxWorkers=2` | 17 files, 185 tests passed. |
-| `pnpm --filter @hnet/domain exec vitest run review-843 --maxWorkers=2` | Final focused run: 2 files, 22 tests passed, including delete-intent offer invalidation after the full run. |
+| `pnpm --filter @hnet/domain exec vitest run review-843 --maxWorkers=2` | Earlier focused checkpoint: 2 files, 22 tests passed, including delete-intent offer invalidation after the full run. |
 | `pnpm typecheck` | Passed. |
 | `pnpm lint` | Passed; warnings occur in unchanged network/book-fix/pool-refresh files. |
 | `pnpm lint:css`; `git diff --check` | Passed. |
@@ -39,3 +39,26 @@ Checkpoint state: source and package validation complete; browser position check
 Final self-review checkpoint: deletion intent/Activity audit still used the frozen ledger link after a successful resolved-identity claim. The claim now row-locks and validates that resolved binding, audits that title, retains the old frozen-link Save predicate and adds a resolved-link Save check. A movie/TV obsolete-link regression verifies that the unrelated ledger row receives no delete event. This is part of F1's resolved-identity correction. Validation for this delta is pending below. Browser bootstrap built successfully, but the initial filter matched no tests; the corrected filter then found the cached Chromium version did not match the installed Playwright package. Installing the matching Chromium; neither run is browser acceptance evidence.
 
 Advisory follow-up, 2026-11-14: applied the same locked ledger-binding check to both Expedite scopes, report late contention/remaps as unevaluable instead of Saved, reserve admin-restored attribution for actual keep rows, and merge refreshed data into the pinned row positions (disable Restore for a missing row). Definitive claim completion now waits for the title lock with a configured bounded timeout. Crashed/ambiguous claims remain conservatively held as Q-38 explicitly proposes; automatic stranded-settle completion is not implemented without a positive completion contract. The advisory finding is answered on the PR; this policy question remains for coordinator/Fable review. Focused command `pnpm --filter @hnet/domain exec vitest run review-843 trash-flow trash-restore-keep --maxWorkers=2` measured 91 tests passed across 5 files. This overlaps prior runs and is not added to their counts. A browser run reached the final keep-removal interaction and exposed an unstable test locator (resting accessible name changes when armed); the locator now matches both armed/resting names. That failed run is not browser acceptance evidence.
+
+## Final source handoff checkpoint
+
+Measured 2026-11-14 UTC. The table below supersedes earlier checkpoints for the same command. Counts are per invocation, parameterized cases count separately, and overlapping rows are never summed.
+
+| Command | Measured result |
+| --- | --- |
+| `pnpm --filter @hnet/domain exec vitest run --maxWorkers=2` | 139 files / 2817 tests passed (start 09:37:55 UTC, 224.25 s). |
+| `pnpm --filter @hnet/api exec vitest run --maxWorkers=2` | 48 files / 641 tests passed (start 09:41:40 UTC). |
+| `pnpm --filter web exec vitest run --maxWorkers=2` | 61 files / 728 tests passed (start 09:43:02 UTC). |
+| `pnpm --filter @hnet/domain exec vitest run review-843 --maxWorkers=2` | 3 files / 30 tests passed (start 09:45:04 UTC), after supplying explicit `watchlist: null` to the new regression fixture for typecheck. Product source was unchanged after the full suite. |
+| `pnpm --filter @hnet/arr exec vitest run --maxWorkers=2` | 17 files / 185 tests passed. `git diff 6b057299..622ae93d -- packages/arr` was empty: these client files were unchanged through the later domain/UI fixes. |
+| `pnpm typecheck`; `pnpm lint`; `pnpm lint:css` | Passed after the fixture correction. Lint warnings remain confined to unchanged files. |
+| `CIRCLE_NODE_TOTAL=3 RAYON_NUM_THREADS=2 pnpm --filter web exec playwright test trash.spec.ts --grep 'Recently deleted keeps neighbouring' --workers=1` | 1 test passed, reported duration 19.3 s. The stack built/served the production Next build, with the build worker count bounded through Next's configured CPU input. Test confirms refreshed neighbour data and unchanged control coordinates through success, uncertainty and keep removal. |
+| `git diff --check`; main journal-prefix comparison | Passed. Fresh `git fetch origin main` still identified `780fdeb178850c7b9f11941e9442ed09d1afe101` as an ancestor, so no base merge or id renumbering was needed. |
+
+All listed counts were checked against their individual logs; no household totals were recomputed or inferred. Intermediate failures (fixture isolation, a missing schema import, a missing typed snapshot, test-name filtering, browser availability and an unstable armed-button locator) were corrected and are not presented as acceptance evidence.
+
+Advisory findings have replies on PR 1079. Valid code findings were fixed. A crashed/ambiguous claim's conservative hold remains explicit in Q-38; background auto-unlock is not implemented, and an unconditional finally-unlock would be unsafe without completion evidence. The coordinator/Fable review must settle that recovery contract. Q-39 records the live Seerr/exclusion-present evidence boundary. No Release Block term or existing Save/Request Keep guard was removed.
+
+Source: this session branch and canonical `agent/haynesnetwork-1114-065403` are pushed with the same source; draft PR 1085 is the session-rule mirror and must not be merged independently. Canonical PR 1079 owns review/merge. Built/tested: local production build, package suites and browser test as above. Installed/deployed live: none. Accepted: pending coordinator, independent Fable review, and subsequent installation/acceptance evidence. No story claim/status/complete action was taken.
+
+Required CI on the next pushed checkpoint commit is pending at the time this file is committed. Its final result and exact commit are recorded on PR 1079 and story 843 after completion; this worker will not end while its required checks run. Next safe step after green CI: coordinator/Fable review of Q-38/Q-39 and the final diff, then the coordinator's merge decision. No merge or deployment is authorized for this worker.
