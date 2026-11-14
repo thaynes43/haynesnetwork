@@ -17,8 +17,8 @@ WITH history AS (
         m.last_watched_server AS before_server,
         CASE WHEN i.tmdb_id>0 OR i.tvdb_id>0 OR i.usable_imdb THEN coalesce(w.plays,0) END AS after_plays,
         w.last_viewed AS after_last, w.server AS after_server,
-        coalesce(m.last_viewed_at >= current_timestamp - interval '30 days',false) AS before_recent,
-        coalesce(w.last_viewed >= current_timestamp - interval '30 days',false) AS after_recent,
+        coalesce(m.last_viewed_at >= current_timestamp - interval '720 hours',false) AS before_recent,
+        coalesce(w.last_viewed >= current_timestamp - interval '720 hours',false) AS after_recent,
         i.arr_tags ? 'dnd' AS dnd, i.arr_tags ? 'mediarequests' AS requested,
         EXISTS (SELECT 1 FROM trash_save_intents s WHERE s.media_item_id=i.id AND s.revoked_at IS NULL) AS saved,
         EXISTS (SELECT 1 FROM watchlist_registry_items r WHERE

@@ -65,6 +65,11 @@ for namespace, col in [('TMDB', 'tmdb_id'), ('TVDB', 'tvdb_id'), ('IMDb', 'imdb_
                 affected.add(r['id'])
 
 for r in rows:
+    # Match the app's elapsed milliseconds, including across daylight-saving boundaries.
+    for phase in ['before', 'after']:
+        viewed = instant(r[phase + '_last'])
+        exact_recent = viewed is not None and now-viewed <= dt.timedelta(days=30)
+        assert exact_recent == r[phase + '_recent'], 'Reassess the census using the exact elapsed watch window'
     dates = [instant(v) for v in [r['newest_import'], r['newest_plex_added']] if v]
     recent = dates and now-max(dates)<dt.timedelta(days=180)
     r['age_guard'] = 'recent' if recent else 'unknown' if not r['plex_matches'] or r['undated_matches'] else 'clear'
