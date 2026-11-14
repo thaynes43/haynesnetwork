@@ -1,3 +1,11 @@
+## 2026-11-14: story 845 design checkpoint; implementation held by Q-37
+
+- Scope and acceptance: OpenProject 845; coordinator holds the story. Worker branch `agent/haynesnetwork-1114-073739`, source pinned to `780fdeb178850c7b9f11941e9442ed09d1afe101` by a fresh fetch on 2026-11-14.
+- Prepared ADR-122 and DESIGN-052 D-33, with Q-35 (capacity), Q-36 (other blocks) and Q-37 (sequencing). Measurements, command/query provenance, term distributions, source citations and the reproducible projection: [evidence](context/2026-11-14-release-block-permanence.md).
+- The story requires the design merged before code; the work order asks for docs first in one PR. The story takes precedence. No runtime, fixture or migration edit made; code and PostgreSQL regression tests are pending the coordinator's resolution/merge of the design. Migration 0115 remains reserved, not created.
+- Proposed behavior: permanent terms, including historical expired/pruned records; no age or capacity eviction; retain the cap and `release_block_full` keep; preserve abandonment cleanup. No live write or deployment. Exact current-pool new-term fan-out is not re-verified; do not use the coordinator's earlier figure as worker-measured evidence.
+- Next safe step: coordinator settles Q-37 and records the required independent adversarial review; merge this design under the story's gate, then implement and validate D-33. The worker does not merge, deploy or close the story. Built/installed/accepted remain unclaimed.
+
 # HANDOFF — cold-start resume point
 
 ## 2026-11-13: story #836 Age Guard library fill (proposed, setting off)
