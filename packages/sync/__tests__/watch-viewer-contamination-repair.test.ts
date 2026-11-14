@@ -329,6 +329,15 @@ describe('one-off viewer contamination repair', () => {
     },
   );
 
+  it('refuses an empty source alongside otherwise proved foreign contributions', async () => {
+    const f = await fixture();
+    const populated = sources(f.rows, { media_type: 'show', guids: [`tmdb://${f.n}`] });
+    const empty = sources([], null);
+    const tautulli = [...populated.tautulli, { ...empty.tautulli[0]!, slug: 'haynestower' }];
+    const report = await repairViewerContamination({ db: t.db, tautulli, apply: true });
+    expect(report).toMatchObject({ complete: false, rowsToClear: 0, rowsCleared: 0 });
+  });
+
   it.each(['viewer-row', 'title-identity'])(
     'refuses inputs changed during the read: %s',
     async (mode) => {

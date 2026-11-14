@@ -116,6 +116,7 @@ export async function repairViewerContamination(input: {
     };
     if (
       !read.complete ||
+      read.instances.some((instance) => instance.rows === 0) ||
       read.attributionIncomplete ||
       titles.size === 0 ||
       snapshot(await legacyCache(tx)) !== snapshot(rawCache)

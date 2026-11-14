@@ -151,7 +151,7 @@ group, and an exact match of stored count/instant/watched/in-progress to that le
 A mapping updated at or after the stored row cannot authorize clearing. Any unresolved identity
 for that viewer preserves their rows; missing user attribution makes the repair preserve all rows. Unknown/refused identities,
 empty/incomplete history, missing user attribution or changed/unmapped viewers cannot prove a clear.
-Ambiguity preserves data. Empty admitted input, missing user attribution or changed cache/live
+Ambiguity preserves data. Any empty configured history source, empty admitted input, missing user attribution or changed cache/live
 identity aborts report `complete=false` (CLI exits nonzero), rather than a clean no-op. Apply locks the relevant tables and rechecks the cache before proving
 rows and calling the domain writer in the same transaction. This favors preservation over coverage;
 not every contaminated row is promised repair. The dry run emits only aggregate row, title and
@@ -229,12 +229,12 @@ change the retained keep-loss snapshot or invent title-name attribution.
 
 Correction-round validation, measured 2026-11-14:
 
-- `pnpm --filter @hnet/sync exec vitest run --maxWorkers=2`: **46 files / 335 tests passed**,
-  final run started 08:39:17Z, duration 60.43 seconds. Embedded PostgreSQL 16; synthetic fixtures.
+- `pnpm --filter @hnet/sync exec vitest run --maxWorkers=2`: **46 files / 336 tests passed**,
+  final run started 08:56:17Z, duration 60.11 seconds. Embedded PostgreSQL 16; synthetic fixtures.
   Includes unavailable/refused/empty history (also alongside an otherwise proved-looking foreign contribution), unmapped/changed mapping, missing attribution,
   incomplete sources, aggregate mismatch, positive cross-kind/id-zero proof, dry run/apply/second
   apply, concurrent row/identity changes, and the unchanged partial-present replacement behavior.
-- `pnpm --workspace-concurrency=2 typecheck`: passed after the final guard change, observed complete at 08:41:36Z.
+- `pnpm --workspace-concurrency=2 typecheck`: passed after the final guard change, observed complete at 08:58:28Z.
 - `pnpm --workspace-concurrency=2 lint`: passed; existing unrelated domain test import warnings.
 - The suites ran serially with at most two workers. A preliminary sync-only typecheck exposed a
   missing synthetic `ratingKey` field; fixed before the full repository typecheck above.
