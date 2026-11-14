@@ -7,7 +7,8 @@
   to integrate into PR 1077. No merge or production refresh/backfill/repair by this worker.
 - Scheduled harvest and existing household backfill preserve absent viewer rows. A separate
   `watch-viewer-contamination-repair.ts --dry-run|--apply` proves collision/sentinel contamination
-  and writes only through the domain writer. Coordinator reviews/runs any production apply.
+  and writes only through the domain writer. Unresolved viewer identities/missing attribution
+  preserve evidence; empty or drifted proof inputs report incomplete. Coordinator reviews/runs any production apply.
 - DESIGN-008 Q-16/Q-17/Q-18 recorded; T-57 and comments say zero means no attributable play found,
   never proof of no viewing. Storage, Trash rules, Plex matcher and paging remain unchanged.
 - Collector errors emit allow-listed stage/instance/status only; synthetic canary checks passed.

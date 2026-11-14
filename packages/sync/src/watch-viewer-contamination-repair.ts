@@ -107,7 +107,7 @@ export async function repairViewerContamination(input: {
     }
     const rows = await tx.select().from(userMediaWatch);
     const report: ViewerRepairReport = {
-      complete: read.complete,
+      complete: read.complete && !read.attributionIncomplete && titles.size > 0,
       rowsExamined: rows.length,
       rowsToClear: 0,
       rowsCleared: 0,
@@ -116,19 +116,31 @@ export async function repairViewerContamination(input: {
     };
     if (
       !read.complete ||
+      read.attributionIncomplete ||
       titles.size === 0 ||
       snapshot(await legacyCache(tx)) !== snapshot(rawCache)
-    )
+    ) {
+      report.complete = false;
       return report;
+    }
     const live = await tx.select().from(mediaItems).where(isNull(mediaItems.deletedFromArrAt));
-    if (liveIdentity(live) !== liveIdentity(initialLive)) return report;
+    if (liveIdentity(live) !== liveIdentity(initialLive)) {
+      report.complete = false;
+      return report;
+    }
     const mappings = new Map((await tx.select().from(userAccountMap)).map((r) => [r.userId, r]));
     const clears: UserMediaWatchInput[] = [];
     for (const row of rows) {
       if (initialRows.get(row.id) !== row.updatedAt.getTime()) continue;
       const target = live.find((t) => t.id === row.mediaItemId);
       const mapping = mappings.get(row.appUserId);
-      if (!target || !mapping?.plexUserId || mapping.updatedAt >= row.updatedAt) continue;
+      if (
+        !target ||
+        !mapping?.plexUserId ||
+        mapping.updatedAt >= row.updatedAt ||
+        read.uncertainUsers.has(mapping.plexUserId)
+      )
+        continue;
       if (target.arrKind !== 'radarr' && target.arrKind !== 'sonarr') continue;
       const contaminated =
         target.tmdbId === 0 ||

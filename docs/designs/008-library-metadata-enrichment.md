@@ -472,7 +472,7 @@ and the existing watch-history backfill. No migration, Trash rule, history windo
   Require no corrected play for that viewer, a nonempty legacy contribution set whose every play
   joins another live title under the corrected rule, and equality of all legacy aggregate fields
   with the stored row. Require a current mapping predating that row; changed/unmapped users,
-  unresolved/refused contributors, incomplete/empty histories and uncertain provenance do not
+  any unresolved/refused identity for that viewer, missing viewer attribution, incomplete/empty histories and uncertain provenance do not
   authorize a clear. Raw legacy cache zero is used only to prove the old fan-out, never to recover
   identity. Lock ledger/cache/mapping/viewer tables and re-read in one apply transaction;
   refuse changed target/cache identities and skip concurrently changed viewer rows. Clear existing rows to zero/null instant/false flags, never create rows.

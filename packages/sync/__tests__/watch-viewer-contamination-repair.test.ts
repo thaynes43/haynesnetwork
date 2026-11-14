@@ -173,6 +173,8 @@ describe('one-off viewer contamination repair', () => {
         apply: true,
       });
       expect(report.rowsCleared).toBe(0);
+      if (['empty', 'unavailable', 'refused', 'missing-user', 'incomplete'].includes(mode))
+        expect(report.complete).toBe(false);
       expect(
         (
           await t.db
@@ -280,6 +282,53 @@ describe('one-off viewer contamination repair', () => {
     },
   );
 
+  it.each(['unavailable', 'refused', 'missing-user'])(
+    'preserves a proved-looking row when another history group is %s',
+    async (mode) => {
+      const f = await fixture();
+      const rows = [
+        ...f.rows,
+        {
+          ...f.rows[0],
+          media_type: 'movie',
+          rating_key: 'unresolved',
+          user_id: mode === 'missing-user' ? null : f.n,
+        },
+      ];
+      const stub = stubFetch([
+        {
+          path: '/api/v2',
+          body: (url: URL) => ({
+            response: {
+              result: 'success',
+              data:
+                url.searchParams.get('cmd') !== 'get_metadata'
+                  ? { data: rows }
+                  : url.searchParams.get('rating_key') === String(f.n)
+                    ? { media_type: 'show', guids: [`tmdb://${f.n}`] }
+                    : mode === 'refused'
+                      ? { media_type: 'clip', guids: [`tmdb://${f.n}`] }
+                      : {},
+            },
+          }),
+        },
+      ]);
+      const tautulli = [
+        {
+          slug: 'haynesops',
+          client: new TautulliClient({
+            baseUrl: 'http://synthetic.test',
+            apiKey: 'synthetic',
+            fetchImpl: stub.fetchImpl,
+          }),
+        },
+      ];
+      expect(
+        (await repairViewerContamination({ db: t.db, tautulli, apply: true })).rowsCleared,
+      ).toBe(0);
+    },
+  );
+
   it.each(['viewer-row', 'title-identity'])(
     'refuses inputs changed during the read: %s',
     async (mode) => {
@@ -320,10 +369,13 @@ describe('one-off viewer contamination repair', () => {
         }
       };
       const stub = sources(f.rows, { media_type: 'show', guids: [`tmdb://${f.n}`] }, false, before);
-      expect(
-        (await repairViewerContamination({ db: t.db, tautulli: stub.tautulli, apply: true }))
-          .rowsCleared,
-      ).toBe(0);
+      const report = await repairViewerContamination({
+        db: t.db,
+        tautulli: stub.tautulli,
+        apply: true,
+      });
+      expect(report.rowsCleared).toBe(0);
+      if (mode === 'title-identity') expect(report.complete).toBe(false);
     },
   );
 

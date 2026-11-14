@@ -537,6 +537,9 @@ export interface HouseholdWatchInstance {
 
 /** The grouped household history, plus whether it is complete enough to store a zero. */
 export interface HouseholdWatchRead {
+  /** In-memory repair guards, never logged or persisted. */
+  uncertainUsers: Set<string>;
+  attributionIncomplete: boolean;
   index: WatchIndex;
   complete: boolean;
   instances: HouseholdWatchInstance[];
@@ -556,6 +559,8 @@ export async function readHouseholdWatch(
   const maxPages = input.tautulliMaxPages ?? TAUTULLI_HISTORY_PAGE_CAP;
   const ratingKeyGuids = input.ratingKeyGuids ?? new Map<string, PlexRatingGuids>();
   const index = emptyWatchIndex();
+  const uncertainUsers = new Set<string>();
+  let attributionIncomplete = false;
   const instances: HouseholdWatchInstance[] = [];
 
   for (const inst of input.sources.tautulli) {
@@ -595,13 +600,25 @@ export async function readHouseholdWatch(
             if (!report.newest || iso > report.newest) report.newest = iso;
           }
           const type = row.media_type ?? '';
+          const userId = plexUserIdString(row.user_id);
+          const uncertainIdentity = () => {
+            if (userId === null) attributionIncomplete = true;
+            else uncertainUsers.add(userId);
+          };
+          if (type !== 'movie' && type !== 'episode') {
+            if (type !== 'track') uncertainIdentity();
+            continue;
+          }
           const key =
             type === 'movie'
               ? row.rating_key
               : type === 'episode'
                 ? row.grandparent_rating_key
                 : undefined;
-          if (key === null || key === undefined) continue;
+          if (key === null || key === undefined) {
+            uncertainIdentity();
+            continue;
+          }
           const arrKind = type === 'movie' ? 'radarr' : 'sonarr';
           const ratingKey = String(key);
           const k = `${arrKind}\0${ratingKey}`;
@@ -609,7 +626,7 @@ export async function readHouseholdWatch(
           g.plays += 1;
           if (when && (!g.last || when > g.last)) g.last = when;
           groups.set(k, g);
-          const userId = plexUserIdString(row.user_id);
+          if (userId === null) attributionIncomplete = true;
           if (userId !== null) {
             let byUser = perUserGroups.get(k);
             if (!byUser) perUserGroups.set(k, (byUser = new Map()));
@@ -641,6 +658,10 @@ export async function readHouseholdWatch(
       }
       for (const [groupKey, g] of groups) {
         const { ratingKey, arrKind } = g;
+        const unjoined = () => {
+          report.unjoined += 1;
+          for (const user of perUserGroups.get(groupKey)?.keys() ?? []) uncertainUsers.add(user);
+        };
         const cached = ratingKeyGuids.get(plexRatingGuidKey(inst.slug, ratingKey));
         let guids: ParsedGuids | null =
           cached?.arrKind === arrKind && identifiableWatchTarget(cached)
@@ -652,7 +673,7 @@ export async function readHouseholdWatch(
             meta = await inst.client.getMetadata(ratingKey);
           } catch (err) {
             report.metadataErrors += 1;
-            report.unjoined += 1;
+            unjoined();
             if (report.metadataErrors === 1) {
               logger.warn('metadata-refresh: tautulli metadata lookup failed', {
                 instance: inst.slug,
@@ -663,11 +684,11 @@ export async function readHouseholdWatch(
           }
           // Gone from Plex (HTTP 400 / empty data — DESIGN-049 D-09): nothing to join on.
           if (!meta) {
-            report.unjoined += 1;
+            unjoined();
             continue;
           }
           if (meta.media_type && meta.media_type !== (arrKind === 'radarr' ? 'movie' : 'show')) {
-            report.unjoined += 1;
+            unjoined();
             continue;
           }
           guids = usableWatchGuids(guidsFromMetadata(meta));
@@ -677,7 +698,7 @@ export async function readHouseholdWatch(
           guids.imdbId === undefined &&
           guids.tvdbId === undefined
         ) {
-          report.unjoined += 1;
+          unjoined();
           continue;
         }
         indexTitle(index, {
@@ -721,7 +742,7 @@ export async function readHouseholdWatch(
       unjoined: inst.unjoined,
     })),
   });
-  return { index, complete, instances };
+  return { index, complete, instances, uncertainUsers, attributionIncomplete };
 }
 
 /** The household watch signal for a target PLUS the per-user (plex user id → stat) breakdown (ADR-053). */

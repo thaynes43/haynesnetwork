@@ -148,9 +148,11 @@ matches in memory (including raw cached zero only for proof), and uses the exist
 The proof requires a collision/sentinel title, no corrected viewer contribution, a nonempty legacy
 contribution set fully attributable to other live titles, complete attribution within each source
 group, and an exact match of stored count/instant/watched/in-progress to that legacy aggregate.
-A mapping updated at or after the stored row cannot authorize clearing. Unknown/refused identities,
+A mapping updated at or after the stored row cannot authorize clearing. Any unresolved identity
+for that viewer preserves their rows; missing user attribution makes the repair preserve all rows. Unknown/refused identities,
 empty/incomplete history, missing user attribution or changed/unmapped viewers cannot prove a clear.
-Ambiguity preserves data. Apply locks the relevant tables and rechecks the cache before proving
+Ambiguity preserves data. Empty admitted input, missing user attribution or changed cache/live
+identity aborts report `complete=false` (CLI exits nonzero), rather than a clean no-op. Apply locks the relevant tables and rechecks the cache before proving
 rows and calling the domain writer in the same transaction. This favors preservation over coverage;
 not every contaminated row is promised repair. The dry run emits only aggregate row, title and
 viewer counts; no individual row, identity, viewing instant or per-viewer measurement is printed.
@@ -227,18 +229,20 @@ change the retained keep-loss snapshot or invent title-name attribution.
 
 Correction-round validation, measured 2026-11-14:
 
-- `pnpm --filter @hnet/sync exec vitest run --maxWorkers=2`: **46 files / 332 tests passed**,
-  final run started 08:28:58Z, duration 57.79 seconds. Embedded PostgreSQL 16; synthetic fixtures.
-  Includes unavailable/refused/empty history, unmapped/changed mapping, missing attribution,
+- `pnpm --filter @hnet/sync exec vitest run --maxWorkers=2`: **46 files / 335 tests passed**,
+  final run started 08:39:17Z, duration 60.43 seconds. Embedded PostgreSQL 16; synthetic fixtures.
+  Includes unavailable/refused/empty history (also alongside an otherwise proved-looking foreign contribution), unmapped/changed mapping, missing attribution,
   incomplete sources, aggregate mismatch, positive cross-kind/id-zero proof, dry run/apply/second
   apply, concurrent row/identity changes, and the unchanged partial-present replacement behavior.
-- `pnpm --workspace-concurrency=2 typecheck`: passed, observed complete at 08:31:34Z.
+- `pnpm --workspace-concurrency=2 typecheck`: passed after the final guard change, observed complete at 08:41:36Z.
 - `pnpm --workspace-concurrency=2 lint`: passed; existing unrelated domain test import warnings.
 - The suites ran serially with at most two workers. A preliminary sync-only typecheck exposed a
   missing synthetic `ratingKey` field; fixed before the full repository typecheck above.
 - Python syntax checks, synthetic collector canary checks, exact `cmp` reproduction of retained
   public artifacts and `git diff --check`: passed. Final arithmetic assertions: 174 affected rows,
   11 keep losses, 6 guardian-clear movies, 10 no-file paired movies with plays, and gap sums 641/1,049.
-- Self-review completed. Source is pushed on the correction PR; CI result is recorded there before
+- Self-review completed. The automatic advisory finding about aborted runs appearing complete
+  was fixed: empty admitted inputs and cache/live-identity drift now report incomplete; tests
+  assert the result. Source is pushed on the correction PR; CI result is recorded there before
   handoff. A passing Next.js build is distinct from a release container or deployment. Installed:
   not performed. Accepted: coordinator-owned, pending Fable review. No production repair was run.
