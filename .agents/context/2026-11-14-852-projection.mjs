@@ -88,7 +88,24 @@ function project(unlimited) {
   }
   return { exhaustedPostDay, rows:result };
 }
-console.log(JSON.stringify({ measuredAt:new Date(now*1000).toISOString(), intakeGBPerDay:intake/1e9,
+// Necessary recovery arithmetic (estimates): same constant intake/yield and delayed first deletion.
+const openExpectedDeleted = movie.posted_bytes * yieldRate;
+const recovery = [60,120].map(deadlineDays => {
+  const requiredFreedBytes = targetFree - initialFree + intake * deadlineDays;
+  const futureDeletions = Math.floor(deadlineDays / window) - 1; // open batch first, day 7
+  const newProposedBytes = (requiredFreedBytes - openExpectedDeleted) / yieldRate;
+  return { deadlineDays, futureDeletions, requiredFreedTB: requiredFreedBytes/TB,
+    newProposedSupplyTB: newProposedBytes/TB, averageBatchTB: newProposedBytes/futureDeletions/TB };
+});
+const balanceProposals = intake * window / yieldRate;
+const ceilingNetGain = cap * yieldRate - intake * window;
+const repeatedBatch = unlimitedSizes.reduce((n,b)=>n+b,0);
+assert.equal(recovery[0].futureDeletions,7);
+assert.equal(recovery[1].futureDeletions,16);
+console.log(JSON.stringify({ estimatedRecovery: { assumption:'Constant historical intake/yield, open batch once at day 7, new deletions from day 14; necessary bounds only',
+  netGainPerCycleAtCeilingTB:ceilingNetGain/TB,
+  netGainPerCycleAtRepeatedSelectionTB:(repeatedBatch*yieldRate-intake*window)/TB,
+  proposalsPerCycleToBalanceTB:balanceProposals/TB, recovery }, measuredAt:new Date(now*1000).toISOString(), intakeGBPerDay:intake/1e9,
   unadjustedGBPerDay:forecastFreeSpace({samples,targetFreeBytes:targetFree,now}).rateBytesPerDay/1e9,
   yieldRate, sampleCount:samples.length, deletionCount:deletions.length,
   unpostedTitles:sizes.length, unpostedBytes:sizes.reduce((n,b)=>n+b,0),

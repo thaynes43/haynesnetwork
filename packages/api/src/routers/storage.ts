@@ -206,12 +206,21 @@ export const storageRouter = router({
      */
     set: adminProcedure.input(SpacePolicyInput).mutation(async ({ ctx, input }) => {
       if (input.dynamicPace) {
+        const previous = (await getSpacePolicy(ctx.db)).dynamicPace!;
+        const sizingChanged = (
+          ['horizonDays', 'floorBytes', 'ceilingBytes', 'movieMaxItems'] as const
+        ).some((key) => input.dynamicPace![key] !== previous[key]);
+        const requiresWindowCheck =
+          input.dynamicPace.enabled || input.dynamicPace.observeOnly || sizingChanged;
         const windowRaw = await getAppSetting(ctx.db, 'trash_default_window_days');
         const windowDays =
           typeof windowRaw === 'number' && Number.isFinite(windowRaw) && windowRaw >= 1
             ? Math.trunc(windowRaw)
             : APP_SETTING_DEFAULTS.trash_default_window_days;
-        if (!dynamicPaceHorizonFitsWindow(input.dynamicPace.horizonDays, windowDays)) {
+        if (
+          requiresWindowCheck &&
+          !dynamicPaceHorizonFitsWindow(input.dynamicPace.horizonDays, windowDays)
+        ) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
             message: 'horizonDays must be at least the save window',

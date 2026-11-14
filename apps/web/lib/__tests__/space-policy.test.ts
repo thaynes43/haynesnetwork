@@ -101,6 +101,30 @@ describe('graduationVerdict', () => {
 });
 
 describe('settings cards preserve Dynamic Pace on save', () => {
+  it('preserves an inactive synthesized 30-day pace for a legacy 45-day save window', () => {
+    // The card has no window input: its untouched config must reach the API verbatim.
+    const policy = {
+      ...P,
+      enabled: true,
+      perArray: { haynestower: { enabled: true } },
+      dynamicPace: {
+        enabled: false,
+        observeOnly: false,
+        horizonDays: 30,
+        movieMaxItems: 50,
+        floorBytes: 130_604_353_957,
+        ceilingBytes: 3_591_025_375_575,
+      },
+    };
+    const draft = toDraft(policy);
+    draft.minCandidates = '2';
+    expect(draftToPolicy(draft, policy).dynamicPace).toEqual(policy.dynamicPace);
+    expect(withEnabled(policy, false).dynamicPace).toEqual(policy.dynamicPace);
+    expect(withArrayConfig(policy, 'haynestower', { enabled: false }).dynamicPace).toEqual(
+      policy.dynamicPace,
+    );
+  });
+
   it.each([false, true])(
     'carries the complete pace config through both card save conversions (enabled=%s)',
     (enabled) => {
