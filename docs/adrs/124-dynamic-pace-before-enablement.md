@@ -51,7 +51,7 @@ The replica read of 2026-11-14 measured those caps as 50 and 5. No mode is enabl
 | C-02 | Observe-only computes and stores the ask but uses the existing gate and caps for real proposals. |
 | C-03 | Applied sizing retains title caps and enforces the hard byte limit against the fresh batch snapshot. A cap may leave a larger shortfall. |
 | C-04 | Missing, stale or unusable history and preload failures retain today's caps, with the reason stored. Invalid active settings read as off. |
-| C-05 | In active modes the sizing decision, selected totals and policy notification commit with the batch/items before promotion. Failure rolls back that kind and is reported; other kinds proceed. A committed draft retains its original decision through self-heal. Skip-record failure is an error. Status returns stored reasoning with its time. |
+| C-05 | In active modes the sizing decision, selected totals and policy notification commit with the batch/items before promotion. Failure rolls back that kind and is reported; other kinds proceed. A committed draft retains its original decision through self-heal. Skip-record failure is an error. Status prefers the original sizing record while its batch is open; otherwise it returns the newest stored decision with its time. |
 | C-06 | The defaults do not promise recovery within the horizon. The projection and its limitations are recorded with the measured inputs in the evidence note. |
 
 ## More information

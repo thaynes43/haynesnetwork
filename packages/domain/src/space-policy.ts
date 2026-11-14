@@ -1052,19 +1052,27 @@ export interface DynamicPaceRead {
 }
 
 async function readStoredDynamicPace(db: DbClient): Promise<DynamicPaceRead | null> {
-  // DISTINCT ON prevents an hourly open-batch skip from hiding another kind's last decision.
+  // Keep the immutable sizing record visible while its batch is open, including interrupted
+  // promotion and later heals/skips. Without an open proposal, show the newest stored outcome.
+  // DISTINCT ON also prevents one kind's repeated skips from displacing the other kind.
   const rows = await db
     .selectDistinctOn(
       [sql`${ledgerEvents.payload}->>'array'`, sql`${ledgerEvents.payload}->>'mediaKind'`],
       { payload: ledgerEvents.payload, occurredAt: ledgerEvents.occurredAt },
     )
     .from(ledgerEvents)
+    .leftJoin(
+      trashBatches,
+      eq(sql<string>`${trashBatches.id}::text`, sql<string>`${ledgerEvents.payload}->>'batchId'`),
+    )
     .where(
       and(eq(ledgerEvents.eventType, 'trash_space_policy'), sql`${ledgerEvents.payload} ? 'pace'`),
     )
     .orderBy(
       sql`${ledgerEvents.payload}->>'array'`,
       sql`${ledgerEvents.payload}->>'mediaKind'`,
+      desc(sql`CASE WHEN ${inArray(trashBatches.state, [...OPEN_STATES])}
+        AND ${ledgerEvents.payload}->>'outcome' = 'proposed' THEN 1 ELSE 0 END`),
       desc(ledgerEvents.occurredAt),
       desc(ledgerEvents.recordedAt),
       desc(ledgerEvents.id),

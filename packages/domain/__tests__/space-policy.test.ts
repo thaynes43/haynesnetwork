@@ -1389,6 +1389,16 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
           (e) => e.eventType === 'trash_space_policy' && e.payload.batchId === batchId,
         )!.payload;
         expect(original).toMatchObject({ outcome: 'proposed', pace: { selectedBytes: 4e9 } });
+        expect(
+          (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+            (d) => d.mediaKind === 'movie',
+          ),
+        ).toMatchObject({
+          ...(original as { pace: Record<string, unknown> }).pace,
+          outcome: 'proposed',
+          batchId,
+          evaluatedAt: paceNow.toISOString(),
+        });
         expect((await f.sweep()).batches.every((b) => b.batchId !== batchId)).toBe(true);
         expect(
           f.calls.some(
@@ -1412,6 +1422,21 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
           )
           .map((e) => e.payload),
       ).toEqual([original]);
+      const status = (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+        (d) => d.mediaKind === 'movie',
+      );
+      expect(status).toMatchObject({
+        ...(original as { pace: Record<string, unknown> }).pace,
+        outcome: 'proposed',
+        batchId,
+        evaluatedAt: paceNow.toISOString(),
+      });
+      await f.run(); // a later ordinary open-batch skip must not obscure the original, either
+      expect(
+        (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+          (d) => d.mediaKind === 'movie',
+        ),
+      ).toEqual(status);
       expect((await f.sweep()).batches.find((b) => b.batchId === batchId)!.deletedCount).toBe(1);
     },
   );

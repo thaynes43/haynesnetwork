@@ -1201,8 +1201,10 @@ original decision; the next tick's existing self-heal promotes it without replac
 The sweep only takes promoted, expired batches, so an uncommitted or draft batch cannot delete.
 Both modes off retain the legacy best-effort attribution contract and payloads.
 
-`storage.policy.status.pace` is a database-only read of the newest stored decision per array
-and kind, with the evaluation time and outcome. It reports null when no decision has been
+`storage.policy.status.pace` is a database-only read per array and kind. While a batch remains
+open, prefer its committed sizing proposal over later skip/error/heal rows; report that proposal's
+original evaluation time, outcome and selected totals. For a kind without such an open proposal,
+return the newest stored decision with its evaluation time and outcome. It reports null when no decision has been
 stored. Proposal history filters out skip records and remains proposal-only. Status never
 resolves a Prometheus or *arr client, even when pace is on; display work is story 853.
 
