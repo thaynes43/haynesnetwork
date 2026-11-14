@@ -16,7 +16,6 @@
 import {
   ledgerEvents,
   trashBatches,
-  trashBatchItems,
   TRASH_BATCH_OPEN_STATES,
   TRASH_MEDIA_KINDS,
   type DbClient,
@@ -304,14 +303,36 @@ async function hasOpenBatch(db: DbClient | undefined, mediaKind: TrashMediaKind)
   return (await findOpenBatch(db, mediaKind)) !== null;
 }
 
+/** Actual selection for one durable batch, or all successful proposals in the run report. */
+function selectedPaceExplanation(
+  explanation: DynamicPaceExplanation,
+  selected: ReadonlyMap<TrashMediaKind, number>,
+  mediaKind?: TrashMediaKind,
+): DynamicPaceExplanation {
+  const kinds = explanation.kinds.filter(
+    (kind) => mediaKind === undefined || kind.mediaKind === mediaKind,
+  );
+  const chosenBytes = [...selected.values()].reduce((sum, bytes) => sum + bytes, 0);
+  const requiredDeletedBytes = explanation.requiredDeletedBytes;
+  return {
+    ...explanation,
+    requiredDeletedBytes,
+    chosenBytes,
+    expectedDeletedBytes: chosenBytes * explanation.yieldRate,
+    shortfallBytes: Math.max(0, requiredDeletedBytes - chosenBytes * explanation.yieldRate),
+    kinds: kinds.map((kind) => ({ ...kind, chosenBytes: selected.get(kind.mediaKind) ?? 0 })),
+  };
+}
+
 /**
  * Evaluate the space-driven policy ONCE (the `space-policy` sync mode's body). Returns a report of
  * every array's over/under-target verdict and, for each opted-in array, one outcome per backing kind:
  * a stuck open system batch is HEALED (promoted to leaving_soon), else a new batch is PROPOSED AND
  * PROMOTED (createBatchFromPending with autoPromote) when the mode/target allows it (ADR-073 — the
  * autonomous engine completes the cycle unattended; it still never deletes, only the sweep reclaims).
- * Never throws for a per-kind failure (records `outcome:'error'` and moves on); it throws only if the
- * utilization/settings reads themselves fail.
+ * Per-kind failures allow independent kinds/arrays to progress. Active-mode decision-recording
+ * failures fail the evaluation only after that progress, never masquerading as successful observation.
+ * Utilization/settings read failures also throw.
  */
 export async function evaluateSpacePolicy(input: {
   db?: DbClient;
@@ -337,6 +358,7 @@ export async function evaluateSpacePolicy(input: {
   const utilization = await getUtilization({ db: input.db, arr: input.arr });
   const arrays: SpacePolicyArrayResult[] = [];
   let proposedCount = 0;
+  let recordingFailed = false;
 
   for (const util of utilization) {
     const arrCfg = effectiveArrayPolicy(policy, util.key);
@@ -486,7 +508,32 @@ export async function evaluateSpacePolicy(input: {
         target: util.target,
         canProposeNew: usePace ? kindChosen > 0 : staticCanPropose,
         minCandidates: arrCfg.minCandidates,
-        paceTracked,
+        ...(paceTracked
+          ? {
+              paceDecision: (selectedBytes: number): StoredPaceDecision => ({
+                mode: observeOnly ? 'observe-only' : 'enabled',
+                applied: usePace && selectedBytes > 0,
+                fallbackReason,
+                // A durable proposal describes its own selection, never a later kind's success.
+                explanation:
+                  usePace && explanation
+                    ? selectedPaceExplanation(
+                        explanation,
+                        new Map([[mediaKind, selectedBytes]]),
+                        mediaKind,
+                      )
+                    : explanation,
+                selectedBytes,
+                allocation: explanation,
+              }),
+              onSelected: (bytes: number) => {
+                selected.set(mediaKind, bytes);
+              },
+              onRecordingFailure: () => {
+                recordingFailed = true;
+              },
+            }
+          : {}),
         targeting: usePace
           ? {
               targetBytes: kindChosen,
@@ -513,59 +560,8 @@ export async function evaluateSpacePolicy(input: {
       });
       if (proposal.outcome === 'proposed' || proposal.outcome === 'promoted') proposedCount += 1;
       result.proposals.push(proposal);
-      if (paceTracked && proposal.outcome === 'proposed' && proposal.batchId) {
-        const [row] = await resolveDb(input.db)
-          .select({ bytes: sql<string>`coalesce(sum(${trashBatchItems.sizeBytes}), 0)::text` })
-          .from(trashBatchItems)
-          .where(eq(trashBatchItems.batchId, proposal.batchId));
-        selected.set(mediaKind, Number(row?.bytes ?? 0));
-      }
-    }
-    if (paceTracked) {
-      // The job records the actual fresh selection, not only the hypothetical allocation.
-      if (usePace && explanation) {
-        const chosenBytes = [...selected.values()].reduce((sum, bytes) => sum + bytes, 0);
-        explanation = {
-          ...explanation,
-          chosenBytes,
-          expectedDeletedBytes: chosenBytes * explanation.yieldRate,
-          shortfallBytes: Math.max(
-            0,
-            explanation.requiredDeletedBytes - chosenBytes * explanation.yieldRate,
-          ),
-          kinds: explanation.kinds.map((kind) => ({
-            ...kind,
-            chosenBytes: selected.get(kind.mediaKind) ?? 0,
-          })),
-        };
-      }
-      result.pace = explanation;
-      for (const proposal of result.proposals) {
-        const pace: StoredPaceDecision = {
-          mode: observeOnly ? 'observe-only' : 'enabled',
-          applied: usePace && proposal.outcome === 'proposed',
-          fallbackReason,
-          explanation,
-          selectedBytes: selected.get(proposal.mediaKind) ?? 0,
-        };
-        if (proposal.outcome === 'proposed' && proposal.batchId) {
-          await recordSpacePolicyProposal({
-            db: input.db,
-            batchId: proposal.batchId,
-            mode: policy.mode,
-            mediaKind: proposal.mediaKind,
-            arrayKey: util.key,
-            arrayLabel: util.label,
-            usedPct: util.usedPct,
-            target: util.target,
-            candidateCount: proposal.candidateCount,
-            candidateBytes: proposal.candidateBytes,
-            gateSkipped: proposal.gateSkipped,
-            actorId,
-            occurredAt: now,
-            pace,
-          });
-        } else {
+      if (paceTracked && proposal.outcome !== 'proposed') {
+        try {
           await resolveDb(input.db)
             .insert(ledgerEvents)
             .values({
@@ -576,18 +572,36 @@ export async function evaluateSpacePolicy(input: {
               requestedByUserId: actorId,
               payload: {
                 batchId: proposal.batchId,
-                mediaKind: proposal.mediaKind,
+                mediaKind,
                 array: util.key,
                 outcome: proposal.outcome,
-                pace,
+                pace: {
+                  mode: observeOnly ? 'observe-only' : 'enabled',
+                  applied: false,
+                  fallbackReason,
+                  explanation,
+                  selectedBytes: 0,
+                } satisfies StoredPaceDecision,
               },
             });
+        } catch {
+          recordingFailed = true;
+          proposal.outcome = 'error';
+          proposal.reason += ' Policy decision recording failed; observation was not recorded.';
         }
       }
+    }
+    if (paceTracked) {
+      result.pace =
+        usePace && explanation ? selectedPaceExplanation(explanation, selected) : explanation;
     }
     arrays.push(result);
   }
 
+  // Finish independent kinds/arrays first, then fail the job: a missing record is never
+  // successful observation evidence. The sync runner already reports a thrown evaluation as failed.
+  if (recordingFailed)
+    throw new Error('Policy decision recording failed; observation was not completed.');
   return { enabled: true, ranAt: now.toISOString(), proposedCount, arrays };
 }
 
@@ -609,8 +623,10 @@ async function proposeForKind(input: {
   /** DESIGN-014 amendment — per-kind composition caps (maxItems/targetBytes, worst-rated-first);
    *  absent ⇒ ALL candidates. */
   targeting?: BatchTargeting;
-  /** D-18: active modes record attribution after both fresh selections are known. */
-  paceTracked?: boolean;
+  /** D-18: create the immutable sizing record from the fresh selection inside its transaction. */
+  paceDecision?: (selectedBytes: number) => StoredPaceDecision;
+  onSelected?: (bytes: number) => void;
+  onRecordingFailure?: () => void;
   /** ADR-120 — set when the pace applied and this kind's ask is 0. The open-batch heal still runs. */
   paceSkip?: { reason: string };
   /** ADR-120 — the deletable pending set already loaded for the pace. Skips a second Maintainerr read. */
@@ -759,6 +775,33 @@ async function proposeForKind(input: {
       // enabled composition caps (maxItems/targetBytes, worst-rated-first); absent ⇒ all candidates.
       // The min-candidates gate above still measures the full pending pool.
       ...(input.targeting !== undefined ? { targeting: input.targeting } : {}),
+      ...(input.paceDecision
+        ? {
+            recordDecision: async (tx, selected) => {
+              try {
+                await recordSpacePolicyProposal({
+                  db: tx,
+                  batchId: selected.batchId,
+                  mode: input.mode,
+                  mediaKind: input.mediaKind,
+                  arrayKey: input.arrayKey,
+                  arrayLabel: input.arrayLabel,
+                  usedPct: input.usedPct,
+                  target: input.target,
+                  candidateCount: selected.itemCount,
+                  candidateBytes,
+                  gateSkipped: selected.gateSkipped,
+                  actorId: input.actorId,
+                  occurredAt: input.now,
+                  pace: input.paceDecision!(selected.totalBytes),
+                });
+              } catch (error) {
+                input.onRecordingFailure?.();
+                throw error;
+              }
+            },
+          }
+        : {}),
     });
   } catch (err) {
     if (err instanceof TrashBatchOpenError) {
@@ -775,13 +818,15 @@ async function proposeForKind(input: {
     };
   }
 
+  input.onSelected?.(created.totalBytes);
+
   // 5. Record the WHY: a trash_space_policy ledger event + a space_policy notification (source
   //    'trash'). Attribution records for Bulletin/Activity + the tuning report's graduation join.
-  //    Best-effort (intent-first, like the rest of the pipeline): the batch is the durable outcome, so
-  //    a rare attribution-write failure must not abort the run — the proposal still reports 'proposed'.
+  //    Both modes off keep legacy best-effort attribution; active modes already committed it
+  //    with the batch above, before promotion.
   let attributionNote = '';
   try {
-    if (!input.paceTracked)
+    if (!input.paceDecision)
       await recordSpacePolicyProposal({
         db: input.db,
         batchId: created.batchId,
@@ -986,6 +1031,8 @@ export interface StoredPaceDecision {
   fallbackReason: string | null;
   explanation: DynamicPaceExplanation | null;
   selectedBytes: number;
+  /** Original array allocation; present on transactional proposals (ADR-124). */
+  allocation?: DynamicPaceExplanation | null;
 }
 
 export interface DynamicPaceRead {
@@ -1005,19 +1052,27 @@ export interface DynamicPaceRead {
 }
 
 async function readStoredDynamicPace(db: DbClient): Promise<DynamicPaceRead | null> {
-  // DISTINCT ON prevents an hourly open-batch skip from hiding another kind's last decision.
+  // Keep the immutable sizing record visible while its batch is open, including interrupted
+  // promotion and later heals/skips. Without an open proposal, show the newest stored outcome.
+  // DISTINCT ON also prevents one kind's repeated skips from displacing the other kind.
   const rows = await db
     .selectDistinctOn(
       [sql`${ledgerEvents.payload}->>'array'`, sql`${ledgerEvents.payload}->>'mediaKind'`],
       { payload: ledgerEvents.payload, occurredAt: ledgerEvents.occurredAt },
     )
     .from(ledgerEvents)
+    .leftJoin(
+      trashBatches,
+      eq(sql<string>`${trashBatches.id}::text`, sql<string>`${ledgerEvents.payload}->>'batchId'`),
+    )
     .where(
       and(eq(ledgerEvents.eventType, 'trash_space_policy'), sql`${ledgerEvents.payload} ? 'pace'`),
     )
     .orderBy(
       sql`${ledgerEvents.payload}->>'array'`,
       sql`${ledgerEvents.payload}->>'mediaKind'`,
+      desc(sql`CASE WHEN ${inArray(trashBatches.state, [...OPEN_STATES])}
+        AND ${ledgerEvents.payload}->>'outcome' = 'proposed' THEN 1 ELSE 0 END`),
       desc(ledgerEvents.occurredAt),
       desc(ledgerEvents.recordedAt),
       desc(ledgerEvents.id),

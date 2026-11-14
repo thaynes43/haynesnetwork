@@ -235,6 +235,92 @@ describe('storage.policy — Dynamic Pace contract (ADR-124)', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
+  it.each([1, 7, 21, 30, 31, 45, 90, 180, 365])(
+    'inactive legacy pace round-trips a %s-day window and disabling controls',
+    async (windowDays) => {
+      const current = await adminCaller.storage.policy.get();
+      const legacy = { ...current };
+      delete legacy.dynamicPace;
+      await setAppSetting({
+        db: testDb.db,
+        key: 'space_policy',
+        value: { ...legacy, enabled: true, perArray: { haynestower: { enabled: true } } },
+        actorId: admin.id,
+      });
+      await setAppSetting({
+        db: testDb.db,
+        key: 'trash_default_window_days',
+        value: windowDays,
+        actorId: admin.id,
+      });
+      try {
+        const loaded = await adminCaller.storage.policy.get();
+        expect(loaded.dynamicPace).toMatchObject({
+          enabled: false,
+          observeOnly: false,
+          horizonDays: 30,
+        });
+        await adminCaller.storage.policy.set({ ...loaded, minCandidates: 2 });
+        await adminCaller.storage.policy.set({ ...loaded, enabled: false });
+        await adminCaller.storage.policy.set({
+          ...loaded,
+          perArray: { haynestower: { enabled: false } },
+        });
+        expect((await adminCaller.storage.policy.get()).dynamicPace).toEqual(loaded.dynamicPace);
+        expect((await adminCaller.storage.policy.get()).perArray.haynestower!.enabled).toBe(false);
+        // Explicit sizing changes remain validated even while inactive.
+        if (windowDays > 30)
+          await expect(
+            adminCaller.storage.policy.set({
+              ...loaded,
+              dynamicPace: { ...loaded.dynamicPace!, horizonDays: 29 },
+            }),
+          ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      } finally {
+        await setAppSetting({
+          db: testDb.db,
+          key: 'trash_default_window_days',
+          value: 7,
+          actorId: admin.id,
+        });
+      }
+    },
+  );
+
+  it.each(['enabled', 'observeOnly'] as const)(
+    'a 45-day window refuses activation via %s with the shorter horizon',
+    async (mode) => {
+      await setAppSetting({
+        db: testDb.db,
+        key: 'trash_default_window_days',
+        value: 45,
+        actorId: admin.id,
+      });
+      try {
+        const loaded = await adminCaller.storage.policy.get();
+        await expect(
+          adminCaller.storage.policy.set({
+            ...loaded,
+            dynamicPace: {
+              ...loaded.dynamicPace!,
+              enabled: false,
+              observeOnly: false,
+              [mode]: true,
+              horizonDays: 30,
+            },
+          }),
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      } finally {
+        await setAppSetting({
+          db: testDb.db,
+          key: 'trash_default_window_days',
+          value: 7,
+          actorId: admin.id,
+        });
+      }
+    },
+  );
+
   it.each([false, true])(
     'status reads only stored job data, including with enabled=%s',
     async (enabled) => {

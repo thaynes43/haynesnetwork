@@ -1163,7 +1163,10 @@ records changes; no database migration or live setting write is needed.
 
 Off: neither read history nor add any policy-ledger field or skip event. Preserve today's
 windowed and continuous gate, caps and payload bytes. The settings cards round-trip the complete
-object, including both new fields, through the strict API schema.
+object, including both new fields, through the strict API schema. An unchanged inactive pace may
+round-trip for every supported save window, including a legacy row whose synthesized horizon is
+shorter. Activation, observation, or an explicit edit to a pace sizing field still validates the
+horizon against the window. Saving never silently enables or resizes a pace.
 
 Observe-only: the hourly job reads history, deletions, yield and the eligible pool, computes the
 ask and stores it; today's gate and caps still select the real batch. Enabled: the computed
@@ -1172,31 +1175,54 @@ failed/empty/stale series, unavailable disk, too-short series or preload failure
 today's gate and caps. A partial preload is discarded completely. Minimum candidates and the
 one-open-kind rule still apply, as does self-healing an existing batch.
 
-Every active-mode kind evaluation has one `trash_space_policy` ledger payload containing
-`pace`: `{ mode, applied, fallbackReason, explanation, selectedBytes }`, plus the outcome and
-batch id (null for skips). `explanation` carries the gap, surplus, measured rate/intake,
+Every successfully recorded active-mode kind evaluation has one `trash_space_policy` ledger payload containing
+`pace`: `{ mode, applied, fallbackReason, explanation, selectedBytes }` (proposals also retain
+`allocation`, the original array-wide explanation before selection), plus the outcome and
+batch id (null only for skips without an existing batch). `explanation` carries the gap, surplus, measured rate/intake,
 forecast's flat reason, window/horizon requirement, requested/chosen bytes, yield, expected
 delete and shortfalls. Add `horizonRequiredDeletedBytes` and `horizonShortfallBytes` against
 `poolBytes * yield`. `applied` is true only when pace governed a newly proposed batch; an open
 batch, minimum-candidates skip or zero ask cannot be reported as an applied batch. A preload
 failure has an explicit reason even when no explanation could be computed. No raw exception
-text is copied into this payload. Selection shortfall reflects the actual fresh batch, not
-only the uncapped pool allocation. Observe-only's selected bytes describe the static batch;
+text is copied into this payload. For an applied proposal, the stored explanation describes this kind's fresh selected bytes
+and expected yield, with shortfall against the array-wide requirement. Its `kinds` contains only
+that kind; `allocation` retains all original kind asks and array-wide sizing inputs. Other kinds have independent transactions and records;
+no record claims a later kind succeeded. The run report aggregates successful fresh selections.
+Selection shortfall reflects the actual fresh batch, not only the uncapped pool allocation. Observe-only's selected bytes describe the static batch;
 its explanation remains the hypothetical paced ask, explicitly unapplied.
 
-`storage.policy.status.pace` is a database-only read of the newest stored decision per array
-and kind, with the evaluation time and outcome. It reports null when no decision has been
+The batch, items, original sizing inputs/decision, selected totals, policy ledger row and policy
+notification commit in the same transaction, before promotion. A ledger or notification failure
+rolls back that kind's batch and is returned as an error; the other kind still runs. Skip-record
+failures also become explicit errors, never successful observations. After independent kinds and
+arrays finish, any decision-recording failure throws, so the existing sync runner fails the job. There is no post-selection
+aggregation read between kinds. A crash after commit and before promotion leaves a draft with its
+original decision; the next tick's existing self-heal promotes it without replacing that decision.
+The sweep only takes promoted, expired batches, so an uncommitted or draft batch cannot delete.
+Both modes off retain the legacy best-effort attribution contract and payloads.
+
+`storage.policy.status.pace` is a database-only read per array and kind. While a batch remains
+open, prefer its committed sizing proposal over later skip/error/heal rows; report that proposal's
+original evaluation time, outcome and selected totals. For a kind without such an open proposal,
+return the newest stored decision with its evaluation time and outcome. It reports null when no decision has been
 stored. Proposal history filters out skip records and remains proposal-only. Status never
 resolves a Prometheus or *arr client, even when pace is on; display work is story 853.
 
 Prometheus evidence and deployment prerequisites are in the note. A source manifest or a code
-default is not a successful read from the job pod. Story 823 must collect that evidence before
-observation is accepted, and observe-only must be accepted before enabled sizing.
+default is not a successful read from the job pod. Story item 5 remains outstanding until story 869 records that proof; gate 823 follows 869.
+Before observation is accepted that evidence is required, and observe-only must be accepted before enabled sizing.
 
 - **Q-16 (open, D-18):** Does the job reach the intended Prometheus service? The metrics client
   and web API currently have different default service addresses and the CronJob has no explicit
   PROMETHEUS_URL. Recommendation: set the CronJob's non-secret PROMETHEUS_URL to the web address
-  in haynes-ops and verify one bounded read from that job's pod before accepting observation.
+  (`http://prometheus-operated.observability.svc.cluster.local:9090`) at
+  `kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml`,
+  `controllers.sync-space-policy`, adding `env.PROMETHEUS_URL` to its container running
+  `--mode=space-policy`, in haynes-ops.
+  Then run one timeout-bounded GET of `/api/v1/query_range` from the job pod, using its configured
+  address, the production free-space expression, `forecastQueryRange(now)` start/end and 259200-second
+  step; output only status, result count and newest sample time. Story 869 owns the change and proof.
+  No Secret read or live policy/observation run is authorized here.
 - **Q-17 (open, D-17):** What size distribution should an unlimited pool projection assume?
   No unlimited real pool can be measured. Recommendation: show both the favourable mathematical ceiling-filling upper bound and a
   repeated measured capped batch, and never describe either as a supply prediction.

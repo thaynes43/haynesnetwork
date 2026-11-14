@@ -25,6 +25,7 @@ import {
   users,
   TRASH_BATCH_OPEN_STATES,
   type DbClient,
+  type Transaction,
   type TrashBatchItemState,
   type TrashBatchState,
   type TrashKeepReason,
@@ -452,6 +453,8 @@ async function fetchLiveExclusions(
 // ---------------------------------------------------------------------------
 
 export interface CreateBatchResult {
+  /** Selected snapshot total, computed before the creation transaction. */
+  totalBytes: number;
   batchId: string;
   state: TrashBatchState;
   mediaKind: TrashMediaKind;
@@ -557,6 +560,11 @@ export async function createBatchFromPending(input: {
    *  `trash_skip_admin_gate` — the space policy sets this so the unattended cycle completes itself. The
    *  human admin-review gate still governs MANUAL "Start a batch" creation (autoPromote absent). */
   autoPromote?: boolean;
+  /** D-18: required policy decision/attribution commits with the batch, before promotion. */
+  recordDecision?: (
+    tx: Transaction,
+    selected: { batchId: string; itemCount: number; totalBytes: number; gateSkipped: boolean },
+  ) => Promise<void>;
 }): Promise<CreateBatchResult> {
   // Auto-promote when either the global gate-skip is on OR the autonomous caller (space policy) asked for
   // it (ADR-073). Both bypass the admin-review gate straight to leaving_soon with `gate_skipped=true`.
@@ -686,6 +694,12 @@ export async function createBatchFromPending(input: {
           source: input.source ?? 'manual',
         },
       });
+      await input.recordDecision?.(tx, {
+        batchId: batch.id,
+        itemCount: selected.length,
+        totalBytes,
+        gateSkipped: skipGate,
+      });
       return batch.id;
     });
   } catch (err) {
@@ -701,6 +715,7 @@ export async function createBatchFromPending(input: {
     return {
       batchId,
       state: 'admin_review',
+      totalBytes,
       mediaKind: input.mediaKind,
       itemCount: selected.length,
       gateSkipped: false,
@@ -724,6 +739,7 @@ export async function createBatchFromPending(input: {
   return {
     batchId,
     state: 'leaving_soon',
+    totalBytes,
     mediaKind: input.mediaKind,
     itemCount: selected.length,
     gateSkipped: true,

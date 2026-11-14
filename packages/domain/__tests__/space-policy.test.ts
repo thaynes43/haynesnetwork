@@ -5,7 +5,7 @@
 // (the prod stall), the trash_space_policy ledger event + space_policy notification writes, the settings
 // audit, and the ledger-derived status read.
 import { afterEach, beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import {
   ledgerEvents,
   mediaItems,
@@ -28,6 +28,8 @@ import {
   recordedSweepDeletions,
   measureDeletableSnapshotPools,
   forecastQueryRange,
+  sweepExpiredBatches,
+  createStaticReleaseBlockArr,
   saveExclusion,
   setAppSetting,
   type ArrClientBundle,
@@ -35,7 +37,13 @@ import {
 } from '../src/index';
 import * as trashFlow from '../src/trash-flow';
 import { baseState, makeMaintainerr, movieCollection, tvCollection } from './maintainerr-stub';
-import { bootMigratedDb, createUser, type TestDb } from './helpers';
+import {
+  bootMigratedDb,
+  createUser,
+  seedVerifiedWatchlistRegistry,
+  upsertDeletableMediaItems,
+  type TestDb,
+} from './helpers';
 
 const TB = 1_000_000_000_000;
 
@@ -921,7 +929,11 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals[0]!;
     expect(movie.outcome).toBe('skipped_empty');
     expect(report.proposedCount).toBe(0);
-    expect((await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find((d) => d.mediaKind === 'movie')!.selectedBytes).toBe(0);
+    expect(
+      (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+        (d) => d.mediaKind === 'movie',
+      )!.selectedBytes,
+    ).toBe(0);
   });
 
   it('an open batch still holds the slot when the pace is on', async () => {
@@ -1148,6 +1160,287 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect((await proposePaced(policy, paceSeries(-1e12), 'over')).proposedCount).toBe(0);
   });
 
+  it.each([-10, 0, 10, -1e150, Number.NaN, -1e307])(
+    'evaluates extreme/non-finite rate %s through the batch writer',
+    async (rate) => {
+      const report = await proposePaced(pacePolicy(true, 2), paceSeries(rate), 'over');
+      const movie = report.arrays[0]!.proposals[0]!;
+      const fallback = !Number.isFinite(rate) || rate === -1e307;
+      expect(movie.outcome).toBe('proposed');
+      expect(await batchIds(movie.batchId!)).toEqual(
+        fallback ? ['ms-9001', 'ms-9002'] : ['ms-9001'],
+      );
+      const decision = (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+        (d) => d.mediaKind === 'movie',
+      )!;
+      expect(decision.applied).toBe(!fallback);
+      expect(decision.selectedBytes).toBe(fallback ? 7e9 : 4e9);
+      expect(decision.fallbackReason).toBe(fallback ? 'too_short' : null);
+    },
+  );
+
+  it('continuous target 100 with missing reader falls back to the ordinary continuous batch', async () => {
+    await setAppSetting({ db: t.db, key: 'space_targets', value: { haynestower: 100 }, actorId });
+    const report = await proposePaced(
+      { ...pacePolicy(true, 2), mode: 'continuous' },
+      'none',
+      'over',
+    );
+    const movie = report.arrays[0]!.proposals[0]!;
+    expect(await batchIds(movie.batchId!)).toEqual(['ms-9001', 'ms-9002']);
+    const decision = (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+      (d) => d.mediaKind === 'movie',
+    )!;
+    expect(decision).toMatchObject({
+      applied: false,
+      fallbackReason: 'missing_reader',
+      selectedBytes: 7e9,
+    });
+  });
+
+  // Real PostgreSQL triggers fail the transaction itself, including inserts inside nested writers.
+  async function installFault(table: 'ledger_events' | 'notifications' | 'trash_batches') {
+    const condition =
+      table === 'trash_batches'
+        ? "NEW.media_kind = 'movie' AND NEW.state = 'leaving_soon'"
+        : table === 'ledger_events'
+          ? "NEW.event_type = 'trash_space_policy' AND NEW.payload->>'mediaKind' = 'movie'"
+          : "NEW.type = 'space_policy' AND NEW.payload->>'mediaKind' = 'movie'";
+    await t.db.execute(
+      sql.raw(`CREATE FUNCTION test_pace_fault() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF ${condition} THEN RAISE EXCEPTION 'synthetic policy fault'; END IF; RETURN NEW; END $$`),
+    );
+    await t.db.execute(
+      sql.raw(`CREATE TRIGGER test_pace_fault BEFORE ${table === 'trash_batches' ? 'UPDATE' : 'INSERT'}
+      ON ${table} FOR EACH ROW EXECUTE FUNCTION test_pace_fault()`),
+    );
+  }
+  async function removeFault(table: string) {
+    await t.db.execute(sql.raw(`DROP TRIGGER test_pace_fault ON ${table}`));
+    await t.db.execute(sql.raw('DROP FUNCTION test_pace_fault()'));
+  }
+  async function recoveryFixture(observeOnly: boolean) {
+    const policy = pacePolicy(!observeOnly, 2);
+    policy.dynamicPace!.observeOnly = observeOnly;
+    policy.dynamicPace!.ceilingBytes = 5e9;
+    await setPolicy(policy);
+    await seedVerifiedWatchlistRegistry(t.db);
+    await upsertDeletableMediaItems({
+      db: t.db,
+      arrKind: 'radarr',
+      items: [
+        {
+          arrItemId: 91,
+          tmdbId: 9001,
+          title: 'Fixture movie',
+          sortTitle: 'fixture',
+          monitored: true,
+          qualityProfileId: 1,
+          qualityProfileName: 'Any',
+          rootFolder: '/m',
+        },
+      ],
+    });
+    const state = baseState({
+      collections: [
+        movieCollection({
+          items: [
+            {
+              mediaServerId: 'ms-9001',
+              tmdbId: 9001,
+              sizeBytes: 4e9,
+              addDate: '2020-01-01T00:00:00Z',
+            },
+          ],
+        }),
+        tvCollection({
+          items: [
+            {
+              mediaServerId: 'ms-8001',
+              tvdbId: 8001,
+              sizeBytes: 1e8,
+              addDate: '2020-01-01T00:00:00Z',
+            },
+          ],
+        }),
+      ],
+    });
+    const stub = makeMaintainerr(state);
+    const run = () =>
+      evaluateSpacePolicy({
+        db: t.db,
+        maintainerr: stub.bundle,
+        arr: overBundle(),
+        readFreeSpace: async () => paceSeries(0),
+        now: paceNow,
+      });
+    const sweep = async () => {
+      await t.db.update(trashBatches).set({ expiresAt: new Date('2020-01-01T00:00:00Z') });
+      const { arr } = createStaticReleaseBlockArr();
+      return sweepExpiredBatches({
+        db: t.db,
+        maintainerr: stub.bundle,
+        arr,
+        registry: 'gate-only',
+      });
+    };
+    return { ...stub, run, sweep, policy };
+  }
+
+  it.each([false, true])(
+    'makes no selected-byte aggregation read between kinds (observeOnly=%s)',
+    async (observeOnly) => {
+      const f = await recoveryFixture(observeOnly);
+      const select = t.db.select.bind(t.db);
+      const spy = vi.spyOn(t.db, 'select').mockImplementation(((
+        fields: Parameters<typeof select>[0],
+      ) => {
+        if (fields && Object.keys(fields).length === 1 && 'bytes' in fields)
+          throw new Error('synthetic removed selected-byte read failure');
+        return fields ? select(fields) : select();
+      }) as typeof t.db.select);
+      try {
+        expect((await f.run()).proposedCount).toBe(2);
+        expect(
+          (await t.db.select().from(trashBatches)).every((b) => b.state === 'leaving_soon'),
+        ).toBe(true);
+      } finally {
+        spy.mockRestore();
+      }
+    },
+  );
+
+  it.each([
+    [false, 'ledger_events'],
+    [true, 'ledger_events'],
+    [false, 'notifications'],
+    [true, 'notifications'],
+  ] as const)(
+    'atomic failure/retry/sweep, observeOnly=%s fault=%s; the other kind proceeds',
+    async (observeOnly, table) => {
+      const f = await recoveryFixture(observeOnly);
+      // Both off on precisely the same candidates establishes the ordinary TV selection.
+      await setPolicy({
+        ...f.policy,
+        dynamicPace: { ...f.policy.dynamicPace!, enabled: false, observeOnly: false },
+      });
+      const off = await f.run();
+      const offTv = await batchIds(
+        off.arrays[0]!.proposals.find((p) => p.mediaKind === 'tv')!.batchId!,
+      );
+      await t.db.delete(trashBatches);
+      await t.db.delete(ledgerEvents).where(eq(ledgerEvents.eventType, 'trash_space_policy'));
+      await t.db.delete(notifications);
+      await setPolicy(f.policy);
+      await installFault(table);
+      try {
+        await expect(f.run()).rejects.toThrow('Policy decision recording failed');
+        const tv = (await t.db.select().from(trashBatches)).find((b) => b.mediaKind === 'tv')!;
+        expect(tv.state).toBe('leaving_soon');
+        expect(await batchIds(tv.id)).toEqual(offTv);
+        expect((await t.db.select().from(trashBatches)).map((b) => b.mediaKind)).toEqual(['tv']);
+        await expect(f.run()).rejects.toThrow('Policy decision recording failed');
+        expect(await t.db.select().from(trashBatches)).toHaveLength(1);
+        const swept = await f.sweep();
+        expect(swept.batches.every((b) => b.mediaKind !== 'movie')).toBe(true);
+        expect(
+          f.calls.some(
+            (c) =>
+              c.pathname === '/collections/media/handle' &&
+              (c.body as { mediaId: string }).mediaId === 'ms-9001',
+          ),
+        ).toBe(false);
+      } finally {
+        await removeFault(table);
+      }
+      const retried = await f.run();
+      const movie = retried.arrays[0]!.proposals[0]!;
+      expect(movie.outcome).toBe('proposed');
+      const records = (await t.db.select().from(ledgerEvents)).filter(
+        (e) =>
+          e.eventType === 'trash_space_policy' &&
+          e.payload.batchId === movie.batchId &&
+          e.payload.outcome === 'proposed',
+      );
+      expect(records).toHaveLength(1);
+      expect(records[0]!.payload.pace).toMatchObject({ applied: !observeOnly, selectedBytes: 4e9 });
+      expect((await f.sweep()).batches.find((b) => b.batchId === movie.batchId)!.deletedCount).toBe(
+        1,
+      );
+      expect((await f.run()).arrays[0]!.proposals[0]!.outcome).not.toBe('proposed');
+    },
+  );
+
+  it.each([false, true])(
+    'interruption after commit keeps the original decision through heal and sweep (observeOnly=%s)',
+    async (observeOnly) => {
+      const f = await recoveryFixture(observeOnly);
+      await installFault('trash_batches');
+      let batchId: string;
+      let original: unknown;
+      try {
+        expect((await f.run()).arrays[0]!.proposals[0]!.outcome).toBe('error');
+        const draft = (await t.db.select().from(trashBatches)).find(
+          (b) => b.mediaKind === 'movie',
+        )!;
+        expect(draft.state).toBe('draft');
+        batchId = draft.id;
+        original = (await t.db.select().from(ledgerEvents)).find(
+          (e) => e.eventType === 'trash_space_policy' && e.payload.batchId === batchId,
+        )!.payload;
+        expect(original).toMatchObject({ outcome: 'proposed', pace: { selectedBytes: 4e9 } });
+        expect(
+          (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+            (d) => d.mediaKind === 'movie',
+          ),
+        ).toMatchObject({
+          ...(original as { pace: Record<string, unknown> }).pace,
+          outcome: 'proposed',
+          batchId,
+          evaluatedAt: paceNow.toISOString(),
+        });
+        expect((await f.sweep()).batches.every((b) => b.batchId !== batchId)).toBe(true);
+        expect(
+          f.calls.some(
+            (c) =>
+              c.pathname === '/collections/media/handle' &&
+              (c.body as { mediaId: string }).mediaId === 'ms-9001',
+          ),
+        ).toBe(false);
+      } finally {
+        await removeFault('trash_batches');
+      }
+      const retry = await f.run();
+      expect(retry.arrays[0]!.proposals[0]).toMatchObject({ outcome: 'promoted', batchId });
+      expect(
+        (await t.db.select().from(ledgerEvents))
+          .filter(
+            (e) =>
+              e.eventType === 'trash_space_policy' &&
+              e.payload.batchId === batchId &&
+              e.payload.outcome === 'proposed',
+          )
+          .map((e) => e.payload),
+      ).toEqual([original]);
+      const status = (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+        (d) => d.mediaKind === 'movie',
+      );
+      expect(status).toMatchObject({
+        ...(original as { pace: Record<string, unknown> }).pace,
+        outcome: 'proposed',
+        batchId,
+        evaluatedAt: paceNow.toISOString(),
+      });
+      await f.run(); // a later ordinary open-batch skip must not obscure the original, either
+      expect(
+        (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+          (d) => d.mediaKind === 'movie',
+        ),
+      ).toEqual(status);
+      expect((await f.sweep()).batches.find((b) => b.batchId === batchId)!.deletedCount).toBe(1);
+    },
+  );
+
   it('the snapshot and live pace pools exclude titles already posted in any open batch', async () => {
     await proposePaced(pacePolicy(false, 1), 'none', 'over');
     await t.db.insert((await import('@hnet/db')).trashCandidates).values([
@@ -1187,17 +1480,15 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
       .insert(trashBatches)
       .values({ mediaKind: 'movie', state: 'deleted', deletedAt: sliverAt })
       .returning();
-    await t.db
-      .insert(trashBatchItems)
-      .values({
-        batchId: batch!.id,
-        maintainerrMediaId: 'sliver',
-        title: 'fixture',
-        state: 'deleted',
-        sizeBytes: 800,
-        deletedSizeBytes: 800,
-        deletedAt: sliverAt,
-      });
+    await t.db.insert(trashBatchItems).values({
+      batchId: batch!.id,
+      maintainerrMediaId: 'sliver',
+      title: 'fixture',
+      state: 'deleted',
+      sizeBytes: 800,
+      deletedSizeBytes: 800,
+      deletedAt: sliverAt,
+    });
     expect(await recordedSweepDeletions(t.db, paceNow, 'haynestower', start)).toEqual([
       { t: start + 1, bytes: 800 },
     ]);
