@@ -25,7 +25,12 @@ import type { ArrTag } from '@hnet/arr';
 import { trashHistoryIds, verifyRestoreReleaseBlock } from './trash-restore';
 import { resolveDb } from './db-client';
 import { RestoreProfileUnmappedError, SearchCapExceededError } from './errors';
-import { finishRestoreRun, recordRestoreResult, startRestoreRun } from './restore-runs';
+import {
+  finishRestoreRun,
+  recordRestoreResult,
+  recordTrashRestoreAttempt,
+  startRestoreRun,
+} from './restore-runs';
 import { guardArrCall } from './media-children';
 import type { ArrClientBundle } from './arr-clients';
 
@@ -467,7 +472,6 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
     initiatedBy: input.initiatedBy,
     reason,
     preview,
-    trashRestore: input.trashRestore,
   });
 
   const results: ExecuteArrAddResultItem[] = [];
@@ -543,6 +547,8 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
           );
         }
         const tags = await resolveTagIds(input.arr, input.arrKind, st, action.row.arrTags);
+        if (input.trashRestore)
+          await recordTrashRestoreAttempt({ db: input.db, runId, mediaItemId: action.row.id });
         newArrItemId = await addItemToArr(
           input.arr,
           input.arrKind,

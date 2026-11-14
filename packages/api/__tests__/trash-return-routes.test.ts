@@ -13,6 +13,7 @@ import {
   tombstoneMissingItems,
   ingestLedgerEvents,
   classifyGuardian,
+  hasRestoreKeep,
 } from '@hnet/domain';
 import {
   RELEASE_BLOCK_PROFILE_NAME,
@@ -178,17 +179,45 @@ describe('ADR-121 Trash return routes', () => {
     },
   );
 
-  it('refuses a missing block term without an add; the conservative intent remains kept, with no success marker', async () => {
+  it.each(['block', 'profile'] as const)(
+    'a refused %s pre-check creates no keep and no success marker',
+    async (reason) => {
+      const admin = await createUser(t.db, { admin: true });
+      const { item, term } = await deleted('radarr', reason === 'block' ? 84003 : 84010);
+      const stub = arrStub('radarr', term, reason === 'block');
+      if (reason === 'profile') stub.bundle.read.radarr.listQualityProfiles = async () => [];
+      const api = caller(makeCtx(t.db, sessionUser(admin), stub.bundle));
+      const result = await api.trash.restoreDeleted({ media: 'movie', mediaItemId: item.id });
+      expect(result.successCount).toBe(0);
+      expect(stub.callsFor('POST', '/api/v3/movie')).toHaveLength(0);
+      expect(
+        await t.db
+          .select()
+          .from(trashRestoreKeeps)
+          .where(eq(trashRestoreKeeps.mediaItemId, item.id)),
+      ).toHaveLength(0);
+      expect(
+        (
+          await t.db.select().from(ledgerEvents).where(eq(ledgerEvents.mediaItemId, item.id))
+        ).filter((e) => e.eventType === 'trash_restored'),
+      ).toHaveLength(0);
+    },
+  );
+
+  it('keeps an uncertain add attempt, with the keep already committed before the call', async () => {
     const admin = await createUser(t.db, { admin: true });
-    const { item, term } = await deleted('radarr', 84003);
-    const stub = arrStub('radarr', term, true);
+    const { item, term } = await deleted('radarr', 84011);
+    const stub = arrStub('radarr', term);
+    let keptBeforeCall = false;
+    stub.bundle.write.radarr.addMovie = async () => {
+      keptBeforeCall = await hasRestoreKeep(t.db, item.id);
+      throw new Error('add response unavailable');
+    };
     const api = caller(makeCtx(t.db, sessionUser(admin), stub.bundle));
     const result = await api.trash.restoreDeleted({ media: 'movie', mediaItemId: item.id });
     expect(result.successCount).toBe(0);
-    expect(stub.callsFor('POST', '/api/v3/movie')).toHaveLength(0);
-    expect(
-      await t.db.select().from(trashRestoreKeeps).where(eq(trashRestoreKeeps.mediaItemId, item.id)),
-    ).toHaveLength(1);
+    expect(keptBeforeCall).toBe(true);
+    expect(await hasRestoreKeep(t.db, item.id)).toBe(true);
     expect(
       (await t.db.select().from(ledgerEvents).where(eq(ledgerEvents.mediaItemId, item.id))).filter(
         (e) => e.eventType === 'trash_restored',

@@ -2762,7 +2762,7 @@ export async function expediteDeletion(
 
 /**
  * ADR-121 / DESIGN-052 D-32 — Admin's single-title Restore. Searches stay off; present
- * titles are skipped. The run intent records a local keep before an add. A successful
+ * titles are skipped. After pre-checks, the add attempt records a local keep before the call. A successful
  * result records trash_restored in the same transaction as the result/tombstone clear.
  * The Release Block is read and verified without changing any term. Music is rejected.
  */

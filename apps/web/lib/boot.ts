@@ -21,8 +21,24 @@ export async function runBootTasks(): Promise<void> {
   if (!process.env.DATABASE_URL) return;
   try {
     await revokeNonAdminRestoreGrants({ db });
-  } catch {
-    console.error('[boot] legacy Trash Restore grant cleanup failed; admin-only API gate remains enforced');
+  } catch (error) {
+    // pg errors may be wrapped by Drizzle. Keep diagnostic codes, never raw SQL, parameters or connection details.
+    const cause = error && typeof error === 'object' && 'cause' in error ? error.cause : undefined;
+    const codeOf = (value: unknown) =>
+      value &&
+      typeof value === 'object' &&
+      'code' in value &&
+      typeof value.code === 'string' &&
+      /^[A-Z0-9_]{1,40}$/.test(value.code)
+        ? value.code
+        : undefined;
+    console.error(
+      '[boot] legacy Trash Restore grant cleanup failed; admin-only API gate remains enforced',
+      {
+        error: error instanceof Error ? error.name : 'UnknownError',
+        code: codeOf(error) ?? codeOf(cause) ?? 'unknown',
+      },
+    );
   }
   await seedDefaultGrants();
   await triggerColdStartPlexMatch();

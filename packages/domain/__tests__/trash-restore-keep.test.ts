@@ -16,6 +16,7 @@ import {
   setAppSetting,
   silentDomainLogger,
   startRestoreRun,
+  recordTrashRestoreAttempt,
   sweepExpiredBatches,
   upsertMediaItemsBatch,
 } from '../src/index';
@@ -79,14 +80,15 @@ describe('ADR-121 Restore Keep at every guardian decision', () => {
         }),
       ],
     });
-  const keep = () =>
-    startRestoreRun({
+  const keep = async () => {
+    const { runId } = await startRestoreRun({
       db: t.db,
       arrKind: 'radarr',
       initiatedBy: actor,
       preview: [{ mediaItemId: id, title: 'Restored One' }],
-      trashRestore: true,
     });
+    await recordTrashRestoreAttempt({ db: t.db, runId, mediaItemId: id });
+  };
 
   it('leaves restored titles out of targeted and untargeted batches', async () => {
     await keep();

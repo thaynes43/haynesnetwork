@@ -23,7 +23,6 @@ export interface StartRestoreRunInput {
   reason?: ArrAddReason;
   /** The exact diff the admin approved (D-16 step 2) — persisted verbatim (R-52). */
   preview: RestorePreviewItem[];
-  trashRestore?: boolean;
 }
 
 /**
@@ -47,28 +46,53 @@ export async function startRestoreRun(input: StartRestoreRunInput): Promise<{ ru
     if (!row) {
       throw new Error('restore_runs insert returned no row');
     }
-    if (input.trashRestore) {
-      for (const item of input.preview) {
-        await tx
-          .insert(trashRestoreKeeps)
-          .values({
-            mediaItemId: item.mediaItemId,
-            restoreRunId: row.id,
-            restoredBy: input.initiatedBy,
-          })
-          .onConflictDoUpdate({
-            target: trashRestoreKeeps.mediaItemId,
-            set: {
-              restoreRunId: row.id,
-              restoredBy: input.initiatedBy,
-              createdAt: new Date(),
-              revokedAt: null,
-              revokedBy: null,
-            },
-          });
-      }
-    }
     return { runId: row.id };
+  });
+}
+
+/** ADR-121: after all known pre-checks, immediately before the add attempt. Its local keep and
+ * audit commit together. A lost response cannot erase the intent; a refused pre-check never calls this. */
+export async function recordTrashRestoreAttempt(input: {
+  db?: DbClient;
+  runId: string;
+  mediaItemId: string;
+}): Promise<void> {
+  await inTransaction(input.db, async (tx) => {
+    const [run] = await tx
+      .select()
+      .from(restoreRuns)
+      .where(eq(restoreRuns.id, input.runId))
+      .for('update');
+    if (
+      !run ||
+      run.status !== 'running' ||
+      !run.preview.some((p) => p.mediaItemId === input.mediaItemId)
+    ) {
+      throw new NotFoundError('Restore attempt must belong to a running approved restore.');
+    }
+    await tx
+      .insert(trashRestoreKeeps)
+      .values({ mediaItemId: input.mediaItemId, restoreRunId: run.id, restoredBy: run.initiatedBy })
+      .onConflictDoUpdate({
+        target: trashRestoreKeeps.mediaItemId,
+        set: {
+          restoreRunId: run.id,
+          restoredBy: run.initiatedBy,
+          createdAt: new Date(),
+          revokedAt: null,
+          revokedBy: null,
+        },
+      });
+    await tx
+      .insert(ledgerEvents)
+      .values({
+        mediaItemId: input.mediaItemId,
+        eventType: 'trash_excluded',
+        source: 'maintainerr',
+        occurredAt: new Date(),
+        requestedByUserId: run.initiatedBy,
+        payload: { action: 'restore_keep', restoreRunId: run.id },
+      });
   });
 }
 
