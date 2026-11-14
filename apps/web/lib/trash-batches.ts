@@ -60,11 +60,10 @@ export const LEAVING_SOON_NAMES: Record<'movie' | 'tv', string> = {
  * - `gone`   — deleted by the sweep.
  *
  * The person-shield `requested` glyph was RETIRED (owner ruling 2026-07-09 — "Maintainerr rules
- * decide what gets promoted; the app controls how much and when it's deleted"). A requester is
- * informational only: it changes NO glyph and NO actionability. A requested item snapshots per its
- * real state (pending unless tag/exclusion-protected) and reads as the ordinary `trash`/`shield`;
- * its requester attribution moves OUT to the meta line as an info badge (a person icon + "Requested
- * by <name>" — the RequestedByBadge component), co-existing with the watch note.
+ * decide what gets promoted; the app controls how much and when it's deleted"). The requester line
+ * stays a meta badge. ADR-118 then makes the `mediarequests` tag a keep: a new batch leaves that
+ * title out, the way a Save is left out, and the sweep keeps a row already pending. A personal
+ * requester tag is still informational. The badge is the RequestedByBadge component.
  *
  * The `eye` glyph was likewise RETIRED from the corner (owner ruling 2026-07-09 — the eye-corner bug
  * fix): a recently-watched pending item reads as the slated trash-can and is saveable; the watch fact
@@ -317,8 +316,10 @@ export interface TargetCandidate {
   /** DESIGN-052 D-26 — inside the Age Guard's 180 days: a TARGETED batch leaves it out, and it frees nothing while it
    *  stays inside the window (the sweep keeps it). Absent ⇒ false. */
   recentlyAdded?: boolean;
-  /** ADR-117 / DESIGN-052 D-29 — no verified posted release name for the file on disk: handled like `recentlyAdded`
-   *  (a TARGETED batch leaves it out, and it frees nothing while the sweep keeps it). Absent ⇒ false. */
+  /** ADR-118 — tagged mediarequests: every batch leaves it out, and it frees nothing while the tag stays. */
+  requested?: boolean;
+  /** ADR-117 / DESIGN-052 D-29 — no verified posted release name for the file on disk: a targeted batch leaves it
+   *  out, an untargeted batch still snapshots it, and it frees nothing while the sweep keeps it. Absent ⇒ false. */
   releaseUnverified?: boolean;
 }
 
@@ -360,23 +361,32 @@ export function previewTargetSelection(
   // (mirrors selectBatchCandidates, DESIGN-052 D-08) — unless the server's proposal is unfiltered (D-25cx).
   // DESIGN-052 D-26 — a title inside the Age Guard's 180 days is handled like a watchlisted one: a targeted pick leaves
   // it out (always: the age needs no registry), an untargeted batch snapshots it, and it frees nothing.
+  // ADR-118 — a requested title is left out of every batch, the way a Save is, so it is not counted here.
+  // ADR-117 / DESIGN-052 D-29 — a title with no verified release name takes no targeted slot and frees nothing.
+  // An untargeted batch still snapshots it (`entering` keeps it); the sweep keeps it `release_unverified`.
   const pending = candidates.filter((c) => !c.protectedByTag);
+  const entering = pending.filter((c) => c.requested !== true);
   const filtered = spec.watchlistFiltered !== false;
-  // ADR-117 / DESIGN-052 D-29 — and so is a title with no verified release name on record.
   const deletable = (filtered ? pending.filter((c) => c.onWatchlist !== true) : pending).filter(
-    (c) => c.recentlyAdded !== true && c.releaseUnverified !== true,
+    (c) => c.recentlyAdded !== true && c.requested !== true && c.releaseUnverified !== true,
   );
   const poolBytes = deletable.reduce((n, c) => n + c.sizeBytes, 0);
   const frees = (items: readonly TargetCandidate[]) =>
     items
-      .filter((c) => c.onWatchlist !== true && c.recentlyAdded !== true && c.releaseUnverified !== true)
+      .filter(
+        (c) =>
+          c.onWatchlist !== true &&
+          c.recentlyAdded !== true &&
+          c.requested !== true &&
+          c.releaseUnverified !== true,
+      )
       .reduce((n, c) => n + c.sizeBytes, 0);
   const capped = spec.targetBytes !== undefined || spec.maxItems !== undefined;
   if (!capped) {
     return {
-      count: pending.length,
-      bytes: pending.reduce((n, c) => n + c.sizeBytes, 0),
-      freesBytes: frees(pending),
+      count: entering.length,
+      bytes: entering.reduce((n, c) => n + c.sizeBytes, 0),
+      freesBytes: frees(entering),
       poolCount: deletable.length,
       poolBytes,
     };
@@ -423,7 +433,10 @@ export interface ExpirePreviewItem {
  * watched (the guardian), not in our ledger (unverifiable), known absent from the live pool, and on a watchlist (the
  * Watchlist Keep). Unknown always reads as slated, the conservative side.
  */
-export function expirePreview(items: ReadonlyArray<ExpirePreviewItem>): { willDelete: number; willKeep: number } {
+export function expirePreview(items: ReadonlyArray<ExpirePreviewItem>): {
+  willDelete: number;
+  willKeep: number;
+} {
   const pending = items.filter((i) => i.state === 'pending');
   const willDelete = pending.filter(
     (i) => !i.recentlyWatched && i.mediaItemId !== null && i.inLivePool !== false && i.onWatchlist !== true,
@@ -470,7 +483,12 @@ export function expireConfirmLines(counts: {
 
 /** The inputs one batch-wall tile's label, tooltip and note derive from (DESIGN-011 D-07, DESIGN-052 D-10). */
 export interface BatchTileViewInput {
-  item: { title: string; state: BatchItemStateName; keepReason?: string | null; onWatchlist?: boolean };
+  item: {
+    title: string;
+    state: BatchItemStateName;
+    keepReason?: string | null;
+    onWatchlist?: boolean;
+  };
   glyph: WallGlyph;
   /** This `skip` is the pool PROJECTION over a still-`pending` row, not a swept `skipped` row. */
   projectedSkip: boolean;

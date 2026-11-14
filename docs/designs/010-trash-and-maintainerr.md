@@ -715,3 +715,5 @@ A `GET /collections` read failure fails **closed**. The invariant core is the pu
 `evaluateAgingInvariants` (`packages/domain/src/trash-flow.ts`); the audit wire shape gains
 `agingViolations: string[]`; the banner (`apps/web/components/trash-safety.tsx`) renders the reasons.
 Read schema `maintainerrCollectionSchema` was extended to carry `arrAction` / `manualCollection`.
+
+**Request Keep (ADR-118, 2026-11-13).** The 2026-07-09 ruling that a requester is informational stands for a personal requester tag. It does not stand for the `mediarequests` tag: `classifyGuardian` keeps that title (`media_request`). The keep reads `media_items.arr_tags`, written by the full sync once a day at 04:30, so it can lag the live tag by up to 24 hours. A new batch leaves the title out. `auditMaintainerr` refuses a sweep when an armed group has lost the clause that excludes the tag, when a later clause is joined by OR, or when the rules cannot be read. DESIGN-052 D-30.

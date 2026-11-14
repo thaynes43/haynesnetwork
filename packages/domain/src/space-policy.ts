@@ -102,9 +102,7 @@ function resolveCap(raw: unknown, fallback: SpacePolicyCap): SpacePolicyCap {
 function resolvePerKind(stored: SpacePolicy | undefined): SpacePolicyPerKind {
   const out = defaultPerKind();
   const storedPerKind = stored?.perKind as
-    | Partial<Record<TrashMediaKind, Partial<SpacePolicyKindCaps>>>
-    | null
-    | undefined;
+    Partial<Record<TrashMediaKind, Partial<SpacePolicyKindCaps>>> | null | undefined;
   if (storedPerKind !== null && typeof storedPerKind === 'object') {
     for (const kind of TRASH_MEDIA_KINDS) {
       const sk = storedPerKind[kind];
@@ -587,7 +585,7 @@ async function proposeForKind(input: {
   let actionable: Array<TrashPendingItem & { maintainerrMediaId: string }> = [];
   try {
     if (input.actionable !== undefined) {
-      actionable = input.actionable;
+      actionable = input.actionable.filter((item) => isPaceDeletable(item));
     } else {
       // ADR-093 / DESIGN-052 D-07 / D-08 — `propose` never refuses: filtered with the newest ok registry run (≤ 24 h),
       // otherwise unfiltered (the sweep's gate is where deletion is enforced).
@@ -598,8 +596,8 @@ async function proposeForKind(input: {
         media: input.mediaKind as TrashMedia,
         watchlist,
       });
-      // D-08 / ADR-099 D-4 — minCandidates excludes Saves (even before their exclusion is enforced), `dnd`,
-      // watchlisted titles and the Age Guard's recent dates, matching the batch builder's eligibility.
+      // D-08 / ADR-099 D-4 / ADR-118 — minCandidates excludes Saves, `dnd`, watchlisted titles, the Age
+      // Guard's recent dates, `mediarequests` and a file with no verified release name (isPaceDeletable), matching the batch builder.
       actionable = pending.items.filter((item) => isPaceDeletable(item));
     }
   } catch (err) {

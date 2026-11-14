@@ -173,8 +173,8 @@ describe('the Expedite copy for a watchlisted item (D-09 / D-25av)', () => {
     // DESIGN-052 D-26 / Q-14 — the Age Guard keeps are named too.
     expect(EXPEDITE_PROTECTED_REASON).toContain('added or upgraded recently');
     expect(EXPEDITE_PROTECTED_REASON).toContain('they are kept');
+    expect(EXPEDITE_PROTECTED_REASON).toContain('requested');
     expect(EXPEDITE_PROTECTED_REASON).not.toMatch(/Maintainerr/);
-    expect(EXPEDITE_PROTECTED_REASON).not.toMatch(/request/i);
     expect(EXPEDITE_PROTECTED_REASON).not.toMatch(/[–—]/);
   });
 });
@@ -195,6 +195,7 @@ describe('the Library item page`s Trash notice (D-10, D-25co)', () => {
       meta: 'Maintainerr’s “Old and unwatched” rule flagged it — deleting frees 4.0 GB. Save it to keep it.',
       watchlistNote: null,
       recentNote: null,
+      requestNote: null,
     });
     expect(trashNoticeText({ ...base, on: true, onWatchlist: false }).watchlistNote).toBeNull();
   });
@@ -213,6 +214,7 @@ describe('the Library item page`s Trash notice (D-10, D-25co)', () => {
       meta: 'Maintainerr’s “Old and unwatched” rule flagged it.',
       watchlistNote: null,
       recentNote: 'Kept: added or upgraded recently',
+      requestNote: null,
     });
     const saved = trashNoticeText({ ...base, on: true, onWatchlist: false, recentlyAdded: true });
     expect(saved.recentNote).toBe(slated.recentNote);

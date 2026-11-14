@@ -84,7 +84,18 @@ describe('stub Maintainerr — the pool flags a rule PUT stored (D-16)', () => {
           radarrSettingsId: 3,
           arrAction: 0,
           ...flags,
-          rules: [{ operator: null, action: 0, firstVal: [1, 0], lastVal: [0, 4], section: 0 }],
+          rules: [
+            { operator: null, action: 0, firstVal: [1, 0], lastVal: [0, 4], section: 0 },
+            // ADR-118: the PUT replaces the group's clauses, so it must keep the request clause or the
+            // audit stays unsafe after listExclusions is put back.
+            {
+              operator: 0,
+              action: 9,
+              firstVal: [1, 2],
+              customVal: { value: 'mediarequests' },
+              section: 0,
+            },
+          ],
         }),
       });
     expect((await put({ listExclusions: false, forceSeerr: true })).ok).toBe(true);

@@ -90,9 +90,16 @@ describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail clos
   it('recently watched ⇒ protected', () => {
     expect(previewGuardian({ ...base, recentlyWatched: true })).toBe('protected_watched');
   });
-  it('requested ⇒ DELETABLE (owner ruling 2026-07-09 — requested is informational only, not a keep)', () => {
-    // A requester no longer protects an item at expedite; it is cold-deletable like any other item.
+  it('a personal requester tag is DELETABLE (owner ruling 2026-07-09); mediarequests is a keep (ADR-118)', () => {
     expect(previewGuardian({ ...base, requesters: ['manofoz'] })).toBe('deletable');
+    expect(previewGuardian({ ...base, arrTags: ['13-member'] })).toBe('deletable');
+    expect(previewGuardian({ ...base, arrTags: ['mediarequests'] })).toBe('protected_request');
+    expect(previewGuardian({ ...base, arrTags: ['mediarequests'], ageGuard: 'recent' })).toBe(
+      'protected_recent',
+    );
+    expect(previewGuardian({ ...base, arrTags: ['mediarequests'], saveIntent: true })).toBe(
+      'protected_saved',
+    );
   });
   it('unknown to the ledger ⇒ unverifiable (never deletable)', () => {
     expect(previewGuardian({ ...base, mediaItemId: null })).toBe('unverifiable');
@@ -121,12 +128,16 @@ describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail clos
   });
   it('ADR-099 — saved (an open save intent) ⇒ protected_saved, before every other keep; never past the id check', () => {
     expect(previewGuardian({ ...base, saveIntent: true })).toBe('protected_saved');
-    expect(previewGuardian({ ...base, saveIntent: true, protectedByTag: true, onWatchlist: true })).toBe(
+    expect(
+      previewGuardian({ ...base, saveIntent: true, protectedByTag: true, onWatchlist: true }),
+    ).toBe('protected_saved');
+    // Unknown to the ledger or not evaluable: still kept, and kept as saved.
+    expect(previewGuardian({ ...base, saveIntent: true, watchlistEvaluable: false })).toBe(
       'protected_saved',
     );
-    // Unknown to the ledger or not evaluable: still kept, and kept as saved.
-    expect(previewGuardian({ ...base, saveIntent: true, watchlistEvaluable: false })).toBe('protected_saved');
-    expect(previewGuardian({ ...base, saveIntent: true, maintainerrMediaId: null })).toBe('unverifiable');
+    expect(previewGuardian({ ...base, saveIntent: true, maintainerrMediaId: null })).toBe(
+      'unverifiable',
+    );
   });
   it('D-25by — the item confirm names WHY it is unverifiable; the all confirm names every cause', () => {
     expect(unverifiableReason({ ...base, mediaItemId: null })).toBe("it isn't in our ledger");
@@ -176,8 +187,9 @@ describe('previewGuardian parity with @hnet/domain classifyForExpedite (ADR-086 
                     // DESIGN-052 D-26 / Q-14 — the Age Guard joins the matrix; ADR-099 D-4 — and the save intent.
                     for (const ageGuard of ['clear', 'recent', 'unknown'] as const) {
                       for (const saveIntent of [false, true]) {
-                        // ADR-117 / DESIGN-052 D-29 — the Release Name Check joins the matrix (absent ⇒ not judged).
-                        for (const releaseName of [undefined, 'verified', 'unverified', 'unchecked'] as const) {
+                        for (const arrTags of [[], ['mediarequests'], ['13-member']] as const) {
+                          // ADR-117 / DESIGN-052 D-29 — the Release Name Check joins the matrix (absent ⇒ not judged).
+                          for (const releaseName of [undefined, 'verified', 'unverified', 'unchecked'] as const) {
                           const item = {
                             maintainerrMediaId,
                             mediaItemId,
@@ -189,6 +201,7 @@ describe('previewGuardian parity with @hnet/domain classifyForExpedite (ADR-086 
                             ruleEvaluationFailed,
                             ageGuard,
                             saveIntent,
+                            arrTags,
                             ...(releaseName === undefined ? {} : { releaseName }),
                           };
                           // Compared as objects so a failure prints WHICH input diverged.
@@ -196,6 +209,7 @@ describe('previewGuardian parity with @hnet/domain classifyForExpedite (ADR-086 
                             ...item,
                             verdict: classifyForExpedite(item),
                           });
+                          }
                         }
                       }
                     }
@@ -253,6 +267,7 @@ describe('partitionForExpedite', () => {
       unverifiable: 3,
       watchlisted: 1,
       recentlyAdded: 1,
+      requested: 0,
     });
   });
 });
@@ -280,6 +295,7 @@ describe('watchlist protection copy (D-10)', () => {
     expect(keptReasonTooltip('recently_added')).toBe('Kept: added or upgraded recently');
     // ADR-099 D-4 — saved from another surface while the batch row was still pending.
     expect(keptReasonTooltip('saved')).toBe('Kept: saved');
+    expect(keptReasonTooltip('media_request')).toBe('Kept: requested');
     expect(keptReasonTooltip(null)).toBeNull();
     expect(keptReasonTooltip('something_new')).toBeNull();
     for (const text of Object.values(KEPT_REASON_TOOLTIPS)) noDashes(text);
@@ -375,6 +391,10 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     // Story 832 — the server reason drives the skip. Null means the server says the title is
     // offered, so a stale age flag does not paint the badge. A missing field keeps the old check.
     expect(pendingWallGlyph({ ...recent, protectionReason: 'recently_added' }, undefined)).toBe('skip');
+    expect(pendingWallGlyph({ ...cold, protectionReason: 'media_request' }, undefined)).toBe('skip');
+    expect(
+      pendingWallGlyph({ ...cold, protectionReason: null, arrTags: ['mediarequests'] }, undefined),
+    ).toBe('trash');
     expect(pendingWallGlyph({ ...recent, protectionReason: null }, undefined)).toBe('trash');
     expect(pendingWallGlyph({ ...recent, protectionReason: 'tag' }, undefined)).toBe('trash');
     // A title with no Maintainerr id is `unactionable` first, but inside the Age Guard it keeps the
@@ -482,10 +502,22 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     // a save this session still wins — the requested item can be deliberately saved by you.
     expect(pendingWallGlyph({ ...cold, requesters: ['manofoz'] }, 'saved')).toBe('shield');
   });
-  it('an un-save this session ⇒ back to trash even while the stale protection signal lingers', () => {
+  it('ADR-118 — mediarequests is the inert skip; a personal requester tag is still the slated trash can', () => {
+    expect(pendingWallGlyph({ ...cold, arrTags: ['mediarequests'] }, undefined)).toBe('skip');
+    expect(pendingWallTappable('skip', true, false)).toBe(false);
+    expect(pendingWallGlyph({ ...cold, arrTags: ['13-member'] }, undefined)).toBe('trash');
     expect(
-      pendingWallGlyph({ ...cold, protectedByExclusion: true }, 'unsaved'),
-    ).toBe('trash');
+      pendingWallGlyph({ ...cold, arrTags: ['mediarequests'], ageGuard: 'recent' }, undefined),
+    ).toBe('skip');
+    expect(
+      pendingWallGlyph(
+        { ...cold, arrTags: ['mediarequests'], protectedByExclusion: true },
+        undefined,
+      ),
+    ).toBe('check');
+  });
+  it('an un-save this session ⇒ back to trash even while the stale protection signal lingers', () => {
+    expect(pendingWallGlyph({ ...cold, protectedByExclusion: true }, 'unsaved')).toBe('trash');
   });
 
   // DESIGN-010 D-12 (build C) — the watch-visibility indicator NEVER touches the corner glyph, in
@@ -775,6 +807,7 @@ describe('the pending wall views: Deletable | All (story 821)', () => {
     expect(WALL_REASON_COPY.watchlisted.detail).toBe(KEPT_REASON_TOOLTIPS.watchlisted);
     expect(WALL_REASON_COPY.recently_watched.detail).toBe(KEPT_REASON_TOOLTIPS.recently_watched);
     expect(WALL_REASON_COPY.recently_added.detail).toBe(KEPT_REASON_TOOLTIPS.recently_added);
+    expect(WALL_REASON_COPY.media_request.detail).toBe(KEPT_REASON_TOOLTIPS.media_request);
     expect(WALL_REASON_COPY.saved.detail).toBe(KEPT_REASON_TOOLTIPS.saved);
     expect(WALL_REASON_COPY.live_excluded.detail).toBe(KEPT_REASON_TOOLTIPS.live_excluded);
     expect(WALL_REASON_COPY.release_unverified.detail).toBe(KEPT_REASON_TOOLTIPS.release_unverified);

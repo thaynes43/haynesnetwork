@@ -74,6 +74,9 @@ import {
   arrKindForTrashMedia,
   auditMaintainerr,
   classifyGuardian,
+  countsTowardDeletion,
+  hasMediaRequestTag,
+  maintainerrUnsafeMessage,
   isLeavingSoonCollectionTitle,
   LEAVING_SOON_COLLECTION_TITLES,
   listTrashPending,
@@ -499,16 +502,13 @@ export function selectBatchCandidates(
   // DESIGN-052 D-26 — likewise a title inside the Age Guard's 180 days (downloaded, upgraded or added to any Plex
   // server): it takes no slot. An untargeted batch snapshots it `pending` and the sweep keeps it `recently_added`, as
   // D-08 does for a watchlisted title; an `unknown` age is proposed normally and the sweep decides.
+  // ADR-118 — a `mediarequests` title takes no slot. createBatchFromPending also leaves it out of
+  // every batch, the way a Save is left out, so this filter is the backstop for a caller that still
+  // passes one in. The sweep keeps a row that is already pending.
   // ADR-117 / DESIGN-052 D-29 — likewise a title whose file on disk has no verified posted release name (the Release
-  // Name Check): the sweep would keep it `release_unverified`, so it takes no slot.
-  const deletable = actionable.filter(
-    (p) =>
-      !p.saveIntent &&
-      !p.protectedByTag &&
-      !p.onWatchlist &&
-      p.ageGuard !== 'recent' &&
-      p.releaseName !== 'unverified',
-  );
+  // Name Check): the sweep would keep it `release_unverified`, so it takes no slot. An untargeted batch still
+  // snapshots it; only this targeted pick leaves it out.
+  const deletable = actionable.filter(countsTowardDeletion);
   // DESIGN-014 amendment (2026-07-09, build D) — the ranking is the SHARED compareByStrategy so the
   // pending walls' "Next up" default sort orders identically (the top of the wall = the front of the
   // deletion queue). Keep this call the single ordering seam.
@@ -569,13 +569,15 @@ export async function createBatchFromPending(input: {
   });
   // ADR-099 D-7 — a saved title (an open save intent) never enters a batch, targeted or not, whether or not
   // Maintainerr has dropped it from its pool yet: a Save outlives the batch it was made in.
+  // ADR-118 — a requested title is the same: it has no end date, so it is not snapshotted, not posted
+  // to Leaving Soon, and not counted as deleting. A row already pending is still kept at the sweep.
   const actionable = pending.items.filter(
     (p): p is TrashPendingItem & { maintainerrMediaId: string } =>
-      p.maintainerrMediaId !== null && !p.saveIntent,
+      p.maintainerrMediaId !== null && !p.saveIntent && !hasMediaRequestTag(p.arrTags),
   );
   if (actionable.length === 0) {
     throw new TrashBatchEmptyError(
-      `No actionable pending ${input.mediaKind} items to batch (nothing pending, everything saved, or no Maintainerr ids).`,
+      `No actionable pending ${input.mediaKind} items to batch (nothing pending, everything saved or requested, or no Maintainerr ids).`,
     );
   }
 
@@ -627,11 +629,10 @@ export async function createBatchFromPending(input: {
           // `protected`, never a delete candidate. Everything else snapshots as `pending` and is
           // re-evaluated fresh at sweep time.
           //
-          // ADR-025/DESIGN-011 errata (2026-07-09) — the requester auto-save was REMOVED. Owner ruling:
-          // "Maintainerr rules decide what gets promoted; the app controls how much and when it's
-          // deleted." A requester is informational only now: a requester-carrying item snapshots per
-          // its real state (pending unless tag-protected), with NO system auto-save. Its attribution
-          // rides the wall meta badge; the recently-watched keep still protects it at the SWEEP.
+          // ADR-025/DESIGN-011 errata (2026-07-09) — the requester auto-save was REMOVED. A personal
+          // requester tag is informational: that item snapshots per its real state (pending unless
+          // tag-protected), with NO system auto-save. A `mediarequests` title never reaches here
+          // (ADR-118): it is filtered out with the Saves.
           //
           // ADR-093 / DESIGN-052 D-08 (D-24k) — a WATCHLISTED item in an untargeted batch snapshots `pending`, never
           // `protected` (that state's only control, Unprotect, removes a Maintainerr exclusion and revokes a Save
@@ -1509,20 +1510,25 @@ export async function sweepExpiredBatches(
   // below, and for any other throw (Maintainerr's pending read failing, a database error) `aborted_arr` with reason
   // `error` before the rethrow, so the banner and the `sweep_paused` page fire after 6 hours like any other pause.
   let recorded = false;
-  const record = (outcome: TrashSweepOutcome, reason: string | null): Promise<TrashSweepOutcome> => {
+  const record = (
+    outcome: TrashSweepOutcome,
+    reason: string | null,
+    extra?: Record<string, unknown>,
+  ): Promise<TrashSweepOutcome> => {
     recorded = true;
-    return recordSweepOutcome(input.db, outcome, reason, clock(), logger);
+    return recordSweepOutcome(input.db, outcome, reason, clock(), logger, extra);
   };
   try {
     // Fail closed on an unsafe install — refuse the whole sweep (ADR-023 C-04). The scheduled sweep records the pause.
     const audit = await auditMaintainerr({ maintainerr: input.maintainerr });
     if (!audit.safe) {
-      if (scheduled) await record('paused_audit_unsafe', 'unsafe');
-      throw new MaintainerrUnsafeError(
-        `Maintainerr is not in a safe state to sweep expired batches (reachable=${audit.reachable}, ` +
-          `integrations ${JSON.stringify(audit.integrations)}). Refusing.`,
-        { integrations: audit.integrations as unknown as Record<string, boolean>, reachable: audit.reachable },
-      );
+      if (scheduled) {
+        await record('paused_audit_unsafe', 'unsafe', { violations: audit.agingViolations });
+      }
+      throw new MaintainerrUnsafeError(maintainerrUnsafeMessage('sweep expired batches', audit), {
+        integrations: audit.integrations as unknown as Record<string, boolean>,
+        reachable: audit.reachable,
+      });
     }
 
     // D-07 / D-14 step 2 — `refresh` only: refresh the registry inline (waiting up to 120 s for a run another process
@@ -1674,9 +1680,14 @@ async function recordSweepOutcome(
   reason: string | null,
   at: Date,
   logger: DomainLogger,
+  extra?: Record<string, unknown>,
 ): Promise<TrashSweepOutcome> {
   const prev = await inTransaction(db, async (tx) => {
-    const [row] = await tx.select().from(trashSweepStatus).where(eq(trashSweepStatus.id, 1)).for('update');
+    const [row] = await tx
+      .select()
+      .from(trashSweepStatus)
+      .where(eq(trashSweepStatus.id, 1))
+      .for('update');
     const pausedSince = outcome === 'ok' ? null : (row?.pausedSince ?? at);
     const values = {
       lastOutcome: outcome,
@@ -1701,6 +1712,7 @@ async function recordSweepOutcome(
       reason: family,
       step: reason,
       pausedForH: Math.floor(((at.getTime() - since.getTime()) / 3_600_000) * 10) / 10,
+      ...extra,
     });
   }
   return outcome;
@@ -1892,15 +1904,14 @@ async function expireOneBatch(input: {
     }
     const verdict = classifyGuardian(fresh);
     if (verdict.keep) {
-      // dnd / recently-watched / watchlisted / recently added (the Age Guard, D-26) / unevaluable — never deleted
-      // (C-07b). Skip, no whitelist: a repeat next batch is the intended stronger tuning signal (Q-03), Save is the
-      // permanent lever. A watchlisted or recently added item is never auto-saved either (ADR-093 C-03 — a
-      // watchlist is not a Save; the Age Guard lapses when the title ages out).
+      // dnd / recently-watched / watchlisted / recently added (the Age Guard, D-26) / mediarequests
+      // (ADR-118) / unevaluable — never deleted (C-07b). Skip, no whitelist: a repeat next batch is the intended
+      // stronger tuning signal (Q-03), Save is the permanent lever. A watchlisted, recently added or requested item
+      // is never auto-saved (ADR-093 C-03 — a watchlist is not a Save; the Age Guard lapses when the title ages
+      // out; the Request Keep lasts while the tag is on the title).
       //
-      // ADR-025 errata (2026-07-09) — a requester is NO LONGER a keep (owner ruling — requested is
-      // informational only), so a requested item is cold here and falls through to deletion below
-      // unless another guard (saves/exclusions/recently-watched) protects it. The old
-      // `requested_override` exception is gone (there is nothing to override any more).
+      // ADR-025 errata (2026-07-09), narrowed by ADR-118 — a personal requester tag is not a keep. The
+      // `mediarequests` tag is. The old `requested_override` auto-save is still gone.
       await keep(item, verdict.reason);
       continue;
     }
@@ -2542,7 +2553,12 @@ export async function getBatchDetail(input: {
             ),
           );
   const guidById = new Map(guidRows.map((r) => [r.maintainerrMediaId, r.plexGuid] as const));
-  const onWatchlistFor = (it: { state: TrashBatchItemState; maintainerrMediaId: string; tmdbId: number | null; tvdbId: number | null }): boolean =>
+  const onWatchlistFor = (it: {
+    state: TrashBatchItemState;
+    maintainerrMediaId: string;
+    tmdbId: number | null;
+    tvdbId: number | null;
+  }): boolean =>
     watchlist !== null &&
     it.state !== 'deleted' &&
     evaluateWatchlist(watchlist, {
@@ -2614,7 +2630,12 @@ export interface BatchSaveStats {
   totalUnsaves: number;
   /** The net rescued count. Equals `totalSaves` — each item contributes at most one net save. */
   netSaved: number;
-  byUser: Array<{ userId: string | null; displayName: string | null; saves: number; unsaves: number }>;
+  byUser: Array<{
+    userId: string | null;
+    displayName: string | null;
+    saves: number;
+    unsaves: number;
+  }>;
 }
 
 /**

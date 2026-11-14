@@ -239,11 +239,7 @@ export function LibraryLinkGlyph() {
  * wall — owner-directed unification 2026-07-07). Keep the keys in lockstep with
  * `lib/trash-batches.ts` `WallGlyph` and `lib/trash.ts` `PendingWallGlyph`.
  */
-export function WallGlyphSvg({
-  glyph,
-}: {
-  glyph: 'trash' | 'shield' | 'check' | 'skip' | 'gone';
-}) {
+export function WallGlyphSvg({ glyph }: { glyph: 'trash' | 'shield' | 'check' | 'skip' | 'gone' }) {
   switch (glyph) {
     case 'trash':
       return <TrashCanGlyph />;
@@ -396,6 +392,7 @@ export function TrashPendingNotice({
     onWatchlist: item.onWatchlist === true,
     // DESIGN-052 D-26 / Q-14 — the Age Guard keeps it: the batch wall's kept reason on its own line.
     recentlyAdded: item.ageGuard === 'recent',
+    requested: item.arrTags?.includes('mediarequests') === true,
     ruleTitle: item.collectionTitle ?? null,
     sizeLabel: formatBytes(item.sizeBytes),
   });
@@ -431,6 +428,11 @@ export function TrashPendingNotice({
         {notice.recentNote !== null ? (
           <p className="muted trash-panel__watchlist" data-testid="trash-recent-note">
             {notice.recentNote}
+          </p>
+        ) : null}
+        {notice.requestNote !== null ? (
+          <p className="muted trash-panel__watchlist" data-testid="trash-request-note">
+            {notice.requestNote}
           </p>
         ) : null}
         {/* DESIGN-010 D-12 — cross-server watch visibility (info, not protection): the last-watch
@@ -513,6 +515,7 @@ export function TrashPendingNotice({
             // DESIGN-052 D-26 / Q-14 — the Age Guard input (the confirm predicts the keep).
             ageGuard: item.ageGuard,
             saveIntent: item.saveIntent === true,
+            arrTags: item.arrTags,
           }}
           safe={safe}
           onClose={() => setExpediteOpen(false)}

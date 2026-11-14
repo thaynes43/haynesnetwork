@@ -197,6 +197,7 @@ describe('partitionPendingForExpedite (the server preview the confirm consumes)'
       unverifiable: 4,
       watchlisted: 1,
       recentlyAdded: 1,
+      requested: 0,
       releaseUnverified: 0,
     });
   });
@@ -213,6 +214,7 @@ describe('partitionPendingForExpedite (the server preview the confirm consumes)'
       unverifiable: 0,
       watchlisted: 0,
       recentlyAdded: 0,
+      requested: 0,
       releaseUnverified: 0,
     });
   });

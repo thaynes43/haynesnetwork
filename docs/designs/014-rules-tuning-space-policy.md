@@ -14,7 +14,8 @@
 - **Last updated:** 2026-11-13 (D-16, story 820: Dynamic Pace review corrections; D-15 is the TV rule).
 - **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26; in effect since 2026-09-28): the
   space policy's proposal leaves out a title on any read Plex watchlist (it takes no cap slot), and `minCandidates`
-  counts deletable candidates only (DESIGN-052 D-08).
+  counts deletable candidates only (DESIGN-052 D-08). Amended 2026-11-13 (ADR-118 / DESIGN-052 D-30): `minCandidates`
+  also leaves out a title tagged `mediarequests`, and no new batch snapshots one.
 - **Author:** Fable 5 (autonomous run, PLAN-014); D-14 amendment by an Opus autonomous run
 - **Implements:** [ADR-031](../adrs/031-space-driven-batch-policy.md),
   [ADR-073](../adrs/073-autonomous-trash-cycle.md),
@@ -416,6 +417,8 @@ Tests: `packages/domain/__tests__/space-policy.test.ts` proves auto-promote to `
 **self-heal of a stuck `admin_review` system batch** (the reproduced prod stall → `promoted`), that a
 MANUAL admin_review batch is left untouched, and that a healthy `leaving_soon` batch is not duplicated.
 
+**Request Keep (ADR-118, 2026-11-13).** `minCandidates` counts the same titles a targeted batch can take. A title tagged `mediarequests` is not one of them, and no new batch snapshots it (DESIGN-052 D-30). A personal requester tag still counts. The keep reads the ledger copy written by the full sync at 04:30, so it can lag the live tag by up to 24 hours.
+
 ## D-15 — TV rule body (owner rulings 2026-11-13, story 835)
 
 The ruling recorded on story 822 (comment 7992) adopts the recommendation in
@@ -428,10 +431,13 @@ watchlist keep, Saves, the `dnd` tag and the `mediarequests` exclusion are uncha
 
 No new glossary term. The pool, the Age Guard (T-273) and the aging invariant (T-105) keep their names.
 The votes floor is the movie rule's existing clause, not a new term. No superseding ADR.
-[ADR-036](../adrs/036-maintainerr-aging-invariant.md) does not read rule predicates, and replacing the
-added-date clause does not make `auditMaintainerr` refuse the pool. The check is below. That audit
-still does not read predicates; a predicate check in it is a dependency of story 823, not a change
-in this story.
+[ADR-036](../adrs/036-maintainerr-aging-invariant.md) does not read rule predicates.
+[ADR-118](../adrs/118-requested-title-is-a-trash-keep.md) reads one: an armed group must exclude
+`mediarequests`, and every clause after the first must be AND. It does not read the rating, the
+votes, the ended flag or the air-date. Replacing the added-date clause does not by itself make
+`auditMaintainerr` refuse the pool. A write that stops after the rating and the votes leaves the
+request clause out, and the audit then refuses. Story 823 should expect that refusal. The check is
+below.
 
 Evidence for the live reads, the image comparator, and the shows that pass the predicates:
 [`.agents/context/2026-11-13-tv-trash-rule-correction.md`](../../.agents/context/2026-11-13-tv-trash-rule-correction.md).

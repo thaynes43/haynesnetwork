@@ -42,6 +42,7 @@ function verdictFor(reason: TrashWallProtectionReason | null): ExpediteVerdict {
   if (reason === 'recently_watched') return 'protected_watched';
   if (reason === 'watchlisted') return 'protected_watchlist';
   if (reason === 'recently_added') return 'protected_recent';
+  if (reason === 'media_request') return 'protected_request';
   return 'unverifiable';
 }
 
@@ -65,6 +66,13 @@ describe('trashWallProtection agrees with classifyForExpedite', () => {
     ['a recent watch', { recentlyWatched: true }, 'recently_watched'],
     ['a watchlist', { onWatchlist: true }, 'watchlisted'],
     ['the Age Guard', { ageGuard: 'recent' }, 'recently_added'],
+    ['the request tag', { arrTags: ['mediarequests'] }, 'media_request'],
+    ['a personal requester tag', { arrTags: ['13-member'] }, null],
+    [
+      'the Age Guard ahead of the request tag',
+      { ageGuard: 'recent', arrTags: ['mediarequests'] },
+      'recently_added',
+    ],
     ['no ledger row', { mediaItemId: null }, 'not_in_ledger'],
     ['a watchlist that cannot be decided', { watchlistEvaluable: false }, 'watchlist_unknown'],
     ['a failed rule read', { ruleEvaluationFailed: true }, 'rules_unknown'],
@@ -87,9 +95,9 @@ describe('trashWallProtection agrees with classifyForExpedite', () => {
     expect(classifyForExpedite(item)).toBe(verdictFor(reason));
   });
 
-  // The cases above are samples. This walks every combination of the nine inputs, so the wall can
+  // The cases above are samples. This walks every combination of the inputs, so the wall can
   // never offer a title Expedite would keep, or hide one Expedite would delete, whatever is added
-  // to either function later.
+  // to either function later. The request tag is one more input: present or absent.
   it('offers a title exactly when Expedite would delete it, for every combination of inputs', () => {
     const flags = [false, true] as const;
     let checked = 0;
@@ -101,26 +109,28 @@ describe('trashWallProtection agrees with classifyForExpedite', () => {
               for (const onWatchlist of flags)
                 for (const watchlistEvaluable of flags)
                   for (const ruleEvaluationFailed of flags)
-                    for (const ageGuard of ['clear', 'recent', 'unknown'] as const) {
-                      const item: ExpediteVerdictInput = {
-                        maintainerrMediaId,
-                        mediaItemId,
-                        saveIntent,
-                        protectedByTag,
-                        recentlyWatched,
-                        onWatchlist,
-                        watchlistEvaluable,
-                        ruleEvaluationFailed,
-                        ageGuard,
-                      };
-                      const reason = trashWallProtection(item);
-                      const verdict = classifyForExpedite(item);
-                      expect(verdict, JSON.stringify(item)).toBe(verdictFor(reason));
-                      expect(reason === null, JSON.stringify(item)).toBe(verdict === 'deletable');
-                      checked += 1;
-                    }
-    // Eight two-valued inputs and the three Age Guard verdicts.
-    expect(checked).toBe(2 ** 8 * 3);
+                    for (const ageGuard of ['clear', 'recent', 'unknown'] as const)
+                      for (const arrTags of [undefined, ['mediarequests']] as const) {
+                        const item: ExpediteVerdictInput = {
+                          maintainerrMediaId,
+                          mediaItemId,
+                          saveIntent,
+                          protectedByTag,
+                          recentlyWatched,
+                          onWatchlist,
+                          watchlistEvaluable,
+                          ruleEvaluationFailed,
+                          ageGuard,
+                          arrTags,
+                        };
+                        const reason = trashWallProtection(item);
+                        const verdict = classifyForExpedite(item);
+                        expect(verdict, JSON.stringify(item)).toBe(verdictFor(reason));
+                        expect(reason === null, JSON.stringify(item)).toBe(verdict === 'deletable');
+                        checked += 1;
+                      }
+    // Eight two-valued inputs, the three Age Guard verdicts, and the request tag present or absent.
+    expect(checked).toBe(2 ** 8 * 3 * 2);
   });
 });
 

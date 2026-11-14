@@ -8,6 +8,13 @@
  *  client can't import the server package; keep the literals in sync). */
 export const PROTECTED_TAG = 'dnd';
 
+/** ADR-118 — the Seerr add tag. Mirrors @hnet/domain MEDIA_REQUEST_TAG. A personal requester tag is not this. */
+export const MEDIA_REQUEST_TAG = 'mediarequests';
+
+function hasMediaRequestTag(tags: readonly string[] | null | undefined): boolean {
+  return Array.isArray(tags) && tags.includes(MEDIA_REQUEST_TAG);
+}
+
 /** The fine-grained Trash action grants (mirrors @hnet/db TRASH_ACTIONS — ADR-023 C-03 /
  *  ADR-025 C-01 for the two curation-pipeline grants). Keep in lockstep with @hnet/db. */
 export const TRASH_ACTION_NAMES = [
@@ -56,6 +63,8 @@ export interface GuardianPreviewInput {
   /** ADR-099 D-4 — somebody saved it (an open save intent): the server keeps it, exclusion or not. Absent ⇒ not
    *  saved (an older server). */
   saveIntent?: boolean;
+  /** ADR-118 — the ledger tags. Includes `mediarequests` ⇒ kept. Absent ⇒ not requested (an older server). */
+  arrTags?: readonly string[];
   /** ADR-117 / DESIGN-052 D-29 — `unverified`: the file on disk has no verified posted release name, so the server
    *  keeps it (skipped). Absent or `unchecked` ⇒ not judged here (an older server, a series). */
   releaseName?: 'verified' | 'unverified' | 'unchecked';
@@ -71,9 +80,9 @@ export interface GuardianPreviewInput {
  * `classifyForExpedite` — the test compares them directly and will fail.
  *
  * The partition:
- * - `deletable`       — cold + positively evaluated ⇒ the server WILL delete it. A requested item
- *                       is deletable now (owner ruling 2026-07-09 — requested is informational only,
- *                       never an app-side keep); its requester rides the meta badge, not the verdict.
+ * - `deletable`       — cold + positively evaluated ⇒ the server WILL delete it. A personal requester
+ *                       tag stays informational (owner ruling 2026-07-09). A `mediarequests` tag is
+ *                       `protected_request` (owner ruling 2026-11-13, ADR-118).
  * - `protected_*`     — kept deliberately (whitelist / watch guardian).
  * - `unverifiable`    — kept because it CANNOT be verified safe (no Maintainerr id, unknown to our
  *                       ledger, watchlist status not evaluable, or Maintainerr's rule data unavailable;
@@ -87,6 +96,7 @@ export type GuardianPreview =
   | 'protected_watched'
   | 'protected_watchlist'
   | 'protected_recent'
+  | 'protected_request'
   | 'unverifiable';
 
 export function previewGuardian(item: GuardianPreviewInput): GuardianPreview {
@@ -100,6 +110,8 @@ export function previewGuardian(item: GuardianPreviewInput): GuardianPreview {
   if (item.onWatchlist) return 'protected_watchlist';
   // DESIGN-052 D-26 / Q-14 — the Age Guard: added or upgraded recently ⇒ kept (never auto-saved).
   if (item.ageGuard === 'recent') return 'protected_recent';
+  // ADR-118 — the Request Keep, after every earlier keep. A personal requester tag is not this.
+  if (hasMediaRequestTag(item.arrTags)) return 'protected_request';
   // Fail closed: unknown to our ledger, watchlist status not evaluable, Maintainerr's rule data unavailable, or the
   // title's dates not readable yet ⇒ kept (skipped).
   if (
@@ -130,12 +142,11 @@ export function unverifiableReason(item: GuardianPreviewInput): string {
 }
 
 /**
- * D-25bk / D-25cy — the Expedite-all confirm's line for the protected count. The app keeps these (the guardian, the
- * Watchlist Keep), not Maintainerr, and a request is no keep (informational since 2026-07-09), so the line never says
- * "Maintainerr keeps" or "requested".
+ * D-25bk / D-25cy, narrowed by ADR-118 — the Expedite-all confirm's line for the protected count. The app keeps these
+ * (the guardian, the Watchlist Keep, the Request Keep), not Maintainerr. A personal requester tag is still not a keep.
  */
 export const EXPEDITE_PROTECTED_REASON =
-  'saved, recently watched, added or upgraded recently, whitelisted, or on a watchlist; they are kept.';
+  'saved, recently watched, added or upgraded recently, whitelisted, on a watchlist, or requested; they are kept.';
 
 /** D-25by — the Expedite-all confirm's line for the unverifiable count (every cause, one sentence). */
 export const EXPEDITE_UNVERIFIABLE_REASON =
@@ -154,6 +165,8 @@ export interface ExpeditePartition {
   watchlisted: number;
   /** DESIGN-052 D-26 / Q-14 — how many of `protected` the Age Guard keeps (a subset, for the confirm's breakdown). */
   recentlyAdded: number;
+  /** ADR-118 — how many of `protected` the Request Keep holds (a subset, for the confirm's breakdown). */
+  requested: number;
 }
 
 /** Partition a pending set the way expediteDeletion scope 'all' will (preview for the Modal). */
@@ -167,6 +180,7 @@ export function partitionForExpedite(
     unverifiable: 0,
     watchlisted: 0,
     recentlyAdded: 0,
+    requested: 0,
   };
   for (const item of items) {
     const verdict = previewGuardian(item);
@@ -179,6 +193,7 @@ export function partitionForExpedite(
       out.protected += 1;
       if (verdict === 'protected_watchlist') out.watchlisted += 1;
       if (verdict === 'protected_recent') out.recentlyAdded += 1;
+      if (verdict === 'protected_request') out.requested += 1;
     }
   }
   return out;
@@ -245,10 +260,12 @@ export function pendingWallGlyph(
     ageGuard?: 'recent' | 'clear' | 'unknown';
     /** ADR-099 D-4 — an open save intent: saved, whether or not Maintainerr holds the exclusion yet. */
     saveIntent?: boolean;
+    /** ADR-118 — the ledger tags. Absent means an older payload that did not send them. */
+    arrTags?: readonly string[];
     /**
      * DESIGN-052 D-10 amendment (story 832) — Wall Protection from the server.
-     * Absent means an older server: the Age Guard skip falls back to `recentlyAddedKeep`.
-     * Null means the server says the title may be offered, so that fallback does not run.
+     * Absent means an older server: the Age Guard and the Request Keep fall back to the item.
+     * Null means the server says the title may be offered, so those fallbacks do not run.
      */
     protectionReason?: string | null;
   },
@@ -288,6 +305,9 @@ export function pendingWallGlyph(
   ) {
     return 'skip';
   }
+  // ADR-118 — a requested title is the inert skip when that keep would be the guardian's first reason.
+  if (item.protectionReason === 'media_request') return 'skip';
+  if (item.protectionReason === undefined && mediaRequestKeep(item)) return 'skip';
   return 'trash';
 }
 
@@ -443,7 +463,11 @@ export interface WatchNote {
  * the meta line to one fixed-height row — ADR-015).
  */
 export function watchNote(
-  item: { lastWatchedAt: string | null; lastWatchedServer: string | null; recentlyWatched: boolean },
+  item: {
+    lastWatchedAt: string | null;
+    lastWatchedServer: string | null;
+    recentlyWatched: boolean;
+  },
   tz: string = DISPLAY_TZ,
 ): WatchNote | null {
   if (item.recentlyWatched) {
@@ -715,6 +739,7 @@ export type WallReasonName =
   | 'recently_watched'
   | 'watchlisted'
   | 'recently_added'
+  | 'media_request'
   | 'not_in_ledger'
   | 'watchlist_unknown'
   | 'rules_unknown'
@@ -736,6 +761,7 @@ export const WALL_REASON_COPY: Record<WallReasonName, { label: string; detail: s
   recently_watched: { label: 'Watched recently', detail: 'Kept: watched recently' },
   watchlisted: { label: 'On a watchlist', detail: 'Kept: on a watchlist' },
   recently_added: { label: 'Added recently', detail: 'Kept: added or upgraded recently' },
+  media_request: { label: 'Requested', detail: 'Kept: requested' },
   not_in_ledger: {
     label: 'Not in the library',
     detail: "Kept: not in the library, so it can't be checked",
@@ -922,6 +948,9 @@ export const WATCHLIST_BREAKDOWN_TERM = 'on a watchlist';
 /** DESIGN-052 D-26 / Q-14 — the Expedite-all confirm's breakdown term for the Age Guard's share of `protected`. */
 export const RECENT_BREAKDOWN_TERM = 'added or upgraded recently';
 
+/** ADR-118 — the Expedite-all confirm's breakdown term for the Request Keep's share of `protected`. */
+export const REQUEST_BREAKDOWN_TERM = 'requested';
+
 /**
  * DESIGN-052 D-26 / Q-14 — the pending walls show a title the Age Guard keeps as the batch wall shows a kept row: the
  * inert `skip` glyph with its "Kept: …" reason, never the slated trash can. Only when the Age Guard is the guardian's
@@ -935,7 +964,42 @@ export function recentlyAddedKeep(item: {
   recentlyWatched: boolean;
   onWatchlist?: boolean;
 }): boolean {
-  return item.ageGuard === 'recent' && !item.protectedByTag && !item.recentlyWatched && item.onWatchlist !== true;
+  return (
+    item.ageGuard === 'recent' &&
+    !item.protectedByTag &&
+    !item.recentlyWatched &&
+    item.onWatchlist !== true
+  );
+}
+
+/**
+ * ADR-118 — the pending walls show a requested title as the inert `skip` only when the Request Keep would be the
+ * guardian's first reason. A Save, the `dnd` tag, a recent watch, a watchlist and the Age Guard still win.
+ */
+export function mediaRequestKeep(item: {
+  arrTags?: readonly string[];
+  protectedByTag: boolean;
+  recentlyWatched: boolean;
+  onWatchlist?: boolean;
+  ageGuard?: 'recent' | 'clear' | 'unknown';
+}): boolean {
+  return (
+    hasMediaRequestTag(item.arrTags) &&
+    !item.protectedByTag &&
+    !item.recentlyWatched &&
+    item.onWatchlist !== true &&
+    item.ageGuard !== 'recent'
+  );
+}
+
+/** The kept line a `skip` tile shows. The Age Guard wins when both it and the Request Keep apply. */
+export function skipKeepTooltip(item: {
+  ageGuard?: 'recent' | 'clear' | 'unknown';
+  arrTags?: readonly string[];
+}): string {
+  if (item.ageGuard === 'recent') return KEPT_REASON_TOOLTIPS.recently_added;
+  if (hasMediaRequestTag(item.arrTags)) return KEPT_REASON_TOOLTIPS.media_request;
+  return KEPT_REASON_TOOLTIPS.recently_added;
 }
 
 /**
@@ -952,26 +1016,41 @@ export function trashNoticeText(input: {
   sizeLabel: string;
   /** DESIGN-052 D-26 / Q-14 — the Age Guard keeps it (downloaded, upgraded or added in the last 180 days). */
   recentlyAdded?: boolean;
-}): { meta: string; watchlistNote: string | null; recentNote: string | null } {
+  /** ADR-118 — the Request Keep holds it. The note stays on a Save so the panel does not reflow. */
+  requested?: boolean;
+}): {
+  meta: string;
+  watchlistNote: string | null;
+  recentNote: string | null;
+  requestNote: string | null;
+} {
   const rule = input.ruleTitle ?? 'deletion';
   const watchlistNote = input.onWatchlist ? WATCHLIST_NOTE_DETAIL : null;
   // D-26 / Q-14 — the batch wall's kept reason, on its own line. Like the watchlist note it stays on a Save (the title
   // is still new; unmounting the line on Save would reflow the panel, hard rule 9).
   const recentNote = input.recentlyAdded === true ? KEPT_REASON_TOOLTIPS.recently_added : null;
+  const requestNote = input.requested === true ? KEPT_REASON_TOOLTIPS.media_request : null;
   if (input.on) {
     return {
       meta: 'Maintainerr will keep this item — un-saving puts it back under its deletion rules.',
       watchlistNote,
       recentNote,
+      requestNote,
     };
   }
-  if (input.onWatchlist || recentNote !== null) {
-    return { meta: `Maintainerr’s “${rule}” rule flagged it.`, watchlistNote, recentNote };
+  if (input.onWatchlist || recentNote !== null || requestNote !== null) {
+    return {
+      meta: `Maintainerr’s “${rule}” rule flagged it.`,
+      watchlistNote,
+      recentNote,
+      requestNote,
+    };
   }
   return {
     meta: `Maintainerr’s “${rule}” rule flagged it — deleting frees ${input.sizeLabel}. Save it to keep it.`,
     watchlistNote: null,
     recentNote: null,
+    requestNote: null,
   };
 }
 
@@ -987,7 +1066,8 @@ export type TrashKeepReasonName =
   | 'recently_added'
   | 'saved'
   | 'release_unverified'
-  | 'release_block_full';
+  | 'release_block_full'
+  | 'media_request';
 
 /** The batch wall's kept-tile tooltip, per keep reason (D-10). `tag` and `live_excluded` are both a Save. */
 export const KEPT_REASON_TOOLTIPS: Record<TrashKeepReasonName, string> = {
@@ -1007,6 +1087,8 @@ export const KEPT_REASON_TOOLTIPS: Record<TrashKeepReasonName, string> = {
   recently_added: 'Kept: added or upgraded recently',
   // ADR-099 D-4 — saved from another surface (the pending wall, the library) while the row was still pending.
   saved: 'Kept: saved',
+  // ADR-118 — the Request Keep lasts while the ledger tags include mediarequests.
+  media_request: 'Kept: requested',
 };
 
 /** The kept tooltip for a skipped row's reason; null for a row with no recorded reason (swept before 0081). */
@@ -1050,7 +1132,11 @@ interface WatchlistsLastRun {
  * (D-25bx: the card never says both "not checked" and "the counts are from the one before").
  */
 export function watchlistsHeadline(
-  summary: { checkedAt: string | null; accountsRead: number; accountsUnreadable: number } & WatchlistsLastRun,
+  summary: {
+    checkedAt: string | null;
+    accountsRead: number;
+    accountsUnreadable: number;
+  } & WatchlistsLastRun,
   now: Date = new Date(),
 ): string {
   const when = relativeTimeLabel(summary.checkedAt, now);
@@ -1123,7 +1209,11 @@ export function exclusionCountValue(count: number | null): string {
  * "Re-added after Trash: 4, all with a different release." (titles, the last 30 days). DESIGN-052 D-25bh: a title
  * re-added with no grab within 7 days is "not grabbed yet", never counted as a different release.
  */
-export function readdSummaryLine(readds: { total: number; sameRelease: number; noGrab?: number }): string {
+export function readdSummaryLine(readds: {
+  total: number;
+  sameRelease: number;
+  noGrab?: number;
+}): string {
   const total = readds.total;
   if (total === 0) return 'Re-added after Trash: none in the last 30 days.';
   const same = readds.sameRelease;

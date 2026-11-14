@@ -26,6 +26,7 @@ import { e2eHarnessActive } from './e2e-harness';
 import {
   bucketFlatPendingForMedia,
   classifyForExpedite,
+  hasMediaRequestTag,
   fetchLiveExclusions,
   classifyGuardian,
   trashWallProtection,
@@ -302,6 +303,8 @@ export interface TrashExpeditePreview {
   watchlisted: number;
   /** DESIGN-052 D-26 / Q-14 — how many of `protected` the Age Guard keeps (added or upgraded recently). A subset. */
   recentlyAdded: number;
+  /** ADR-118 — how many of `protected` the Request Keep holds. A subset. */
+  requested: number;
   /** ADR-117 / DESIGN-052 D-29 — how many of `unverifiable` are kept because the file on disk has no verified posted
    *  release name (the Release Name Check). A subset of `unverifiable`, never added to it. */
   releaseUnverified: number;
@@ -455,6 +458,7 @@ export function partitionPendingForExpedite(
     unverifiable: 0,
     watchlisted: 0,
     recentlyAdded: 0,
+    requested: 0,
     releaseUnverified: 0,
   };
   for (const i of items) {
@@ -473,6 +477,7 @@ export function partitionPendingForExpedite(
       out.protected += 1;
       if (verdict === 'protected_watchlist') out.watchlisted += 1;
       if (verdict === 'protected_recent') out.recentlyAdded += 1;
+      if (verdict === 'protected_request') out.requested += 1;
     }
   }
   return out;
@@ -601,9 +606,7 @@ export async function listTrashPendingPage(input: {
     facets: firstPage ? pendingFacets(universe) : null,
     expeditePreview: firstPage ? partitionPendingForExpedite(universe) : null,
     allActionableIds: firstPage
-      ? universe
-          .map((i) => i.maintainerrMediaId)
-          .filter((id): id is string => id !== null)
+      ? universe.map((i) => i.maintainerrMediaId).filter((id): id is string => id !== null)
       : null,
   };
 }
@@ -624,8 +627,10 @@ export interface TrashPendingCandidate {
   onWatchlist: boolean;
   /** DESIGN-052 D-26 — inside the Age Guard's 180 days: no batch takes it, so the preview leaves it out too. */
   recentlyAdded: boolean;
-  /** ADR-117 / DESIGN-052 D-29 — no verified posted release name for the file on disk: no batch takes it, and the
-   *  sweep would keep it, so the preview leaves it out too. */
+  /** ADR-118 — the ledger tags include mediarequests: every batch leaves it out. */
+  requested: boolean;
+  /** ADR-117 / DESIGN-052 D-29 — no verified posted release name for the file on disk: a targeted batch leaves it
+   *  out, and the sweep would keep it, so the preview does not count it as freeing space. */
   releaseUnverified: boolean;
 }
 
@@ -653,7 +658,9 @@ export async function listTrashPendingCandidates(input: {
   const base = await materializeSnapshotPending(input);
   const watchlistFiltered = await isProposalWatchlistFiltered({ db: input.db });
   const candidates = base.items
-    .filter((i): i is TrashPendingItem & { maintainerrMediaId: string } => i.maintainerrMediaId !== null)
+    .filter(
+      (i): i is TrashPendingItem & { maintainerrMediaId: string } => i.maintainerrMediaId !== null,
+    )
     .map((i) => ({
       maintainerrMediaId: i.maintainerrMediaId,
       mediaItemId: i.mediaItemId,
@@ -666,6 +673,7 @@ export async function listTrashPendingCandidates(input: {
       protectedByTag: i.protectedByTag,
       onWatchlist: i.onWatchlist,
       recentlyAdded: i.ageGuard === 'recent',
+      requested: hasMediaRequestTag(i.arrTags),
       releaseUnverified: i.releaseName === 'unverified',
     }));
   return {

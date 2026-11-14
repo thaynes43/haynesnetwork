@@ -85,6 +85,25 @@ interface StubRuleGroup {
   libraryId: string;
   dataType: string;
   collectionId: number;
+  /** Present on an armed pool. A Leaving Soon shell leaves it unset (`useRules` false). */
+  rules?: unknown[];
+}
+
+/** The request clause the audit requires on an armed group. */
+function requestKeepClause(dataType: string): Record<string, unknown> {
+  const show = dataType === 'show' || dataType === 'season' || dataType === 'episode';
+  return {
+    id: 1,
+    isActive: true,
+    section: 0,
+    ruleJson: JSON.stringify({
+      operator: 0,
+      action: 9,
+      firstVal: show ? [2, 2] : [1, 2],
+      customVal: { ruleTypeId: 2, value: 'mediarequests' },
+      section: 0,
+    }),
+  };
 }
 interface MaintState {
   integrations: { radarr: boolean; sonarr: boolean; tautulli: boolean; seerr: boolean };
@@ -168,6 +187,7 @@ function makeMaintainerr(state: MaintState): {
           useRules: g.useRules,
           libraryId: g.libraryId,
           dataType: g.dataType,
+          ...(g.rules !== undefined ? { rules: g.rules } : {}),
           collection: (() => {
             const c = state.collections.find((col) => col.id === g.collectionId);
             return c ? { id: c.id, title: c.title, manualCollection: c.manualCollection ?? false } : null;
@@ -442,6 +462,7 @@ const baseState = (over: Partial<MaintState> = {}): MaintState => {
         libraryId: String(c.libraryId),
         dataType: c.type,
         collectionId: c.id,
+        rules: [requestKeepClause(c.type)],
       })),
   };
 };
@@ -1190,12 +1211,20 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId });
     // Drift: a stale member is on the Plex wall that is NOT a pending batch item (e.g. a leftover
     // from the pre-fix era). The close must strip it — the record persists across batches now.
-    state.collections.find((c) => c.id === 600)!.items.push({
-      mediaServerId: 'ms-stale-leftover',
-      sizeBytes: 0,
-      addDate: '2026-06-01T00:00:00Z',
+    state.collections
+      .find((c) => c.id === 600)!
+      .items.push({
+        mediaServerId: 'ms-stale-leftover',
+        sizeBytes: 0,
+        addDate: '2026-06-01T00:00:00Z',
+      });
+    await sweepExpiredBatches({
+      arr: releaseArr,
+      registry: 'gate-only',
+      db: t.db,
+      maintainerr: bundle,
+      actorId,
     });
-    await sweepExpiredBatches({ arr: releaseArr, registry: 'gate-only', db: t.db, maintainerr: bundle, actorId });
     const [row] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
     expect(row!.state).toBe('deleted');
     const rolling = state.collections.find((c) => c.id === 600)!;

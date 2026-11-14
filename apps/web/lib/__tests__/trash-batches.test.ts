@@ -385,9 +385,42 @@ describe('previewTargetSelection — the Start-a-batch client preview (mirrors s
   });
 
   it('ADR-093 D-08 — a watchlisted candidate takes no slot in a targeted pick, yet an untargeted batch snapshots it', () => {
-    const listed = [c(4e9, { onWatchlist: true }), c(3e9), c(2e9, { protectedByTag: true }), c(1e9)];
-    expect(previewTargetSelection(listed, {})).toMatchObject({ count: 3, bytes: 8e9, poolCount: 2, poolBytes: 4e9 });
-    expect(previewTargetSelection(listed, { maxItems: 1, strategy: 'largest' })).toMatchObject({ count: 1, bytes: 3e9 });
+    const listed = [
+      c(4e9, { onWatchlist: true }),
+      c(3e9),
+      c(2e9, { protectedByTag: true }),
+      c(1e9),
+    ];
+    expect(previewTargetSelection(listed, {})).toMatchObject({
+      count: 3,
+      bytes: 8e9,
+      poolCount: 2,
+      poolBytes: 4e9,
+    });
+    expect(previewTargetSelection(listed, { maxItems: 1, strategy: 'largest' })).toMatchObject({
+      count: 1,
+      bytes: 3e9,
+    });
+  });
+
+  it('ADR-118 — a requested title is left out of every batch and frees nothing', () => {
+    const requested = [
+      c(4e9, { requested: true }),
+      c(3e9),
+      c(2e9, { protectedByTag: true }),
+      c(1e9),
+    ];
+    expect(previewTargetSelection(requested, {})).toMatchObject({
+      count: 2,
+      bytes: 4e9,
+      freesBytes: 4e9,
+      poolCount: 2,
+    });
+    expect(previewTargetSelection(requested, { maxItems: 1, strategy: 'largest' })).toMatchObject({
+      count: 1,
+      bytes: 3e9,
+      freesBytes: 3e9,
+    });
   });
 
   it('DESIGN-052 D-26 — a title inside the Age Guard window takes no targeted slot; an untargeted batch snapshots it but it frees nothing', () => {

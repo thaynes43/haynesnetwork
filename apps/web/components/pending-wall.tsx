@@ -36,6 +36,7 @@ import {
   KEPT_REASON_TOOLTIPS,
   PENDING_VIEWS,
   pendingWallGlyph,
+  skipKeepTooltip,
   pendingWallTappable,
   releaseNeedsConfirm,
   shownWallReason,
@@ -75,6 +76,8 @@ export interface PendingWallItem {
   ageGuard?: 'recent' | 'clear' | 'unknown';
   /** ADR-099 D-4 — somebody saved it (an open save intent): saved, whether or not Maintainerr has caught up. */
   saveIntent?: boolean;
+  /** ADR-118 — the ledger tags. The wire item already carries them; absent means not requested. */
+  arrTags?: readonly string[];
   /** DESIGN-052 D-10 amendment (story 832) — why this title cannot be deleted, or null when it can. */
   protectionReason?: string | null;
 }
@@ -135,14 +138,14 @@ function tileInfo(
     // pointer user sees the same thing the aria-label tells a screen-reader user.
     ...(armed ? ['Tap again to un-save — 3 seconds'] : []),
     // DESIGN-052 D-10 amendment (story 821) — a kept title leads with why it is kept, never with a
-    // delete date it will not meet. The two older checks below cover a server that sends no reason
-    // (D-26 / Q-14: the Age Guard's kept reason; the watchlist's).
+    // delete date it will not meet. The checks below cover a server that sends no reason
+    // (the Age Guard or the Request Keep, then the watchlist).
     reason !== null
       ? wallReasonCopy(reason).detail
       : item.onWatchlist === true
         ? KEPT_REASON_TOOLTIPS.watchlisted
         : glyph === 'skip'
-          ? KEPT_REASON_TOOLTIPS.recently_added
+          ? skipKeepTooltip(item)
           : item.scheduledDeleteAt !== null
             ? `Deletes ${formatDay(item.scheduledDeleteAt)} (${daysLeftLabel(daysUntil(item.scheduledDeleteAt))})`
             : 'No scheduled delete date',
@@ -370,7 +373,7 @@ function PendingTile({
         : item.onWatchlist === true
           ? `${item.title} is protected while on a watchlist${tappable ? ' — tap to save it permanently' : ''}`
           : glyph === 'skip'
-            ? `${item.title}. ${KEPT_REASON_TOOLTIPS.recently_added}`
+            ? `${item.title}. ${reason !== null ? wallReasonCopy(reason).detail : skipKeepTooltip(item)}`
             : reason !== null
               ? // A kept title is not "slated to delete": say why it is kept, then what a tap does.
                 `${item.title}. ${wallReasonCopy(reason).detail}${tappable ? '. Tap to save it' : ''}`

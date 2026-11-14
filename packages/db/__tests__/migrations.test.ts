@@ -4123,6 +4123,28 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     }
   });
 
+  // ADR-118 / DESIGN-052 D-30 — 0111 follows 0110 and adds media_request to every value 0110 allows.
+  it('lists 0111_trash_request_keep at idx 109, strictly after 0110_legacy_release_names', () => {
+    const entry = journal.entries.find((e) => e.tag === '0111_trash_request_keep');
+    const prev = journal.entries.find((e) => e.tag === '0110_legacy_release_names');
+    expect(prev?.idx).toBe(108);
+    expect(prev?.when).toBe(1791470000000);
+    expect(entry?.idx).toBe(109);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    expect(entry!.when).toBe(1791480000000);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0111_trash_request_keep.sql'), 'utf8');
+    const prevSql = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0110_legacy_release_names.sql'), 'utf8');
+    const prevList = prevSql.match(
+      /trash_batch_items_keep_reason_enum" CHECK \("trash_batch_items"\."keep_reason" IS NULL OR "trash_batch_items"\."keep_reason" = ANY \(ARRAY\[([^\]]+)\]\)/,
+    );
+    const listed = prevList?.[1];
+    expect(listed).toEqual(expect.stringContaining("'release_unverified'"));
+    for (const reason of listed!.split(',')) {
+      expect(sqlText).toContain(reason);
+    }
+    expect(sqlText).toContain("'media_request'");
+  });
+
   // PLAN-077 P5 gate — the Release Pick's lists are journaled (idx 102), after 0102.
   it('lists 0103_release_pick_lists at idx 102, strictly after 0102_mislabel_name_terms', () => {
     const entry = journal.entries.find((e) => e.tag === '0103_release_pick_lists');

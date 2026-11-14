@@ -175,7 +175,27 @@ function freshRules(): Array<Record<string, unknown>> {
           section: 0,
           isActive: true,
           // firstVal[0] === 1 (Application.RADARR) ⇒ PUT requires a group-level radarrSettingsId.
-          ruleJson: JSON.stringify({ operator: null, action: 0, firstVal: [1, 0], lastVal: [0, 4], section: 0 }),
+          ruleJson: JSON.stringify({
+            operator: null,
+            action: 0,
+            firstVal: [1, 0],
+            lastVal: [0, 4],
+            section: 0,
+          }),
+        },
+        {
+          id: 2,
+          ruleGroupId: 11,
+          section: 0,
+          isActive: true,
+          // ADR-118 — the request clause the audit requires on an armed movie group (Radarr tags, NOT_CONTAINS).
+          ruleJson: JSON.stringify({
+            operator: 0,
+            action: 9,
+            firstVal: [1, 2],
+            customVal: { ruleTypeId: 0, value: 'mediarequests' },
+            section: 0,
+          }),
         },
       ],
     },
@@ -291,7 +311,10 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
       // created outside the current session (its `dnd` tag has not synced into arrTags). Bug 2: the
       // pending list must still show it Protected (protectedByExclusion), not wait for the tag.
       if (url.pathname === '/_stub/exclude' && method === 'POST') {
-        const body = JSON.parse(await readBody(req)) as { mediaServerId: string; excluded?: boolean };
+        const body = JSON.parse(await readBody(req)) as {
+          mediaServerId: string;
+          excluded?: boolean;
+        };
         if (body.excluded === false) exclusions.delete(body.mediaServerId);
         else exclusions.add(body.mediaServerId);
         res.writeHead(204);
@@ -358,7 +381,9 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
           const mediaId = String((body as { mediaId?: unknown })?.mediaId ?? '');
           handled.add(mediaId);
           // ADR-093 / DESIGN-052 D-20 — the delete reaches the *arr: the stub *arr now 404s the item.
-          const deleted = collections.flatMap((c) => c.items).find((i) => i.mediaServerId === mediaId);
+          const deleted = collections
+            .flatMap((c) => c.items)
+            .find((i) => i.mediaServerId === mediaId);
           if (deleted) markStubArrDeleted(deleted);
           return json(res, 201, {});
         }

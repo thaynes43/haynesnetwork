@@ -19,7 +19,12 @@ import {
   forecastFreeSpace,
   type FreeSpaceSample,
 } from './storage-forecast';
-import { bucketFlatPendingForMedia, shapePendingItems, type FlatPending } from './trash-flow';
+import {
+  bucketFlatPendingForMedia,
+  hasMediaRequestTag,
+  shapePendingItems,
+  type FlatPending,
+} from './trash-flow';
 import { evaluateRegistryGate } from './watchlist-registry';
 
 /**
@@ -275,6 +280,7 @@ export function dynamicPaceHorizonFitsWindow(horizonDays: number, windowDays: nu
  * The proposal filter, shared so the status snapshot and the live proposal count the same titles. ADR-117 /
  * DESIGN-052 D-29 — a title whose file on disk has no verified posted release name (the Release Name Check says
  * `unverified`) is never proposed and frees nothing: the sweep would keep it, so it is not in the pool either.
+ * ADR-118 — a title tagged `mediarequests` is the same: the sweep would keep it, and no batch snapshots it.
  */
 export function isPaceDeletable<
   T extends {
@@ -283,6 +289,7 @@ export function isPaceDeletable<
     protectedByTag: boolean;
     onWatchlist: boolean;
     ageGuard: string;
+    arrTags?: readonly string[];
     releaseName?: string;
   },
 >(item: T): item is T & { maintainerrMediaId: string } {
@@ -292,6 +299,7 @@ export function isPaceDeletable<
     !item.protectedByTag &&
     !item.onWatchlist &&
     item.ageGuard !== 'recent' &&
+    !hasMediaRequestTag(item.arrTags) &&
     item.releaseName !== 'unverified'
   );
 }

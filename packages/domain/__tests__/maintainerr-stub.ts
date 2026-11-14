@@ -44,6 +44,8 @@ export interface StubRuleGroup {
   libraryId: string;
   dataType: string;
   collectionId: number;
+  /** Clause list. The default armed group carries the request clause. Omitted means the list was not modeled. */
+  rules?: unknown[];
 }
 export interface MaintState {
   integrations: { radarr: boolean; sonarr: boolean; tautulli: boolean; seerr: boolean };
@@ -157,6 +159,7 @@ export function makeMaintainerr(state: MaintState): {
           useRules: g.useRules,
           libraryId: g.libraryId,
           dataType: g.dataType,
+          ...(g.rules !== undefined ? { rules: g.rules } : {}),
           collection: (() => {
             const c = state.collections.find((col) => col.id === g.collectionId);
             return c ? { id: c.id, title: c.title, manualCollection: c.manualCollection ?? false } : null;
@@ -415,6 +418,24 @@ export function tvCollection(over: Partial<StubCollection> = {}): StubCollection
   };
 }
 
+/** The request clause an armed group must carry (Radarr tags for a movie, Sonarr show tags otherwise). */
+function requestKeepClause(dataType: string): Record<string, unknown> {
+  const show =
+    dataType === 'show' || dataType === 'season' || dataType === 'episode' || dataType === '2';
+  return {
+    id: 1,
+    isActive: true,
+    section: 0,
+    ruleJson: JSON.stringify({
+      operator: 0,
+      action: 9,
+      firstVal: show ? [2, 2] : [1, 2],
+      customVal: { ruleTypeId: 2, value: 'mediarequests' },
+      section: 0,
+    }),
+  };
+}
+
 export const baseState = (over: Partial<MaintState> = {}): MaintState => {
   const collections = over.collections ?? [movieCollection()];
   return {
@@ -440,6 +461,7 @@ export const baseState = (over: Partial<MaintState> = {}): MaintState => {
         libraryId: String(c.libraryId),
         dataType: c.type,
         collectionId: c.id,
+        rules: [requestKeepClause(c.type)],
       })),
   };
 };

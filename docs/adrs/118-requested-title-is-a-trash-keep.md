@@ -1,0 +1,44 @@
+# ADR-118: A title tagged `mediarequests` is a Trash keep
+
+- **Status:** Accepted
+- **Date:** 2026-11-13
+- **Deciders:** the owner (ruling of 2026-11-13, recorded on story 818 comment 8041 and story 844). The review corrections in C-03, C-04, C-05 and C-06 were applied the same day from the adversarial review of PR 1068; the coordinator accepted the fail-closed rules read (review Q-R3) on story 844 comment 8203.
+
+## Context and problem statement
+
+On 2026-07-09 the owner ruled that Maintainerr's rules decide what is promoted and the app decides how much is deleted and when. [ADR-025](025-trash-curation-pipeline.md)'s errata of that date removed the requester keep from `classifyGuardian`. A personal requester tag stayed informational. [ADR-093](093-watchlists-protect-trash-and-fresh-rerequests.md) C-03 restates that, and C-11 says a Seerr add is tagged `mediarequests`, which keeps the title out of the Trash pools only because each Maintainerr rule excludes that tag.
+
+That exclusion is one clause on each rule. The app does not read the tag, and the sweep's audit does not check that the clause is still there. A rule save that dropped the clause would let a requested title into the pool, and the guardian would then delete it. The owner's direction of 2026-11-13 is that a requested title is protected so it cannot be removed. This ADR records that direction for the `mediarequests` tag. It does not restore the retired requester auto-save, and it does not make a personal requester tag (`<n>-name`) a keep.
+
+## Decision drivers
+
+- A requested title must stay, even when Maintainerr's pool contains it.
+- The protection is the tag on the ledger copy. It lasts while that copy contains the tag. There is no timer.
+- A re-requested copy of a Trash-deleted title is tagged `mediarequests` by Seerr's add, except the three cases ADR-093 C-11 names, and is then kept once the copy has the tag.
+- No keep that already holds a title may be weakened or reordered so that title becomes deletable.
+- An Accepted ADR is not edited. This record supersedes the conflicting sentences; ADR-025 and ADR-093 stay as they were accepted.
+
+## Considered options
+
+- **Leave the clause as the only protection.** Rejected: nothing in the app checks it, and the rule description has already drifted from the body.
+- **Restore the 2026-07-09-before requester keep** (any personal requester tag, auto-save at batch build). Rejected: the ruling names the requested title, which is the `mediarequests` tag, and the restore routes are a separate story.
+- **Keep the tag inside the guardian, and refuse a sweep when either rule has lost the clause.** Chosen.
+
+## Decision outcome
+
+Chosen option: **the tag is a guardian keep, and the audit requires the clause**, because the app then refuses the deletion itself and also refuses to run when the Maintainerr clause that should have kept the title out of the pool is gone.
+
+### Consequences
+
+| ID   | Consequence |
+| ---- | ----------- |
+| C-01 | **Supersedes, for this tag only, the 2026-07-09 errata of ADR-025 and the "requesters stay informational" sentence of ADR-093 C-03.** `classifyGuardian` keeps a title whose ledger tags include `mediarequests` (reason `media_request`). A personal requester tag stays informational and is not a keep. The retired auto-save is not restored. |
+| C-02 | **Order.** The new keep sits after Save, the `dnd` tag, a recent watch, the Watchlist Keep and the Age Guard, and before the fail-closed `unevaluable` bucket. Those earlier keeps still win, in the same order, so a title kept today is kept for the same reason. ADR-117's `release_unverified` stays after `unevaluable`. A title that is both tagged `mediarequests` and unnamed is kept, and the reason reported is `media_request`, because this keep is earlier. |
+| C-03 | **Where.** The keep is the guardian's, so the sweep, Expedite (both scopes) and Expire now all honor a row that is already pending. Creating a batch leaves the title out, the way a Save is left out: it is not snapshotted, not posted to Leaving Soon, and not counted as deleting. That holds for every batch, including a space-policy batch. The client preview mirrors it. None of those paths auto-save the title. |
+| C-04 | **How long.** The keep lasts while `media_items.arr_tags` contains `mediarequests`. That column is written by the full sync once a day at 04:30, so the keep can lag the live tag by up to 24 hours, at that 04:30 full sync. Removing the tag from the copy removes the keep. The app does not remove the tag. Reading the tag live at the delete is a follow-up story, not this decision. |
+| C-05 | **The audit.** `auditMaintainerr` refuses a sweep, Expedite and Expire now when an armed group whose `useRules` is not false has lost an active "tags do not contain `mediarequests`" clause, or joins a later clause with OR, or when `GET /api/rules` cannot be read. The clause is recognised the way Maintainerr compares it (`Number` on the operator, the action and each `firstVal` element; the value lower-cased; a JSON list that contains the tag). A later null operator is OR. Which section the clause sits in is not part of the check. A group with `useRules` false, including a Leaving Soon shell, is not held to the clause. A failed rules read is fail-closed: the coordinator accepted that on story 844 (comment 8203), which is wider than the story's sentence that nothing else about the audit changes. The horizon, `arrAction`, `listExclusions`, `forceSeerr` and the integration checks are otherwise unchanged. |
+| C-06 | **Descriptions.** A rule save the app writes sets the group's description from the clauses it is writing: the property (`2,20` vote count, `2,7` ended, `0,27` last episode aired, and the others already named), the action (2 is equals), a date comparison in days, and the second property of a two-property clause. The caller's own text stays after that sentence, so a save does not wipe notes. This ADR does not write to the live Maintainerr. |
+
+## More information
+
+DESIGN-052 D-30. Glossary T-336. The measured counts, the known limits and Q-31 are recorded in D-30. Main already holds Q-23 for the Release Name Check, so the Request Keep's open question is Q-31. The review's measurements are the ones cited there; this record does not repeat them as a new read.
