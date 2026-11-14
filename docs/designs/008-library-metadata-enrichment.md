@@ -1,7 +1,7 @@
 # DESIGN-008: Library metadata enrichment, poster proxy, and the shared filter/sort contract
 
 - **Status:** Draft
-- **Last updated:** 2026-11-13 <!-- D-03 amendment: the household history is paged to a short page, and a finished read stores play_count 0. Prior: 2026-09-23 (staleness slack). -->
+- **Last updated:** 2026-11-14 <!-- D-03 amendment: the household history is paged to a short page, and a finished read stores play_count 0. Prior: 2026-09-23 (staleness slack). -->
 - **Satisfies:** PRD-001 R-40..R-42 (extended) + new **R-67..R-72**; governed by **ADR-018**
   (metadata modeling), **ADR-019** (poster proxy), ADR-008 (one-way sync), ADR-003
   (Postgres/Drizzle + transactional audit), ADR-015 (no reorientation). Bounded context DDD-002
@@ -426,6 +426,50 @@ Music tab, and the 390×844 pass (2-column grid, single-row chip bar, viewport-c
 `seed-ledger.ts` gained a second radarr movie (`Stub Runner`, disjoint genres/requester/rating)
 so a filter/sort visibly CHANGES the result set.
 
+### D-15 — Kind-qualified watch identity; sentinel ids are unknown (story #855)
+
+Amendment dated 2026-11-14. Applies to the household harvest, its per-user projection,
+and the existing watch-history backfill. No migration, Trash rule, history window or paging change.
+
+- A history row's `media_type` supplies the kind: `movie` → Radarr, `episode` → Sonarr
+  (the grandparent/show rating key). Group by **kind and rating key**, retain that kind
+  through indexing and matching, and apply it to **every** external id, including IMDb.
+  Missing/unknown kinds are skipped; they never fan out to both kinds. Music stays unknown,
+  as in Q-11. A conflicting cached kind is bypassed in favour of `get_metadata`; an explicit
+  conflicting metadata type is rejected. A metadata response without a type can use the
+  history row's already-known kind.
+- One normalization rule applies to ledger targets, cached ids and `get_metadata` ids:
+  TMDB/TVDB must be positive safe integers; IMDb must be `tt` followed by digits with
+  a nonzero numeric part. Zero (including `tt0`), empty/whitespace, missing and malformed
+  ids cannot enter or query the index. A cached key with no usable ids falls back to
+  `get_metadata`. Cached library kind must agree with its ledger kind.
+- IMDb is one namespace: a genuinely shared IMDb id denotes the same work, rather than
+  a numeric collision like TMDB. Duplicate ledger entries **within the matching kind**
+  can intentionally share its plays. An episode row still cannot join a Radarr entry by
+  IMDb, nor a movie row a Sonarr entry. Conflicting catalog classification is not authority
+  to attribute plays across kinds.
+- A complete read stores zero only for a movie/show with at least one usable external id
+  and no joined play. With **no usable id**, store null `play_count`, null `last_viewed_at`,
+  null `last_watched_at`/server and no Tautulli source/breakdown: **unknown**, never a
+  fabricated "known, never played". Incomplete reads retain D-03's null behavior.
+- The corrected join takes effect in the next eligible metadata refresh after deployment;
+  **deployment therefore applies the correction without a separate backfill command**.
+  The existing backfill shares the join and offers `--dry-run` / `--apply`; the worker runs
+  it only against stub data and embedded PostgreSQL. Coordinator review of the keep-loss
+  list and adversarial review are required before release, and any production apply is
+  a separate coordinator step. Source, tested, installed and accepted are recorded separately.
+- The same join feeds `user_media_watch`. A complete read must also replace stale
+  per-user projections (zero/false for an identifiable title with no play for that mapped
+  viewer; null/false when unidentifiable). Only existing absent-viewer rows are cleared;
+  no zero row is created for a viewer who had no row. Equal rows are left alone, including
+  when only the per-user projection needed correction. Users without a current Plex
+  mapping cannot be reattributed; their old rows stay pending a restored mapping.
+  An incomplete read must not clear absent users.
+  This repairs contamination rather than merely ceasing to add it. No watch writer is used.
+
+Replica evidence, household-only census, projected Trash consequences and reader inventory:
+[story #855 evidence](../../.agents/context/watch-join-855/README.md).
+
 ## Alternatives considered
 
 - Columns on `media_items` vs the separate table — see ADR-018 (rejected: sync bloat, Restore
@@ -456,6 +500,16 @@ runs verbatim in `@hnet/ui` (`src/filters/*.test.*` — jsdom via per-file docbl
 the stubs above + the poster-proxy contract spec + the D-10/D-11 grid/filter journeys
 (`library-grid.spec.ts`, see D-14).
 
+The D-15 identity matrix (`packages/sync/__tests__/watch-join-identity.test.ts`) runs
+both the real database cache loader and the `get_metadata` route against embedded PostgreSQL 16.
+It checks every id namespace across kinds; same-kind IMDb duplicates; zero, empty, whitespace
+and missing ids with distinct valid fallback ids; invalid ids on the play itself; unidentifiable
+null versus identifiable zero; multi-id deduplication; conflicting/unknown kinds; stale mapped
+viewer correction even when household fields already match; incomplete-read preservation;
+and the backfill dry run, metadata preservation and idempotence. Empty numeric ids cannot be
+stored in PostgreSQL integer columns, so their ledger representation is null; the upstream
+empty GUID is exercised explicitly.
+
 ## Open questions
 
 | ID | Question | Resolution |
@@ -464,3 +518,6 @@ the stubs above + the poster-proxy contract spec + the D-10/D-11 grid/filter jou
 | Q-10 | Dedupe one account watching a title on two servers | Deferred — SUM across servers is the current signal (PLAN-006 refines if needed). |
 | Q-11 | Should Lidarr (music) receive `play_count` 0 on a finished read? | **Open.** Recommendation: no. History rows for tracks are not joined to an artist, so a 0 would say "never played" for a library this harvest does not read. Music stays null (unknown) until a join exists. |
 | Q-12 | Tautulli `recordsTotal` is larger than the grouped rows the walk returns. HaynesTower, 2026-11-13: `recordsTotal` 49,262, unfiltered `recordsFiltered` 39,010, and the walk returned 39,010 rows. Episode `group_count` summed to 39,629 and movie `group_count` to 6,977 (46,606 together). Track `group_count` was not summed, so the remaining 2,656 (49,262 − 46,606, calculated) is unexplained. | **Open.** Recommendation: page `data` until a short or empty page, and size the cap from the walked rows (`recordsFiltered`), not from `recordsTotal`. The cap of 158 is 2 × ceil(39010/500). |
+| Q-13 | Can the current `media_metadata` household aggregate alone recover the correct kind/id attribution? | No: SUM/MAX discarded the contributing rating keys and kinds. Recommendation: obtain a read-only grouped lifetime history, retain only household title totals, and mirror the corrected join in replica SELECTs; never infer the owner of a play from identical aggregates. Evidence status is recorded with the census. |
+| Q-14 | Should a shared IMDb id override a history row's kind? | Recommendation implemented in D-15: no. IMDb denotes one work, but the row kind still confines attribution; same-kind duplicate entries may intentionally share it. |
+| Q-15 | When may corrected counts remove current keeps in production? | Open release hold: coordinator must read the named keep-loss list and obtain the required adversarial review before deployment or production apply. Worker performs neither. |

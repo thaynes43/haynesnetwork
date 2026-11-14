@@ -235,10 +235,10 @@ describe('metadata-refresh per-user watch attribution (ADR-053 / DESIGN-026 D-07
     // ADDITIVE (ADR-053 C-03): the household signal is exactly what it was with an empty map.
     expect(await household()).toEqual(householdBefore);
 
-    // 3) Idempotent: a later run re-writes the same per-user rows and maps nobody new.
+    // 3) Idempotent: a later run leaves equal per-user rows alone and maps nobody new.
     const again = await harvest();
     expect(again.plexAccountMap).toMatchObject({ candidates: 1, mapped: 0, noClaim: 1 });
-    expect(again.sources[0]!.stats).toMatchObject({ userWatchMappedUsers: 1, userWatchWritten: 2 });
+    expect(again.sources[0]!.stats).toMatchObject({ userWatchMappedUsers: 1, userWatchWritten: 0 });
     expect(await t.db.select().from(userMediaWatch)).toHaveLength(2);
     expect(await household()).toEqual(householdBefore);
   });
@@ -264,7 +264,7 @@ describe('metadata-refresh per-user watch attribution (ADR-053 / DESIGN-026 D-07
       expect(tick2.sources[0]!.stats).toMatchObject({
         targets: 3,
         written: 3,
-        userWatchWritten: 2,
+        userWatchWritten: 0,
       });
     } finally {
       clock.mockRestore();

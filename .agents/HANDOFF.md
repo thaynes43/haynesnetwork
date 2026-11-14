@@ -1,5 +1,23 @@
 # HANDOFF — cold-start resume point
 
+## 2026-11-14: story #855 watch join by kind and usable id (release hold)
+
+- DESIGN-008 D-15 and Q-13..Q-15; evidence and reproduction under
+  [context/watch-join-855/README.md](context/watch-join-855/README.md).
+- Source correction applies automatically on the next eligible metadata harvest after deployment.
+  Coordinator must review the keep-loss list and obtain the mandatory adversarial review before release.
+  No production correction, deployment, watch write or merge by this worker.
+- Measured 2026-11-14, replica postgres16-11 and grouped lifetime Tautulli GETs: 76 TMDB movie/show
+  pairs (46 with identical positive records), 22 Sonarr TMDB-zero rows. The SELECT mirror separates
+  those 22 into 20 zeros and two genuine played shows; no positive cross-kind duplicate remains.
+- The mirror removes 11 recent-watch keeps, adds none. None of those titles is in the pool or an
+  open batch. Six movies would clear the database guardian if they entered the pool: 2001: A Space
+  Odyssey, Beautiful Thing, Citizen Kane, Das Boot, Sister Act, The Bridges of Madison County.
+  The evidence names every loss and every other known keep. This is a projection, not installed state.
+- Household and mapped-viewer read projections share the corrected join. Missing all usable ids stays
+  unknown (null). Music, paging, Plex matcher and Trash rules stay unchanged.
+- Next safe step: coordinator review of the open PR and adversarial review; coordinator owns acceptance.
+
 ## 2026-11-13: story #836 Age Guard library fill (proposed, setting off)
 
 - ADR-119 and DESIGN-052 D-31. The audited setting `age_guard_ignore_library_fill` defaults off. Off keeps the 2026-10-03 newest-date rule, except one case: a pool member with no Plex match and no download import inside 180 days is `unknown` (kept). That is the one change that alters today's behaviour, and it only ever keeps more. Measured 2026-11-13 on replica postgres16-11 (`SELECT` on `trash_candidates`, `refreshed_at` 2026-11-13 15:15:05.495-05): 0 of 524 movie candidates have no Plex match, and the TV pool has 0 members. The ten shows that pass story 835's predicates all have a Plex match (same replica, same day).

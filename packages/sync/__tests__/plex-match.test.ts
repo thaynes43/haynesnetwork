@@ -11,7 +11,10 @@ import {
   upsertPlexLibraries,
   type PlexClientBundle,
 } from '@hnet/domain';
-import { formatCrossTypeRepairReport, parseCrossTypeRepairArgs } from '../src/scripts/plex-match-type-repair';
+import {
+  formatCrossTypeRepairReport,
+  parseCrossTypeRepairArgs,
+} from '../src/scripts/plex-match-type-repair';
 import type { PlexReadClient } from '@hnet/plex/read';
 import type { PlexSectionItem } from '@hnet/plex';
 import { lookupHouseholdWatch, type TitleWatch, type WatchIndex } from '../src/metadata-refresh';
@@ -388,9 +391,10 @@ describe('a library whose live type disagrees with the registry', () => {
   });
 });
 
-describe('household plays are joined by id number', () => {
-  it('gives a movie and a show that share a TMDB number the same play, with no match row involved', () => {
+describe('household plays are joined by kind and id', () => {
+  it('does not give a movie the play of a show sharing its TMDB number', () => {
     const played: TitleWatch = {
+      arrKind: 'sonarr',
       instanceSlug: 'haynestower',
       guids: { tmdbId: 500501 },
       playCount: 7,
@@ -402,9 +406,19 @@ describe('household plays are joined by id number', () => {
       byImdb: new Map(),
       byTvdb: new Map(),
     };
-    const movie = lookupHouseholdWatch(index, { tmdbId: 500501, imdbId: null, tvdbId: null });
-    const show = lookupHouseholdWatch(index, { tmdbId: 500501, imdbId: null, tvdbId: 801 });
-    expect(movie?.household.playCount).toBe(7);
+    const movie = lookupHouseholdWatch(index, {
+      arrKind: 'radarr',
+      tmdbId: 500501,
+      imdbId: null,
+      tvdbId: null,
+    });
+    const show = lookupHouseholdWatch(index, {
+      arrKind: 'sonarr',
+      tmdbId: 500501,
+      imdbId: null,
+      tvdbId: 801,
+    });
+    expect(movie).toBeNull();
     expect(show?.household.playCount).toBe(7);
     expect(show?.household.lastViewedAt?.toISOString()).toBe('2026-09-28T00:00:00.000Z');
   });

@@ -18,7 +18,6 @@ import {
   upsertMediaMetadataBatch,
   upsertUserMediaWatchBatch,
   type MediaMetadataFields,
-  type UserMediaWatchInput,
   type UserWatchContribution,
   type UserWatchStat,
 } from '@hnet/domain';
@@ -52,6 +51,13 @@ import {
   type PlexRatingGuids,
 } from './db-reads';
 import type { SyncLogger } from './logger';
+import { projectUserWatchRows } from './watch-user-projection';
+import {
+  identifiableWatchTarget,
+  usableWatchGuids,
+  type WatchKind,
+  type WatchTarget,
+} from './watch-identity';
 
 export const METADATA_STALE_THRESHOLD_MS = 6 * 60 * 60 * 1000; // D-03 — 6h
 /**
@@ -79,9 +85,6 @@ export const TAUTULLI_HISTORY_PAGE_SIZE = 500;
  * a zero for a title it did not see.
  */
 export const TAUTULLI_HISTORY_PAGE_CAP = 158;
-
-/** Movies and shows are the kinds whose history rows this harvest joins. Music is left unknown. */
-const WATCH_ZERO_KINDS: ReadonlySet<ArrKind> = new Set(['radarr', 'sonarr']);
 
 /** The cross-kind indices harvested once and shared by every per-kind run. */
 export interface MetadataContext {
@@ -202,7 +205,7 @@ export async function runMetadataRefreshForKind(
   // ADR-053 / DESIGN-026 D-07 — the plex.tv user id → app user id map for per-user watch attribution.
   // Empty (no mapped users) ⇒ the per-user emission is a clean no-op; the household aggregate is unchanged.
   const plexUserMap = await getPlexUserIdToAppUserMap(db);
-  const userWatchBatch: UserMediaWatchInput[] = [];
+  const userWatchTargets: (MetadataTarget & { perUser?: Map<string, UserWatchStat> })[] = [];
 
   // Tier: the *arr live list (base descriptive fields for LIVE rows) — one call, degradable.
   let arrList = new Map<number, MetadataPatch>();
@@ -302,28 +305,15 @@ export async function runMetadataRefreshForKind(
     const extra: Record<string, unknown> = {};
     const watch = matchWatch(input.context.watchIndex, target);
     // A finished read stores 0 for a movie or show with no joined row. Null stays "unknown":
-    // the read stopped early, a lookup threw, or this kind's plays are not in the history grain.
-    const knownZero = !watch && input.context.watchComplete && WATCH_ZERO_KINDS.has(arrKind);
+    // the read stopped early, a lookup threw, this title has no usable id, or the kind is music.
+    const knownZero = !watch && input.context.watchComplete && identifiableWatchTarget(target);
     if (knownZero) stats.watchZeros += 1;
     if (watch) {
       sourcesFlags.tautulli = true;
       stats.tierTautulli += 1;
       extra.tautulli = watch.household.perInstance;
-      // ADR-053 / DESIGN-026 D-07 — emit per-user watch rows for the mapped users (additive; the
-      // household aggregate below is untouched). A play by an unmapped/anonymous user attributes to nobody.
-      for (const [plexUserId, stat] of watch.perUser) {
-        const appUserId = plexUserMap.get(plexUserId);
-        if (!appUserId) continue;
-        userWatchBatch.push({
-          mediaItemId: target.id,
-          appUserId,
-          playCount: stat.playCount,
-          lastViewedAt: stat.lastViewedAt,
-          watched: stat.watched,
-          inProgress: stat.inProgress,
-        });
-      }
     }
+    userWatchTargets.push({ ...target, perUser: watch?.perUser });
 
     const collections =
       target.tmdbId !== null ? input.context.maintainerrByTmdb.get(target.tmdbId) : undefined;
@@ -357,13 +347,20 @@ export async function runMetadataRefreshForKind(
   // ADR-053 / DESIGN-026 D-07 — persist the per-user watch rows (additive; the domain writer chunks). A
   // no-op when no user is mapped. Isolated: a failure here must not lose the household metadata just
   // written, so it's logged and swallowed (self-heals next cycle).
-  if (userWatchBatch.length > 0) {
-    try {
-      const { written } = await upsertUserMediaWatchBatch({ db, rows: userWatchBatch });
-      stats.userWatchWritten = written;
-    } catch (err) {
-      logger.error('metadata-refresh: per-user watch upsert failed', { kind: arrKind, error: msg(err) });
-    }
+  try {
+    const userWatchBatch = await projectUserWatchRows({
+      db,
+      targets: userWatchTargets,
+      complete: input.context.watchComplete,
+      mappedUsers: plexUserMap,
+    });
+    const { written } = await upsertUserMediaWatchBatch({ db, rows: userWatchBatch });
+    stats.userWatchWritten = written;
+  } catch (err) {
+    logger.error('metadata-refresh: per-user watch upsert failed', {
+      kind: arrKind,
+      error: msg(err),
+    });
   }
 
   logger.info('metadata-refresh: kind done', { ...stats });
@@ -477,6 +474,7 @@ async function tryDirect(
 // ── Tautulli watch-stats aggregation (cross-server) ──────────────────────────────────────
 
 export interface TitleWatch {
+  arrKind: WatchKind;
   instanceSlug: string;
   guids: ParsedGuids;
   playCount: number;
@@ -513,9 +511,10 @@ function indexTitle(index: WatchIndex, tw: TitleWatch): void {
     if (!set) map.set(key, (set = new Set()));
     set.add(tw);
   };
-  add(index.byTmdb, tw.guids.tmdbId);
-  add(index.byImdb, tw.guids.imdbId);
-  add(index.byTvdb, tw.guids.tvdbId);
+  const ids = usableWatchGuids(tw.guids);
+  add(index.byTmdb, ids.tmdbId);
+  add(index.byImdb, ids.imdbId);
+  add(index.byTvdb, ids.tvdbId);
 }
 
 /** One Tautulli instance's history walk. Dates are household instants (ISO), never one account's row. */
@@ -547,7 +546,9 @@ export interface HouseholdWatchRead {
  * rows still advance the oldest/newest instants and the page count. A rating key the plex-match
  * table already resolved skips `get_metadata`.
  */
-export async function readHouseholdWatch(input: BuildMetadataContextInput): Promise<HouseholdWatchRead> {
+export async function readHouseholdWatch(
+  input: BuildMetadataContextInput,
+): Promise<HouseholdWatchRead> {
   const { logger } = input;
   const pageSize = input.tautulliPageSize ?? TAUTULLI_HISTORY_PAGE_SIZE;
   const maxPages = input.tautulliMaxPages ?? TAUTULLI_HISTORY_PAGE_CAP;
@@ -569,7 +570,10 @@ export async function readHouseholdWatch(input: BuildMetadataContextInput): Prom
     };
     instances.push(report);
     try {
-      const groups = new Map<string, { plays: number; last: Date | null }>();
+      const groups = new Map<
+        string,
+        { arrKind: WatchKind; ratingKey: string; plays: number; last: Date | null }
+      >();
       // ADR-053 / DESIGN-026 D-07 — the per-user breakdown per title: ratingKey → (plex user id →
       // contribution). Built alongside the household aggregate from the same history pages.
       const perUserGroups = new Map<string, Map<string, UserWatchContribution>>();
@@ -596,8 +600,10 @@ export async function readHouseholdWatch(input: BuildMetadataContextInput): Prom
                 ? row.grandparent_rating_key
                 : undefined;
           if (key === null || key === undefined) continue;
-          const k = String(key);
-          const g = groups.get(k) ?? { plays: 0, last: null };
+          const arrKind = type === 'movie' ? 'radarr' : 'sonarr';
+          const ratingKey = String(key);
+          const k = `${arrKind}\0${ratingKey}`;
+          const g = groups.get(k) ?? { arrKind, ratingKey, plays: 0, last: null };
           g.plays += 1;
           if (when && (!g.last || when > g.last)) g.last = when;
           groups.set(k, g);
@@ -631,9 +637,13 @@ export async function readHouseholdWatch(input: BuildMetadataContextInput): Prom
           pageSize,
         });
       }
-      for (const [ratingKey, g] of groups) {
+      for (const [groupKey, g] of groups) {
+        const { ratingKey, arrKind } = g;
         const cached = ratingKeyGuids.get(plexRatingGuidKey(inst.slug, ratingKey));
-        let guids: PlexRatingGuids | null = cached ?? null;
+        let guids: ParsedGuids | null =
+          cached?.arrKind === arrKind && identifiableWatchTarget(cached)
+            ? usableWatchGuids(cached)
+            : null;
         if (!guids) {
           let meta: TautulliMetadata | null;
           try {
@@ -654,18 +664,27 @@ export async function readHouseholdWatch(input: BuildMetadataContextInput): Prom
             report.unjoined += 1;
             continue;
           }
-          guids = guidsFromMetadata(meta);
+          if (meta.media_type && meta.media_type !== (arrKind === 'radarr' ? 'movie' : 'show')) {
+            report.unjoined += 1;
+            continue;
+          }
+          guids = usableWatchGuids(guidsFromMetadata(meta));
         }
-        if (guids.tmdbId === undefined && guids.imdbId === undefined && guids.tvdbId === undefined) {
+        if (
+          guids.tmdbId === undefined &&
+          guids.imdbId === undefined &&
+          guids.tvdbId === undefined
+        ) {
           report.unjoined += 1;
           continue;
         }
         indexTitle(index, {
           instanceSlug: inst.slug,
+          arrKind,
           guids,
           playCount: g.plays,
           lastViewedAt: g.last,
-          perUser: perUserGroups.get(ratingKey) ?? new Map(),
+          perUser: perUserGroups.get(groupKey) ?? new Map(),
         });
       }
       if (report.metadataErrors > 0) {
@@ -707,21 +726,20 @@ export interface TargetWatch {
   perUser: Map<string, UserWatchStat>;
 }
 
-export function lookupHouseholdWatch(
-  index: WatchIndex,
-  target: { tmdbId: number | null; imdbId: string | null; tvdbId: number | null },
-): TargetWatch | null {
+export function lookupHouseholdWatch(index: WatchIndex, target: WatchTarget): TargetWatch | null {
   return matchWatch(index, target);
 }
 
-function matchWatch(
-  index: WatchIndex,
-  target: { tmdbId: number | null; imdbId: string | null; tvdbId: number | null },
-): TargetWatch | null {
+function matchWatch(index: WatchIndex, target: WatchTarget): TargetWatch | null {
+  if (!identifiableWatchTarget(target)) return null;
+  const ids = usableWatchGuids(target);
   const matched = new Set<TitleWatch>();
-  if (target.tmdbId !== null) for (const tw of index.byTmdb.get(target.tmdbId) ?? []) matched.add(tw);
-  if (target.imdbId) for (const tw of index.byImdb.get(target.imdbId) ?? []) matched.add(tw);
-  if (target.tvdbId !== null) for (const tw of index.byTvdb.get(target.tvdbId) ?? []) matched.add(tw);
+  const add = (plays: Iterable<TitleWatch>) => {
+    for (const tw of plays) if (tw.arrKind === target.arrKind) matched.add(tw);
+  };
+  if (ids.tmdbId !== undefined) add(index.byTmdb.get(ids.tmdbId) ?? []);
+  if (ids.imdbId !== undefined) add(index.byImdb.get(ids.imdbId) ?? []);
+  if (ids.tvdbId !== undefined) add(index.byTvdb.get(ids.tvdbId) ?? []);
   if (matched.size === 0) return null;
   const contributions: WatchContribution[] = [...matched].map((tw) => ({
     instanceSlug: tw.instanceSlug,

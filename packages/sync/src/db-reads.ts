@@ -15,6 +15,7 @@ import {
   type SyncSource,
 } from '@hnet/db';
 import { and, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { identifiableWatchTarget, usableWatchGuids, type WatchKind } from './watch-identity';
 
 /** A Media Item the metadata harvest must (re)fetch (ADR-018 / DESIGN-008 D-03). */
 export interface MetadataTarget {
@@ -191,6 +192,7 @@ export async function resolveSeerrMediaItemId(
 
 /** External ids a Plex rating key already resolves to, so the watch harvest can skip `get_metadata`. */
 export interface PlexRatingGuids {
+  arrKind: WatchKind;
   imdbId?: string;
   tmdbId?: number;
   tvdbId?: number;
@@ -210,6 +212,8 @@ export async function loadPlexRatingGuids(db: DbClient): Promise<Map<string, Ple
     .select({
       slug: plexServers.slug,
       ratingKey: mediaPlexMatches.ratingKey,
+      arrKind: mediaItems.arrKind,
+      mediaType: plexLibraries.mediaType,
       tmdbId: mediaItems.tmdbId,
       imdbId: mediaItems.imdbId,
       tvdbId: mediaItems.tvdbId,
@@ -220,11 +224,10 @@ export async function loadPlexRatingGuids(db: DbClient): Promise<Map<string, Ple
     .innerJoin(mediaItems, eq(mediaItems.id, mediaPlexMatches.mediaItemId));
   const map = new Map<string, PlexRatingGuids>();
   for (const row of rows) {
-    const guids: PlexRatingGuids = {};
-    if (row.tmdbId !== null) guids.tmdbId = row.tmdbId;
-    if (row.imdbId) guids.imdbId = row.imdbId;
-    if (row.tvdbId !== null) guids.tvdbId = row.tvdbId;
-    if (guids.tmdbId === undefined && guids.imdbId === undefined && guids.tvdbId === undefined) continue;
+    if (row.arrKind !== 'radarr' && row.arrKind !== 'sonarr') continue;
+    if (row.mediaType !== (row.arrKind === 'radarr' ? 'movie' : 'show')) continue;
+    const guids: PlexRatingGuids = { arrKind: row.arrKind, ...usableWatchGuids(row) };
+    if (!identifiableWatchTarget(guids)) continue;
     map.set(plexRatingGuidKey(row.slug, row.ratingKey), guids);
   }
   return map;

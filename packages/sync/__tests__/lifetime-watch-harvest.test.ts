@@ -140,7 +140,9 @@ describe('lifetime household watch (DESIGN-008 D-03)', () => {
       sources: { tautulli: [{ slug: 'haynesops', client: stub.client }] },
       logger: noopLogger,
       db: t.db,
-      ratingKeyGuids: new Map([[plexRatingGuidKey('haynesops', '101'), { tmdbId: 8388 }]]),
+      ratingKeyGuids: new Map([
+        [plexRatingGuidKey('haynesops', '101'), { arrKind: 'radarr', tmdbId: 8388 }],
+      ]),
     });
     expect(context.watchComplete).toBe(true);
     const stats = await runMetadataRefreshForKind({

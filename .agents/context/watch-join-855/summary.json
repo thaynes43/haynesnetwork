@@ -1,0 +1,354 @@
+{
+  "before_measured_at": "2026-11-14T02:03:58.432741-05:00",
+  "projection_measured_at": "2026-11-14T02:08:38.342403-05:00",
+  "replica": true,
+  "id_census": [
+    {
+      "namespace": "TMDB",
+      "arr": "radarr",
+      "live": 9630,
+      "zero": 0,
+      "empty": 0,
+      "missing": 0,
+      "identical_groups": 0,
+      "titles_in_identical_groups": 0,
+      "identical_groups_after": 0,
+      "titles_in_identical_groups_after": 0,
+      "positive_identical_groups_before": 0,
+      "positive_identical_groups_after": 0
+    },
+    {
+      "namespace": "TMDB",
+      "arr": "sonarr",
+      "live": 1085,
+      "zero": 22,
+      "empty": 0,
+      "missing": 0,
+      "identical_groups": 1,
+      "titles_in_identical_groups": 22,
+      "identical_groups_after": 1,
+      "titles_in_identical_groups_after": 20,
+      "positive_identical_groups_before": 1,
+      "positive_identical_groups_after": 0
+    },
+    {
+      "namespace": "TMDB",
+      "arr": "lidarr",
+      "live": 7735,
+      "zero": 0,
+      "empty": 0,
+      "missing": 7735,
+      "identical_groups": 1,
+      "titles_in_identical_groups": 7735,
+      "identical_groups_after": 1,
+      "titles_in_identical_groups_after": 7735,
+      "positive_identical_groups_before": 0,
+      "positive_identical_groups_after": 0
+    },
+    {
+      "namespace": "TVDB",
+      "arr": "radarr",
+      "live": 9630,
+      "zero": 0,
+      "empty": 0,
+      "missing": 9630,
+      "identical_groups": 1,
+      "titles_in_identical_groups": 8331,
+      "identical_groups_after": 1,
+      "titles_in_identical_groups_after": 8356,
+      "positive_identical_groups_before": 0,
+      "positive_identical_groups_after": 0
+    },
+    {
+      "namespace": "TVDB",
+      "arr": "sonarr",
+      "live": 1085,
+      "zero": 0,
+      "empty": 0,
+      "missing": 0,
+      "identical_groups": 0,
+      "titles_in_identical_groups": 0,
+      "identical_groups_after": 0,
+      "titles_in_identical_groups_after": 0,
+      "positive_identical_groups_before": 0,
+      "positive_identical_groups_after": 0
+    },
+    {
+      "namespace": "TVDB",
+      "arr": "lidarr",
+      "live": 7735,
+      "zero": 0,
+      "empty": 0,
+      "missing": 7735,
+      "identical_groups": 1,
+      "titles_in_identical_groups": 7735,
+      "identical_groups_after": 1,
+      "titles_in_identical_groups_after": 7735,
+      "positive_identical_groups_before": 0,
+      "positive_identical_groups_after": 0
+    },
+    {
+      "namespace": "IMDb",
+      "arr": "radarr",
+      "live": 9630,
+      "zero": 0,
+      "empty": 0,
+      "missing": 85,
+      "identical_groups": 1,
+      "titles_in_identical_groups": 84,
+      "identical_groups_after": 1,
+      "titles_in_identical_groups_after": 84,
+      "positive_identical_groups_before": 0,
+      "positive_identical_groups_after": 0
+    },
+    {
+      "namespace": "IMDb",
+      "arr": "sonarr",
+      "live": 1085,
+      "zero": 0,
+      "empty": 0,
+      "missing": 12,
+      "identical_groups": 2,
+      "titles_in_identical_groups": 11,
+      "identical_groups_after": 1,
+      "titles_in_identical_groups_after": 10,
+      "positive_identical_groups_before": 1,
+      "positive_identical_groups_after": 0
+    },
+    {
+      "namespace": "IMDb",
+      "arr": "lidarr",
+      "live": 7735,
+      "zero": 0,
+      "empty": 0,
+      "missing": 7735,
+      "identical_groups": 1,
+      "titles_in_identical_groups": 7735,
+      "identical_groups_after": 1,
+      "titles_in_identical_groups_after": 7735,
+      "positive_identical_groups_before": 0,
+      "positive_identical_groups_after": 0
+    }
+  ],
+  "pairs": [
+    {
+      "namespace": "TMDB",
+      "pairs": 76,
+      "by_arr_pair": {
+        "radarr/sonarr": 76
+      },
+      "with_play": 46,
+      "identical_positive_before": 46,
+      "identical_positive_after": 0
+    },
+    {
+      "namespace": "TVDB",
+      "pairs": 0,
+      "by_arr_pair": {},
+      "with_play": 0,
+      "identical_positive_before": 0,
+      "identical_positive_after": 0
+    },
+    {
+      "namespace": "IMDb",
+      "pairs": 0,
+      "by_arr_pair": {},
+      "with_play": 0,
+      "identical_positive_before": 0,
+      "identical_positive_after": 0
+    }
+  ],
+  "age_fill_enabled": false,
+  "registry_ok_at": "2026-11-14T01:59:17.908-05:00",
+  "watch_totals": [
+    {
+      "arr": "radarr",
+      "before_played": 1299,
+      "before_zero": 8331,
+      "before_unknown": 0,
+      "after_played": 1274,
+      "after_zero": 8356,
+      "after_unknown": 0
+    },
+    {
+      "arr": "sonarr",
+      "before_played": 500,
+      "before_zero": 585,
+      "before_unknown": 0,
+      "after_played": 464,
+      "after_zero": 621,
+      "after_unknown": 0
+    }
+  ],
+  "affected_titles": 174,
+  "changed_titles": 76,
+  "changed_affected_titles": 73,
+  "loses_watch_keep": [
+    "Pan's Labyrinth",
+    "Hacks",
+    "Citizen Kane",
+    "Beautiful Thing",
+    "Das Boot",
+    "2001: A Space Odyssey",
+    "Sister Act",
+    "Muppet Babies",
+    "The Bridges of Madison County",
+    "Troy",
+    "Galaxy Quest"
+  ],
+  "gains_watch_keep": [],
+  "guardian_clears_after_loss": [
+    "Citizen Kane",
+    "Beautiful Thing",
+    "Das Boot",
+    "2001: A Space Odyssey",
+    "Sister Act",
+    "The Bridges of Madison County"
+  ],
+  "newly_deletable_in_pool_or_batch": [],
+  "id_zero_after": [
+    {
+      "title": "Star Wars: Icons of the Force",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "DuckTales (2017)",
+      "plays": 1,
+      "last": "2026-10-11T14:09:57-04:00"
+    },
+    {
+      "title": "Dancing with the Stars",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "I Am Groot",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "Forky Asks a Question",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "Condor",
+      "plays": 10,
+      "last": "2025-06-28T23:45:48-04:00"
+    },
+    {
+      "title": "The Corner",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "Gravity Falls (Shorts)",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "Lincoln: Divided We Stand",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "Legends (2027)",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "My World and Welcome to It",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "Lioness (2021)",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "Playmakers",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "The State Funeral of HM Queen Elizabeth II",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "People Like Us",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "Dragon Ball Super Friends",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "Swamp Thing (2019)",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "TILT",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "The R\u00e9gi.G",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "Weg Met Ons Ma",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "War and Remembrance",
+      "plays": 0,
+      "last": null
+    },
+    {
+      "title": "Grey\u2019s Anatomy Texas Spinoff",
+      "plays": 0,
+      "last": null
+    }
+  ],
+  "unknown_video_titles": [],
+  "other_changes": [
+    {
+      "title": "Numberblocks",
+      "arr_kind": "sonarr",
+      "before_plays": 637,
+      "after_plays": 637,
+      "before_last": "2026-11-14T00:14:56-05:00",
+      "after_last": "2026-11-14T02:04:39-05:00",
+      "before_server": "haynestower",
+      "after_server": "haynestower"
+    },
+    {
+      "title": "Lockup",
+      "arr_kind": "sonarr",
+      "before_plays": 371,
+      "after_plays": 373,
+      "before_last": "2026-11-12T23:17:00-05:00",
+      "after_last": "2026-11-14T02:04:20-05:00",
+      "before_server": "haynestower",
+      "after_server": "haynestower"
+    },
+    {
+      "title": "The Office (US)",
+      "arr_kind": "sonarr",
+      "before_plays": 3281,
+      "after_plays": 3285,
+      "before_last": "2026-11-14T00:14:16-05:00",
+      "after_last": "2026-11-14T02:04:06-05:00",
+      "before_server": "haynestower",
+      "after_server": "haynestower"
+    }
+  ]
+}

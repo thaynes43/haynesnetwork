@@ -16,12 +16,14 @@ import {
   upsertMediaMetadataBatch,
   upsertUserMediaWatchBatch,
   type MediaMetadataFields,
-  type UserMediaWatchInput,
+  type UserWatchStat,
 } from '@hnet/domain';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { MetadataSourceClients } from './clients';
 import { loadPlexRatingGuids } from './db-reads';
+import { identifiableWatchTarget, type WatchTarget } from './watch-identity';
 import type { SyncLogger } from './logger';
+import { projectUserWatchRows } from './watch-user-projection';
 import {
   lookupHouseholdWatch,
   readHouseholdWatch,
@@ -54,9 +56,11 @@ export interface WatchHistoryBackfillReport {
   played: number;
   /**
    * Candidates with no joined history row. Null when the read is incomplete: a zero is not claimed,
-   * and nothing is written. When set, played + zeros = candidates.
+   * and nothing is written. When set, played + zeros + unknown = candidates.
    */
   zeros: number | null;
+  /** Candidates with no usable identity (unknown rather than known zero). */
+  unknown: number;
   /** Candidates whose stored watch columns differ from this read. */
   changed: number;
   /** Rows persisted. 0 on a dry run and on an incomplete read. */
@@ -67,7 +71,7 @@ export interface WatchHistoryBackfillReport {
   unjoined: number;
 }
 
-interface Candidate {
+interface Candidate extends WatchTarget {
   id: string;
   tmdbId: number | null;
   imdbId: string | null;
@@ -88,6 +92,7 @@ export async function backfillWatchHistory(
       skippedNoMetadata: 0,
       played: 0,
       zeros: null,
+      unknown: 0,
       changed: 0,
       written: 0,
       unchanged: 0,
@@ -116,6 +121,7 @@ export async function backfillWatchHistory(
     candidates: candidates.length,
     skippedNoMetadata,
     unjoined,
+    unknown: candidates.filter((row) => !identifiableWatchTarget(row)).length,
   };
 
   if (!read.complete) {
@@ -144,33 +150,26 @@ export async function backfillWatchHistory(
 
   const plexUserMap = await getPlexUserIdToAppUserMap(db);
   const changedRows: MediaMetadataFields[] = [];
-  const userRows: UserMediaWatchInput[] = [];
+  const userTargets: (Candidate & { perUser?: Map<string, UserWatchStat> })[] = [];
   let played = 0;
   for (const row of candidates) {
     const watch = lookupHouseholdWatch(read.index, row);
     if (watch) played += 1;
-    const next = watchFields(row.meta, watch);
-    if (!watchDiffers(row.meta, next)) continue;
-    changedRows.push(next);
-    if (!watch) continue;
-    for (const [plexUserId, stat] of watch.perUser) {
-      const appUserId = plexUserMap.get(plexUserId);
-      if (!appUserId) continue;
-      userRows.push({
-        mediaItemId: row.id,
-        appUserId,
-        playCount: stat.playCount,
-        lastViewedAt: stat.lastViewedAt,
-        watched: stat.watched,
-        inProgress: stat.inProgress,
-      });
-    }
+    const next = watchFields(row.meta, watch, identifiableWatchTarget(row));
+    if (watchDiffers(row.meta, next)) changedRows.push(next);
+    userTargets.push({ ...row, perUser: watch?.perUser });
   }
-  const zeros = candidates.length - played;
+  const userRows = await projectUserWatchRows({
+    db,
+    targets: userTargets,
+    complete: read.complete,
+    mappedUsers: plexUserMap,
+  });
+  const zeros = candidates.length - played - base.unknown;
 
   let written = 0;
   let userWatchWritten = 0;
-  if (input.apply && changedRows.length > 0) {
+  if (input.apply) {
     for (let i = 0; i < changedRows.length; i += WRITE_CHUNK) {
       const chunk = changedRows.slice(i, i + WRITE_CHUNK);
       const result = await upsertMediaMetadataBatch({ db, rows: chunk });
@@ -206,6 +205,7 @@ async function loadCandidates(db: DbClient): Promise<Candidate[]> {
   const rows = await db
     .select({
       id: mediaItems.id,
+      arrKind: mediaItems.arrKind,
       tmdbId: mediaItems.tmdbId,
       imdbId: mediaItems.imdbId,
       tvdbId: mediaItems.tvdbId,
@@ -214,10 +214,7 @@ async function loadCandidates(db: DbClient): Promise<Candidate[]> {
     .from(mediaItems)
     .innerJoin(mediaMetadata, eq(mediaMetadata.mediaItemId, mediaItems.id))
     .where(
-      and(
-        isNull(mediaItems.deletedFromArrAt),
-        inArray(mediaItems.arrKind, ['radarr', 'sonarr']),
-      ),
+      and(isNull(mediaItems.deletedFromArrAt), inArray(mediaItems.arrKind, ['radarr', 'sonarr'])),
     );
   return rows;
 }
@@ -242,6 +239,7 @@ async function countMissingMetadata(db: DbClient): Promise<number> {
 function watchFields(
   meta: MediaMetadataRow,
   watch: ReturnType<typeof lookupHouseholdWatch>,
+  identifiable: boolean,
 ): MediaMetadataFields {
   const sources = { ...(meta.sources ?? {}) };
   const extra = { ...(meta.extra ?? {}) };
@@ -265,7 +263,7 @@ function watchFields(
     genres: meta.genres ?? [],
     arrAddedAt: meta.arrAddedAt,
     releasedAt: meta.releasedAt,
-    playCount: watch ? watch.household.playCount : 0,
+    playCount: watch ? watch.household.playCount : identifiable ? 0 : null,
     lastViewedAt: watch?.household.lastViewedAt ?? null,
     lastWatchedAt: watch?.household.lastViewedAt ?? null,
     lastWatchedServer: watch?.household.lastWatchedServer ?? null,

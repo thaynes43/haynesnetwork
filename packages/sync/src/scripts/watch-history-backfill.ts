@@ -4,7 +4,7 @@
 //
 // Pages each configured Tautulli history (page size 500, cap 158) and, on a finished read, stores
 // the household play count for every live movie and show that already has a metadata row. A title
-// with no joined play is stored as 0. An incomplete read writes nothing and exits 1. No Tautulli
+// with a usable id and no joined play is stored as 0; one with no usable id stays null. An incomplete read writes nothing and exits 1. No Tautulli
 // instance configured exits 2 and writes nothing. Idempotent: a second --apply writes no household
 // row when the stored watch columns already match.
 //
@@ -24,14 +24,16 @@ import { backfillWatchHistory } from '../watch-history-backfill';
 const USAGE = `Usage: watch-history-backfill.ts --dry-run|--apply
 
   --dry-run  page each Tautulli history and print the household counts (writes nothing)
-  --apply    store play_count 0 for a live movie or show with no joined play, and the
+  --apply    store play_count 0 for an identifiable live movie or show with no joined play, and the
              summed plays for one that has them. Refuses to write when the read is
              incomplete. A second run writes nothing.
 
 Env: DATABASE_URL and the Tautulli instance keys (TAUTULLI_API_KEY,
 TAUTULLI_K8PLEX_API_KEY, TAUTULLI_HAYNESTOWER_API_KEY + TAUTULLI_HAYNESTOWER_URL).`;
 
-export function parseWatchHistoryBackfillArgs(argv: readonly string[]): { apply: boolean } | 'help' {
+export function parseWatchHistoryBackfillArgs(
+  argv: readonly string[],
+): { apply: boolean } | 'help' {
   let mode: 'dry' | 'apply' | null = null;
   for (const arg of argv) {
     if (arg === '--help' || arg === '-h') return 'help';
