@@ -53,6 +53,7 @@ import {
   recordAndBlockReleases,
   reconcileReleaseBlock,
   settleReleaseRecords,
+  keepReasonForUnrecorded,
   stampReleaseRecords,
   type ReleaseBlockArrClients,
 } from './release-block';
@@ -504,6 +505,9 @@ export function selectBatchCandidates(
   // ADR-118 — a `mediarequests` title takes no slot. createBatchFromPending also leaves it out of
   // every batch, the way a Save is left out, so this filter is the backstop for a caller that still
   // passes one in. The sweep keeps a row that is already pending.
+  // ADR-117 / DESIGN-052 D-29 — likewise a title whose file on disk has no verified posted release name (the Release
+  // Name Check): the sweep would keep it `release_unverified`, so it takes no slot. An untargeted batch still
+  // snapshots it; only this targeted pick leaves it out.
   const deletable = actionable.filter(countsTowardDeletion);
   // DESIGN-014 amendment (2026-07-09, build D) — the ranking is the SHARED compareByStrategy so the
   // pending walls' "Next up" default sort orders identically (the top of the wall = the front of the
@@ -1352,6 +1356,14 @@ export interface BatchSweepResult {
   abortReason: 'handle_breaker' | 'arr_identity' | null;
   /** ADR-093 / DESIGN-052 D-09 / D-21 — the items this sweep KEPT (landed `skipped`), per keep reason. */
   keptByReason: Partial<Record<TrashKeepReason, number>>;
+  /**
+   * ADR-117 / DESIGN-052 D-29 — posted names of the titles this sweep deleted that got no term because they name
+   * no release (a season-0 special, a bare title). A title whose file on disk has no verified posted name is never
+   * deleted: it is kept and counted under `keptByReason.release_unverified`, and one whose terms would not fit
+   * under the cap under `keptByReason.release_block_full`. Logged on `[trash] sweep_summary` and on the batch-close
+   * event.
+   */
+  skippedNames: number;
 }
 
 /** D-14 — why a sweep paused cleanly: the Registry Gate refused (`gate`), or the Release Block could not be written and
@@ -1610,6 +1622,11 @@ export async function sweepExpiredBatches(
       batches: results.length,
       deleted: results.reduce((n, r) => n + r.deletedCount, 0),
       kept: mergeKept(results),
+      // ADR-117 / D-29 — titles kept because a file on disk has no verified posted name, or the cap had no room,
+      // and the posted names skipped on the titles that were deleted.
+      releaseUnverifiedKept: results.reduce((n, r) => n + (r.keptByReason.release_unverified ?? 0), 0),
+      releaseBlockFullKept: results.reduce((n, r) => n + (r.keptByReason.release_block_full ?? 0), 0),
+      skippedNames: results.reduce((n, r) => n + r.skippedNames, 0),
       aborted,
     });
     return { batchesSwept: results.length, batches: results, due: due.length, paused: null, outcome, registryRefresh };
@@ -1729,19 +1746,50 @@ export interface TrashSweepStatusView {
   lastOkAt: string | null;
   /** Set only when no sweep of a due batch has succeeded for SWEEP_PAUSE_BANNER_AFTER_H hours (any reason). */
   banner: TrashSweepBanner | null;
+  /**
+   * ADR-117 / DESIGN-052 D-29 — in the batch swept most recently (any kind; the scheduled sweep or Expire now): how
+   * many titles it kept because a file on disk has no verified posted release name, and because their terms would
+   * not fit under the Release Block's cap. Counts only. Null when no batch has been swept yet.
+   */
+  lastSweepKept: { sweptAt: string; releaseUnverified: number; releaseBlockFull: number } | null;
 }
 
 /** DESIGN-052 D-10 — the scheduled sweep's status for the Trash page (read-only). */
-export async function getTrashSweepStatus(input: {
-  db?: DbClient;
-  now?: Date;
-}): Promise<TrashSweepStatusView> {
-  const [row] = await resolveDb(input.db)
-    .select()
-    .from(trashSweepStatus)
-    .where(eq(trashSweepStatus.id, 1));
+export async function getTrashSweepStatus(input: { db?: DbClient; now?: Date }): Promise<TrashSweepStatusView> {
+  const db = resolveDb(input.db);
+  // D-29 — read from the batch itself, so an Expire now (which writes no status row) is counted too.
+  const [swept] = await db
+    .select({ id: trashBatches.id, deletedAt: trashBatches.deletedAt })
+    .from(trashBatches)
+    .where(and(eq(trashBatches.state, 'deleted'), isNotNull(trashBatches.deletedAt)))
+    .orderBy(desc(trashBatches.deletedAt))
+    .limit(1);
+  let lastSweepKept: TrashSweepStatusView['lastSweepKept'] = null;
+  if (swept?.deletedAt) {
+    const [kept] = await db
+      .select({
+        releaseUnverified: sql<number>`count(*) filter (where ${trashBatchItems.keepReason} = 'release_unverified')::int`,
+        releaseBlockFull: sql<number>`count(*) filter (where ${trashBatchItems.keepReason} = 'release_block_full')::int`,
+      })
+      .from(trashBatchItems)
+      .where(and(eq(trashBatchItems.batchId, swept.id), eq(trashBatchItems.state, 'skipped')));
+    lastSweepKept = {
+      sweptAt: swept.deletedAt.toISOString(),
+      releaseUnverified: kept?.releaseUnverified ?? 0,
+      releaseBlockFull: kept?.releaseBlockFull ?? 0,
+    };
+  }
+  const [row] = await db.select().from(trashSweepStatus).where(eq(trashSweepStatus.id, 1));
   if (!row) {
-    return { lastOutcome: null, lastReason: null, lastAt: null, pausedSince: null, lastOkAt: null, banner: null };
+    return {
+      lastOutcome: null,
+      lastReason: null,
+      lastAt: null,
+      pausedSince: null,
+      lastOkAt: null,
+      banner: null,
+      lastSweepKept,
+    };
   }
   const now = (input.now ?? new Date()).getTime();
   let banner: TrashSweepBanner | null = null;
@@ -1760,6 +1808,7 @@ export async function getTrashSweepStatus(input: {
     pausedSince: row.pausedSince?.toISOString() ?? null,
     lastOkAt: row.lastOkAt?.toISOString() ?? null,
     banner,
+    lastSweepKept,
   };
 }
 
@@ -1823,6 +1872,7 @@ async function expireOneBatch(input: {
   let consecutiveHandleFailures = 0;
   let aborted = false;
   const keptByReason: Partial<Record<TrashKeepReason, number>> = {};
+  let skippedNames = 0;
   const keep = async (item: { id: string; maintainerrMediaId: string; title: string }, reason: TrashKeepReason) => {
     if (await markItemSkipped(input.db, item.id, reason)) {
       skippedCount += 1;
@@ -1871,7 +1921,9 @@ async function expireOneBatch(input: {
   // D-14 steps 4..5 — through the seam Expedite shares (`recordAndBlockReleases`): the identity of each survivor's
   // release (D-11); three consecutive *arr read failures mean the *arr is down, so the sweep aborts before Phase A
   // (nothing recorded, nothing deleted; the batch stays leaving_soon). A single failure, or a survivor with no
-  // recordable term, is KEPT `release_unrecorded` (no term, no delete); it comes back later. Then the Title Exclusion
+  // recordable term, is KEPT `release_unrecorded` (no term, no delete); it comes back later. A survivor whose file on
+  // disk has no verified posted name is KEPT `release_unverified`, and one whose terms would not fit under the cap
+  // `release_block_full` (ADR-117 / D-29). Then the Title Exclusion
   // (ADR-097 / D-27: each survivor's title on the *arr's import-list exclusion list, read back) and Phase A, before any
   // delete: every survivor recorded `in_flight`, the Release Block written and read back. A failure of either throws
   // ReleaseBlockError (step `exclusion`, or the profile's step with the records abandoned; nothing is claimed) — the
@@ -1890,9 +1942,9 @@ async function expireOneBatch(input: {
     })),
     origin: 'sweep',
     logger: input.logger,
-    onUnrecorded: async (key) => {
+    onUnrecorded: async (key, reason) => {
       const s = byKey.get(key);
-      if (s) await keep(s.item, 'release_unrecorded');
+      if (s) await keep(s.item, keepReasonForUnrecorded(reason));
     },
   });
   if (blocked.aborted) {
@@ -1910,6 +1962,7 @@ async function expireOneBatch(input: {
       aborted: true,
       abortReason: 'arr_identity',
       keptByReason,
+      skippedNames,
     };
   }
   const toDelete = survivors.filter((s) => blocked.recordable.has(s.item.id));
@@ -2011,6 +2064,7 @@ async function expireOneBatch(input: {
       continue;
     }
     deletedCount += 1; // the row is durably 'deleted' (intent-first) whether or not the handle lands
+    skippedNames += blocked.skippedNames.get(item.id) ?? 0;
     sweptMediaIds.push(item.maintainerrMediaId);
     reclaimedBytes += fresh.sizeBytes ?? 0;
     // The destructive per-item handle. A single failure is tolerated (intent + snapshot are durable;
@@ -2061,7 +2115,14 @@ async function expireOneBatch(input: {
   // D-14 step 8 — an abandoned record's term leaves the profile now (best effort: the next reconcile also would).
   if (anyAbandoned) {
     try {
-      await reconcileReleaseBlock({ db: input.db, arr: input.arr, arrKind: sweepArrKind, logger: input.logger });
+      // ADR-117 / D-29 — a delete path never prunes an older term (`prune: false`).
+      await reconcileReleaseBlock({
+        db: input.db,
+        arr: input.arr,
+        arrKind: sweepArrKind,
+        logger: input.logger,
+        prune: false,
+      });
     } catch {
       // logged by the writer (`[release-block] failed`)
     }
@@ -2087,6 +2148,7 @@ async function expireOneBatch(input: {
       aborted: true,
       abortReason: 'handle_breaker',
       keptByReason,
+      skippedNames,
     };
   }
 
@@ -2135,6 +2197,9 @@ async function expireOneBatch(input: {
         raceSkipped,
         handleErrors,
         counts: finalCounts,
+        // ADR-117 / D-29 — why titles were kept, and the posted names skipped on the ones deleted.
+        keptByReason,
+        skippedNames,
         // DESIGN-011 amendment — an audited admin override that expired the batch mid-window.
         ...(input.forcedEarly ? { forcedEarly: true, forcedBy: input.actorId } : {}),
       },
@@ -2164,6 +2229,7 @@ async function expireOneBatch(input: {
     aborted: false,
     abortReason: null,
     keptByReason,
+    skippedNames,
   };
 }
 

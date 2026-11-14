@@ -33,14 +33,15 @@ import {
   type ReleaseBlockReconcileReport,
   type ReleaseRecordDraft,
 } from './release-block';
-import { deriveTerm, parseReleaseName, releaseTokens } from './release-terms';
+import { deriveTerm, parseReleaseName } from './release-terms';
+import { matchLegacySab, type LegacySabJob } from './release-block-names';
 
-/** One completed job of a legacy SABnzbd history (name, downloaded bytes, completion time). No URL, ever. */
-export interface LegacySabJob {
-  name: string;
-  bytes: number;
-  completedAt: Date;
-}
+export {
+  LEGACY_SAB_SIZE_MIN_RATIO,
+  matchLegacySab,
+  postedReleaseName,
+  type LegacySabJob,
+} from './release-block-names';
 
 /** One remediation title (D-15 `--manual`): its tmdb id and the release names to block. */
 export interface ManualSeedEntry {
@@ -52,9 +53,6 @@ export interface ManualSeedEntry {
 
 /** The titles the dry run reports by name (D-15: only the legacy SAB can seed them). */
 export const SEED_NAMED_TITLES = ['Silent Night', 'The Unholy Trinity'] as const;
-
-/** D-15 — the size window: the deleted file is 90 % to 100 % of the download (par and container overhead). */
-export const LEGACY_SAB_SIZE_MIN_RATIO = 0.9;
 
 /**
  * Parse a legacy SAB export: one job per line, either JSON (`{"name","bytes","completed"}`, `completed` an ISO time or
@@ -122,23 +120,6 @@ export function parseManualSeedFile(text: string): ManualSeedEntry[] {
       year: o.year as number,
       releaseNames: names,
     };
-  });
-}
-
-/** D-15 — the legacy SAB jobs matching one deleted movie (title tokens, year ±1, completed before, size 90..100 %). */
-export function matchLegacySab(
-  item: { title: string; year: number | null; deletedAt: Date; deletedSizeBytes: number | null },
-  jobs: readonly LegacySabJob[],
-): LegacySabJob[] {
-  if (item.year === null || item.deletedSizeBytes === null || item.deletedSizeBytes <= 0) return [];
-  const want = releaseTokens(item.title).join(' ');
-  return jobs.filter((job) => {
-    if (job.completedAt.getTime() >= item.deletedAt.getTime()) return false;
-    const p = parseReleaseName(job.name, [item.year as number]);
-    if (p.year === null || Math.abs(p.year - (item.year as number)) > 1) return false;
-    if (p.titleTokens.join(' ') !== want) return false;
-    const ratio = (item.deletedSizeBytes as number) / job.bytes;
-    return ratio >= LEGACY_SAB_SIZE_MIN_RATIO && ratio <= 1;
   });
 }
 

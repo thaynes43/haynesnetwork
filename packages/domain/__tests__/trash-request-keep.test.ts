@@ -17,6 +17,7 @@ import {
   classifyForExpedite,
   classifyGuardian,
   countsTowardDeletion,
+  trashWallProtection,
   createBatchFromPending,
   createStaticReleaseBlockArr,
   createStaticWatchlistSources,
@@ -90,6 +91,20 @@ function ratingClause(kind: 'movie' | 'show', value: string) {
 }
 
 describe('the Request Keep, the clause audit and the rule description (ADR-118)', () => {
+  it('keeps a title tagged mediarequests whose file has no verified release name, and reports media_request', () => {
+    // The Request Keep is before unevaluable. release_unverified (ADR-117) is after unevaluable.
+    // First match wins, so the reported reason is media_request. The title is still kept.
+    const item = { ...cold, arrTags: ['mediarequests'], releaseName: 'unverified' as const };
+    expect(classifyGuardian(item)).toEqual({ keep: true, reason: 'media_request' });
+    expect(trashWallProtection(item)).toBe('media_request');
+    expect(countsTowardDeletion(item)).toBe(false);
+    expect(classifyForExpedite(item)).toBe('protected_request');
+    expect(classifyGuardian({ ...cold, releaseName: 'unverified' })).toEqual({
+      keep: true,
+      reason: 'release_unverified',
+    });
+  });
+
   it('keeps a tagged title after every earlier keep, and leaves an untagged title deletable', () => {
     expect(classifyGuardian({ ...cold, arrTags: ['mediarequests'] })).toEqual({
       keep: true,

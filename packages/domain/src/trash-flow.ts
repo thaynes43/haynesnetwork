@@ -50,6 +50,7 @@ import {
 } from './trash-save-enforcement';
 import { consoleDomainLogger, type DomainLogger } from './domain-logger';
 import { judgeAge, loadAgeEvidence, type TrashAgeGuard } from './trash-age-guard';
+import { loadReleaseNameStates, type TrashReleaseName } from './trash-release-name';
 import {
   evaluateRegistryGate,
   evaluateWatchlist,
@@ -725,6 +726,14 @@ export interface TrashPendingItem {
    */
   saveIntent: boolean;
   /**
+   * ADR-117 / DESIGN-052 D-29 — the Release Name Check (`trash-release-name.ts`): `unverified` when the database
+   * holds no verified posted release name for the file on disk, only the name the *arr rebuilt when it renamed the
+   * file. Such a title is kept `release_unverified`, never proposed and never offered by the default wall.
+   * `unchecked` (and absent) is not judged here: a series, or an item with no ledger row; the delete path's own
+   * read decides.
+   */
+  releaseName?: TrashReleaseName;
+  /**
    * DESIGN-052 D-10 amendment (2026-11-13, story 832) — Wall Protection for this row, or null when the
    * wall may offer it. Set by `listTrashPendingPage`. Reads that do not run that page leave it absent.
    */
@@ -972,6 +981,12 @@ export async function shapePendingItems(input: {
     arrKind,
     mediaItemIds: [...byExtId.values()].map((j) => j.mediaItemId),
   });
+  // ADR-117 / D-29 — the Release Name Check for every joined ledger item (three grouped reads; movies only).
+  const releaseNames = await loadReleaseNameStates({
+    db: input.db,
+    arrKind,
+    mediaItemIds: joinedIds,
+  });
 
   let totalSizeBytes = 0;
   const items: TrashPendingItem[] = forMedia.map((f) => {
@@ -1025,6 +1040,7 @@ export async function shapePendingItems(input: {
       ageGuard: age.ageGuard,
       newestAddedAt: age.newestAddedAt,
       saveIntent: joined !== undefined && savedIds.has(joined.mediaItemId),
+      releaseName: (joined ? releaseNames.get(joined.mediaItemId) : undefined) ?? 'unchecked',
     };
   });
 
@@ -1677,8 +1693,11 @@ export type GuardianKeepReason =
   | 'recently_watched'
   | 'watchlisted'
   | 'recently_added'
+  // ADR-118 — after the keeps that existed before it, and before `unevaluable`.
   | 'media_request'
-  | 'unevaluable';
+  | 'unevaluable'
+  // ADR-117 / DESIGN-052 D-29 — after `unevaluable`, where that decision placed it.
+  | 'release_unverified';
 export type GuardianVerdict = { keep: true; reason: GuardianKeepReason } | { keep: false };
 
 /** The fields the guardian reads. A structural subset of `TrashPendingItem` (every real caller still
@@ -1694,6 +1713,7 @@ export type GuardianInput = Pick<
   | 'ruleEvaluationFailed'
   | 'ageGuard'
   | 'saveIntent'
+  | 'releaseName'
 > & { arrTags?: readonly string[] };
 
 /**
@@ -1733,14 +1753,18 @@ export function classifyGuardian(item: GuardianInput): GuardianVerdict {
   ) {
     return { keep: true, reason: 'unevaluable' };
   }
+  // ADR-117 / DESIGN-052 D-29 (owner ruling 2026-11-13) — a release that was grabbed is never grabbed again, and a
+  // term built from the renamed file is not a verified block. A title whose file on disk has no verified posted
+  // name is kept on every delete path. Not a Save: it is deletable once a name is on record.
+  if (item.releaseName === 'unverified') return { keep: true, reason: 'release_unverified' };
   return { keep: false };
 }
 
 /**
  * A pending title that takes a deletion slot: not saved, not `dnd`, not watchlisted, not inside the Age Guard,
- * and not tagged `mediarequests` (ADR-118). The Request Keep is last so the earlier keeps are unchanged.
- * createBatchFromPending leaves a requested title out of every batch; this predicate is the slot math
- * and the space-policy count.
+ * and not tagged `mediarequests` (ADR-118). ADR-117 also leaves out a title whose file has no verified
+ * posted release name. createBatchFromPending leaves a requested title out of every batch; this
+ * predicate is the slot math and the space-policy count.
  */
 export function countsTowardDeletion(item: {
   saveIntent: boolean;
@@ -1748,13 +1772,15 @@ export function countsTowardDeletion(item: {
   onWatchlist: boolean;
   ageGuard: 'recent' | 'clear' | 'unknown';
   arrTags?: readonly string[];
+  releaseName?: string;
 }): boolean {
   return (
     !item.saveIntent &&
     !item.protectedByTag &&
     !item.onWatchlist &&
     item.ageGuard !== 'recent' &&
-    !hasMediaRequestTag(item.arrTags)
+    !hasMediaRequestTag(item.arrTags) &&
+    item.releaseName !== 'unverified'
   );
 }
 
@@ -1837,6 +1863,8 @@ export const TRASH_WALL_PROTECTION_REASONS = [
   'age_unknown',
   'unactionable',
   'live_excluded',
+  // ADR-117 / DESIGN-052 D-29 — no verified posted release name for the file on disk (the Release Name Check).
+  'release_unverified',
 ] as const;
 export type TrashWallProtectionReason = (typeof TRASH_WALL_PROTECTION_REASONS)[number];
 
@@ -1853,6 +1881,7 @@ export function trashWallProtection(item: ExpediteVerdictInput): TrashWallProtec
   if (item.watchlistEvaluable !== true) return 'watchlist_unknown';
   if (item.ruleEvaluationFailed) return 'rules_unknown';
   if (item.ageGuard === 'unknown') return 'age_unknown';
+  if (item.releaseName === 'unverified') return 'release_unverified';
   return null;
 }
 
@@ -2019,8 +2048,15 @@ export interface ExpediteDeletionResult {
    *  caller can drop them from the candidate read-model without waiting for the next refresh. */
   expeditedIds: string[];
   /** ADR-093 / DESIGN-052 D-11 — of `skippedCount`, the items kept because their release could not be recorded (no
-   *  term, no delete). */
+   *  term, no delete). Since ADR-117 / D-29 it includes the two counts below. */
   unrecordedCount: number;
+  /** ADR-117 / D-29 — of `skippedCount`, the items kept because a file on disk has no verified posted release name
+   *  (the guardian's ledger check, or the delete path's read of the *arr's files). Never deleted. */
+  unverifiedNameCount: number;
+  /** D-29 — of `skippedCount`, the items kept because their terms would not fit under the Release Block's cap. */
+  blockFullCount: number;
+  /** D-29 — posted names of the deleted items that got no term because they name no release. */
+  skippedNames: number;
 }
 
 /**
@@ -2316,8 +2352,18 @@ async function recordAndBlockExpediteReleases(
   input: Pick<ExpediteDeletionInput, 'db' | 'arr' | 'logger'>,
   survivors: readonly ExpediteSurvivor[],
 ): Promise<{
-  deletable: Array<{ survivor: ExpediteSurvivor; recordIds: string[]; arrItemId: number | null }>;
+  deletable: Array<{
+    survivor: ExpediteSurvivor;
+    recordIds: string[];
+    arrItemId: number | null;
+    /** ADR-117 / D-29 — posted names of this item that got no term because they name no release. */
+    skippedNames: number;
+  }>;
   unrecorded: ExpediteSurvivor[];
+  /** D-29 — of `unrecorded`, kept because a file on disk has no verified posted name. */
+  unverified: number;
+  /** D-29 — of `unrecorded`, kept because the terms would not fit under the cap. */
+  blockFull: number;
 }> {
   const blocked = await recordAndBlockReleases({
     db: input.db,
@@ -2340,8 +2386,11 @@ async function recordAndBlockExpediteReleases(
         survivor,
         recordIds: blocked.recordIds.get(survivor.maintainerrMediaId) ?? [],
         arrItemId: drafts(survivor)[0]?.arrItemId ?? null,
+        skippedNames: blocked.skippedNames.get(survivor.maintainerrMediaId) ?? 0,
       })),
     unrecorded: survivors.filter((s) => !blocked.recordable.has(s.maintainerrMediaId)),
+    unverified: [...blocked.unrecorded.values()].filter((r) => r === 'unverified_name').length,
+    blockFull: [...blocked.unrecorded.values()].filter((r) => r === 'cap').length,
   };
 }
 
@@ -2351,7 +2400,8 @@ async function reconcileAfterAbandon(
   arrKind: 'radarr' | 'sonarr',
 ): Promise<void> {
   try {
-    await reconcileReleaseBlock({ db: input.db, arr: input.arr, arrKind, logger: input.logger });
+    // ADR-117 / D-29 — a delete path never prunes an older term (`prune: false`).
+    await reconcileReleaseBlock({ db: input.db, arr: input.arr, arrKind, logger: input.logger, prune: false });
   } catch {
     // logged by the writer; the next reconcile removes the orphan term
   }
@@ -2409,7 +2459,7 @@ export async function expediteDeletion(
     // Checked BEFORE the guardian so a just-saved cold item is never handled (closes the race).
     const liveExcluded = await fetchLiveExclusions(input.maintainerr, [targetMediaId]);
     if (liveExcluded.has(targetMediaId)) {
-      return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
+      return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0, unverifiedNameCount: 0, blockFullCount: 0, skippedNames: 0 };
     }
     const verdict = classifyGuardian(target);
     if (verdict.keep) {
@@ -2425,7 +2475,7 @@ export async function expediteDeletion(
           actorId: input.actorId,
           reason: 'watch_guardian',
         });
-        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
+        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0, unverifiedNameCount: 0, blockFullCount: 0, skippedNames: 0 };
       }
       if (
         verdict.reason === 'saved' ||
@@ -2437,18 +2487,21 @@ export async function expediteDeletion(
         // Saved (ADR-099 D-4: the app's record; the keeper owns its exclusion), already whitelisted, on a watchlist
         // (the Watchlist Keep), inside the Age Guard (D-26) or tagged mediarequests (ADR-118): refused like a
         // tagged item, never auto-saved.
-        return {
-          scope: 'item',
-          protectedCount: 1,
-          expeditedCount: 0,
-          skippedCount: 0,
-          stalePending: 0,
-          expeditedIds: [],
-          unrecordedCount: 0,
-        };
+        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0, unverifiedNameCount: 0, blockFullCount: 0, skippedNames: 0 };
       }
-      // unevaluable — not deleted, not force-whitelisted.
-      return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
+      // unevaluable, or no verified release name on record (ADR-117 / D-29) — not deleted, not force-whitelisted.
+      return {
+        scope: 'item',
+        protectedCount: 0,
+        expeditedCount: 0,
+        skippedCount: 1,
+        stalePending: 0,
+        expeditedIds: [],
+        unrecordedCount: 0,
+        unverifiedNameCount: verdict.reason === 'release_unverified' ? 1 : 0,
+        blockFullCount: 0,
+        skippedNames: 0,
+      };
     }
 
     // Cold + positively evaluated ⇒ delete this one item (intent-first). Use the RESOLVED
@@ -2472,8 +2525,20 @@ export async function expediteDeletion(
     const releases = await recordAndBlockExpediteReleases(input, [survivor]);
     const one = releases.deletable[0];
     if (!one) {
-      // No recordable release (D-11): kept, never deleted.
-      return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1, stalePending: 0, expeditedIds: [], unrecordedCount: 1 };
+      // No recordable release (D-11), no verified name for a file on disk, or no room under the cap (D-29): kept,
+      // never deleted.
+      return {
+        scope: 'item',
+        protectedCount: 0,
+        expeditedCount: 0,
+        skippedCount: 1,
+        stalePending: 0,
+        expeditedIds: [],
+        unrecordedCount: 1,
+        unverifiedNameCount: releases.unverified,
+        blockFullCount: releases.blockFull,
+        skippedNames: 0,
+      };
     }
     let settled: Awaited<ReturnType<typeof expediteOneSurvivor>>;
     try {
@@ -2487,9 +2552,20 @@ export async function expediteDeletion(
     }
     if (settled === 'watchlisted' || settled === 'saved') {
       // Added to the owner's watchlist after the gate's snapshot (D-25ay), or saved meanwhile (ADR-099): kept.
-      return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
+      return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0, unverifiedNameCount: 0, blockFullCount: 0, skippedNames: 0 };
     }
-    return { scope: 'item', protectedCount: 0, expeditedCount: 1, skippedCount: 0, stalePending: 0, expeditedIds: [targetMediaId], unrecordedCount: 0 };
+    return {
+      scope: 'item',
+      protectedCount: 0,
+      expeditedCount: 1,
+      skippedCount: 0,
+      stalePending: 0,
+      expeditedIds: [targetMediaId],
+      unrecordedCount: 0,
+      unverifiedNameCount: 0,
+      blockFullCount: 0,
+      skippedNames: one.skippedNames,
+    };
   }
 
   // scope 'all' — per-item loop over the REQUESTED kind's pending set (never /collections/handle).
@@ -2537,6 +2613,8 @@ export async function expediteDeletion(
   // not targets (never in the snapshot) and are left untouched, uncounted.
   let skippedCount =
     snapshot === null ? pending.items.filter((p) => p.maintainerrMediaId === null).length : 0;
+  // ADR-117 / D-29 — of the skipped, the items the guardian kept for want of a verified release name.
+  let unverifiedNameCount = 0;
   for (const p of targets) {
     const mediaId = p.maintainerrMediaId;
     // F1 — a LIVE exclusion protects the item even before its dnd tag round-trips.
@@ -2576,7 +2654,8 @@ export async function expediteDeletion(
       } else if (verdict.reason === 'media_request') {
         protectedCount += 1; // the Request Keep (ADR-118) — kept while the tag is on the title, never auto-saved.
       } else {
-        skippedCount += 1; // unevaluable — fail closed.
+        skippedCount += 1; // unevaluable, or no verified release name on record (D-29) — fail closed.
+        if (verdict.reason === 'release_unverified') unverifiedNameCount += 1;
       }
       continue;
     }
@@ -2606,7 +2685,8 @@ export async function expediteDeletion(
   let expeditedCount = 0;
   const expeditedIds: string[] = [];
   let anyAbandoned = false;
-  for (const [index, { survivor, recordIds, arrItemId }] of releases.deletable.entries()) {
+  let skippedNames = 0;
+  for (const [index, { survivor, recordIds, arrItemId, skippedNames: skipped }] of releases.deletable.entries()) {
     try {
       const settled = await expediteOneSurvivor(
         input,
@@ -2631,6 +2711,7 @@ export async function expediteDeletion(
       throw error;
     }
     expeditedCount += 1;
+    skippedNames += skipped;
     expeditedIds.push(survivor.maintainerrMediaId);
   }
   if (anyAbandoned) await reconcileAfterAbandon(input, arrKind);
@@ -2643,6 +2724,9 @@ export async function expediteDeletion(
     stalePending,
     expeditedIds,
     unrecordedCount: releases.unrecorded.length,
+    unverifiedNameCount: unverifiedNameCount + releases.unverified,
+    blockFullCount: releases.blockFull,
+    skippedNames,
   };
 }
 

@@ -178,6 +178,8 @@ interface PendingCandidate {
   recentlyAdded?: boolean;
   /** ADR-118 — tagged mediarequests: every batch leaves it out. Absent ⇒ false. */
   requested?: boolean;
+  /** ADR-117 / DESIGN-052 D-29 — no verified release name on record: a targeted batch leaves it out. Absent ⇒ false. */
+  releaseUnverified?: boolean;
 }
 
 interface SafetyLike {
@@ -1565,6 +1567,7 @@ export function KindTab({
     onWatchlist: p.onWatchlist === true,
     recentlyAdded: p.recentlyAdded === true,
     requested: p.requested === true,
+    releaseUnverified: p.releaseUnverified === true,
   }));
 
   const kindNoun = kind === 'movie' ? 'movie' : 'TV';

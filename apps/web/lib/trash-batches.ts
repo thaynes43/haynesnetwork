@@ -318,6 +318,9 @@ export interface TargetCandidate {
   recentlyAdded?: boolean;
   /** ADR-118 — tagged mediarequests: every batch leaves it out, and it frees nothing while the tag stays. */
   requested?: boolean;
+  /** ADR-117 / DESIGN-052 D-29 — no verified posted release name for the file on disk: a targeted batch leaves it
+   *  out, an untargeted batch still snapshots it, and it frees nothing while the sweep keeps it. Absent ⇒ false. */
+  releaseUnverified?: boolean;
 }
 
 export interface TargetPreview {
@@ -359,16 +362,24 @@ export function previewTargetSelection(
   // DESIGN-052 D-26 — a title inside the Age Guard's 180 days is handled like a watchlisted one: a targeted pick leaves
   // it out (always: the age needs no registry), an untargeted batch snapshots it, and it frees nothing.
   // ADR-118 — a requested title is left out of every batch, the way a Save is, so it is not counted here.
+  // ADR-117 / DESIGN-052 D-29 — a title with no verified release name takes no targeted slot and frees nothing.
+  // An untargeted batch still snapshots it (`entering` keeps it); the sweep keeps it `release_unverified`.
   const pending = candidates.filter((c) => !c.protectedByTag);
   const entering = pending.filter((c) => c.requested !== true);
   const filtered = spec.watchlistFiltered !== false;
   const deletable = (filtered ? pending.filter((c) => c.onWatchlist !== true) : pending).filter(
-    (c) => c.recentlyAdded !== true && c.requested !== true,
+    (c) => c.recentlyAdded !== true && c.requested !== true && c.releaseUnverified !== true,
   );
   const poolBytes = deletable.reduce((n, c) => n + c.sizeBytes, 0);
   const frees = (items: readonly TargetCandidate[]) =>
     items
-      .filter((c) => c.onWatchlist !== true && c.recentlyAdded !== true && c.requested !== true)
+      .filter(
+        (c) =>
+          c.onWatchlist !== true &&
+          c.recentlyAdded !== true &&
+          c.requested !== true &&
+          c.releaseUnverified !== true,
+      )
       .reduce((n, c) => n + c.sizeBytes, 0);
   const capped = spec.targetBytes !== undefined || spec.maxItems !== undefined;
   if (!capped) {

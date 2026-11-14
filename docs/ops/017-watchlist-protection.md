@@ -152,6 +152,11 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/title-exclusion-ba
 # DESIGN-008 D-03 (story 837) — household watch history, after the image that contains it is deployed
 kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/watch-history-backfill.ts --dry-run
 kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/watch-history-backfill.ts --apply
+# ADR-117 / DESIGN-052 D-29 — the legacy release names, once, by the coordinator: --dry-run first, then --apply
+kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/legacy-release-names-load.ts --dry-run --dir=/tmp/legacy
+kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/legacy-release-names-load.ts --apply --dir=/tmp/legacy
+# ADR-117 / DESIGN-052 D-29 — posted-name backfill, after the load: --dry-run first; --apply only after its counts are read
+kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/release-block-backfill.ts --dry-run
 ```
 
 - **`--pool`** prints, per kind, the pool size, the items recordable and their records by shape (`group` / `exact` /
@@ -163,8 +168,8 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/watch-history-back
   another title of the same name holds (`namesakeNarrowed` and `namesakes`, titles and years: The Killer 2024 next to
   The Killer 2023, D-25cr), and the items D-11 would keep `release_unrecorded` with their reasons and share
   (`unrecordedShare`, Q-13). It needs `MAINTAINERR_API_KEY` too.
-- **The legacy SAB file** (`--legacy-sab`) holds release names from the HaynesTower SABnzbd histories. It is never
-  committed. Copy it into the pod for the run and delete it after:
+- **The legacy SAB file** (`--legacy-sab`, the seed's flag only) holds release names from the HaynesTower SABnzbd
+  histories. It is never committed. Copy it into the pod for the run and delete it after:
   `kubectl -n frontend cp ./sab.tsv <pod>:/tmp/sab.tsv -c app`, run with `--legacy-sab=/tmp/sab.tsv`, then
   `kubectl -n frontend exec <pod> -c app -- rm /tmp/sab.tsv`. The same holds for a `--manual` file.
 - **`watch-history-backfill.ts`** (DESIGN-008 D-03, story 837; one-off, after the release that carries it is
@@ -176,6 +181,101 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/watch-history-back
   match. Expect about two minutes (the 2026-11-13 history walk was 23.0 s; the estimate adds the
   metadata lookups). It names no account and no title. The 6-hourly metadata refresh does the same
   read after this release, so a later cycle restores a zero that a failed cycle cleared.
+- **`legacy-release-names-load.ts`** (ADR-117, DESIGN-052 D-29; one-off, by the coordinator, after the release that
+  carries migration 0110 is deployed) loads the release names of the Radarr and Sonarr databases from before the
+  2026-07-03 move, and the two old SABnzbd histories, into `legacy_release_names` and `legacy_download_jobs`. Until
+  it has run, Trash keeps every title whose file the ledger cannot name (468 of 524 pool movies on 2026-11-13).
+  - **The files** are the coordinator's private extract: `old-radarr-history.tsv`, `old-radarr-files.tsv`,
+    `old-sonarr-history.tsv`, `old-sonarr-files.tsv`, `legacy-sab-full.tsv` (tab-separated, no header; the columns
+    are in `legacy-release-load.ts`). They are never committed and never put in a PR, a log or the tracker. Copy the
+    directory into the pod for the run and delete it after:
+    `kubectl -n frontend cp ./legacy <pod>:/tmp/legacy -c app`, run with `--dir=/tmp/legacy`, then
+    `kubectl -n frontend exec <pod> -c app -- rm -r /tmp/legacy`. A file that is not in the directory is reported
+    `absent` and skipped.
+  - **One of `--dry-run` and `--apply` is required.** It needs only `DATABASE_URL`, builds no Radarr or Sonarr
+    client and makes no network call. `--dry-run` runs in a read-only transaction and writes nothing. `--apply`
+    inserts everything in one transaction; a second `--apply` of the same files inserts 0 rows (`dedupe_key`).
+  - **What it refuses and reports.** A line in which any field contains `://` is refused whole (`refusedUrl`). A
+    line it cannot use is counted by reason: `columns`, `id`, `event`, `name_empty`, `file_without_name`, `size`,
+    `completed`; an unreadable date is stored as null and counted (`dateUnparsed`). It prints counts and, per
+    outcome, the first five line numbers; never a line's content, a name or a URL.
+  - **The output** is one JSON report after a summary log line: `files.<file>` (`read`, `usable`, `refusedUrl`,
+    `unusable.<reason>`, `dateUnparsed`, `duplicateInFile`, `lines`, `inserted`, `alreadyPresent`, or `"absent"`),
+    `totals.legacyReleaseNames` and `totals.legacyDownloadJobs` (the same sums, with `distinct`, `rowsBefore`,
+    `rowsAfter`), and `pool`. In a dry run `inserted` is what `--apply` would insert.
+  - **Check `pool` before `--apply`.** `pool.movies` is computed from the files plus what the table already holds,
+    against the pending movie pool: `titles`, `fileNamedByExactSize` (a legacy file record of the TMDB id whose size
+    is exactly `media_items.size_on_disk`), `withGrabName`, `withAnyName`, `withNoName`. The coordinator measured the
+    extract against the pool of 524 on 2026-11-13: 472 files named by exact size, 523 titles with a grab name, 524
+    with any name. A dry run that differs much from those is a reason to stop and look, not to apply.
+    `pool.shows` gives `titles`, `withAnyName` and `withNoName` (a series has many files; no per-file figure).
+  - **After the load**, `release-block-seed.ts --pool` says what the delete path would do with the pool (it reads
+    Radarr's files): `recordable`, `unrecordable.unverified_name`, `unrecordable.no_term`, `unrecordable.cap`, and
+    `terms` (`live`, `added`, `cap`). Then run the backfill's dry run.
+- **`release-block-backfill.ts`** (ADR-117, DESIGN-052 D-29; one-off, after the load above) gives a Deleted-Release
+  Record to every posted name of a title Trash already deleted that no live term matches. Names come from the app's
+  own tables: the ledger, `legacy_release_names` and, for a movie, the size-matched `legacy_download_jobs`. It reads
+  no file and no download client, and does not ask Radarr or Sonarr for history. One of `--dry-run` and `--apply` is
+  required. `--dry-run` reads the database only and writes nothing. `--apply` inserts the records, writes and reads
+  back the profile, and only then turns them active; if the profile cannot be written it abandons them and exits
+  non-zero, and a later `--apply` starts clean. It never terms a title that is back in the library (`skippedLive`),
+  never restarts a term's 365 days (`expired`), and never prunes: a title whose terms would not fit under the cap is
+  left out whole (`capRefused`). The report has one block per class (`lowConfidence`, `movies`, `shows`,
+  `otherNames`: `titles`, `named`, `unnamed`, `noNewTerm`, `records`, `untermed`, `skipped`, `alreadyBlocked`) and
+  `terms` per *arr. Do not run `--apply` until the dry-run counts have been read against D-29. A second `--apply`
+  adds nothing.
+- **Pool titles the Release Name Check lets go** (the database's view, no *arr read; D-29). Run it on a replica
+  before and after the load; it needs migration 0110 (before that release, drop the `by_legacy` part). On
+  2026-11-13, with no legacy names: 524 pool movies, 2 with no file, 54 the ledger names, 468 with no verified name;
+  so 56 deletable. A name containing `{tmdb-`, `{imdb-` or `{tvdb-` does not count (D-29). A domain test runs this
+  exact statement against the check (`release-name-rule.test.ts`).
+
+  ```sql
+  WITH pool AS (
+    SELECT DISTINCT m.id, m.tmdb_id, m.size_on_disk, m.on_disk_file_count
+    FROM trash_candidates c
+    JOIN media_items m ON m.arr_kind = 'radarr' AND m.tmdb_id = c.tmdb_id AND m.deleted_from_arr_at IS NULL
+    WHERE c.media_kind = 'movie'
+  ), newest AS (
+    SELECT DISTINCT ON (e.media_item_id) e.media_item_id, e.payload
+    FROM ledger_events e JOIN pool p ON p.id = e.media_item_id
+    WHERE e.event_type = 'imported'
+      AND coalesce(e.payload->>'rawEventType', '') NOT IN ('movieFolderImported', 'seriesFolderImported')
+    ORDER BY e.media_item_id, e.occurred_at DESC, e.id DESC
+  ), by_ledger AS (
+    SELECT n.media_item_id AS id FROM newest n
+    WHERE (btrim(coalesce(n.payload->>'sourceTitle', '')) <> ''
+           AND position('://' in n.payload->>'sourceTitle') = 0
+           AND position('{tmdb-' in lower(coalesce(n.payload->>'sourceTitle', ''))) = 0
+           AND position('{imdb-' in lower(coalesce(n.payload->>'sourceTitle', ''))) = 0
+           AND position('{tvdb-' in lower(coalesce(n.payload->>'sourceTitle', ''))) = 0)
+       OR EXISTS (SELECT 1 FROM ledger_events g
+                  WHERE g.media_item_id = n.media_item_id AND g.event_type = 'grabbed'
+                    AND g.payload->>'downloadId' = n.payload->>'downloadId'
+                    AND btrim(coalesce(g.payload->>'sourceTitle', '')) <> ''
+                    AND position('://' in g.payload->>'sourceTitle') = 0
+                    AND position('{tmdb-' in lower(coalesce(g.payload->>'sourceTitle', ''))) = 0
+                    AND position('{imdb-' in lower(coalesce(g.payload->>'sourceTitle', ''))) = 0
+                    AND position('{tvdb-' in lower(coalesce(g.payload->>'sourceTitle', ''))) = 0)
+  ), by_legacy AS (
+    SELECT DISTINCT p.id FROM pool p
+    JOIN legacy_release_names l ON l.arr_kind = 'radarr' AND l.record_kind = 'file'
+      AND l.external_id = p.tmdb_id AND l.size_bytes = p.size_on_disk
+    WHERE p.size_on_disk > 0
+      AND position('{tmdb-' in lower(l.release_name)) = 0
+      AND position('{imdb-' in lower(l.release_name)) = 0
+      AND position('{tvdb-' in lower(l.release_name)) = 0
+  )
+  SELECT count(*) AS pool,
+         count(*) FILTER (WHERE on_disk_file_count = 0) AS no_file,
+         count(*) FILTER (WHERE on_disk_file_count > 0 AND id IN (SELECT id FROM by_ledger)) AS ledger_names_it,
+         count(*) FILTER (WHERE on_disk_file_count > 0 AND id IN (SELECT id FROM by_legacy)) AS legacy_names_it,
+         count(*) FILTER (WHERE on_disk_file_count = 0 OR id IN (SELECT id FROM by_ledger)
+                                OR id IN (SELECT id FROM by_legacy)) AS deletable,
+         count(*) FILTER (WHERE on_disk_file_count > 0 AND id NOT IN (SELECT id FROM by_ledger)
+                                AND id NOT IN (SELECT id FROM by_legacy)) AS kept_no_verified_name
+  FROM pool;
+  ```
 - **`title-exclusion-backfill.ts`** (ADR-097, D-28; one-off, after the release that carries it is deployed) adds a
   Radarr or Sonarr import-list exclusion for every title Trash deleted, so Kometa and the import lists never add it
   again. It leaves out a title the *arr has in its library now (re-added since; the owner keeps those, 2026-10-03)

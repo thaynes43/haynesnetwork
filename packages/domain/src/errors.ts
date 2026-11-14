@@ -409,8 +409,10 @@ export class JanitorReleaseBlockError extends Error {
 /** DESIGN-052 D-13 / D-21 — where the Release Block writer failed: a term outside the grammar (`validate`), the
  *  profile write (`put`, including its GET), the read-back (`read_back`), or a copied profile (`duplicate_profile`).
  *  ADR-097 / D-27 adds `exclusion`: the Title Exclusion before Phase A could not be written and read back (the
- *  TitleExclusionError is the cause; nothing was recorded or deleted, and no profile was touched). */
-export type ReleaseBlockStep = 'validate' | 'put' | 'read_back' | 'duplicate_profile' | 'exclusion';
+ *  TitleExclusionError is the cause; nothing was recorded or deleted, and no profile was touched). ADR-117 / D-29
+ *  adds `cap`: a delete path or the backfill would need an older term pruned to fit under the cap, which they never
+ *  do (nothing was written to the profile). */
+export type ReleaseBlockStep = 'validate' | 'put' | 'read_back' | 'duplicate_profile' | 'exclusion' | 'cap';
 
 /** ADR-097 / DESIGN-052 D-27 — where the Title Exclusion writer failed: a target without the *arr's key or a title
  *  (`validate`), the exclusion list read (`read`), a `POST` (`write`), or the read-back (`read_back`). */

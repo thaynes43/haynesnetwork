@@ -143,8 +143,9 @@ const USAGE = `Usage: sync.ts --mode=${SYNC_RUN_KINDS.join('|')} [--source=${SYN
                            Needs KAVITA_PASSWORD + AUDIOBOOKSHELF_PASSWORD (URLs default in-cluster). No
                            --source. Writes no sync_runs row.
   --mode=plex-match        resolve each *arr ledger media_item to its exact Plex {library, ratingKey} by
-                           shared-GUID match (tmdb/imdb/tvdb/musicbrainz) and UPSERT the media_plex_matches
-                           cache (ADR-047 — the Library access gate + "Watch on Plex" deep-link substrate).
+                           shared-GUID match inside the fitting library type (radarr→movie, sonarr→show,
+                           lidarr→artist; tmdb/imdb/tvdb/musicbrainz) and UPSERT the media_plex_matches
+                           cache (ADR-047 / ADR-123). The same transaction deletes a cross-type row.
                            READS DB media_items (their ids, already synced) + the Plex libraries READ-ONLY —
                            no *arr call, no write to Plex. Needs PLEX_HAYNESTOWER/HAYNESOPS/HAYNESKUBE_TOKEN
                            (URLs default to in-cluster/ingress). No --source. Writes no sync_runs row.
@@ -909,9 +910,11 @@ async function main(): Promise<number> {
           plexMatch: {
             upserted: report.plexMatch.upserted,
             removed: report.plexMatch.removed,
+            crossTypeRemoved: report.plexMatch.crossTypeRemoved,
             byKind: report.plexMatch.stats.byKind,
             plexTitlesIndexed: report.plexMatch.stats.plexTitlesIndexed,
             unmappedSections: report.plexMatch.stats.unmappedSections,
+            typeDisagreements: report.plexMatch.stats.typeDisagreements,
           },
         }
       : {}),

@@ -1607,15 +1607,24 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
         db,
         matches: snapshot.matches,
         scopedLibraryIds: snapshot.scopedLibraryIds,
+        excludeCrossTypeLibraryIds: snapshot.typeDisagreementLibraryIds,
         now: options.now,
       });
       plexMatch = { ...report, stats: snapshot.stats };
+      if (report.crossTypeRemoved !== 0) {
+        logger.info('plex-match cross-type removed', {
+          crossTypeRemoved: report.crossTypeRemoved,
+          groups: report.crossTypeGroups,
+        });
+      }
       logger.info('plex-match complete', {
         upserted: report.upserted,
         removed: report.removed,
+        crossTypeRemoved: report.crossTypeRemoved,
         byKind: snapshot.stats.byKind,
         scopedLibraries: snapshot.scopedLibraryIds.length,
         unmappedSections: snapshot.stats.unmappedSections,
+        typeDisagreements: snapshot.stats.typeDisagreements,
         plexTitlesIndexed: snapshot.stats.plexTitlesIndexed,
       });
       if (snapshot.scopedLibraryIds.length === 0) {

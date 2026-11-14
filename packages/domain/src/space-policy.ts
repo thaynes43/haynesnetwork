@@ -597,7 +597,7 @@ async function proposeForKind(input: {
         watchlist,
       });
       // D-08 / ADR-099 D-4 / ADR-118 — minCandidates excludes Saves, `dnd`, watchlisted titles, the Age
-      // Guard's recent dates and `mediarequests` (isPaceDeletable), matching the batch builder.
+      // Guard's recent dates, `mediarequests` and a file with no verified release name (isPaceDeletable), matching the batch builder.
       actionable = pending.items.filter((item) => isPaceDeletable(item));
     }
   } catch (err) {

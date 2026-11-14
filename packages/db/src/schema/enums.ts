@@ -622,7 +622,8 @@ export type PlexMediaType = (typeof PLEX_MEDIA_TYPES)[number];
 // ADR-047 / DESIGN-025 (PLAN-028 — Library "Watch/Listen/Read here" deep links) — the shared external
 // GUID a media_items row and a Plex title BOTH carry, used to resolve the *arr → Plex match (which Plex
 // library the item lives in + its ratingKey). Radarr matches on tmdb/imdb, Sonarr on tvdb/imdb, Lidarr
-// on musicbrainz. `media_plex_matches.matched_via` is CHECK-constrained to this set.
+// on musicbrainz, and only inside the fitting library type (ADR-123: movie, show, artist).
+// `media_plex_matches.matched_via` is CHECK-constrained to this set.
 export const PLEX_MATCH_GUID_SOURCES = ['tmdb', 'imdb', 'tvdb', 'musicbrainz'] as const;
 export type PlexMatchGuidSource = (typeof PLEX_MATCH_GUID_SOURCES)[number];
 
@@ -1747,8 +1748,9 @@ export type WatchlistItemKind = (typeof WATCHLIST_ITEM_KINDS)[number];
 
 /** trash_batch_items.keep_reason — why the sweep kept a batch item (D-05, D-09, D-14). The guardian's
  *  reasons, the two pre-guardian skips, the release that could not be recorded (D-11), the Age Guard's
- *  `recently_added` (DESIGN-052 D-26, migration 0086), and the Request Keep's `media_request`
- *  (ADR-118, migration 0108: the ledger tags include `mediarequests`). */
+ *  `recently_added` (DESIGN-052 D-26, migration 0086), the Request Keep's `media_request`
+ *  (ADR-118, migration 0111: the ledger tags include `mediarequests`), and the Release Name Check's
+ *  `release_unverified` and `release_block_full` (ADR-117, migration 0110). */
 export const TRASH_KEEP_REASONS = [
   'tag',
   'recently_watched',
@@ -1761,7 +1763,12 @@ export const TRASH_KEEP_REASONS = [
   // ADR-099 D-4 — an open save intent (a Save the app recorded). Authoritative whether or not Maintainerr holds the
   // exclusion yet.
   'saved',
-  // ADR-118 / DESIGN-052 D-30 — the title's ledger tags include `mediarequests`.
+  // ADR-117 / DESIGN-052 D-29 (migration 0110) — the file on disk has no verified posted release name, so no term
+  // can be shown to block it: the title is kept until a name is on record.
+  'release_unverified',
+  // D-29 — the delete's terms would not all fit under the Release Block's cap; nothing older is pruned to make room.
+  'release_block_full',
+  // ADR-118 / DESIGN-052 D-30 (migration 0111) — the title's ledger tags include `mediarequests`.
   'media_request',
 ] as const;
 export type TrashKeepReason = (typeof TRASH_KEEP_REASONS)[number];
@@ -1770,6 +1777,11 @@ export type TrashKeepReason = (typeof TRASH_KEEP_REASONS)[number];
 export const DELETED_RELEASE_ARR_KINDS = ['radarr', 'sonarr'] as const;
 export type DeletedReleaseArrKind = (typeof DELETED_RELEASE_ARR_KINDS)[number];
 
+/** legacy_release_names.record_kind (ADR-117 / DESIGN-052 D-29, migration 0110) — what the old Radarr or Sonarr
+ *  database recorded: a grab, an import, a failed download, or the file record's original release name. */
+export const LEGACY_RELEASE_RECORD_KINDS = ['grabbed', 'imported', 'failed', 'file'] as const;
+export type LegacyReleaseRecordKind = (typeof LEGACY_RELEASE_RECORD_KINDS)[number];
+
 /** trash_deleted_releases.identity_source — where a Deleted-Release Record's identity came from (D-11, D-15). */
 export const DELETED_RELEASE_IDENTITY_SOURCES = [
   'arr_grab_history',
@@ -1777,6 +1789,9 @@ export const DELETED_RELEASE_IDENTITY_SOURCES = [
   'ledger_grab',
   'legacy_sab',
   'none',
+  // ADR-117 / DESIGN-052 D-29 (migration 0110) — a name the Radarr or Sonarr database from before the 2026-07-03 move
+  // recorded for the title's own id (`legacy_release_names`).
+  'legacy_arr',
 ] as const;
 export type DeletedReleaseIdentitySource = (typeof DELETED_RELEASE_IDENTITY_SOURCES)[number];
 

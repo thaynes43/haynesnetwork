@@ -45,7 +45,6 @@ import {
   setAppSetting,
   silentDomainLogger,
   sweepExpiredBatches,
-  syncPlexMatches,
   upsertMediaItemsBatch,
   upsertMediaMetadataBatch,
   upsertPlexLibraries,
@@ -242,19 +241,38 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     await plexDates([8001, 8002].map((id) => ({ ext: id, lib: opsShows, at: daysAgo(500) })));
   });
 
-  /** Upsert the Plex matches (one per library) with their date added. */
+  /**
+   * Upsert the Plex matches (one per library) with their date added. This writes the rows directly.
+   * `syncPlexMatches` would delete a cross-type row in the same transaction (ADR-123), and these cases
+   * include a movie dated in a show library so the fill rule can be read with that row present.
+   */
   async function plexDates(rows: Array<{ ext: number; lib: string; at: Date | null }>) {
-    await syncPlexMatches({
-      db: t.db,
-      matches: rows.map((r, i) => ({
-        mediaItemId: ids.get(r.ext)!,
-        plexLibraryId: r.lib,
-        ratingKey: `${r.ext}-${i}`,
-        matchedVia: 'tmdb' as const,
-        plexAddedAt: r.at,
-      })),
-      scopedLibraryIds: [],
-    });
+    if (rows.length === 0) return;
+    const now = new Date();
+    await t.db
+      .insert(mediaPlexMatches)
+      .values(
+        rows.map((r, i) => ({
+          mediaItemId: ids.get(r.ext)!,
+          plexLibraryId: r.lib,
+          ratingKey: `${r.ext}-${i}`,
+          matchedVia: 'tmdb' as const,
+          plexAddedAt: r.at,
+          firstSeenAt: now,
+          lastSeenAt: now,
+          updatedAt: now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [mediaPlexMatches.mediaItemId, mediaPlexMatches.plexLibraryId],
+        set: {
+          ratingKey: sql`excluded.rating_key`,
+          matchedVia: sql`excluded.matched_via`,
+          plexAddedAt: sql`excluded.plex_added_at`,
+          lastSeenAt: sql`excluded.last_seen_at`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+      });
   }
 
   /** An *arr history import in the ledger (`downloadFolderImported` = a download or an upgrade). */

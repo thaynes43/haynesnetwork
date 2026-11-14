@@ -28,6 +28,7 @@ import {
   classifyForExpedite,
   hasMediaRequestTag,
   fetchLiveExclusions,
+  classifyGuardian,
   trashWallProtection,
   fetchMaintainerrPending,
   shapePendingItems,
@@ -304,6 +305,9 @@ export interface TrashExpeditePreview {
   recentlyAdded: number;
   /** ADR-118 — how many of `protected` the Request Keep holds. A subset. */
   requested: number;
+  /** ADR-117 / DESIGN-052 D-29 — how many of `unverifiable` are kept because the file on disk has no verified posted
+   *  release name (the Release Name Check). A subset of `unverifiable`, never added to it. */
+  releaseUnverified: number;
 }
 
 export interface TrashPendingPage {
@@ -455,6 +459,7 @@ export function partitionPendingForExpedite(
     watchlisted: 0,
     recentlyAdded: 0,
     requested: 0,
+    releaseUnverified: 0,
   };
   for (const i of items) {
     const verdict = classifyForExpedite(i);
@@ -463,6 +468,11 @@ export function partitionPendingForExpedite(
       out.deletableBytes += i.sizeBytes;
     } else if (verdict === 'unverifiable') {
       out.unverifiable += 1;
+      // D-29 — the guardian's own reason, so the count is exactly the titles it keeps for want of a name.
+      const kept = classifyGuardian(i);
+      if (i.maintainerrMediaId !== null && kept.keep && kept.reason === 'release_unverified') {
+        out.releaseUnverified += 1;
+      }
     } else {
       out.protected += 1;
       if (verdict === 'protected_watchlist') out.watchlisted += 1;
@@ -619,6 +629,9 @@ export interface TrashPendingCandidate {
   recentlyAdded: boolean;
   /** ADR-118 — the ledger tags include mediarequests: every batch leaves it out. */
   requested: boolean;
+  /** ADR-117 / DESIGN-052 D-29 — no verified posted release name for the file on disk: a targeted batch leaves it
+   *  out, and the sweep would keep it, so the preview does not count it as freeing space. */
+  releaseUnverified: boolean;
 }
 
 /**
@@ -661,6 +674,7 @@ export async function listTrashPendingCandidates(input: {
       onWatchlist: i.onWatchlist,
       recentlyAdded: i.ageGuard === 'recent',
       requested: hasMediaRequestTag(i.arrTags),
+      releaseUnverified: i.releaseName === 'unverified',
     }));
   return {
     candidates,
