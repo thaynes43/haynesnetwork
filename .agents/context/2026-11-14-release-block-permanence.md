@@ -8,7 +8,7 @@ Date: 2026-11-14. Source pinned by `git fetch origin main` and `git rev-parse or
 
 All observations below were measured on 2026-11-14. Replica SQL was executed with `kubectl exec -n database pod/postgres16-11 -c postgres -- psql -X -d haynesnetwork -P pager=off -c '<SELECT statements below>'`. The replica was selected from `kubectl get pods -n database -l cnpg.io/cluster=postgres16,cnpg.io/instanceRole=replica -o name`. PostgreSQL reported version 16.4. Queries ran between 07:40 and 07:43 UTC and are separate snapshots; matching totals were checked across them. All SQL was SELECT only.
 
-A record is a row, a term occurrence is a non-null `term`, and a profile release-term count is the distinct set of non-null terms across the relevant records. A row stores at most one term. A title is `(arr_kind, coalesce(tmdb_id,tvdb_id))`; measured rows all group to the title totals below. A live profile also has a sentinel, which is **excluded** from the app's cap. Character totals include that sentinel and exclude JSON punctuation/encoding overhead; they are not request byte sizes.
+A record is a row, a term occurrence is a non-null `term`, and a profile release-term count is the distinct set of non-null terms across the relevant records. A row stores at most one term. A title is `(arr_kind, external_id)`, using TMDB for Radarr and TVDB for Sonarr. The final replica audit at 2026-11-14T08:00:32Z re-ran the title histogram with that explicit kind-specific key, replacing the initial coalesced-key grouping: every distribution count stayed the same, and neither service had a missing title key. A live profile also has a sentinel, which is **excluded** from the app's cap. Character totals include that sentinel and exclude JSON punctuation/encoding overhead; they are not request byte sizes.
 
 ### Records and states (measured)
 
@@ -200,7 +200,7 @@ FROM trash_deleted_releases GROUP BY arr_kind, state ORDER BY 1,2;
 SELECT arr_kind, (term IS NOT NULL)::int AS terms_per_record, count(*)
 FROM trash_deleted_releases GROUP BY 1,2 ORDER BY 1,2;
 SELECT arr_kind, term_count, count(*) AS titles FROM (
-  SELECT arr_kind, coalesce(tmdb_id,tvdb_id) AS external_id,
+  SELECT arr_kind, CASE WHEN arr_kind='radarr' THEN tmdb_id ELSE tvdb_id END AS external_id,
          count(DISTINCT term) AS term_count
   FROM trash_deleted_releases WHERE state='active' GROUP BY 1,2
 ) g GROUP BY 1,2 ORDER BY 1,2;
@@ -212,7 +212,7 @@ WITH first_seen AS (
   FROM trash_deleted_releases WHERE term IS NOT NULL GROUP BY 1,2
 ) SELECT arr_kind,date_trunc('week',first_recorded AT TIME ZONE 'UTC')::date,count(*)
   FROM first_seen GROUP BY 1,2 ORDER BY 1,2;
-SELECT arr_kind,count(*),count(DISTINCT term),count(DISTINCT coalesce(tmdb_id,tvdb_id))
+SELECT arr_kind,count(*),count(DISTINCT term),count(DISTINCT CASE WHEN arr_kind='radarr' THEN tmdb_id ELSE tvdb_id END)
 FROM trash_deleted_releases
 WHERE origin IN ('sweep','expedite') AND state='active'
   AND recorded_at >= now() - interval '28 days' GROUP BY arr_kind;
