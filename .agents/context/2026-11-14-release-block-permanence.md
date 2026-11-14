@@ -327,4 +327,13 @@ This checkpoint supersedes the Q-38/Q-39 holds above. The correction starts from
 
 **coordinator, 2026-11-14 (Q-39):** accepted as recommended. After this release the previous image's one-off posted-name backfill is not run because it reads `expires_at` as a date and new rows hold null. An image rollback remains safe for the app, the sweep and the reconcile. The design and OPS-017 rollback text record this restriction.
 
-Validation is pending the requested local checks and correction PR checks. Existing measurement/projection tables are unchanged; the original command/query provenance and count rules remain above. No fresh household measurements, production operations, release build, installation, acceptance or merge are claimed. Independent adversarial review and acceptance remain coordinator-owned.
+Local validation measured on 2026-11-14, serial suites with at most two workers:
+
+- `pnpm --filter @hnet/db test --maxWorkers=2`: passed, 184 tests; contiguous-journal guard and incremental compatibility both pass without weakened assertions.
+- `pnpm --filter @hnet/domain exec vitest run release-block --maxWorkers=2`: passed, 79 tests.
+- `npm_config_workspace_concurrency=2 pnpm typecheck`: passed.
+- `npm_config_workspace_concurrency=2 pnpm lint`: passed; the log/change-list audit found warnings only in unchanged files.
+- Local Python audit of the documented tables and embedded projection: title histograms/percentiles/weighted totals, weekly/origin sums, sentinel subtraction, expiry cohort sums, every monthly forecast cell, first-cap dates and counterfactual peaks agree with their stated rules. No count discrepancy found; original measurements were not repeated against a live service.
+- Byte comparison with the parent PR confirms the SQL file is identical; journal comparison confirms every main entry is unchanged. `git diff --check` passes and the old migration tag has no remaining references.
+
+Existing measurement/projection tables are unchanged; original command/query provenance and count rules remain above. Before dependency installation, `df -h`, `df -i` and `du -sx /tmp` showed sufficient headroom; estimated installation budget 4 GiB with an 8 GiB reserve. Source was committed and pushed before installation. No fresh household measurements, production operations, release image publication, installation, acceptance or merge are claimed. Correction PR check outcomes are recorded separately in the PR and story after completion. Independent adversarial review and acceptance remain coordinator-owned.
