@@ -2019,13 +2019,15 @@ async function expireOneBatch(input: {
     });
     let unresolvedIdentity = false;
     const claimed = await inTransaction(input.db, async (tx) => {
-      if (
-        !identity ||
-        !(await lockTrashTitle(tx, identity)) ||
-        (await hasRestoreKeepForIdentity(tx, identity)) ||
-        (await hasTitleDeleteClaim(tx, identity))
-      )
+      if (!identity || !(await lockTrashTitle(tx, identity))) {
+        unresolvedIdentity = true;
         return null;
+      }
+      if (await hasRestoreKeepForIdentity(tx, identity)) return null;
+      if (await hasTitleDeleteClaim(tx, identity)) {
+        unresolvedIdentity = true;
+        return null;
+      }
       const [resolvedRow] = fresh.mediaItemId
         ? await tx.select().from(mediaItems).where(eq(mediaItems.id, fresh.mediaItemId)).for('share')
         : [];
