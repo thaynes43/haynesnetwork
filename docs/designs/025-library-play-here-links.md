@@ -1,7 +1,7 @@
 # DESIGN-025: Library "Watch/Listen/Read here" — the *arr→Plex match, the access gate, and the availability resolver
 
 - **Status:** Accepted
-- **Last updated:** 2026-11-13 (D-10 / ADR-123, story 847: a match is only inside the fitting library type). Prior: 2026-10-07 (D-08: an admin opens a linked request's Request Events in the History, issue #792). Prior: 2026-07-28 (D-09 added — the ADR-081 library-access bootstrap seed + registration
+- **Last updated:** 2026-11-14 (D-11, story 856: only a proved complete section read scopes stale reconciliation). Prior: 2026-11-13 (D-10 / ADR-123, story 847: a match is only inside the fitting library type). Prior: 2026-10-07 (D-08: an admin opens a linked request's Request Events in the History, issue #792). Prior: 2026-07-28 (D-09 added — the ADR-081 library-access bootstrap seed + registration
   auto-grant, the boot-triggered first plex-match sync, and the honest cold-start empty-reason on the gate;
   R-237, glossary T-232..T-234)
 - **Satisfies:** PRD-001 R-157, **R-221** (D-08 — books detail-page parity), **R-237** (D-09 — bootstrap +
@@ -252,9 +252,8 @@ alone. A title that still has a dated fitting match older than 180 days can move
 when the date that kept it was the wrong type. Household play counts on `media_metadata` are not rewritten
 here (Q-04).
 
-A section is still marked fully read when a page comes back empty before `totalSize` is reached, and the
-reconcile can then delete fitting rows it did not see. That is on main today. This decision does not change
-it.
+D-11 below closes the earlier short-read fault: an empty page before `totalSize` is reached must not scope
+the library for stale reconciliation. The cross-type delete above remains unchanged.
 
 Readers of these rows, and what the repaired rows change for each:
 
@@ -270,6 +269,36 @@ Readers of these rows, and what the repaired rows change for each:
 - `mark_watched` (`holdingServers` in `packages/domain/src/watch/marks.ts`) takes a rating key from these rows
   when the title has no per-account row, with no type check. A wrong row could mark the other title. After
   the repair the key is a fitting library's, or there is no row.
+
+### D-11 — prove section completeness before stale reconciliation (story 856)
+
+The matcher scopes a library only after the number of items read reaches Plex's **reported `totalSize`**.
+The page's `size` is not a section total. The matcher asks `listSectionContentsPage` for the reported total
+only; its existing other callers retain their fallback behavior. No Plex write or production repair is part
+of this change.
+
+An unknown or invalid total, a total that changes between pages, an empty page before that total, an
+exception, or reaching the existing page cap leaves the library **unscoped**. Even reaching the total on
+the cap's final page leaves it unscoped. A reported zero with any stored match rows also leaves it unscoped:
+an apparently empty response cannot erase the cache. A reported zero with no stored rows and no returned
+items is a complete empty library and is scoped. The stored-row check includes all match rows, not just
+live ledger items. The existing cap and page size are unchanged implementation bounds, not new anomaly
+thresholds.
+
+Observed items can still be indexed and upserted from an incomplete section, as on a thrown read today;
+the stale-delete scope alone is withheld. ADR-123's independent cross-type deletion and its live-type
+disagreement exclusion remain unchanged. Thus fitting stored matches survive every incomplete read,
+while a complete nonempty read can still remove a stale fitting row.
+
+Each attempted section read logs its server, section, library id, items read, reported total and pages read.
+Incomplete reads log at `error` with a reason and increment `PlexMatchStats.incompleteSections`. The count is
+included in both `plex-match complete` and the CLI's `sync finished` summary. Complete reads log at `info`,
+so later measurements can compare actual section reads with totals. No new run table or migration is added.
+
+The measurement, queries, observability limits, unchanged reader consequences and execution plan are in
+[the story evidence](../../.agents/context/2026-11-14-plex-match-completeness.md). No additional size-drop
+threshold is selected from aggregate logs that cannot distinguish valid library churn from bad answers
+(Q-05). This rule cannot detect a full but wrong positive total.
 
 ## Alternatives considered
 
@@ -297,6 +326,11 @@ first login, so the seed is a true one-shot with no marker table.
   to `clear`, a cross-type IMDb row is removed while the fitting IMDb row stays, an excluded library is
   left out, and a stored household play count is unchanged. The harvest join by id number, with no regard
   to kind, is covered beside the matcher tests.
+  `packages/sync/__tests__/plex-match-completeness.test.ts` exercises D-11 against embedded PostgreSQL 16:
+  incomplete reads preserve stored fitting row identities, complete reads remove a stale row, a genuinely
+  empty library scopes safely, and the cap's final page remains unscoped. The existing domain tests above
+  prove the independent cross-type delete still runs without any scoped library. The Plex read-client tests
+  prove that an omitted wire total stays unknown for the matcher.
 - **Live:** as hnet-e2e-member with a deliberately-withheld library — the walls return 0 items from it and the tab
   is hidden; 390px + desktop screenshots (a play button on an accessible item; a withheld library absent).
 
@@ -307,4 +341,5 @@ first login, so the seed is a true one-shot with no marker table.
 | Q-01 | Hide vs teaser inaccessible content? | HIDE — a security invariant (ADR-047 Q-01). |
 | Q-02 | Gate ytdl-sub per-library or keep the section-only gate? | Per-library (k8plex grant), section knob layered on top (ADR-047 Q-A / D-05). |
 | Q-03 | Cold-start (a kind with no matches yet)? | Deny-by-default until `plex-match` derives ≥1 match; run the sync at deploy; admins unrestricted (C-06). |
+| Q-05 | Should a full but much smaller positive section answer also stop reconciliation? | **Open for the coordinator.** Retained run logs show a large removal followed by recovery, but lack per-section totals, row identities and proof of legitimate churn. Recommendation: ship D-11 without an invented numeric limit, collect its section telemetry, then choose a measured per-library threshold or a repeat-read/manual-release policy in separately authorized work. |
 | Q-04 | The household watch harvest joins plays to titles by id number with no regard to kind (`matchWatch` and `indexTitle` in `packages/sync/src/metadata-refresh.ts`). A movie and a show that share a TMDB number share their plays whether or not a wrong match row exists. A review on 2026-11-13 measured 78 Radarr and Sonarr pairs sharing a TMDB number, 20 of them with a play, and those 20 store the same household play count and the same last-viewed time on both titles. Remeasured the same day at 22:07Z on replica `pod/postgres16-11`: 76 live pairs, and 20 still stored identically. Every live Sonarr row carries a TMDB id (1,085 of 1,085 at that remeasure; the review's earlier count was 1,097 of 1,097). This change does not rewrite `media_metadata` and does not change the harvest. After it, nothing moves at the next metadata refresh: each stored count stays the sum over both titles. No title gains or loses a watch record or a recent-watch keep because a match row was removed. | **Open, and out of this change.** The join should fit the kind: a movie history row joins only a Radarr title, an episode row only a Sonarr title. That is its own story, with its own census, because it would remove a recent-watch keep from some of the titles that show a view inside 30 days. Recommendation: do not change the harvest here. |

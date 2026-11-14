@@ -915,6 +915,7 @@ async function main(): Promise<number> {
             plexTitlesIndexed: report.plexMatch.stats.plexTitlesIndexed,
             unmappedSections: report.plexMatch.stats.unmappedSections,
             typeDisagreements: report.plexMatch.stats.typeDisagreements,
+            incompleteSections: report.plexMatch.stats.incompleteSections,
           },
         }
       : {}),

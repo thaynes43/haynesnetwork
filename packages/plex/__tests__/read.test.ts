@@ -72,6 +72,48 @@ describe('PlexReadClient — listSectionContents (ADR-038)', () => {
   });
 });
 
+describe('PlexReadClient — section total for matcher reconciliation (DESIGN-025 D-11)', () => {
+  it.each([0, 1])(
+    'keeps a missing total unknown when the returned page size is %s',
+    async (size) => {
+      const stub = plexStub([
+        { path: '/library/sections/1/all', body: { MediaContainer: { size, Metadata: [] } } },
+      ]);
+      expect(
+        (
+          await client(stub).listSectionContentsPage('1', {
+            start: 0,
+            size: 1000,
+            requireTotalSize: true,
+          })
+        ).totalSize,
+      ).toBeNull();
+      // Other callers keep their existing behavior; the stricter interpretation is matcher-only.
+      expect(
+        (await client(stub).listSectionContentsPage('1', { start: 0, size: 1000 })).totalSize,
+      ).toBe(size);
+    },
+  );
+
+  it.each([0, 2])('preserves an explicit total of %s', async (totalSize) => {
+    const stub = plexStub([
+      {
+        path: '/library/sections/1/all',
+        body: { MediaContainer: { size: 0, totalSize, Metadata: [] } },
+      },
+    ]);
+    expect(
+      (
+        await client(stub).listSectionContentsPage('1', {
+          start: 0,
+          size: 1000,
+          requireTotalSize: true,
+        })
+      ).totalSize,
+    ).toBe(totalSize);
+  });
+});
+
 // ADR-064 / DESIGN-035 D-02 (PLAN-037) — the paged collections listing.
 describe('PlexReadClient — listCollections (ADR-064)', () => {
   const pagedRoute = {

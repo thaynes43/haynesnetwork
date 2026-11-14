@@ -21,7 +21,7 @@ import { noopLogger, type SyncLogger } from './logger';
 /** How many library items to pull per Plex page (bounded by the client to ≤1000). */
 const PLEX_PAGE_SIZE = 1000;
 /** Safety cap on pages per section so a bad totalSize can never loop forever. */
-const MAX_PAGES = 500;
+export const MAX_PAGES = 500;
 
 /** The Plex library `type`s the match sweep enumerates (Movies / TV / Music — never photos). */
 const MATCHABLE_TYPES = new Set(['movie', 'show', 'artist']);
@@ -73,6 +73,8 @@ export interface PlexMatchStats {
    * `PlexMatchSnapshot.typeDisagreementLibraryIds` and are left out of the cross-type delete.
    */
   typeDisagreements: number;
+  /** Attempted section reads left unscoped because completeness could not be proved (D-11). */
+  incompleteSections: number;
   /** Total Plex titles indexed across all matchable libraries. */
   plexTitlesIndexed: number;
 }
@@ -152,6 +154,7 @@ export async function fetchPlexMatchSnapshot(input: {
   const typeDisagreementLibraryIds = new Set<string>();
   let unmappedSections = 0;
   let typeDisagreements = 0;
+  let incompleteSections = 0;
   let plexTitlesIndexed = 0;
 
   const slugs = Object.keys(input.plex.read) as PlexServerSlug[];
@@ -194,26 +197,73 @@ export async function fetchPlexMatchSnapshot(input: {
         });
         continue;
       }
+      let start = 0;
+      let pagesRead = 0;
+      let total: number | null = null;
+      let fullyRead = false;
+      let reason = 'page_cap';
       try {
-        let start = 0;
         for (let page = 0; page < MAX_PAGES; page += 1) {
           const { items: pageItems, totalSize } = await read.listSectionContentsPage(section.key, {
             start,
             size: PLEX_PAGE_SIZE,
+            requireTotalSize: true,
           });
+          pagesRead += 1;
+          const previousTotal = total;
+          total = totalSize;
           for (const it of pageItems) indexPlexItem(it, lib.libraryId, lib.mediaType);
           plexTitlesIndexed += pageItems.length;
           start += pageItems.length;
-          if (pageItems.length === 0 || (totalSize !== null && start >= totalSize)) break;
+          if (totalSize === null || !Number.isSafeInteger(totalSize) || totalSize < 0) {
+            reason = 'unknown_total';
+            break;
+          }
+          if (pagesRead > 1 && previousTotal !== totalSize) {
+            reason = 'changed_total';
+            break;
+          }
+          if (totalSize === 0 && (lib.hasStoredMatches || start > 0)) {
+            reason = 'unexpected_zero';
+            break;
+          }
+          // Hitting the cap is not completion, even if the final page claims we reached the total.
+          if (pagesRead === MAX_PAGES) break;
+          if (start >= totalSize) {
+            fullyRead = true;
+            break;
+          }
+          if (pageItems.length === 0) {
+            reason = 'short_read';
+            break;
+          }
         }
-        scopedLibraryIds.add(lib.libraryId); // fully read → in reconciliation scope
       } catch (error) {
+        reason = 'read_failed';
         logger.error('plex-match: section read failed', {
           server: slug,
           section: section.key,
           error: error instanceof Error ? error.message : String(error),
         });
         // read failed mid-way — do NOT scope this library (avoid dropping matches we didn't fully see)
+      }
+      const sectionStats = {
+        server: slug,
+        section: section.key,
+        libraryId: lib.libraryId,
+        itemsRead: start,
+        totalSize: total,
+        pagesRead,
+      };
+      if (fullyRead) {
+        scopedLibraryIds.add(lib.libraryId);
+        logger.info('plex-match: section read complete', sectionStats);
+      } else {
+        incompleteSections += 1;
+        logger.error('plex-match: section read incomplete (not scoped)', {
+          ...sectionStats,
+          reason,
+        });
       }
     }
   }
@@ -290,6 +340,7 @@ export async function fetchPlexMatchSnapshot(input: {
       scopedLibraryIds: scoped,
       unmappedSections,
       typeDisagreements,
+      incompleteSections,
       plexTitlesIndexed,
     },
   };
