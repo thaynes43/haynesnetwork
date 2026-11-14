@@ -2318,6 +2318,8 @@ async function expediteOneSurvivor(
       requestedByUserId: input.actorId ?? null,
       payload: {
         scope,
+        deleteClaimId: claimId,
+        ...identity,
         collectionId: survivor.collectionId,
         maintainerrMediaId: survivor.maintainerrMediaId,
         // PLAN-013 reclaim forward-capture — frozen at expedite time (best-effort reclaim source).

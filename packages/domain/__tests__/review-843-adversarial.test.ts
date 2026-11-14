@@ -1,7 +1,15 @@
 // Regressions from the first adversarial review; synthetic PostgreSQL data and stub clients only.
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { releasePickLists, mediaItems, trashBatchItems, trashBatches, trashRestoreKeeps } from '@hnet/db';
+import {
+  ledgerEvents,
+  notifications,
+  releasePickLists,
+  mediaItems,
+  trashBatchItems,
+  trashBatches,
+  trashRestoreKeeps,
+} from '@hnet/db';
 import {
   bootMigratedDb,
   createUser,
@@ -312,10 +320,19 @@ it.each(['in-flight restore', 'removed keep'] as const)(
       mediaKind: 'movie',
       actorId: actor,
     });
-    const [offer] = await t.db.insert(releasePickLists).values({ requesterId: actor, mediaItemId: item!.id,
-    arrKind: 'radarr', targetLabel: 'Synthetic', searchedAt: new Date(), reasonsVersion: 1,
-    offers: [{ key: 'synthetic-pre-delete' }] }).returning();
-  if (scenario === 'removed keep') {
+    const [offer] = await t.db
+      .insert(releasePickLists)
+      .values({
+        requesterId: actor,
+        mediaItemId: item!.id,
+        arrKind: 'radarr',
+        targetLabel: 'Synthetic',
+        searchedAt: new Date(),
+        reasonsVersion: 1,
+        offers: [{ key: 'synthetic-pre-delete' }],
+      })
+      .returning();
+    if (scenario === 'removed keep') {
       await keep(item!.id);
       await removeRestoreKeep({ db: t.db, mediaItemId: item!.id, actorId: actor });
     } else {
@@ -338,6 +355,103 @@ it.each(['in-flight restore', 'removed keep'] as const)(
       actorId: actor,
     });
     expect(calls.filter((c) => c.pathname === '/collections/media/handle')).toHaveLength(1);
-  expect((await t.db.select().from(releasePickLists).where(eq(releasePickLists.id, offer!.id)))[0]).toMatchObject({ offers: [], reasonsVersion: -1 });
+    expect(
+      (await t.db.select().from(releasePickLists).where(eq(releasePickLists.id, offer!.id)))[0],
+    ).toMatchObject({ offers: [], reasonsVersion: -1 });
+  },
+);
+
+it.each(['radarr', 'sonarr'] as const)(
+  'audits the resolved %s title when the batch ledger link is obsolete',
+  async (kind) => {
+    const n = kind === 'radarr' ? 79501 : 79502,
+      actor = (await createUser(t.db)).id;
+    await seedVerifiedWatchlistRegistry(t.db);
+    await setAppSetting({ db: t.db, key: 'trash_skip_admin_gate', value: true, actorId: actor });
+    const collection = kind === 'radarr' ? movieCollection : tvCollection;
+    const { bundle, calls } = makeMaintainerr(
+      baseState({
+        collections: [
+          collection({
+            items: [
+              {
+                mediaServerId: `ms-${n}`,
+                ...(kind === 'radarr' ? { tmdbId: n } : { tvdbId: n }),
+                sizeBytes: 1000000000,
+                addDate: '2024-01-01T00:00:00Z',
+              },
+            ],
+          }),
+        ],
+      }),
+    );
+    const { batchId } = await createBatchFromPending({
+      db: t.db,
+      maintainerr: bundle,
+      mediaKind: kind === 'radarr' ? 'movie' : 'tv',
+      actorId: actor,
+    });
+    await upsertMediaItemsBatch({
+      db: t.db,
+      arrKind: kind,
+      items: [fields(n, n), fields(n + 1000, n + 1000)],
+    });
+    await stampOldPlexMatches(t.db);
+    const [resolved] = await t.db
+      .select()
+      .from(mediaItems)
+      .where(and(eq(mediaItems.arrKind, kind), eq(mediaItems.tmdbId, n)));
+    const [other] = await t.db
+      .select()
+      .from(mediaItems)
+      .where(and(eq(mediaItems.arrKind, kind), eq(mediaItems.tmdbId, n + 1000)));
+    await t.db
+      .update(trashBatchItems)
+      .set({ mediaItemId: other!.id })
+      .where(eq(trashBatchItems.batchId, batchId));
+    const { arr } = createStaticReleaseBlockArr();
+    await sweepExpiredBatches({
+      db: t.db,
+      maintainerr: bundle,
+      arr,
+      registry: 'gate-only',
+      logger: silentDomainLogger,
+      batchId,
+      forceOverride: true,
+      actorId: actor,
+    });
+    expect(calls.filter((c) => c.pathname === '/collections/media/handle')).toHaveLength(1);
+    const intents = await t.db
+      .select()
+      .from(ledgerEvents)
+      .where(
+        and(
+          eq(ledgerEvents.mediaItemId, resolved!.id),
+          eq(ledgerEvents.eventType, 'trash_expedited'),
+        ),
+      );
+    expect(intents).toHaveLength(1);
+    expect(intents[0]!.payload).toMatchObject({
+      arrKind: kind,
+      externalId: n,
+      deleteClaimId: expect.any(String),
+    });
+    expect(
+      await t.db
+        .select()
+        .from(ledgerEvents)
+        .where(
+          and(
+            eq(ledgerEvents.mediaItemId, other!.id),
+            eq(ledgerEvents.eventType, 'trash_expedited'),
+          ),
+        ),
+    ).toHaveLength(0);
+    expect(
+      await t.db
+        .select()
+        .from(notifications)
+        .where(and(eq(notifications.mediaItemId, resolved!.id), eq(notifications.type, 'deleted'))),
+    ).toHaveLength(1);
   },
 );

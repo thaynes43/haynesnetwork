@@ -2016,6 +2016,7 @@ async function expireOneBatch(input: {
       tmdbId: fresh.tmdbId,
       tvdbId: fresh.tvdbId,
     });
+    let unresolvedIdentity = false;
     const claimed = await inTransaction(input.db, async (tx) => {
       if (
         !identity ||
@@ -2024,6 +2025,14 @@ async function expireOneBatch(input: {
         (await hasTitleDeleteClaim(tx, identity))
       )
         return null;
+      const [resolvedRow] = fresh.mediaItemId
+        ? await tx.select().from(mediaItems).where(eq(mediaItems.id, fresh.mediaItemId)).for('share')
+        : [];
+      const resolvedIdentity = resolvedRow ? trashTitleIdentity(resolvedRow) : null;
+      if (!resolvedIdentity || resolvedIdentity.arrKind !== identity.arrKind || resolvedIdentity.externalId !== identity.externalId) {
+        unresolvedIdentity = true;
+        return null;
+      }
 
       const updated = await tx
         .update(trashBatchItems)
@@ -2043,6 +2052,8 @@ async function expireOneBatch(input: {
             // shield): an open save intent is the app's record, read in the same statement as the claim.
             sql`NOT EXISTS (SELECT 1 FROM ${trashSaveIntents} tsi
                             WHERE tsi.media_item_id = ${trashBatchItems.mediaItemId} AND tsi.revoked_at IS NULL)`,
+            sql`NOT EXISTS (SELECT 1 FROM ${trashSaveIntents} tsi
+                            WHERE tsi.media_item_id = ${fresh.mediaItemId} AND tsi.revoked_at IS NULL)`,
           ),
         )
         .returning({ id: trashBatchItems.id });
@@ -2051,13 +2062,15 @@ async function expireOneBatch(input: {
       if (!claimId) throw new Error('Trash deletion is already claimed; keep this batch pending.');
       await invalidateTrashReleaseOffers(tx, identity);
       await tx.insert(ledgerEvents).values({
-        mediaItemId: item.mediaItemId,
+        mediaItemId: fresh.mediaItemId,
         eventType: 'trash_expedited',
         source: 'maintainerr',
         occurredAt: nowDate(),
         requestedByUserId: input.actorId,
         payload: {
           scope: 'batch',
+          deleteClaimId: claimId,
+          ...identity,
           batchId: input.batchId,
           collectionId: fresh.collectionId,
           maintainerrMediaId: item.maintainerrMediaId,
@@ -2069,7 +2082,7 @@ async function expireOneBatch(input: {
       // deletion (with actor) immediately, and write the app-sourced Activity notification — the batch
       // sweep deletes via the same per-item handle Maintainerr never webhooks back.
       await recordDeletionAudit(tx, {
-        mediaItemId: item.mediaItemId,
+        mediaItemId: fresh.mediaItemId,
         title: fresh.title,
         sizeBytes: fresh.sizeBytes,
         tmdbId: fresh.tmdbId,
@@ -2091,7 +2104,7 @@ async function expireOneBatch(input: {
       // `keep` counts a row that moved on its own (the wall's flip to `saved`) as the race.
       await keep(
         item,
-        (await hasRestoreKeepForIdentity(input.db, identity))
+        unresolvedIdentity ? 'unevaluable' : (await hasRestoreKeepForIdentity(input.db, identity))
           ? 'admin_restored'
           : 'saved',
       );
