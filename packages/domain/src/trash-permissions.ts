@@ -6,7 +6,7 @@ import {
   type DbClient,
   type TrashAction,
 } from '@hnet/db';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { NotFoundError, SystemRoleImmutableError } from './errors';
 import { inTransaction, resolveDb } from './db-client';
 
@@ -42,6 +42,11 @@ export async function setRoleTrashActions(
   input: SetRoleTrashActionsInput,
 ): Promise<{ changed: boolean; before: TrashAction[]; after: TrashAction[] }> {
   const after = normalizeActions(input.actions);
+  if (after.includes('restore_deleted')) {
+    throw new SystemRoleImmutableError(
+      'Restore is reserved for Admin and cannot be granted to a role.',
+    );
+  }
   return inTransaction(input.db, async (tx) => {
     const [role] = await tx
       .select({ id: roles.id, name: roles.name, isAdmin: roles.isAdmin })
@@ -77,8 +82,7 @@ export async function setRoleTrashActions(
       detail: { role_name: role.name, before, after },
     });
 
-    const changed =
-      before.length !== after.length || before.some((a, i) => a !== after[i]);
+    const changed = before.length !== after.length || before.some((a, i) => a !== after[i]);
     return { changed, before, after };
   });
 }
@@ -100,5 +104,32 @@ export async function trashActionsForRole(input: {
     .from(roleTrashActionGrants)
     .where(eq(roleTrashActionGrants.roleId, input.roleId));
   const set = new Set(rows.map((r) => r.action));
-  return TRASH_ACTIONS.filter((a) => set.has(a));
+  return TRASH_ACTIONS.filter((a) => a !== 'restore_deleted' && set.has(a));
+}
+
+/** ADR-121 — idempotent cleanup of legacy grants through the same audited writer.
+ * Role locks serialize cleanup with edits; an audit failure rolls the whole cleanup back. */
+export async function revokeNonAdminRestoreGrants(input: { db?: DbClient }): Promise<void> {
+  await inTransaction(input.db, async (tx) => {
+    const legacy = await tx
+      .select({ id: roles.id })
+      .from(roles)
+      .innerJoin(roleTrashActionGrants, eq(roles.id, roleTrashActionGrants.roleId))
+      .where(and(eq(roles.isAdmin, false), eq(roleTrashActionGrants.action, 'restore_deleted')))
+      .orderBy(asc(roles.id))
+      .for('update', { of: roles });
+    for (const role of legacy) {
+      const grants = await tx
+        .select({ action: roleTrashActionGrants.action })
+        .from(roleTrashActionGrants)
+        .where(eq(roleTrashActionGrants.roleId, role.id));
+      if (!grants.some((g) => g.action === 'restore_deleted')) continue;
+      await setRoleTrashActions({
+        db: tx,
+        roleId: role.id,
+        actions: grants.map((g) => g.action).filter((a) => a !== 'restore_deleted'),
+        actorId: null,
+      });
+    }
+  });
 }

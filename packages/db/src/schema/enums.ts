@@ -1770,6 +1770,8 @@ export const TRASH_KEEP_REASONS = [
   'release_block_full',
   // ADR-118 / DESIGN-052 D-30 (migration 0111) — the title's ledger tags include `mediarequests`.
   'media_request',
+  // ADR-121 / DESIGN-052 D-32 — an unrevoked app-owned admin Restore intent.
+  'admin_restored',
 ] as const;
 export type TrashKeepReason = (typeof TRASH_KEEP_REASONS)[number];
 

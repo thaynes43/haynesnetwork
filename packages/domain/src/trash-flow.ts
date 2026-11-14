@@ -1,3 +1,4 @@
+import { hasRestoreKeep } from './trash-restore';
 // ADR-023 / DESIGN-010 — the Trash section orchestrators over Maintainerr (the deletion system of
 // record). Read-through pending (no mirror table), the preflight SAFETY audit, the confined
 // exclusion/expedite/rules write surface, the cross-server watch guardian, and the recently-deleted
@@ -12,6 +13,7 @@ import {
   trashBatchSaves,
   trashBatches,
   trashSaveIntents,
+  trashRestoreKeeps,
   users,
   TRASH_BATCH_OPEN_STATES,
   type ArrKind,
@@ -726,6 +728,7 @@ export interface TrashPendingItem {
    * batch ever proposes it, and the walls show it saved.
    */
   saveIntent: boolean;
+  restoreKeep?: boolean;
   /**
    * ADR-117 / DESIGN-052 D-29 — the Release Name Check (`trash-release-name.ts`): `unverified` when the database
    * holds no verified posted release name for the file on disk, only the name the *arr rebuilt when it renamed the
@@ -968,6 +971,16 @@ export async function shapePendingItems(input: {
   // ADR-099 D-4 — which joined titles carry an open save intent (one read; the intent table is small).
   const joinedIds = [...byExtId.values()].map((j) => j.mediaItemId);
   const savedIds = new Set<string>();
+  const restoredIds = new Set<string>();
+  if (joinedIds.length > 0) {
+    const keeps = await db
+      .select({ id: trashRestoreKeeps.mediaItemId })
+      .from(trashRestoreKeeps)
+      .where(
+        and(inArray(trashRestoreKeeps.mediaItemId, joinedIds), isNull(trashRestoreKeeps.revokedAt)),
+      );
+    keeps.forEach((k) => restoredIds.add(k.id));
+  }
   if (joinedIds.length > 0) {
     const open = await db
       .select({ mediaItemId: trashSaveIntents.mediaItemId })
@@ -1041,6 +1054,7 @@ export async function shapePendingItems(input: {
       ageGuard: age.ageGuard,
       newestAddedAt: age.newestAddedAt,
       saveIntent: joined !== undefined && savedIds.has(joined.mediaItemId),
+      restoreKeep: joined !== undefined && restoredIds.has(joined.mediaItemId),
       releaseName: (joined ? releaseNames.get(joined.mediaItemId) : undefined) ?? 'unchecked',
     };
   });
@@ -1696,6 +1710,7 @@ export type GuardianKeepReason =
   | 'recently_added'
   // ADR-118 — after the keeps that existed before it, and before `unevaluable`.
   | 'media_request'
+  | 'admin_restored'
   | 'unevaluable'
   // ADR-117 / DESIGN-052 D-29 — after `unevaluable`, where that decision placed it.
   | 'release_unverified';
@@ -1715,7 +1730,7 @@ export type GuardianInput = Pick<
   | 'ageGuard'
   | 'saveIntent'
   | 'releaseName'
-> & { arrTags?: readonly string[] };
+> & { arrTags?: readonly string[]; restoreKeep?: boolean };
 
 /**
  * The guardian's per-item verdict (P4 — fail closed). An item is expeditable ONLY when it is
@@ -1742,6 +1757,7 @@ export function classifyGuardian(item: GuardianInput): GuardianVerdict {
   // before `unevaluable`, so a tagged title is reported as requested. The tags are the full sync's copy
   // (04:30, up to 24 hours). It lasts while that copy contains the tag.
   if (hasMediaRequestTag(item.arrTags)) return { keep: true, reason: 'media_request' };
+  if (item.restoreKeep) return { keep: true, reason: 'admin_restored' };
   // Fail closed: no ledger resolution ⇒ no watch data ⇒ we cannot confirm it is safe. Likewise an item whose
   // watchlist status cannot be evaluated (no verified snapshot, or no guid while a registry title of its kind is
   // unmapped), an item Maintainerr flags `ruleEvaluationFailed` (its own handler skips those), and an item whose
@@ -1769,6 +1785,7 @@ export function classifyGuardian(item: GuardianInput): GuardianVerdict {
  */
 export function countsTowardDeletion(item: {
   saveIntent: boolean;
+  restoreKeep?: boolean;
   protectedByTag: boolean;
   onWatchlist: boolean;
   ageGuard: 'recent' | 'clear' | 'unknown';
@@ -1777,6 +1794,7 @@ export function countsTowardDeletion(item: {
 }): boolean {
   return (
     !item.saveIntent &&
+    !item.restoreKeep &&
     !item.protectedByTag &&
     !item.onWatchlist &&
     item.ageGuard !== 'recent' &&
@@ -1811,6 +1829,7 @@ export type ExpediteVerdict =
   | 'protected_watchlist'
   | 'protected_recent'
   | 'protected_request'
+  | 'protected_restore'
   | 'unverifiable';
 
 /**
@@ -1840,6 +1859,7 @@ export function classifyForExpedite(item: ExpediteVerdictInput): ExpediteVerdict
   if (verdict.reason === 'watchlisted') return 'protected_watchlist';
   if (verdict.reason === 'recently_added') return 'protected_recent';
   if (verdict.reason === 'media_request') return 'protected_request';
+  if (verdict.reason === 'admin_restored') return 'protected_restore';
   return 'unverifiable'; // 'unevaluable' — kept because it cannot be cleared, not whitelisted.
 }
 
@@ -1858,6 +1878,7 @@ export const TRASH_WALL_PROTECTION_REASONS = [
   'watchlisted',
   'recently_added',
   'media_request',
+  'admin_restored',
   'not_in_ledger',
   'watchlist_unknown',
   'rules_unknown',
@@ -1878,6 +1899,7 @@ export function trashWallProtection(item: ExpediteVerdictInput): TrashWallProtec
   if (item.ageGuard === 'recent') return 'recently_added';
   // ADR-118 — the same place as classifyGuardian, so a requested title is not offered.
   if (hasMediaRequestTag(item.arrTags)) return 'media_request';
+  if (item.restoreKeep) return 'admin_restored';
   if (item.mediaItemId === null) return 'not_in_ledger';
   if (item.watchlistEvaluable !== true) return 'watchlist_unknown';
   if (item.ruleEvaluationFailed) return 'rules_unknown';
@@ -2239,7 +2261,11 @@ async function expediteOneSurvivor(
   const logger = input.logger ?? consoleDomainLogger;
   // ADR-099 D-4 — a Save made after the guardian ran (a tap on the wall while this expedite runs) is re-read just
   // before the delete: the app's record keeps the title, exclusion or not.
-  if (survivor.mediaItemId !== null && (await hasOpenSaveIntent(input.db, survivor.mediaItemId))) {
+  if (
+    survivor.mediaItemId !== null &&
+    ((await hasOpenSaveIntent(input.db, survivor.mediaItemId)) ||
+      (await hasRestoreKeep(input.db, survivor.mediaItemId)))
+  ) {
     await abandonReleaseRecords({ db: input.db, recordIds: release.recordIds });
     logger.info('[trash] kept', {
       scope,
@@ -2483,7 +2509,8 @@ export async function expediteDeletion(
         verdict.reason === 'tag' ||
         verdict.reason === 'watchlisted' ||
         verdict.reason === 'recently_added' ||
-        verdict.reason === 'media_request'
+        verdict.reason === 'media_request' ||
+        verdict.reason === 'admin_restored'
       ) {
         // Saved (ADR-099 D-4: the app's record; the keeper owns its exclusion), already whitelisted, on a watchlist
         // (the Watchlist Keep), inside the Age Guard (D-26) or tagged mediarequests (ADR-118): refused like a
@@ -2652,6 +2679,8 @@ export async function expediteDeletion(
         protectedCount += 1; // the Watchlist Keep — kept, never auto-saved (a watchlist is not a Save).
       } else if (verdict.reason === 'recently_added') {
         protectedCount += 1; // the Age Guard (D-26) — kept, never auto-saved (it lapses when the title ages out).
+      } else if (verdict.reason === 'admin_restored') {
+        protectedCount += 1; // ADR-121: deliberate admin Restore, kept until admin removal.
       } else if (verdict.reason === 'media_request') {
         protectedCount += 1; // the Request Keep (ADR-118) — kept while the tag is on the title, never auto-saved.
       } else {
@@ -2732,10 +2761,10 @@ export async function expediteDeletion(
 }
 
 /**
- * ADR-023 / DESIGN-010 D-02 — Restore a recently-deleted item. Reuses the EXISTING executeRestore
- * failsafe path (reason 'restore', searches OFF, skip-if-present) unchanged, then records a
- * `trash_restored` marker event attributing the re-add to the Trash section (executeRestore writes
- * its own 'restored' event; this marker is the Trash-context attribution). Music is rejected (R-87).
+ * ADR-121 / DESIGN-052 D-32 — Admin's single-title Restore. Searches stay off; present
+ * titles are skipped. The run intent records a local keep before an add. A successful
+ * result records trash_restored in the same transaction as the result/tombstone clear.
+ * The Release Block is read and verified without changing any term. Music is rejected.
  */
 export async function restoreDeleted(input: {
   db?: DbClient;
@@ -2753,16 +2782,7 @@ export async function restoreDeleted(input: {
     arrKind: input.arrKind,
     initiatedBy: input.actorId,
     mediaItemIds: [input.mediaItemId],
-  });
-  await inTransaction(input.db, async (tx) => {
-    await tx.insert(ledgerEvents).values({
-      mediaItemId: input.mediaItemId,
-      eventType: 'trash_restored',
-      source: 'maintainerr',
-      occurredAt: nowDate(),
-      requestedByUserId: input.actorId ?? null,
-      payload: { restoreRunId: result.runId, status: result.status },
-    });
+    trashRestore: true,
   });
   return result;
 }

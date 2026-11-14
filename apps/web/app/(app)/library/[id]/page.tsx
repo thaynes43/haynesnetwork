@@ -34,7 +34,7 @@ export default async function LibraryItemPage({
   const trashAccess: ItemTrashAccess =
     level === 'disabled'
       ? null
-      : { level, actions: role.isAdmin ? [...TRASH_ACTIONS] : (role.trashActions ?? []) };
+      : { level, actions: role.isAdmin ? [...TRASH_ACTIONS] : (role.trashActions ?? []).filter((a) => a !== 'restore_deleted') };
   return (
     <ItemDetail mediaItemId={id} trashAccess={trashAccess} from={from} arrivedSeerrIssueId={arrivedSeerrIssueId} />
   );

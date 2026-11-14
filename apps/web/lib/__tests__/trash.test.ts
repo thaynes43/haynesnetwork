@@ -74,6 +74,14 @@ const base: GuardianPreviewInput = {
 };
 
 describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail closed)', () => {
+  it('ADR-121 — restore keeps have the same protected verdict on server and client', () => {
+    const restored = { ...base, ageGuard: 'clear' as const, saveIntent: false, restoreKeep: true };
+    expect(previewGuardian(restored)).toBe('protected_restore');
+    expect(classifyForExpedite(restored)).toBe(previewGuardian(restored));
+    expect(previewGuardian({ ...restored, saveIntent: true })).toBe('protected_saved');
+    expect(previewGuardian({ ...restored, arrTags: ['mediarequests'] })).toBe('protected_request');
+    expect(wallReasonCopy('admin_restored').detail).toContain('restored');
+  });
   it('cold + evaluated ⇒ deletable', () => {
     expect(previewGuardian(base)).toBe('deletable');
   });

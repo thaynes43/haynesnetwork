@@ -658,6 +658,7 @@ export async function listTrashPendingCandidates(input: {
   const base = await materializeSnapshotPending(input);
   const watchlistFiltered = await isProposalWatchlistFiltered({ db: input.db });
   const candidates = base.items
+    .filter((i) => !i.restoreKeep)
     .filter(
       (i): i is TrashPendingItem & { maintainerrMediaId: string } => i.maintainerrMediaId !== null,
     )

@@ -328,7 +328,7 @@ export default function AdminRolesPage() {
       grantsAll: role.grantsAll,
       libraryIds: [...(grantsByRole[role.id] ?? [])],
       allServerIds: [...(allGrantsByRole[role.id] ?? [])],
-      trashActions: [...role.trashActions] as TrashActionName[],
+      trashActions: role.trashActions.filter((a) => a !== 'restore_deleted') as TrashActionName[],
       messageActions: [...role.messageActions] as MessageActionName[],
       booksActions: [...role.booksActions] as BookActionName[],
       collectionsActions: [...role.collectionsActions] as CollectionActionName[],
@@ -546,15 +546,19 @@ export default function AdminRolesPage() {
         </p>
         <ul className="check-list">
           {TRASH_ACTION_NAMES.map((action) => {
+            const adminOnly = action === 'restore_deleted';
             const impliedBySave = action === 'save_leaving_soon' && hasSavePower;
             return (
               <li key={action}>
-                <label className="check-row" data-disabled={impliedBySave || undefined}>
+                <label
+                  className="check-row"
+                  data-disabled={adminOnly || impliedBySave || undefined}
+                >
                   <input
                     type="checkbox"
                     data-testid={`trash-action-${action}`}
-                    disabled={impliedBySave}
-                    checked={impliedBySave || form.trashActions.includes(action)}
+                    disabled={adminOnly || impliedBySave}
+                    checked={!adminOnly && (impliedBySave || form.trashActions.includes(action))}
                     onChange={(e) =>
                       apply((f) => ({
                         ...f,

@@ -1,5 +1,6 @@
 // DESIGN-005 D-16 — the Restore flow (R-50..R-52, AC-09). Explicitly NOT automatic:
-// only the two admin procedures reach this module; sync never writes to an *arr.
+// only explicit app actions reach this module; sync never writes to an *arr.
+// ADR-121: both bulk paths exclude Trash history; only Admin's single-title Trash Restore bypasses it.
 //
 //   diff    → computeRestoreDiff: live item list vs ledger by EXTERNAL id (the identity
 //             that survives a rebuild); tombstoned rows included and badged — the
@@ -21,6 +22,7 @@ import {
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { ArrError } from '@hnet/arr';
 import type { ArrTag } from '@hnet/arr';
+import { trashHistoryIds, verifyRestoreReleaseBlock } from './trash-restore';
 import { resolveDb } from './db-client';
 import { RestoreProfileUnmappedError, SearchCapExceededError } from './errors';
 import { finishRestoreRun, recordRestoreResult, startRestoreRun } from './restore-runs';
@@ -77,9 +79,7 @@ async function liveItemsByExternalId(
     return new Map(movies.map((m) => [String(m.tmdbId), { arrId: m.id, monitored: m.monitored }]));
   }
   const artists = await guardArrCall('lidarr GET /artist', () => arr.read.lidarr.listArtists());
-  return new Map(
-    artists.map((a) => [a.foreignArtistId, { arrId: a.id, monitored: a.monitored }]),
-  );
+  return new Map(artists.map((a) => [a.foreignArtistId, { arrId: a.id, monitored: a.monitored }]));
 }
 
 /** Just the present external ids — the read-only Restore diff (D-16) needs no monitored state. */
@@ -156,19 +156,31 @@ export interface ComputeRestoreDiffInput {
  * external id is absent from the live *arr. Never persisted; R-52's preview is the
  * admin seeing this list before execute.
  */
-export async function computeRestoreDiff(
-  input: ComputeRestoreDiffInput,
-): Promise<RestoreDiffItem[]> {
+export async function computeRestoreDiff(input: ComputeRestoreDiffInput): Promise<{
+  items: RestoreDiffItem[];
+  skippedTrash: RestoreDiffItem[];
+  skippedTrashCount: number;
+}> {
   const db = resolveDb(input.db);
   const arrInstanceId = input.arrInstanceId ?? 'main';
   const live = await liveExternalIds(input.arr, input.arrKind);
   const rows = await candidateRows(db, input.arrKind, arrInstanceId);
-  return rows
+  const missing = rows
     .filter((row) => {
       const ext = externalIdOfRow(input.arrKind, row);
       return ext !== null && !live.has(ext);
     })
     .map((row) => toDiffItem(input.arrKind, row));
+  const history = await trashHistoryIds(
+    input.db,
+    missing.map((r) => r.mediaItemId),
+  );
+  const skippedTrash = missing.filter((r) => history.has(r.mediaItemId));
+  return {
+    items: missing.filter((r) => !history.has(r.mediaItemId)),
+    skippedTrash,
+    skippedTrashCount: skippedTrash.length,
+  };
 }
 
 export interface ExecuteArrAddInput {
@@ -189,6 +201,8 @@ export interface ExecuteArrAddInput {
   reason?: ArrAddReason;
   /** ADR-022 D-02 — trigger the owning *arr's item search after each add/monitor. */
   searchOnAdd?: boolean;
+  /** Internal only: Trash's single-title admin entry point. Never exposed by a bulk API. */
+  trashRestore?: boolean;
 }
 
 /** Back-compat alias — Restore is `executeArrAdd({ reason:'restore', searchOnAdd:false })`. */
@@ -206,6 +220,7 @@ export interface ExecuteArrAddResultItem {
   error?: string;
   /** True when the item was approved but skipped at execute time (present / ineligible). */
   skipped?: boolean;
+  skipReason?: 'trash_deleted';
 }
 
 export interface ExecuteArrAddResult {
@@ -214,6 +229,8 @@ export interface ExecuteArrAddResult {
   itemCount: number;
   successCount: number;
   results: ExecuteArrAddResultItem[];
+  skippedTrash: { mediaItemId: string; title: string }[];
+  skippedTrashCount: number;
 }
 
 /** @deprecated use ExecuteArrAddResultItem */
@@ -390,11 +407,26 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
     .orderBy(asc(mediaItems.sortTitle));
   const rowById = new Map(rows.map((r) => [r.id, r]));
 
+  const history = await trashHistoryIds(
+    input.db,
+    rows.map((r) => r.id),
+  );
   const actions: ArrAddAction[] = [];
   const skipped: ExecuteArrAddResultItem[] = [];
   for (const id of approvedIds) {
     const row = rowById.get(id);
     const ext = row === undefined ? null : externalIdOfRow(input.arrKind, row);
+    if (row !== undefined && !input.trashRestore && history.has(id)) {
+      skipped.push({
+        mediaItemId: id,
+        title: row.title,
+        ok: false,
+        skipped: true,
+        skipReason: 'trash_deleted',
+        error: 'skipped: Trash-deleted title — use Seerr or an admin Restore in Trash',
+      });
+      continue;
+    }
     // Eligibility: a real row of this instance with an external id. 'restore' additionally
     // requires the ledger row be monitored (the failsafe re-adds only monitored rows).
     if (row === undefined || ext === null || (reason === 'restore' && !row.monitored)) {
@@ -425,7 +457,9 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
     }
   }
 
-  const preview: RestorePreviewItem[] = actions.map((a) => ({ ...toDiffItem(input.arrKind, a.row) }));
+  const preview: RestorePreviewItem[] = actions.map((a) => ({
+    ...toDiffItem(input.arrKind, a.row),
+  }));
   const { runId } = await startRestoreRun({
     db: input.db,
     arrKind: input.arrKind,
@@ -433,6 +467,7 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
     initiatedBy: input.initiatedBy,
     reason,
     preview,
+    trashRestore: input.trashRestore,
   });
 
   const results: ExecuteArrAddResultItem[] = [];
@@ -440,7 +475,13 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
     await recordRestoreResult({
       db: input.db,
       runId,
-      result: { mediaItemId: skip.mediaItemId, ok: false, error: skip.error },
+      result: {
+        mediaItemId: skip.mediaItemId,
+        title: skip.title,
+        skipReason: skip.skipReason,
+        ok: false,
+        error: skip.error,
+      },
     });
     results.push(skip);
   }
@@ -461,9 +502,33 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
     const outcome: 'added' | 'monitored' = action.kind === 'add' ? 'added' : 'monitored';
     let result: ExecuteArrAddResultItem;
     try {
+      // Recheck after target-state reads as well as at selection: a newly recorded Trash deletion
+      // must not turn a stale bulk preview into an add/monitor/search.
+      if (
+        !input.trashRestore &&
+        (await trashHistoryIds(input.db, [action.row.id])).has(action.row.id)
+      ) {
+        const skip: ExecuteArrAddResultItem = {
+          mediaItemId: action.row.id,
+          title: action.row.title,
+          ok: false,
+          skipped: true,
+          skipReason: 'trash_deleted',
+          error: 'skipped: Trash-deleted title — use Seerr or an admin Restore in Trash',
+        };
+        await recordRestoreResult({ db: input.db, runId, result: skip });
+        results.push(skip);
+        continue;
+      }
       let newArrItemId: number | undefined;
       let targetArrId: number;
       if (action.kind === 'add') {
+        if (
+          input.trashRestore &&
+          (await trashHistoryIds(input.db, [action.row.id])).has(action.row.id)
+        ) {
+          await verifyRestoreReleaseBlock({ db: input.db, arr: input.arr, item: action.row });
+        }
         const st = state!;
         const qualityProfileId = st.profileIdByName.get(action.row.qualityProfileName);
         if (qualityProfileId === undefined) {
@@ -521,6 +586,7 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
           mediaItemId: action.row.id,
           ok: true,
           outcome,
+          trashRestore: input.trashRestore,
           searched,
           ...(newArrItemId !== undefined ? { newArrItemId } : {}),
           ...(searchError !== undefined ? { searchError } : {}),
@@ -528,7 +594,13 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
       });
     } catch (err) {
       const message = errMessage(err);
-      result = { mediaItemId: action.row.id, title: action.row.title, ok: false, outcome, error: message };
+      result = {
+        mediaItemId: action.row.id,
+        title: action.row.title,
+        ok: false,
+        outcome,
+        error: message,
+      };
       await recordRestoreResult({
         db: input.db,
         runId,
@@ -545,6 +617,10 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
     itemCount: actions.length,
     successCount: results.filter((r) => r.ok).length,
     results,
+    skippedTrash: results
+      .filter((s) => s.skipReason === 'trash_deleted')
+      .map(({ mediaItemId, title }) => ({ mediaItemId, title })),
+    skippedTrashCount: results.filter((s) => s.skipReason === 'trash_deleted').length,
   };
 }
 
@@ -552,7 +628,7 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
  * DESIGN-005 D-16 — the admin-only failsafe Restore, now a thin wrapper over executeArrAdd
  * with the historical contract preserved: searches OFF, present items skipped (never
  * monitor-flipped), only monitored ledger rows eligible. The restore router + tests are
- * unchanged (ADR-022 C-01).
+ * unchanged except for Trash history exclusion (ADR-121).
  */
 export async function executeRestore(input: ExecuteRestoreInput): Promise<ExecuteArrAddResult> {
   return executeArrAdd({ ...input, reason: 'restore', searchOnAdd: false });

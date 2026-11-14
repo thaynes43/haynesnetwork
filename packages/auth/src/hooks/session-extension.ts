@@ -155,7 +155,7 @@ export async function getSessionExtension(
   const grantedSet = new Set(grantRows.map((r) => r.action));
   const trashActions: TrashAction[] = row.isAdmin
     ? [...TRASH_ACTIONS]
-    : TRASH_ACTIONS.filter((a) => grantedSet.has(a));
+    : TRASH_ACTIONS.filter((a) => a !== 'restore_deleted' && grantedSet.has(a));
   // ADR-026 C-04 — the fine-grained Bulletin message action grants: admin ⇒ every action (no
   // rows), otherwise the role's granted rows in canonical order. Skipped entirely for admins.
   const messageGrantRows = row.isAdmin

@@ -10,7 +10,7 @@
 // serving and /api/health are never blocked. dev:local, the e2e harness (ADR-103), and unit tests never run
 // these (they exercise the domain/sync helpers directly).
 import { db, getPool } from '@hnet/db';
-import { seedDefaultServerAllGrantsIfBootstrap } from '@hnet/domain';
+import { revokeNonAdminRestoreGrants, seedDefaultServerAllGrantsIfBootstrap } from '@hnet/domain';
 import { e2eHarnessActive } from '@hnet/domain/e2e-harness';
 
 export async function runBootTasks(): Promise<void> {
@@ -19,6 +19,11 @@ export async function runBootTasks(): Promise<void> {
   // seeds itself, exactly as under `next dev`.
   if (e2eHarnessActive()) return;
   if (!process.env.DATABASE_URL) return;
+  try {
+    await revokeNonAdminRestoreGrants({ db });
+  } catch {
+    console.error('[boot] legacy Trash Restore grant cleanup failed; admin-only API gate remains enforced');
+  }
   await seedDefaultGrants();
   await triggerColdStartPlexMatch();
 }

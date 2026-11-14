@@ -1,3 +1,4 @@
+import { hasRestoreKeep } from './trash-restore';
 // ADR-025 / DESIGN-011 — the Trash CURATION PIPELINE orchestrators. Batches are the deletion unit:
 // createBatchFromPending snapshots the current pending set for one media kind into a curated batch;
 // admins (and, in the window, users) rescue items (setBatchItemSaved); greenlightBatch promotes the
@@ -21,6 +22,7 @@ import {
   trashCandidates,
   trashCandidatesState,
   trashSaveIntents,
+  trashRestoreKeeps,
   trashSweepStatus,
   users,
   TRASH_BATCH_OPEN_STATES,
@@ -573,7 +575,10 @@ export async function createBatchFromPending(input: {
   // to Leaving Soon, and not counted as deleting. A row already pending is still kept at the sweep.
   const actionable = pending.items.filter(
     (p): p is TrashPendingItem & { maintainerrMediaId: string } =>
-      p.maintainerrMediaId !== null && !p.saveIntent && !hasMediaRequestTag(p.arrTags),
+      p.maintainerrMediaId !== null &&
+      !p.saveIntent &&
+      !p.restoreKeep &&
+      !hasMediaRequestTag(p.arrTags),
   );
   if (actionable.length === 0) {
     throw new TrashBatchEmptyError(
@@ -1755,7 +1760,10 @@ export interface TrashSweepStatusView {
 }
 
 /** DESIGN-052 D-10 — the scheduled sweep's status for the Trash page (read-only). */
-export async function getTrashSweepStatus(input: { db?: DbClient; now?: Date }): Promise<TrashSweepStatusView> {
+export async function getTrashSweepStatus(input: {
+  db?: DbClient;
+  now?: Date;
+}): Promise<TrashSweepStatusView> {
   const db = resolveDb(input.db);
   // D-29 — read from the batch itself, so an Expire now (which writes no status row) is counted too.
   const [swept] = await db
@@ -2016,6 +2024,8 @@ async function expireOneBatch(input: {
             // shield): an open save intent is the app's record, read in the same statement as the claim.
             sql`NOT EXISTS (SELECT 1 FROM ${trashSaveIntents} tsi
                             WHERE tsi.media_item_id = ${trashBatchItems.mediaItemId} AND tsi.revoked_at IS NULL)`,
+            sql`NOT EXISTS (SELECT 1 FROM ${trashRestoreKeeps} trk
+                            WHERE trk.media_item_id = ${trashBatchItems.mediaItemId} AND trk.revoked_at IS NULL)`,
           ),
         )
         .returning({ id: trashBatchItems.id });
@@ -2059,7 +2069,12 @@ async function expireOneBatch(input: {
       // The item was Saved just in time — never deleted, never handled. A row still `pending` lost the claim to an
       // open save intent (saved from another surface, ADR-099 D-4): it is kept `saved`, so the close never strands it.
       // `keep` counts a row that moved on its own (the wall's flip to `saved`) as the race.
-      await keep(item, 'saved');
+      await keep(
+        item,
+        item.mediaItemId && (await hasRestoreKeep(input.db, item.mediaItemId))
+          ? 'admin_restored'
+          : 'saved',
+      );
       if ((await abandonReleaseRecords({ db: input.db, recordIds: ids })) > 0) anyAbandoned = true;
       continue;
     }

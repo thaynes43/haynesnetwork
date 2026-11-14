@@ -771,6 +771,13 @@
       "when": 1791480000000,
       "tag": "0111_trash_request_keep",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1791490000000,
+      "tag": "0112_trash_restore_keep",
+      "breakpoints": true
     }
   ]
 }

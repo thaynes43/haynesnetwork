@@ -49,7 +49,7 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    user-facing catalog links.)
 4. *_The *arrs are the source of truth*_ for media lists. This app's ledger is a synced copy
    plus attribution/audit — sync flows in from the *arrs; the only write-backs are the explicit
-   failsafe restore and fix actions, plus the **ADR-083 queue janitor** (automated cleanup of
+   failsafe restore (skipping Trash history, ADR-121), admin-only Trash Restore (with a durable app keep), and fix actions, plus the **ADR-083 queue janitor** (automated cleanup of
    errored *grabs* — queue-item remove/blocklist/retry/re-search only, never library files;
    census-first, per-class enforcement config, see DESIGN-046). **The janitor is in CENSUS
    (observe-only) rollout until PLAN-065 records L3** — check `.agents/HANDOFF.md` for the

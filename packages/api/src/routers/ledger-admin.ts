@@ -223,7 +223,12 @@ export const ledgerAdminRouter = router({
           reason: 'ledger_add',
           searchOnAdd: input.searchOnAdd,
         });
-        return { runId: result.runId, status: result.status };
+        return {
+          runId: result.runId,
+          status: result.status,
+          skippedTrash: result.skippedTrash,
+          skippedTrashCount: result.skippedTrashCount,
+        };
       });
     }),
 

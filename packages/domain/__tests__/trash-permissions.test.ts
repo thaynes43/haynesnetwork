@@ -4,7 +4,7 @@
 // the grant (presence); the Admin role is immutable (ROLE_IMMUTABLE, no rows, no audit); and
 // trashActionsForRole applies the Admin=all and empty-default fallbacks.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import {
   permissionAudit,
   roleTrashActionGrants,
@@ -15,6 +15,7 @@ import {
   SystemRoleImmutableError,
   createRole,
   setRoleTrashActions,
+  revokeNonAdminRestoreGrants,
   trashActionsForRole,
 } from '../src/index';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
@@ -121,21 +122,82 @@ describe('trashActionsForRole (ADR-023 C-03 fallbacks)', () => {
   });
 
   it('no rows ⇒ the empty set', async () => {
-    const { roleId } = await createRole({ db: t.db, name: 'Fresh Trash', appIds: [], actorId: null });
+    const { roleId } = await createRole({
+      db: t.db,
+      name: 'Fresh Trash',
+      appIds: [],
+      actorId: null,
+    });
     expect(await trashActionsForRole({ db: t.db, roleId })).toEqual([]);
   });
 
   it('returns exactly the granted actions in canonical order', async () => {
-    const { roleId } = await createRole({ db: t.db, name: 'Granted Trash', appIds: [], actorId: null });
+    const { roleId } = await createRole({
+      db: t.db,
+      name: 'Granted Trash',
+      appIds: [],
+      actorId: null,
+    });
     await setRoleTrashActions({
       db: t.db,
       roleId,
-      actions: ['restore_deleted', 'save_exclude'],
+      actions: ['expedite_item', 'save_exclude'],
       actorId: null,
     });
     expect(await trashActionsForRole({ db: t.db, roleId })).toEqual([
       'save_exclude',
-      'restore_deleted',
+      'expedite_item',
     ]);
+  });
+});
+
+describe('ADR-121 legacy Restore grant cleanup', () => {
+  let t: TestDb;
+  let roleId: string;
+  beforeAll(async () => {
+    t = await bootMigratedDb();
+    ({ roleId } = await createRole({ db: t.db, name: 'Legacy role', appIds: [], actorId: null }));
+    await t.db.insert(roleTrashActionGrants).values([
+      { roleId, action: 'restore_deleted' },
+      { roleId, action: 'save_exclude' },
+    ]);
+  });
+  afterAll(async () => t?.stop());
+  it('denies regrant and filters a legacy grant from effective permissions before cleanup', async () => {
+    await expect(
+      setRoleTrashActions({ db: t.db, roleId, actions: ['restore_deleted'], actorId: null }),
+    ).rejects.toBeInstanceOf(SystemRoleImmutableError);
+    expect(await trashActionsForRole({ db: t.db, roleId })).toEqual(['save_exclude']);
+  });
+  it('rolls the revocation back when audit insertion fails, then revokes and audits atomically', async () => {
+    await t.db.execute(
+      sql`CREATE FUNCTION reject_trash_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END $$`,
+    );
+    await t.db.execute(
+      sql`CREATE TRIGGER reject_trash_audit BEFORE INSERT ON permission_audit FOR EACH ROW EXECUTE FUNCTION reject_trash_audit()`,
+    );
+    await expect(revokeNonAdminRestoreGrants({ db: t.db })).rejects.toThrow('audit unavailable');
+    expect(
+      (
+        await t.db
+          .select()
+          .from(roleTrashActionGrants)
+          .where(eq(roleTrashActionGrants.roleId, roleId))
+      ).map((r) => r.action),
+    ).toContain('restore_deleted');
+    await t.db.execute(sql`DROP TRIGGER reject_trash_audit ON permission_audit`);
+    await revokeNonAdminRestoreGrants({ db: t.db });
+    const audits = await t.db
+      .select()
+      .from(permissionAudit)
+      .where(eq(permissionAudit.roleId, roleId));
+    const changes = audits.filter((a) => a.action === 'update_trash_actions');
+    expect(changes).toHaveLength(1);
+    expect(changes[0]!.detail).toMatchObject({
+      before: ['save_exclude', 'restore_deleted'],
+      after: ['save_exclude'],
+    });
+    await revokeNonAdminRestoreGrants({ db: t.db });
+    expect(await trashActionsForRole({ db: t.db, roleId })).toEqual(['save_exclude']);
   });
 });

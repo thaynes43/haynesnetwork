@@ -1,3 +1,5 @@
+import { mediaItems, trashRestoreKeeps } from '@hnet/db';
+import { desc, eq } from 'drizzle-orm';
 // ADR-023 / DESIGN-010 — the Trash section's tRPC surface (Maintainerr-backed deletion UI). Access
 // is layered: the coarse `trash` section level gates VIEW (read_only browses pending/collections/
 // rules/recently-deleted/activity), while each destructive/mutating action needs an explicit
@@ -41,6 +43,7 @@ import {
   removeTrashCandidateRows,
   requestPoolRefreshAfterSave,
   restoreDeleted,
+  removeRestoreKeep,
   saveExclusion,
   setAgeGuardIgnoreLibraryFill,
   setAppSetting,
@@ -229,9 +232,7 @@ export const trashRouter = router({
           items: page.items.map((item) => ({
             ...item,
             posterUrl:
-              item.mediaItemId === null
-                ? null
-                : posterUrlFor(item.mediaItemId, item.posterSource),
+              item.mediaItemId === null ? null : posterUrlFor(item.mediaItemId, item.posterSource),
           })),
         };
       });
@@ -258,8 +259,7 @@ export const trashRouter = router({
           watchlistFiltered: result.watchlistFiltered,
           candidates: result.candidates.map((c) => ({
             ...c,
-            posterUrl:
-              c.mediaItemId === null ? null : posterUrlFor(c.mediaItemId, c.posterSource),
+            posterUrl: c.mediaItemId === null ? null : posterUrlFor(c.mediaItemId, c.posterSource),
           })),
         };
       });
@@ -453,7 +453,25 @@ export const trashRouter = router({
    * DESIGN-010 D-02 — Restore a recently-deleted item (restore_deleted grant). Reuses the failsafe
    * executeRestore path + a trash_restored marker. media is movie|tv (music is never restorable).
    */
-  restoreDeleted: trashActionProcedure('restore_deleted')
+  restoreKeeps: adminProcedure.query(async ({ ctx }) => {
+    const rows = await ctx.db
+      .select({
+        mediaItemId: mediaItems.id,
+        title: mediaItems.title,
+        revokedAt: trashRestoreKeeps.revokedAt,
+      })
+      .from(trashRestoreKeeps)
+      .innerJoin(mediaItems, eq(mediaItems.id, trashRestoreKeeps.mediaItemId))
+      .orderBy(desc(trashRestoreKeeps.createdAt));
+    return rows.map((r) => ({ ...r, revokedAt: r.revokedAt?.toISOString() ?? null }));
+  }),
+  removeRestoreKeep: adminProcedure
+    .input(z.object({ mediaItemId: z.uuid() }))
+    .mutation(({ ctx, input }) =>
+      mapDomainErrors(() => removeRestoreKeep({ db: ctx.db, ...input, actorId: ctx.user.id })),
+    ),
+
+  restoreDeleted: adminProcedure
     .input(z.object({ media: trashMedia, mediaItemId: z.uuid() }))
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
@@ -464,7 +482,7 @@ export const trashRouter = router({
           mediaItemId: input.mediaItemId,
           actorId: ctx.user.id,
         });
-        return { runId: result.runId, status: result.status };
+        return { runId: result.runId, status: result.status, successCount: result.successCount };
       });
     }),
 
@@ -528,9 +546,7 @@ export const trashRouter = router({
     list: sectionProcedure('trash', 'read_only')
       .input(z.object({ mediaKind: trashMedia.optional() }).optional())
       .query(async ({ ctx, input }) => {
-        return mapDomainErrors(() =>
-          listBatches({ db: ctx.db, mediaKind: input?.mediaKind }),
-        );
+        return mapDomainErrors(() => listBatches({ db: ctx.db, mediaKind: input?.mediaKind }));
       }),
 
     /** One batch + its poster-grid item list (the review / Leaving-Soon wall source). read_only+. */
@@ -599,7 +615,9 @@ export const trashRouter = router({
 
     /** Green-light a batch → Leaving Soon (manage_batches). Optional window override (else default). */
     greenlight: trashActionProcedure('manage_batches')
-      .input(z.object({ batchId: z.uuid(), windowDays: z.number().int().min(1).max(365).optional() }))
+      .input(
+        z.object({ batchId: z.uuid(), windowDays: z.number().int().min(1).max(365).optional() }),
+      )
       .mutation(async ({ ctx, input }) => {
         return mapDomainErrors(() =>
           greenlightBatch({
@@ -651,7 +669,8 @@ export const trashRouter = router({
             actorId: ctx.user.id,
             registry: 'gate-only',
           });
-          if (report.paused !== null) throw new TrashSweepPausedError(report.paused.reason, report.paused.step);
+          if (report.paused !== null)
+            throw new TrashSweepPausedError(report.paused.reason, report.paused.step);
           return report;
         });
       }),

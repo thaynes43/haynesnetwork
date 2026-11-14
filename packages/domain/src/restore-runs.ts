@@ -2,6 +2,7 @@ import {
   ledgerEvents,
   mediaItems,
   restoreRuns,
+  trashRestoreKeeps,
   type ArrAddReason,
   type ArrKind,
   type DbClient,
@@ -22,6 +23,7 @@ export interface StartRestoreRunInput {
   reason?: ArrAddReason;
   /** The exact diff the admin approved (D-16 step 2) — persisted verbatim (R-52). */
   preview: RestorePreviewItem[];
+  trashRestore?: boolean;
 }
 
 /**
@@ -45,6 +47,27 @@ export async function startRestoreRun(input: StartRestoreRunInput): Promise<{ ru
     if (!row) {
       throw new Error('restore_runs insert returned no row');
     }
+    if (input.trashRestore) {
+      for (const item of input.preview) {
+        await tx
+          .insert(trashRestoreKeeps)
+          .values({
+            mediaItemId: item.mediaItemId,
+            restoreRunId: row.id,
+            restoredBy: input.initiatedBy,
+          })
+          .onConflictDoUpdate({
+            target: trashRestoreKeeps.mediaItemId,
+            set: {
+              restoreRunId: row.id,
+              restoredBy: input.initiatedBy,
+              createdAt: new Date(),
+              revokedAt: null,
+              revokedBy: null,
+            },
+          });
+      }
+    }
     return { runId: row.id };
   });
 }
@@ -55,6 +78,9 @@ export interface RecordRestoreResultInput {
   result: {
     mediaItemId: string;
     ok: boolean;
+    title?: string;
+    skipReason?: 'trash_deleted';
+    trashRestore?: boolean;
     /**
      * ADR-022 D-02 — which per-item outcome this was:
      *   'added'     (default) — absent from the live *arr, re-added monitored: clears the
@@ -86,7 +112,11 @@ export async function recordRestoreResult(
 ): Promise<{ successCount: number }> {
   return inTransaction(input.db, async (tx) => {
     const [run] = await tx
-      .select({ id: restoreRuns.id, status: restoreRuns.status })
+      .select({
+        id: restoreRuns.id,
+        status: restoreRuns.status,
+        initiatedBy: restoreRuns.initiatedBy,
+      })
       .from(restoreRuns)
       .where(eq(restoreRuns.id, input.runId))
       .for('update');
@@ -97,6 +127,8 @@ export async function recordRestoreResult(
     const outcome = input.result.outcome ?? 'added';
     const entry = {
       mediaItemId: input.result.mediaItemId,
+      ...(input.result.title ? { title: input.result.title } : {}),
+      ...(input.result.skipReason ? { skipReason: input.result.skipReason } : {}),
       ok: input.result.ok,
       at: new Date().toISOString(),
       ...(input.result.outcome !== undefined ? { outcome } : {}),
@@ -171,6 +203,16 @@ export async function recordRestoreResult(
       }
     }
 
+    if (input.result.ok && input.result.trashRestore) {
+      await tx.insert(ledgerEvents).values({
+        mediaItemId: input.result.mediaItemId,
+        eventType: 'trash_restored',
+        requestedByUserId: run.initiatedBy,
+        source: 'maintainerr',
+        occurredAt: new Date(),
+        payload: { restoreRunId: input.runId, status: 'completed' },
+      });
+    }
     return { successCount: updated?.successCount ?? 0 };
   });
 }

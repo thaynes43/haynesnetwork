@@ -360,15 +360,15 @@ test.describe('trash — watchlist protection on the page (ADR-093)', () => {
 test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
   test.describe.configure({ mode: 'serial' });
 
-  test('the Admin → Restore nav item is gone; /admin/restore and ?tab=batches redirect', async ({
+  test('Admin sees the failsafe restore preview; old batch links still redirect', async ({
     page,
   }) => {
     await signIn(page, 'admin');
     await page.goto('/admin');
-    await expect(page.locator('.admin-nav').getByRole('link', { name: 'Restore' })).toHaveCount(0);
+    await expect(page.locator('.admin-nav').getByRole('link', { name: 'Failsafe restore' })).toBeVisible();
     await page.goto('/admin/restore');
-    await page.waitForURL('**/trash');
-    await expect(page.getByRole('heading', { name: 'Trash' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Failsafe restore' })).toBeVisible();
+    await expect(page.getByText('Trash-deleted titles are skipped.', { exact: false })).toBeVisible();
 
     // ADR-033 — the retired ?tab=batches deep link folds into the per-kind tab (kind rides along).
     await page.goto('/trash?tab=batches');

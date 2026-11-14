@@ -84,7 +84,7 @@ describe('restore.diff / restore.execute (AC-09)', () => {
 
     // ---- Diff (D-16 step 1): exactly the two absent rows, tombstone badged. ----
     const diff = await api.restore.diff({ arrKind: 'sonarr' });
-    const byId = new Map(diff.map((d) => [d.mediaItemId, d]));
+    const byId = new Map(diff.items.map((d) => [d.mediaItemId, d]));
     expect(byId.has(kept.id)).toBe(false);
     expect(byId.get(lost.id)).toMatchObject({
       title: 'Lost Show',

@@ -963,7 +963,8 @@ function LedgerBrowser({
                 <strong>Present but unmonitored</strong> — switched to monitored in place.
               </li>
               <li>
-                <strong>Already monitored</strong> — skipped, nothing changes.
+                <strong>Already monitored</strong> — skipped, nothing changes. Trash-deleted titles
+                are also skipped; use Seerr or an admin Restore in Trash.
               </li>
             </ul>
             <label className="check-row">
@@ -1031,6 +1032,7 @@ function RunReport({
   const entries = run.results as RunResultEntry[];
   const previewTitles = new Map(run.preview.map((p) => [p.mediaItemId, p.title]));
   const s = summarizeRun(entries);
+  const trashSkips = entries.filter((e) => e.skipReason === 'trash_deleted');
   const statusTone =
     run.status === 'completed' ? 'ok' : run.status === 'failed' ? 'danger' : 'warn';
 
@@ -1067,6 +1069,15 @@ function RunReport({
           {s.searched} search command{s.searched === 1 ? '' : 's'} sent
         </span>
       </p>
+      {trashSkips.length > 0 ? (
+        <p role="status">
+          {trashSkips.length} Trash-deleted titles skipped. Use Seerr or an admin Restore in Trash:{' '}
+          {trashSkips
+            .map((e) => (typeof e.title === 'string' ? e.title : '(unknown item)'))
+            .join(', ')}
+          .
+        </p>
+      ) : null}
       {entries.length === 0 ? (
         <p className="muted">Nothing to do — every selected item was already handled.</p>
       ) : (
@@ -1083,6 +1094,7 @@ function RunReport({
               const c = classifyRunItem(entry);
               const badge = OUTCOME_BADGES[c.kind]!;
               const title =
+                (typeof entry.title === 'string' ? entry.title : undefined) ??
                 titleById?.get(entry.mediaItemId) ??
                 previewTitles.get(entry.mediaItemId) ??
                 '(unknown item)';
