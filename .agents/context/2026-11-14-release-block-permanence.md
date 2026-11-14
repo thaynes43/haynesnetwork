@@ -2,7 +2,7 @@
 
 Date: 2026-11-14. Source pinned by `git fetch origin main` and `git rev-parse origin/main`: `780fdeb178850c7b9f11941e9442ed09d1afe101`. Story: OpenProject 845, parent 814. Decision: ADR-122 / DESIGN-052 D-33. No live mutation, search, grab, configuration edit or deployment was performed. No release term, indexer identity or per-account viewing is included in this note.
 
-**End state:** design/evidence prepared; implementation held by Q-37, because the story requires the design merged before code. Source behavior is unchanged. Tests of the proposed runtime behavior have not run, nothing is installed, and acceptance belongs to the coordinator after the required adversarial review. Migration 0115 is reserved but not created. No new glossary id.
+**Design-worker end state (superseded by the implementation checkpoint below):** design/evidence prepared; implementation held by Q-37, because the story requires the design merged before code. Source behavior is unchanged. Tests of the proposed runtime behavior have not run, nothing is installed, and acceptance belongs to the coordinator after the required adversarial review. Migration 0115 is reserved but not created. No new glossary id.
 
 ## Measurement method and count rules
 
@@ -275,3 +275,36 @@ Next safe step: coordinator resolves Q-37 and reviews/merges the design in the s
 - No package source or test is touched, so no package test suite or PostgreSQL runtime-regression result is claimed. The required regression cases are specified in D-33 and await Q-37. Build, installation and acceptance remain pending.
 
 Dependencies were installed with the frozen lockfile. Disk headroom was measured before installation (`df -h`, `df -i`, `du -sx /tmp`): 18 GiB available on the session volume and no temporary-directory usage; installation budget estimated at 4 GiB with an 8 GiB reserve. Unpushed source was exported before that job. No dependency manifest or lockfile was changed.
+
+
+## Implementation checkpoint — session haynesnetwork-1114-080857
+
+This section supersedes the design worker's implementation hold above. Q-37 was answered by the coordinator on 2026-11-14 (story comment 8512): design PR 1080 merges first, code PR second; both are reviewed together. The code branch is `agent/haynesnetwork-1114-080857`, based on design head `99f8d4e562bcc86b26e7ea0280c00194bfd68000`. No claim or story completion is made by this worker.
+
+Source implements ADR-122 / D-33: protected states include legacy expired/pruned rows, every reconcile refuses capacity overflow before a profile write, every delete reserves beside that whole set, new expiry is null, and upkeep reports total permanent terms, stranded work and capacity refusal. There is no age transition, pruning option or clipped desired set. Abandoned orphan cleanup, shared terms, ambiguity and single-writer confinement remain. Seed/backfill no longer set an expiry origin or skip old deletions. Legacy finite expiry is decoded only to bound evidence by the deletion time; new rows use their batch deletion or ledger tombstone, never insertion time.
+
+Migration 0115 uses assigned journal idx 111. It only drops the expiry column's NOT NULL constraint. No CHECK is replaced, old row value rewritten or prior journal entry changed. The compatibility test applies the actual incremental migration after the previous schema, compares all finite row fields and CHECK definitions, exercises prior-shape finite-date SQL and new null expiry, and repeats the migration. This proves schema compatibility; no previous container image was launched.
+
+**Q-38 is a merge dependency:** the fetched main and design branch end at idx 109, leaving the assigned idx 111 without idx 110. The journal guard is retained. The coordinator must supply the predecessor or explicitly reassign the unmerged reservation; never renumber a migration already on main. No dummy migration or weakened test is included.
+
+**First run after release (inference from the design's measured snapshot above):** the protected set is unchanged at 1151 Radarr / 195 Sonarr terms and there are no legacy expired/pruned records to recover. The measured profile counts agree with that set; matching counts alone do not prove exact profile membership. Permanence leaves the desired set unchanged and therefore requires no profile PUT or POST by itself on the first upkeep/reconcile. This inference assumes no independent drift or intervening changes at release; ordinary new deletions, drift or legacy omissions would use the existing writer. The implementation worker made no production request to remeasure it.
+
+New source ids: migration 0115 (journal idx 111) and DESIGN-052 Q-38 only. No ADR, D-NN or glossary term added. The existing glossary and hard rule now describe source behavior; ADR-122's status is left for the coordinator. The requested fixture anonymity audit on 2026-11-14 found four original fields with two original identities, and verified every resulting indexer field uses only indexer A/B; no identity was emitted by the audit. No per-account viewing or production terms are added.
+
+Measured test evidence and final PR check states are recorded below and on story 845. No build artifact, installation, live profile mutation, acceptance or merge is claimed. Q-35's capacity experiment and multiple profiles are outside this implementation, and Q-36's other blocks are unchanged. The required independent adversarial review and coordinator review remain pre-merge gates owned by the coordinator.
+
+
+### Implementation validation (measured 2026-11-14)
+
+- `pnpm --filter @hnet/domain test --maxWorkers=2`: final full run passed, 2786 tests in 135 files. Earlier obsolete prune expectations and a sync fixture outside the single-writer boundary were corrected; the final full run includes the guard and every domain behavior test.
+- Focused Release Block/name-rule/seed/backfill run passed 120 tests; the final full run includes the final calendar-year fixture and guard corrections.
+- `pnpm --filter @hnet/sync test --maxWorkers=2`: final run passed, 312 tests in 44 files. Both job modes use the domain fixture writer and isolated PostgreSQL databases.
+- `pnpm --filter @hnet/db test --maxWorkers=2`: 183 passed, one failed solely at the contiguous-journal guard (Q-38). The actual incremental migration compatibility test passed. The failed prerequisite is not waived.
+- Local count audits re-evaluated the documented Python projection and conserved title histograms/weighted totals, weekly records/distinct terms, profile sentinel counts and legacy expiry cohorts. Every monthly projection cell matched. No measurement table or production aggregate was changed or remeasured by this worker.
+- `git diff --check` passed. Required PR check outcomes will be recorded on the PR and story after completion, independently of these local results.
+
+- `npm_config_workspace_concurrency=2 pnpm typecheck`: passed across the workspace. A test-only assertion was added for the history array that its fixture always supplies; runtime behavior is unchanged from the final package runs.
+- Local-output exception: a diff preview on 2026-11-14 showed a pre-existing indexer fixture value. Later verification used a count-only audit. No original value was added to PR text or tracker notes, and the source replacements use only indexer A/B. The removed values are not reproduced here.
+
+- `npm_config_workspace_concurrency=2 pnpm lint`: passed. A local log/change-list audit found warnings only in untouched files; the retired seed-test lifetime constant was removed rather than leaving a new warning.
+- Fresh `git fetch origin main` before publication still pins main to `780fdeb178850c7b9f11941e9442ed09d1afe101`; Q-38 remains unresolved. No parallel main changes were discarded. Final PR URL, commit, required-check outcomes and next safe step are recorded on story 845; the worker does not merge or accept.

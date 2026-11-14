@@ -1,3 +1,10 @@
+## 2026-11-14: story 845 implementation checkpoint; Q-38 journal prerequisite
+
+- Code branch `agent/haynesnetwork-1114-080857`, stacked on design PR 1080. Coordinator ruling: design PR first, code PR second; worker does not merge or close the story.
+- Source implements ADR-122 / DESIGN-052 D-33: permanent protected terms including legacy expired/pruned coverage, unconditional capacity refusal, null new expiry, non-expiring seed/backfill and upkeep, abandoned cleanup retained. PostgreSQL regression and schema upgrade evidence: [checkpoint](context/2026-11-14-release-block-permanence.md#implementation-checkpoint--session-haynesnetwork-1114-080857).
+- Q-38: migration 0115 is reserved at journal idx 111, but fetched main ends at idx 109. The contiguous-journal guard is retained and needs the predecessor or a coordinator reassignment before a green merge gate. No prior migration is renumbered. Next safe step: coordinator resolves that prerequisite; merge main, recheck the journal and finish required PR checks.
+- No production calls, writes, deployment, acceptance, other sessions or changes to the Janitor Release Block / Mislabel Block. The coordinator owns the required independent adversarial review before merge. Source, tests, build, installation and acceptance are separate evidence states.
+
 ## 2026-11-14: story 845 design checkpoint; implementation held by Q-37
 
 - Scope and acceptance: OpenProject 845; coordinator holds the story. Worker branch `agent/haynesnetwork-1114-073739`, source pinned to `780fdeb178850c7b9f11941e9442ed09d1afe101` by a fresh fetch on 2026-11-14.

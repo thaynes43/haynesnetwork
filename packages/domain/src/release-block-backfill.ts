@@ -1,12 +1,12 @@
 // ADR-117 / DESIGN-052 D-29 — one-off backfill of posted release names onto titles Trash already deleted.
-// A dry run writes nothing and does not call Radarr or Sonarr. Apply inserts records (origin `backfill`, 365 days
-// from the original delete) through insertReleaseRecords, reconciles the profile through reconcileReleaseBlock and
-// only then turns them `active`. It never removes or weakens an existing record, never lengthens a term's life,
-// never prunes an older term to make room, and never terms a title the ledger lists as live.
+// A dry run writes nothing and does not call Radarr or Sonarr. Apply inserts permanent records (origin `backfill`)
+// through insertReleaseRecords, reconciles the profile through reconcileReleaseBlock and only then turns them
+// `active`. It never removes or weakens an existing record, never expires a term or prunes an older term to make room,
+// and never terms a title the ledger lists as live.
 //
 // Selection: every TITLE Trash deleted that is still gone. A title is one (arr kind, tmdb id or tvdb id) with a
-// `deleted` batch item, or with a live (`active` / `in_flight`) Deleted-Release Record (an Expedite delete has no
-// batch item), whose media item is tombstoned (`deleted_from_arr_at` set). Each title lands in ONE class:
+// `deleted` batch item, or a protected Deleted-Release Record (including legacy `expired` / `pruned`; an Expedite
+// delete has no batch item), whose media item is tombstoned (`deleted_from_arr_at` set). Each title lands in ONE class:
 //   lowConfidence — it has a live record from the renamed file (`arr_file`, `low_confidence`);
 //   movies / shows — it has no record with a term at all;
 //   otherNames — every other title: it has a term, and may still have a posted name no live term matches
@@ -29,7 +29,7 @@ import { matchLegacySab, postedReleaseName, verifiedFileName } from './release-b
 import { readLegacyJobsForSize, readLegacyReleaseNames } from './release-block-legacy';
 import {
   RELEASE_BLOCK_TERM_CAP,
-  RELEASE_TERM_LIFETIME_DAYS,
+  RELEASE_BLOCK_PROTECTED_STATES,
   abandonReleaseRecords,
   activateReleaseRecords,
   draftForVerifiedName,
@@ -45,14 +45,14 @@ import {
 } from './release-block';
 import { termMatchesRaw } from './release-terms';
 
-const DAY_MS = 86_400_000;
-const TERMED_STATES = ['active', 'in_flight', 'expired', 'pruned'] as const;
+/** D-33 — legacy expiry encoded the actual delete plus the former lifetime. Evidence bound only, never retention. */
+function legacyDeletionTimeFromExpiry(expiresAt: Date): Date {
+  return new Date(expiresAt.getTime() - 365 * 86_400_000);
+}
 
-/** Title counts: titles = expired + named + unnamed + noNewTerm + capRefused + unread. Name counts are separate. */
+/** Title counts: titles = named + unnamed + noNewTerm + capRefused + unread. Name counts are separate. */
 export interface PostedNameBackfillClass {
   titles: number;
-  /** The delete is already 365 days old. Nothing is inserted, so the term's life is not restarted. */
-  expired: number;
   /** At least one new term. */
   named: number;
   /** No posted name in any source (a URL is not a name). */
@@ -83,7 +83,7 @@ export interface PostedNameBackfillReport {
   otherNames: PostedNameBackfillClass;
   /** Deleted titles the ledger lists as live again (re-added): never termed, not part of any class. */
   skippedLive: { movies: number; shows: number };
-  /** Per *arr: the distinct live terms before, the distinct terms this run adds, and the cap. */
+  /** Per *arr: the complete protected terms before, the distinct terms this run adds, and the cap. */
   terms: Record<ReleaseArrKind, { live: number; added: number; cap: number }>;
   reconciled: ReleaseBlockReconcileReport[];
 }
@@ -100,7 +100,7 @@ interface Candidate {
   mediaItemId: string;
   arrItemId: number | null;
   batchItemId: string | null;
-  /** The delete's own time: a new term expires 365 days from it. */
+  /** The actual delete time bounds evidence; it never controls term retention. */
   deletedAt: Date;
   sizeBytes: number | null;
 }
@@ -108,7 +108,6 @@ interface Candidate {
 function emptyClass(): PostedNameBackfillClass {
   return {
     titles: 0,
-    expired: 0,
     named: 0,
     unnamed: 0,
     noNewTerm: 0,
@@ -162,7 +161,7 @@ export async function backfillPostedReleaseNames(input: {
   const t = trashDeletedReleases;
 
   // Every record that has (or had) a term, per title: the live terms, whether any is the renamed-file kind, and the
-  // delete clock its life runs from (expires_at less the lifetime).
+  // actual deletion time for bounding evidence. Legacy finite expiry retains its historical interpretation.
   const records = await db
     .select({
       arrKind: t.arrKind,
@@ -180,25 +179,33 @@ export async function backfillPostedReleaseNames(input: {
       identitySource: t.identitySource,
       termConfidence: t.termConfidence,
       expiresAt: t.expiresAt,
+      batchDeletedAt: trashBatchItems.deletedAt,
+      ledgerDeletedAt: mediaItems.deletedFromArrAt,
     })
     .from(t)
-    .where(and(inArray(t.state, [...TERMED_STATES]), isNotNull(t.term)));
+    .leftJoin(trashBatchItems, eq(trashBatchItems.id, t.batchItemId))
+    .leftJoin(mediaItems, eq(mediaItems.id, t.mediaItemId))
+    .where(and(inArray(t.state, [...RELEASE_BLOCK_PROTECTED_STATES]), isNotNull(t.term)));
   const liveTerms: Record<ReleaseArrKind, Set<string>> = { radarr: new Set(), sonarr: new Set() };
   const termed = new Set<string>();
   const lowConfidence = new Set<string>();
   const fromRecords = new Map<string, Candidate>();
   for (const r of records) {
     if (r.arrKind !== 'radarr' && r.arrKind !== 'sonarr') continue;
-    const live = r.state === 'active' || r.state === 'in_flight';
-    if (live) liveTerms[r.arrKind].add(r.term as string);
+    liveTerms[r.arrKind].add(r.term as string);
     const externalId = r.arrKind === 'radarr' ? r.tmdbId : r.tvdbId;
     if (externalId === null || externalId <= 0) continue;
     const key = titleKey(r.arrKind, externalId);
     termed.add(key);
-    if (!live) continue;
     if (r.identitySource === 'arr_file' && r.termConfidence === 'low_confidence') lowConfidence.add(key);
     if (r.mediaItemId === null) continue;
-    const deletedAt = new Date(r.expiresAt.getTime() - RELEASE_TERM_LIFETIME_DAYS * DAY_MS);
+    const deletedAt =
+      r.expiresAt !== null
+        ? legacyDeletionTimeFromExpiry(r.expiresAt)
+        : (r.batchDeletedAt ?? r.ledgerDeletedAt);
+    // A new record has no expiry clock. Never replace an unknown deletion time with recorded_at or now.
+    // A viable tombstoned title has ledgerDeletedAt; live/unknown items cannot supply deletion evidence.
+    if (deletedAt === null) continue;
     const known = fromRecords.get(key);
     if (known && known.deletedAt.getTime() >= deletedAt.getTime()) continue;
     fromRecords.set(key, {
@@ -308,7 +315,6 @@ export async function backfillPostedReleaseNames(input: {
     sonarr: new Set(liveTerms.sonarr),
   };
   const items: KeyedDrafts[] = [];
-  const deletedAtByKey = new Map<string, Date>();
   for (const candidate of titles.values()) {
     if (!tombstoned.has(candidate.mediaItemId)) {
       report.skippedLive[candidate.arrKind === 'radarr' ? 'movies' : 'shows'] += 1;
@@ -322,10 +328,6 @@ export async function backfillPostedReleaseNames(input: {
           : report.shows
         : report.otherNames;
     bucket.titles += 1;
-    if (candidate.deletedAt.getTime() + RELEASE_TERM_LIFETIME_DAYS * DAY_MS <= now.getTime()) {
-      bucket.expired += 1;
-      continue;
-    }
     const names = await namesFor(db, candidate, eventsByItem.get(candidate.mediaItemId) ?? [], bucket);
     if (names === 'unread') {
       bucket.unread += 1;
@@ -382,7 +384,6 @@ export async function backfillPostedReleaseNames(input: {
     bucket.named += 1;
     bucket.records += drafts.length;
     items.push({ key: candidate.key, drafts, batchItemId: candidate.batchItemId });
-    deletedAtByKey.set(candidate.key, candidate.deletedAt);
   }
 
   if (!input.apply || items.length === 0) return report;
@@ -396,7 +397,6 @@ export async function backfillPostedReleaseNames(input: {
     origin: 'backfill',
     state: 'in_flight',
     recordedAt: now,
-    expiresFrom: (key) => deletedAtByKey.get(key),
     logger,
   });
   const recordIds = [...inserted.values()].flat();
@@ -406,14 +406,14 @@ export async function backfillPostedReleaseNames(input: {
   try {
     for (const arrKind of kinds) {
       report.reconciled.push(
-        await reconcileReleaseBlock({ db: input.db, arr, arrKind, logger, now, prune: false }),
+        await reconcileReleaseBlock({ db: input.db, arr, arrKind, logger, now }),
       );
     }
   } catch (error) {
     await abandonReleaseRecords({ db: input.db, recordIds, at: now });
     for (const arrKind of kinds) {
       try {
-        await reconcileReleaseBlock({ db: input.db, arr, arrKind, logger, now, prune: false });
+        await reconcileReleaseBlock({ db: input.db, arr, arrKind, logger, now });
       } catch {
         // best effort: the upkeep's drift check removes an orphan term
       }

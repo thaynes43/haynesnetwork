@@ -2,7 +2,7 @@
 // with the in-memory *arr: the dry run writes nothing; a deleted row whose *arr record still exists is skipped (and one
 // whose presence cannot be confirmed); the ledger identifies first, then the legacy SAB by title, year ±1, completion
 // before the delete and size 90..100 %; the rest is counted unblockable; the named titles are reported; `--manual`
-// adds the remediation names; `--apply` writes `active` records (365 days from the deletion) and reconciles; a re-run
+// adds the remediation names; `--apply` writes permanent `active` records and reconciles; a re-run
 // skips what is already recorded.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
@@ -25,8 +25,6 @@ import {
   upsertMediaItemsBatch,
 } from '../src/index';
 import { bootMigratedDb, type TestDb } from './helpers';
-
-const DAY = 86_400_000;
 
 describe('the Release Block seed (DESIGN-052 D-15)', () => {
   let t: TestDb;
@@ -129,6 +127,41 @@ describe('the Release Block seed (DESIGN-052 D-15)', () => {
     fixture.movies.set(103, { title: 'Still Here', year: 2021, tmdbId: 5103, file: null });
     return { arr, fixture };
   };
+
+  it('D-33: seeds deletions older than ten years permanently, retaining the actual delete as the evidence bound', async () => {
+    const { arr, fixture } = arrWithPresence();
+    const now = new Date('2037-11-14T12:00:00Z');
+    const report = await seedReleaseBlock({
+      db: t.db,
+      arr,
+      apply: true,
+      legacySab: legacy,
+      now,
+      logger: silentDomainLogger,
+    });
+    expect(report.identified).toEqual({ ledger: 1, legacySab: 1 });
+    expect(report.unblockable.movies).toBe(1); // The only job for that title finished after the actual delete.
+    const rows = await t.db.select().from(trashDeletedReleases);
+    expect(rows.length).toBe(2);
+    expect(
+      rows.every(
+        (r) =>
+          r.state === 'active' && r.expiresAt === null && r.recordedAt.getTime() === now.getTime(),
+      ),
+    ).toBe(true);
+    const profile = structuredClone(fixture.profiles);
+    const again = await seedReleaseBlock({
+      db: t.db,
+      arr,
+      apply: true,
+      legacySab: legacy,
+      now,
+      logger: silentDomainLogger,
+    });
+    expect(again.records).toBe(0);
+    expect(fixture.profiles).toEqual(profile);
+    expect(await t.db.select().from(trashDeletedReleases)).toEqual(rows);
+  });
 
   it('parses the legacy SAB export and matches by title, year ±1, completion before the delete and size 90..100 %', () => {
     expect(legacy).toHaveLength(3);
@@ -346,7 +379,8 @@ describe('the Release Block seed (DESIGN-052 D-15)', () => {
       ['remediation', 'legacy_sab'],
     ]);
     const ledgerRow = rows.find((r) => r.identitySource === 'ledger_grab')!;
-    expect(ledgerRow.expiresAt.getTime()).toBe(deletedAt.getTime() + 365 * DAY);
+    expect(ledgerRow.expiresAt).toBeNull();
+    expect(rows.every((r) => r.expiresAt === null)).toBe(true);
     expect(fixture.profiles.radarr[0]!.ignored).toHaveLength(5); // the sentinel + four terms
     expect(fixture.profiles.radarr[0]!.ignored).toContain(RELEASE_BLOCK_SENTINEL);
     expect(report.reconciled).toHaveLength(1);

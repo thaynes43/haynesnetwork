@@ -4,7 +4,7 @@
 // - identity (D-11): the import `data.fileId` → `downloadId` → grab join and its fallbacks, an upgraded file naming the
 //   latest import, the renamed-file-only record, a no-file movie, a movie already gone (the ledger), a series per
 //   season / group / resolution;
-// - the writer (D-13): create, idempotent, a hand edit overwritten, expiry, the 3,000 cap, the stranded in-flight
+// - the writer (D-13): create, idempotent, a hand edit overwritten, permanent terms, the 3,000 cap, the stranded in-flight
 //   settle, and each refusal (`validate`, `put`, `read_back`, `duplicate_profile`);
 // - the sweep (D-14): the order identity GETs → profile write → read-back → claim → handle → *arr GET → active; a failed
 //   write or a malformed term pauses cleanly with nothing deleted; a failed handle, an item still present, or a claim
@@ -37,6 +37,8 @@ import {
   getReleaseBlockSummary,
   identifyRelease,
   reconcileReleaseBlock,
+  recordAndBlockReleases,
+  keepReasonForUnrecorded,
   reconcileReleaseBlockIfDue,
   reportPoolReleaseIdentity,
   settleReleaseRecords,
@@ -87,7 +89,7 @@ function grabbedMovie(id: number, over: Partial<StaticArrMovie> = {}): StaticArr
         fileId: null,
         importedPath: null,
         releaseGroup: 'FraMeSToR',
-        indexer: 'NZBgeek (Prowlarr)',
+        indexer: 'indexer A',
         releaseSource: null,
       },
       {
@@ -192,7 +194,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
         releaseGroup: 'FraMeSToR',
         quality: 'Remux-2160p',
         resolution: 2160,
-        indexer: 'NZBgeek (Prowlarr)',
+        indexer: 'indexer A',
         termConfidence: 'verified',
         shape: 'group',
       });
@@ -349,7 +351,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
             downloadId: 'L1',
             releaseGroup: 'SPARKS',
             quality: 'Bluray-1080p',
-            indexer: 'geek',
+            indexer: 'indexer B',
           },
         },
         {
@@ -370,7 +372,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
         identitySource: 'ledger_grab',
         releaseGroup: 'SPARKS',
         resolution: 1080,
-        indexer: 'geek',
+        indexer: 'indexer B',
       });
       await t.db.delete(ledgerEvents).where(eq(ledgerEvents.mediaItemId, mid));
     });
@@ -839,7 +841,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
     const insertActive = async (
       terms: string[],
       at = new Date(),
-      expiresAt = new Date(Date.now() + 86_400_000),
+      expiresAt: Date | null = null,
     ) => {
       if (terms.length === 0) return;
       await t.db.insert(trashDeletedReleases).values(
@@ -888,25 +890,183 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
       expect(logs.some((l) => l.msg === '[release-block] reconciled')).toBe(true);
     });
 
-    it('expires terms past their 365 days, and prunes the oldest active ones beyond the 3,000 cap', async () => {
+    it.each([
+      { label: '365-day boundary', recordedAt: new Date('2036-11-14T12:00:00Z') },
+      { label: 'ten calendar years', recordedAt: new Date('2027-11-14T12:00:00Z') },
+    ])(
+      'D-33: preserves old and new-schema terms at $label, without a second write',
+      async ({ recordedAt }) => {
+        const { arr, fixture } = createStaticReleaseBlockArr();
+        const now = new Date('2037-11-14T12:00:00Z');
+        await insertActive(
+          [exact('legacy')],
+          recordedAt,
+          new Date(recordedAt.getTime() + 365 * 86_400_000),
+        );
+        await insertActive([exact('permanent')], recordedAt, null);
+        const before = await records();
+        expect(
+          await reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger, now }),
+        ).toMatchObject({
+          total: 2,
+          removed: 0,
+          wrote: true,
+        });
+        expect(fixture.profiles.radarr[0]!.ignored.length).toBe(3);
+        expect(await records()).toEqual(before);
+        expect(
+          await reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger, now }),
+        ).toMatchObject({
+          total: 2,
+          added: 0,
+          removed: 0,
+          wrote: false,
+        });
+        expect(fixture.calls.filter((c) => / (create|update)$/.test(c))).toHaveLength(1);
+      },
+    );
+
+    it('D-33: restores expired/pruned terms without rewriting history; abandoned orphan cleanup preserves shared terms', async () => {
       const { arr, fixture } = createStaticReleaseBlockArr();
-      await insertActive([exact('old')], new Date(Date.now() - 1000), new Date(Date.now() - 1));
-      await insertActive(
-        Array.from({ length: RELEASE_BLOCK_TERM_CAP + 2 }, (_, i) => exact(`t${i}`)),
-        new Date(Date.now() - 10 * 86_400_000),
+      const then = new Date('2016-01-01T00:00:00Z');
+      await t.db.insert(trashDeletedReleases).values(
+        (['expired', 'pruned', 'abandoned', 'abandoned'] as const).map((state, i) => ({
+          arrKind: 'radarr' as const,
+          title: 'Historical fixture',
+          identitySource: 'arr_file' as const,
+          term: exact(i === 2 ? 'expired' : state),
+          state,
+          origin: 'sweep' as const,
+          recordedAt: then,
+          activatedAt: then,
+          endedAt: then,
+          expiresAt: then,
+        })),
       );
-      const report = await reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger });
-      expect(report).toMatchObject({ expired: 1, pruned: 2, total: RELEASE_BLOCK_TERM_CAP });
-      const ignored = fixture.profiles.radarr[0]!.ignored;
-      expect(ignored).toHaveLength(RELEASE_BLOCK_TERM_CAP + 1);
-      expect(ignored).not.toContain(exact('old'));
-      expect(ignored).not.toContain(exact('t0')); // the oldest two were pruned
-      expect(ignored).not.toContain(exact('t1'));
-      expect(ignored).toContain(exact(`t${RELEASE_BLOCK_TERM_CAP + 1}`));
-      const states = (await records()).map((r) => r.state);
-      expect(states.filter((s) => s === 'pruned')).toHaveLength(2);
-      expect(states.filter((s) => s === 'expired')).toHaveLength(1);
-      expect(logs.some((l) => l.msg === '[release-block] pruned' && l.level === 'warn')).toBe(true);
+      // Existing profile has the abandoned orphan, but lacks the two historical protected terms.
+      fixture.profiles.radarr.push({
+        id: 1,
+        name: RELEASE_BLOCK_PROFILE_NAME,
+        enabled: true,
+        required: [],
+        ignored: [RELEASE_BLOCK_SENTINEL, exact('abandoned')],
+        indexerId: 0,
+        tags: [],
+      });
+      const before = await records();
+      const first = await reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger });
+      expect(first).toMatchObject({ total: 2, added: 2, removed: 1, wrote: true });
+      expect(fixture.profiles.radarr[0]!.ignored.includes(exact('expired'))).toBe(true);
+      expect(fixture.profiles.radarr[0]!.ignored.includes(exact('pruned'))).toBe(true);
+      expect(await records()).toEqual(before);
+      expect((await getReleaseBlockSummary({ db: t.db })).kinds[0]!.terms).toBe(2);
+      expect(
+        (await reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger })).wrote,
+      ).toBe(false);
+    });
+
+    it.each(['active', 'expired', 'pruned'] as const)(
+      'D-33: cap and duplicate succeed; excess %s term refuses direct and scheduled reconciliation atomically',
+      async (state) => {
+        const { arr, fixture } = createStaticReleaseBlockArr();
+        await insertActive(
+          Array.from({ length: RELEASE_BLOCK_TERM_CAP }, (_, i) => exact(`cap${i}`)),
+        );
+        expect(
+          await reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger }),
+        ).toMatchObject({
+          total: RELEASE_BLOCK_TERM_CAP,
+          wrote: true,
+        });
+        await insertActive([exact('cap0')]); // Another supporting row consumes no capacity.
+        expect(
+          (await reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger })).wrote,
+        ).toBe(false);
+        const beforeProfile = structuredClone(fixture.profiles);
+        await t.db.insert(trashDeletedReleases).values([
+          {
+            arrKind: 'radarr',
+            title: 'Overflow',
+            identitySource: 'arr_file',
+            term: exact('extra'),
+            state,
+            origin: 'sweep',
+            expiresAt: new Date('2017-01-01T00:00:00Z'),
+          },
+          {
+            arrKind: 'radarr',
+            arrItemId: 777,
+            title: 'Stranded',
+            identitySource: 'arr_file',
+            term: exact('cap0'),
+            state: 'in_flight',
+            origin: 'sweep',
+            recordedAt: new Date('2016-01-01T00:00:00Z'),
+          },
+        ]);
+        fixture.gone.radarr.add(777);
+        const beforeRows = await records();
+        fixture.calls.length = 0;
+        await expect(
+          reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger }),
+        ).rejects.toMatchObject({ step: 'cap' });
+        const scheduled = await reconcileReleaseBlockIfDue({ db: t.db, arr, logger });
+        expect(scheduled[0]).toMatchObject({
+          drift: 'cap',
+          total: RELEASE_BLOCK_TERM_CAP + 1,
+          report: null,
+          error: expect.any(String),
+        });
+        expect(fixture.calls.some((c) => / (create|update)$/.test(c))).toBe(false);
+        expect(fixture.profiles).toEqual(beforeProfile);
+        expect(await records()).toEqual(beforeRows); // Even the stranded settle rolls back on overflow.
+      },
+    );
+
+    it('D-33: a multi-term title over capacity is kept and reported by the shared sweep/Expedite seam', async () => {
+      const { arr, fixture } = createStaticReleaseBlockArr({
+        movies: new Map([[1, grabbedMovie(1)]]),
+      });
+      const history = fixture.movies.get(1)!.history!;
+      history.push({
+        ...history[0]!,
+        id: 99,
+        downloadId: 'earlier',
+        sourceTitle: 'Babygirl.2024.1080p.BluRay.x264-OTHERGRP',
+      });
+      await insertActive(
+        Array.from({ length: RELEASE_BLOCK_TERM_CAP - 1 }, (_, i) => exact(`cap${i}`)),
+      );
+      // Legacy pruned records count in delete reservations too.
+      await t.db.update(trashDeletedReleases).set({ state: 'pruned' });
+      const before = await records();
+      const kept: string[] = [];
+      const result = await recordAndBlockReleases({
+        db: t.db,
+        arr,
+        origin: 'sweep',
+        logger,
+        survivors: [
+          {
+            key: 'whole-title',
+            mediaItemId: await mediaItemId('radarr', 1),
+            title: 'Fixture movie',
+          },
+        ],
+        onUnrecorded: async (_key, reason) => {
+          kept.push(keepReasonForUnrecorded(reason));
+        },
+      });
+      expect(result.aborted).toBe(false);
+      if (result.aborted) throw new Error('unexpected identity abort');
+      expect(result.recordable.size).toBe(0);
+      expect(result.unrecorded.get('whole-title')).toBe('cap');
+      expect(kept).toEqual(['release_block_full']);
+      expect(logs.some((l) => l.msg === '[release-block] cap_kept' && l.fields?.needed === 2)).toBe(
+        true,
+      );
+      expect(fixture.calls.some((c) => / (create|update|exclusion_add)/.test(c))).toBe(false);
+      expect(await records()).toEqual(before);
     });
 
     it('settles a stranded in-flight row: 404 ⇒ active, present ⇒ abandoned, unreachable ⇒ left in place', async () => {
@@ -1088,6 +1248,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
         releaseTitle: BABYGIRL,
       });
       expect(rec!.activatedAt).not.toBeNull();
+      expect(rec!.expiresAt).toBeNull();
       const [event] = await t.db
         .select()
         .from(ledgerEvents)
@@ -1263,7 +1424,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
       );
     });
 
-    it('D-25br: the hourly upkeep drops a term past its 365 days; a failed reconcile is a warning, never a throw', async () => {
+    it('D-33: scheduled drift repair preserves an old term; a failed reconcile is a warning, never a throw', async () => {
       const { arr, fixture } = createStaticReleaseBlockArr();
       const term = '/^old[^a-z0-9]+movie[^a-z0-9]+2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]grp(?:[^a-z0-9]|$)/i';
       await t.db.insert(trashDeletedReleases).values({
@@ -1278,14 +1439,23 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
       });
       fixture.fail.add('radarr:list');
       const failed = await reconcileReleaseBlockIfDue({ db: t.db, arr, logger });
-      expect(failed[0]).toMatchObject({ arrKind: 'radarr', expiring: 1, report: null, error: expect.any(String) });
-      expect(logs.some((l) => l.msg === '[release-block] upkeep_failed' && l.level === 'warn')).toBe(true);
+      expect(failed[0]).toMatchObject({
+        arrKind: 'radarr',
+        total: 1,
+        report: null,
+        error: expect.any(String),
+      });
+      expect(
+        logs.some((l) => l.msg === '[release-block] upkeep_failed' && l.level === 'warn'),
+      ).toBe(true);
       expect((await records())[0]!.state).toBe('active'); // the transaction rolled back: tried again next hour
       fixture.fail.clear();
       const ok = await reconcileReleaseBlockIfDue({ db: t.db, arr, logger });
-      expect(ok[0]).toMatchObject({ expiring: 1, report: { expired: 1 }, error: null });
-      expect((await records())[0]!.state).toBe('expired');
-      expect(fixture.profiles.radarr[0]!.ignored).toEqual([RELEASE_BLOCK_SENTINEL]);
+      expect(ok[0]).toMatchObject({ total: 1, report: { total: 1, removed: 0 }, error: null });
+      expect((await records())[0]!.state).toBe('active');
+      expect(fixture.profiles.radarr[0]!.ignored.includes(term)).toBe(true);
+      const again = await reconcileReleaseBlockIfDue({ db: t.db, arr, logger });
+      expect(again[0]).toMatchObject({ total: 1, drift: null, report: null, error: null });
     });
 
     it('classifyHandleFailure: a 4xx or a code-0 ReturnStatus is a refusal; a timeout, a 5xx or anything else is ambiguous', () => {

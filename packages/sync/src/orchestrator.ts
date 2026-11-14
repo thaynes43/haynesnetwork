@@ -720,7 +720,7 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
         });
       }
     }
-    // DESIGN-052 D-25cf — the Release Block upkeep (D-25br: the stranded settle and the expiry; D-25ce: the profile
+    // DESIGN-052 D-25cf — the Release Block upkeep (D-25br: the stranded settle and permanent terms; D-25ce: the profile
     // drift check) at the end of every registry run as well as hourly in the sweep job, so it never stops while the
     // sweep CronJob is suspended (PLAN-072 S4..S6, rollback step 1). Best effort: it never changes the exit.
     let releaseBlockUpkeep: ReleaseBlockUpkeepKind[] | null = null;
@@ -801,8 +801,8 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
       sweepError = error instanceof Error ? error.message : String(error);
       logger.error('trash batch sweep failed', { error: sweepError });
     }
-    // DESIGN-052 D-25br — the D-13 step 1 settle and expiry on schedule, whether or not a batch was due (before the
-    // re-add check, so a stranded record whose delete did happen is active when the check looks). Best effort.
+    // DESIGN-052 D-25br / D-33 — settle and repair drift on schedule for permanent terms, whether or not a batch
+    // was due (before the re-add check, so a stranded record whose delete did happen is active). Best effort.
     let releaseBlockUpkeep: ReleaseBlockUpkeepKind[] | null = null;
     try {
       releaseBlockUpkeep = await reconcileReleaseBlockIfDue({ db, arr: releaseBlockArr, logger });

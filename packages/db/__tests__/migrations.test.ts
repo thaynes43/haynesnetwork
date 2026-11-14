@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -4207,5 +4208,66 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(sqlText).toContain('ADD COLUMN "exclusion_confirmed_at" timestamp with time zone');
     expect(sqlText).toContain("'recently_added','saved'");
     expect(sqlText).toContain('SET "exclusion_confirmed_at" = COALESCE("last_relinked_at", "saved_at")');
+  });
+});
+
+// ADR-122 / DESIGN-052 D-33 — exercise an actual upgrade from the previous schema,
+// preserving its finite rows and CHECK vocabulary while allowing new permanent rows.
+describe('0115 permanent Release Block incremental compatibility', () => {
+  it('only relaxes expiry nullability; previous finite-date reads and writes remain valid', async () => {
+    const pg = await startPostgres();
+    const folder = mkdtempSync(join(tmpdir(), 'hnet-0115-'));
+    const client = new Client({ connectionString: pg.connectionString });
+    try {
+      cpSync(DEFAULT_MIGRATIONS_FOLDER, folder, { recursive: true });
+      const path = join(folder, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(path, 'utf8')) as { entries: Array<{ idx: number }> };
+      journal.entries = journal.entries.filter((e) => e.idx < 111);
+      writeFileSync(path, JSON.stringify(journal));
+      await runMigrations({ databaseUrl: pg.connectionString, migrationsFolder: folder });
+      await client.connect();
+      const column = () =>
+        client.query(`SELECT is_nullable FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'trash_deleted_releases' AND column_name = 'expires_at'`);
+      expect((await column()).rows[0].is_nullable).toBe('NO');
+      const oldInsert = (state: string) =>
+        client.query(
+          `INSERT INTO trash_deleted_releases
+        (arr_kind, title, identity_source, state, origin, recorded_at, activated_at, ended_at, expires_at)
+        VALUES ('radarr', 'Historical fixture', 'legacy_arr', $1, 'backfill',
+          '2016-01-01', '2016-01-02', '2017-01-01', '2017-01-01')`,
+          [state],
+        );
+      for (const state of DELETED_RELEASE_STATES) await oldInsert(state);
+      const records = () => client.query('SELECT * FROM trash_deleted_releases ORDER BY id');
+      const constraints = () =>
+        client.query(`SELECT conname, pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint WHERE conrelid = 'trash_deleted_releases'::regclass AND contype = 'c' ORDER BY conname`);
+      const before = (await records()).rows;
+      const checks = (await constraints()).rows;
+      await runMigrations({ databaseUrl: pg.connectionString });
+      expect((await column()).rows[0].is_nullable).toBe('YES');
+      expect((await records()).rows).toEqual(before);
+      expect((await constraints()).rows).toEqual(checks); // No existing CHECK value is removed.
+      await oldInsert('active'); // The prior image's finite-date insert remains valid.
+      const oldRead = await client.query(`SELECT count(*)::int AS n FROM trash_deleted_releases
+        WHERE state = 'active' AND expires_at <= '2026-11-14'`);
+      expect(oldRead.rows[0].n).toBe(2); // The prior image's finite-date predicate is still valid.
+      await client.query(`INSERT INTO trash_deleted_releases
+        (arr_kind, title, identity_source, state, origin, expires_at)
+        VALUES ('sonarr', 'Permanent fixture', 'arr_grab_history', 'active', 'sweep', NULL)`);
+      await runMigrations({ databaseUrl: pg.connectionString }); // No-op repeat migration preserves both shapes.
+      expect(
+        (
+          await client.query(
+            'SELECT count(*)::int AS n FROM trash_deleted_releases WHERE expires_at IS NULL',
+          )
+        ).rows[0].n,
+      ).toBe(1);
+    } finally {
+      await client.end();
+      await pg.stop();
+      rmSync(folder, { recursive: true, force: true });
+    }
   });
 });

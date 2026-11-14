@@ -228,14 +228,94 @@ describe('runSync — trash-batch-sweep mode (ADR-025, ADR-093)', () => {
     expect(report.releaseBlockReadds).toMatchObject({ checked: expect.any(Number), failed: 0 });
     expect(report.totalFailure).toBe(false);
     expect(fixture.calls.every((c) => !c.includes('create') && !c.includes('update'))).toBe(true);
-    // Nothing stranded or expiring, no live term and no profile: the upkeep read each profile once (D-25ce) and wrote
+    // Nothing stranded, no live term and no profile: the upkeep read each profile once (D-25ce) and wrote
     // nothing.
     expect(report.releaseBlockUpkeep).toEqual([
-      { arrKind: 'radarr', stranded: 0, expiring: 0, drift: null, report: null, error: null },
-      { arrKind: 'sonarr', stranded: 0, expiring: 0, drift: null, report: null, error: null },
+      { arrKind: 'radarr', stranded: 0, total: 0, drift: null, report: null, error: null },
+      { arrKind: 'sonarr', stranded: 0, total: 0, drift: null, report: null, error: null },
     ]);
     expect(fixture.calls.filter((c) => c.endsWith(' list'))).toEqual(['radarr list', 'sonarr list']);
   });
+
+  it.each(['trash-batch-sweep', 'watchlist-registry'] as const)(
+    'D-33: %s keeps old permanent terms and repairs drift without age eviction',
+    async (mode) => {
+      const isolated = await bootMigratedDb();
+      try {
+        const { sources } = createStaticWatchlistSources({ ownerId: '1' });
+        const { arr, fixture } = createStaticReleaseBlockArr();
+        // Fixture setup follows the same single-writer boundary as the scheduled job.
+        await insertReleaseRecords({
+          db: isolated.db,
+          origin: 'backfill',
+          state: 'active',
+          recordedAt: new Date('2016-01-01T00:00:00Z'),
+          logger: silentDomainLogger,
+          items: [
+            {
+              key: 'historical',
+              drafts: [
+                {
+                  arrKind: 'radarr',
+                  arrItemId: null,
+                  mediaItemId: null,
+                  tmdbId: null,
+                  tvdbId: null,
+                  imdbId: null,
+                  title: 'Historical fixture',
+                  year: 2015,
+                  season: null,
+                  identitySource: 'arr_grab_history',
+                  releaseTitle: null,
+                  releaseGroup: null,
+                  quality: null,
+                  resolution: null,
+                  sizeBytes: null,
+                  fileName: null,
+                  indexer: null,
+                  years: [2015],
+                  term: '/^old(?:[^a-z0-9]|$)/i',
+                  termConfidence: 'verified',
+                  shape: 'exact',
+                },
+              ],
+            },
+          ],
+        });
+        const before = await isolated.db.select().from(trashDeletedReleases);
+        const run = () =>
+          runSync({
+            mode,
+            clients: {},
+            maintainerr: stubMaintainerr(freshState()),
+            watchlistRegistry: sources,
+            releaseBlockArr: arr,
+            db: isolated.db,
+            logger: silentDomainLogger,
+          });
+        const first = await run();
+        expect(first.releaseBlockUpkeep?.[0]).toMatchObject({
+          total: 1,
+          drift: 'missing',
+          report: { total: 1, removed: 0, wrote: true },
+          error: null,
+        });
+        expect(fixture.profiles.radarr[0]!.ignored.length).toBe(2);
+        fixture.calls.length = 0;
+        const again = await run();
+        expect(again.releaseBlockUpkeep?.[0]).toMatchObject({
+          total: 1,
+          drift: null,
+          report: null,
+          error: null,
+        });
+        expect(fixture.calls.some((c) => / (create|update)$/.test(c))).toBe(false);
+        expect(await isolated.db.select().from(trashDeletedReleases)).toEqual(before);
+      } finally {
+        await isolated.stop();
+      }
+    },
+  );
 
   it('D-25br: a nothing-due sweep job settles a record an ambiguous handle stranded, and drops its term', async () => {
     const { sources } = createStaticWatchlistSources({ ownerId: '1' });
