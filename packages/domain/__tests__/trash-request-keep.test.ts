@@ -240,6 +240,40 @@ describe('the Request Keep, the clause audit and the rule description (ADR-118)'
     expect(mixedCase).toEqual([]);
   });
 
+  it('accepts a first request clause with no operator, and refuses one later that has none', () => {
+    const movie = { name: 'hnet movies', isActive: true, useRules: true, dataType: 'movie' };
+    const absent = requestClause('movie', { operator: undefined });
+    // JSON.stringify drops an undefined key, which is how a first clause loses its operator.
+    expect(JSON.parse(String(absent.ruleJson))).not.toHaveProperty('operator');
+    expect(evaluateRequestClauses([{ ...movie, rules: [absent] }])).toEqual([]);
+    expect(
+      evaluateRequestClauses([{ ...movie, rules: [requestClause('movie', { operator: null })] }]),
+    ).toEqual([]);
+    expect(
+      evaluateRequestClauses([{ ...movie, rules: [requestClause('movie', { operator: 0 })] }]),
+    ).toEqual([]);
+    expect(
+      evaluateRequestClauses([{ ...movie, rules: [requestClause('movie', { operator: '0' })] }]),
+    ).toEqual([]);
+    expect(evaluateRequestClauses([{ ...movie, rules: [absent, viewsClause(0)] }])).toEqual([]);
+    const laterAbsent = evaluateRequestClauses([
+      {
+        ...movie,
+        rules: [ratingClause('movie', '6.5'), requestClause('movie', { operator: undefined })],
+      },
+    ]);
+    expect(laterAbsent).toHaveLength(1);
+    expect(laterAbsent[0]).toContain('OR');
+    const laterNull = evaluateRequestClauses([
+      {
+        ...movie,
+        rules: [ratingClause('movie', '6.5'), requestClause('movie', { operator: null })],
+      },
+    ]);
+    expect(laterNull).toHaveLength(1);
+    expect(laterNull[0]).toContain('OR');
+  });
+
   it('refuses a later OR, including a second section, and accepts a second section joined by AND', () => {
     const movie = { name: 'hnet movies', isActive: true, useRules: true, dataType: 'movie' };
     const withClause = [ratingClause('movie', '6.5'), requestClause('movie')];
@@ -290,14 +324,41 @@ describe('the Request Keep, the clause audit and the rule description (ADR-118)'
     expect(text).toContain('does not contain mediarequests');
     expect(text).not.toContain('6.0');
     const notes = 'Pool flags and the ruling dates stay.';
+    const separator = ' — ';
     const live = {
       useRules: true,
       collection: { arrAction: 0, listExclusions: true, forceSeerr: true, deleteAfterDays: 9999 },
     };
+    const written = (payload: Record<string, unknown>): string => {
+      if (typeof payload.description !== 'string') throw new Error('description was not a string');
+      return payload.description;
+    };
     const updated = buildRuleGroupUpdate({ id: 1, rules, description: notes }, live);
-    expect(updated.description).toBe(`${text} ${notes}`);
-    const again = buildRuleGroupUpdate({ id: 1, rules, description: updated.description }, live);
-    expect(again.description).toBe(updated.description);
+    const saved = written(updated);
+    expect(saved).toBe(`${text}${separator}${notes}`);
+    const rulesEdited = [ratingClause('movie', '6.0'), requestClause('movie')];
+    const editedText = describeTrashRules(rulesEdited);
+    const edited = written(
+      buildRuleGroupUpdate({ id: 1, rules: rulesEdited, description: saved }, live),
+    );
+    expect(edited).toBe(`${editedText}${separator}${notes}`);
+    expect(edited).toContain('is below 6.0');
+    expect(edited).not.toContain('6.5');
+    expect(edited.split(separator)).toEqual([editedText, notes]);
+    const third = written(
+      buildRuleGroupUpdate({ id: 1, rules: rulesEdited, description: edited }, live),
+    );
+    expect(third).toBe(edited);
+    // A description from before the separator is notes, kept whole once, then left unchanged.
+    const handwritten = 'Hand-written notes. The old sentence stays in this text.';
+    const once = written(
+      buildRuleGroupUpdate({ id: 1, rules: rulesEdited, description: handwritten }, live),
+    );
+    expect(once).toBe(`${editedText}${separator}${handwritten}`);
+    const twice = written(
+      buildRuleGroupUpdate({ id: 1, rules: rulesEdited, description: once }, live),
+    );
+    expect(twice).toBe(once);
     const twoProperties = describeTrashRules([
       encoded({ operator: null, action: 0, firstVal: [1, 0], lastVal: [0, 4], section: 0 }),
     ]);

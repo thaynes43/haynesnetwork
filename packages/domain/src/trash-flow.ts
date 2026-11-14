@@ -360,9 +360,10 @@ function ruleKeepsRequests(rule: DecodedTrashRule, dataType: unknown): boolean {
   if (asNumber(rule.action) !== REQUEST_CLAUSE_ACTION) return false;
   if (!valueExcludesMediaRequests(rule.value)) return false;
   if (!samePair(rule.firstVal, pair)) return false;
-  // Number(null) is 0, and the first clause's operator is null. A later null is OR; the group
-  // check below is what refuses that. This match only asks whether the clause itself is AND-shaped.
-  return asNumber(rule.operator) === 0;
+  // The first clause's operator is null, and JSON.stringify drops an undefined key, so the key can
+  // be absent. Number(undefined) is NaN, so that absence has to be accepted here rather than through
+  // Number. A later null or missing operator is OR; laterClauseIsAnd refuses that.
+  return rule.operator === null || rule.operator === undefined || asNumber(rule.operator) === 0;
 }
 
 /**
@@ -2954,23 +2955,35 @@ export function buildRuleGroupUpdate(
       'Refusing to save a rule group with rules but useRules off: Maintainerr would delete every rule.',
     );
   }
-  // ADR-118 C-06 — a group that carries clauses gets a description taken from those clauses, and the
-  // caller's own text stays after that sentence, so an Arm or Disarm does not wipe notes. An empty
-  // list (Leaving Soon) keeps the description the caller wrote.
+  // ADR-118 C-06 — a group that carries clauses gets a description taken from those clauses. The
+  // person's notes stay after a fixed separator, so a later save replaces the generated sentence
+  // and an Arm or Disarm does not wipe the notes. An empty list (Leaving Soon) keeps the caller's
+  // text.
   return withDescribedRules(out);
 }
 
 /**
- * Set a rule group's description from its clauses, then keep the caller's own text after that sentence.
- * A second save of the same text does not repeat the sentence. No rules means the payload is unchanged.
+ * The boundary between the generated sentence and the person's notes (space, U+2014, space).
+ * The first one is the boundary. A description with none is notes, kept whole after the new sentence.
+ */
+const RULE_DESCRIPTION_NOTES_SEPARATOR = ' — ';
+
+/**
+ * Set a rule group's description from its clauses, and keep the person's notes after the separator.
+ * A save replaces the previously generated sentence. A description with no separator is notes, kept
+ * whole after the new sentence once; a later save of that text does not add the sentence again.
+ * No rules means the payload is unchanged.
  */
 function withDescribedRules(payload: Record<string, unknown>): Record<string, unknown> {
   if (!Array.isArray(payload.rules) || payload.rules.length === 0) return payload;
   const generated = describeTrashRules(payload.rules);
   const caller = typeof payload.description === 'string' ? payload.description.trim() : '';
   if (caller === '' || caller === generated) return { ...payload, description: generated };
-  if (caller.startsWith(`${generated} `)) return { ...payload, description: caller };
-  return { ...payload, description: `${generated} ${caller}` };
+  const separator = RULE_DESCRIPTION_NOTES_SEPARATOR;
+  const splitAt = caller.indexOf(separator);
+  const notes = (splitAt === -1 ? caller : caller.slice(splitAt + separator.length)).trim();
+  if (notes === '') return { ...payload, description: generated };
+  return { ...payload, description: `${generated}${separator}${notes}` };
 }
 
 /**
