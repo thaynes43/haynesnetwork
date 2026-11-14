@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.127.0](https://github.com/thaynes43/haynesnetwork/compare/v0.126.3...v0.127.0) (2026-11-14)
+
+
+### Features
+
+* **storage:** forecast when each array reaches its target and full ([#1063](https://github.com/thaynes43/haynesnetwork/issues/1063)) ([b7766ed](https://github.com/thaynes43/haynesnetwork/commit/b7766edd7e10dc0e7f5a6ef0ff81c6a2ba33e6d2))
+* **storage:** plot when each array reaches its target and 100% above the trend ([#1072](https://github.com/thaynes43/haynesnetwork/issues/1072)) ([b7ea4bd](https://github.com/thaynes43/haynesnetwork/commit/b7ea4bde32ae84daa84f39122036ea1de5d93ebd))
+* **sync:** page household Tautulli history and store a lifetime zero ([#1066](https://github.com/thaynes43/haynesnetwork/issues/1066)) ([81f17ed](https://github.com/thaynes43/haynesnetwork/commit/81f17ed41906b14c993f6e4d7d8c9547f2dcf9c8))
+* **trash:** Deletable | All replaces Show protected, and a kept tile says why ([#1069](https://github.com/thaynes43/haynesnetwork/issues/1069)) ([517b2ea](https://github.com/thaynes43/haynesnetwork/commit/517b2eaf6148f85fe438bdc69742ab15144359f9))
+* **trash:** keep a title tagged mediarequests ([#1068](https://github.com/thaynes43/haynesnetwork/issues/1068)) ([ab80a12](https://github.com/thaynes43/haynesnetwork/commit/ab80a1263ca0f548b5e64e790bc34c0b626e8030))
+* **trash:** keep library-fill dates out of the Age Guard when enabled ([#1067](https://github.com/thaynes43/haynesnetwork/issues/1067)) ([3339700](https://github.com/thaynes43/haynesnetwork/commit/3339700d994c06f3670855a29786564b690e3520))
+* **trash:** size each batch from the gap and the intake ([#1071](https://github.com/thaynes43/haynesnetwork/issues/1071)) ([9917654](https://github.com/thaynes43/haynesnetwork/commit/9917654419573b155d141f21f5f9ef3e2334c089))
+
+
+### Bug Fixes
+
+* **sync:** match a Plex title only inside its library type ([#1075](https://github.com/thaynes43/haynesnetwork/issues/1075)) ([4a54d5d](https://github.com/thaynes43/haynesnetwork/commit/4a54d5daebac2d614f3e7f00bc360fa66bcc347a))
+* **trash:** delete a title only when its file has a verified release name ([#1070](https://github.com/thaynes43/haynesnetwork/issues/1070)) ([b5ef4c9](https://github.com/thaynes43/haynesnetwork/commit/b5ef4c9724ceb45e459fbe65610038e4dcb24d58))
+* **trash:** keep undeletable titles off the default wall ([#1064](https://github.com/thaynes43/haynesnetwork/issues/1064)) ([1777b0c](https://github.com/thaynes43/haynesnetwork/commit/1777b0c690a51fa26c990701ed30f4cd3afa0ff2))
+
+
+### Documentation
+
+* correct the Import Check's file-replacement rule in CLAUDE.md ([#1058](https://github.com/thaynes43/haynesnetwork/issues/1058)) ([30295c8](https://github.com/thaynes43/haynesnetwork/commit/30295c8b69d5a99f29d8fe1aabb1c60db648c36f))
+
 ## [0.126.3](https://github.com/thaynes43/haynesnetwork/compare/v0.126.2...v0.126.3) (2026-10-31)
 
 
