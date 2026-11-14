@@ -1,0 +1,136 @@
+{
+  "history_measured_at": "2026-11-14T08:20:28.654Z",
+  "live_measured_at": "2026-11-14T03:21:52.800027-05:00",
+  "groups_by_instance_kind": [
+    {
+      "instance": "haynesops",
+      "kind": "radarr",
+      "groups": 1,
+      "plays": 1,
+      "oldest": "2026-07-22T02:59:24.000Z",
+      "newest": "2026-07-22T02:59:24.000Z"
+    },
+    {
+      "instance": "haynesops",
+      "kind": "sonarr",
+      "groups": 0,
+      "plays": 0,
+      "oldest": null,
+      "newest": null
+    },
+    {
+      "instance": "hayneskube",
+      "kind": "radarr",
+      "groups": 0,
+      "plays": 0,
+      "oldest": null,
+      "newest": null
+    },
+    {
+      "instance": "hayneskube",
+      "kind": "sonarr",
+      "groups": 0,
+      "plays": 0,
+      "oldest": null,
+      "newest": null
+    },
+    {
+      "instance": "haynestower",
+      "kind": "radarr",
+      "groups": 618,
+      "plays": 994,
+      "oldest": "2023-09-20T03:47:48.000Z",
+      "newest": "2026-09-24T22:46:15.000Z"
+    },
+    {
+      "instance": "haynestower",
+      "kind": "sonarr",
+      "groups": 22,
+      "plays": 54,
+      "oldest": "2023-11-19T19:12:56.000Z",
+      "newest": "2025-12-30T03:24:58.000Z"
+    }
+  ],
+  "reasons": {
+    "metadata_unavailable": 635,
+    "no_usable_id": 6
+  },
+  "total_groups": 641,
+  "total_plays": 1049,
+  "lead_movies": 446,
+  "lead_shows": 8,
+  "lead_groups": 462,
+  "lead_plays": 725,
+  "largest_leads": [
+    {
+      "title": "Top Gun: Maverick",
+      "year": 2022,
+      "kind": "radarr",
+      "groups": 1,
+      "plays": 13
+    },
+    {
+      "title": "Dark Shadows",
+      "year": 2012,
+      "kind": "radarr",
+      "groups": 1,
+      "plays": 12
+    },
+    {
+      "title": "A Minecraft Movie",
+      "year": 2025,
+      "kind": "radarr",
+      "groups": 1,
+      "plays": 9
+    },
+    {
+      "title": "Flight Risk",
+      "year": 2025,
+      "kind": "radarr",
+      "groups": 1,
+      "plays": 7
+    },
+    {
+      "title": "Hannibal",
+      "year": 2001,
+      "kind": "radarr",
+      "groups": 1,
+      "plays": 7
+    },
+    {
+      "title": "Home Alone 2: Lost in New York",
+      "year": 1992,
+      "kind": "radarr",
+      "groups": 1,
+      "plays": 7
+    },
+    {
+      "title": "Down Periscope",
+      "year": 1996,
+      "kind": "radarr",
+      "groups": 1,
+      "plays": 6
+    },
+    {
+      "title": "Gran Turismo",
+      "year": 2023,
+      "kind": "radarr",
+      "groups": 1,
+      "plays": 6
+    },
+    {
+      "title": "Il Sorpasso",
+      "year": 1962,
+      "kind": "radarr",
+      "groups": 1,
+      "plays": 6
+    },
+    {
+      "title": "The Roast of Tom Brady",
+      "year": 2024,
+      "kind": "radarr",
+      "groups": 1,
+      "plays": 6
+    }
+  ]
+}

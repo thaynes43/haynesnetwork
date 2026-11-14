@@ -1,5 +1,32 @@
 # HANDOFF — cold-start resume point
 
+## 2026-11-14: story #855 first-review corrections (release hold)
+
+- Correction source on session branch `agent/haynesnetwork-1114-081244`, based on PR 1077
+  head `fa4bdc14`; higher-priority session rules require its own correction PR, for the coordinator
+  to integrate into PR 1077. No merge or production refresh/backfill/repair by this worker.
+- Scheduled harvest and existing household backfill preserve absent viewer rows. A separate
+  `watch-viewer-contamination-repair.ts --dry-run|--apply` proves collision/sentinel contamination
+  and writes only through the domain writer. Unresolved viewer identities/missing attribution
+  preserve evidence; empty or drifted proof inputs report incomplete. Coordinator reviews/runs any production apply.
+- DESIGN-008 Q-16/Q-17/Q-18 recorded; T-57 and comments say zero means no attributable play found,
+  never proof of no viewing. Storage, Trash rules, Plex matcher and paging remain unchanged.
+- Collector errors emit allow-listed stage/instance/status only; synthetic canary checks passed.
+  Raw metadata TMDB/TVDB ids require decimal digits before conversion. Whole-library inputs are
+  private, removed from the branch tree; retained summaries reproduce from explicit private paths.
+- Measured 2026-11-14, sanitized collector start 08:20:28Z and replica live SELECT 08:21:52Z:
+  641 unresolved groups / 1,049 grouped plays. Name/year leads only: 446 movies + 8 shows,
+  462 groups / 725 grouped plays; no identity recovery. Evidence and counting rules:
+  [context/watch-join-855/README.md](context/watch-join-855/README.md).
+- Household correction still applies on the next eligible harvest after deployment. The retained
+  2026-11-14 replica projection removes 11 watch keeps, adds none. Six movies would clear the
+  database guardian if in the pool: 2001: A Space Odyssey, Beautiful Thing, Citizen Kane, Das Boot,
+  Sister Act, The Bridges of Madison County. None of the losses was in the measured pool/open batch.
+- Source/tested/build evidence is on the correction PR. Installed: not performed. Accepted:
+  coordinator-owned, pending mandatory Fable review before merge/release. Story stays open.
+- Next safe step: coordinator integrates the correction, arranges Fable review, then decides release
+  and any one-off repair; record installed and accepted separately. This worker starts no next story.
+
 ## 2026-11-13: story #836 Age Guard library fill (proposed, setting off)
 
 - ADR-119 and DESIGN-052 D-31. The audited setting `age_guard_ignore_library_fill` defaults off. Off keeps the 2026-10-03 newest-date rule, except one case: a pool member with no Plex match and no download import inside 180 days is `unknown` (kept). That is the one change that alters today's behaviour, and it only ever keeps more. Measured 2026-11-13 on replica postgres16-11 (`SELECT` on `trash_candidates`, `refreshed_at` 2026-11-13 15:15:05.495-05): 0 of 524 movie candidates have no Plex match, and the TV pool has 0 members. The ten shows that pass story 835's predicates all have a Plex match (same replica, same day).
