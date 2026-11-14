@@ -211,3 +211,5 @@ export * from './release-pick-lists';
 // ADR-114 / DESIGN-055 P4 decisions 26-34 (migration 0104) — the Watch Carry (T-326), its Carry Snapshot states (T-327)
 // and its append-only mark audit. Guarded single-writer tables.
 export * from './watch-carries';
+
+export * from './trash-restore-keeps';

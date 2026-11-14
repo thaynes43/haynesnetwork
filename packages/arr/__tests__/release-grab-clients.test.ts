@@ -43,16 +43,21 @@ describe('POST /release (DESIGN-055 D-06)', () => {
   const languages = [{ id: 1, name: 'English' }];
 
   it('Sonarr: the plain grab sends exactly {guid, indexerId}', async () => {
-    const stub = stubFetch([{ method: 'POST', path: '/api/v3/release', body: { guid: 'g1', indexerId: 3 } }]);
-    await new SonarrWriteClient({ ...SONARR, fetchImpl: stub.fetchImpl }).grabRelease({ guid: 'g1', indexerId: 3 });
-    expect(stub.calls).toHaveLength(1);
-    expect(stub.calls[0]).toMatchObject({ method: 'POST' });
-    expect(stub.calls[0]!.url.pathname).toBe('/api/v3/release');
-    expect(stub.calls[0]!.body).toEqual({ guid: 'g1', indexerId: 3 });
+    const stub = stubFetch([{ path: '/api/v3/releaseprofile', body: [] },
+      { method: 'POST', path: '/api/v3/release', body: { guid: 'g1', indexerId: 3 } }]);
+    await new SonarrWriteClient({ ...SONARR, fetchImpl: stub.fetchImpl }).grabRelease({ guid: 'g1', indexerId: 3 },
+      'Synthetic.Release.1080p-GROUP',
+    );
+    expect(stub.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    expect(stub.calls.filter((c) => c.method === 'POST')[0]).toMatchObject({ method: 'POST' });
+    expect(stub.calls.filter((c) => c.method === 'POST')[0]!.url.pathname).toBe('/api/v3/release');
+    expect(stub.calls.filter((c) => c.method === 'POST')[0]!.body).toEqual({ guid: 'g1', indexerId: 3 });
   });
 
   it("Sonarr: the override grab sends exactly OverrideMatchModalContent's body", async () => {
-    const stub = stubFetch([{ method: 'POST', path: '/api/v3/release', body: {} }]);
+    const stub = stubFetch([
+      { path: '/api/v3/releaseprofile', body: [] },
+      { method: 'POST', path: '/api/v3/release', body: {} }]);
     await new SonarrWriteClient({ ...SONARR, fetchImpl: stub.fetchImpl }).grabRelease({
       guid: 'g2',
       indexerId: 3,
@@ -62,8 +67,10 @@ describe('POST /release (DESIGN-055 D-06)', () => {
       languages,
       downloadClientId: null,
       shouldOverride: true,
-    });
-    expect(stub.calls[0]!.body).toEqual({
+    },
+      'Synthetic.Release.1080p-GROUP',
+    );
+    expect(stub.calls.filter((c) => c.method === 'POST')[0]!.body).toEqual({
       guid: 'g2',
       indexerId: 3,
       seriesId: 1061,
@@ -73,33 +80,37 @@ describe('POST /release (DESIGN-055 D-06)', () => {
       downloadClientId: null,
       shouldOverride: true,
     });
-    expect(Object.keys(stub.calls[0]!.body as object)).toEqual([
+    expect(Object.keys(stub.calls.filter((c) => c.method === 'POST')[0]!.body as object)).toEqual([
       'guid', 'indexerId', 'seriesId', 'episodeIds', 'quality', 'languages', 'downloadClientId', 'shouldOverride',
     ]);
   });
 
   it("Radarr: the plain grab and the override grab, each exactly as Radarr's UI sends them", async () => {
-    const stub = stubFetch([{ method: 'POST', path: '/api/v3/release', body: {} }]);
+    const stub = stubFetch([{ path: '/api/v3/releaseprofile', body: [] },
+      { method: 'POST', path: '/api/v3/release', body: {} }]);
     const client = new RadarrWriteClient({ ...RADARR, fetchImpl: stub.fetchImpl });
-    await client.grabRelease({ guid: 'm1', indexerId: 2 });
-    await client.grabRelease({ indexerId: 2, guid: 'm2', movieId: 2934, quality, languages, downloadClientId: null, shouldOverride: true });
-    expect(stub.calls[0]!.body).toEqual({ guid: 'm1', indexerId: 2 });
-    expect(stub.calls[1]!.body).toEqual({ indexerId: 2, guid: 'm2', movieId: 2934, quality, languages, downloadClientId: null, shouldOverride: true });
-    expect(Object.keys(stub.calls[1]!.body as object)).toEqual([
+    await client.grabRelease({ guid: 'm1', indexerId: 2 }, 'Synthetic.Release.1080p-GROUP');
+    await client.grabRelease({ indexerId: 2, guid: 'm2', movieId: 2934, quality, languages, downloadClientId: null, shouldOverride: true },
+      'Synthetic.Release.1080p-GROUP',
+    );
+    expect(stub.calls.filter((c) => c.method === 'POST')[0]!.body).toEqual({ guid: 'm1', indexerId: 2 });
+    expect(stub.calls.filter((c) => c.method === 'POST')[1]!.body).toEqual({ indexerId: 2, guid: 'm2', movieId: 2934, quality, languages, downloadClientId: null, shouldOverride: true });
+    expect(Object.keys(stub.calls.filter((c) => c.method === 'POST')[1]!.body as object)).toEqual([
       'indexerId', 'guid', 'movieId', 'quality', 'languages', 'downloadClientId', 'shouldOverride',
     ]);
   });
 
   it('a refused grab surfaces the *arr status (404 cache expired, 409 the site refused) and is never retried', async () => {
     const stub = stubFetch([
+      { path: '/api/v3/releaseprofile', body: [] },
       { method: 'POST', path: '/api/v3/release', status: 409, body: { message: 'Getting release from indexer failed' } },
     ]);
     const err = await new SonarrWriteClient({ ...SONARR, fetchImpl: stub.fetchImpl })
-      .grabRelease({ guid: 'g3', indexerId: 3 })
+      .grabRelease({ guid: 'g3', indexerId: 3 }, 'Synthetic.Release.1080p-GROUP')
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ArrHttpError);
     expect((err as ArrHttpError).status).toBe(409);
-    expect(stub.calls).toHaveLength(1);
+    expect(stub.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
     // The grab waits on the indexer and the download client: it gets the release search's long bound.
     expect(RELEASE_SEARCH_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000);
   });

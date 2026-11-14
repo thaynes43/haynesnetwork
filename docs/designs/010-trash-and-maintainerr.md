@@ -113,7 +113,7 @@ integration-health endpoint** — the audit derives connectivity from the `rules
 | View pending / collections / rules / recently-deleted / activity / status | `sectionProcedure('trash','read_only')`                                  |
 | Save / un-save an item                                                    | `trashActionProcedure('save_exclude'                                     | 'remove_exclude')` (read_only + grant) |
 | Expedite one / all                                                        | `trashActionProcedure('expedite_item'                                    | 'expedite_all')`                       |
-| Restore a deleted item                                                    | `trashActionProcedure('restore_deleted')`                                |
+| Restore a deleted item | Admin only (ADR-121 / DESIGN-052 D-32); stale grants never authorize it |
 | Create/update/delete a rule group                                         | `trashActionProcedure('edit_rules','edit')` — grant **and** section Edit |
 | Set a role's Trash actions                                                | `roles.setTrashActions` (`adminProcedure`)                               |
 
@@ -717,3 +717,7 @@ A `GET /collections` read failure fails **closed**. The invariant core is the pu
 Read schema `maintainerrCollectionSchema` was extended to carry `arrAction` / `manualCollection`.
 
 **Request Keep (ADR-118, 2026-11-13).** The 2026-07-09 ruling that a requester is informational stands for a personal requester tag. It does not stand for the `mediarequests` tag: `classifyGuardian` keeps that title (`media_request`). The keep reads `media_items.arr_tags`, written by the full sync once a day at 04:30, so it can lag the live tag by up to 24 hours. A new batch leaves the title out. `auditMaintainerr` refuses a sweep when an armed group has lost the clause that excludes the tag, when a later clause is joined by OR, or when the rules cannot be read. DESIGN-052 D-30.
+
+**ADR-121 / DESIGN-052 D-32 amendment (2026-11-14, story 843):** `restore_deleted` is reserved for Admin. Non-admin grant rows are revoked by the audited domain writer; no role can be granted this action. Restore creates an indefinite app-owned Restore Keep, removable only by Admin. The Recently deleted button is hidden from non-admins.
+
+The earlier D-08 Restore navigation retirement is superseded for the failsafe preview/report only: `/admin/restore` now shows excluded Trash titles as well as recoverable disaster tombstones. The single-title return remains in Trash.

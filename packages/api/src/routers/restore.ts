@@ -53,7 +53,12 @@ export const restoreRouter = router({
           initiatedBy: ctx.user.id,
           mediaItemIds: input.mediaItemIds,
         });
-        return { runId: result.runId, status: result.status };
+        return {
+          runId: result.runId,
+          status: result.status,
+          skippedTrash: result.skippedTrash,
+          skippedTrashCount: result.skippedTrashCount,
+        };
       });
     }),
 

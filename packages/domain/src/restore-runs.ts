@@ -2,6 +2,7 @@ import {
   ledgerEvents,
   mediaItems,
   restoreRuns,
+  trashRestoreKeeps,
   type ArrAddReason,
   type ArrKind,
   type DbClient,
@@ -11,6 +12,13 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 import { NotFoundError } from './errors';
 import { inTransaction } from './db-client';
+import {
+  hasTitleDeleteClaim,
+  lockTrashTitle,
+  trashTitleIdentity,
+  type TrashTitleIdentity,
+} from './trash-title-lock';
+import { invalidateTrashReleaseOffers } from './trash-restore';
 
 export interface StartRestoreRunInput {
   db?: DbClient;
@@ -49,12 +57,88 @@ export async function startRestoreRun(input: StartRestoreRunInput): Promise<{ ru
   });
 }
 
+/** ADR-121: after all known pre-checks, immediately before the add attempt. Its local keep and
+ * audit commit together. A lost response cannot erase the intent; a refused pre-check never calls this. */
+export async function recordTrashRestoreAttempt(input: {
+  db?: DbClient;
+  runId: string;
+  mediaItemId: string;
+  expectedIdentity?: TrashTitleIdentity;
+}): Promise<void> {
+  await inTransaction(input.db, async (tx) => {
+    const [run] = await tx
+      .select()
+      .from(restoreRuns)
+      .where(eq(restoreRuns.id, input.runId))
+      .for('update');
+    if (
+      !run ||
+      run.status !== 'running' ||
+      !run.preview.some((p) => p.mediaItemId === input.mediaItemId)
+    ) {
+      throw new NotFoundError('Restore attempt must belong to a running approved restore.');
+    }
+    const [item] = await tx
+      .select()
+      .from(mediaItems)
+      .where(eq(mediaItems.id, input.mediaItemId))
+      .for('share');
+    const identity = item ? trashTitleIdentity(item) : null;
+    if (
+      input.expectedIdentity &&
+      (!identity ||
+        identity.arrKind !== input.expectedIdentity.arrKind ||
+        identity.externalId !== input.expectedIdentity.externalId)
+    )
+      throw new NotFoundError('Restore title identity changed; refresh the selection.');
+    if (!identity || identity.arrKind !== run.arrKind)
+      throw new NotFoundError('Restore title identity is uncertain; refresh the selection.');
+    if (!(await lockTrashTitle(tx, identity)) || (await hasTitleDeleteClaim(tx, identity)))
+      throw new NotFoundError(
+        'Trash is already deleting this title. Restore is held until that deletion is resolved.',
+      );
+    await invalidateTrashReleaseOffers(tx, identity);
+    await tx
+      .insert(trashRestoreKeeps)
+      .values({
+        ...identity,
+        title: item!.title,
+        mediaItemId: input.mediaItemId,
+        restoreRunId: run.id,
+        restoredBy: run.initiatedBy,
+      })
+      .onConflictDoUpdate({
+        target: [trashRestoreKeeps.arrKind, trashRestoreKeeps.externalId],
+        set: {
+          title: item!.title,
+          mediaItemId: input.mediaItemId,
+          restoreRunId: run.id,
+          restoredBy: run.initiatedBy,
+          createdAt: new Date(),
+          revokedAt: null,
+          revokedBy: null,
+        },
+      });
+    await tx.insert(ledgerEvents).values({
+      mediaItemId: input.mediaItemId,
+      eventType: 'trash_excluded',
+      source: 'maintainerr',
+      occurredAt: new Date(),
+      requestedByUserId: run.initiatedBy,
+      payload: { action: 'restore_keep', restoreRunId: run.id, ...identity },
+    });
+  });
+}
+
 export interface RecordRestoreResultInput {
   db?: DbClient;
   runId: string;
   result: {
     mediaItemId: string;
     ok: boolean;
+    title?: string;
+    skipReason?: 'trash_deleted';
+    trashRestore?: boolean;
     /**
      * ADR-022 D-02 — which per-item outcome this was:
      *   'added'     (default) — absent from the live *arr, re-added monitored: clears the
@@ -86,7 +170,11 @@ export async function recordRestoreResult(
 ): Promise<{ successCount: number }> {
   return inTransaction(input.db, async (tx) => {
     const [run] = await tx
-      .select({ id: restoreRuns.id, status: restoreRuns.status })
+      .select({
+        id: restoreRuns.id,
+        status: restoreRuns.status,
+        initiatedBy: restoreRuns.initiatedBy,
+      })
       .from(restoreRuns)
       .where(eq(restoreRuns.id, input.runId))
       .for('update');
@@ -97,6 +185,8 @@ export async function recordRestoreResult(
     const outcome = input.result.outcome ?? 'added';
     const entry = {
       mediaItemId: input.result.mediaItemId,
+      ...(input.result.title ? { title: input.result.title } : {}),
+      ...(input.result.skipReason ? { skipReason: input.result.skipReason } : {}),
       ok: input.result.ok,
       at: new Date().toISOString(),
       ...(input.result.outcome !== undefined ? { outcome } : {}),
@@ -171,6 +261,16 @@ export async function recordRestoreResult(
       }
     }
 
+    if (input.result.ok && input.result.trashRestore) {
+      await tx.insert(ledgerEvents).values({
+        mediaItemId: input.result.mediaItemId,
+        eventType: 'trash_restored',
+        requestedByUserId: run.initiatedBy,
+        source: 'maintainerr',
+        occurredAt: new Date(),
+        payload: { restoreRunId: input.runId, status: 'completed' },
+      });
+    }
     return { successCount: updated?.successCount ?? 0 };
   });
 }

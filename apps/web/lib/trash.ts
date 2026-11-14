@@ -39,7 +39,7 @@ export const TRASH_ACTION_LABELS: Record<TrashActionName, string> = {
   expedite_item: 'Delete one item now — destructive',
   expedite_all: 'Delete the whole pending set now — destructive',
   edit_rules: 'Edit deletion rules (also needs Trash access = Edit)',
-  restore_deleted: 'Restore recently deleted items',
+  restore_deleted: 'Restore recently deleted items — Admin only',
   save_leaving_soon: 'Save items — during a Leaving-Soon window only',
   manage_batches: 'Manage curation batches — create / green-light / cancel / expire',
 };
@@ -63,6 +63,7 @@ export interface GuardianPreviewInput {
   /** ADR-099 D-4 — somebody saved it (an open save intent): the server keeps it, exclusion or not. Absent ⇒ not
    *  saved (an older server). */
   saveIntent?: boolean;
+  restoreKeep?: boolean;
   /** ADR-118 — the ledger tags. Includes `mediarequests` ⇒ kept. Absent ⇒ not requested (an older server). */
   arrTags?: readonly string[];
   /** ADR-117 / DESIGN-052 D-29 — `unverified`: the file on disk has no verified posted release name, so the server
@@ -97,6 +98,7 @@ export type GuardianPreview =
   | 'protected_watchlist'
   | 'protected_recent'
   | 'protected_request'
+  | 'protected_restore'
   | 'unverifiable';
 
 export function previewGuardian(item: GuardianPreviewInput): GuardianPreview {
@@ -112,6 +114,7 @@ export function previewGuardian(item: GuardianPreviewInput): GuardianPreview {
   if (item.ageGuard === 'recent') return 'protected_recent';
   // ADR-118 — the Request Keep, after every earlier keep. A personal requester tag is not this.
   if (hasMediaRequestTag(item.arrTags)) return 'protected_request';
+  if (item.restoreKeep) return 'protected_restore';
   // Fail closed: unknown to our ledger, watchlist status not evaluable, Maintainerr's rule data unavailable, or the
   // title's dates not readable yet ⇒ kept (skipped).
   if (
@@ -146,7 +149,7 @@ export function unverifiableReason(item: GuardianPreviewInput): string {
  * (the guardian, the Watchlist Keep, the Request Keep), not Maintainerr. A personal requester tag is still not a keep.
  */
 export const EXPEDITE_PROTECTED_REASON =
-  'saved, recently watched, added or upgraded recently, whitelisted, on a watchlist, or requested; they are kept.';
+  'saved, recently watched, added or upgraded recently, whitelisted, on a watchlist, requested, or restored by an admin; they are kept.';
 
 /** D-25by — the Expedite-all confirm's line for the unverifiable count (every cause, one sentence). */
 export const EXPEDITE_UNVERIFIABLE_REASON =
@@ -260,6 +263,7 @@ export function pendingWallGlyph(
     ageGuard?: 'recent' | 'clear' | 'unknown';
     /** ADR-099 D-4 — an open save intent: saved, whether or not Maintainerr holds the exclusion yet. */
     saveIntent?: boolean;
+    restoreKeep?: boolean;
     /** ADR-118 — the ledger tags. Absent means an older payload that did not send them. */
     arrTags?: readonly string[];
     /**
@@ -306,7 +310,8 @@ export function pendingWallGlyph(
     return 'skip';
   }
   // ADR-118 — a requested title is the inert skip when that keep would be the guardian's first reason.
-  if (item.protectionReason === 'media_request') return 'skip';
+  if (item.protectionReason === 'media_request' || item.protectionReason === 'admin_restored')
+    return 'skip';
   if (item.protectionReason === undefined && mediaRequestKeep(item)) return 'skip';
   return 'trash';
 }
@@ -365,10 +370,9 @@ export interface PinnedTile<T> {
  * tap (earlier pins already in it), so putting the missing ones back lowest index first rebuilds
  * that wall exactly.
  */
-export function withPinnedTiles<T extends { maintainerrMediaId: string | null; collectionId: number }>(
-  serverItems: readonly T[],
-  pins: readonly PinnedTile<T>[],
-): T[] {
+export function withPinnedTiles<
+  T extends { maintainerrMediaId: string | null; collectionId: number },
+>(serverItems: readonly T[], pins: readonly PinnedTile<T>[]): T[] {
   if (pins.length === 0) return serverItems as T[];
   const keyOf = (i: T) => `${i.collectionId}:${i.maintainerrMediaId ?? ''}`;
   const present = new Set(serverItems.map(keyOf));
@@ -739,6 +743,7 @@ export type WallReasonName =
   | 'recently_watched'
   | 'watchlisted'
   | 'recently_added'
+  | 'admin_restored'
   | 'media_request'
   | 'not_in_ledger'
   | 'watchlist_unknown'
@@ -761,6 +766,7 @@ export const WALL_REASON_COPY: Record<WallReasonName, { label: string; detail: s
   recently_watched: { label: 'Watched recently', detail: 'Kept: watched recently' },
   watchlisted: { label: 'On a watchlist', detail: 'Kept: on a watchlist' },
   recently_added: { label: 'Added recently', detail: 'Kept: added or upgraded recently' },
+  admin_restored: { label: 'Admin restored', detail: 'Kept: restored by an admin' },
   media_request: { label: 'Requested', detail: 'Kept: requested' },
   not_in_ledger: {
     label: 'Not in the library',
@@ -791,7 +797,10 @@ export const WALL_REASON_FALLBACK = { label: 'Kept', detail: "Kept: it can't be 
 
 /** The words for a reason; the fallback for one this build does not know. */
 export function wallReasonCopy(reason: string): { label: string; detail: string } {
-  return (WALL_REASON_COPY as Record<string, { label: string; detail: string }>)[reason] ?? WALL_REASON_FALLBACK;
+  return (
+    (WALL_REASON_COPY as Record<string, { label: string; detail: string }>)[reason] ??
+    WALL_REASON_FALLBACK
+  );
 }
 
 /** A Save (the app's record, or a live exclusion) as opposed to a keep nobody chose. */
@@ -994,11 +1003,13 @@ export function mediaRequestKeep(item: {
 
 /** The kept line a `skip` tile shows. The Age Guard wins when both it and the Request Keep apply. */
 export function skipKeepTooltip(item: {
+  restoreKeep?: boolean;
   ageGuard?: 'recent' | 'clear' | 'unknown';
   arrTags?: readonly string[];
 }): string {
   if (item.ageGuard === 'recent') return KEPT_REASON_TOOLTIPS.recently_added;
   if (hasMediaRequestTag(item.arrTags)) return KEPT_REASON_TOOLTIPS.media_request;
+  if (item.restoreKeep) return KEPT_REASON_TOOLTIPS.admin_restored;
   return KEPT_REASON_TOOLTIPS.recently_added;
 }
 
@@ -1067,6 +1078,7 @@ export type TrashKeepReasonName =
   | 'saved'
   | 'release_unverified'
   | 'release_block_full'
+  | 'admin_restored'
   | 'media_request';
 
 /** The batch wall's kept-tile tooltip, per keep reason (D-10). `tag` and `live_excluded` are both a Save. */
@@ -1088,6 +1100,7 @@ export const KEPT_REASON_TOOLTIPS: Record<TrashKeepReasonName, string> = {
   // ADR-099 D-4 — saved from another surface (the pending wall, the library) while the row was still pending.
   saved: 'Kept: saved',
   // ADR-118 — the Request Keep lasts while the ledger tags include mediarequests.
+  admin_restored: 'Kept: restored by an admin',
   media_request: 'Kept: requested',
 };
 

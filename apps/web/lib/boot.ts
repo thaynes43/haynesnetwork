@@ -10,7 +10,7 @@
 // serving and /api/health are never blocked. dev:local, the e2e harness (ADR-103), and unit tests never run
 // these (they exercise the domain/sync helpers directly).
 import { db, getPool } from '@hnet/db';
-import { seedDefaultServerAllGrantsIfBootstrap } from '@hnet/domain';
+import { revokeNonAdminRestoreGrants, seedDefaultServerAllGrantsIfBootstrap } from '@hnet/domain';
 import { e2eHarnessActive } from '@hnet/domain/e2e-harness';
 
 export async function runBootTasks(): Promise<void> {
@@ -19,6 +19,27 @@ export async function runBootTasks(): Promise<void> {
   // seeds itself, exactly as under `next dev`.
   if (e2eHarnessActive()) return;
   if (!process.env.DATABASE_URL) return;
+  try {
+    await revokeNonAdminRestoreGrants({ db });
+  } catch (error) {
+    // pg errors may be wrapped by Drizzle. Keep diagnostic codes, never raw SQL, parameters or connection details.
+    const cause = error && typeof error === 'object' && 'cause' in error ? error.cause : undefined;
+    const codeOf = (value: unknown) =>
+      value &&
+      typeof value === 'object' &&
+      'code' in value &&
+      typeof value.code === 'string' &&
+      /^[A-Z0-9_]{1,40}$/.test(value.code)
+        ? value.code
+        : undefined;
+    console.error(
+      '[boot] legacy Trash Restore grant cleanup failed; admin-only API gate remains enforced',
+      {
+        error: error instanceof Error ? error.name : 'UnknownError',
+        code: codeOf(error) ?? codeOf(cause) ?? 'unknown',
+      },
+    );
+  }
   await seedDefaultGrants();
   await triggerColdStartPlexMatch();
 }

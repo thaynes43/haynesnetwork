@@ -121,7 +121,7 @@ export const booksOrIntegrationsProcedure = authedProcedure.use(({ ctx, next }) 
  * Admin still implies ALL actions and never reaches this helper.
  */
 export function effectiveTrashActions(actions: readonly TrashAction[]): TrashAction[] {
-  const set = new Set<TrashAction>(actions);
+  const set = new Set<TrashAction>(actions.filter((a) => a !== 'restore_deleted'));
   if (set.has('save_exclude')) set.add('save_leaving_soon');
   return [...set];
 }
@@ -209,6 +209,7 @@ export function collectionActionProcedure(action: CollectionAction) {
  */
 export function hasTrashAction(role: SessionRole, action: TrashAction): boolean {
   if (role.isAdmin) return true;
+  if (action === 'restore_deleted') return false; // ADR-121: even a stale session grant cannot restore.
   return effectiveTrashActions(role.trashActions ?? []).includes(action);
 }
 

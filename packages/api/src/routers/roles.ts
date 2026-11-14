@@ -195,7 +195,7 @@ export const rolesRouter = router({
       const grantedSet = trashActionsByRole.get(row.id);
       const trashActions: TrashAction[] = row.isAdmin
         ? [...TRASH_ACTIONS]
-        : TRASH_ACTIONS.filter((a) => grantedSet?.has(a));
+        : TRASH_ACTIONS.filter((a) => a !== 'restore_deleted' && grantedSet?.has(a));
       // ADR-026 — admin ⇒ every message action; otherwise the granted rows in canonical order.
       const messageGrantedSet = messageActionsByRole.get(row.id);
       const messageActions: MessageAction[] = row.isAdmin

@@ -8,7 +8,7 @@
 // entrypoint may be imported ONLY by
 // packages/domain — enforced by the D-12 guard test. Exercised exclusively via fetch stubs in tests.
 import { assertArrEnv, type ArrEnvConfig } from './config';
-import { MaintainerrWriteFailedError } from './errors';
+import { ArrReleaseBlockedError, MaintainerrWriteFailedError } from './errors';
 import { ArrHttp, type QueryParams } from './http';
 import { maintainerrReturnStatusSchema } from './schemas/maintainerr';
 import {
@@ -175,6 +175,56 @@ abstract class ArrWriteClientBase {
  * terms only; it never touches library files, quality profiles or custom formats.
  */
 abstract class ReleaseProfileWriteClient extends ArrWriteClientBase {
+  /** ADR-121 D-32: uncached GET immediately before each POST, including overrides and staff grabs. */
+  async assertReleaseAllowed(releaseTitle: string): Promise<void> {
+    if (!releaseTitle?.trim())
+      throw new ArrReleaseBlockedError(
+        'The release name is missing. Refresh the release list before trying again.',
+      );
+    let profiles: ArrReleaseProfile[];
+    try {
+      profiles = await this.listReleaseProfiles();
+    } catch {
+      throw new ArrReleaseBlockedError(
+        'Release protection could not be checked. No release was grabbed; try again after it is available.',
+      );
+    }
+    const ours = profiles.filter(
+      (p) => p.name === 'haynesnetwork: deleted releases (managed, do not edit)',
+    );
+    if (ours.length > 1)
+      throw new ArrReleaseBlockedError(
+        'Release protection needs repair before a release can be grabbed.',
+      );
+    for (const profile of ours) {
+      if (
+        !profile.enabled ||
+        profile.indexerId !== 0 ||
+        (profile.tags?.length ?? 0) !== 0 ||
+        (profile.required?.length ?? 0) !== 0 ||
+        !profile.ignored.includes('hnet-release-block-sentinel')
+      )
+        throw new ArrReleaseBlockedError(
+          'Release protection needs repair before a release can be grabbed.',
+        );
+      for (const term of profile.ignored) {
+        if (term === 'hnet-release-block-sentinel') continue;
+        const match = /^\/(.*)\/i$/s.exec(term);
+        let matches: boolean;
+        try {
+          matches = match
+            ? new RegExp(match[1]!, 'i').test(releaseTitle)
+            : releaseTitle.toLowerCase().includes(term.toLowerCase());
+        } catch {
+          throw new ArrReleaseBlockedError(
+            'Release protection contains an unreadable term. No release was grabbed.',
+          );
+        }
+        if (matches) throw new ArrReleaseBlockedError();
+      }
+    }
+  }
+
   /** `GET /releaseprofile` — every release profile (the writer finds its own by exact name). */
   listReleaseProfiles(): Promise<ArrReleaseProfile[]> {
     return this.http.requestJson('GET', 'releaseprofile', z.array(arrReleaseProfileSchema));
@@ -276,7 +326,11 @@ export class SonarrWriteClient extends ReleaseProfileWriteClient {
    * indexer and hands it to the download client before it answers, so the call gets the release search's long bound
    * and is never retried. Hard rule 4: the Release Pick's grab, after its Repair Request row is committed.
    */
-  grabRelease(body: ArrReleaseGrab | SonarrReleaseOverrideGrab): Promise<void> {
+  async grabRelease(
+    body: ArrReleaseGrab | SonarrReleaseOverrideGrab,
+    releaseTitle: string,
+  ): Promise<void> {
+    await this.assertReleaseAllowed(releaseTitle);
     return this.grabHttp.requestVoid('POST', 'release', { body });
   }
 
@@ -318,7 +372,11 @@ export class RadarrWriteClient extends ReleaseProfileWriteClient {
    * plain body or the override body (the row grabbed for this movie at its own quality), each exactly as Radarr
    * 6.4.4.10685's UI sends it (pinned in write-clients.test.ts). Hard rule 4: the Release Pick's grab.
    */
-  grabRelease(body: ArrReleaseGrab | RadarrReleaseOverrideGrab): Promise<void> {
+  async grabRelease(
+    body: ArrReleaseGrab | RadarrReleaseOverrideGrab,
+    releaseTitle: string,
+  ): Promise<void> {
+    await this.assertReleaseAllowed(releaseTitle);
     return this.grabHttp.requestVoid('POST', 'release', { body });
   }
 

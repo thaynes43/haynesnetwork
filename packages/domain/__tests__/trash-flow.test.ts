@@ -1,10 +1,11 @@
+import { trashTitleDeleteClaims } from '@hnet/db';
 // ADR-023 / DESIGN-010 — Trash orchestrators (embedded PG16 + fetch-stubbed Maintainerr). Proves:
 // the preflight audit's SAFE verdict; saveExclusion's PROTECTIVE ordering (external-then-event: a
 // failed exclusion writes NO event) + idempotency; expedite's DESTRUCTIVE ordering (intent-first: a
 // failed handle STILL leaves the trash_expedited event) + the SAFE gate refusal; the watch guardian
 // window; the read-through pending merge + scheduled-delete derivation; recently-deleted from
 // tombstones; and the music/Lidarr rejection.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { desc, eq } from 'drizzle-orm';
 import { ledgerEvents, mediaItems, notifications } from '@hnet/db/schema';
 import {
@@ -571,6 +572,10 @@ describe('saveExclusion / removeExclusion (ADR-023 D-05 protective ordering)', (
     actorId = (await createUser(t.db, { email: 'trash-save@example.com' })).id;
   });
   afterAll(async () => t?.stop());
+  // Independent synthetic scenarios must not inherit an earlier uncertain-delete claim.
+  beforeEach(async () => {
+    await t.db.delete(trashTitleDeleteClaims);
+  });
 
   const excludeEvents = () =>
     t.db.select().from(ledgerEvents).where(eq(ledgerEvents.eventType, 'trash_excluded'));
@@ -707,6 +712,10 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     });
   });
   afterAll(async () => t?.stop());
+  // Independent synthetic scenarios must not inherit an earlier uncertain-delete claim.
+  beforeEach(async () => {
+    await t.db.delete(trashTitleDeleteClaims);
+  });
 
   const pendingState = () =>
     baseState({
@@ -1041,6 +1050,10 @@ describe('expedite deletion audit — Recently Deleted + Activity (deletion-trac
     });
   });
   afterAll(async () => t?.stop());
+  // Independent synthetic scenarios must not inherit an earlier uncertain-delete claim.
+  beforeEach(async () => {
+    await t.db.delete(trashTitleDeleteClaims);
+  });
 
   const coldState = () =>
     baseState({
@@ -1144,6 +1157,10 @@ describe('listRecentlyDeleted + restore music rejection (ADR-023 D-02 / R-87)', 
     await tombstoneMissingItems({ db: t.db, arrKind: 'radarr', seenArrItemIds: [] });
   });
   afterAll(async () => t?.stop());
+  // Independent synthetic scenarios must not inherit an earlier uncertain-delete claim.
+  beforeEach(async () => {
+    await t.db.delete(trashTitleDeleteClaims);
+  });
 
   it('lists tombstoned rows as recently-deleted (newest first)', async () => {
     const rows = await listRecentlyDeleted({ db: t.db, media: 'movie' });
@@ -1219,7 +1236,8 @@ describe('upsertTrashRule — GET→PUT rule-shape reconciliation (Bug 1, live-r
 
     const put = calls.find((c) => c.method === 'PUT' && c.pathname === '/rules');
     expect(put).toBeDefined();
-    const sent = put!.body as { id: number; isActive: boolean; rules: Array<Record<string, unknown>> };
+    const sent = put!.body as { id: number; isActive: boolean; rules: Array<Record<string, unknown>>;
+    };
     expect(sent).toMatchObject({ id: 11, isActive: false });
     expect(sent.rules).toHaveLength(2);
     for (const r of sent.rules) {
@@ -1358,6 +1376,10 @@ describe('listTrashPending — live exclusion reflected in the pending list (Bug
     });
   });
   afterAll(async () => t?.stop());
+  // Independent synthetic scenarios must not inherit an earlier uncertain-delete claim.
+  beforeEach(async () => {
+    await t.db.delete(trashTitleDeleteClaims);
+  });
 
   const oneItemState = (over: Partial<MaintState> = {}) =>
     baseState({

@@ -1,3 +1,4 @@
+import { trashTitleDeleteClaims } from '@hnet/db';
 // ADR-093 C-07 / C-09 / C-15 / DESIGN-052 D-11..D-14 / D-23 (PLAN-072 S2 part 2) — the Deleted-Release Record and the
 // Release Block, end to end on embedded PG16 with the fetch-stubbed Maintainerr and the in-memory *arr (no live API,
 // ADR-010):
@@ -157,6 +158,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
   });
   afterAll(async () => t?.stop());
   beforeEach(async () => {
+    await t.db.delete(trashTitleDeleteClaims);
     logs.length = 0;
     await t.db.delete(trashDeletedReleases);
     await t.db.delete(trashBatches);

@@ -22,6 +22,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         <Link href="/admin/catalog">Catalog</Link>
         <Link href="/admin/roles">Roles</Link>
         <Link href="/admin/fixes">Fixes</Link>
+        <Link href="/admin/restore">Failsafe restore</Link>
         {/* ADR-111 / ADR-112 / DESIGN-055 D-10, D-12 (PLAN-077 P3) — Seerr reports, linked repairs, staff notes. */}
         <Link href="/admin/seerr">Seerr issues</Link>
         {/* ADR-027 / DESIGN-004 D-15 (PLAN-010) — the dashboard Message-of-the-Day compose surface. */}
@@ -33,9 +34,6 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         {/* IA reshuffle (2026-07-09, build B) — the Storage nav item is retired: disk utilization +
             reclaim + policy moved into the tabbed Trash Settings hub (user menu → Trash settings →
             Storage/Reclaim). /admin/storage now redirects to /settings/trash?tab=storage. */}
-        {/* ADR-023 / DESIGN-010 D-08 — the Restore nav item is retired: its capability re-homes
-            into the Trash section's Recently-Deleted (and PLAN-005's Ledger). /admin/restore now
-            redirects to /trash; restoreRouter stays callable. */}
       </nav>
       {children}
     </div>

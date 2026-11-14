@@ -1,5 +1,7 @@
+import { lockTrashTitle, hasTitleDeleteClaim, trashTitleIdentity } from './trash-title-lock';
 // DESIGN-005 D-16 — the Restore flow (R-50..R-52, AC-09). Explicitly NOT automatic:
-// only the two admin procedures reach this module; sync never writes to an *arr.
+// only explicit app actions reach this module; sync never writes to an *arr.
+// ADR-121: both bulk paths exclude Trash history; only Admin's single-title Trash Restore bypasses it.
 //
 //   diff    → computeRestoreDiff: live item list vs ledger by EXTERNAL id (the identity
 //             that survives a rebuild); tombstoned rows included and badged — the
@@ -21,9 +23,19 @@ import {
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { ArrError } from '@hnet/arr';
 import type { ArrTag } from '@hnet/arr';
-import { resolveDb } from './db-client';
+import {
+  hasTrashHistoryForItem,
+  trashHistoryIds,
+  verifyRestoreReleaseBlock,
+} from './trash-restore';
+import { inTransaction, resolveDb } from './db-client';
 import { RestoreProfileUnmappedError, SearchCapExceededError } from './errors';
-import { finishRestoreRun, recordRestoreResult, startRestoreRun } from './restore-runs';
+import {
+  finishRestoreRun,
+  recordRestoreResult,
+  recordTrashRestoreAttempt,
+  startRestoreRun,
+} from './restore-runs';
 import { guardArrCall } from './media-children';
 import type { ArrClientBundle } from './arr-clients';
 
@@ -77,9 +89,7 @@ async function liveItemsByExternalId(
     return new Map(movies.map((m) => [String(m.tmdbId), { arrId: m.id, monitored: m.monitored }]));
   }
   const artists = await guardArrCall('lidarr GET /artist', () => arr.read.lidarr.listArtists());
-  return new Map(
-    artists.map((a) => [a.foreignArtistId, { arrId: a.id, monitored: a.monitored }]),
-  );
+  return new Map(artists.map((a) => [a.foreignArtistId, { arrId: a.id, monitored: a.monitored }]));
 }
 
 /** Just the present external ids — the read-only Restore diff (D-16) needs no monitored state. */
@@ -156,19 +166,31 @@ export interface ComputeRestoreDiffInput {
  * external id is absent from the live *arr. Never persisted; R-52's preview is the
  * admin seeing this list before execute.
  */
-export async function computeRestoreDiff(
-  input: ComputeRestoreDiffInput,
-): Promise<RestoreDiffItem[]> {
+export async function computeRestoreDiff(input: ComputeRestoreDiffInput): Promise<{
+  items: RestoreDiffItem[];
+  skippedTrash: RestoreDiffItem[];
+  skippedTrashCount: number;
+}> {
   const db = resolveDb(input.db);
   const arrInstanceId = input.arrInstanceId ?? 'main';
   const live = await liveExternalIds(input.arr, input.arrKind);
   const rows = await candidateRows(db, input.arrKind, arrInstanceId);
-  return rows
+  const missing = rows
     .filter((row) => {
       const ext = externalIdOfRow(input.arrKind, row);
       return ext !== null && !live.has(ext);
     })
     .map((row) => toDiffItem(input.arrKind, row));
+  const history = await trashHistoryIds(
+    input.db,
+    missing.map((r) => r.mediaItemId),
+  );
+  const skippedTrash = missing.filter((r) => history.has(r.mediaItemId));
+  return {
+    items: missing.filter((r) => !history.has(r.mediaItemId)),
+    skippedTrash,
+    skippedTrashCount: skippedTrash.length,
+  };
 }
 
 export interface ExecuteArrAddInput {
@@ -189,6 +211,8 @@ export interface ExecuteArrAddInput {
   reason?: ArrAddReason;
   /** ADR-022 D-02 — trigger the owning *arr's item search after each add/monitor. */
   searchOnAdd?: boolean;
+  /** Internal only: Trash's single-title admin entry point. Never exposed by a bulk API. */
+  trashRestore?: boolean;
 }
 
 /** Back-compat alias — Restore is `executeArrAdd({ reason:'restore', searchOnAdd:false })`. */
@@ -206,6 +230,7 @@ export interface ExecuteArrAddResultItem {
   error?: string;
   /** True when the item was approved but skipped at execute time (present / ineligible). */
   skipped?: boolean;
+  skipReason?: 'trash_deleted';
 }
 
 export interface ExecuteArrAddResult {
@@ -214,6 +239,8 @@ export interface ExecuteArrAddResult {
   itemCount: number;
   successCount: number;
   results: ExecuteArrAddResultItem[];
+  skippedTrash: { mediaItemId: string; title: string }[];
+  skippedTrashCount: number;
 }
 
 /** @deprecated use ExecuteArrAddResultItem */
@@ -390,11 +417,26 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
     .orderBy(asc(mediaItems.sortTitle));
   const rowById = new Map(rows.map((r) => [r.id, r]));
 
+  const history = await trashHistoryIds(
+    input.db,
+    rows.map((r) => r.id),
+  );
   const actions: ArrAddAction[] = [];
   const skipped: ExecuteArrAddResultItem[] = [];
   for (const id of approvedIds) {
     const row = rowById.get(id);
     const ext = row === undefined ? null : externalIdOfRow(input.arrKind, row);
+    if (row !== undefined && !input.trashRestore && history.has(id)) {
+      skipped.push({
+        mediaItemId: id,
+        title: row.title,
+        ok: false,
+        skipped: true,
+        skipReason: 'trash_deleted',
+        error: 'skipped: Trash-deleted title — use Seerr or an admin Restore in Trash',
+      });
+      continue;
+    }
     // Eligibility: a real row of this instance with an external id. 'restore' additionally
     // requires the ledger row be monitored (the failsafe re-adds only monitored rows).
     if (row === undefined || ext === null || (reason === 'restore' && !row.monitored)) {
@@ -425,7 +467,9 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
     }
   }
 
-  const preview: RestorePreviewItem[] = actions.map((a) => ({ ...toDiffItem(input.arrKind, a.row) }));
+  const preview: RestorePreviewItem[] = actions.map((a) => ({
+    ...toDiffItem(input.arrKind, a.row),
+  }));
   const { runId } = await startRestoreRun({
     db: input.db,
     arrKind: input.arrKind,
@@ -440,7 +484,13 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
     await recordRestoreResult({
       db: input.db,
       runId,
-      result: { mediaItemId: skip.mediaItemId, ok: false, error: skip.error },
+      result: {
+        mediaItemId: skip.mediaItemId,
+        title: skip.title,
+        skipReason: skip.skipReason,
+        ok: false,
+        error: skip.error,
+      },
     });
     results.push(skip);
   }
@@ -461,74 +511,122 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
     const outcome: 'added' | 'monitored' = action.kind === 'add' ? 'added' : 'monitored';
     let result: ExecuteArrAddResultItem;
     try {
-      let newArrItemId: number | undefined;
-      let targetArrId: number;
+      let qualityProfileId: number | undefined;
+      let tags: number[] = [];
       if (action.kind === 'add') {
         const st = state!;
-        const qualityProfileId = st.profileIdByName.get(action.row.qualityProfileName);
-        if (qualityProfileId === undefined) {
-          // Recorded per item, never a silent default (D-16/D-17).
+        qualityProfileId = st.profileIdByName.get(action.row.qualityProfileName);
+        if (qualityProfileId === undefined)
           throw new RestoreProfileUnmappedError(
             `quality profile '${action.row.qualityProfileName}' not found on the live ${input.arrKind}`,
           );
-        }
-        if (!st.rootFolderPaths.has(action.row.rootFolder)) {
+        if (!st.rootFolderPaths.has(action.row.rootFolder))
           throw new Error(
             `root folder '${action.row.rootFolder}' not found on the live ${input.arrKind}`,
           );
-        }
-        const tags = await resolveTagIds(input.arr, input.arrKind, st, action.row.arrTags);
-        newArrItemId = await addItemToArr(
-          input.arr,
-          input.arrKind,
-          action.row,
-          st,
-          qualityProfileId,
-          tags,
-        );
-        targetArrId = newArrItemId;
-      } else {
-        await setArrMonitored(input.arr, input.arrKind, action.liveArrId!);
-        targetArrId = action.liveArrId!;
-      }
-
-      // Best-effort search — the add/monitor is the durable state change; a failed search
-      // command does NOT fail the item (the *arrs queue search internally; indexers may throttle).
-      let searched = false;
-      let searchError: string | undefined;
-      if (searchOnAdd) {
-        try {
-          await triggerArrSearch(input.arr, input.arrKind, targetArrId);
-          searched = true;
-        } catch (err) {
-          searchError = errMessage(err);
+        tags = await resolveTagIds(input.arr, input.arrKind, st, action.row.arrTags);
+        if (input.trashRestore) {
+          if (await hasTrashHistoryForItem(input.db, action.row))
+            await verifyRestoreReleaseBlock({
+              db: input.db,
+              arr: input.arr,
+              item: action.row,
+            });
+          // This intent commits BEFORE the external call. The next transaction revalidates its binding.
+          await recordTrashRestoreAttempt({
+            db: input.db,
+            runId,
+            mediaItemId: action.row.id,
+            expectedIdentity: trashTitleIdentity(action.row) ?? undefined,
+          });
         }
       }
-
-      result = {
-        mediaItemId: action.row.id,
-        title: action.row.title,
-        ok: true,
-        outcome,
-        ...(newArrItemId !== undefined ? { newArrItemId } : {}),
-        ...(searched ? { searched: true } : {}),
-        ...(searchError !== undefined ? { error: `search failed: ${searchError}` } : {}),
-      };
-      await recordRestoreResult({
-        db: input.db,
-        runId,
-        result: {
+      result = await inTransaction(input.db, async (tx) => {
+        const identity = trashTitleIdentity(action.row);
+        const locked =
+          input.arrKind === 'lidarr' || (identity !== null && (await lockTrashTitle(tx, identity)));
+        const [current] = locked
+          ? await tx.select().from(mediaItems).where(eq(mediaItems.id, action.row.id)).for('update')
+          : [];
+        const history = await hasTrashHistoryForItem(tx, action.row);
+        const changed =
+          !locked ||
+          !current ||
+          current.arrKind !== input.arrKind ||
+          current.arrInstanceId !== arrInstanceId ||
+          externalIdOfRow(input.arrKind, current) !== externalIdOfRow(input.arrKind, action.row);
+        const deleting = identity !== null && (await hasTitleDeleteClaim(tx, identity));
+        if ((!input.trashRestore && history) || changed || deleting) {
+          const skip: ExecuteArrAddResultItem = {
+            mediaItemId: action.row.id,
+            title: action.row.title,
+            ok: false,
+            skipped: true,
+            ...(history && !input.trashRestore ? { skipReason: 'trash_deleted' as const } : {}),
+            error:
+              history && !input.trashRestore
+                ? 'skipped: Trash-deleted title — use Seerr or an admin Restore in Trash'
+                : 'skipped: title identity changed or a Trash action is in progress; refresh the selection',
+          };
+          await recordRestoreResult({ db: tx, runId, result: skip });
+          return skip;
+        }
+        let newArrItemId: number | undefined;
+        let targetArrId: number;
+        if (action.kind === 'add') {
+          newArrItemId = await addItemToArr(
+            input.arr,
+            input.arrKind,
+            action.row,
+            state!,
+            qualityProfileId!,
+            tags,
+          );
+          targetArrId = newArrItemId;
+        } else {
+          await setArrMonitored(input.arr, input.arrKind, action.liveArrId!);
+          targetArrId = action.liveArrId!;
+        }
+        let searched = false;
+        let searchError: string | undefined;
+        if (searchOnAdd) {
+          try {
+            await triggerArrSearch(input.arr, input.arrKind, targetArrId);
+            searched = true;
+          } catch (err) {
+            searchError = errMessage(err);
+          }
+        }
+        const receipt: ExecuteArrAddResultItem = {
           mediaItemId: action.row.id,
+          title: action.row.title,
           ok: true,
           outcome,
-          searched,
           ...(newArrItemId !== undefined ? { newArrItemId } : {}),
-          ...(searchError !== undefined ? { searchError } : {}),
-        },
+          ...(searched ? { searched: true } : {}),
+          ...(searchError !== undefined ? { error: `search failed: ${searchError}` } : {}),
+        };
+        await recordRestoreResult({
+          db: tx,
+          runId,
+          result: {
+            ...receipt,
+            trashRestore: input.trashRestore,
+            searched,
+            ...(searchError !== undefined ? { searchError } : {}),
+          },
+        });
+        return receipt;
       });
     } catch (err) {
       const message = errMessage(err);
-      result = { mediaItemId: action.row.id, title: action.row.title, ok: false, outcome, error: message };
+      result = {
+        mediaItemId: action.row.id,
+        title: action.row.title,
+        ok: false,
+        outcome,
+        error: message,
+      };
       await recordRestoreResult({
         db: input.db,
         runId,
@@ -545,6 +643,10 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
     itemCount: actions.length,
     successCount: results.filter((r) => r.ok).length,
     results,
+    skippedTrash: results
+      .filter((s) => s.skipReason === 'trash_deleted')
+      .map(({ mediaItemId, title }) => ({ mediaItemId, title })),
+    skippedTrashCount: results.filter((s) => s.skipReason === 'trash_deleted').length,
   };
 }
 
@@ -552,7 +654,7 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
  * DESIGN-005 D-16 — the admin-only failsafe Restore, now a thin wrapper over executeArrAdd
  * with the historical contract preserved: searches OFF, present items skipped (never
  * monitor-flipped), only monitored ledger rows eligible. The restore router + tests are
- * unchanged (ADR-022 C-01).
+ * unchanged except for Trash history exclusion (ADR-121).
  */
 export async function executeRestore(input: ExecuteRestoreInput): Promise<ExecuteArrAddResult> {
   return executeArrAdd({ ...input, reason: 'restore', searchOnAdd: false });

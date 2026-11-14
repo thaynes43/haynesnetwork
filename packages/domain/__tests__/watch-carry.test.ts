@@ -245,6 +245,7 @@ function stubSonarr(opts: { contentOn?: Array<[number, number]>; copyNames?: Rec
   const fetchImpl = (async (input: unknown, init: RequestInit = {}) => {
     const url = new URL(String(input));
     const method = init.method ?? 'GET';
+    if (method === 'GET' && url.pathname === '/api/v3/releaseprofile') return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
     const p = url.pathname;
     if (method === 'GET' && p === '/api/v3/episode') {
@@ -632,6 +633,55 @@ describe('the Watch Carry flow (ADR-114)', () => {
     expect(result.carry).toMatchObject({ status: 'verified' });
     expect(plex.view(FRIEND_A, 'g-1-2')).toMatchObject({ viewCount: 0 });
     expect(plex.view(FRIEND_A, 'g-1-4')).toMatchObject({ viewCount: 2 });
+  });
+
+  it('Wrong-Content Replace refuses a currently blocked release at its final grab', async () => {
+    resetReleaseSearchState();
+    const arr = stubSonarr({
+      contentOn: [
+        [1, 1],
+        [2, 9],
+        [3, 3],
+        [4, 4],
+      ],
+      copyNames: { 2: 'Other.Show.S01E01.1080p.WEB-DL-GRP' },
+    });
+    arr.state.releases = [
+      release('right-1', 'Show.S01E02.Bravo.Night.1080p.WEB-DL-GRP', 2, [
+        'Existing file on disk has a equal or higher Custom Format score: 0',
+      ]),
+    ];
+    const plex = fakePlex({ files: arr.plexFiles, accounts: [OWNER] });
+    const target = {
+      db: t.db,
+      arr: arr.bundle,
+      mediaItemId: itemId,
+      seasonNumber: 1,
+      episodeNumber: 2,
+    };
+    const plan = await planWrongContentReplace(target);
+    arr.bundle.write.sonarr.listReleaseProfiles = async () => [
+      {
+        id: 1,
+        name: 'haynesnetwork: deleted releases (managed, do not edit)',
+        enabled: true,
+        required: [],
+        ignored: ['hnet-release-block-sentinel', '/./i'],
+        indexerId: 0,
+        tags: [],
+      },
+    ];
+    await expect(
+      runWrongContentReplace({
+        ...target,
+        planDigest: plan.digest,
+        keys: [plan.candidates[0]!.key],
+        evidence: 'The title card names another show.',
+        watchCarry: plex.plex,
+        carryPauseMs: 0,
+      }),
+    ).rejects.toThrow('already grabbed');
+    expect(arr.state.grabs).toEqual([]);
   });
 
   it('the Wrong-Content Replace finds a correct release first, then deletes, grabs, and drops a mark on content held nowhere else (P4 decision 38)', async () => {

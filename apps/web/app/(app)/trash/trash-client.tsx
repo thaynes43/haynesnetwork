@@ -799,12 +799,18 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
       const res = await restore.mutateAsync({ media, mediaItemId });
       setRowStatus((prev) =>
         new Map(prev).set(mediaItemId, {
-          ok: true,
-          text: res.status === 'completed' ? 'Re-added' : `Run ${res.status.replaceAll('_', ' ')}`,
+          ok: res.successCount > 0,
+          text:
+            res.successCount > 0
+              ? 'Re-added'
+              : `Not restored — run ${res.status.replaceAll('_', ' ')}`,
         }),
       );
+      void utils.trash.restoreKeeps.invalidate();
       void utils.trash.recentlyDeleted.invalidate();
     } catch (err) {
+      void utils.trash.restoreKeeps.invalidate();
+      void utils.trash.recentlyDeleted.invalidate();
       setRowStatus((prev) =>
         new Map(prev).set(mediaItemId, { ok: false, text: describeMutationError(err) }),
       );
@@ -813,9 +819,14 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
     return 'ok' as const;
   };
 
-  if (movies.isLoading || tv.isLoading) return <p className="muted">Loading recently deleted…</p>;
+  const pinnedRows = useRef<Array<
+    NonNullable<typeof movies.data>[number] & { media: 'movie' | 'tv' }
+  > | null>(null);
+
+  if ((movies.isLoading || tv.isLoading) && pinnedRows.current === null)
+    return <p className="muted">Loading recently deleted…</p>;
   const loadError = movies.error ?? tv.error;
-  if (loadError) {
+  if (loadError && pinnedRows.current === null) {
     return (
       <p className="alert" role="alert">
         Couldn’t load the recently-deleted list: {loadError.message}
@@ -823,7 +834,7 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
     );
   }
 
-  const rows = [
+  const incomingRows = [
     ...(movies.data ?? []).map((r) => ({ ...r, media: 'movie' as const })),
     ...(tv.data ?? []).map((r) => ({ ...r, media: 'tv' as const })),
   ].sort((a, b) => {
@@ -832,86 +843,117 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
     return bx - ax;
   });
 
+  if (pinnedRows.current === null) pinnedRows.current = incomingRows;
+  const currentRows = new Map(incomingRows.map((row) => [row.mediaItemId, row]));
+  // Retain positions and action results, but refresh the data of existing rows. Missing rows lose Restore.
+  const rows = pinnedRows.current.map((row) => currentRows.get(row.mediaItemId) ?? row);
+
   if (rows.length === 0) {
-    return <p className="muted">Nothing here — no movies or shows have been deleted recently.</p>;
+    return (
+      <>
+        {canRestore ? <RestoreKeeps /> : null}
+        <p className="muted">Nothing here — no movies or shows have been deleted recently.</p>
+      </>
+    );
   }
 
   return (
-    <table className="admin-table trash-deleted" data-testid="trash-deleted">
-      <thead>
-        <tr>
-          <th>Title</th>
-          <th>Kind</th>
-          <th>Size</th>
-          <th>Deleted</th>
-          <th>By</th>
-          <th>Restore</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => {
-          const status = rowStatus.get(row.mediaItemId);
-          return (
-            <tr key={row.mediaItemId} data-testid="trash-deleted-row">
-              <td data-label="Title">
-                <span className="trash-titlecell">
-                  <span className="trash-poster" aria-hidden="true">
-                    <MediaPoster posterUrl={row.posterUrl} kind={row.arrKind} alt="" />
+    <>
+      <table className="admin-table trash-deleted" data-testid="trash-deleted">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Kind</th>
+            <th>Size</th>
+            <th>Deleted</th>
+            <th>By</th>
+            <th>Restore</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const status = rowStatus.get(row.mediaItemId);
+            return (
+              <tr key={row.mediaItemId} data-testid="trash-deleted-row">
+                <td data-label="Title">
+                  <span className="trash-titlecell">
+                    <span className="trash-poster" aria-hidden="true">
+                      <MediaPoster posterUrl={row.posterUrl} kind={row.arrKind} alt="" />
+                    </span>
+                    <Link href={`/library/${row.mediaItemId}`} className="ledger-title">
+                      {row.title}
+                    </Link>
+                    {row.year !== null ? <span className="muted"> ({row.year})</span> : null}
                   </span>
-                  <Link href={`/library/${row.mediaItemId}`} className="ledger-title">
-                    {row.title}
-                  </Link>
-                  {row.year !== null ? <span className="muted"> ({row.year})</span> : null}
-                </span>
-              </td>
-              <td data-label="Kind">
-                <span className="badge badge--muted">{row.media === 'movie' ? 'Movie' : 'TV'}</span>
-              </td>
-              <td data-label="Size">{row.sizeOnDisk > 0 ? formatBytes(row.sizeOnDisk) : '—'}</td>
-              <td data-label="Deleted">
-                {row.deletedAt !== null ? formatDay(row.deletedAt) : '—'}
-              </td>
-              <td data-label="By" data-testid="trash-deleted-by">
-                {row.deletedBy !== null ? (
-                  row.deletedBy
-                ) : (
-                  <span className="muted" title="Removed by a sync pass — no app user attributed.">
-                    System
+                </td>
+                <td data-label="Kind">
+                  <span className="badge badge--muted">
+                    {row.media === 'movie' ? 'Movie' : 'TV'}
                   </span>
-                )}
-              </td>
-              <td data-label="Restore">
-                {status !== undefined ? (
+                </td>
+                <td data-label="Size">{row.sizeOnDisk > 0 ? formatBytes(row.sizeOnDisk) : '—'}</td>
+                <td data-label="Deleted">
+                  {row.deletedAt !== null ? formatDay(row.deletedAt) : '—'}
+                </td>
+                <td data-label="By" data-testid="trash-deleted-by">
+                  {row.deletedBy !== null ? (
+                    row.deletedBy
+                  ) : (
+                    <span
+                      className="muted"
+                      title="Removed by a sync pass — no app user attributed."
+                    >
+                      System
+                    </span>
+                  )}
+                </td>
+                <td data-label="Restore">
                   <span
-                    className={`badge badge--${status.ok ? 'ok' : 'danger'}`}
-                    data-testid="trash-restore-status"
-                    title={
-                      status.ok
-                        ? 'Re-added to the manager — this row clears on the next sync.'
-                        : status.text
-                    }
+                    style={{
+                      display: 'inline-flex',
+                      minWidth: '8rem',
+                      minHeight: '2.25rem',
+                      alignItems: 'center',
+                    }}
                   >
-                    {status.text}
+                    {status !== undefined ? (
+                      <span
+                        className={`badge badge--${status.ok ? 'ok' : 'danger'}`}
+                        data-testid="trash-restore-status"
+                        title={
+                          status.ok
+                            ? 'Re-added to the manager and protected by a restore keep.'
+                            : status.text
+                        }
+                      >
+                        {status.ok ? 'Re-added' : 'Not restored'}
+                      </span>
+                    ) : canRestore ? (
+                      <ConfirmButton
+                        className="btn sm"
+                        data-testid="trash-restore"
+                        label="Restore"
+                        reArmOnFailure
+                        disabled={!currentRows.has(row.mediaItemId)}
+                        restingAriaLabel={`Restore ${row.title} — re-add it to the media manager — click twice to confirm`}
+                        confirmAriaLabel={`Confirm restore ${row.title}`}
+                        onConfirm={() => restoreRow(row.mediaItemId, row.media)}
+                      />
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
                   </span>
-                ) : canRestore ? (
-                  <ConfirmButton
-                    className="btn sm"
-                    data-testid="trash-restore"
-                    label="Restore"
-                    reArmOnFailure
-                    restingAriaLabel={`Restore ${row.title} — re-add it to the media manager — click twice to confirm`}
-                    confirmAriaLabel={`Confirm restore ${row.title}`}
-                    onConfirm={() => restoreRow(row.mediaItemId, row.media)}
-                  />
-                ) : (
-                  <span className="muted">—</span>
-                )}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {loadError ? (
+        <p role="alert">Couldn’t refresh recently deleted: {loadError.message}</p>
+      ) : null}
+      {canRestore ? <RestoreKeeps /> : null}
+    </>
   );
 }
 
@@ -1136,5 +1178,51 @@ export function TrashClient({
     <Suspense fallback={<p className="muted">Loading…</p>}>
       <TrashContent access={access} viewerId={viewerId} viewerIsAdmin={viewerIsAdmin} />
     </Suspense>
+  );
+}
+
+function RestoreKeeps() {
+  const keeps = trpc.trash.restoreKeeps.useQuery();
+  const utils = trpc.useUtils();
+  const remove = trpc.trash.removeRestoreKeep.useMutation({
+    onSuccess: () => {
+      void keeps.refetch();
+      void utils.trash.invalidate();
+    },
+  });
+  return (
+    <section className="card">
+      <h2>Admin restore keeps</h2>
+      <p>
+        Restored titles stay protected from Trash until an admin removes their restore keep. Other
+        protections still apply.
+      </p>
+      {keeps.error ? <p role="alert">{keeps.error.message}</p> : null}
+      {remove.error ? <p role="alert">{remove.error.message}</p> : null}
+      <ul>
+        {keeps.data?.map((k) => (
+          <li key={k.keepId}>
+            {k.title}{' '}
+            <span style={{ display: 'inline-flex', minWidth: '15rem', minHeight: '2.25rem', alignItems: 'center' }}>
+              {k.revokedAt ? (
+              <span className="muted">Restore keep removed</span>
+            ) : (
+              <ConfirmButton
+                className="btn sm"
+                label="Remove restore keep"
+                restingAriaLabel={`Remove restore keep for ${k.title} — click twice to confirm`}
+                confirmAriaLabel={`Confirm removal of restore keep for ${k.title}`}
+                disabled={remove.isPending}
+                onConfirm={async () => {
+                  await remove.mutateAsync({ keepId: k.keepId });
+                  return 'ok' as const;
+                }}
+              />
+            )}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

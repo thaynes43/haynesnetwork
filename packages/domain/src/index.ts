@@ -341,3 +341,5 @@ export * from './wrong-content-retry';
 
 // DESIGN-055 P4 decision 40: private original-part continuation.
 export { planWrongContentPartResume, runWrongContentPartResume } from './wrong-content-parts';
+
+export * from './trash-restore';

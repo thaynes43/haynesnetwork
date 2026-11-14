@@ -1,3 +1,11 @@
+import { hasRestoreKeepForIdentity, invalidateTrashReleaseOffers } from './trash-restore';
+import {
+  lockTrashTitle,
+  trashTitleIdentity,
+  claimTitleDeletion,
+  finishTitleDeletion,
+  hasTitleDeleteClaim,
+} from './trash-title-lock';
 // ADR-025 / DESIGN-011 — the Trash CURATION PIPELINE orchestrators. Batches are the deletion unit:
 // createBatchFromPending snapshots the current pending set for one media kind into a curated batch;
 // admins (and, in the window, users) rescue items (setBatchItemSaved); greenlightBatch promotes the
@@ -14,6 +22,7 @@
 // WHERE, so a concurrent transition loses the race (TrashBatchStateError) instead of double-acting.
 import {
   ledgerEvents,
+  mediaItems,
   mediaMetadata,
   trashBatchItems,
   trashBatchSaves,
@@ -573,7 +582,10 @@ export async function createBatchFromPending(input: {
   // to Leaving Soon, and not counted as deleting. A row already pending is still kept at the sweep.
   const actionable = pending.items.filter(
     (p): p is TrashPendingItem & { maintainerrMediaId: string } =>
-      p.maintainerrMediaId !== null && !p.saveIntent && !hasMediaRequestTag(p.arrTags),
+      p.maintainerrMediaId !== null &&
+      !p.saveIntent &&
+      !p.restoreKeep &&
+      !hasMediaRequestTag(p.arrTags),
   );
   if (actionable.length === 0) {
     throw new TrashBatchEmptyError(
@@ -1755,7 +1767,10 @@ export interface TrashSweepStatusView {
 }
 
 /** DESIGN-052 D-10 — the scheduled sweep's status for the Trash page (read-only). */
-export async function getTrashSweepStatus(input: { db?: DbClient; now?: Date }): Promise<TrashSweepStatusView> {
+export async function getTrashSweepStatus(input: {
+  db?: DbClient;
+  now?: Date;
+}): Promise<TrashSweepStatusView> {
   const db = resolveDb(input.db);
   // D-29 — read from the batch itself, so an Expire now (which writes no status row) is counted too.
   const [swept] = await db
@@ -1997,7 +2012,39 @@ async function expireOneBatch(input: {
     // handle) — a saved item must never be deleted. Intent event + terminal state + deletion snapshot
     // land same-tx AFTER the claim so nothing is written when the claim loses (D-09 intent-first). The claim also ties
     // the item's Deleted-Release Records to it (ADR-084 D-4's audit row).
+    const identity = trashTitleIdentity({
+      arrKind: sweepArrKind,
+      tmdbId: fresh.tmdbId,
+      tvdbId: fresh.tvdbId,
+    });
+    let unresolvedIdentity = false;
     const claimed = await inTransaction(input.db, async (tx) => {
+      if (!identity || !(await lockTrashTitle(tx, identity))) {
+        unresolvedIdentity = true;
+        return null;
+      }
+      if (await hasRestoreKeepForIdentity(tx, identity)) return null;
+      if (await hasTitleDeleteClaim(tx, identity)) {
+        unresolvedIdentity = true;
+        return null;
+      }
+      const [resolvedRow] = fresh.mediaItemId
+        ? await tx
+            .select()
+            .from(mediaItems)
+            .where(eq(mediaItems.id, fresh.mediaItemId))
+            .for('share')
+        : [];
+      const resolvedIdentity = resolvedRow ? trashTitleIdentity(resolvedRow) : null;
+      if (
+        !resolvedIdentity ||
+        resolvedIdentity.arrKind !== identity.arrKind ||
+        resolvedIdentity.externalId !== identity.externalId
+      ) {
+        unresolvedIdentity = true;
+        return null;
+      }
+
       const updated = await tx
         .update(trashBatchItems)
         .set({
@@ -2016,18 +2063,25 @@ async function expireOneBatch(input: {
             // shield): an open save intent is the app's record, read in the same statement as the claim.
             sql`NOT EXISTS (SELECT 1 FROM ${trashSaveIntents} tsi
                             WHERE tsi.media_item_id = ${trashBatchItems.mediaItemId} AND tsi.revoked_at IS NULL)`,
+            sql`NOT EXISTS (SELECT 1 FROM ${trashSaveIntents} tsi
+                            WHERE tsi.media_item_id = ${fresh.mediaItemId} AND tsi.revoked_at IS NULL)`,
           ),
         )
         .returning({ id: trashBatchItems.id });
-      if (updated.length === 0) return false; // saved/changed mid-sweep — do not delete
+      if (updated.length === 0) return null; // saved/changed mid-sweep — do not delete
+      const claimId = await claimTitleDeletion(tx, identity);
+      if (!claimId) throw new Error('Trash deletion is already claimed; keep this batch pending.');
+      await invalidateTrashReleaseOffers(tx, identity);
       await tx.insert(ledgerEvents).values({
-        mediaItemId: item.mediaItemId,
+        mediaItemId: fresh.mediaItemId,
         eventType: 'trash_expedited',
         source: 'maintainerr',
         occurredAt: nowDate(),
         requestedByUserId: input.actorId,
         payload: {
           scope: 'batch',
+          deleteClaimId: claimId,
+          ...identity,
           batchId: input.batchId,
           collectionId: fresh.collectionId,
           maintainerrMediaId: item.maintainerrMediaId,
@@ -2039,7 +2093,7 @@ async function expireOneBatch(input: {
       // deletion (with actor) immediately, and write the app-sourced Activity notification — the batch
       // sweep deletes via the same per-item handle Maintainerr never webhooks back.
       await recordDeletionAudit(tx, {
-        mediaItemId: item.mediaItemId,
+        mediaItemId: fresh.mediaItemId,
         title: fresh.title,
         sizeBytes: fresh.sizeBytes,
         tmdbId: fresh.tmdbId,
@@ -2053,13 +2107,18 @@ async function expireOneBatch(input: {
         imdbRating: fresh.imdbRating,
         tmdbRating: fresh.tmdbRating,
       });
-      return true;
+      return claimId;
     });
     if (!claimed) {
       // The item was Saved just in time — never deleted, never handled. A row still `pending` lost the claim to an
       // open save intent (saved from another surface, ADR-099 D-4): it is kept `saved`, so the close never strands it.
       // `keep` counts a row that moved on its own (the wall's flip to `saved`) as the race.
-      await keep(item, 'saved');
+      await keep(
+        item,
+        unresolvedIdentity ? 'unevaluable' : (await hasRestoreKeepForIdentity(input.db, identity))
+          ? 'admin_restored'
+          : 'saved',
+      );
       if ((await abandonReleaseRecords({ db: input.db, recordIds: ids })) > 0) anyAbandoned = true;
       continue;
     }
@@ -2094,6 +2153,7 @@ async function expireOneBatch(input: {
       title: item.title,
       logger: input.logger,
     });
+    if (identity && settled !== 'in_flight') await finishTitleDeletion(input.db, identity, claimed, input.logger);
     if (settled === 'abandoned') anyAbandoned = true;
     // D-21 / D-25az — one line per delete, after its settle (PLAN-072 S7 reads the order from these).
     input.logger.info('[trash] deleted', {
