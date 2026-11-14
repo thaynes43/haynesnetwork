@@ -328,8 +328,9 @@ first login, so the seed is a true one-shot with no marker table.
   to kind, is covered beside the matcher tests.
   `packages/sync/__tests__/plex-match-completeness.test.ts` exercises D-11 against embedded PostgreSQL 16:
   incomplete reads preserve stored fitting row identities, complete reads remove a stale row, a genuinely
-  empty library scopes safely, the cap's final page remains unscoped, and the independent cross-type delete
-  still runs. The Plex read-client tests prove that an omitted wire total stays unknown for the matcher.
+  empty library scopes safely, and the cap's final page remains unscoped. The existing domain tests above
+  prove the independent cross-type delete still runs without any scoped library. The Plex read-client tests
+  prove that an omitted wire total stays unknown for the matcher.
 - **Live:** as hnet-e2e-member with a deliberately-withheld library — the walls return 0 items from it and the tab
   is hidden; 390px + desktop screenshots (a play button on an accessible item; a withheld library absent).
 

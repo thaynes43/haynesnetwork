@@ -1630,7 +1630,7 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
       });
       if (snapshot.scopedLibraryIds.length === 0) {
         plexMatchError =
-          'plex-match: no Plex library could be read (registry empty or all servers down)';
+          'plex-match: no Plex library had a verified complete section read';
       }
     } catch (error) {
       plexMatchError = error instanceof Error ? error.message : String(error);

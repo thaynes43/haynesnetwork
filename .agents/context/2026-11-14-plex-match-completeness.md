@@ -147,9 +147,9 @@ The pinned starting source was already on origin before dependency installation.
 
 Source: implemented D-11 and error/stats telemetry; no change to domain writers, Age Guard or
 `metadata-refresh.ts`. Local tests measured 2026-11-14: `pnpm --filter @hnet/sync exec vitest run
---maxWorkers=2` passed **327** tests in **45** files; `pnpm --filter @hnet/plex exec vitest run
+--maxWorkers=2` passed **326** tests in **45** files; `pnpm --filter @hnet/plex exec vitest run
 --maxWorkers=2` passed **145** tests in **11** files; `pnpm --filter @hnet/domain exec vitest run
-plex-match-type --maxWorkers=2` passed **7** tests in **1** file. Suites ran serially. The installed embedded
+plex-match-type no-direct-state-writes --maxWorkers=2` passed **9** tests in **2** files. Suites ran serially. The installed embedded
 package identifies itself as PostgreSQL **16.14** (`node_modules/.pnpm/embedded-postgres*/node_modules/embedded-postgres/package.json`).
 `git diff --check` and the CSV assertions above passed. The initial root typecheck passed, but its outer
 `--workspace-concurrency=2` did not propagate to the nested recursive command (the log showed the default
@@ -160,3 +160,11 @@ unmodified domain tests. No local application build was requested; required CI b
 Built: CI pending. Installed: not performed. Accepted:
 coordinator-owned, pending adversarial review. Story's stale dependency text calls PR 1075 not ready; its
 later completion/install history and the pinned source show it ready. No held action was resumed.
+
+Initial CI on `b37b3704` caught a direct historical-fixture insert in the new sync test, forbidden by the
+single-writer guard outside domain. The fixture test was removed, without weakening the guard. The existing
+domain case `the sync deletes a cross-type row in a library it did not read, and leaves fitting rows there`
+already proves the required independent deletion. Final test counts above are after that correction (the
+initial sync count was **327**, measured by the earlier same-command run). The guard was added to the final
+local domain check. The automatic advisory review reported no findings and a diagnostic note; its note was
+also addressed by changing the zero-scope summary to say that no library had a verified complete read.

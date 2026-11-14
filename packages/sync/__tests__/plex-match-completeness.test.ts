@@ -251,24 +251,6 @@ describe('section completeness and stale-delete scope', () => {
     expect(await storedIds()).toEqual(ids);
   });
 
-  it('still removes an ADR-123 cross-type row while an incomplete library keeps its fitting rows', async () => {
-    const ids = await storedIds();
-    // Fixture for a historical wrong match; the production writer rejects/removes such a row today.
-    await t.db.insert(mediaPlexMatches).values({
-      mediaItemId: show,
-      plexLibraryId: movieLib,
-      ratingKey: 'wrong',
-      matchedVia: 'tvdb',
-    });
-    const fake = bundle(() => ({ items: [], totalSize: 2 }));
-    const snapshot = await fetchPlexMatchSnapshot({ db: t.db, plex: fake.plex });
-    expect(snapshot.scopedLibraryIds).toEqual([]);
-    const report = await syncPlexMatches({ db: t.db, ...snapshot, now });
-    expect(report.crossTypeRemoved).toBe(1);
-    expect(report.removed).toBe(0);
-    expect(await storedIds()).toEqual(ids);
-  });
-
   it('reports an incomplete section in the orchestrator completion stats', async () => {
     const ids = await storedIds();
     const infos: Array<{ msg: string; fields: unknown }> = [];
