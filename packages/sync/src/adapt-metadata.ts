@@ -254,8 +254,13 @@ export function parseTautulliGuids(guids: readonly string[] | null | undefined):
     const [scheme, id] = g.split('://');
     if (!id) continue;
     if (scheme === 'imdb') out.imdbId = id;
-    else if (scheme === 'tmdb') out.tmdbId = Number(id) || undefined;
-    else if (scheme === 'tvdb') out.tvdbId = Number(id) || undefined;
+    else if ((scheme === 'tmdb' || scheme === 'tvdb') && /^\d+$/.test(id)) {
+      const value = Number(id);
+      if (Number.isSafeInteger(value) && value > 0) {
+        if (scheme === 'tmdb') out.tmdbId = value;
+        else out.tvdbId = value;
+      }
+    }
   }
   return out;
 }

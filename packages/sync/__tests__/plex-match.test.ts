@@ -394,6 +394,7 @@ describe('a library whose live type disagrees with the registry', () => {
 describe('household plays are joined by kind and id', () => {
   it('does not give a movie the play of a show sharing its TMDB number', () => {
     const played: TitleWatch = {
+      ratingKey: 'synthetic-show',
       arrKind: 'sonarr',
       instanceSlug: 'haynestower',
       guids: { tmdbId: 500501 },

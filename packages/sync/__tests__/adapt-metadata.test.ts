@@ -130,6 +130,10 @@ describe('metadata mappers (D-02)', () => {
 });
 
 describe('parseTautulliGuids', () => {
+  it.each(['tmdb', 'tvdb'])('rejects nondecimal raw %s ids', (scheme) => {
+    for (const raw of ['0x10', '1.6e1', '-16', ' 16', '16.0', '9007199254740992'])
+      expect(parseTautulliGuids([`${scheme}://${raw}`])).toEqual({});
+  });
   it('parses imdb/tmdb/tvdb scheme uris', () => {
     expect(parseTautulliGuids(['imdb://tt42998751', 'tmdb://7045602', 'tvdb://11759792'])).toEqual({
       imdbId: 'tt42998751',

@@ -9,7 +9,7 @@
 // `--apply` writes nothing when the stored watch columns already match.
 //
 // Music is left null (DESIGN-008 Q-11): track history is not joined to an artist, so a 0 would say
-// "never played" for a library this harvest does not read.
+// "no attributable play found" for a library this harvest does not read.
 import { mediaItems, mediaMetadata, type DbClient, type MediaMetadataRow } from '@hnet/db';
 import {
   getPlexUserIdToAppUserMap,
@@ -59,7 +59,7 @@ export interface WatchHistoryBackfillReport {
    * and nothing is written. When set, played + zeros + unknown = candidates.
    */
   zeros: number | null;
-  /** Candidates with no usable identity (unknown rather than known zero). */
+  /** Candidates with no usable identity (unknown rather than an attributable-history zero). */
   unknown: number;
   /** Candidates whose stored watch columns differ from this read. */
   changed: number;
@@ -162,7 +162,6 @@ export async function backfillWatchHistory(
   const userRows = await projectUserWatchRows({
     db,
     targets: userTargets,
-    complete: read.complete,
     mappedUsers: plexUserMap,
   });
   const zeros = candidates.length - played - base.unknown;

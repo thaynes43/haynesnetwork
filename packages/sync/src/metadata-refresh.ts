@@ -304,7 +304,8 @@ export async function runMetadataRefreshForKind(
 
     const extra: Record<string, unknown> = {};
     const watch = matchWatch(input.context.watchIndex, target);
-    // A finished read stores 0 for a movie or show with no joined row. Null stays "unknown":
+    // A finished read stores 0: no attributable play found, not proof of never played.
+    // Null stays "unknown":
     // the read stopped early, a lookup threw, this title has no usable id, or the kind is music.
     const knownZero = !watch && input.context.watchComplete && identifiableWatchTarget(target);
     if (knownZero) stats.watchZeros += 1;
@@ -334,7 +335,7 @@ export async function runMetadataRefreshForKind(
       // DESIGN-010 D-12 — the watch-visibility pair: the SAME cross-server MAX instant as
       // lastViewedAt, stored with the server that owns it so the walls/detail can show
       // "Last watched on <server> · <Mon YYYY>". Info only — protection reads lastViewedAt.
-      // A known zero has a null instant: the household has no joined play to date.
+      // Zero means no attributable play found; unresolved historical identity may hide plays.
       lastWatchedAt: watch?.household.lastViewedAt ?? null,
       lastWatchedServer: watch?.household.lastWatchedServer ?? null,
       sources: sourcesFlags,
@@ -351,7 +352,6 @@ export async function runMetadataRefreshForKind(
     const userWatchBatch = await projectUserWatchRows({
       db,
       targets: userWatchTargets,
-      complete: input.context.watchComplete,
       mappedUsers: plexUserMap,
     });
     const { written } = await upsertUserMediaWatchBatch({ db, rows: userWatchBatch });
@@ -474,6 +474,8 @@ async function tryDirect(
 // ── Tautulli watch-stats aggregation (cross-server) ──────────────────────────────────────
 
 export interface TitleWatch {
+  /** Source key retained in memory for the one-off contamination proof. */
+  ratingKey: string;
   arrKind: WatchKind;
   instanceSlug: string;
   guids: ParsedGuids;
@@ -680,6 +682,7 @@ export async function readHouseholdWatch(
         }
         indexTitle(index, {
           instanceSlug: inst.slug,
+          ratingKey,
           arrKind,
           guids,
           playCount: g.plays,
@@ -715,6 +718,7 @@ export async function readHouseholdWatch(
       finished: inst.finished,
       oldest: inst.oldest,
       newest: inst.newest,
+      unjoined: inst.unjoined,
     })),
   });
   return { index, complete, instances };

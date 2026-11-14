@@ -120,7 +120,8 @@ context is built ONCE and shared. `selectMetadataTargets` picks rows missing OR
 > HaynesOps. Plex is the wrong source for "nobody in the household watched."
 >
 > **What a stored value means.** `play_count` 0 and a null `last_viewed_at` mean the read finished and
-> no history row joined this movie or show: known, never played, as far as this history goes. Null
+> no history row joined this movie or show: **no attributable play found**, not proof of never played.
+> Retired keys, unavailable metadata and disjoint ids can hide real plays even on a finished read. Null
 > `play_count` means unknown: the read stopped early, a `get_metadata` lookup threw, no Tautulli
 > instance is configured, or the kind is music (Q-11). The database had been storing no zeros; an
 > absent title was written null, which is the same shape as "not read." A finished read now writes 0
@@ -439,7 +440,8 @@ and the existing watch-history backfill. No migration, Trash rule, history windo
   conflicting metadata type is rejected. A metadata response without a type can use the
   history row's already-known kind.
 - One normalization rule applies to ledger targets, cached ids and `get_metadata` ids:
-  TMDB/TVDB must be positive safe integers; IMDb must be `tt` followed by digits with
+  TMDB/TVDB raw metadata GUID components must be plain decimal digits before conversion,
+  then positive safe integers; IMDb must be `tt` followed by digits with
   a nonzero numeric part. Zero (including `tt0`), empty/whitespace, missing and malformed
   ids cannot enter or query the index. A cached key with no usable ids falls back to
   `get_metadata`. Cached library kind must agree with its ledger kind.
@@ -449,7 +451,9 @@ and the existing watch-history backfill. No migration, Trash rule, history windo
   IMDb, nor a movie row a Sonarr entry. Conflicting catalog classification is not authority
   to attribute plays across kinds.
 - A complete read stores zero only for a movie/show with at least one usable external id
-  and no joined play. With **no usable id**, store null `play_count`, null `last_viewed_at`,
+  and no joined play: **no attributable play found**, never proof of no viewing. The
+  per-instance `unjoined` completion-log count records groups not admitted to the id index;
+  indexed groups with no matching live title are an additional gap. With **no usable id**, store null `play_count`, null `last_viewed_at`,
   null `last_watched_at`/server and no Tautulli source/breakdown: **unknown**, never a
   fabricated "known, never played". Incomplete reads retain D-03's null behavior.
 - The corrected join takes effect in the next eligible metadata refresh after deployment;
@@ -458,14 +462,24 @@ and the existing watch-history backfill. No migration, Trash rule, history windo
   it only against stub data and embedded PostgreSQL. Coordinator review of the keep-loss
   list and adversarial review are required before release, and any production apply is
   a separate coordinator step. Source, tested, installed and accepted are recorded separately.
-- The same join feeds `user_media_watch`. A complete read must also replace stale
-  per-user projections (zero/false for an identifiable title with no play for that mapped
-  viewer; null/false when unidentifiable). Only existing absent-viewer rows are cleared;
-  no zero row is created for a viewer who had no row. Equal rows are left alone, including
-  when only the per-user projection needed correction. Users without a current Plex
-  mapping cannot be reattributed; their old rows stay pending a restored mapping.
-  An incomplete read must not clear absent users.
-  This repairs contamination rather than merely ceasing to add it. No watch writer is used.
+- The same join feeds `user_media_watch`, adding/updating only viewers with a contribution,
+  as on main. Neither a finished read nor missing identity authorizes clearing an absent viewer.
+  A partial read can still replace a **present** viewer with a smaller surviving-source aggregate;
+  that pre-existing behavior is unchanged here (Q-18), and is covered by a regression.
+- One-off `watch-viewer-contamination-repair.ts --dry-run|--apply` repairs only positively
+  proved contamination, through `upsertUserMediaWatchBatch`. It is never run by the scheduler.
+  A candidate is a live video title sharing a usable id across kinds, or carrying numeric id zero.
+  Require no corrected play for that viewer, a nonempty legacy contribution set whose every play
+  joins another live title under the corrected rule, and equality of all legacy aggregate fields
+  with the stored row. Require a current mapping predating that row; changed/unmapped users,
+  unresolved/refused contributors, incomplete/empty histories and uncertain provenance do not
+  authorize a clear. Raw legacy cache zero is used only to prove the old fan-out, never to recover
+  identity. Lock ledger/cache/mapping/viewer tables and re-read in one apply transaction;
+  refuse changed target/cache identities and skip concurrently changed viewer rows. Clear existing rows to zero/null instant/false flags, never create rows.
+  Dry run and apply report aggregate rows examined, rows to clear/cleared, distinct titles and
+  distinct viewers only; no ids, names, account counts, progress or viewing times. A second apply
+  changes nothing. Coordinator reviews the dry run before any production apply; this worker runs
+  only embedded PostgreSQL fixtures. No Plex/Tautulli write or Trash-rule change.
 
 Replica evidence, household-only census, projected Trash consequences and reader inventory:
 [story #855 evidence](../../.agents/context/watch-join-855/README.md).
@@ -505,7 +519,7 @@ both the real database cache loader and the `get_metadata` route against embedde
 It checks every id namespace across kinds; same-kind IMDb duplicates; zero, empty, whitespace
 and missing ids with distinct valid fallback ids; invalid ids on the play itself; unidentifiable
 null versus identifiable zero; multi-id deduplication; conflicting/unknown kinds; stale mapped
-viewer correction even when household fields already match; incomplete-read preservation;
+viewer absence preservation; positive-proof repair and dry-run idempotence; partial present-viewer limits;
 and the backfill dry run, metadata preservation and idempotence. Empty numeric ids cannot be
 stored in PostgreSQL integer columns, so their ledger representation is null; the upstream
 empty GUID is exercised explicitly.
@@ -521,3 +535,12 @@ empty GUID is exercised explicitly.
 | Q-13 | Can the current `media_metadata` household aggregate alone recover the correct kind/id attribution? | No: SUM/MAX discarded the contributing rating keys and kinds. Recommendation: obtain a read-only grouped lifetime history, retain only household title totals, and mirror the corrected join in replica SELECTs; never infer the owner of a play from identical aggregates. Evidence status is recorded with the census. |
 | Q-14 | Should a shared IMDb id override a history row's kind? | Recommendation implemented in D-15: no. IMDb denotes one work, but the row kind still confines attribution; same-kind duplicate entries may intentionally share it. |
 | Q-15 | When may corrected counts remove current keeps in production? | Open release hold: coordinator must read the named keep-loss list and obtain the required adversarial review before deployment or production apply. Worker performs neither. |
+| Q-16 | What negative evidence permits clearing an existing viewer row when history identity is unresolved? | Recommendation: preserve it unless contamination is positively established, with explicit coverage/provenance and an aggregate dry run. Coordinator ruling 2026-11-14 (#855 comment 8516): scheduled harvest never clears absent viewers; separate proof-based repair only. |
+| Q-17 | May “known never played” be used for deletion/audit conclusions when retired keys such as Troy's remain unresolved? | Recommendation: no; say “no attributable play found”, measure the gap, and scope identity recovery separately. Coordinator ruling 2026-11-14 (#855 comment 8516): wording changes, storage unchanged; no name joins or sentinel/cross-kind restoration. |
+| Q-18 | What production baseline distinguishes genuinely empty history or an intentional mapping change from an incomplete/reset source? | Recommendation: require an explicit apply decision and tested provenance/completeness policy before subtractive reconciliation. A partial read can overwrite a present viewer's row with fewer plays: main's behavior, unchanged here. Resolve that policy in separate scope; the one-off repair preserves uncertain rows. |
+
+Correction plan (2026-11-14, story #855): amend D-15/T-57 first; remove absent-viewer clearing;
+implement the separate proof-based repair and embedded-PG regression cases; sanitize the collector
+and decimal GUID parsing; measure unresolved household groups and name/year leads read-only;
+remove whole-library inputs from the public tree; run the serial sync suite, typecheck, lint and
+required PR checks. No recovery by name or storage-contract change is in scope.

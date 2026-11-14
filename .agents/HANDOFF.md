@@ -1,22 +1,30 @@
 # HANDOFF — cold-start resume point
 
-## 2026-11-14: story #855 watch join by kind and usable id (release hold)
+## 2026-11-14: story #855 first-review corrections (release hold)
 
-- DESIGN-008 D-15 and Q-13..Q-15; evidence and reproduction under
+- Correction source on session branch `agent/haynesnetwork-1114-081244`, based on PR 1077
+  head `fa4bdc14`; higher-priority session rules require its own correction PR, for the coordinator
+  to integrate into PR 1077. No merge or production refresh/backfill/repair by this worker.
+- Scheduled harvest and existing household backfill preserve absent viewer rows. A separate
+  `watch-viewer-contamination-repair.ts --dry-run|--apply` proves collision/sentinel contamination
+  and writes only through the domain writer. Coordinator reviews/runs any production apply.
+- DESIGN-008 Q-16/Q-17/Q-18 recorded; T-57 and comments say zero means no attributable play found,
+  never proof of no viewing. Storage, Trash rules, Plex matcher and paging remain unchanged.
+- Collector errors emit allow-listed stage/instance/status only; synthetic canary checks passed.
+  Raw metadata TMDB/TVDB ids require decimal digits before conversion. Whole-library inputs are
+  private, removed from the branch tree; retained summaries reproduce from explicit private paths.
+- Measured 2026-11-14, sanitized collector start 08:20:28Z and replica live SELECT 08:21:52Z:
+  641 unresolved groups / 1,049 grouped plays. Name/year leads only: 446 movies + 8 shows,
+  462 groups / 725 grouped plays; no identity recovery. Evidence and counting rules:
   [context/watch-join-855/README.md](context/watch-join-855/README.md).
-- Source correction applies automatically on the next eligible metadata harvest after deployment.
-  Coordinator must review the keep-loss list and obtain the mandatory adversarial review before release.
-  No production correction, deployment, watch write or merge by this worker.
-- Measured 2026-11-14, replica postgres16-11 and grouped lifetime Tautulli GETs: 76 TMDB movie/show
-  pairs (46 with identical positive records), 22 Sonarr TMDB-zero rows. The SELECT mirror separates
-  those 22 into 20 zeros and two genuine played shows; no positive cross-kind duplicate remains.
-- The mirror removes 11 recent-watch keeps, adds none. None of those titles is in the pool or an
-  open batch. Six movies would clear the database guardian if they entered the pool: 2001: A Space
-  Odyssey, Beautiful Thing, Citizen Kane, Das Boot, Sister Act, The Bridges of Madison County.
-  The evidence names every loss and every other known keep. This is a projection, not installed state.
-- Household and mapped-viewer read projections share the corrected join. Missing all usable ids stays
-  unknown (null). Music, paging, Plex matcher and Trash rules stay unchanged.
-- Next safe step: coordinator review of the open PR and adversarial review; coordinator owns acceptance.
+- Household correction still applies on the next eligible harvest after deployment. The retained
+  2026-11-14 replica projection removes 11 watch keeps, adds none. Six movies would clear the
+  database guardian if in the pool: 2001: A Space Odyssey, Beautiful Thing, Citizen Kane, Das Boot,
+  Sister Act, The Bridges of Madison County. None of the losses was in the measured pool/open batch.
+- Source/tested/build evidence is on the correction PR. Installed: not performed. Accepted:
+  coordinator-owned, pending mandatory Fable review before merge/release. Story stays open.
+- Next safe step: coordinator integrates the correction, arranges Fable review, then decides release
+  and any one-off repair; record installed and accepted separately. This worker starts no next story.
 
 ## 2026-11-13: story #836 Age Guard library fill (proposed, setting off)
 
