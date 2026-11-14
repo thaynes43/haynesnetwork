@@ -335,7 +335,7 @@ test.describe('trash — watchlist protection on the page (ADR-093)', () => {
       await expect(confirm).toContainText('3 protected');
       // D-25bk / D-25cy — the app keeps them (never "Maintainerr keeps"). ADR-118 names a requested title here.
       await expect(confirm).toContainText(
-        '3 protected: saved, recently watched, added or upgraded recently, whitelisted, on a watchlist, or requested; they are kept.',
+        '3 protected: saved, recently watched, added or upgraded recently, whitelisted, on a watchlist, requested, or restored by an admin; they are kept.',
       );
       await expect(confirm).not.toContainText('Maintainerr keeps');
       await expect(page.getByTestId('trash-expedite-watchlisted')).toHaveText('1 on a watchlist');
@@ -1234,7 +1234,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const confirm = page.getByTestId('trash-expedite-all-confirm');
     await expect(confirm).toContainText('0 will be deleted NOW');
     await expect(confirm).toContainText(
-      '1 protected: saved, recently watched, added or upgraded recently, whitelisted, on a watchlist, or requested; they are kept.',
+      '1 protected: saved, recently watched, added or upgraded recently, whitelisted, on a watchlist, requested, or restored by an admin; they are kept.',
     );
     await expect(page.getByTestId('trash-expedite-recent')).toHaveText('1 added or upgraded recently');
     await expect(page.getByTestId('trash-expedite-all-submit')).toBeDisabled();
@@ -2299,6 +2299,9 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const limitedRow = page.locator('.admin-table tbody tr').filter({ hasText: 'Trash Limited' });
     await limitedRow.getByRole('button', { name: 'Edit' }).click();
     const grid = page.getByTestId('trash-actions-grid');
+    // ADR-121: Restore is reserved for Admin and cannot be granted by this grid.
+    await expect(grid.getByTestId('trash-action-restore_deleted')).toBeDisabled();
+    await expect(grid.getByTestId('trash-action-restore_deleted')).not.toBeChecked();
 
     // ADR-025 errata — global Save is a superset: Trash Limited holds `save_exclude`, so the
     // Leaving-Soon rescue row renders CHECKED + DISABLED with the "included in Save" note.
