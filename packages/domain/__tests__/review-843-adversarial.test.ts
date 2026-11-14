@@ -546,7 +546,7 @@ it('unknown external identity is unevaluable, never attributed to an admin Resto
       ],
     }),
   );
-  const pending = await listTrashPending({ db: t.db, maintainerr: bundle, media: 'movie' });
+  const pending = await listTrashPending({ db: t.db, maintainerr: bundle, media: 'movie', watchlist: null });
   expect(pending.items).toHaveLength(1);
   expect(pending.items[0]!.restoreKeep).toBe(false);
   expect(classifyGuardian(pending.items[0]!)).toMatchObject({ keep: true, reason: 'unevaluable' });
