@@ -264,7 +264,7 @@ describe('kind-qualified watch join', () => {
         expect(watch?.household.playCount ?? (item.plays === null ? null : 0)).toBe(item.plays);
         expect(watch?.household.lastViewedAt?.toISOString() ?? null).toBe(item.last);
       }
-      // Seed a leaked per-viewer row; the corrected complete harvest must clear it too.
+      // An absent viewer is preserved even when this row may be contaminated.
       const zeroId = expected.find((r) => r.plays === 0)!.id;
       await upsertUserMediaWatchBatch({
         db: t.db,
@@ -327,21 +327,16 @@ describe('kind-qualified watch join', () => {
         expect(stored!.lastWatchedAt?.toISOString() ?? null).toBe(item.last);
         expect(stored!.lastWatchedServer).toBe(item.last ? 'haynesops' : null);
       }
-      const [cleared] = await t.db
+      const [retained] = await t.db
         .select()
         .from(userMediaWatch)
         .where(eq(userMediaWatch.mediaItemId, zeroId));
-      expect(cleared).toMatchObject({
-        playCount: 0,
-        lastViewedAt: null,
-        watched: false,
-        inProgress: false,
-      });
+      expect(retained).toMatchObject({ playCount: 99, watched: true });
       const [unknown] = await t.db
         .select()
         .from(userMediaWatch)
         .where(eq(userMediaWatch.mediaItemId, unknownCached));
-      expect(unknown).toMatchObject({ playCount: null, lastViewedAt: null, watched: false });
+      expect(unknown).toMatchObject({ playCount: 99, watched: true });
 
       // Exercise the existing dry run against the contaminated baseline, then apply in embedded PG only.
       await upsertMediaMetadataBatch({
@@ -387,7 +382,7 @@ describe('kind-qualified watch join', () => {
         imdbRating: '7.5',
         extra: { retained: true },
       });
-      // A stale viewer row must be repaired even when every household field already matches.
+      // The household backfill also preserves absent viewer evidence.
       await upsertUserMediaWatchBatch({
         db: t.db,
         rows: [
@@ -407,7 +402,7 @@ describe('kind-qualified watch join', () => {
         logger: noopLogger,
         apply: true,
       });
-      expect(userOnly).toMatchObject({ changed: 0, written: 0, userWatchWritten: 1 });
+      expect(userOnly).toMatchObject({ changed: 0, written: 0, userWatchWritten: 0 });
       const again = await backfillWatchHistory({
         db: t.db,
         tautulli: stub.tautulli,
@@ -415,6 +410,22 @@ describe('kind-qualified watch join', () => {
         apply: true,
       });
       expect(again).toMatchObject({ changed: 0, written: 0, userWatchWritten: 0 });
+    },
+  );
+
+  it.each(['tmdb', 'tvdb'])(
+    'rejects malformed raw %s metadata before conversion',
+    async (scheme) => {
+      for (const raw of ['0x10', '1.6e1']) {
+        const stub = source([history('radarr', 'malformed', first)], {
+          malformed: { media_type: 'movie', guids: [`${scheme}://${raw}`] },
+        });
+        const context = await buildMetadataContext({ sources: stub, logger: noopLogger });
+        expect(
+          lookupHouseholdWatch(context.watchIndex, { arrKind: 'radarr', tmdbId: 16, tvdbId: 16 }),
+        ).toBeNull();
+        expect(context.watchInstances[0]!.unjoined).toBe(1);
+      }
     },
   );
 

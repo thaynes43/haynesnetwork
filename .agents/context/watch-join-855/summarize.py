@@ -1,4 +1,5 @@
 """Summarize the replica snapshots; household fields only. No network or writes to a database."""
+import argparse
 import collections
 import csv
 import datetime as dt
@@ -6,9 +7,15 @@ import json
 import gzip
 from pathlib import Path
 
-BASE = Path(__file__).parent
-before = json.loads(gzip.decompress((BASE / 'before.json.gz').read_bytes()))
-projection = json.loads(gzip.decompress((BASE / 'projection.json.gz').read_bytes()))
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--before', type=Path, required=True, help='private before.json.gz')
+parser.add_argument('--projection', type=Path, required=True, help='private projection.json.gz')
+parser.add_argument('--output-dir', type=Path, required=True, help='private output directory')
+args = parser.parse_args()
+BASE = args.output_dir
+BASE.mkdir(parents=True, exist_ok=True)
+before = json.loads(gzip.decompress(args.before.read_bytes()))
+projection = json.loads(gzip.decompress(args.projection.read_bytes()))
 live = before['live']
 rows = projection['projected']
 by_id = {r['id']: r for r in rows}
@@ -41,6 +48,7 @@ for namespace, col in [('TMDB', 'tmdb_id'), ('TVDB', 'tvdb_id'), ('IMDb', 'imdb_
         'identical_positive_before': sum(watch_record(a)==watch_record(b) and (a['play_count'] or 0)>0 for a,b in pairs),
         'identical_positive_after': sum(by_id[a['id']]['after_plays']==by_id[b['id']]['after_plays']
             and by_id[a['id']]['after_last']==by_id[b['id']]['after_last']
+            and by_id[a['id']]['after_server']==by_id[b['id']]['after_server']
             and (by_id[a['id']]['after_plays'] or 0)>0 for a,b in pairs)})
     for arr in ['radarr', 'sonarr', 'lidarr']:
         subset = [r for r in live if r['arr_kind']==arr]

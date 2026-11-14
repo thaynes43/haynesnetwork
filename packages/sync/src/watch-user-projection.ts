@@ -1,12 +1,11 @@
-// DESIGN-008 D-15 — repair existing per-user projections without creating absent-viewer rows.
+// DESIGN-008 D-15 — emit only attributed viewers. Absence never authorizes clearing.
 import { userMediaWatch, type DbClient } from '@hnet/db';
 import type { UserMediaWatchInput, UserWatchStat } from '@hnet/domain';
 import { inArray } from 'drizzle-orm';
-import { identifiableWatchTarget, type WatchTarget } from './watch-identity';
+import type { WatchTarget } from './watch-identity';
 
 export async function projectUserWatchRows(input: {
   db: DbClient;
-  complete: boolean;
   mappedUsers: ReadonlyMap<string, string>;
   targets: (WatchTarget & { id: string; perUser?: ReadonlyMap<string, UserWatchStat> })[];
 }): Promise<UserMediaWatchInput[]> {
@@ -27,14 +26,14 @@ export async function projectUserWatchRows(input: {
     for (const [plexUserId, appUserId] of input.mappedUsers) {
       const stat = target.perUser?.get(plexUserId);
       const before = byKey.get(key(target.id, appUserId));
-      if (!stat && (!input.complete || !before)) continue;
+      if (!stat) continue;
       const next: UserMediaWatchInput = {
         mediaItemId: target.id,
         appUserId,
-        playCount: stat?.playCount ?? (identifiableWatchTarget(target) ? 0 : null),
-        lastViewedAt: stat?.lastViewedAt ?? null,
-        watched: stat?.watched ?? false,
-        inProgress: stat?.inProgress ?? false,
+        playCount: stat.playCount,
+        lastViewedAt: stat.lastViewedAt,
+        watched: stat.watched,
+        inProgress: stat.inProgress,
       };
       if (
         before &&
