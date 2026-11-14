@@ -4213,16 +4213,16 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
 
 // ADR-122 / DESIGN-052 D-33 — exercise an actual upgrade from the previous schema,
 // preserving its finite rows and CHECK vocabulary while allowing new permanent rows.
-describe('0115 permanent Release Block incremental compatibility', () => {
+describe('0112 permanent Release Block incremental compatibility', () => {
   it('only relaxes expiry nullability; previous finite-date reads and writes remain valid', async () => {
     const pg = await startPostgres();
-    const folder = mkdtempSync(join(tmpdir(), 'hnet-0115-'));
+    const folder = mkdtempSync(join(tmpdir(), 'hnet-0112-'));
     const client = new Client({ connectionString: pg.connectionString });
     try {
       cpSync(DEFAULT_MIGRATIONS_FOLDER, folder, { recursive: true });
       const path = join(folder, 'meta', '_journal.json');
       const journal = JSON.parse(readFileSync(path, 'utf8')) as { entries: Array<{ idx: number }> };
-      journal.entries = journal.entries.filter((e) => e.idx < 111);
+      journal.entries = journal.entries.filter((e) => e.idx < 110);
       writeFileSync(path, JSON.stringify(journal));
       await runMigrations({ databaseUrl: pg.connectionString, migrationsFolder: folder });
       await client.connect();

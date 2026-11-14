@@ -296,6 +296,8 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/release-block-back
 
 ## 8. Rollback
 
+**coordinator, 2026-11-14 (DESIGN-052 Q-39):** after the permanent Release Block release, do not run the previous image's one-off posted-name backfill (`release-block-backfill.ts`): it reads `expires_at` as a date and new rows hold null. An image rollback remains safe for the app, the sweep and the reconcile; use the corrected backfill or a forward fix for that maintenance.
+
 PLAN-072's Rollback section is the order. Every CronJob suspend and resume in it goes through haynes-ops git, never
 `kubectl` (section 1: a Helm upgrade puts a hand-set `suspend` back to git's, D-25db). In short: first, in one
 haynes-ops PR, set `suspend: true` on the sweep CronJob and `TRASH_WEB_DELETES_HELD` on the web pod (the older image
