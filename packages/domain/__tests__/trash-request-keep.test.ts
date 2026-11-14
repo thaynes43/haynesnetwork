@@ -324,7 +324,7 @@ describe('the Request Keep, the clause audit and the rule description (ADR-118)'
     expect(text).toContain('does not contain mediarequests');
     expect(text).not.toContain('6.0');
     const notes = 'Pool flags and the ruling dates stay.';
-    const separator = ' — ';
+    const separator = ' | Notes: ';
     const live = {
       useRules: true,
       collection: { arrAction: 0, listExclusions: true, forceSeerr: true, deleteAfterDays: 9999 },
@@ -349,7 +349,7 @@ describe('the Request Keep, the clause audit and the rule description (ADR-118)'
       buildRuleGroupUpdate({ id: 1, rules: rulesEdited, description: edited }, live),
     );
     expect(third).toBe(edited);
-    // A description from before the separator is notes, kept whole once, then left unchanged.
+    // A description with no marker is notes, kept whole once, then left unchanged.
     const handwritten = 'Hand-written notes. The old sentence stays in this text.';
     const once = written(
       buildRuleGroupUpdate({ id: 1, rules: rulesEdited, description: handwritten }, live),
@@ -374,6 +374,56 @@ describe('the Request Keep, the clause audit and the rule description (ADR-118)'
     expect(leaving.description).toBe(
       'Items leaving the server soon. Save the ones you still want.',
     );
+  });
+
+  it('keeps a long hand-written description that contains an em dash and no notes marker', () => {
+    // Shaped like the armed descriptions measured 2026-11-14 (872 and 748 characters, each with
+    // ` — ` once and the marker zero times). This fixture is at least as long as the shorter one.
+    const marker = ' | Notes: ';
+    const dash = ' — ';
+    const sentence =
+      'Hand-written notes for an armed rule. The pool flags stay here, and the ruling dates 2026-07-09 and 2026-11-13 stay here. A requested title is protected while the request tag is present. A personal requester tag stays informational. The rating named in these notes is 6.5, which is what a person wrote, and a later edit of the clause must not drop this text. ';
+    const handwritten = `${sentence}${sentence}The clause text before this dash stays${dash}and the text after it stays too. ${sentence}`;
+    expect(handwritten.length).toBeGreaterThanOrEqual(748);
+    expect(handwritten.split(dash)).toHaveLength(2);
+    expect(handwritten.includes(marker)).toBe(false);
+    const rules = [ratingClause('movie', '6.5'), requestClause('movie')];
+    const text = describeTrashRules(rules);
+    expect(text).toContain('is below 6.5');
+    expect(text.includes(marker)).toBe(false);
+    expect(text.includes(dash)).toBe(false);
+    const live = {
+      useRules: true,
+      collection: { arrAction: 0, listExclusions: true, forceSeerr: true, deleteAfterDays: 9999 },
+    };
+    const written = (payload: Record<string, unknown>): string => {
+      if (typeof payload.description !== 'string') throw new Error('description was not a string');
+      return payload.description;
+    };
+    const saved = written(buildRuleGroupUpdate({ id: 1, rules, description: handwritten }, live));
+    expect(saved).toBe(`${text}${marker}${handwritten}`);
+    const again = written(buildRuleGroupUpdate({ id: 1, rules, description: saved }, live));
+    expect(again).toBe(saved);
+    const rulesEdited = [ratingClause('movie', '6.0'), requestClause('movie')];
+    const editedText = describeTrashRules(rulesEdited);
+    expect(editedText).toContain('is below 6.0');
+    expect(editedText).not.toContain('6.5');
+    const edited = written(
+      buildRuleGroupUpdate({ id: 1, rules: rulesEdited, description: saved }, live),
+    );
+    expect(edited).toBe(`${editedText}${marker}${handwritten}`);
+    expect(edited.slice(editedText.length + marker.length)).toBe(handwritten);
+    const blank = written(buildRuleGroupUpdate({ id: 1, rules, description: '' }, live));
+    expect(blank).toBe(text);
+    expect(blank.includes(marker)).toBe(false);
+    const doubled = `${handwritten}${marker}and a second marker stays in the notes`;
+    const held = written(
+      buildRuleGroupUpdate({ id: 1, rules, description: `old sentence${marker}${doubled}` }, live),
+    );
+    expect(held).toBe(`${text}${marker}${doubled}`);
+    const lower = `A lower-case lookalike ${dash}and the words | notes: are not the marker.`;
+    const lowerSaved = written(buildRuleGroupUpdate({ id: 1, rules, description: lower }, live));
+    expect(lowerSaved).toBe(`${text}${marker}${lower}`);
   });
 
   it('describes the corrected TV rule of DESIGN-014 D-15, and that rule passes the audit', () => {

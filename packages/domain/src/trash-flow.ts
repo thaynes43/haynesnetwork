@@ -2956,33 +2956,38 @@ export function buildRuleGroupUpdate(
     );
   }
   // ADR-118 C-06 — a group that carries clauses gets a description taken from those clauses. The
-  // person's notes stay after a fixed separator, so a later save replaces the generated sentence
-  // and an Arm or Disarm does not wipe the notes. An empty list (Leaving Soon) keeps the caller's
-  // text.
+  // person's notes stay after the marker ` | Notes: `. A description with no marker is all notes,
+  // dashes included. An empty list (Leaving Soon) keeps the caller's text.
   return withDescribedRules(out);
 }
 
 /**
- * The boundary between the generated sentence and the person's notes (space, U+2014, space).
- * The first one is the boundary. A description with none is notes, kept whole after the new sentence.
+ * The only boundary between the generated sentence and the person's notes: space, vertical bar,
+ * space, the word Notes, colon, space. Ordinary writing does not contain this string. The first
+ * occurrence is the boundary. A description with none of it is all notes.
  */
-const RULE_DESCRIPTION_NOTES_SEPARATOR = ' — ';
+const RULE_DESCRIPTION_NOTES_SEPARATOR = ' | Notes: ';
 
 /**
- * Set a rule group's description from its clauses, and keep the person's notes after the separator.
- * A save replaces the previously generated sentence. A description with no separator is notes, kept
- * whole after the new sentence once; a later save of that text does not add the sentence again.
- * No rules means the payload is unchanged.
+ * Set a rule group's description from its clauses.
+ * A description with no marker is kept whole, character for character, after the new sentence and
+ * the marker, once. A later save replaces only the sentence before the marker and leaves the notes
+ * after it unchanged. A further marker inside those notes stays in the notes. An empty description
+ * is the generated sentence alone, with no marker. No rules means the payload is unchanged.
  */
 function withDescribedRules(payload: Record<string, unknown>): Record<string, unknown> {
   if (!Array.isArray(payload.rules) || payload.rules.length === 0) return payload;
   const generated = describeTrashRules(payload.rules);
-  const caller = typeof payload.description === 'string' ? payload.description.trim() : '';
-  if (caller === '' || caller === generated) return { ...payload, description: generated };
+  if (typeof payload.description !== 'string' || payload.description.trim() === '') {
+    return { ...payload, description: generated };
+  }
+  const caller = payload.description;
+  if (caller.trim() === generated) return { ...payload, description: generated };
   const separator = RULE_DESCRIPTION_NOTES_SEPARATOR;
   const splitAt = caller.indexOf(separator);
-  const notes = (splitAt === -1 ? caller : caller.slice(splitAt + separator.length)).trim();
-  if (notes === '') return { ...payload, description: generated };
+  if (splitAt === -1) return { ...payload, description: `${generated}${separator}${caller}` };
+  const notes = caller.slice(splitAt + separator.length);
+  if (notes.trim() === '') return { ...payload, description: generated };
   return { ...payload, description: `${generated}${separator}${notes}` };
 }
 
