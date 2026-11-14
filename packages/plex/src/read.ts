@@ -214,6 +214,8 @@ export class PlexReadClient {
     opts: {
       start: number;
       size: number;
+      /** DESIGN-025 D-11: do not substitute the returned page size for an unknown section total. */
+      requireTotalSize?: boolean;
       /**
        * DESIGN-049 D-09 — the Plex metadata `type` to list (1 movie, 2 show, 3 season, 4 episode). Omitted ⇒
        * the section's own top-level type.
@@ -253,7 +255,9 @@ export class PlexReadClient {
     );
     return {
       items: body.MediaContainer.Metadata,
-      totalSize: body.MediaContainer.totalSize ?? body.MediaContainer.size ?? null,
+      totalSize:
+        body.MediaContainer.totalSize ??
+        (opts.requireTotalSize ? null : (body.MediaContainer.size ?? null)),
     };
   }
 

@@ -115,6 +115,8 @@ export interface PlexLibraryRef {
   serverSlug: PlexServerSlug;
   sectionKey: string;
   mediaType: PlexMediaType;
+  /** All stored matches, including tombstoned titles, make a reported empty section suspect (D-11). */
+  hasStoredMatches: boolean;
 }
 
 /** Every AVAILABLE plex_libraries row joined to its server slug — maps (slug, sectionKey) → library id. */
@@ -125,6 +127,8 @@ export async function selectPlexLibraryRefs(db: DbClient): Promise<PlexLibraryRe
       serverSlug: plexServers.slug,
       sectionKey: plexLibraries.sectionKey,
       mediaType: plexLibraries.mediaType,
+      hasStoredMatches: sql<boolean>`exists (select 1 from ${mediaPlexMatches}
+        where ${mediaPlexMatches.plexLibraryId} = ${plexLibraries.id})`,
     })
     .from(plexLibraries)
     .innerJoin(plexServers, eq(plexServers.id, plexLibraries.serverId))

@@ -1625,6 +1625,7 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
         scopedLibraries: snapshot.scopedLibraryIds.length,
         unmappedSections: snapshot.stats.unmappedSections,
         typeDisagreements: snapshot.stats.typeDisagreements,
+        incompleteSections: snapshot.stats.incompleteSections,
         plexTitlesIndexed: snapshot.stats.plexTitlesIndexed,
       });
       if (snapshot.scopedLibraryIds.length === 0) {
