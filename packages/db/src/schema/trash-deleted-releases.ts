@@ -31,8 +31,8 @@ const sqlList = (values: readonly string[]) => values.map((v) => `'${v}'`).join(
  * ADR-093 C-07 / DESIGN-052 D-05 / D-11 (PLAN-072, migration 0081) — the DELETED-RELEASE RECORD (T-264): the identity
  * of a release the Trash sweep or Expedite is about to delete (release name, group, quality, size, file name), and
  * the "must not contain" term the Release Block (T-265) derives from it. Recorded `in_flight` before the delete,
- * `active` only once the *arr no longer has the item (D-14), `abandoned` when the delete did not happen, `expired`
- * after 365 days, `pruned` past the 3,000-term cap.
+ * `active` only once the *arr no longer has the item (D-14), `abandoned` when the delete did not happen. ADR-122 /
+ * D-33 keeps terms permanently, including historical `expired` / `pruned` rows; no new row enters those states.
  *
  * NO URL IS EVER STORED: NZB and download URLs carry indexer API keys. Written ONLY by the @hnet/domain release-block
  * single-writers (the no-direct-state-writes guard covers it).
@@ -73,7 +73,8 @@ export const trashDeletedReleases = pgTable(
     origin: text('origin').$type<DeletedReleaseOrigin>().notNull(),
     recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
     activatedAt: timestamp('activated_at', { withTimezone: true }),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    /** D-33 — legacy finite metadata only; new records have no expiry. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
     endedAt: timestamp('ended_at', { withTimezone: true }),
     /** D-23 — a re-add of this title was seen, and whether any of its grabs matched the term. */
     readdSeenAt: timestamp('readd_seen_at', { withTimezone: true }),

@@ -75,9 +75,9 @@ import {
   type TermResolution,
 } from './release-terms';
 
-/** D-13 — a term lives this long from its record (a later record of the same term keeps it alive longer). */
-export const RELEASE_TERM_LIFETIME_DAYS = 365;
-/** D-13 — at most this many live terms per *arr; beyond it the oldest `active` rows are pruned (WARN). */
+/** ADR-122 / D-33 — all these states protect their terms permanently; abandoned records do not. */
+export const RELEASE_BLOCK_PROTECTED_STATES = ['in_flight', 'active', 'expired', 'pruned'] as const;
+/** D-33 — at most this many distinct release terms per *arr, excluding the sentinel; overflow refuses. */
 export const RELEASE_BLOCK_TERM_CAP = 3_000;
 /** D-13 step 1 — an `in_flight` row older than this belongs to a sweep that died mid-way: settle it against the *arr. */
 export const RELEASE_IN_FLIGHT_SETTLE_AFTER_MS = 60 * 60_000;
@@ -1387,8 +1387,6 @@ export async function insertReleaseRecords(input: {
   origin: DeletedReleaseOrigin;
   state?: Extract<DeletedReleaseState, 'in_flight' | 'active'>;
   recordedAt?: Date;
-  /** The seed: the term's 365 days run from the deletion, so old deletions age out on the same clock (D-15). */
-  expiresFrom?: (key: string) => Date | undefined;
   logger?: DomainLogger;
 }): Promise<Map<string, string[]>> {
   const logger = input.logger ?? consoleDomainLogger;
@@ -1398,7 +1396,6 @@ export async function insertReleaseRecords(input: {
   await inTransaction(input.db, async (tx) => {
     for (const item of input.items) {
       const ids: string[] = [];
-      const from = input.expiresFrom?.(item.key) ?? at;
       for (const d of item.drafts) {
         if (d.term !== null && !isGrammarTerm(d.term)) {
           // Never reachable through deriveTerm; a guard so a malformed term can never be stored (D-12).
@@ -1432,7 +1429,7 @@ export async function insertReleaseRecords(input: {
             origin: input.origin,
             recordedAt: at,
             activatedAt: state === 'active' ? at : null,
-            expiresAt: new Date(from.getTime() + RELEASE_TERM_LIFETIME_DAYS * DAY_MS),
+            expiresAt: null,
           })
           .returning({ id: trashDeletedReleases.id });
         if (row) ids.push(row.id);
@@ -1547,7 +1544,6 @@ export async function blockReleases(input: {
         arrKind: kind,
         logger,
         now: input.now,
-        prune: false,
       });
       done.push(kind);
     }
@@ -1560,7 +1556,7 @@ export async function blockReleases(input: {
     const failed = error instanceof ReleaseBlockError && error.mayHaveWritten ? error.arrKind : null;
     for (const kind of kinds.filter((k) => done.includes(k) || k === failed)) {
       try {
-        await reconcileReleaseBlock({ db: input.db, arr: input.arr, arrKind: kind, logger, prune: false });
+        await reconcileReleaseBlock({ db: input.db, arr: input.arr, arrKind: kind, logger });
       } catch {
         // best effort: the upkeep's drift check removes the orphan terms
       }
@@ -1675,8 +1671,6 @@ export interface ReleaseBlockReconcileReport {
   total: number;
   added: number;
   removed: number;
-  expired: number;
-  pruned: number;
   settled: number;
   wrote: boolean;
   ms: number;
@@ -1684,13 +1678,19 @@ export interface ReleaseBlockReconcileReport {
 
 const releaseLockKey = (kind: ReleaseArrKind) => sql`hashtext(${`release-block:${kind}`})`;
 
-/** D-13 step 1 — the distinct terms of `in_flight` and `active` rows of one *arr, newest first (uncapped). */
+/** D-33 — the complete distinct permanent set, including legacy expired/pruned rows, newest first (uncapped). */
 export async function readLiveTerms(exec: DbClient, kind: ReleaseArrKind): Promise<string[]> {
   const t = trashDeletedReleases;
   const rows = await resolveDb(exec)
     .select({ term: t.term, newest: sql<Date>`max(${t.recordedAt})`.as('newest') })
     .from(t)
-    .where(and(eq(t.arrKind, kind), inArray(t.state, ['in_flight', 'active']), isNotNull(t.term)))
+    .where(
+      and(
+        eq(t.arrKind, kind),
+        inArray(t.state, [...RELEASE_BLOCK_PROTECTED_STATES]),
+        isNotNull(t.term),
+      ),
+    )
     .groupBy(t.term)
     .orderBy(sql`newest desc`);
   return rows.map((r) => r.term as string);
@@ -1741,14 +1741,13 @@ export function releaseProfileDrift(
 /**
  * D-13 — `reconcileReleaseBlock({ arrKind })`, the single writer of the app's release profile on one *arr, under
  * `pg_advisory_xact_lock('release-block:<kind>')`:
- *  1. rows past `expires_at` turn `expired`; `in_flight` rows older than an hour are settled against the *arr (404 ⇒
- *     `active`, present ⇒ `abandoned`, unreachable ⇒ left in place); desired = the sentinel + the distinct terms of
- *     `in_flight` and `active` rows, newest first, capped at 3,000 (the oldest `active` rows beyond it are `pruned`);
+ *  1. settle stranded `in_flight` rows against the *arr (404 ⇒ active, present ⇒ abandoned, unreachable ⇒ kept).
+ *     Desired = the sentinel + every protected term, including legacy expired/pruned records, regardless of age.
+ *     Refuse over the cap before any profile write; no expiry, pruning or clipping (ADR-122 / D-33);
  *  2. every desired term must pass the D-12 grammar, before any write (`validate`);
  *  3. the profile is found by exact name: none ⇒ POST; one ⇒ PUT only when it differs; more ⇒ `duplicate_profile`;
  *  4. a read-back GET must show every desired term (`read_back`).
- * Idempotent (a set comparison). A hand edit is overwritten; a deleted profile is re-created. With `prune: false`
- * (every delete path and the backfill, ADR-117 / D-29) step 1 throws `cap` in place of pruning.
+ * Idempotent (a set comparison). A hand edit is overwritten; a deleted profile is re-created.
  */
 export async function reconcileReleaseBlock(input: {
   db?: DbClient;
@@ -1756,12 +1755,6 @@ export async function reconcileReleaseBlock(input: {
   arrKind: ReleaseArrKind;
   logger?: DomainLogger;
   now?: Date;
-  /**
-   * ADR-117 / D-29 — `false` on a delete path (Phase A) and in the backfill: when the live terms exceed the cap the
-   * reconcile throws ReleaseBlockError `cap` and its transaction rolls back, so no older term is ever pruned to make
-   * room for a new one. The hourly upkeep leaves it true (D-13's standing rule).
-   */
-  prune?: boolean;
 }): Promise<ReleaseBlockReconcileReport> {
   const logger = input.logger ?? consoleDomainLogger;
   const kind = input.arrKind;
@@ -1772,12 +1765,7 @@ export async function reconcileReleaseBlock(input: {
     return await inTransaction(input.db, async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${releaseLockKey(kind)})`);
 
-      // 1 — expiry, the stranded in-flight settle, the cap.
-      const expired = await tx
-        .update(t)
-        .set({ state: 'expired', endedAt: now })
-        .where(and(eq(t.arrKind, kind), eq(t.state, 'active'), lte(t.expiresAt, now)))
-        .returning({ id: t.id });
+      // 1 — the stranded in-flight settle, then the complete permanent set and the cap.
       const stranded = await tx
         .select({ id: t.id, arrItemId: t.arrItemId, tmdbId: t.tmdbId, tvdbId: t.tvdbId })
         .from(t)
@@ -1819,26 +1807,10 @@ export async function reconcileReleaseBlock(input: {
         settled += ids.length;
       }
       const terms = await readLiveTerms(tx, kind);
-      let pruned = 0;
-      if (terms.length > RELEASE_BLOCK_TERM_CAP && input.prune === false) {
+      if (terms.length > RELEASE_BLOCK_TERM_CAP) {
         throw new ReleaseBlockError(kind, 'cap', { sent: false });
       }
-      if (terms.length > RELEASE_BLOCK_TERM_CAP) {
-        const over = terms.slice(RELEASE_BLOCK_TERM_CAP);
-        const rows = await tx
-          .update(t)
-          .set({ state: 'pruned', endedAt: now })
-          .where(and(eq(t.arrKind, kind), eq(t.state, 'active'), inArray(t.term, over)))
-          .returning({ id: t.id });
-        pruned = rows.length;
-        logger.warn('[release-block] pruned', {
-          arrKind: kind,
-          terms: over.length,
-          records: pruned,
-        });
-      }
-      const live = terms.slice(0, RELEASE_BLOCK_TERM_CAP);
-      const desired = [RELEASE_BLOCK_SENTINEL, ...live];
+      const desired = [RELEASE_BLOCK_SENTINEL, ...terms];
 
       // 2 — the grammar, before any write.
       if (!desired.every(isGrammarTerm)) throw new ReleaseBlockError(kind, 'validate');
@@ -1890,11 +1862,9 @@ export async function reconcileReleaseBlock(input: {
       }
       const report: ReleaseBlockReconcileReport = {
         arrKind: kind,
-        total: live.length,
+        total: terms.length,
         added: [...want].filter((x) => !before.has(x) && x !== RELEASE_BLOCK_SENTINEL).length,
         removed: [...before].filter((x) => !want.has(x) && x !== RELEASE_BLOCK_SENTINEL).length,
-        expired: expired.length,
-        pruned,
         settled,
         wrote,
         ms: Date.now() - started,
@@ -1914,9 +1884,10 @@ export type { ReleaseBlockStep };
 
 export interface ReleaseBlockUpkeepKind {
   arrKind: ReleaseArrKind;
-  /** `in_flight` records older than the settle age, and `active` records past `expires_at`, when the upkeep looked. */
+  /** Complete permanent release-term count when upkeep looked, excluding the sentinel. */
+  total: number;
+  /** `in_flight` records older than the settle age when the upkeep looked. */
   stranded: number;
-  expiring: number;
   /** D-25ce — how the profile differed from the records (null: it matched, or the records' own work was due). */
   drift: ReleaseProfileDriftReason | 'cap' | null;
   /** The reconcile's report (null when nothing was due, or when it failed). */
@@ -1928,9 +1899,8 @@ export interface ReleaseBlockUpkeepKind {
  * D-13 step 1 on schedule (D-25br, D-25ce, D-25cf) — the upkeep the `trash-batch-sweep` job runs every hour after the
  * sweep and the `watchlist-registry` job runs at the end of every run (every 15 minutes, so it keeps going while the
  * sweep CronJob is suspended), whether or not a batch was due. For each *arr it runs `reconcileReleaseBlock` when:
- *  - an `in_flight` record is older than the settle age (an ambiguous handle failure left it stranded) or an `active`
- *    record is past `expires_at` (the stranded settle by presence, and the expiry);
- *  - the live terms exceed the cap (the prune);
+ *  - an `in_flight` record is older than the settle age (an ambiguous handle failure left it stranded);
+ *  - the permanent terms exceed the cap (a refusal, never pruning);
  *  - or the profile itself drifted from the records (one `GET /releaseprofile`, D-25ce): the managed profile is
  *    missing while a term is live, duplicated, disabled, hand-edited (required terms, an indexer, tags), or its
  *    `ignored` set differs from the sentinel plus the live terms (an abandoned record's term left behind when a Phase A
@@ -1954,22 +1924,22 @@ export async function reconcileReleaseBlockIfDue(input: {
     const [due] = await db
       .select({
         stranded: sql<number>`count(*) filter (where ${t.state} = 'in_flight' and ${t.recordedAt} < ${new Date(now.getTime() - RELEASE_IN_FLIGHT_SETTLE_AFTER_MS).toISOString()}::timestamptz)::int`,
-        expiring: sql<number>`count(*) filter (where ${t.state} = 'active' and ${t.expiresAt} <= ${now.toISOString()}::timestamptz)::int`,
       })
       .from(t)
       .where(eq(t.arrKind, kind));
     const entry: ReleaseBlockUpkeepKind = {
       arrKind: kind,
       stranded: due?.stranded ?? 0,
-      expiring: due?.expiring ?? 0,
+      total: 0,
       drift: null,
       report: null,
       error: null,
     };
     try {
-      let run = entry.stranded > 0 || entry.expiring > 0;
+      const live = await readLiveTerms(db, kind);
+      entry.total = live.length;
+      let run = entry.stranded > 0;
       if (!run) {
-        const live = await readLiveTerms(db, kind);
         if (live.length > RELEASE_BLOCK_TERM_CAP) {
           entry.drift = 'cap';
         } else {
@@ -1992,11 +1962,12 @@ export async function reconcileReleaseBlockIfDue(input: {
       }
       if (run) entry.report = await reconcileReleaseBlock({ db, arr: input.arr, arrKind: kind, logger, now });
     } catch (error) {
+      if (error instanceof ReleaseBlockError && error.step === 'cap') entry.drift = 'cap';
       entry.error = error instanceof Error ? error.message : String(error);
       logger.warn('[release-block] upkeep_failed', {
         arrKind: kind,
         stranded: entry.stranded,
-        expiring: entry.expiring,
+        total: entry.total,
         drift: entry.drift,
         error: entry.error,
       });
@@ -2102,8 +2073,9 @@ export function keepReasonForUnrecorded(
 
 /**
  * ADR-117 / D-29 — do an item's terms all fit under the cap beside the live ones? `live` is the distinct terms of the
- * *arr's `in_flight` and `active` records plus those already reserved in this run; when the item fits, its new terms
- * are added to it. When it does not, nothing is added and the item is kept: no older term is pruned to make room.
+ * *arr's protected records (including legacy expired/pruned) plus those already reserved in this run; when the item
+ * fits, its new terms are added to it. When it does not, nothing is added and the item is kept: no older term is
+ * pruned to make room.
  */
 export function reserveTermsUnderCap(
   live: Set<string>,
@@ -2458,7 +2430,11 @@ export async function getReleaseBlockSummary(input: {
       })
       .from(t)
       .where(
-        and(eq(t.arrKind, kind), inArray(t.state, ['in_flight', 'active']), isNotNull(t.term)),
+        and(
+          eq(t.arrKind, kind),
+          inArray(t.state, [...RELEASE_BLOCK_PROTECTED_STATES]),
+          isNotNull(t.term),
+        ),
       );
     const exclusions = kind === 'radarr' ? radarrExclusions : sonarrExclusions;
     const oldest = agg?.oldest ? new Date(agg.oldest) : null;

@@ -2115,13 +2115,12 @@ async function expireOneBatch(input: {
   // D-14 step 8 — an abandoned record's term leaves the profile now (best effort: the next reconcile also would).
   if (anyAbandoned) {
     try {
-      // ADR-117 / D-29 — a delete path never prunes an older term (`prune: false`).
+      // ADR-117 / D-29 — a delete path never prunes an older term (ADR-122 / D-33).
       await reconcileReleaseBlock({
         db: input.db,
         arr: input.arr,
         arrKind: sweepArrKind,
         logger: input.logger,
-        prune: false,
       });
     } catch {
       // logged by the writer (`[release-block] failed`)

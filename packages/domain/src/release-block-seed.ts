@@ -10,7 +10,7 @@
 //      (`legacy_sab`; every match becomes a record, so two groups of one size are both blocked). Movies only;
 //   3. neither: unblockable (ADR-093 C-21), counted.
 // `--manual` adds the remediation titles' names (origin `remediation`). Records are written `active` (the delete is
-// confirmed), their 365 days counted from `deleted_at`, then each *arr's profile is reconciled and read back.
+// confirmed), with null expiry metadata (ADR-122 / D-33), then each *arr's profile is reconciled and read back.
 // A dry run writes nothing (it still GETs the *arr to confirm what is gone). The legacy SAB file never enters git.
 import {
   mediaItems,
@@ -23,6 +23,7 @@ import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { resolveDb } from './db-client';
 import { consoleDomainLogger, type DomainLogger } from './domain-logger';
 import {
+  RELEASE_BLOCK_PROTECTED_STATES,
   identifyFromLedger,
   insertReleaseRecords,
   isSameArrTitle,
@@ -297,7 +298,7 @@ export async function seedReleaseBlock(input: {
         .where(
           and(
             isNotNull(trashDeletedReleases.batchItemId),
-            inArray(trashDeletedReleases.state, ['in_flight', 'active', 'expired', 'pruned']),
+            inArray(trashDeletedReleases.state, [...RELEASE_BLOCK_PROTECTED_STATES]),
           ),
         )
     ).map((r) => r.batchItemId as string),
@@ -319,7 +320,6 @@ export async function seedReleaseBlock(input: {
   const namedOf = (title: string) =>
     report.named.find((n) => n.title.toLowerCase() === title.trim().toLowerCase()) ?? null;
   const items: KeyedDrafts[] = [];
-  const deletedAtByKey = new Map<string, Date>();
   // Rows no source identified; counted as unblockable once `--manual` has had its say (D-25cs).
   const unidentified: Array<{ kind: ReleaseArrKind; tmdbId: number | null }> = [];
 
@@ -402,7 +402,6 @@ export async function seedReleaseBlock(input: {
     if (named && named.matchedBy === null) named.matchedBy = source;
     report.records += drafts.length;
     items.push({ key: row.id, drafts, batchItemId: row.id });
-    deletedAtByKey.set(row.id, deletedAt);
   }
 
   // --manual: the remediation titles (Babygirl, Another Simple Favor, Terrifier), each release name its own record.
@@ -415,7 +414,7 @@ export async function seedReleaseBlock(input: {
       .where(
         and(
           eq(trashDeletedReleases.origin, 'remediation'),
-          inArray(trashDeletedReleases.state, ['in_flight', 'active']),
+          inArray(trashDeletedReleases.state, [...RELEASE_BLOCK_PROTECTED_STATES]),
         ),
       );
     const have = new Set(existing.map((e) => `${e.tmdbId}|${e.term}`));
@@ -451,7 +450,6 @@ export async function seedReleaseBlock(input: {
       if (drafts.length > 0) {
         const key = `manual:${entry.tmdbId}`;
         manualItems.push({ key, drafts });
-        if (match?.deletedAt) deletedAtByKey.set(key, match.deletedAt);
         report.manual.records += drafts.length;
         const named = namedOf(entry.title);
         if (named && named.matchedBy === null) named.matchedBy = 'manual';
@@ -487,7 +485,6 @@ export async function seedReleaseBlock(input: {
       origin: 'backfill',
       state: 'active',
       recordedAt: now,
-      expiresFrom: (key) => deletedAtByKey.get(key),
       logger,
     });
   }
@@ -498,7 +495,6 @@ export async function seedReleaseBlock(input: {
       origin: 'remediation',
       state: 'active',
       recordedAt: now,
-      expiresFrom: (key) => deletedAtByKey.get(key),
       logger,
     });
   }

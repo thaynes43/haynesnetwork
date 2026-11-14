@@ -1064,10 +1064,10 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
       expect(logs.some((l) => l.msg === '[release-block] cap_kept')).toBe(true);
     });
 
-    it('the reconcile a delete path runs refuses over the cap (`cap`) and prunes nothing; the upkeep`s still prunes', async () => {
+    it('D-33: every reconcile refuses over the cap (`cap`) and prunes nothing', async () => {
       await fill(RELEASE_BLOCK_TERM_CAP + 1);
       const { arr, fixture } = createStaticReleaseBlockArr();
-      const err = await reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger, prune: false }).catch(
+      const err = await reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger }).catch(
         (error: unknown) => error,
       );
       expect(err).toBeInstanceOf(ReleaseBlockError);
@@ -1076,9 +1076,11 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
       expect(await activeCount()).toBe(RELEASE_BLOCK_TERM_CAP + 1);
       expect(fixture.profiles.radarr).toHaveLength(0);
 
-      const upkeep = await reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger });
-      expect(upkeep.pruned).toBe(1);
-      expect(await activeCount()).toBe(RELEASE_BLOCK_TERM_CAP);
+      await expect(
+        reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger }),
+      ).rejects.toMatchObject({ step: 'cap' });
+      expect(await activeCount()).toBe(RELEASE_BLOCK_TERM_CAP + 1);
+      expect(fixture.profiles.radarr).toHaveLength(0);
     });
   });
 

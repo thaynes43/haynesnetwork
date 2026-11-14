@@ -2401,8 +2401,8 @@ async function reconcileAfterAbandon(
   arrKind: 'radarr' | 'sonarr',
 ): Promise<void> {
   try {
-    // ADR-117 / D-29 — a delete path never prunes an older term (`prune: false`).
-    await reconcileReleaseBlock({ db: input.db, arr: input.arr, arrKind, logger: input.logger, prune: false });
+    // ADR-117 / D-29 — a delete path never prunes an older term (ADR-122 / D-33).
+    await reconcileReleaseBlock({ db: input.db, arr: input.arr, arrKind, logger: input.logger });
   } catch {
     // logged by the writer; the next reconcile removes the orphan term
   }
