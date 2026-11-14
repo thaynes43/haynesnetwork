@@ -1762,12 +1762,22 @@ export const TRASH_KEEP_REASONS = [
   // ADR-099 D-4 — an open save intent (a Save the app recorded). Authoritative whether or not Maintainerr holds the
   // exclusion yet.
   'saved',
+  // ADR-117 / DESIGN-052 D-29 (migration 0110) — the file on disk has no verified posted release name, so no term
+  // can be shown to block it: the title is kept until a name is on record.
+  'release_unverified',
+  // D-29 — the delete's terms would not all fit under the Release Block's cap; nothing older is pruned to make room.
+  'release_block_full',
 ] as const;
 export type TrashKeepReason = (typeof TRASH_KEEP_REASONS)[number];
 
 /** trash_deleted_releases.arr_kind — the Release Block covers Radarr and Sonarr only (D-13). */
 export const DELETED_RELEASE_ARR_KINDS = ['radarr', 'sonarr'] as const;
 export type DeletedReleaseArrKind = (typeof DELETED_RELEASE_ARR_KINDS)[number];
+
+/** legacy_release_names.record_kind (ADR-117 / DESIGN-052 D-29, migration 0110) — what the old Radarr or Sonarr
+ *  database recorded: a grab, an import, a failed download, or the file record's original release name. */
+export const LEGACY_RELEASE_RECORD_KINDS = ['grabbed', 'imported', 'failed', 'file'] as const;
+export type LegacyReleaseRecordKind = (typeof LEGACY_RELEASE_RECORD_KINDS)[number];
 
 /** trash_deleted_releases.identity_source — where a Deleted-Release Record's identity came from (D-11, D-15). */
 export const DELETED_RELEASE_IDENTITY_SOURCES = [
@@ -1776,6 +1786,9 @@ export const DELETED_RELEASE_IDENTITY_SOURCES = [
   'ledger_grab',
   'legacy_sab',
   'none',
+  // ADR-117 / DESIGN-052 D-29 (migration 0110) — a name the Radarr or Sonarr database from before the 2026-07-03 move
+  // recorded for the title's own id (`legacy_release_names`).
+  'legacy_arr',
 ] as const;
 export type DeletedReleaseIdentitySource = (typeof DELETED_RELEASE_IDENTITY_SOURCES)[number];
 

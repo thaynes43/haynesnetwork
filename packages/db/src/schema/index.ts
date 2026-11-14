@@ -195,6 +195,7 @@ export * from './oauth-audit';
 // the Seerr watchlist enrollments; and the one-row trash_sweep_status. All guarded single-writer tables.
 export * from './watchlist-registry';
 export * from './trash-deleted-releases';
+export * from './legacy-release-names';
 export * from './seerr-watchlist-enrollments';
 export * from './trash-sweep-status';
 // ADR-097 / DESIGN-052 D-27 (migration 0087) — the Title Exclusion audit: one append-only row per import-list exclusion

@@ -59,8 +59,11 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    (never library files, quality profiles or custom formats), written only by its single writer
    (`reconcileReleaseBlock`, D-13), which runs before each Trash delete (written and read back
    first), after deletes to remove abandoned terms, in the hourly and 15-minute upkeep (the sweep and
-   registry jobs: settle, expiry, drift repair; D-25br, D-25ce, D-25cf) and from the one-off seed
-   (D-15); its terms only ever come from Deleted-Release Records. And **Seerr**: the watchlist
+   registry jobs: settle, expiry, drift repair; D-25br, D-25ce, D-25cf), from the one-off seed
+   (D-15) and from the posted-name backfill (ADR-117, D-29); its terms only ever come from Deleted-Release Records.
+   Trash deletes a title only when each file on disk has a verified posted release name and its terms are written and
+   read back first: a name rebuilt from the renamed file is never a basis for a delete, and no delete prunes an older
+   term (ADR-117, owner ruling 2026-11-13). And **Seerr**: the watchlist
    enrollment, one `settings/main` write per Seerr user turning watchlist sync on, behind the audited
    `seerr_watchlist_enroll` setting (D-17), plus the one-off `animeTags` preflight on **Seerr's**
    Sonarr-server settings (`PUT /api/v1/settings/sonarr/{id}` on Seerr, the whole server object

@@ -271,7 +271,11 @@ export function dynamicPaceHorizonFitsWindow(horizonDays: number, windowDays: nu
   );
 }
 
-/** The proposal filter, shared so the status snapshot and the live proposal count the same titles. */
+/**
+ * The proposal filter, shared so the status snapshot and the live proposal count the same titles. ADR-117 /
+ * DESIGN-052 D-29 — a title whose file on disk has no verified posted release name (the Release Name Check says
+ * `unverified`) is never proposed and frees nothing: the sweep would keep it, so it is not in the pool either.
+ */
 export function isPaceDeletable<
   T extends {
     maintainerrMediaId: string | null;
@@ -279,6 +283,7 @@ export function isPaceDeletable<
     protectedByTag: boolean;
     onWatchlist: boolean;
     ageGuard: string;
+    releaseName?: string;
   },
 >(item: T): item is T & { maintainerrMediaId: string } {
   return (
@@ -286,7 +291,8 @@ export function isPaceDeletable<
     !item.saveIntent &&
     !item.protectedByTag &&
     !item.onWatchlist &&
-    item.ageGuard !== 'recent'
+    item.ageGuard !== 'recent' &&
+    item.releaseName !== 'unverified'
   );
 }
 

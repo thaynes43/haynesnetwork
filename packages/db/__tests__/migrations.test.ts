@@ -43,6 +43,7 @@ import {
   SEERR_ISSUE_WRITE_STATES,
   DELETED_RELEASE_ARR_KINDS,
   DELETED_RELEASE_IDENTITY_SOURCES,
+  LEGACY_RELEASE_RECORD_KINDS,
   TITLE_EXCLUSION_ARR_KINDS,
   TITLE_EXCLUSION_ORIGINS,
   LL_RELEASE_FORMATS,
@@ -3342,6 +3343,98 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
+  // ADR-117 / DESIGN-052 D-29 (migration 0110): the legacy release names and download jobs. Additive.
+  describe('0110 legacy release names (ADR-117 / DESIGN-052 D-29)', () => {
+    it('creates legacy_release_names and legacy_download_jobs with their columns', async () => {
+      const cols = await client.query(
+        `SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns
+          WHERE table_name IN ('legacy_release_names', 'legacy_download_jobs')
+          ORDER BY table_name, ordinal_position`,
+      );
+      const of = (table: string) =>
+        cols.rows.filter((r) => r.table_name === table).map((r) => `${r.column_name} ${r.data_type} ${r.is_nullable}`);
+      expect(of('legacy_release_names')).toEqual([
+        'id uuid NO',
+        'arr_kind text NO',
+        'external_id integer NO',
+        'record_kind text NO',
+        'release_name text NO',
+        'size_bytes bigint YES',
+        'occurred_at timestamp with time zone YES',
+        'release_group text YES',
+        'season integer YES',
+        'quality text YES',
+        'title text YES',
+        'dedupe_key text NO',
+        'loaded_at timestamp with time zone NO',
+      ]);
+      expect(of('legacy_download_jobs')).toEqual([
+        'id uuid NO',
+        'source text NO',
+        'name text NO',
+        'bytes bigint NO',
+        'completed_at timestamp with time zone NO',
+        'category text YES',
+        'status text YES',
+        'dedupe_key text NO',
+        'loaded_at timestamp with time zone NO',
+      ]);
+    });
+
+    it('refuses a URL or blank name, a file row without a size and a bad kind; dedupe_key is unique', async () => {
+      const name = (key: string, fields: Record<string, unknown> = {}) => {
+        const row = { arr_kind: 'radarr', external_id: 1, record_kind: 'grabbed', release_name: 'Some.Name.2020-GRP', size_bytes: null, ...fields };
+        return client.query({
+          text: `INSERT INTO legacy_release_names (arr_kind, external_id, record_kind, release_name, size_bytes, dedupe_key)
+                 VALUES ($1, $2, $3, $4, $5, $6)`,
+          values: [row.arr_kind, row.external_id, row.record_kind, row.release_name, row.size_bytes, `test-0110-${key}`],
+        });
+      };
+      const job = (key: string, fields: Record<string, unknown> = {}) => {
+        const row = { name: 'Some.Name.2020-GRP', bytes: 100, ...fields };
+        return client.query({
+          text: `INSERT INTO legacy_download_jobs (source, name, bytes, completed_at, dedupe_key)
+                 VALUES ('test-0110', $1, $2, now(), $3)`,
+          values: [row.name, row.bytes, `test-0110-${key}`],
+        });
+      };
+      try {
+        for (const kind of LEGACY_RELEASE_RECORD_KINDS) {
+          await name(`ok-${kind}`, { record_kind: kind, size_bytes: kind === 'file' ? 10 : null });
+        }
+        await name('ok-sonarr', { arr_kind: 'sonarr', release_name: ' Spaced.Name ' });
+        await job('ok');
+        // No URL, anywhere in the name; no blank name.
+        await expect(name('url', { release_name: 'Some.Name https://example.invalid/x' })).rejects.toMatchObject({ code: '23514' });
+        await expect(name('blank', { release_name: '   ' })).rejects.toMatchObject({ code: '23514' });
+        await expect(job('url', { name: 'https://example.invalid/x' })).rejects.toMatchObject({ code: '23514' });
+        await expect(job('blank', { name: ' ' })).rejects.toMatchObject({ code: '23514' });
+        // A file row carries its exact byte size; a job its bytes.
+        await expect(name('file-null', { record_kind: 'file' })).rejects.toMatchObject({ code: '23514' });
+        await expect(name('file-zero', { record_kind: 'file', size_bytes: 0 })).rejects.toMatchObject({ code: '23514' });
+        await expect(job('zero', { bytes: 0 })).rejects.toMatchObject({ code: '23514' });
+        // Known kinds and a positive id only.
+        await expect(name('lidarr', { arr_kind: 'lidarr' })).rejects.toMatchObject({ code: '23514' });
+        await expect(name('deleted', { record_kind: 'deleted' })).rejects.toMatchObject({ code: '23514' });
+        await expect(name('zero-id', { external_id: 0 })).rejects.toMatchObject({ code: '23514' });
+        // One row per key.
+        await expect(name('ok-grabbed')).rejects.toMatchObject({ code: '23505' });
+        await expect(job('ok')).rejects.toMatchObject({ code: '23505' });
+        for (const [conname, values] of [
+          ['legacy_release_names_arr_kind_enum', DELETED_RELEASE_ARR_KINDS],
+          ['legacy_release_names_record_kind_enum', LEGACY_RELEASE_RECORD_KINDS],
+        ] as const) {
+          const def = await client.query(`SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = $1`, [conname]);
+          const listed = [...String(def.rows[0].def).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+          expect(listed.sort(), conname).toEqual([...values].sort());
+        }
+      } finally {
+        await client.query(`DELETE FROM legacy_release_names WHERE dedupe_key LIKE 'test-0110-%'`);
+        await client.query(`DELETE FROM legacy_download_jobs WHERE dedupe_key LIKE 'test-0110-%'`);
+      }
+    });
+  });
+
   describe('0104 watch_carries (ADR-114 / DESIGN-055 P4 decisions 26-34)', () => {
     it('creates the Watch Carry, its snapshot states and its mark audit with their CHECKs, and cascades', async () => {
       const item = await client.query(
@@ -3995,6 +4088,39 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0105_seerr_issue_writes.sql'), 'utf8');
     expect(sqlText).toContain('CREATE TABLE "seerr_issue_writes"');
     expect(sqlText).toContain("'seerr_issue_bridge'");
+  });
+
+  // ADR-117 / DESIGN-052 D-29 gate — 0110 follows 0109 (idx 107, when 1791460000000 on main).
+  it('lists 0110_legacy_release_names at idx 108, strictly after 0109_age_guard_library_fill', () => {
+    const entry = journal.entries.find((e) => e.tag === '0110_legacy_release_names');
+    const prev = journal.entries.find((e) => e.tag === '0109_age_guard_library_fill');
+    expect(prev?.idx).toBe(107);
+    expect(prev?.when).toBe(1791460000000);
+    expect(entry?.idx).toBe(108);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    expect(entry!.when).toBe(1791470000000);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0110_legacy_release_names.sql'), 'utf8');
+    expect(sqlText).toContain('CREATE TABLE "legacy_release_names"');
+    expect(sqlText).toContain('CREATE TABLE "legacy_download_jobs"');
+    expect(sqlText).toContain("'release_unverified','release_block_full'");
+    // Every keep reason on main, plus the two this migration adds. media_request is not on main.
+    for (const reason of [
+      'tag',
+      'recently_watched',
+      'watchlisted',
+      'unevaluable',
+      'not_in_pool',
+      'live_excluded',
+      'release_unrecorded',
+      'recently_added',
+      'saved',
+    ]) {
+      expect(sqlText).toContain(`'${reason}'`);
+    }
+    expect(sqlText).not.toContain('media_request');
+    for (const source of ['arr_grab_history', 'arr_file', 'ledger_grab', 'legacy_sab', 'none', 'legacy_arr']) {
+      expect(sqlText).toContain(`'${source}'`);
+    }
   });
 
   // PLAN-077 P5 gate — the Release Pick's lists are journaled (idx 102), after 0102.

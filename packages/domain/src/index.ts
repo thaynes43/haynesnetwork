@@ -308,6 +308,10 @@ export * from './watchlist-registry-sources';
 // Block (terms, the confined profile writer, the re-add check), the backfill seed and the Seerr watchlist enrollment.
 export * from './release-terms';
 export * from './release-block';
+export * from './release-block-legacy';
+export * from './trash-release-name';
+export * from './release-block-backfill';
+export * from './legacy-release-load';
 export * from './release-block-seed';
 export * from './release-block-pool';
 export * from './release-block-static';

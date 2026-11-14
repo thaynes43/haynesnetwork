@@ -1,6 +1,7 @@
 // ADR-093 / DESIGN-052 D-15 / D-17 (PLAN-072 S8 / S9) — the coordinator's one-off scripts parse their arguments
 // strictly (the seed needs exactly one of --dry-run / --apply; the Seerr switch takes one command).
 import { describe, expect, it } from 'vitest';
+import { parseBackfillArgs } from '../src/scripts/release-block-backfill';
 import { parseSeedArgs } from '../src/scripts/release-block-seed';
 import { parseSeerrWatchlistArgs } from '../src/scripts/seerr-watchlist';
 import { parseTitleExclusionBackfillArgs } from '../src/scripts/title-exclusion-backfill';
@@ -43,6 +44,18 @@ describe('release-block-seed arguments', () => {
     expect(() => parseSeedArgs([])).toThrow(/--dry-run, --apply or --pool/);
     expect(() => parseSeedArgs(['--dry-run', '--apply'])).toThrow(/exclusive/);
     expect(() => parseSeedArgs(['--dry-run', '--nope'])).toThrow(/unknown/);
+  });
+});
+
+describe('release-block-backfill arguments', () => {
+  it('needs exactly one of --dry-run and --apply, and reads no file (ADR-117: names come from the app tables)', () => {
+    expect(parseBackfillArgs(['--dry-run'])).toEqual({ apply: false });
+    expect(parseBackfillArgs(['--apply'])).toEqual({ apply: true });
+    expect(() => parseBackfillArgs(['--apply', '--legacy-sab=/tmp/sab.tsv'])).toThrow(/unknown/);
+    expect(parseBackfillArgs(['--help'])).toBe('help');
+    expect(() => parseBackfillArgs([])).toThrow(/--dry-run or --apply/);
+    expect(() => parseBackfillArgs(['--dry-run', '--apply'])).toThrow(/exclusive/);
+    expect(() => parseBackfillArgs(['--dry-run', '--nope'])).toThrow(/unknown/);
   });
 });
 
