@@ -157,7 +157,11 @@ export async function getTuningReport(input: { db?: DbClient; now?: Date }): Pro
   const policyRows = await db
     .select({ batchId: sql<string>`${ledgerEvents.payload}->>'batchId'` })
     .from(ledgerEvents)
-    .where(eq(ledgerEvents.eventType, 'trash_space_policy'));
+    .where(and(
+      eq(ledgerEvents.eventType, 'trash_space_policy'),
+      // ADR-124: observing an existing (possibly manual) batch is not a policy proposal.
+      sql`coalesce(${ledgerEvents.payload}->>'outcome', 'proposed') = 'proposed'`,
+    ));
   const policyBatchIds = new Set(policyRows.map((r) => r.batchId).filter(Boolean));
 
   // Restored media items (trash_restored) — the near-miss set for the graduation restore count.

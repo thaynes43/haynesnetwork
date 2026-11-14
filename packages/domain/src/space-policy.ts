@@ -22,7 +22,7 @@ import {
   type TrashBatchState,
   type TrashMediaKind,
 } from '@hnet/db';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   APP_SETTING_DEFAULTS,
   SPACE_POLICY_MODES,
@@ -41,7 +41,9 @@ import {
 import {
   explainDynamicPace,
   isPaceDeletable,
-  measureDeletableSnapshotPools,
+  DYNAMIC_PACE_MOVIE_MAX_ITEMS,
+  DYNAMIC_PACE_TV_MAX_ITEMS,
+  openPaceTitleIds,
   measureTrashYield,
   recordedSweepDeletions,
   resolveDynamicPace,
@@ -163,6 +165,7 @@ export async function getSpacePolicy(db?: DbClient): Promise<SpacePolicy> {
   const mode = (SPACE_POLICY_MODES as readonly string[]).includes(stored?.mode as string)
     ? (stored!.mode as SpacePolicyMode)
     : d.mode;
+  const perKind = resolvePerKind(stored);
   return {
     enabled: stored?.enabled === true,
     mode,
@@ -171,9 +174,14 @@ export async function getSpacePolicy(db?: DbClient): Promise<SpacePolicy> {
     // Normalized (not passed through) so retired per-array keys can't break the admin card's save.
     perArray: resolvePerArray(stored),
     // DESIGN-014 amendment (2026-07-09, build A) — per-kind caps, migrating the retired flat key.
-    perKind: resolvePerKind(stored),
+    perKind,
     // ADR-120 — absent on older rows. Off unless the stored switch is exactly true.
-    dynamicPace: resolveDynamicPace(stored?.dynamicPace),
+    dynamicPace: resolveDynamicPace(
+      stored?.dynamicPace,
+      perKind.movie.maxItems.enabled
+        ? Math.max(1, Math.trunc(perKind.movie.maxItems.value))
+        : DYNAMIC_PACE_MOVIE_MAX_ITEMS,
+    ),
   };
 }
 
@@ -283,7 +291,9 @@ async function findOpenBatch(
   const [row] = await resolveDb(db)
     .select({ id: trashBatches.id, state: trashBatches.state, createdBy: trashBatches.createdBy })
     .from(trashBatches)
-    .where(and(eq(trashBatches.mediaKind, mediaKind), inArray(trashBatches.state, [...OPEN_STATES])))
+    .where(
+      and(eq(trashBatches.mediaKind, mediaKind), inArray(trashBatches.state, [...OPEN_STATES])),
+    )
     .limit(1);
   return row ?? null;
 }
@@ -293,14 +303,36 @@ async function hasOpenBatch(db: DbClient | undefined, mediaKind: TrashMediaKind)
   return (await findOpenBatch(db, mediaKind)) !== null;
 }
 
+/** Actual selection for one durable batch, or all successful proposals in the run report. */
+function selectedPaceExplanation(
+  explanation: DynamicPaceExplanation,
+  selected: ReadonlyMap<TrashMediaKind, number>,
+  mediaKind?: TrashMediaKind,
+): DynamicPaceExplanation {
+  const kinds = explanation.kinds.filter(
+    (kind) => mediaKind === undefined || kind.mediaKind === mediaKind,
+  );
+  const chosenBytes = [...selected.values()].reduce((sum, bytes) => sum + bytes, 0);
+  const requiredDeletedBytes = explanation.requiredDeletedBytes;
+  return {
+    ...explanation,
+    requiredDeletedBytes,
+    chosenBytes,
+    expectedDeletedBytes: chosenBytes * explanation.yieldRate,
+    shortfallBytes: Math.max(0, requiredDeletedBytes - chosenBytes * explanation.yieldRate),
+    kinds: kinds.map((kind) => ({ ...kind, chosenBytes: selected.get(kind.mediaKind) ?? 0 })),
+  };
+}
+
 /**
  * Evaluate the space-driven policy ONCE (the `space-policy` sync mode's body). Returns a report of
  * every array's over/under-target verdict and, for each opted-in array, one outcome per backing kind:
  * a stuck open system batch is HEALED (promoted to leaving_soon), else a new batch is PROPOSED AND
  * PROMOTED (createBatchFromPending with autoPromote) when the mode/target allows it (ADR-073 — the
  * autonomous engine completes the cycle unattended; it still never deletes, only the sweep reclaims).
- * Never throws for a per-kind failure (records `outcome:'error'` and moves on); it throws only if the
- * utilization/settings reads themselves fail.
+ * Per-kind failures allow independent kinds/arrays to progress. Active-mode decision-recording
+ * failures fail the evaluation only after that progress, never masquerading as successful observation.
+ * Utilization/settings read failures also throw.
  */
 export async function evaluateSpacePolicy(input: {
   db?: DbClient;
@@ -309,7 +341,7 @@ export async function evaluateSpacePolicy(input: {
   actorId?: string | null;
   now?: Date;
   /**
-   * ADR-120 — free-space history for one array. Called only when Dynamic Pace is switched on.
+   * ADR-124 — free-space history for one array. Called only in enabled or observe-only mode.
    * Null or a throw keeps today's caps. The sync script passes the chart's Prometheus query.
    */
   readFreeSpace?: (arrayKey: string) => Promise<readonly FreeSpaceSample[] | null>;
@@ -326,11 +358,11 @@ export async function evaluateSpacePolicy(input: {
   const utilization = await getUtilization({ db: input.db, arr: input.arr });
   const arrays: SpacePolicyArrayResult[] = [];
   let proposedCount = 0;
+  let recordingFailed = false;
 
   for (const util of utilization) {
     const arrCfg = effectiveArrayPolicy(policy, util.key);
-    const overTarget =
-      util.usedPct !== null && util.target !== null && util.usedPct > util.target;
+    const overTarget = util.usedPct !== null && util.target !== null && util.usedPct > util.target;
     const result: SpacePolicyArrayResult = {
       key: util.key,
       label: util.label,
@@ -357,17 +389,20 @@ export async function evaluateSpacePolicy(input: {
     // Self-heal of an ALREADY-open stuck batch is independent of this gate (ADR-073 — a mid-cycle death
     // under target must still converge).
     const staticCanPropose =
-      policy.mode === 'continuous'
-        ? true
-        : !util.unavailable && util.target !== null && overTarget;
+      policy.mode === 'continuous' ? true : !util.unavailable && util.target !== null && overTarget;
 
-    // ADR-120 — size from the gap and the intake only when the switch is on AND the series was
-    // read. Anything else keeps today's caps and today's gate. The reader is not called while off.
+    // ADR-124 / D-18: observation and enabled sizing share the same computation. A failed
+    // preload is discarded completely; no partial pool can escape into static fallback.
     const kinds = trashKindsForArray(util.key);
     let explanation: DynamicPaceExplanation | null = null;
-    let loaded: Map<TrashMediaKind, Array<TrashPendingItem & { maintainerrMediaId: string }>> | null =
-      null;
+    let loaded: Map<
+      TrashMediaKind,
+      Array<TrashPendingItem & { maintainerrMediaId: string }>
+    > | null = null;
     const paceOn = policy.dynamicPace?.enabled === true;
+    const observeOnly = policy.dynamicPace?.observeOnly === true;
+    const paceTracked = (paceOn || observeOnly) && kinds.length > 0;
+    let fallbackReason: string | null = null;
     const diskOk =
       !util.unavailable &&
       util.freeSpace != null &&
@@ -375,63 +410,88 @@ export async function evaluateSpacePolicy(input: {
       util.target != null &&
       util.freeSpace >= 0 &&
       util.totalSpace > 0;
-    if (paceOn && kinds.length > 0 && diskOk && input.readFreeSpace) {
-      let series: readonly FreeSpaceSample[] | null = null;
-      try {
-        series = await input.readFreeSpace(util.key);
-      } catch {
-        series = null;
-      }
-      if (series != null && series.length > 0) {
+    if (paceTracked) {
+      if (!diskOk) fallbackReason = 'no_disk';
+      else if (!input.readFreeSpace) fallbackReason = 'missing_reader';
+      else {
+        let series: readonly FreeSpaceSample[] | null = null;
         try {
-          const windowRaw = await getAppSetting(input.db, 'trash_default_window_days');
-          const windowDays =
-            typeof windowRaw === 'number' && Number.isFinite(windowRaw) && windowRaw >= 1
-              ? Math.trunc(windowRaw)
-              : APP_SETTING_DEFAULTS.trash_default_window_days;
-          const deletions = await recordedSweepDeletions(input.db, now);
-          const saveRate = await measureTrashYield(input.db, now);
-          const watchlist = await evaluateRegistryGate({ db: input.db, purpose: 'propose', now });
-          loaded = new Map();
-          for (const mediaKind of kinds) {
-            const pending = await listTrashPending({
-              db: input.db,
-              maintainerr: input.maintainerr,
-              media: mediaKind,
-              watchlist,
-            });
-            loaded.set(
-              mediaKind,
-              pending.items.filter((item) => isPaceDeletable(item)),
-            );
-          }
-          const pace = policy.dynamicPace!;
-          explanation = explainDynamicPace({
-            freeBytes: util.freeSpace!,
-            totalBytes: util.totalSpace!,
-            targetPct: util.target!,
-            samples: series,
-            deletions,
-            now: Math.floor(now.getTime() / 1000),
-            windowDays,
-            horizonDays: pace.horizonDays,
-            floorBytes: pace.floorBytes,
-            ceilingBytes: pace.ceilingBytes,
-            saveRate,
-            pools: kinds.map((mediaKind) => ({
-              mediaKind,
-              poolBytes: (loaded!.get(mediaKind) ?? []).reduce((sum, item) => sum + (item.sizeBytes ?? 0), 0),
-            })),
-          });
+          series = await input.readFreeSpace(util.key);
         } catch {
-          explanation = null;
-          loaded = null;
+          fallbackReason = 'series_read_failed';
+        }
+        if (series == null || series.length === 0) fallbackReason ??= 'missing_series';
+        else {
+          try {
+            const windowRaw = await getAppSetting(input.db, 'trash_default_window_days');
+            const windowDays =
+              typeof windowRaw === 'number' && Number.isFinite(windowRaw) && windowRaw >= 1
+                ? Math.trunc(windowRaw)
+                : APP_SETTING_DEFAULTS.trash_default_window_days;
+            const usable = series.filter(
+              (s) =>
+                Number.isFinite(s.t) && Number.isFinite(s.freeBytes) && s.t <= now.getTime() / 1000,
+            );
+            const seriesStart =
+              usable.length > 0
+                ? Math.min(...usable.map((s) => s.t))
+                : Math.floor(now.getTime() / 1000);
+            const deletions = await recordedSweepDeletions(input.db, now, util.key, seriesStart);
+            const saveRate = await measureTrashYield(input.db, now, util.key);
+            const watchlist = await evaluateRegistryGate({ db: input.db, purpose: 'propose', now });
+            const posted = await openPaceTitleIds(input.db);
+            const preloaded = new Map<
+              TrashMediaKind,
+              Array<TrashPendingItem & { maintainerrMediaId: string }>
+            >();
+            for (const mediaKind of kinds) {
+              const pending = await listTrashPending({
+                db: input.db,
+                maintainerr: input.maintainerr,
+                media: mediaKind,
+                watchlist,
+              });
+              preloaded.set(
+                mediaKind,
+                pending.items
+                  .filter(isPaceDeletable)
+                  .filter((item) => !posted.get(mediaKind)?.has(item.maintainerrMediaId)),
+              );
+            }
+            const pace = policy.dynamicPace!;
+            explanation = explainDynamicPace({
+              freeBytes: util.freeSpace!,
+              totalBytes: util.totalSpace!,
+              targetPct: util.target!,
+              samples: series,
+              deletions,
+              now: Math.floor(now.getTime() / 1000),
+              windowDays,
+              horizonDays: pace.horizonDays,
+              floorBytes: pace.floorBytes,
+              ceilingBytes: pace.ceilingBytes,
+              saveRate,
+              pools: kinds.map((mediaKind) => ({
+                mediaKind,
+                poolBytes: (preloaded.get(mediaKind) ?? []).reduce(
+                  (sum, item) => sum + (item.sizeBytes ?? 0),
+                  0,
+                ),
+              })),
+            });
+            fallbackReason = explanation.inapplicable;
+            loaded = preloaded;
+          } catch {
+            fallbackReason = 'preload_failed';
+            explanation = null;
+            loaded = null;
+          }
         }
       }
     }
-    result.pace = explanation;
-    const usePace = explanation?.applicable === true;
+    const usePace = paceOn && explanation?.applicable === true;
 
+    const selected = new Map<TrashMediaKind, number>();
     for (const mediaKind of kinds) {
       const share = explanation?.kinds.find((kind) => kind.mediaKind === mediaKind);
       const kindChosen = share?.chosenBytes ?? 0;
@@ -448,23 +508,100 @@ export async function evaluateSpacePolicy(input: {
         target: util.target,
         canProposeNew: usePace ? kindChosen > 0 : staticCanPropose,
         minCandidates: arrCfg.minCandidates,
-        // Per-kind composition caps while the pace is off or not applicable. While it applies, the
-        // byte ask replaces those caps; the kind's strategy is kept.
+        ...(paceTracked
+          ? {
+              paceDecision: (selectedBytes: number): StoredPaceDecision => ({
+                mode: observeOnly ? 'observe-only' : 'enabled',
+                applied: usePace && selectedBytes > 0,
+                fallbackReason,
+                // A durable proposal describes its own selection, never a later kind's success.
+                explanation:
+                  usePace && explanation
+                    ? selectedPaceExplanation(
+                        explanation,
+                        new Map([[mediaKind, selectedBytes]]),
+                        mediaKind,
+                      )
+                    : explanation,
+                selectedBytes,
+                allocation: explanation,
+              }),
+              onSelected: (bytes: number) => {
+                selected.set(mediaKind, bytes);
+              },
+              onRecordingFailure: () => {
+                recordingFailed = true;
+              },
+            }
+          : {}),
         targeting: usePace
-          ? { targetBytes: kindChosen, strategy: activeBatchStrategy(policy, mediaKind) }
+          ? {
+              targetBytes: kindChosen,
+              hardMaxBytes: kindChosen,
+              ...(!explanation!.overTarget ? { minBytes: explanation!.floorBytes } : {}),
+              maxItems:
+                mediaKind === 'movie'
+                  ? Math.min(
+                      policy.dynamicPace!.movieMaxItems ?? DYNAMIC_PACE_MOVIE_MAX_ITEMS,
+                      effectiveKindTargeting(policy, mediaKind).maxItems ?? Number.MAX_SAFE_INTEGER,
+                    )
+                  : (effectiveKindTargeting(policy, mediaKind).maxItems ??
+                    DYNAMIC_PACE_TV_MAX_ITEMS),
+              strategy: activeBatchStrategy(policy, mediaKind),
+            }
           : buildKindTargeting(policy, mediaKind),
         ...(usePace && kindChosen <= 0 && explanation != null
           ? { paceSkip: { reason: paceSkipReason(explanation, mediaKind) } }
           : {}),
         ...(usePace && loaded != null ? { actionable: loaded.get(mediaKind) ?? [] } : {}),
-        ...(usePace && explanation != null ? { paceNote: paceSkipReason(explanation, mediaKind) } : {}),
+        ...(usePace && explanation != null
+          ? { paceNote: paceSkipReason(explanation, mediaKind) }
+          : {}),
       });
       if (proposal.outcome === 'proposed' || proposal.outcome === 'promoted') proposedCount += 1;
       result.proposals.push(proposal);
+      if (paceTracked && proposal.outcome !== 'proposed') {
+        try {
+          await resolveDb(input.db)
+            .insert(ledgerEvents)
+            .values({
+              mediaItemId: null,
+              eventType: 'trash_space_policy',
+              source: 'maintainerr',
+              occurredAt: now,
+              requestedByUserId: actorId,
+              payload: {
+                batchId: proposal.batchId,
+                mediaKind,
+                array: util.key,
+                outcome: proposal.outcome,
+                pace: {
+                  mode: observeOnly ? 'observe-only' : 'enabled',
+                  applied: false,
+                  fallbackReason,
+                  explanation,
+                  selectedBytes: 0,
+                } satisfies StoredPaceDecision,
+              },
+            });
+        } catch {
+          recordingFailed = true;
+          proposal.outcome = 'error';
+          proposal.reason += ' Policy decision recording failed; observation was not recorded.';
+        }
+      }
+    }
+    if (paceTracked) {
+      result.pace =
+        usePace && explanation ? selectedPaceExplanation(explanation, selected) : explanation;
     }
     arrays.push(result);
   }
 
+  // Finish independent kinds/arrays first, then fail the job: a missing record is never
+  // successful observation evidence. The sync runner already reports a thrown evaluation as failed.
+  if (recordingFailed)
+    throw new Error('Policy decision recording failed; observation was not completed.');
   return { enabled: true, ranAt: now.toISOString(), proposedCount, arrays };
 }
 
@@ -486,6 +623,10 @@ async function proposeForKind(input: {
   /** DESIGN-014 amendment — per-kind composition caps (maxItems/targetBytes, worst-rated-first);
    *  absent ⇒ ALL candidates. */
   targeting?: BatchTargeting;
+  /** D-18: create the immutable sizing record from the fresh selection inside its transaction. */
+  paceDecision?: (selectedBytes: number) => StoredPaceDecision;
+  onSelected?: (bytes: number) => void;
+  onRecordingFailure?: () => void;
   /** ADR-120 — set when the pace applied and this kind's ask is 0. The open-batch heal still runs. */
   paceSkip?: { reason: string };
   /** ADR-120 — the deletable pending set already loaded for the pace. Skips a second Maintainerr read. */
@@ -634,6 +775,33 @@ async function proposeForKind(input: {
       // enabled composition caps (maxItems/targetBytes, worst-rated-first); absent ⇒ all candidates.
       // The min-candidates gate above still measures the full pending pool.
       ...(input.targeting !== undefined ? { targeting: input.targeting } : {}),
+      ...(input.paceDecision
+        ? {
+            recordDecision: async (tx, selected) => {
+              try {
+                await recordSpacePolicyProposal({
+                  db: tx,
+                  batchId: selected.batchId,
+                  mode: input.mode,
+                  mediaKind: input.mediaKind,
+                  arrayKey: input.arrayKey,
+                  arrayLabel: input.arrayLabel,
+                  usedPct: input.usedPct,
+                  target: input.target,
+                  candidateCount: selected.itemCount,
+                  candidateBytes,
+                  gateSkipped: selected.gateSkipped,
+                  actorId: input.actorId,
+                  occurredAt: input.now,
+                  pace: input.paceDecision!(selected.totalBytes),
+                });
+              } catch (error) {
+                input.onRecordingFailure?.();
+                throw error;
+              }
+            },
+          }
+        : {}),
     });
   } catch (err) {
     if (err instanceof TrashBatchOpenError) {
@@ -650,27 +818,30 @@ async function proposeForKind(input: {
     };
   }
 
+  input.onSelected?.(created.totalBytes);
+
   // 5. Record the WHY: a trash_space_policy ledger event + a space_policy notification (source
   //    'trash'). Attribution records for Bulletin/Activity + the tuning report's graduation join.
-  //    Best-effort (intent-first, like the rest of the pipeline): the batch is the durable outcome, so
-  //    a rare attribution-write failure must not abort the run — the proposal still reports 'proposed'.
+  //    Both modes off keep legacy best-effort attribution; active modes already committed it
+  //    with the batch above, before promotion.
   let attributionNote = '';
   try {
-    await recordSpacePolicyProposal({
-      db: input.db,
-      batchId: created.batchId,
-      mode: input.mode,
-      mediaKind: input.mediaKind,
-      arrayKey: input.arrayKey,
-      arrayLabel: input.arrayLabel,
-      usedPct: input.usedPct,
-      target: input.target,
-      candidateCount: created.itemCount,
-      candidateBytes,
-      gateSkipped: created.gateSkipped,
-      actorId: input.actorId,
-      occurredAt: input.now,
-    });
+    if (!input.paceDecision)
+      await recordSpacePolicyProposal({
+        db: input.db,
+        batchId: created.batchId,
+        mode: input.mode,
+        mediaKind: input.mediaKind,
+        arrayKey: input.arrayKey,
+        arrayLabel: input.arrayLabel,
+        usedPct: input.usedPct,
+        target: input.target,
+        candidateCount: created.itemCount,
+        candidateBytes,
+        gateSkipped: created.gateSkipped,
+        actorId: input.actorId,
+        occurredAt: input.now,
+      });
   } catch (err) {
     attributionNote = ` (attribution write failed: ${err instanceof Error ? err.message : String(err)})`;
   }
@@ -710,6 +881,7 @@ async function recordSpacePolicyProposal(input: {
   gateSkipped: boolean;
   actorId: string | null;
   occurredAt: Date;
+  pace?: StoredPaceDecision;
 }): Promise<void> {
   const kindLabel = input.mediaKind === 'movie' ? 'Movies' : 'TV';
   const payload = {
@@ -723,6 +895,7 @@ async function recordSpacePolicyProposal(input: {
     candidateCount: input.candidateCount,
     candidateBytes: input.candidateBytes,
     gateSkipped: input.gateSkipped,
+    ...(input.pace ? { outcome: 'proposed', pace: input.pace } : {}),
   };
   // Mode-aware lead: over-target cites the crossed ceiling; continuous cites the mode (usedPct/target
   // may be null when the *arr disk read was unavailable).
@@ -732,16 +905,14 @@ async function recordSpacePolicyProposal(input: {
       : `${input.arrayLabel} is ${input.usedPct}% used (target ${input.target}%).`;
 
   // Batch-scoped ledger event (mediaItemId null) — the durable WHY the tuning report joins on.
-  await resolveDb(input.db)
-    .insert(ledgerEvents)
-    .values({
-      mediaItemId: null,
-      eventType: 'trash_space_policy',
-      source: 'maintainerr',
-      occurredAt: input.occurredAt,
-      requestedByUserId: input.actorId,
-      payload,
-    });
+  await resolveDb(input.db).insert(ledgerEvents).values({
+    mediaItemId: null,
+    eventType: 'trash_space_policy',
+    source: 'maintainerr',
+    occurredAt: input.occurredAt,
+    requestedByUserId: input.actorId,
+    payload,
+  });
 
   // The Activity/Bulletin notification (source 'trash' — the app is the event source).
   await recordNotification({
@@ -785,6 +956,8 @@ export interface SpacePolicyStatus {
   kinds: SpacePolicyKindStatus[];
   /** The most recent proposals (newest first, capped) for the card's history line. */
   recentProposals: SpacePolicyProposalRecord[];
+  /** Latest stored job evaluations; reading never resolves external clients. */
+  pace: DynamicPaceRead | null;
 }
 
 function toProposalRecord(row: {
@@ -819,10 +992,18 @@ export async function getSpacePolicyStatus(input: {
   const rows = await db
     .select({ occurredAt: ledgerEvents.occurredAt, payload: ledgerEvents.payload })
     .from(ledgerEvents)
-    .where(eq(ledgerEvents.eventType, 'trash_space_policy'))
+    .where(
+      and(
+        eq(ledgerEvents.eventType, 'trash_space_policy'),
+        sql`${ledgerEvents.payload}->>'batchId' IS NOT NULL`,
+        sql`coalesce(${ledgerEvents.payload}->>'outcome', 'proposed') = 'proposed'`,
+      ),
+    )
     .orderBy(desc(ledgerEvents.occurredAt))
     .limit(20);
-  const records = rows.map((r) => toProposalRecord(r as { occurredAt: Date; payload: Record<string, unknown> }));
+  const records = rows.map((r) =>
+    toProposalRecord(r as { occurredAt: Date; payload: Record<string, unknown> }),
+  );
 
   const kinds: SpacePolicyKindStatus[] = [];
   for (const mediaKind of ['movie', 'tv'] as const) {
@@ -839,82 +1020,92 @@ export async function getSpacePolicyStatus(input: {
     lastProposalAt: records[0]?.proposedAt ?? null,
     kinds,
     recentProposals: records.slice(0, 10),
+    pace: await readStoredDynamicPace(db),
   };
 }
 
-/** The status card's pace read. `applied` is false while the switch is off. */
+/** D-18: sanitized durable job reasoning, never recomputed by the status read. */
+export interface StoredPaceDecision {
+  mode: 'observe-only' | 'enabled';
+  applied: boolean;
+  fallbackReason: string | null;
+  explanation: DynamicPaceExplanation | null;
+  selectedBytes: number;
+  /** Original array allocation; present on transactional proposals (ADR-124). */
+  allocation?: DynamicPaceExplanation | null;
+}
+
 export interface DynamicPaceRead {
   applied: boolean;
-  /** Eligible bytes are the candidate snapshot, which lags the live set the proposal uses. */
-  poolSource: 'snapshot';
-  arrays: Array<{ key: string; explanation: DynamicPaceExplanation }>;
+  poolSource: 'job';
+  arrays: Array<{
+    key: string;
+    decisions: Array<
+      StoredPaceDecision & {
+        mediaKind: TrashMediaKind;
+        evaluatedAt: string;
+        outcome: string;
+        batchId: string | null;
+      }
+    >;
+  }>;
 }
 
-/**
- * ADR-120 — the reasoning for each batchable array (gap, intake, required, chosen, shortfall),
- * including while the switch is off. A missing series comes back as not applicable with a zero
- * ask. Throws only if the disk or the snapshot read throws; the router turns that into a null
- * pace so the existing card still loads.
- */
-export async function explainLiveDynamicPace(input: {
-  db?: DbClient;
-  arr: UtilizationArrBundle;
-  readSamples: (arrayKey: string) => Promise<readonly FreeSpaceSample[] | null>;
-  now?: Date;
-}): Promise<DynamicPaceRead> {
-  const now = input.now ?? new Date();
-  const policy = await getSpacePolicy(input.db);
-  const pace = policy.dynamicPace ?? resolveDynamicPace(undefined);
-  const windowRaw = await getAppSetting(input.db, 'trash_default_window_days');
-  const windowDays =
-    typeof windowRaw === 'number' && Number.isFinite(windowRaw) && windowRaw >= 1
-      ? Math.trunc(windowRaw)
-      : APP_SETTING_DEFAULTS.trash_default_window_days;
-  const utilization = await getUtilization({ db: input.db, arr: input.arr });
-  const deletions = await recordedSweepDeletions(input.db, now);
-  const saveRate = await measureTrashYield(input.db, now);
-  const pools = await measureDeletableSnapshotPools(input.db, now);
-  const nowSec = Math.floor(now.getTime() / 1000);
+async function readStoredDynamicPace(db: DbClient): Promise<DynamicPaceRead | null> {
+  // Keep the immutable sizing record visible while its batch is open, including interrupted
+  // promotion and later heals/skips. Without an open proposal, show the newest stored outcome.
+  // DISTINCT ON also prevents one kind's repeated skips from displacing the other kind.
+  const rows = await db
+    .selectDistinctOn(
+      [sql`${ledgerEvents.payload}->>'array'`, sql`${ledgerEvents.payload}->>'mediaKind'`],
+      { payload: ledgerEvents.payload, occurredAt: ledgerEvents.occurredAt },
+    )
+    .from(ledgerEvents)
+    .leftJoin(
+      trashBatches,
+      eq(sql<string>`${trashBatches.id}::text`, sql<string>`${ledgerEvents.payload}->>'batchId'`),
+    )
+    .where(
+      and(eq(ledgerEvents.eventType, 'trash_space_policy'), sql`${ledgerEvents.payload} ? 'pace'`),
+    )
+    .orderBy(
+      sql`${ledgerEvents.payload}->>'array'`,
+      sql`${ledgerEvents.payload}->>'mediaKind'`,
+      desc(sql`CASE WHEN ${inArray(trashBatches.state, [...OPEN_STATES])}
+        AND ${ledgerEvents.payload}->>'outcome' = 'proposed' THEN 1 ELSE 0 END`),
+      desc(ledgerEvents.occurredAt),
+      desc(ledgerEvents.recordedAt),
+      desc(ledgerEvents.id),
+    )
+    .limit(STORAGE_ARRAYS.length * TRASH_MEDIA_KINDS.length);
   const arrays: DynamicPaceRead['arrays'] = [];
-  for (const util of utilization) {
-    const kinds = trashKindsForArray(util.key);
-    if (kinds.length === 0) continue;
-    const diskOk =
-      !util.unavailable &&
-      util.freeSpace != null &&
-      util.totalSpace != null &&
-      util.target != null &&
-      util.totalSpace > 0;
-    let samples: readonly FreeSpaceSample[] = [];
-    if (diskOk) {
-      try {
-        samples = (await input.readSamples(util.key)) ?? [];
-      } catch {
-        samples = [];
-      }
+  for (const row of rows) {
+    const p = row.payload as Record<string, unknown>;
+    if (
+      typeof p.array !== 'string' ||
+      (p.mediaKind !== 'movie' && p.mediaKind !== 'tv') ||
+      !p.pace ||
+      typeof p.pace !== 'object'
+    )
+      continue;
+    let array = arrays.find((a) => a.key === p.array);
+    if (!array) {
+      array = { key: p.array, decisions: [] };
+      arrays.push(array);
     }
-    const explanation = explainDynamicPace({
-      freeBytes: util.freeSpace ?? Number.NaN,
-      totalBytes: util.totalSpace ?? Number.NaN,
-      targetPct: util.target ?? Number.NaN,
-      samples,
-      deletions,
-      now: nowSec,
-      windowDays,
-      horizonDays: pace.horizonDays,
-      floorBytes: pace.floorBytes,
-      ceilingBytes: pace.ceilingBytes,
-      saveRate,
-      pools: kinds.map((mediaKind) => ({
-        mediaKind,
-        poolBytes: pools.find((pool) => pool.mediaKind === mediaKind)?.poolBytes ?? 0,
-      })),
+    array.decisions.push({
+      ...(p.pace as StoredPaceDecision),
+      mediaKind: p.mediaKind,
+      evaluatedAt: row.occurredAt.toISOString(),
+      outcome: String(p.outcome),
+      batchId: typeof p.batchId === 'string' ? p.batchId : null,
     });
-    arrays.push({ key: util.key, explanation });
   }
-  return {
-    applied: pace.enabled === true && arrays.some((array) => array.explanation.applicable),
-    poolSource: 'snapshot',
-    arrays,
-  };
+  return arrays.length === 0
+    ? null
+    : {
+        applied: arrays.some((a) => a.decisions.some((d) => d.applied)),
+        poolSource: 'job',
+        arrays,
+      };
 }

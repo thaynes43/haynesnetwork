@@ -213,6 +213,17 @@ describe('getTuningReport (ADR-031 — rescue-vs-delete stats + graduation)', ()
     expect(r.graduation.completedPolicyBatches).toBe(0);
   });
 
+  it('an observed open manual batch does not become a policy batch for graduation', async () => {
+    const batchId = await seedBatch({ mediaKind: 'movie', state: 'deleted', policy: false,
+      items: [{ state: 'deleted' }] });
+    await t.db.insert(ledgerEvents).values({ eventType: 'trash_space_policy', source: 'maintainerr', occurredAt: new Date(),
+      payload: { batchId, mediaKind: 'movie', array: 'haynestower', outcome: 'skipped_open_batch',
+        pace: { mode: 'observe-only', applied: false } } });
+    const report = await getTuningReport({ db: t.db });
+    expect(report.overall.deleted).toBe(1);
+    expect(report.graduation.completedPolicyBatches).toBe(0);
+  });
+
   it('empty dataset → zeroed report, graduation not met', async () => {
     const r = await getTuningReport({ db: t.db });
     expect(r.overall).toMatchObject({ proposed: 0, rescued: 0, deleted: 0, saveRatePct: null });

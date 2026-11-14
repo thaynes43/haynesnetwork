@@ -4,9 +4,16 @@
 // auto-promote to leaving_soon (no admin-review gate, no cooldown), the SELF-HEAL of a stuck batch
 // (the prod stall), the trash_space_policy ledger event + space_policy notification writes, the settings
 // audit, and the ledger-derived status read.
-import { afterEach, beforeAll, beforeEach, afterAll, describe, expect, it } from 'vitest';
-import { eq, inArray } from 'drizzle-orm';
-import { ledgerEvents, mediaItems, notifications, permissionAudit, trashBatchItems, trashBatches } from '@hnet/db/schema';
+import { afterEach, beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest';
+import { eq, inArray, sql } from 'drizzle-orm';
+import {
+  ledgerEvents,
+  mediaItems,
+  notifications,
+  permissionAudit,
+  trashBatchItems,
+  trashBatches,
+} from '@hnet/db/schema';
 import {
   DYNAMIC_PACE_CEILING_BYTES,
   DYNAMIC_PACE_FLOOR_BYTES,
@@ -19,19 +26,34 @@ import {
   getSpacePolicyStatus,
   measureTrashYield,
   recordedSweepDeletions,
+  measureDeletableSnapshotPools,
+  forecastQueryRange,
+  sweepExpiredBatches,
+  createStaticReleaseBlockArr,
   saveExclusion,
   setAppSetting,
   type ArrClientBundle,
   type SpacePolicy,
 } from '../src/index';
+import * as trashFlow from '../src/trash-flow';
 import { baseState, makeMaintainerr, movieCollection, tvCollection } from './maintainerr-stub';
-import { bootMigratedDb, createUser, type TestDb } from './helpers';
+import {
+  bootMigratedDb,
+  createUser,
+  seedVerifiedWatchlistRegistry,
+  upsertDeletableMediaItems,
+  type TestDb,
+} from './helpers';
 
 const TB = 1_000_000_000_000;
 
 // --- *arr /diskspace stub (from the storage-metrics test) --------------------------------------------
 type DiskSpec = { path: string; freeSpace: number; totalSpace: number }[] | 'fail';
-function makeArrBundle(cfg: { radarr?: DiskSpec; sonarr?: DiskSpec; lidarr?: DiskSpec }): ArrClientBundle {
+function makeArrBundle(cfg: {
+  radarr?: DiskSpec;
+  sonarr?: DiskSpec;
+  lidarr?: DiskSpec;
+}): ArrClientBundle {
   const byHost: Record<string, DiskSpec | undefined> = {
     'radarr.test': cfg.radarr,
     'sonarr.test': cfg.sonarr,
@@ -41,8 +63,12 @@ function makeArrBundle(cfg: { radarr?: DiskSpec; sonarr?: DiskSpec; lidarr?: Dis
     const url = new URL(String(input));
     if (url.pathname.endsWith('/diskspace')) {
       const spec = byHost[url.hostname];
-      if (spec === 'fail' || spec === undefined) return new Response('{"m":"down"}', { status: 500 });
-      return new Response(JSON.stringify(spec), { status: 200, headers: { 'content-type': 'application/json' } });
+      if (spec === 'fail' || spec === undefined)
+        return new Response('{"m":"down"}', { status: 500 });
+      return new Response(JSON.stringify(spec), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     }
     return new Response('{"m":"no stub"}', { status: 404 });
   }) as typeof fetch;
@@ -56,12 +82,17 @@ function makeArrBundle(cfg: { radarr?: DiskSpec; sonarr?: DiskSpec; lidarr?: Dis
 }
 
 // HaynesTower at 90% used (100 free / 1000 total) — OVER an 80% target; and at 70% — UNDER.
-const TOWER_OVER: DiskSpec = [{ path: '/data/haynestower', freeSpace: 100 * TB, totalSpace: 1000 * TB }];
-const TOWER_UNDER: DiskSpec = [{ path: '/data/haynestower', freeSpace: 300 * TB, totalSpace: 1000 * TB }];
+const TOWER_OVER: DiskSpec = [
+  { path: '/data/haynestower', freeSpace: 100 * TB, totalSpace: 1000 * TB },
+];
+const TOWER_UNDER: DiskSpec = [
+  { path: '/data/haynestower', freeSpace: 300 * TB, totalSpace: 1000 * TB },
+];
 const MUSIC: DiskSpec = [{ path: '/data/cephfs-hdd', freeSpace: 130 * TB, totalSpace: 175 * TB }];
 
 const overBundle = () => makeArrBundle({ radarr: TOWER_OVER, sonarr: TOWER_OVER, lidarr: MUSIC });
-const underBundle = () => makeArrBundle({ radarr: TOWER_UNDER, sonarr: TOWER_UNDER, lidarr: MUSIC });
+const underBundle = () =>
+  makeArrBundle({ radarr: TOWER_UNDER, sonarr: TOWER_UNDER, lidarr: MUSIC });
 
 const ENABLED: SpacePolicy = {
   enabled: true,
@@ -72,9 +103,7 @@ const ENABLED: SpacePolicy = {
 };
 
 /** ENABLED with the movie kind's caps overridden (DESIGN-014 amendment 2026-07-09, build A). */
-const withMovieCaps = (
-  movie: Partial<SpacePolicy['perKind']['movie']>,
-): SpacePolicy => ({
+const withMovieCaps = (movie: Partial<SpacePolicy['perKind']['movie']>): SpacePolicy => ({
   ...ENABLED,
   perKind: { ...defaultPerKind(), movie: { ...defaultPerKind().movie, ...movie } },
 });
@@ -85,17 +114,27 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
 
   beforeAll(async () => {
     t = await bootMigratedDb();
-    actorId = (await createUser(t.db, { email: 'policy-admin@example.com', displayName: 'Policy Admin' })).id;
+    actorId = (
+      await createUser(t.db, { email: 'policy-admin@example.com', displayName: 'Policy Admin' })
+    ).id;
     await setAppSetting({ db: t.db, key: 'space_targets', value: { haynestower: 80 }, actorId });
   });
   afterAll(async () => t?.stop());
 
   // Clean slate between tests (in packages/domain — the no-direct-writes guard does not apply here).
   beforeEach(async () => {
+    await setAppSetting({ db: t.db, key: 'trash_default_window_days', value: 7, actorId });
+    await setAppSetting({ db: t.db, key: 'space_targets', value: { haynestower: 80 }, actorId });
     await t.db.delete(trashBatches); // cascades items + saves
     await t.db
       .delete(ledgerEvents)
-      .where(inArray(ledgerEvents.eventType, ['trash_space_policy', 'trash_batch_transition', 'trash_restored']));
+      .where(
+        inArray(ledgerEvents.eventType, [
+          'trash_space_policy',
+          'trash_batch_transition',
+          'trash_restored',
+        ]),
+      );
     await t.db.delete(notifications);
     await setAppSetting({ db: t.db, key: 'trash_skip_admin_gate', value: false, actorId });
   });
@@ -104,12 +143,18 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     await t.db.delete(mediaItems);
   });
 
-  const setPolicy = (p: SpacePolicy) => setAppSetting({ db: t.db, key: 'space_policy', value: p, actorId });
+  const setPolicy = (p: SpacePolicy) =>
+    setAppSetting({ db: t.db, key: 'space_policy', value: p, actorId });
 
   it('over target + enabled + candidates → PROPOSES AND PROMOTES a movie batch (leaving_soon) + event + notification', async () => {
     await setPolicy(ENABLED);
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
 
     expect(report.enabled).toBe(true);
     expect(report.proposedCount).toBe(1);
@@ -130,7 +175,10 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(report.arrays.find((a) => a.key === 'cephfs')!.proposals).toEqual([]);
 
     // The batch went STRAIGHT to leaving_soon with the save window open (no admin-review gate, ADR-073).
-    const [batch] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, movie.batchId!));
+    const [batch] = await t.db
+      .select()
+      .from(trashBatches)
+      .where(eq(trashBatches.id, movie.batchId!));
     expect(batch!.state).toBe('leaving_soon');
     expect(batch!.gateSkipped).toBe(true);
     expect(batch!.expiresAt).not.toBeNull();
@@ -150,7 +198,10 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(payload.candidateCount).toBe(3);
 
     // The Activity/Bulletin notification (source 'trash', type 'space_policy').
-    const [note] = await t.db.select().from(notifications).where(eq(notifications.type, 'space_policy'));
+    const [note] = await t.db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.type, 'space_policy'));
     expect(note!.source).toBe('trash');
     expect(note!.title).toContain('Movies');
   });
@@ -160,7 +211,12 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     const state = baseState({ collections: [movieCollection()] });
     const { bundle } = makeMaintainerr(state);
     // Tick 1: proposes + promotes — the drive creates the Leaving-Soon record (id 555) + its shell.
-    const first = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+    const first = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
     const batchId = first.arrays
       .find((a) => a.key === 'haynestower')!
       .proposals.find((p) => p.mediaKind === 'movie')!.batchId!;
@@ -173,7 +229,12 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     state.ruleGroups = state.ruleGroups.filter((g) => g.collectionId !== 555);
 
     // Tick 2: the open batch is left alone BUT its collection is healed — re-driven + re-pointed.
-    const second = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+    const second = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
     const proposal = second.arrays
       .find((a) => a.key === 'haynestower')!
       .proposals.find((p) => p.mediaKind === 'movie')!;
@@ -193,15 +254,18 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
   const proposeMovie = async (policy: SpacePolicy) => {
     await setPolicy(policy);
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
     return report.arrays
       .find((a) => a.key === 'haynestower')!
       .proposals.find((p) => p.mediaKind === 'movie')!;
   };
   const batchIds = async (batchId: string) =>
-    (
-      await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.batchId, batchId))
-    )
+    (await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.batchId, batchId)))
       .map((i) => i.maintainerrMediaId)
       .sort();
 
@@ -236,7 +300,10 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
 
   it('a DISABLED cap is ignored — the whole pool is proposed', async () => {
     const movie = await proposeMovie(
-      withMovieCaps({ maxItems: { enabled: false, value: 1 }, targetBytes: { enabled: false, value: 1 } }),
+      withMovieCaps({
+        maxItems: { enabled: false, value: 1 },
+        targetBytes: { enabled: false, value: 1 },
+      }),
     );
     expect(movie.outcome).toBe('proposed');
     expect(movie.candidateCount).toBe(3); // both caps off ⇒ all three
@@ -244,8 +311,15 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
 
   it('proposes BOTH movie and tv when both rule collections have candidates', async () => {
     await setPolicy(ENABLED);
-    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection(), tvCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+    const { bundle } = makeMaintainerr(
+      baseState({ collections: [movieCollection(), tvCollection()] }),
+    );
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
     expect(report.proposedCount).toBe(2);
     const tower = report.arrays.find((a) => a.key === 'haynestower')!;
     expect(tower.proposals.find((p) => p.mediaKind === 'movie')!.outcome).toBe('proposed');
@@ -257,13 +331,20 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
   it('UNDER target (over-target mode) → nothing proposed (skipped_under_target), no batch created', async () => {
     await setPolicy(ENABLED);
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: underBundle(), actorId });
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: underBundle(),
+      actorId,
+    });
     expect(report.proposedCount).toBe(0);
     const tower = report.arrays.find((a) => a.key === 'haynestower')!;
     expect(tower.overTarget).toBe(false);
     expect(tower.usedPct).toBe(70);
     // Opted in but under target ⇒ each kind reports skipped_under_target (no NEW batch), never []).
-    expect(tower.proposals.find((p) => p.mediaKind === 'movie')!.outcome).toBe('skipped_under_target');
+    expect(tower.proposals.find((p) => p.mediaKind === 'movie')!.outcome).toBe(
+      'skipped_under_target',
+    );
     expect(tower.proposals.find((p) => p.mediaKind === 'tv')!.outcome).toBe('skipped_under_target');
     expect(await t.db.select().from(trashBatches)).toHaveLength(0);
   });
@@ -271,7 +352,12 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
   it('DISABLED policy → a no-op run (no utilization read, no proposals, no writes)', async () => {
     await setPolicy({ ...ENABLED, enabled: false });
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
     expect(report.enabled).toBe(false);
     expect(report.proposedCount).toBe(0);
     expect(report.arrays).toEqual([]);
@@ -281,7 +367,12 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
   it('per-array OFF (global on) → array reported but never proposes', async () => {
     await setPolicy({ ...ENABLED, perArray: { haynestower: { enabled: false } } });
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
     expect(report.proposedCount).toBe(0);
     const tower = report.arrays.find((a) => a.key === 'haynestower')!;
     expect(tower.enabled).toBe(false);
@@ -292,10 +383,19 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
   it('open batch for the kind → skipped_open_batch (idempotence, no error, no duplicate)', async () => {
     await setPolicy(ENABLED);
     // Seed an OPEN movie batch directly (the one-open-per-kind slot is taken).
-    await t.db.insert(trashBatches).values({ mediaKind: 'movie', state: 'admin_review', createdBy: actorId });
+    await t.db
+      .insert(trashBatches)
+      .values({ mediaKind: 'movie', state: 'admin_review', createdBy: actorId });
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('skipped_open_batch');
     expect(report.proposedCount).toBe(0);
     expect(await t.db.select().from(trashBatches)).toHaveLength(1); // no second batch created
@@ -317,13 +417,23 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     expect(stuck.gateSkipped).toBe(false);
 
     // Next run: no cooldown, no admin gate — the stuck batch self-heals to leaving_soon.
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('promoted');
     expect(movie.batchId).toBe(stuck.batchId);
     expect(report.proposedCount).toBe(1);
 
-    const [batch] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, stuck.batchId));
+    const [batch] = await t.db
+      .select()
+      .from(trashBatches)
+      .where(eq(trashBatches.id, stuck.batchId));
     expect(batch!.state).toBe('leaving_soon');
     expect(batch!.gateSkipped).toBe(true);
     expect(batch!.expiresAt).not.toBeNull();
@@ -338,21 +448,42 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
   it('SELF-HEAL does NOT touch a MANUAL admin_review batch (createdBy set) — left for the admin', async () => {
     await setPolicy(ENABLED);
     // A human-created admin_review batch (createdBy = a real user) is the admin's to curate.
-    await t.db.insert(trashBatches).values({ mediaKind: 'movie', state: 'admin_review', createdBy: actorId });
+    await t.db
+      .insert(trashBatches)
+      .values({ mediaKind: 'movie', state: 'admin_review', createdBy: actorId });
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('skipped_open_batch');
-    const [batch] = await t.db.select().from(trashBatches).where(eq(trashBatches.mediaKind, 'movie'));
+    const [batch] = await t.db
+      .select()
+      .from(trashBatches)
+      .where(eq(trashBatches.mediaKind, 'movie'));
     expect(batch!.state).toBe('admin_review'); // untouched
   });
 
   it('a healthy open leaving_soon batch is left alone (skipped_open_batch, no duplicate)', async () => {
     await setPolicy(ENABLED);
-    await t.db.insert(trashBatches).values({ mediaKind: 'movie', state: 'leaving_soon', createdBy: null });
+    await t.db
+      .insert(trashBatches)
+      .values({ mediaKind: 'movie', state: 'leaving_soon', createdBy: null });
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('skipped_open_batch');
     expect(report.proposedCount).toBe(0);
     expect(await t.db.select().from(trashBatches)).toHaveLength(1);
@@ -361,8 +492,15 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
   it('min-candidates → too few pending is skipped', async () => {
     await setPolicy({ ...ENABLED, minCandidates: 10 }); // the movie collection has only 3
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('skipped_min_candidates');
     expect(movie.candidateCount).toBe(3);
     expect(report.proposedCount).toBe(0);
@@ -372,33 +510,74 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     await setPolicy({ ...ENABLED, minCandidates: 3 });
     const state = baseState({ collections: [movieCollection()] });
     const { bundle } = makeMaintainerr(state);
-    const [saved] = await t.db.insert(mediaItems).values({
-      arrKind: 'radarr', arrItemId: 1, tmdbId: 9001,
-      title: 'Saved movie', sortTitle: 'saved movie', monitored: true,
-      qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/movies',
-    }).returning();
+    const [saved] = await t.db
+      .insert(mediaItems)
+      .values({
+        arrKind: 'radarr',
+        arrItemId: 1,
+        tmdbId: 9001,
+        title: 'Saved movie',
+        sortTitle: 'saved movie',
+        monitored: true,
+        qualityProfileId: 1,
+        qualityProfileName: 'Any',
+        rootFolder: '/movies',
+      })
+      .returning();
     state.fail.add('GET /rules/exclusion');
     const save = await saveExclusion({
-      db: t.db, maintainerr: bundle, mediaItemId: saved!.id,
-      maintainerrMediaId: 'ms-9001', actorId,
+      db: t.db,
+      maintainerr: bundle,
+      mediaItemId: saved!.id,
+      maintainerrMediaId: 'ms-9001',
+      actorId,
     });
     state.fail.clear();
     expect(save).toMatchObject({ recorded: true, exclusion: 'pending' });
     expect(state.exclusions.has('ms-9001')).toBe(false);
 
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
-    expect(movie).toMatchObject({ outcome: 'skipped_min_candidates', candidateCount: 2, candidateBytes: 5_000_000_000 });
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(movie).toMatchObject({
+      outcome: 'skipped_min_candidates',
+      candidateCount: 2,
+      candidateBytes: 5_000_000_000,
+    });
     expect(report.proposedCount).toBe(0);
     expect(await t.db.select().from(trashBatches)).toHaveLength(0);
-    expect(await t.db.select().from(ledgerEvents).where(eq(ledgerEvents.eventType, 'trash_space_policy'))).toHaveLength(0);
-    expect(await t.db.select().from(notifications).where(eq(notifications.type, 'space_policy'))).toHaveLength(0);
+    expect(
+      await t.db
+        .select()
+        .from(ledgerEvents)
+        .where(eq(ledgerEvents.eventType, 'trash_space_policy')),
+    ).toHaveLength(0);
+    expect(
+      await t.db.select().from(notifications).where(eq(notifications.type, 'space_policy')),
+    ).toHaveLength(0);
 
     // Lowering the minimum admits the same two unsaved titles; the pending Save still takes no slot.
     await setPolicy({ ...ENABLED, minCandidates: 2 });
-    const next = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
-    const proposed = next.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
-    expect(proposed).toMatchObject({ outcome: 'proposed', candidateCount: 2, candidateBytes: 5_000_000_000 });
+    const next = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
+    const proposed = next.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
+    expect(proposed).toMatchObject({
+      outcome: 'proposed',
+      candidateCount: 2,
+      candidateBytes: 5_000_000_000,
+    });
     expect(await batchIds(proposed.batchId!)).toEqual(['ms-9002', 'ms-9003']);
   });
 
@@ -406,11 +585,21 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     await setPolicy(ENABLED);
     await setAppSetting({ db: t.db, key: 'trash_skip_admin_gate', value: true, actorId });
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: overBundle(), actorId });
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      actorId,
+    });
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('proposed');
     expect(movie.gateSkipped).toBe(true);
-    const [batch] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, movie.batchId!));
+    const [batch] = await t.db
+      .select()
+      .from(trashBatches)
+      .where(eq(trashBatches.id, movie.batchId!));
     expect(batch!.state).toBe('leaving_soon');
     expect(batch!.gateSkipped).toBe(true);
   });
@@ -422,7 +611,12 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
     await setPolicy(CONTINUOUS);
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
     // underBundle ⇒ 70% used, UNDER the 80% target — over-target mode would skip; continuous proposes.
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: underBundle(), actorId });
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: underBundle(),
+      actorId,
+    });
     expect(report.proposedCount).toBe(1);
     const tower = report.arrays.find((a) => a.key === 'haynestower')!;
     expect(tower.overTarget).toBe(false); // utilization is still read for reporting
@@ -433,17 +627,31 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
   it('continuous mode STILL requires the array to be opted in (per-array off ⇒ no proposal)', async () => {
     await setPolicy({ ...CONTINUOUS, perArray: { haynestower: { enabled: false } } });
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: underBundle(), actorId });
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: underBundle(),
+      actorId,
+    });
     expect(report.proposedCount).toBe(0);
     expect(report.arrays.find((a) => a.key === 'haynestower')!.proposals).toEqual([]);
   });
 
   it('continuous mode skips when a batch is already open (idempotence)', async () => {
     await setPolicy(CONTINUOUS);
-    await t.db.insert(trashBatches).values({ mediaKind: 'movie', state: 'admin_review', createdBy: actorId });
+    await t.db
+      .insert(trashBatches)
+      .values({ mediaKind: 'movie', state: 'admin_review', createdBy: actorId });
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: underBundle(), actorId });
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: underBundle(),
+      actorId,
+    });
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('skipped_open_batch');
     expect(report.proposedCount).toBe(0);
   });
@@ -451,8 +659,15 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
   it('continuous mode still respects min-candidates', async () => {
     await setPolicy({ ...CONTINUOUS, minCandidates: 10 }); // only 3 pending
     const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
-    const report = await evaluateSpacePolicy({ db: t.db, maintainerr: bundle, arr: underBundle(), actorId });
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: underBundle(),
+      actorId,
+    });
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('skipped_min_candidates');
     expect(report.proposedCount).toBe(0);
   });
@@ -554,7 +769,10 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
       key: 'space_policy',
       value: {
         ...ENABLED,
-        perKind: { ...defaultPerKind(), movie: { ...defaultPerKind().movie, maxItems: { enabled: true, value: 4 } } },
+        perKind: {
+          ...defaultPerKind(),
+          movie: { ...defaultPerKind().movie, maxItems: { enabled: true, value: 4 } },
+        },
         targetBytesPerBatch: 5_000_000_000,
       } as unknown as SpacePolicy,
       actorId,
@@ -636,59 +854,86 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
 
   it('the switch off equals today: maxItems 1, and the free-space reader is not called', async () => {
     const report = await proposePaced(pacePolicy(false, 1), 'throw', 'over');
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('proposed');
     expect(movie.candidateCount).toBe(1);
     expect(report.arrays.find((a) => a.key === 'haynestower')!.pace).toBeNull();
   });
 
-  it('the switch on with no series keeps today\'s cap', async () => {
+  it("the switch on with no series keeps today's cap", async () => {
     const report = await proposePaced(pacePolicy(true, 1), 'none', 'over');
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('proposed');
     expect(movie.candidateCount).toBe(1);
   });
 
-  it('the switch on with a too-short series keeps today\'s cap', async () => {
+  it("the switch on with a too-short series keeps today's cap", async () => {
     const report = await proposePaced(pacePolicy(true, 1), paceSeries(0).slice(0, 3), 'over');
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('proposed');
     expect(movie.candidateCount).toBe(1);
     expect(report.arrays.find((a) => a.key === 'haynestower')!.pace?.applicable).toBe(false);
   });
 
-  it('the switch on replaces maxItems with the byte ask (a flat series still closes the gap)', async () => {
+  it('the switch on retains the title cap beside the hard byte ask', async () => {
     const report = await proposePaced(pacePolicy(true, 1), paceSeries(0), 'over');
     const tower = report.arrays.find((a) => a.key === 'haynestower')!;
     const movie = tower.proposals.find((p) => p.mediaKind === 'movie')!;
     expect(tower.pace?.applicable).toBe(true);
     expect(movie.outcome).toBe('proposed');
-    expect(movie.candidateCount).toBe(2);
-    expect(await batchIds(movie.batchId!)).toEqual(['ms-9001', 'ms-9002']);
+    expect(movie.candidateCount).toBe(1);
+    expect(await batchIds(movie.batchId!)).toEqual(['ms-9001']);
   });
 
   it('under target with the switch off proposes nothing', async () => {
     const report = await proposePaced(pacePolicy(false, 1), 'throw', 'under');
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('skipped_under_target');
     expect(report.proposedCount).toBe(0);
   });
 
   it('under target with the switch on and a filling library proposes a steady batch', async () => {
     const report = await proposePaced(pacePolicy(true, 1), paceSeries(-2_000_000_000_000), 'under');
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('proposed');
-    expect(movie.candidateCount).toBe(2);
+    expect(movie.candidateCount).toBe(1);
     expect(report.arrays.find((a) => a.key === 'haynestower')!.pace?.pace).toBe('steady');
   });
 
   it('a drain that reaches the floor inside the horizon proposes nothing', async () => {
     const report = await proposePaced(pacePolicy(true, 50), paceSeries(2_000_000_000_000), 'over');
-    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const movie = report.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('skipped_pace');
     expect(report.proposedCount).toBe(0);
     const [batch] = await t.db.select().from(trashBatches);
     expect(batch).toBeUndefined();
+  });
+
+  it('under target, the final title-capped selection below the floor is not posted', async () => {
+    const policy = pacePolicy(true, 1);
+    policy.dynamicPace!.floorBytes = 5e9;
+    policy.dynamicPace!.ceilingBytes = 9e9;
+    const report = await proposePaced(policy, paceSeries(-2e12), 'under');
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals[0]!;
+    expect(movie.outcome).toBe('skipped_empty');
+    expect(report.proposedCount).toBe(0);
+    expect(
+      (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+        (d) => d.mediaKind === 'movie',
+      )!.selectedBytes,
+    ).toBe(0);
   });
 
   it('an open batch still holds the slot when the pace is on', async () => {
@@ -697,10 +942,561 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
       .find((a) => a.key === 'haynestower')!
       .proposals.find((p) => p.mediaKind === 'movie')!.batchId;
     const second = await proposePaced(pacePolicy(true, 1), paceSeries(0), 'over');
-    const movie = second.arrays.find((a) => a.key === 'haynestower')!.proposals.find((p) => p.mediaKind === 'movie')!;
+    const movie = second.arrays
+      .find((a) => a.key === 'haynestower')!
+      .proposals.find((p) => p.mediaKind === 'movie')!;
     expect(movie.outcome).toBe('skipped_open_batch');
     expect(movie.batchId).toBe(created);
     expect(second.proposedCount).toBe(0);
+  });
+
+  it('observe-only stores the hypothetical ask while today’s cap builds the batch', async () => {
+    const policy = pacePolicy(false, 1);
+    policy.dynamicPace!.observeOnly = true;
+    policy.dynamicPace!.ceilingBytes = 1; // no title could fit a paced batch
+    const report = await proposePaced(policy, paceSeries(0), 'over');
+    expect(report.proposedCount).toBe(1);
+    const status = await getSpacePolicyStatus({ db: t.db });
+    const decision = status.pace!.arrays[0]!.decisions.find((d) => d.mediaKind === 'movie')!;
+    expect(decision).toMatchObject({
+      mode: 'observe-only',
+      applied: false,
+      fallbackReason: null,
+      outcome: 'proposed',
+      selectedBytes: 4e9,
+      evaluatedAt: paceNow.toISOString(),
+    });
+    expect(decision.explanation!.chosenBytes).toBe(1);
+    const [event] = await t.db
+      .select()
+      .from(ledgerEvents)
+      .where(eq(ledgerEvents.eventType, 'trash_space_policy'));
+    expect(event!.payload.pace).toMatchObject({ mode: 'observe-only', applied: false });
+  });
+
+  it('a zero ask is recorded; status returns that stored decision without recomputing', async () => {
+    await proposePaced(pacePolicy(true, 50), paceSeries(2e12), 'over');
+    const status = await getSpacePolicyStatus({ db: t.db });
+    expect(status.lastProposalAt).toBeNull();
+    expect(status.recentProposals).toEqual([]);
+    expect(status.pace!.applied).toBe(false);
+    expect(status.pace!.arrays[0]!.decisions).toHaveLength(2);
+    expect(status.pace!.arrays[0]!.decisions[0]).toMatchObject({
+      outcome: 'skipped_pace',
+      applied: false,
+      fallbackReason: null,
+    });
+    await setPolicy(ENABLED); // the historical reasoning survives a later setting change
+    expect((await getSpacePolicyStatus({ db: t.db })).pace).toEqual(status.pace);
+  });
+
+  it.each(['throw', 'none'] as const)(
+    'a %s reader falls back with a stored reason and today’s caps',
+    async (reader) => {
+      await proposePaced(pacePolicy(true, 1), reader, 'over');
+      const status = await getSpacePolicyStatus({ db: t.db });
+      const movie = status.pace!.arrays[0]!.decisions.find((d) => d.mediaKind === 'movie')!;
+      expect(movie).toMatchObject({
+        outcome: 'proposed',
+        applied: false,
+        explanation: null,
+        fallbackReason: reader === 'throw' ? 'series_read_failed' : 'missing_reader',
+        selectedBytes: 4e9,
+      });
+    },
+  );
+
+  it('a partial preload failure falls back to today’s caps, discarding partial data', async () => {
+    const original = trashFlow.listTrashPending;
+    let reads = 0;
+    const spy = vi.spyOn(trashFlow, 'listTrashPending').mockImplementation(async (input) => {
+      reads++;
+      if (reads === 2) throw new Error('preload unavailable');
+      return original(input);
+    });
+    try {
+      const report = await proposePaced(pacePolicy(true, 1), paceSeries(0), 'over');
+      expect(report.proposedCount).toBe(1);
+      const decision = (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+        (d) => d.mediaKind === 'movie',
+      )!;
+      expect(decision).toMatchObject({
+        applied: false,
+        fallbackReason: 'preload_failed',
+        selectedBytes: 4e9,
+      });
+      expect(reads).toBeGreaterThan(2); // fallback really read again, rather than trusting partial preload
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a stale series falls back and records staleness', async () => {
+    await proposePaced(pacePolicy(true, 1), paceSeries(0).slice(0, -2), 'over');
+    const decision = (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+      (d) => d.mediaKind === 'movie',
+    )!;
+    expect(decision).toMatchObject({
+      applied: false,
+      fallbackReason: 'stale_series',
+      selectedBytes: 4e9,
+    });
+  });
+
+  it('TV retains its five-title cap beside movies under a shared hard byte ceiling', async () => {
+    const policy = pacePolicy(true, 50);
+    policy.perKind.tv.maxItems = { enabled: true, value: 5 };
+    await setPolicy(policy);
+    const tv = tvCollection({
+      items: Array.from({ length: 10 }, (_, i) => ({
+        mediaServerId: `tv-${i}`,
+        tvdbId: 8000 + i,
+        sizeBytes: 100_000_000,
+        addDate: '2026-01-01T00:00:00Z',
+      })),
+    });
+    const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection(), tv] }));
+    const report = await evaluateSpacePolicy({
+      db: t.db,
+      maintainerr: bundle,
+      arr: overBundle(),
+      now: paceNow,
+      readFreeSpace: async () => paceSeries(0),
+    });
+    const tower = report.arrays.find((a) => a.key === 'haynestower')!;
+    expect(tower.proposals.find((p) => p.mediaKind === 'tv')!.candidateCount).toBe(5);
+    const items = await t.db.select().from(trashBatchItems);
+    expect(items.reduce((sum, i) => sum + i.sizeBytes, 0)).toBeLessThanOrEqual(
+      policy.dynamicPace!.ceilingBytes,
+    );
+    expect(tower.pace!.chosenBytes).toBe(items.reduce((sum, i) => sum + i.sizeBytes, 0));
+    expect(tower.pace!.shortfallBytes).toBe(
+      tower.pace!.requiredDeletedBytes - tower.pace!.expectedDeletedBytes,
+    );
+  });
+
+  it('a separate audited movie title cap can only reduce the current cap', async () => {
+    const policy = pacePolicy(true, 50);
+    policy.dynamicPace!.movieMaxItems = 1;
+    const report = await proposePaced(policy, paceSeries(0), 'over');
+    expect(report.arrays.find((a) => a.key === 'haynestower')!.proposals[0]!.candidateCount).toBe(
+      1,
+    );
+    expect((await getSpacePolicy(t.db)).dynamicPace!.movieMaxItems).toBe(1);
+  });
+
+  it.each(['over-target', 'continuous'] as const)(
+    'off preserves the original payload bytes and caps in %s mode',
+    async (mode) => {
+      const captures: string[] = [];
+      for (const explicitOff of [false, true]) {
+        await t.db.delete(trashBatches);
+        await t.db.delete(notifications);
+        await t.db.delete(ledgerEvents).where(eq(ledgerEvents.eventType, 'trash_space_policy'));
+        const p = { ...withMovieCaps({ maxItems: { enabled: true, value: 1 } }), mode };
+        if (explicitOff)
+          p.dynamicPace = { ...pacePolicy(false, 1).dynamicPace!, observeOnly: false };
+        await setPolicy(p);
+        const { bundle } = makeMaintainerr(baseState({ collections: [movieCollection()] }));
+        const reader = vi.fn(async () => {
+          throw new Error('off read');
+        });
+        const report = await evaluateSpacePolicy({
+          db: t.db,
+          maintainerr: bundle,
+          arr: mode === 'continuous' ? underBundle() : overBundle(),
+          now: paceNow,
+          readFreeSpace: reader,
+        });
+        expect(reader).not.toHaveBeenCalled();
+        expect(report.proposedCount).toBe(1);
+        const [event] = await t.db
+          .select()
+          .from(ledgerEvents)
+          .where(eq(ledgerEvents.eventType, 'trash_space_policy'));
+        const pld = event!.payload;
+        // The legacy payload has exactly these fields. Only the newly generated batch UUID varies.
+        expect(pld).toEqual({
+          batchId: report.arrays[0]!.proposals[0]!.batchId,
+          mediaKind: 'movie',
+          mode,
+          array: 'haynestower',
+          arrayLabel: 'HaynesTower',
+          usedPct: mode === 'continuous' ? 70 : 90,
+          target: 80,
+          candidateCount: 1,
+          candidateBytes: 9e9,
+          gateSkipped: true,
+        });
+        captures.push(JSON.stringify({ ...pld, batchId: '<generated>' }));
+        const [notice] = await t.db
+          .select()
+          .from(notifications)
+          .where(eq(notifications.type, 'space_policy'));
+        expect(notice!.payload).toEqual(pld);
+      }
+      expect(captures[1]).toBe(captures[0]);
+    },
+  );
+
+  it('continuous mode still respects minCandidates while pace is on', async () => {
+    const policy = { ...pacePolicy(true, 50), mode: 'continuous' as const, minCandidates: 4 };
+    const report = await proposePaced(policy, paceSeries(-2e12), 'under');
+    const movie = report.arrays.find((a) => a.key === 'haynestower')!.proposals[0]!;
+    expect(movie.outcome).toBe('skipped_min_candidates');
+    expect(report.proposedCount).toBe(0);
+    expect(
+      (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+        (d) => d.mediaKind === 'movie',
+      )!.applied,
+    ).toBe(false);
+  });
+
+  it('continuous mode under a far-under target and target 100 posts no paced batch', async () => {
+    const policy = { ...pacePolicy(true, 50), mode: 'continuous' as const };
+    const report = await proposePaced(policy, paceSeries(-1e9), 'under');
+    expect(report.proposedCount).toBe(0);
+    await setAppSetting({ db: t.db, key: 'space_targets', value: { haynestower: 100 }, actorId });
+    expect((await proposePaced(policy, paceSeries(-1e12), 'over')).proposedCount).toBe(0);
+  });
+
+  it.each([-10, 0, 10, -1e150, Number.NaN, -1e307])(
+    'evaluates extreme/non-finite rate %s through the batch writer',
+    async (rate) => {
+      const report = await proposePaced(pacePolicy(true, 2), paceSeries(rate), 'over');
+      const movie = report.arrays[0]!.proposals[0]!;
+      const fallback = !Number.isFinite(rate) || rate === -1e307;
+      expect(movie.outcome).toBe('proposed');
+      expect(await batchIds(movie.batchId!)).toEqual(
+        fallback ? ['ms-9001', 'ms-9002'] : ['ms-9001'],
+      );
+      const decision = (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+        (d) => d.mediaKind === 'movie',
+      )!;
+      expect(decision.applied).toBe(!fallback);
+      expect(decision.selectedBytes).toBe(fallback ? 7e9 : 4e9);
+      expect(decision.fallbackReason).toBe(fallback ? 'too_short' : null);
+    },
+  );
+
+  it('continuous target 100 with missing reader falls back to the ordinary continuous batch', async () => {
+    await setAppSetting({ db: t.db, key: 'space_targets', value: { haynestower: 100 }, actorId });
+    const report = await proposePaced(
+      { ...pacePolicy(true, 2), mode: 'continuous' },
+      'none',
+      'over',
+    );
+    const movie = report.arrays[0]!.proposals[0]!;
+    expect(await batchIds(movie.batchId!)).toEqual(['ms-9001', 'ms-9002']);
+    const decision = (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+      (d) => d.mediaKind === 'movie',
+    )!;
+    expect(decision).toMatchObject({
+      applied: false,
+      fallbackReason: 'missing_reader',
+      selectedBytes: 7e9,
+    });
+  });
+
+  // Real PostgreSQL triggers fail the transaction itself, including inserts inside nested writers.
+  async function installFault(table: 'ledger_events' | 'notifications' | 'trash_batches') {
+    const condition =
+      table === 'trash_batches'
+        ? "NEW.media_kind = 'movie' AND NEW.state = 'leaving_soon'"
+        : table === 'ledger_events'
+          ? "NEW.event_type = 'trash_space_policy' AND NEW.payload->>'mediaKind' = 'movie'"
+          : "NEW.type = 'space_policy' AND NEW.payload->>'mediaKind' = 'movie'";
+    await t.db.execute(
+      sql.raw(`CREATE FUNCTION test_pace_fault() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF ${condition} THEN RAISE EXCEPTION 'synthetic policy fault'; END IF; RETURN NEW; END $$`),
+    );
+    await t.db.execute(
+      sql.raw(`CREATE TRIGGER test_pace_fault BEFORE ${table === 'trash_batches' ? 'UPDATE' : 'INSERT'}
+      ON ${table} FOR EACH ROW EXECUTE FUNCTION test_pace_fault()`),
+    );
+  }
+  async function removeFault(table: string) {
+    await t.db.execute(sql.raw(`DROP TRIGGER test_pace_fault ON ${table}`));
+    await t.db.execute(sql.raw('DROP FUNCTION test_pace_fault()'));
+  }
+  async function recoveryFixture(observeOnly: boolean) {
+    const policy = pacePolicy(!observeOnly, 2);
+    policy.dynamicPace!.observeOnly = observeOnly;
+    policy.dynamicPace!.ceilingBytes = 5e9;
+    await setPolicy(policy);
+    await seedVerifiedWatchlistRegistry(t.db);
+    await upsertDeletableMediaItems({
+      db: t.db,
+      arrKind: 'radarr',
+      items: [
+        {
+          arrItemId: 91,
+          tmdbId: 9001,
+          title: 'Fixture movie',
+          sortTitle: 'fixture',
+          monitored: true,
+          qualityProfileId: 1,
+          qualityProfileName: 'Any',
+          rootFolder: '/m',
+        },
+      ],
+    });
+    const state = baseState({
+      collections: [
+        movieCollection({
+          items: [
+            {
+              mediaServerId: 'ms-9001',
+              tmdbId: 9001,
+              sizeBytes: 4e9,
+              addDate: '2020-01-01T00:00:00Z',
+            },
+          ],
+        }),
+        tvCollection({
+          items: [
+            {
+              mediaServerId: 'ms-8001',
+              tvdbId: 8001,
+              sizeBytes: 1e8,
+              addDate: '2020-01-01T00:00:00Z',
+            },
+          ],
+        }),
+      ],
+    });
+    const stub = makeMaintainerr(state);
+    const run = () =>
+      evaluateSpacePolicy({
+        db: t.db,
+        maintainerr: stub.bundle,
+        arr: overBundle(),
+        readFreeSpace: async () => paceSeries(0),
+        now: paceNow,
+      });
+    const sweep = async () => {
+      await t.db.update(trashBatches).set({ expiresAt: new Date('2020-01-01T00:00:00Z') });
+      const { arr } = createStaticReleaseBlockArr();
+      return sweepExpiredBatches({
+        db: t.db,
+        maintainerr: stub.bundle,
+        arr,
+        registry: 'gate-only',
+      });
+    };
+    return { ...stub, run, sweep, policy };
+  }
+
+  it.each([false, true])(
+    'makes no selected-byte aggregation read between kinds (observeOnly=%s)',
+    async (observeOnly) => {
+      const f = await recoveryFixture(observeOnly);
+      const select = t.db.select.bind(t.db);
+      const spy = vi.spyOn(t.db, 'select').mockImplementation(((
+        fields: Parameters<typeof select>[0],
+      ) => {
+        if (fields && Object.keys(fields).length === 1 && 'bytes' in fields)
+          throw new Error('synthetic removed selected-byte read failure');
+        return fields ? select(fields) : select();
+      }) as typeof t.db.select);
+      try {
+        expect((await f.run()).proposedCount).toBe(2);
+        expect(
+          (await t.db.select().from(trashBatches)).every((b) => b.state === 'leaving_soon'),
+        ).toBe(true);
+      } finally {
+        spy.mockRestore();
+      }
+    },
+  );
+
+  it.each([
+    [false, 'ledger_events'],
+    [true, 'ledger_events'],
+    [false, 'notifications'],
+    [true, 'notifications'],
+  ] as const)(
+    'atomic failure/retry/sweep, observeOnly=%s fault=%s; the other kind proceeds',
+    async (observeOnly, table) => {
+      const f = await recoveryFixture(observeOnly);
+      // Both off on precisely the same candidates establishes the ordinary TV selection.
+      await setPolicy({
+        ...f.policy,
+        dynamicPace: { ...f.policy.dynamicPace!, enabled: false, observeOnly: false },
+      });
+      const off = await f.run();
+      const offTv = await batchIds(
+        off.arrays[0]!.proposals.find((p) => p.mediaKind === 'tv')!.batchId!,
+      );
+      await t.db.delete(trashBatches);
+      await t.db.delete(ledgerEvents).where(eq(ledgerEvents.eventType, 'trash_space_policy'));
+      await t.db.delete(notifications);
+      await setPolicy(f.policy);
+      await installFault(table);
+      try {
+        await expect(f.run()).rejects.toThrow('Policy decision recording failed');
+        const tv = (await t.db.select().from(trashBatches)).find((b) => b.mediaKind === 'tv')!;
+        expect(tv.state).toBe('leaving_soon');
+        expect(await batchIds(tv.id)).toEqual(offTv);
+        expect((await t.db.select().from(trashBatches)).map((b) => b.mediaKind)).toEqual(['tv']);
+        await expect(f.run()).rejects.toThrow('Policy decision recording failed');
+        expect(await t.db.select().from(trashBatches)).toHaveLength(1);
+        const swept = await f.sweep();
+        expect(swept.batches.every((b) => b.mediaKind !== 'movie')).toBe(true);
+        expect(
+          f.calls.some(
+            (c) =>
+              c.pathname === '/collections/media/handle' &&
+              (c.body as { mediaId: string }).mediaId === 'ms-9001',
+          ),
+        ).toBe(false);
+      } finally {
+        await removeFault(table);
+      }
+      const retried = await f.run();
+      const movie = retried.arrays[0]!.proposals[0]!;
+      expect(movie.outcome).toBe('proposed');
+      const records = (await t.db.select().from(ledgerEvents)).filter(
+        (e) =>
+          e.eventType === 'trash_space_policy' &&
+          e.payload.batchId === movie.batchId &&
+          e.payload.outcome === 'proposed',
+      );
+      expect(records).toHaveLength(1);
+      expect(records[0]!.payload.pace).toMatchObject({ applied: !observeOnly, selectedBytes: 4e9 });
+      expect((await f.sweep()).batches.find((b) => b.batchId === movie.batchId)!.deletedCount).toBe(
+        1,
+      );
+      expect((await f.run()).arrays[0]!.proposals[0]!.outcome).not.toBe('proposed');
+    },
+  );
+
+  it.each([false, true])(
+    'interruption after commit keeps the original decision through heal and sweep (observeOnly=%s)',
+    async (observeOnly) => {
+      const f = await recoveryFixture(observeOnly);
+      await installFault('trash_batches');
+      let batchId: string;
+      let original: unknown;
+      try {
+        expect((await f.run()).arrays[0]!.proposals[0]!.outcome).toBe('error');
+        const draft = (await t.db.select().from(trashBatches)).find(
+          (b) => b.mediaKind === 'movie',
+        )!;
+        expect(draft.state).toBe('draft');
+        batchId = draft.id;
+        original = (await t.db.select().from(ledgerEvents)).find(
+          (e) => e.eventType === 'trash_space_policy' && e.payload.batchId === batchId,
+        )!.payload;
+        expect(original).toMatchObject({ outcome: 'proposed', pace: { selectedBytes: 4e9 } });
+        expect(
+          (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+            (d) => d.mediaKind === 'movie',
+          ),
+        ).toMatchObject({
+          ...(original as { pace: Record<string, unknown> }).pace,
+          outcome: 'proposed',
+          batchId,
+          evaluatedAt: paceNow.toISOString(),
+        });
+        expect((await f.sweep()).batches.every((b) => b.batchId !== batchId)).toBe(true);
+        expect(
+          f.calls.some(
+            (c) =>
+              c.pathname === '/collections/media/handle' &&
+              (c.body as { mediaId: string }).mediaId === 'ms-9001',
+          ),
+        ).toBe(false);
+      } finally {
+        await removeFault('trash_batches');
+      }
+      const retry = await f.run();
+      expect(retry.arrays[0]!.proposals[0]).toMatchObject({ outcome: 'promoted', batchId });
+      expect(
+        (await t.db.select().from(ledgerEvents))
+          .filter(
+            (e) =>
+              e.eventType === 'trash_space_policy' &&
+              e.payload.batchId === batchId &&
+              e.payload.outcome === 'proposed',
+          )
+          .map((e) => e.payload),
+      ).toEqual([original]);
+      const status = (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+        (d) => d.mediaKind === 'movie',
+      );
+      expect(status).toMatchObject({
+        ...(original as { pace: Record<string, unknown> }).pace,
+        outcome: 'proposed',
+        batchId,
+        evaluatedAt: paceNow.toISOString(),
+      });
+      await f.run(); // a later ordinary open-batch skip must not obscure the original, either
+      expect(
+        (await getSpacePolicyStatus({ db: t.db })).pace!.arrays[0]!.decisions.find(
+          (d) => d.mediaKind === 'movie',
+        ),
+      ).toEqual(status);
+      expect((await f.sweep()).batches.find((b) => b.batchId === batchId)!.deletedCount).toBe(1);
+    },
+  );
+
+  it('the snapshot and live pace pools exclude titles already posted in any open batch', async () => {
+    await proposePaced(pacePolicy(false, 1), 'none', 'over');
+    await t.db.insert((await import('@hnet/db')).trashCandidates).values([
+      {
+        mediaKind: 'movie',
+        collectionId: 7,
+        maintainerrMediaId: 'ms-9001',
+        tmdbId: 9001,
+        sizeBytes: 4e9,
+      },
+      {
+        mediaKind: 'movie',
+        collectionId: 7,
+        maintainerrMediaId: 'ms-9002',
+        tmdbId: 9002,
+        sizeBytes: 3e9,
+      },
+    ]);
+    try {
+      expect(
+        (await measureDeletableSnapshotPools(t.db, paceNow)).find((p) => p.mediaKind === 'movie')!
+          .poolBytes,
+      ).toBe(3e9);
+      const report = await proposePaced(pacePolicy(true, 50), paceSeries(0), 'over');
+      expect(report.arrays.find((a) => a.key === 'haynestower')!.pace!.poolBytes).toBe(5e9);
+      expect(report.proposedCount).toBe(0);
+    } finally {
+      await t.db.delete((await import('@hnet/db')).trashCandidates);
+    }
+  });
+
+  it('reads sweep deletions from the series start, including before now minus 90 days', async () => {
+    const start = forecastQueryRange(paceNowSec).start;
+    expect(start).toBeLessThan(paceNowSec - 90 * DAY);
+    const sliverAt = new Date((start + 1) * 1000);
+    const [batch] = await t.db
+      .insert(trashBatches)
+      .values({ mediaKind: 'movie', state: 'deleted', deletedAt: sliverAt })
+      .returning();
+    await t.db.insert(trashBatchItems).values({
+      batchId: batch!.id,
+      maintainerrMediaId: 'sliver',
+      title: 'fixture',
+      state: 'deleted',
+      sizeBytes: 800,
+      deletedSizeBytes: 800,
+      deletedAt: sliverAt,
+    });
+    expect(await recordedSweepDeletions(t.db, paceNow, 'haynestower', start)).toEqual([
+      { t: start + 1, bytes: 800 },
+    ]);
+    expect(await recordedSweepDeletions(t.db, paceNow, 'cephfs', start)).toEqual([]);
+    expect(await recordedSweepDeletions(t.db, paceNow, 'unknown', start)).toEqual([]);
+    expect(await measureTrashYield(t.db, paceNow, 'cephfs')).toBeNull();
+    expect(await measureTrashYield(t.db, paceNow, 'unknown')).toBeNull();
+    expect(await measureTrashYield(t.db, paceNow, 'haynestower')).toBeNull(); // outside the yield window
   });
 
   it('the save rate is saved bytes over saved plus deleted, and a sweep is one deletion', async () => {
@@ -709,7 +1505,13 @@ describe('evaluateSpacePolicy (ADR-031 — propose-only, never deletes)', () => 
       .values({ mediaKind: 'movie', state: 'deleted', deletedAt: paceNow })
       .returning();
     await t.db.insert(trashBatchItems).values([
-      { batchId: batch!.id, maintainerrMediaId: 'saved-1', title: 'saved', state: 'saved', sizeBytes: 200 },
+      {
+        batchId: batch!.id,
+        maintainerrMediaId: 'saved-1',
+        title: 'saved',
+        state: 'saved',
+        sizeBytes: 200,
+      },
       {
         batchId: batch!.id,
         maintainerrMediaId: 'deleted-1',

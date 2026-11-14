@@ -1900,6 +1900,18 @@ describe('selectBatchCandidates — reclaim-targeted pick (DESIGN-011 amendment)
     expect(ids(pool, { targetBytes: 6e9, strategy: 'largest' })).toEqual(['a', 'b']);
   });
 
+  it('a hard byte cap skips a crossing title and takes later fitting titles', () => {
+    expect(ids(pool, { targetBytes: 5e9, hardMaxBytes: 5e9, maxItems: 50 })).toEqual(['a', 'd']);
+    expect(ids(pool, { targetBytes: 5e9, hardMaxBytes: 5e9, maxItems: 1 })).toEqual(['a']);
+    expect(ids(pool, { targetBytes: 1, hardMaxBytes: 1 })).toEqual([]);
+    expect(ids(pool, { hardMaxBytes: 0 })).toEqual([]);
+  });
+
+  it('an under-target minimum byte floor never forces extra titles into the capped batch', () => {
+    expect(ids(pool, { targetBytes: 6e9, hardMaxBytes: 6e9, maxItems: 1, minBytes: 5e9 })).toEqual([]);
+    expect(ids(pool, { targetBytes: 6e9, hardMaxBytes: 6e9, maxItems: 2, minBytes: 5e9 })).toEqual(['a', 'd']);
+  });
+
   it('targetBytes largest: EXACT hit stops precisely at the target', () => {
     // 4e9 + 3e9 = 7e9 exactly ⇒ {a,b} (does not pull in `d`).
     expect(ids(pool, { targetBytes: 7e9 })).toEqual(['a', 'b']);

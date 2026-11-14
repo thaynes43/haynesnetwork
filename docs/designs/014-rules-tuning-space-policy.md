@@ -11,7 +11,8 @@
   **Amended 2026-11-13 by [ADR-120](../adrs/120-dynamic-trash-pace.md)** (D-16): while Dynamic Pace is
   on, the byte ask comes from the gap and the intake. The switch ships off, and while it is off D-09
   and D-14 are unchanged. The 2026-11-13 adversarial review's merge corrections are folded into D-16.
-- **Last updated:** 2026-11-13 (D-16, story 820: Dynamic Pace review corrections; D-15 is the TV rule).
+- **Proposed amendment 2026-11-14:** [ADR-124](../adrs/124-dynamic-pace-before-enablement.md), D-17/D-18 below (story 852); both modes stay off.
+- **Last updated:** 2026-11-14 (D-17/D-18; coordinator choices awaiting owner confirmation).
 - **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26; in effect since 2026-09-28): the
   space policy's proposal leaves out a title on any read Plex watchlist (it takes no cap slot), and `minCandidates`
   counts deletable candidates only (DESIGN-052 D-08). Amended 2026-11-13 (ADR-118 / DESIGN-052 D-30): `minCandidates`
@@ -293,6 +294,8 @@ Sync: `runSync` `space-policy` mode wiring (report shape, requires both bundles,
   2026-11-13): post nothing until the trend would cross the target inside the horizon, then only
   what holds the target. The formula the review recommends is
   `max(0, (targetFree − free) − rate × horizon) × min(1, window / horizon)`.
+  **Coordinator implementation decision, 2026-11-14 (story 852):** build that recommendation
+  in D-17 behind the switch; owner confirmation is still required before enablement.
 - **Q-13 (open, D-16; the review's Q-R02):** is the horizon a deadline or a time constant? The
   shipped horizon is a rolling time constant. At the default ceiling, with an unlimited pool, the
   review's simulation leaves a 39.4 TB gap at day 60 and reaches the target after about a year.
@@ -301,6 +304,8 @@ Sync: `runSync` `space-policy` mode wiring (report shape, requires both bundles,
   of 2026-11-13 (intake 329.8 GB/day, yield 0.8805). This correction did not re-run it.
   Recommendation: keep the rolling rule, call it a time constant, and set it to 21 to 30 days so
   that 60 days closes most of the gap.
+  **Coordinator implementation decision, 2026-11-14:** D-17 uses a named 30-day time constant,
+  awaiting owner confirmation. The new projection explicitly retains the measured safety caps.
 - **Q-14 (open, D-16; the review's Q-R03):** what is the largest batch acceptable in one 7-day
   window, in bytes and in titles? The code's ceiling is 3,591,025,375,575 bytes and there is no
   title cap. On today's pool the review counted a first batch of 155 titles (3.604 TB) and a second
@@ -310,6 +315,10 @@ Sync: `runSync` `space-policy` mode wiring (report shape, requires both bundles,
   code drops `maxItems` when the pace applies. The review's example: a 20 TB TV pool beside today's
   movies would take 2.59 TB of a 3.59 TB ask, worst-rated first. Recommendation: yes, keep the
   5-title cap until story 835 decides.
+
+**Coordinator implementation decision, 2026-11-14 (story 852):** D-17 retains TV maxItems
+for Q-15 and adds a movie title cap defaulting to today’s per-kind cap for Q-14. Q-15 still
+awaits owner confirmation; Q-14’s final limits remain for story 823.
 
 Pace questions start at Q-07. Main's D-15 already holds Q-04, Q-05 and Q-06. The review numbered
 its four questions Q-R01 to Q-R04. This change assigns them Q-12 to Q-15, after this change's own
@@ -1070,3 +1079,156 @@ at 1, a horizon shorter than the window refused, one ceiling shared by both kind
 `space-policy.test.ts` proves the switch off equals today's `maxItems`, a missing or too-short
 series keeps that cap, the switch on replaces it, under target proposes only when the pace has
 intake, a closing drain posts nothing, and an open batch still holds the slot.
+
+## D-17 — Amendment 2026-11-14 (ADR-124) — bounded Dynamic Pace
+
+Story 852 amends D-16; D-16 describes the earlier switched-off implementation. This amendment
+has status Proposed. The coordinator's decisions (story 820 comment 8175) implement Q-12, Q-13
+and Q-15 **awaiting the owner**, not owner rulings. Q-14 remains open for story 823. Both modes
+ship off; installing this code is neither observation evidence nor acceptance to enable it.
+
+Let `signedGap = targetFree - free`, `rate` be change in free bytes per day after recorded
+Trash deletions are added back, `H` the rolling time constant, and `W` the save window:
+
+```
+horizonRequired = max(0, signedGap - rate * H)
+requiredDeleted = horizonRequired * min(1, W / H)
+rawAsk = requiredDeleted / yield
+```
+
+One formula applies on both sides of the target. A target of 100 percent explicitly asks for
+nothing. Far under target, nothing is proposed until the trend crosses the target within H.
+Under target, an ask or remaining pool below the byte floor is zero, never raised to the floor.
+Each new under-target batch must also meet that floor after the fresh selection and title cap;
+otherwise it is empty. This deliberately permits less deletion when a split allocation cannot
+make a floor-sized batch; it never adds titles to force the floor. Over target, a
+positive ask retains D-16's floor. `forecastReason: flat` is retained alongside the forecast's
+actual finite rate and intake; flat is uncertainty about direction, not a measured zero rate.
+A flat forecast without a finite rate cannot size a batch and falls back to today's caps.
+
+| Bound or default | Value and provenance |
+| --- | --- |
+| H | Named constant `DYNAMIC_PACE_HORIZON_DAYS = 30`; coordinator decision on Q-13, awaiting owner confirmation. A time constant, not a deadline or a measured disk property. |
+| Floor | 130,604,353,957 bytes, smallest completed batch's proposed total in the 2026-11-13 replica measurement (D-16). |
+| Ceiling | 3,591,025,375,575 bytes, largest such batch. Hard cap, shared by movie and TV allocations; never include a crossing title. Story 823 decides changes. |
+| Movie titles | New audited `movieMaxItems`, default the current enabled per-kind maxItems. The 2026-11-14 replica SELECT measured 50. The effective cap also retains any smaller enabled per-kind maxItems. Missing/disabled per-kind caps use the measured 50 as a safety cap. |
+| TV titles | Retain the enabled per-kind maxItems (measured 5 in the same SELECT); missing/disabled caps retain measured 5. No unbounded TV batch. |
+| History age | Require the newest usable sample at the expected step-aligned query end. The measured series is sampled every 3 days (259,200 seconds; coordinator Prometheus read 2026-11-13T16:36Z). This permits the normal alignment lag but no missing newest grid sample; no extra guessed grace interval. |
+| Other rails | Retain the existing settings sanity limits, including horizon 1..3660 and integer bytes, as input validation rather than measured operational defaults. Refuse ceiling above the measured hard cap, floor above ceiling, and horizon below the current save window on save. The formula clamps the ratio even if the window changes later. |
+
+An active setting with missing/unreadable existing bounds, inverted floor/ceiling or a ceiling
+above the hard limit reads as off, rather than silently running at substituted bounds. New
+optional fields on a previously valid object get their documented defaults. `observeOnly`
+takes precedence if a hand-edited row sets both modes; the settings edge refuses that combination.
+
+Allocations split the ask proportionally across eligible bytes not already in an open batch.
+The batch builder re-reads the live candidates and applies the existing filters and ranking,
+then stops at the title cap and skips every title that would cross its hard byte allocation.
+No leftover allocation is transferred to another kind. Selected bytes and the remaining
+shortfall are recorded after the fresh batch is built. Neither the pool nor its yield is a
+promise of actual freed space.
+
+Recorded sweep deletions are read starting at the first usable series sample, including the
+sliver before `now - 90 days`. Save rate retains D-16's trailing-90-day rule. Both measurements
+are scoped to the array's backing kinds, derived from STORAGE_ARRAYS; this project's movie/TV
+storage topology is unchanged. Unknown arrays contribute neither deletions nor yield.
+
+The [evidence note](../../.agents/context/2026-11-14-852-dynamic-pace.md) records the replica
+queries, the measured inputs and reproducible day-30, day-60 and day-120 **projection**, for an
+unlimited pool and today's pool. No refill, intake change or reversal of the unexplained step
+is asserted as fact. Counts in that note are checked against their written definitions.
+
+Projection, computed 2026-11-14 with the installed forecast on the coordinator's 2026-11-13
+series plus replica deletion add-back: intake 329.766947 GB/day; trailing-window yield
+0.872330394; live free 88.152002 TB, total 529.958515 TB; unposted pool 383 movies / 5.777501 TB.
+The open 50-movie / 1.881676 TB batch is counted once, deleting at estimated day 7.
+Constant intake/yield, no refill, same title/byte caps and seven-day posts/deletes are assumptions.
+Unlimited means the favourable mathematical ceiling-filling bound, not a measured pool.
+
+| Projection | Day 30 gap (TB) | Day 60 gap (TB) | Day 120 gap (TB) |
+| --- | ---: | ---: | ---: |
+| Unlimited pool, fitting the ceiling within the title cap | 43.192 | 40.554 | 32.147 |
+| Today's finite pool, no refill | 49.526 | 57.483 | 77.228 |
+
+Neither meets the recovery goal. The evidence note also shows an unlimited estimate repeating
+today's largest capped selection, which worsens because its throughput is below intake. The
+projection script and SELECT are linked there; all table cells are estimates calculated from
+those measured inputs. They are not evidence that real future pool sizes or yields stay fixed.
+
+## D-18 — Amendment 2026-11-14 — observe and read the job's stored decision
+
+`space_policy.dynamicPace` adds `observeOnly` (default false) and `movieMaxItems` to D-16's
+existing audited settings object. `enabled` also defaults false. The same settings single writer
+records changes; no database migration or live setting write is needed.
+
+Off: neither read history nor add any policy-ledger field or skip event. Preserve today's
+windowed and continuous gate, caps and payload bytes. The settings cards round-trip the complete
+object, including both new fields, through the strict API schema. An unchanged inactive pace may
+round-trip for every supported save window, including a legacy row whose synthesized horizon is
+shorter. Activation, observation, or an explicit edit to a pace sizing field still validates the
+horizon against the window. Saving never silently enables or resizes a pace.
+
+Observe-only: the hourly job reads history, deletions, yield and the eligible pool, computes the
+ask and stores it; today's gate and caps still select the real batch. Enabled: the computed
+applicable ask replaces the byte target, with D-17's title and hard byte caps. A missing reader,
+failed/empty/stale series, unavailable disk, too-short series or preload failure falls back to
+today's gate and caps. A partial preload is discarded completely. Minimum candidates and the
+one-open-kind rule still apply, as does self-healing an existing batch.
+
+Every successfully recorded active-mode kind evaluation has one `trash_space_policy` ledger payload containing
+`pace`: `{ mode, applied, fallbackReason, explanation, selectedBytes }` (proposals also retain
+`allocation`, the original array-wide explanation before selection), plus the outcome and
+batch id (null only for skips without an existing batch). `explanation` carries the gap, surplus, measured rate/intake,
+forecast's flat reason, window/horizon requirement, requested/chosen bytes, yield, expected
+delete and shortfalls. Add `horizonRequiredDeletedBytes` and `horizonShortfallBytes` against
+`poolBytes * yield`. `applied` is true only when pace governed a newly proposed batch; an open
+batch, minimum-candidates skip or zero ask cannot be reported as an applied batch. A preload
+failure has an explicit reason even when no explanation could be computed. No raw exception
+text is copied into this payload. For an applied proposal, the stored explanation describes this kind's fresh selected bytes
+and expected yield, with shortfall against the array-wide requirement. Its `kinds` contains only
+that kind; `allocation` retains all original kind asks and array-wide sizing inputs. Other kinds have independent transactions and records;
+no record claims a later kind succeeded. The run report aggregates successful fresh selections.
+Selection shortfall reflects the actual fresh batch, not only the uncapped pool allocation. Observe-only's selected bytes describe the static batch;
+its explanation remains the hypothetical paced ask, explicitly unapplied.
+
+The batch, items, original sizing inputs/decision, selected totals, policy ledger row and policy
+notification commit in the same transaction, before promotion. A ledger or notification failure
+rolls back that kind's batch and is returned as an error; the other kind still runs. Skip-record
+failures also become explicit errors, never successful observations. After independent kinds and
+arrays finish, any decision-recording failure throws, so the existing sync runner fails the job. There is no post-selection
+aggregation read between kinds. A crash after commit and before promotion leaves a draft with its
+original decision; the next tick's existing self-heal promotes it without replacing that decision.
+The sweep only takes promoted, expired batches, so an uncommitted or draft batch cannot delete.
+Both modes off retain the legacy best-effort attribution contract and payloads.
+
+`storage.policy.status.pace` is a database-only read per array and kind. While a batch remains
+open, prefer its committed sizing proposal over later skip/error/heal rows; report that proposal's
+original evaluation time, outcome and selected totals. For a kind without such an open proposal,
+return the newest stored decision with its evaluation time and outcome. It reports null when no decision has been
+stored. Proposal history filters out skip records and remains proposal-only. Status never
+resolves a Prometheus or *arr client, even when pace is on; display work is story 853.
+
+Prometheus evidence and deployment prerequisites are in the note. A source manifest or a code
+default is not a successful read from the job pod. Story item 5 remains outstanding until story 869 records that proof; gate 823 follows 869.
+Before observation is accepted that evidence is required, and observe-only must be accepted before enabled sizing.
+
+- **Q-16 (open, D-18):** Does the job reach the intended Prometheus service? The metrics client
+  and web API currently have different default service addresses and the CronJob has no explicit
+  PROMETHEUS_URL. Recommendation: set the CronJob's non-secret PROMETHEUS_URL to the web address
+  (`http://prometheus-operated.observability.svc.cluster.local:9090`) at
+  `kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml`,
+  `controllers.sync-space-policy`, adding `env.PROMETHEUS_URL` to its container running
+  `--mode=space-policy`, in haynes-ops.
+  Then run one timeout-bounded GET of `/api/v1/query_range` from the job pod, using its configured
+  address, the production free-space expression, `forecastQueryRange(now)` start/end and 259200-second
+  step; output only status, result count and newest sample time. Story 869 owns the change and proof.
+  No Secret read or live policy/observation run is authorized here.
+- **Q-17 (open, D-17):** What size distribution should an unlimited pool projection assume?
+  No unlimited real pool can be measured. Recommendation: show both the favourable mathematical ceiling-filling upper bound and a
+  repeated measured capped batch, and never describe either as a supply prediction.
+- **Q-18 (open, D-17):** Does the observed byte-weighted yield hold for future batches?
+  Recommendation: keep the measured trailing-window estimator; skips remain excluded as in
+  Q-10. Label the projection conditional on constant intake/yield and no pool refill.
+
+Q-12, Q-13 and Q-15 remain awaiting owner confirmation; the coordinator's implementation
+choices above do not close them. Q-14 remains open and is not decided in this story.

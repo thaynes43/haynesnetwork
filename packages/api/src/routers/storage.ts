@@ -17,10 +17,9 @@ import {
   getAppSetting,
   getNotifyWindow,
   dynamicPaceHorizonFitsWindow,
-  explainLiveDynamicPace,
+  DYNAMIC_PACE_CEILING_BYTES,
   getSpacePolicy,
   getSpacePolicyStatus,
-  readArrayFreeSpaceSamples,
   setAppSetting,
   BATCH_STRATEGIES,
   RECLAIM_WINDOWS,
@@ -93,11 +92,21 @@ export const SpacePolicyInput = z
     dynamicPace: z
       .object({
         enabled: z.boolean(),
+        observeOnly: z.boolean().optional(),
+        movieMaxItems: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
         horizonDays: z.number().int().min(1).max(3660),
         floorBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-        ceilingBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+        ceilingBytes: z.number().int().positive().max(DYNAMIC_PACE_CEILING_BYTES),
       })
       .strict()
+      .refine((p) => p.floorBytes <= p.ceilingBytes, {
+        message: 'floorBytes must not exceed ceilingBytes',
+        path: ['floorBytes'],
+      })
+      .refine((p) => !(p.enabled && p.observeOnly), {
+        message: 'choose enabled or observe-only, not both',
+        path: ['observeOnly'],
+      })
       .optional(),
   })
   .strict();
@@ -187,27 +196,8 @@ export const storageRouter = router({
     /** The effective space-policy config (defaults merged — always fully populated, DEFAULT OFF). */
     get: adminProcedure.query(({ ctx }) => getSpacePolicy(ctx.db)),
 
-    /**
-     * Ledger-derived status, plus the Dynamic Pace reasoning (gap, intake, required, chosen,
-     * shortfall). The pace read fails soft: a downed Prometheus or disk leaves `pace` null and
-     * the existing card still loads. The card does not render the new fields (DESIGN-014 D-16).
-     */
-    status: adminProcedure.query(async ({ ctx }) => {
-      const status = await getSpacePolicyStatus({ db: ctx.db });
-      let pace: Awaited<ReturnType<typeof explainLiveDynamicPace>> | null = null;
-      try {
-        const nowSec = Math.floor(Date.now() / 1000);
-        const prometheus = resolvePrometheusReader(ctx);
-        pace = await explainLiveDynamicPace({
-          db: ctx.db,
-          arr: resolveArrBundle(ctx),
-          readSamples: (arrayKey) => readArrayFreeSpaceSamples(prometheus, arrayKey, nowSec),
-        });
-      } catch {
-        pace = null;
-      }
-      return { ...status, pace };
-    }),
+    /** D-18: only the job's durable reasoning; no external client is resolved here. */
+    status: adminProcedure.query(({ ctx }) => getSpacePolicyStatus({ db: ctx.db })),
 
     /**
      * Replace the space-policy config — audited via the app_settings single-writer (update_app_setting).
@@ -216,12 +206,21 @@ export const storageRouter = router({
      */
     set: adminProcedure.input(SpacePolicyInput).mutation(async ({ ctx, input }) => {
       if (input.dynamicPace) {
+        const previous = (await getSpacePolicy(ctx.db)).dynamicPace!;
+        const sizingChanged = (
+          ['horizonDays', 'floorBytes', 'ceilingBytes', 'movieMaxItems'] as const
+        ).some((key) => input.dynamicPace![key] !== previous[key]);
+        const requiresWindowCheck =
+          input.dynamicPace.enabled || input.dynamicPace.observeOnly || sizingChanged;
         const windowRaw = await getAppSetting(ctx.db, 'trash_default_window_days');
         const windowDays =
           typeof windowRaw === 'number' && Number.isFinite(windowRaw) && windowRaw >= 1
             ? Math.trunc(windowRaw)
             : APP_SETTING_DEFAULTS.trash_default_window_days;
-        if (!dynamicPaceHorizonFitsWindow(input.dynamicPace.horizonDays, windowDays)) {
+        if (
+          requiresWindowCheck &&
+          !dynamicPaceHorizonFitsWindow(input.dynamicPace.horizonDays, windowDays)
+        ) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
             message: 'horizonDays must be at least the save window',

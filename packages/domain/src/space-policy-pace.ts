@@ -7,8 +7,15 @@
 // sweep deletions added back, so the rate is intake and not intake minus Trash. A level jump the
 // forecast sets aside stays set aside. The live free-space reading is the level for the gap; it
 // does not enter the rate.
-import { trashBatchItems, trashBatches, trashCandidates, type DbClient, type TrashMediaKind } from '@hnet/db';
-import { and, eq, gte, sql } from 'drizzle-orm';
+import {
+  TRASH_BATCH_OPEN_STATES,
+  trashBatchItems,
+  trashBatches,
+  trashCandidates,
+  type DbClient,
+  type TrashMediaKind,
+} from '@hnet/db';
+import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import type { DynamicPaceConfig } from './app-settings';
 import { resolveDb } from './db-client';
 import type { DomainLogger } from './domain-logger';
@@ -35,10 +42,10 @@ export const FREESPACE_SERIES_QUERY =
   'max by (__name__, path) ({__name__=~"(radarr|sonarr|lidarr)_rootfolder_freespace_bytes"})';
 
 /**
- * Horizon the owner set: back to the target within 60 days, not within one window.
- * This is the owner's bound (story 820), not a statistic of the disk.
+ * Rolling time constant: coordinator's Q-13 decision (820 comment 8175), awaiting the owner.
+ * ADR-124 / DESIGN-014 D-17. This is a policy choice, not a disk measurement or deadline.
  */
-export const DYNAMIC_PACE_HORIZON_DAYS = 60;
+export const DYNAMIC_PACE_HORIZON_DAYS = 30;
 
 /**
  * Floor on the byte ask. The smallest proposed-byte total of a completed HaynesTower batch in the
@@ -63,7 +70,8 @@ export interface RecordedDeletion {
 export type DynamicPaceName = 'catch-up' | 'steady' | 'none';
 
 /** Why a computed explanation is not allowed to size a batch. */
-export type DynamicPaceBlock = 'too_short' | 'bad_bounds' | 'no_disk';
+export type DynamicPaceBlock =
+  'too_short' | 'bad_bounds' | 'no_disk' | 'stale_series' | 'unknown_rate';
 
 export interface KindPool {
   mediaKind: TrashMediaKind;
@@ -79,7 +87,8 @@ export interface DynamicPaceKindShare {
 /**
  * The reasoning the status read returns. Byte fields are integers except the rates and the
  * expected deletion, which keep the fraction the yield implies.
- * `chosenBytes` is the array ask after the floor, the ceiling and the pool. It is 0 when
+ * `chosenBytes` is the array ask after the floor, the ceiling and the pool.
+ * The job replaces it with its actual selection when enabled sizing runs. It is 0 when
  * `applicable` is false, so a caller that forgets the flag asks for nothing.
  */
 export interface DynamicPaceExplanation {
@@ -95,12 +104,11 @@ export interface DynamicPaceExplanation {
   surplusBytes: number;
   /**
    * Change in free bytes per day after deletions are added back. Negative while the library
-   * fills. Null when the series is too short. 0 when the forecast calls the rate flat.
+   * fills. Null when no rate can be measured; a flat forecast retains its measured rate.
    */
   rateBytesPerDay: number | null;
   /**
-   * Bytes per day the library is filling. Null when the rate was not measured (too short or
-   * flat). 0 when the measured rate is draining.
+   * Bytes per day the library is filling. Null when the rate was not measured. 0 when the measured rate is draining.
    */
   intakeBytesPerDay: number | null;
   forecastReason: 'too_short' | 'flat' | null;
@@ -110,8 +118,12 @@ export interface DynamicPaceExplanation {
   intakePerWindowBytes: number;
   /** The gap's share of one window. 0 when the array is not over target. */
   gapPerWindowBytes: number;
-  /** Bytes that have to be deleted this window. 0 when the pace is not applied. */
+  /** Bytes that have to be deleted this window, before any safety/pool/selection cap. */
   requiredDeletedBytes: number;
+  /** Required deletion over the rolling horizon, before any safety or pool cap. */
+  horizonRequiredDeletedBytes: number;
+  /** Horizon requirement minus the expected yield of the unposted pool. */
+  horizonShortfallBytes: number;
   /** Saved bytes / (saved + deleted) over the forecast window. Null when nothing completed. */
   saveRate: number | null;
   /** Share of an asked byte we expect the sweep to actually delete. 1 when the save rate is unusable. */
@@ -207,7 +219,12 @@ export async function readArrayFreeSpaceSamples(
 ): Promise<FreeSpaceSample[] | null> {
   try {
     const range = forecastQueryRange(nowSec);
-    const matrix = await reader.queryRange(FREESPACE_SERIES_QUERY, range.start, range.end, range.step);
+    const matrix = await reader.queryRange(
+      FREESPACE_SERIES_QUERY,
+      range.start,
+      range.end,
+      range.step,
+    );
     const samples = samplesForStorageArray(matrix, arrayKey);
     return samples.length > 0 ? samples : null;
   } catch {
@@ -239,25 +256,42 @@ export function addRecordedDeletions(
 }
 
 function finiteInt(value: unknown, min: number, max: number): number | null {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max)
+    return null;
   return value;
 }
 
+/** Measured current movie/TV title caps, replica SELECT 2026-11-14; D-17. */
+export const DYNAMIC_PACE_MOVIE_MAX_ITEMS = 50;
+export const DYNAMIC_PACE_TV_MAX_ITEMS = 5;
+
 /**
- * Fill a missing Dynamic Pace object with the measured defaults, switch off. A stored bound that
- * is not a safe integer is replaced by that default; the switch is on only when stored `enabled`
- * is exactly true. `ceiling < floor` is left for the explainer, which then refuses to size.
+ * Defaults are for an absent/off object. An active object with unreadable existing bounds reads
+ * as off; never silently apply substituted bounds. New optional fields migrate valid old objects.
  */
-export function resolveDynamicPace(raw: unknown): DynamicPaceConfig {
-  const absent = raw === null || typeof raw !== 'object';
-  const stored = (absent ? {} : raw) as Partial<DynamicPaceConfig>;
+export function resolveDynamicPace(
+  raw: unknown,
+  movieMaxItems = DYNAMIC_PACE_MOVIE_MAX_ITEMS,
+): DynamicPaceConfig {
+  const stored = (raw !== null && typeof raw === 'object' ? raw : {}) as Partial<DynamicPaceConfig>;
+  const horizon = finiteInt(stored.horizonDays, 1, 3660);
+  const floor = finiteInt(stored.floorBytes, 0, DYNAMIC_PACE_CEILING_BYTES);
+  const ceiling = finiteInt(stored.ceilingBytes, 1, DYNAMIC_PACE_CEILING_BYTES);
+  const titles = finiteInt(stored.movieMaxItems, 1, Number.MAX_SAFE_INTEGER);
+  const valid =
+    horizon !== null &&
+    floor !== null &&
+    ceiling !== null &&
+    floor <= ceiling &&
+    (stored.movieMaxItems === undefined || titles !== null) &&
+    (stored.observeOnly === undefined || typeof stored.observeOnly === 'boolean');
   return {
-    enabled: stored.enabled === true,
-    horizonDays: finiteInt(stored.horizonDays, 1, 3660) ?? DYNAMIC_PACE_HORIZON_DAYS,
-    floorBytes:
-      finiteInt(stored.floorBytes, 0, Number.MAX_SAFE_INTEGER) ?? DYNAMIC_PACE_FLOOR_BYTES,
-    ceilingBytes:
-      finiteInt(stored.ceilingBytes, 1, Number.MAX_SAFE_INTEGER) ?? DYNAMIC_PACE_CEILING_BYTES,
+    enabled: valid && stored.enabled === true && stored.observeOnly !== true,
+    observeOnly: valid && stored.observeOnly === true,
+    horizonDays: valid ? horizon : DYNAMIC_PACE_HORIZON_DAYS,
+    floorBytes: valid ? floor : DYNAMIC_PACE_FLOOR_BYTES,
+    ceilingBytes: valid ? ceiling : DYNAMIC_PACE_CEILING_BYTES,
+    movieMaxItems: titles ?? movieMaxItems,
   };
 }
 
@@ -322,7 +356,9 @@ export function splitPaceAsk(ask: number, pools: readonly KindPool[]): DynamicPa
   const total = clean.reduce((sum, pool) => sum + pool.poolBytes, 0);
   const capped = Math.min(nonNegative(ask), total);
   if (capped > 0 && total > 0) {
-    const order = clean.slice().sort((a, b) => b.poolBytes - a.poolBytes || (a.mediaKind < b.mediaKind ? -1 : 1));
+    const order = clean
+      .slice()
+      .sort((a, b) => b.poolBytes - a.poolBytes || (a.mediaKind < b.mediaKind ? -1 : 1));
     let given = 0;
     for (const pool of order) {
       const share = Math.min(pool.poolBytes, Math.floor((capped * pool.poolBytes) / total));
@@ -378,6 +414,8 @@ function idle(input: {
     intakePerWindowBytes: 0,
     gapPerWindowBytes: 0,
     requiredDeletedBytes: 0,
+    horizonRequiredDeletedBytes: 0,
+    horizonShortfallBytes: 0,
     saveRate: input.saveRate,
     yieldRate: 1,
     unclampedBytes: 0,
@@ -425,7 +463,8 @@ export function explainDynamicPace(input: {
     input.floorBytes >= 0 &&
     Number.isInteger(input.ceilingBytes) &&
     input.ceilingBytes >= 1 &&
-    input.ceilingBytes >= input.floorBytes;
+    input.ceilingBytes >= input.floorBytes &&
+    input.ceilingBytes <= DYNAMIC_PACE_CEILING_BYTES;
   const targetFreeBytes = diskOk ? Math.round(input.totalBytes * (1 - input.targetPct / 100)) : 0;
   const levelFreeBytes = diskOk ? input.freeBytes : 0;
   const gapBytes = diskOk ? Math.max(0, targetFreeBytes - levelFreeBytes) : 0;
@@ -447,6 +486,11 @@ export function explainDynamicPace(input: {
   if (!diskOk) return idle({ ...common, block: 'no_disk', forecastReason: null });
   if (!boundsOk) return idle({ ...common, block: 'bad_bounds', forecastReason: null });
 
+  // The recorded series has a measured 3-day step (2026-11-13). Allow its alignment lag,
+  // but no missing newest grid point. Do not invent a further grace interval (D-17).
+  const usable = input.samples.filter(
+    (s) => Number.isFinite(s.t) && Number.isFinite(s.freeBytes) && s.t <= input.now,
+  );
   const adjusted = addRecordedDeletions(input.samples, input.deletions);
   const forecast = forecastFreeSpace({
     samples: adjusted,
@@ -457,22 +501,38 @@ export function explainDynamicPace(input: {
     return idle({ ...common, block: 'too_short', forecastReason: 'too_short' });
   }
 
-  const rateKnown = forecast.forecast && forecast.rateBytesPerDay != null && Number.isFinite(forecast.rateBytesPerDay);
-  const rate = rateKnown ? forecast.rateBytesPerDay! : 0;
-  const intakeBytesPerDay = rateKnown ? (rate < 0 ? -rate : 0) : null;
+  if (
+    usable.length > 0 &&
+    Math.max(...usable.map((s) => s.t)) < forecastQueryRange(input.now).end
+  ) {
+    return idle({ ...common, block: 'stale_series', forecastReason: null });
+  }
+
+  const rate = forecast.rateBytesPerDay;
+  if (rate === null || !Number.isFinite(rate)) {
+    return idle({ ...common, block: 'unknown_rate', forecastReason: forecast.reason });
+  }
+  const intakeBytesPerDay = Math.max(0, -rate);
   const saveOk = input.saveRate != null && input.saveRate >= 0 && input.saveRate < 1;
   const yieldRate = saveOk ? 1 - input.saveRate! : 1;
   // A window longer than the horizon must not ask for more than the horizon's requirement.
   const windowShare = Math.min(1, input.windowDays / input.horizonDays);
-  const requiredDeletedBytes = overTarget
-    ? Math.max(0, gapBytes - rate * input.horizonDays) * windowShare
-    : Math.max(0, -rate * input.windowDays);
+  const horizonRequiredDeletedBytes =
+    input.targetPct >= 100
+      ? 0
+      : Math.max(0, targetFreeBytes - levelFreeBytes - rate * input.horizonDays);
+  const requiredDeletedBytes = horizonRequiredDeletedBytes * windowShare;
   const unclampedBytes = requiredDeletedBytes <= 0 ? 0 : requiredDeletedBytes / yieldRate;
+  const belowUnderTargetFloor = !overTarget && unclampedBytes < input.floorBytes;
   const ask =
-    unclampedBytes <= 0
+    unclampedBytes <= 0 || belowUnderTargetFloor
       ? 0
       : Math.min(input.ceilingBytes, Math.max(input.floorBytes, Math.floor(unclampedBytes)));
-  const kinds = splitPaceAsk(ask, input.pools);
+  const available = Math.min(
+    ask,
+    input.pools.reduce((sum, pool) => sum + nonNegative(pool.poolBytes), 0),
+  );
+  const kinds = splitPaceAsk(!overTarget && available < input.floorBytes ? 0 : ask, input.pools);
   const poolBytes = kinds.reduce((sum, kind) => sum + kind.poolBytes, 0);
   const chosenBytes = kinds.reduce((sum, kind) => sum + kind.chosenBytes, 0);
   const expectedDeletedBytes = chosenBytes * yieldRate;
@@ -485,7 +545,7 @@ export function explainDynamicPace(input: {
     targetFreeBytes,
     gapBytes,
     surplusBytes,
-    rateBytesPerDay: rateKnown ? rate : 0,
+    rateBytesPerDay: rate,
     intakeBytesPerDay,
     forecastReason: forecast.reason,
     windowDays: input.windowDays,
@@ -493,6 +553,8 @@ export function explainDynamicPace(input: {
     intakePerWindowBytes: intakeBytesPerDay == null ? 0 : intakeBytesPerDay * input.windowDays,
     gapPerWindowBytes: overTarget ? gapBytes * windowShare : 0,
     requiredDeletedBytes,
+    horizonRequiredDeletedBytes,
+    horizonShortfallBytes: Math.max(0, horizonRequiredDeletedBytes - poolBytes * yieldRate),
     saveRate: input.saveRate,
     yieldRate,
     unclampedBytes,
@@ -510,15 +572,51 @@ export function explainDynamicPace(input: {
 const SILENT: DomainLogger = { info() {}, warn() {}, error() {} };
 
 function asBytes(value: unknown): number {
-  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
+  const n =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
   return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Current array-to-kind topology; music never supplies deletable Trash bytes. */
+function measurementKinds(arrayKey: string): Array<'movie' | 'tv'> {
+  const sources = STORAGE_ARRAYS.find((a) => a.key === arrayKey)?.sources ?? [];
+  return [
+    ...new Set(
+      sources.flatMap((s) =>
+        s.arr === 'radarr' ? ['movie' as const] : s.arr === 'sonarr' ? ['tv' as const] : [],
+      ),
+    ),
+  ];
+}
+
+/** Open titles cannot supply another batch's pool. Include every item state of an open batch. */
+export async function openPaceTitleIds(
+  db: DbClient | undefined,
+): Promise<Map<TrashMediaKind, Set<string>>> {
+  const rows = await resolveDb(db)
+    .select({ mediaKind: trashBatches.mediaKind, id: trashBatchItems.maintainerrMediaId })
+    .from(trashBatchItems)
+    .innerJoin(trashBatches, eq(trashBatchItems.batchId, trashBatches.id))
+    .where(inArray(trashBatches.state, [...TRASH_BATCH_OPEN_STATES]));
+  const out = new Map<TrashMediaKind, Set<string>>();
+  for (const row of rows) {
+    if (!out.has(row.mediaKind)) out.set(row.mediaKind, new Set());
+    out.get(row.mediaKind)!.add(row.id);
+  }
+  return out;
 }
 
 /**
  * Byte-weighted save rate over completed batches whose sweep fell inside the forecast window.
  * Skips are not in the ratio. Null when nothing was saved or deleted (no inflation).
  */
-export async function measureTrashYield(db: DbClient | undefined, now: Date): Promise<number | null> {
+export async function measureTrashYield(
+  db: DbClient | undefined,
+  now: Date,
+  arrayKey = 'haynestower',
+): Promise<number | null> {
+  const kinds = measurementKinds(arrayKey);
+  if (kinds.length === 0) return null;
   const since = new Date(now.getTime() - FORECAST_WINDOW_SECONDS * 1000);
   const [row] = await resolveDb(db)
     .select({
@@ -527,7 +625,14 @@ export async function measureTrashYield(db: DbClient | undefined, now: Date): Pr
     })
     .from(trashBatchItems)
     .innerJoin(trashBatches, eq(trashBatchItems.batchId, trashBatches.id))
-    .where(and(eq(trashBatches.state, 'deleted'), gte(trashBatches.deletedAt, since)));
+    .where(
+      and(
+        eq(trashBatches.state, 'deleted'),
+        gte(trashBatches.deletedAt, since),
+        lte(trashBatches.deletedAt, now),
+        inArray(trashBatches.mediaKind, kinds),
+      ),
+    );
   const saved = asBytes(row?.saved);
   const deleted = asBytes(row?.deleted);
   const denom = saved + deleted;
@@ -539,8 +644,12 @@ export async function measureTrashYield(db: DbClient | undefined, now: Date): Pr
 export async function recordedSweepDeletions(
   db: DbClient | undefined,
   now: Date,
+  arrayKey = 'haynestower',
+  seriesStart = forecastQueryRange(Math.floor(now.getTime() / 1000)).start,
 ): Promise<RecordedDeletion[]> {
-  const since = new Date(now.getTime() - FORECAST_WINDOW_SECONDS * 1000);
+  const kinds = measurementKinds(arrayKey);
+  if (kinds.length === 0) return [];
+  const since = new Date(seriesStart * 1000);
   const rows = await resolveDb(db)
     .select({
       deletedAt: trashBatches.deletedAt,
@@ -552,6 +661,8 @@ export async function recordedSweepDeletions(
       and(
         eq(trashBatches.state, 'deleted'),
         gte(trashBatches.deletedAt, since),
+        lte(trashBatches.deletedAt, now),
+        inArray(trashBatches.mediaKind, kinds),
         eq(trashBatchItems.state, 'deleted'),
       ),
     )
@@ -591,6 +702,7 @@ export async function measureDeletableSnapshotPools(
     plexGuid: row.plexGuid,
     ruleEvaluationFailed: row.ruleEvaluationFailed,
   }));
+  const posted = await openPaceTitleIds(db);
   const pools: KindPool[] = [];
   for (const mediaKind of ['movie', 'tv'] as const) {
     const shaped = await shapePendingItems({
@@ -601,7 +713,12 @@ export async function measureDeletableSnapshotPools(
     });
     const byId = new Map<string, number>();
     for (const item of shaped.items) {
-      if (!isPaceDeletable(item) || item.maintainerrMediaId == null) continue;
+      if (
+        !isPaceDeletable(item) ||
+        item.maintainerrMediaId == null ||
+        posted.get(mediaKind)?.has(item.maintainerrMediaId)
+      )
+        continue;
       const size = item.sizeBytes ?? 0;
       const prev = byId.get(item.maintainerrMediaId);
       if (prev === undefined || size > prev) byId.set(item.maintainerrMediaId, size);

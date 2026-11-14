@@ -144,6 +144,10 @@ export interface SpacePolicy {
 /** The audited Dynamic Pace bounds. `enabled` ships false. Horizon, floor and ceiling are the D-16 defaults. */
 export interface DynamicPaceConfig {
   enabled: boolean;
+  /** ADR-124: computes/stores the ask while static caps build the real batch. Ships off. */
+  observeOnly?: boolean;
+  /** Audited movie title cap; absent defaults to the current per-kind cap (D-17). */
+  movieMaxItems?: number;
   horizonDays: number;
   floorBytes: number;
   ceilingBytes: number;

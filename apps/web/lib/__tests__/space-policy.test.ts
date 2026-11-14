@@ -13,6 +13,8 @@ import {
   withEnabled,
 } from '../space-policy';
 
+import { toDraft, draftToPolicy } from '../batch-policy-form';
+
 const CAPS = {
   maxItems: { enabled: false, value: 25 },
   targetBytes: { enabled: false, value: 1 },
@@ -72,7 +74,12 @@ describe('graduationVerdict', () => {
   };
 
   it('ready when meetsCriteria', () => {
-    const g = { ...base, completedPolicyBatches: 4, meetsCriteria: true, aggregate: { ...base.aggregate, saveRatePct: 5 } };
+    const g = {
+      ...base,
+      completedPolicyBatches: 4,
+      meetsCriteria: true,
+      aggregate: { ...base.aggregate, saveRatePct: 5 },
+    };
     expect(graduationVerdict(g)).toContain('Ready');
   });
 
@@ -91,4 +98,55 @@ describe('graduationVerdict', () => {
     expect(v).toContain('save-rate 30% > 10%');
     expect(v).toContain('2 restores of swept items');
   });
+});
+
+describe('settings cards preserve Dynamic Pace on save', () => {
+  it('preserves an inactive synthesized 30-day pace for a legacy 45-day save window', () => {
+    // The card has no window input: its untouched config must reach the API verbatim.
+    const policy = {
+      ...P,
+      enabled: true,
+      perArray: { haynestower: { enabled: true } },
+      dynamicPace: {
+        enabled: false,
+        observeOnly: false,
+        horizonDays: 30,
+        movieMaxItems: 50,
+        floorBytes: 130_604_353_957,
+        ceilingBytes: 3_591_025_375_575,
+      },
+    };
+    const draft = toDraft(policy);
+    draft.minCandidates = '2';
+    expect(draftToPolicy(draft, policy).dynamicPace).toEqual(policy.dynamicPace);
+    expect(withEnabled(policy, false).dynamicPace).toEqual(policy.dynamicPace);
+    expect(withArrayConfig(policy, 'haynestower', { enabled: false }).dynamicPace).toEqual(
+      policy.dynamicPace,
+    );
+  });
+
+  it.each([false, true])(
+    'carries the complete pace config through both card save conversions (enabled=%s)',
+    (enabled) => {
+      const dynamicPace = {
+        enabled,
+        observeOnly: !enabled,
+        movieMaxItems: 50,
+        horizonDays: 30,
+        floorBytes: 130_604_353_957,
+        ceilingBytes: 3_591_025_375_575,
+      };
+      const policy = { ...P, dynamicPace };
+      const draft = toDraft(policy);
+      draft.minCandidates = '12';
+      const saved = draftToPolicy(draft, policy); // BatchPolicyCard.onSave uses this exact seam
+      expect(saved.dynamicPace).toEqual(dynamicPace);
+      expect(saved.minCandidates).toBe(12);
+      expect(withEnabled(policy, true).dynamicPace).toEqual(dynamicPace);
+      expect(withArrayConfig(policy, 'haynestower', { enabled: true }).dynamicPace).toEqual(
+        dynamicPace,
+      );
+      expect(policy.dynamicPace).toEqual(dynamicPace);
+    },
+  );
 });

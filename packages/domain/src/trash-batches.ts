@@ -25,6 +25,7 @@ import {
   users,
   TRASH_BATCH_OPEN_STATES,
   type DbClient,
+  type Transaction,
   type TrashBatchItemState,
   type TrashBatchState,
   type TrashKeepReason,
@@ -452,6 +453,8 @@ async function fetchLiveExclusions(
 // ---------------------------------------------------------------------------
 
 export interface CreateBatchResult {
+  /** Selected snapshot total, computed before the creation transaction. */
+  totalBytes: number;
   batchId: string;
   state: TrashBatchState;
   mediaKind: TrashMediaKind;
@@ -466,6 +469,10 @@ export interface BatchTargeting {
   /** Free at LEAST this many bytes: rank the deletable candidates by `strategy` and take greedily
    *  until the running total crosses it (the crossing item is INCLUDED — we never split a title). */
   targetBytes?: number;
+  /** ADR-124: strict upper byte bound; a crossing title is skipped, never included. */
+  hardMaxBytes?: number;
+  /** ADR-124: an under-target paced batch below the measured floor is not posted. */
+  minBytes?: number;
   /** Hard cap on the number of items taken (an independent stop condition — whichever hits first). */
   maxItems?: number;
   /** The greedy ranking (default 'largest'; policy batches pass 'worst-rated'). */
@@ -492,7 +499,7 @@ export function selectBatchCandidates(
 ): ActionableItem[] {
   const capped =
     targeting !== undefined &&
-    (targeting.targetBytes !== undefined || targeting.maxItems !== undefined);
+    (targeting.targetBytes !== undefined || targeting.maxItems !== undefined || targeting.hardMaxBytes !== undefined);
   if (!capped) return [...actionable];
 
   const strategy = targeting?.strategy ?? 'largest';
@@ -517,13 +524,15 @@ export function selectBatchCandidates(
   const out: ActionableItem[] = [];
   let total = 0;
   for (const item of ranked) {
+    if (targeting?.hardMaxBytes !== undefined &&
+        (!Number.isSafeInteger(item.sizeBytes) || item.sizeBytes < 0 || total + item.sizeBytes > targeting.hardMaxBytes)) continue;
     out.push(item);
     total += item.sizeBytes;
     const hitTarget = targeting?.targetBytes !== undefined && total >= targeting.targetBytes;
     const hitCap = targeting?.maxItems !== undefined && out.length >= targeting.maxItems;
     if (hitTarget || hitCap) break;
   }
-  return out;
+  return targeting?.minBytes !== undefined && total < targeting.minBytes ? [] : out;
 }
 
 /**
@@ -551,6 +560,11 @@ export async function createBatchFromPending(input: {
    *  `trash_skip_admin_gate` — the space policy sets this so the unattended cycle completes itself. The
    *  human admin-review gate still governs MANUAL "Start a batch" creation (autoPromote absent). */
   autoPromote?: boolean;
+  /** D-18: required policy decision/attribution commits with the batch, before promotion. */
+  recordDecision?: (
+    tx: Transaction,
+    selected: { batchId: string; itemCount: number; totalBytes: number; gateSkipped: boolean },
+  ) => Promise<void>;
 }): Promise<CreateBatchResult> {
   // Auto-promote when either the global gate-skip is on OR the autonomous caller (space policy) asked for
   // it (ADR-073). Both bypass the admin-review gate straight to leaving_soon with `gate_skipped=true`.
@@ -680,6 +694,12 @@ export async function createBatchFromPending(input: {
           source: input.source ?? 'manual',
         },
       });
+      await input.recordDecision?.(tx, {
+        batchId: batch.id,
+        itemCount: selected.length,
+        totalBytes,
+        gateSkipped: skipGate,
+      });
       return batch.id;
     });
   } catch (err) {
@@ -695,6 +715,7 @@ export async function createBatchFromPending(input: {
     return {
       batchId,
       state: 'admin_review',
+      totalBytes,
       mediaKind: input.mediaKind,
       itemCount: selected.length,
       gateSkipped: false,
@@ -718,6 +739,7 @@ export async function createBatchFromPending(input: {
   return {
     batchId,
     state: 'leaving_soon',
+    totalBytes,
     mediaKind: input.mediaKind,
     itemCount: selected.length,
     gateSkipped: true,
