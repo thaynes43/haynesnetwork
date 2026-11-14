@@ -289,7 +289,7 @@ Migration 0115 uses assigned journal idx 111. It only drops the expiry column's 
 
 **First run after release (inference from the design's measured snapshot above):** the protected set is unchanged at 1151 Radarr / 195 Sonarr terms and there are no legacy expired/pruned records to recover. The measured profile counts agree with that set; matching counts alone do not prove exact profile membership. Permanence leaves the desired set unchanged and therefore requires no profile PUT or POST by itself on the first upkeep/reconcile. This inference assumes no independent drift or intervening changes at release; ordinary new deletions, drift or legacy omissions would use the existing writer. The implementation worker made no production request to remeasure it.
 
-New source ids: migration 0115 (journal idx 111) and DESIGN-052 Q-38 only. No ADR, D-NN or glossary term added. The existing glossary and hard rule now describe source behavior; ADR-122's status is left for the coordinator. The requested fixture anonymity audit on 2026-11-14 found four original fields with two original identities, and verified every resulting indexer field uses only indexer A/B; no identity was emitted by the audit. No per-account viewing or production terms are added.
+New implementation ids: migration 0115 (journal idx 111) and DESIGN-052 Q-38/Q-39 only. No ADR, D-NN or glossary term added. The existing glossary and hard rule now describe source behavior; ADR-122's status is left for the coordinator. The requested fixture anonymity audit on 2026-11-14 found four original fields with two original identities, and verified every resulting indexer field uses only indexer A/B; no identity was emitted by the audit. No per-account viewing or production terms are added.
 
 Measured test evidence and final PR check states are recorded below and on story 845. No build artifact, installation, live profile mutation, acceptance or merge is claimed. Q-35's capacity experiment and multiple profiles are outside this implementation, and Q-36's other blocks are unchanged. The required independent adversarial review and coordinator review remain pre-merge gates owned by the coordinator.
 
@@ -308,3 +308,12 @@ Measured test evidence and final PR check states are recorded below and on story
 
 - `npm_config_workspace_concurrency=2 pnpm lint`: passed. A local log/change-list audit found warnings only in untouched files; the retired seed-test lifetime constant was removed rather than leaving a new warning.
 - Fresh `git fetch origin main` before publication still pins main to `780fdeb178850c7b9f11941e9442ed09d1afe101`; Q-38 remains unresolved. No parallel main changes were discarded. Final PR URL, commit, required-check outcomes and next safe step are recorded on story 845; the worker does not merge or accept.
+
+
+### Advisory review follow-up (2026-11-14)
+
+The automatic advisory review confirmed Q-38. The predecessor needs not only the missing journal position but also an earlier migration timestamp and deployment before or with 0115: once Drizzle has applied 0115, it skips a newly supplied older-timestamp entry. This PR must remain held rather than deploying around the missing prerequisite.
+
+It also found the rollback limitation now recorded as Q-39. The prior image's one-off posted-name backfill dereferences `expiresAt` and cannot read the null rows that the new writer will insert. Ordinary app/delete/reconcile SQL remains compatible; the migration itself creates no null rows. The SQL comment and PR explicitly qualify compatibility, and the coordinator must settle the intended scope of the unchanged-previous-image requirement before merge. Recommendation: use this corrected backfill or a forward fix for maintenance, and never rewrite permanent records to finite deadlines for that old CLI. No old-image CLI, image rollback or production operation was performed. The regression proves schema/finite-SQL compatibility, not whole-image rollback compatibility after new writes.
+
+Only comments/documentation changed after the validated runtime source; no D-33 runtime decision or test guard was changed. Implementation ids now include Q-39 in addition to Q-38 and migration 0115. The advisory review is separate from the required independent adversarial review, which remains with the coordinator. Required checks are awaited on the final pushed head.
