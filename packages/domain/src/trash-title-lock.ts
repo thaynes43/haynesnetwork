@@ -72,8 +72,12 @@ export async function finishTitleDeletion(
   claimId: string,
 ): Promise<void> {
   await inTransaction(db, async (tx) => {
-    // The durable claim excludes new restores even while lock contention is resolved by a later reconciliation.
-    if (!(await lockTrashTitle(tx, identity))) return;
+    // A definitive settle must not silently strand its claim on ordinary title-lock contention.
+    // Bound the wait; timeout propagates and retains the conservative hold for coordinator reconciliation.
+    await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext('trash-title:' || ${identity.arrKind}), ${identity.externalId})`,
+    );
     await tx
       .update(trashTitleDeleteClaims)
       .set({ completedAt: new Date() })

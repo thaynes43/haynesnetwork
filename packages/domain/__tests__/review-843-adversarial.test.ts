@@ -24,6 +24,9 @@ import {
   createBatchFromPending,
   createStaticReleaseBlockArr,
   executeArrAdd,
+  expediteDeletion,
+  listTrashPending,
+  classifyGuardian,
   hasRestoreKeep,
   removeRestoreKeep,
   recordTrashRestoreAttempt,
@@ -455,3 +458,96 @@ it.each(['radarr', 'sonarr'] as const)(
     ).toHaveLength(1);
   },
 );
+
+it.each(
+  (['radarr', 'sonarr'] as const).flatMap((kind, k) =>
+    (['item', 'all'] as const).map((scope, i) => ({ kind, scope, n: 81000 + k * 100 + i })),
+  ),
+)(
+  'Expedite $kind $scope refuses a ledger remap during release preparation',
+  async ({ kind, scope, n }) => {
+    const actor = (await createUser(t.db)).id;
+    await seedVerifiedWatchlistRegistry(t.db);
+    await upsertMediaItemsBatch({ db: t.db, arrKind: kind, items: [fields(n, n)] });
+    await stampOldPlexMatches(t.db);
+    const collection = kind === 'radarr' ? movieCollection : tvCollection;
+    const { bundle, calls } = makeMaintainerr(
+      baseState({
+        collections: [
+          collection({
+            items: [
+              {
+                mediaServerId: `ms-${n}`,
+                ...(kind === 'radarr' ? { tmdbId: n } : { tvdbId: n }),
+                sizeBytes: 1000000000,
+                addDate: '2024-01-01T00:00:00Z',
+              },
+            ],
+          }),
+        ],
+      }),
+    );
+    const { arr } = createStaticReleaseBlockArr();
+    const list = arr.write[kind].listReleaseProfiles.bind(arr.write[kind]);
+    let changed = false;
+    arr.write[kind].listReleaseProfiles = async () => {
+      if (!changed) {
+        changed = true;
+        await upsertMediaItemsBatch({ db: t.db, arrKind: kind, items: [fields(n, n + 1000)] });
+      }
+      return list();
+    };
+    const result = await expediteDeletion({
+      db: t.db,
+      maintainerr: bundle,
+      arr,
+      scope,
+      media: kind === 'radarr' ? 'movie' : 'tv',
+      actorId: actor,
+      item: { collectionId: kind === 'radarr' ? 7 : 8, maintainerrMediaId: `ms-${n}` },
+      snapshotMediaIds: [`ms-${n}`],
+      logger: silentDomainLogger,
+    });
+    expect(changed).toBe(true);
+    expect(result).toMatchObject({ expeditedCount: 0, skippedCount: 1 });
+    expect(calls.filter((c) => c.pathname === '/collections/media/handle')).toHaveLength(0);
+    const [remapped] = await t.db
+      .select()
+      .from(mediaItems)
+      .where(and(eq(mediaItems.arrKind, kind), eq(mediaItems.arrItemId, n)));
+    expect(
+      await t.db
+        .select()
+        .from(ledgerEvents)
+        .where(
+          and(
+            eq(ledgerEvents.mediaItemId, remapped!.id),
+            eq(ledgerEvents.eventType, 'trash_expedited'),
+          ),
+        ),
+    ).toHaveLength(0);
+  },
+);
+
+it('unknown external identity is unevaluable, never attributed to an admin Restore', async () => {
+  await seedVerifiedWatchlistRegistry(t.db);
+  const { bundle } = makeMaintainerr(
+    baseState({
+      collections: [
+        movieCollection({
+          items: [
+            {
+              mediaServerId: 'ms-unknown-identity',
+              sizeBytes: 1000000000,
+              addDate: '2024-01-01T00:00:00Z',
+            },
+          ],
+        }),
+      ],
+    }),
+  );
+  const pending = await listTrashPending({ db: t.db, maintainerr: bundle, media: 'movie' });
+  expect(pending.items).toHaveLength(1);
+  expect(pending.items[0]!.restoreKeep).toBe(false);
+  expect(classifyGuardian(pending.items[0]!)).toMatchObject({ keep: true, reason: 'unevaluable' });
+});

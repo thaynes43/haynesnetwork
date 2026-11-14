@@ -1056,7 +1056,7 @@ export async function shapePendingItems(input: {
       ageGuard: age.ageGuard,
       newestAddedAt: age.newestAddedAt,
       saveIntent: joined !== undefined && savedIds.has(joined.mediaItemId),
-      restoreKeep: ext === null || restoredIds.has(ext),
+      restoreKeep: ext !== null && restoredIds.has(ext),
       releaseName: (joined ? releaseNames.get(joined.mediaItemId) : undefined) ?? 'unchecked',
     };
   });
@@ -2259,23 +2259,32 @@ async function expediteOneSurvivor(
   survivor: ExpediteSurvivor,
   release: { recordIds: readonly string[]; arrItemId: number | null },
   watchlist: DeleteWatchlistSnapshot,
-): Promise<'active' | 'abandoned' | 'in_flight' | 'none' | 'watchlisted' | 'saved'> {
+): Promise<
+  | 'active'
+  | 'abandoned'
+  | 'in_flight'
+  | 'none'
+  | 'watchlisted'
+  | 'saved'
+  | 'admin_restored'
+  | 'unevaluable'
+> {
   const logger = input.logger ?? consoleDomainLogger;
   // ADR-099 D-4 — a Save made after the guardian ran (a tap on the wall while this expedite runs) is re-read just
   // before the delete: the app's record keeps the title, exclusion or not.
-  if (
-    survivor.mediaItemId !== null &&
-    ((await hasOpenSaveIntent(input.db, survivor.mediaItemId)) ||
-      (await hasRestoreKeepForIdentity(input.db, trashTitleIdentity(survivor))))
-  ) {
+  const identity = trashTitleIdentity(survivor);
+  const saved =
+    survivor.mediaItemId !== null && (await hasOpenSaveIntent(input.db, survivor.mediaItemId));
+  const restored = identity !== null && (await hasRestoreKeepForIdentity(input.db, identity));
+  if (saved || restored) {
     await abandonReleaseRecords({ db: input.db, recordIds: release.recordIds });
     logger.info('[trash] kept', {
       scope,
       maintainerrMediaId: survivor.maintainerrMediaId,
       title: survivor.title,
-      reason: 'saved',
+      reason: saved ? 'saved' : 'admin_restored',
     });
-    return 'saved';
+    return saved ? 'saved' : 'admin_restored';
   }
   if (
     await isOnLateWatchlist({
@@ -2298,14 +2307,31 @@ async function expediteOneSurvivor(
     });
     return 'watchlisted';
   }
-  const identity = trashTitleIdentity(survivor);
+  let claimKeep: 'saved' | 'admin_restored' | 'unevaluable' = 'unevaluable';
   const claimId = await inTransaction(input.db, async (tx) => {
+    if (!identity || !(await lockTrashTitle(tx, identity))) return null;
+    if (await hasRestoreKeepForIdentity(tx, identity)) {
+      claimKeep = 'admin_restored';
+      return null;
+    }
+    const [row] = survivor.mediaItemId
+      ? await tx
+          .select()
+          .from(mediaItems)
+          .where(eq(mediaItems.id, survivor.mediaItemId))
+          .for('share')
+      : [];
+    const current = row ? trashTitleIdentity(row) : null;
     if (
-      !identity ||
-      !(await lockTrashTitle(tx, identity)) ||
-      (await hasRestoreKeepForIdentity(tx, identity))
+      !current ||
+      current.arrKind !== identity.arrKind ||
+      current.externalId !== identity.externalId
     )
       return null;
+    if (await hasOpenSaveIntent(tx, row!.id)) {
+      claimKeep = 'saved';
+      return null;
+    }
     const claimId = await claimTitleDeletion(tx, identity);
     if (!claimId) return null;
     await invalidateTrashReleaseOffers(tx, identity);
@@ -2351,7 +2377,7 @@ async function expediteOneSurvivor(
   });
   if (!claimId || !identity) {
     await abandonReleaseRecords({ db: input.db, recordIds: release.recordIds });
-    return 'saved';
+    return claimKeep;
   }
   // The destructive handle, then the settle of the item's records (DESIGN-052 D-14 step 7 / D-25ax), always by the
   // *arr's answer: a 404 makes them active even when the handle's answer was lost; a present item abandons them after
@@ -2596,10 +2622,12 @@ export async function expediteDeletion(
       await reconcileAfterAbandon(input, survivor.arrKind);
       throw error;
     }
-    if (settled === 'abandoned' || settled === 'watchlisted' || settled === 'saved') {
+    if (settled === 'abandoned' || settled === 'watchlisted' || settled === 'saved' || settled === 'admin_restored' || settled === 'unevaluable') {
       await reconcileAfterAbandon(input, survivor.arrKind);
     }
-    if (settled === 'watchlisted' || settled === 'saved') {
+    if (settled === 'unevaluable') return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1,
+      stalePending: 0, expeditedIds: [], unrecordedCount: 0, unverifiedNameCount: 0, blockFullCount: 0, skippedNames: 0 };
+    if (settled === 'watchlisted' || settled === 'saved' || settled === 'admin_restored') {
       // Added to the owner's watchlist after the gate's snapshot (D-25ay), or saved meanwhile (ADR-099): kept.
       return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0, unverifiedNameCount: 0, blockFullCount: 0, skippedNames: 0 };
     }
@@ -2748,7 +2776,8 @@ export async function expediteDeletion(
         watchlist,
       );
       if (settled === 'abandoned') anyAbandoned = true;
-      if (settled === 'watchlisted' || settled === 'saved') {
+      if (settled === 'unevaluable') { anyAbandoned = true; skippedCount += 1; continue; }
+      if (settled === 'watchlisted' || settled === 'saved' || settled === 'admin_restored') {
         // Added to the owner's watchlist after the gate's snapshot (D-25ay), or saved meanwhile (ADR-099): kept.
         anyAbandoned = true;
         protectedCount += 1;

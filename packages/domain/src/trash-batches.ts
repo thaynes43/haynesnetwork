@@ -2029,10 +2029,18 @@ async function expireOneBatch(input: {
         return null;
       }
       const [resolvedRow] = fresh.mediaItemId
-        ? await tx.select().from(mediaItems).where(eq(mediaItems.id, fresh.mediaItemId)).for('share')
+        ? await tx
+            .select()
+            .from(mediaItems)
+            .where(eq(mediaItems.id, fresh.mediaItemId))
+            .for('share')
         : [];
       const resolvedIdentity = resolvedRow ? trashTitleIdentity(resolvedRow) : null;
-      if (!resolvedIdentity || resolvedIdentity.arrKind !== identity.arrKind || resolvedIdentity.externalId !== identity.externalId) {
+      if (
+        !resolvedIdentity ||
+        resolvedIdentity.arrKind !== identity.arrKind ||
+        resolvedIdentity.externalId !== identity.externalId
+      ) {
         unresolvedIdentity = true;
         return null;
       }

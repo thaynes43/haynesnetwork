@@ -800,12 +800,17 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
       setRowStatus((prev) =>
         new Map(prev).set(mediaItemId, {
           ok: res.successCount > 0,
-          text: res.successCount > 0 ? 'Re-added' : `Not restored — run ${res.status.replaceAll('_', ' ')}`,
+          text:
+            res.successCount > 0
+              ? 'Re-added'
+              : `Not restored — run ${res.status.replaceAll('_', ' ')}`,
         }),
       );
       void utils.trash.restoreKeeps.invalidate();
+      void utils.trash.recentlyDeleted.invalidate();
     } catch (err) {
       void utils.trash.restoreKeeps.invalidate();
+      void utils.trash.recentlyDeleted.invalidate();
       setRowStatus((prev) =>
         new Map(prev).set(mediaItemId, { ok: false, text: describeMutationError(err) }),
       );
@@ -818,9 +823,10 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
     NonNullable<typeof movies.data>[number] & { media: 'movie' | 'tv' }
   > | null>(null);
 
-  if (movies.isLoading || tv.isLoading) return <p className="muted">Loading recently deleted…</p>;
+  if ((movies.isLoading || tv.isLoading) && pinnedRows.current === null)
+    return <p className="muted">Loading recently deleted…</p>;
   const loadError = movies.error ?? tv.error;
-  if (loadError) {
+  if (loadError && pinnedRows.current === null) {
     return (
       <p className="alert" role="alert">
         Couldn’t load the recently-deleted list: {loadError.message}
@@ -838,7 +844,9 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
   });
 
   if (pinnedRows.current === null) pinnedRows.current = incomingRows;
-  const rows = pinnedRows.current;
+  const currentRows = new Map(incomingRows.map((row) => [row.mediaItemId, row]));
+  // Retain positions and action results, but refresh the data of existing rows. Missing rows lose Restore.
+  const rows = pinnedRows.current.map((row) => currentRows.get(row.mediaItemId) ?? row);
 
   if (rows.length === 0) {
     return (
@@ -900,39 +908,50 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
                   )}
                 </td>
                 <td data-label="Restore">
-                  <span style={{ display: 'inline-flex', minWidth: '8rem', minHeight: '2.25rem', alignItems: 'center' }}>
-                  {status !== undefined ? (
-                    <span
-                      className={`badge badge--${status.ok ? 'ok' : 'danger'}`}
-                      data-testid="trash-restore-status"
-                      title={
-                        status.ok
-                          ? 'Re-added to the manager and protected by a restore keep.'
-                          : status.text
-                      }
-                    >
-                      {status.ok ? 'Re-added' : 'Not restored'}
-                    </span>
-                  ) : canRestore ? (
-                    <ConfirmButton
-                      className="btn sm"
-                      data-testid="trash-restore"
-                      label="Restore"
-                      reArmOnFailure
-                      restingAriaLabel={`Restore ${row.title} — re-add it to the media manager — click twice to confirm`}
-                      confirmAriaLabel={`Confirm restore ${row.title}`}
-                      onConfirm={() => restoreRow(row.mediaItemId, row.media)}
-                    />
-                  ) : (
-                    <span className="muted">—</span>
-                  )}
-                </span>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      minWidth: '8rem',
+                      minHeight: '2.25rem',
+                      alignItems: 'center',
+                    }}
+                  >
+                    {status !== undefined ? (
+                      <span
+                        className={`badge badge--${status.ok ? 'ok' : 'danger'}`}
+                        data-testid="trash-restore-status"
+                        title={
+                          status.ok
+                            ? 'Re-added to the manager and protected by a restore keep.'
+                            : status.text
+                        }
+                      >
+                        {status.ok ? 'Re-added' : 'Not restored'}
+                      </span>
+                    ) : canRestore ? (
+                      <ConfirmButton
+                        className="btn sm"
+                        data-testid="trash-restore"
+                        label="Restore"
+                        reArmOnFailure
+                        disabled={!currentRows.has(row.mediaItemId)}
+                        restingAriaLabel={`Restore ${row.title} — re-add it to the media manager — click twice to confirm`}
+                        confirmAriaLabel={`Confirm restore ${row.title}`}
+                        onConfirm={() => restoreRow(row.mediaItemId, row.media)}
+                      />
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </span>
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      {loadError ? (
+        <p role="alert">Couldn’t refresh recently deleted: {loadError.message}</p>
+      ) : null}
       {canRestore ? <RestoreKeeps /> : null}
     </>
   );

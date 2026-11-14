@@ -2578,7 +2578,19 @@ test('Recently deleted keeps neighbouring Restore controls fixed through success
     const data = names.map((name, i) => {
       const arg = batched ? input[String(i)] : input;
       if (name === 'trash.recentlyDeleted')
-        return { result: { data: arg.media === 'movie' ? (keeps.length ? [] : rows) : [] } };
+        return {
+          result: {
+            data:
+              arg.media === 'movie'
+                ? rows
+                    .filter((row) => !keeps.some((k) => k.mediaItemId === row.mediaItemId))
+                    .map((row) => ({
+                      ...row,
+                      year: row.mediaItemId === ids[2] && keeps.length ? 2025 : row.year,
+                    }))
+                : [],
+          },
+        };
       if (name === 'trash.restoreKeeps') return { result: { data: keeps } };
       if (name === 'trash.removeRestoreKeep') {
         const keep = keeps.find((k) => k.keepId === arg.keepId)!;
@@ -2632,11 +2644,14 @@ test('Recently deleted keeps neighbouring Restore controls fixed through success
         exact: true,
       }),
     ).toBeVisible();
+    await expect(
+      page.getByTestId('trash-deleted-row').filter({ hasText: 'Synthetic deleted 2' }),
+    ).toContainText('(2025)');
     expect(await position()).toEqual(before);
   }
   await armAndConfirm(
     page.getByRole('button', {
-      name: 'Remove restore keep for Synthetic deleted 0 — click twice to confirm',
+      name: /restore keep for Synthetic deleted 0/,
       exact: true,
     }),
   );
