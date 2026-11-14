@@ -2403,7 +2403,7 @@ async function expediteOneSurvivor(
     title: survivor.title,
     logger,
   });
-  if (settled !== 'in_flight') await finishTitleDeletion(input.db, identity, claimId);
+  if (settled !== 'in_flight') await finishTitleDeletion(input.db, identity, claimId, logger);
   // D-21 / D-25az — one line per delete, after its settle.
   logger.info('[trash] expedited', {
     scope,

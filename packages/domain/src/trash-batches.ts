@@ -2153,7 +2153,7 @@ async function expireOneBatch(input: {
       title: item.title,
       logger: input.logger,
     });
-    if (identity && settled !== 'in_flight') await finishTitleDeletion(input.db, identity, claimed);
+    if (identity && settled !== 'in_flight') await finishTitleDeletion(input.db, identity, claimed, input.logger);
     if (settled === 'abandoned') anyAbandoned = true;
     // D-21 / D-25az — one line per delete, after its settle (PLAN-072 S7 reads the order from these).
     input.logger.info('[trash] deleted', {

@@ -1,8 +1,11 @@
+import { inTransaction } from '../src/db-client';
+import { lockTrashTitle } from '../src/trash-title-lock';
 // Regressions from the first adversarial review; synthetic PostgreSQL data and stub clients only.
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import {
   ledgerEvents,
+  trashTitleDeleteClaims,
   notifications,
   releasePickLists,
   mediaItems,
@@ -546,8 +549,105 @@ it('unknown external identity is unevaluable, never attributed to an admin Resto
       ],
     }),
   );
-  const pending = await listTrashPending({ db: t.db, maintainerr: bundle, media: 'movie', watchlist: null });
+  const pending = await listTrashPending({
+    db: t.db,
+    maintainerr: bundle,
+    media: 'movie',
+    watchlist: null,
+  });
   expect(pending.items).toHaveLength(1);
   expect(pending.items[0]!.restoreKeep).toBe(false);
   expect(classifyGuardian(pending.items[0]!)).toMatchObject({ keep: true, reason: 'unevaluable' });
+});
+
+it('a settled-claim lock timeout retains that claim while the sweep finishes other titles and closes its batch', async () => {
+  const actor = (await createUser(t.db)).id,
+    first = 84001,
+    second = 84002;
+  await seedVerifiedWatchlistRegistry(t.db);
+  await setAppSetting({ db: t.db, key: 'trash_skip_admin_gate', value: true, actorId: actor });
+  await upsertMediaItemsBatch({
+    db: t.db,
+    arrKind: 'radarr',
+    items: [fields(first, first), fields(second, second)],
+  });
+  await stampOldPlexMatches(t.db);
+  const state = baseState({
+    collections: [
+      movieCollection({
+        items: [first, second].map((n) => ({
+          mediaServerId: `ms-${n}`,
+          tmdbId: n,
+          sizeBytes: 1000000000,
+          addDate: '2024-01-01T00:00:00Z',
+        })),
+      }),
+    ],
+  });
+  const { bundle, calls } = makeMaintainerr(state),
+    { arr, fixture } = createStaticReleaseBlockArr();
+  const { batchId } = await createBatchFromPending({
+    db: t.db,
+    maintainerr: bundle,
+    mediaKind: 'movie',
+    actorId: actor,
+  });
+  let unlock!: () => void;
+  const released = new Promise<void>((resolve) => {
+    unlock = resolve;
+  });
+  let holder: Promise<void> | undefined;
+  state.onHandle = async (ms) => {
+    const n = Number(ms.slice(3));
+    fixture.gone.radarr.add(n);
+    if (n !== first) return;
+    let locked!: () => void;
+    const acquired = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    holder = inTransaction(t.db, async (tx) => {
+      expect(await lockTrashTitle(tx, { arrKind: 'radarr', externalId: first })).toBe(true);
+      locked();
+      await released;
+    });
+    await acquired;
+  };
+  const warnings: unknown[] = [];
+  try {
+    await sweepExpiredBatches({
+      db: t.db,
+      maintainerr: bundle,
+      arr,
+      registry: 'gate-only',
+      logger: {
+        ...silentDomainLogger,
+        warn: (_message, fields) => {
+          warnings.push(fields);
+        },
+      },
+      batchId,
+      forceOverride: true,
+      actorId: actor,
+    });
+  } finally {
+    unlock();
+    await holder;
+  }
+  expect(calls.filter((c) => c.pathname === '/collections/media/handle')).toHaveLength(2);
+  expect(
+    (await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId)))[0],
+  ).toMatchObject({ state: 'deleted' });
+  const [held] = await t.db
+    .select()
+    .from(trashTitleDeleteClaims)
+    .where(eq(trashTitleDeleteClaims.externalId, first));
+  const [completed] = await t.db
+    .select()
+    .from(trashTitleDeleteClaims)
+    .where(eq(trashTitleDeleteClaims.externalId, second));
+  expect(held!.completedAt).toBeNull();
+  expect(completed!.completedAt).not.toBeNull();
+  expect(warnings).toContainEqual(
+    expect.objectContaining({ arrKind: 'radarr', externalId: first, code: '55P03' }),
+  );
 });

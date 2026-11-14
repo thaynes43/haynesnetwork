@@ -666,3 +666,8 @@ export function isPostgresUniqueViolation(err: unknown): boolean {
 export function isPostgresForeignKeyViolation(err: unknown): boolean {
   return pgErrorCode(err) === '23503';
 }
+
+/** A bounded PostgreSQL lock wait expired; permission/connection errors are not this condition. */
+export function isPgLockTimeout(err: unknown): boolean {
+  return pgErrorCode(err) === '55P03';
+}
