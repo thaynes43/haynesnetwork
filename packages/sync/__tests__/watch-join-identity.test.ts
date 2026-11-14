@@ -1,15 +1,10 @@
 // DESIGN-008 D-15 / #855. Synthetic household history, stubs and embedded PostgreSQL 16 only.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
+import { mediaItems, mediaMetadata, plexLibraries, userMediaWatch, type ArrKind } from '@hnet/db';
 import {
-  mediaItems,
-  mediaMetadata,
-  mediaPlexMatches,
-  plexLibraries,
-  userMediaWatch,
-  type ArrKind,
-} from '@hnet/db';
-import {
+  upsertMediaItemsBatch,
+  syncPlexMatches,
   upsertMediaMetadataBatch,
   upsertPlexLibraries,
   upsertUserAccountHandles,
@@ -116,23 +111,32 @@ describe('kind-qualified watch join', () => {
         withMatch = true,
       ) => {
         const n = ++sequence;
+        // Distinct synthetic instances let the normal ledger writer retain duplicate/sentinel
+        // external ids rather than treating a later fixture as an arr rebuild of the first.
+        const fixtureInstance = `${route}-${n}`;
+        await upsertMediaItemsBatch({
+          db: t.db,
+          arrKind: target.arrKind,
+          arrInstanceId: fixtureInstance,
+          items: [
+            {
+              arrItemId: n,
+              tmdbId: target.tmdbId ?? (target.arrKind === 'radarr' ? 0 : null),
+              tvdbId: target.tvdbId ?? (target.arrKind === 'sonarr' ? 0 : null),
+              imdbId: target.imdbId,
+              title: `Synthetic title ${n}`,
+              sortTitle: `synthetic ${n}`,
+              monitored: true,
+              qualityProfileId: 1,
+              qualityProfileName: 'Synthetic',
+              rootFolder: '/synthetic',
+            },
+          ],
+        });
         const [item] = await t.db
-          .insert(mediaItems)
-          .values({
-            arrKind: target.arrKind,
-            arrInstanceId: route,
-            arrItemId: n,
-            tmdbId: target.tmdbId ?? (target.arrKind === 'radarr' ? 0 : null),
-            tvdbId: target.tvdbId ?? (target.arrKind === 'sonarr' ? 0 : null),
-            imdbId: target.imdbId,
-            title: `Synthetic title ${n}`,
-            sortTitle: `synthetic ${n}`,
-            monitored: true,
-            qualityProfileId: 1,
-            qualityProfileName: 'Synthetic',
-            rootFolder: '/synthetic',
-          })
-          .returning();
+          .select()
+          .from(mediaItems)
+          .where(eq(mediaItems.arrInstanceId, fixtureInstance));
         const storedTarget = { ...target, tmdbId: item!.tmdbId, tvdbId: item!.tvdbId };
         expected.push({ id: item!.id, target: storedTarget, plays, last: when });
         await upsertMediaMetadataBatch({
@@ -151,11 +155,17 @@ describe('kind-qualified watch join', () => {
           ],
         });
         if (withMatch)
-          await t.db.insert(mediaPlexMatches).values({
-            mediaItemId: item!.id,
-            plexLibraryId: libraries.get(target.arrKind === 'radarr' ? 'movie' : 'show')!,
-            ratingKey: String(n),
-            matchedVia: 'tmdb',
+          await syncPlexMatches({
+            db: t.db,
+            scopedLibraryIds: [],
+            matches: [
+              {
+                mediaItemId: item!.id,
+                plexLibraryId: libraries.get(target.arrKind === 'radarr' ? 'movie' : 'show')!,
+                ratingKey: String(n),
+                matchedVia: 'tmdb',
+              },
+            ],
           });
         const ids = usableWatchGuids(storedTarget);
         const guids =
@@ -289,7 +299,6 @@ describe('kind-qualified watch join', () => {
         sources: stub,
         context: { ...context, watchComplete: false },
         arrKind: 'radarr',
-        arrInstanceId: route,
         logger: noopLogger,
         staleThresholdMs: -1,
       });
@@ -305,7 +314,6 @@ describe('kind-qualified watch join', () => {
           sources: stub,
           context,
           arrKind,
-          arrInstanceId: route,
           logger: noopLogger,
           staleThresholdMs: -1,
         });
