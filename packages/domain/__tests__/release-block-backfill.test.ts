@@ -335,6 +335,30 @@ describe('the posted-name backfill (ADR-117 / DESIGN-052 D-29)', () => {
     expect(fixture.profiles.radarr[0]!.ignored).toHaveLength(2);
   });
 
+  it('a token-bearing grab is termed or counted, never dropped', async () => {
+    await deletedBatch('movie', [{ title: 'Posted Movie', size: 5_000 }]);
+    const grabName = 'Posted.Movie.2020.1080p.BluRay.x264-TOKGRP {tmdb-7001}';
+    const failedName = 'Posted.Movie.2020.720p.WEB-DL.x264-FAILGRP {imdb-tt0007001}';
+    await grab('Posted Movie', grabName);
+    await grab('Posted Movie', failedName, 'download_failed');
+    const dry = await backfillPostedReleaseNames({ db: t.db, apply: false, logger: quiet, now: NOW });
+    sums(dry.movies);
+    expect(dry.movies.namesSeen).toBe(2);
+    expect(dry.movies.unnamed).toBe(0);
+    const termed = dry.movies.records > 0;
+    const counted = dry.movies.untermed + dry.movies.skipped > 0;
+    expect(termed || counted).toBe(true);
+    if (dry.movies.records === 2) {
+      const { arr, fixture } = createStaticReleaseBlockArr();
+      const applied = await backfillPostedReleaseNames({ db: t.db, arr, apply: true, logger: quiet, now: NOW });
+      expect(applied.movies).toMatchObject({ named: 1, records: 2 });
+      const ignored = fixture.profiles.radarr[0]!.ignored;
+      for (const name of [grabName, failedName]) {
+        expect(ignored.some((term) => termMatchesRaw(term, name)), name).toBe(true);
+      }
+    }
+  });
+
   it('counts a name it cannot term and a name that names no release, and records the rest of the title', async () => {
     await deletedBatch('movie', [{ title: 'Posted Movie', size: 5_000 }]);
     await grab('Posted Movie', 'Posted.Movie.2020.1080p.WEB-DL.x264-POSTGRP');

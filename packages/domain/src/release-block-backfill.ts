@@ -25,7 +25,7 @@ import {
 import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { resolveDb } from './db-client';
 import { consoleDomainLogger, type DomainLogger } from './domain-logger';
-import { matchLegacySab, postedReleaseName } from './release-block-names';
+import { matchLegacySab, postedReleaseName, verifiedFileName } from './release-block-names';
 import { readLegacyJobsForSize, readLegacyReleaseNames } from './release-block-legacy';
 import {
   RELEASE_BLOCK_TERM_CAP,
@@ -460,7 +460,10 @@ async function namesFor(
   const legacy = await readLegacyReleaseNames(db, candidate.arrKind, candidate.externalId);
   if (legacy === 'truncated') return 'unread';
   for (const row of legacy) {
-    const name = postedReleaseName(row.releaseName);
+    // A file record is a name of the file. A library id token there is the rename and is not a term. A grab,
+    // a failed download or an import keeps the name: it is termed, or counted when the grammar cannot write one.
+    const name =
+      row.recordKind === 'file' ? verifiedFileName(row.releaseName) : postedReleaseName(row.releaseName);
     if (!name) continue;
     add({
       name,

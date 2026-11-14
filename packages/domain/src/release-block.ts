@@ -45,7 +45,12 @@ import {
   type TitleExclusionArrClients,
   type TitleExclusionTarget,
 } from './title-exclusion';
-import { matchLegacySab, postedReleaseName } from './release-block-names';
+import {
+  carriesLibraryIdToken,
+  matchLegacySab,
+  postedReleaseName,
+  verifiedFileName,
+} from './release-block-names';
 import { FOLDER_IMPORT_EVENT_TYPES } from './trash-release-name';
 import {
   legacyNamesOfFile,
@@ -282,9 +287,13 @@ export async function ledgerReleases(
         .limit(1);
       grab = row?.payload ?? null;
     }
+    const grabTitle = grab ? payloadString(grab, 'sourceTitle') : null;
+    const importTitle = payloadString(imp.payload, 'sourceTitle');
+    // D-29 — a library id token in the import's own name is the renamed file and does not name it. The grab's
+    // name is a fetched release and stays, token or not, so it can be termed.
     const titles = [
-      grab ? payloadString(grab, 'sourceTitle') : null,
-      payloadString(imp.payload, 'sourceTitle'),
+      grabTitle,
+      importTitle !== null && !carriesLibraryIdToken(importTitle) ? importTitle : null,
     ].filter((t): t is string => t !== null);
     out.push({
       sourceTitles: [...new Set(titles)],
@@ -342,6 +351,20 @@ function isCurrentFileBase(recorded: string | null | undefined, relativePath: st
   const recordedBase = withoutMediaExtension(pathBaseName(recorded));
   const currentBase = withoutMediaExtension(pathBaseName(relativePath));
   return recordedBase.length > 0 && recordedBase === currentBase;
+}
+
+/**
+ * The *arr's names that may verify one file. A library id token does not verify the scene name or the original
+ * path (those are the renamed file). The grab title is a fetched release: a token in it does not remove it.
+ */
+function namesThatVerifyFile(
+  relativePath: string | null | undefined,
+  sceneName: string | null | undefined,
+  originalFilePath: string | null | undefined,
+  grabTitle: string | null | undefined,
+): string[] {
+  const [grab, scene, original] = arrRecordedNames(relativePath, sceneName, originalFilePath, grabTitle);
+  return distinct([postedReleaseName(grab), verifiedFileName(scene), verifiedFileName(original)]);
 }
 
 /** The *arr's names for one file, with a current-path scene name or original path left out. */
@@ -743,7 +766,12 @@ export async function ledgerPostedReleases(
 function legacyPostedReleases(legacy: readonly LegacyReleaseName[]): PostedRelease[] {
   return uniquePosted(
     legacy.map((l) => {
-      const name = postedReleaseName(l.releaseName);
+      // A file record names the file on disk: a library id token there is the rename, not a fetched release.
+      // A grab, a failed download or an import keeps the name so it is termed or the title is kept.
+      const name =
+        l.recordKind === 'file'
+          ? verifiedFileName(l.releaseName)
+          : postedReleaseName(l.releaseName);
       if (!name) return null;
       return {
         name,
@@ -1088,10 +1116,11 @@ async function identifyMovie(
   const { grab, imported } = joinFileToGrab(file, history);
   const [ledger] = await ledgerReleases(db, mediaItemId, before, 1);
   // A string containing "://" is never a name, whichever record holds it.
-  const arrNames = distinct(
-    arrRecordedNames(file.relativePath, file.sceneName, file.originalFilePath, grab?.sourceTitle).map(
-      postedReleaseName,
-    ),
+  const arrNames = namesThatVerifyFile(
+    file.relativePath,
+    file.sceneName,
+    file.originalFilePath,
+    grab?.sourceTitle,
   );
   const q = file.quality?.quality;
   const fileGroup = file.releaseGroup ?? grab?.releaseGroup ?? imported?.releaseGroup ?? null;
@@ -1112,7 +1141,7 @@ async function identifyMovie(
   const legacyFile = legacyNamesOfFile(legacy, { sizeBytes: file.size });
   const names = distinct([
     ...(useLedger ? ledger!.sourceTitles.map(postedReleaseName) : arrNames),
-    ...legacyFile.map((l) => postedReleaseName(l.releaseName)),
+    ...legacyFile.map((l) => verifiedFileName(l.releaseName)),
   ]);
   // D-29 (owner ruling 2026-11-13) — the file on disk has no verified posted name: only the name Radarr rebuilt
   // when it renamed the file is known, and that is never a basis for a delete. The title is kept.
@@ -1230,12 +1259,10 @@ async function identifySeries(
   }
   const facts: FileFacts[] = files.map((f) => {
     const { grab, imported } = joinFileToGrab(f, history);
-    const arrNames = distinct(
-      arrRecordedNames(f.relativePath, f.sceneName, f.originalFilePath, grab?.sourceTitle).map(postedReleaseName),
-    );
+    const arrNames = namesThatVerifyFile(f.relativePath, f.sceneName, f.originalFilePath, grab?.sourceTitle);
     // D-29 — a legacy file record of this series, in the file's season, with its IDENTICAL byte size names it too.
     const legacyFile = legacyNamesOfFile(legacy, { sizeBytes: f.size, season: f.seasonNumber as number });
-    const names = distinct([...arrNames, ...legacyFile.map((l) => postedReleaseName(l.releaseName))]);
+    const names = distinct([...arrNames, ...legacyFile.map((l) => verifiedFileName(l.releaseName))]);
     const q = f.quality?.quality;
     const group =
       f.releaseGroup ??

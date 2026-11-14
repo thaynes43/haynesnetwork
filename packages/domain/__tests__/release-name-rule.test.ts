@@ -388,11 +388,15 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
 
     const TOKEN = 'Movie 9001 (2024) {tmdb-9001} [Bluray-1080p][x264]-NEWGRP';
 
-    it('a library id token is not a posted name; a bracket run and an episode shape still are', () => {
-      expect(postedReleaseName(TOKEN)).toBeNull();
-      expect(postedReleaseName(`${TOKEN}.mkv`)).toBeNull();
-      expect(postedReleaseName('Movie.9001.2024.1080p.BluRay.x264-NEWGRP {IMDB-tt0009001}')).toBeNull();
-      expect(postedReleaseName('Night.Shift.S01E01.1080p.WEB.x264-TVGRP {tvdb-8050}')).toBeNull();
+    it('a library id token stays a stored name; a bracket run and an episode shape still are', () => {
+      expect(postedReleaseName(TOKEN)).toBe(TOKEN);
+      expect(postedReleaseName(`${TOKEN}.mkv`)).toBe(`${TOKEN}.mkv`);
+      expect(postedReleaseName('Movie.9001.2024.1080p.BluRay.x264-NEWGRP {IMDB-tt0009001}')).toBe(
+        'Movie.9001.2024.1080p.BluRay.x264-NEWGRP {IMDB-tt0009001}',
+      );
+      expect(postedReleaseName('Night.Shift.S01E01.1080p.WEB.x264-TVGRP {tvdb-8050}')).toBe(
+        'Night.Shift.S01E01.1080p.WEB.x264-TVGRP {tvdb-8050}',
+      );
       expect(postedReleaseName(POSTED(9001))).toBe(POSTED(9001));
       const bracketed = 'Night Shift (2019) - S01E02 - Pilot [WEBDL-1080p]-TVGRP';
       expect(postedReleaseName(bracketed)).toBe(bracketed);
@@ -451,13 +455,75 @@ describe('the verified-name rule (ADR-117 / DESIGN-052 D-29)', () => {
 
       await loadLegacy({
         radarrFiles: [radarrFile(9001, TOKEN, FILE_SIZE), radarrFile(9001, POSTED(9001), FILE_SIZE)].join('\n'),
-        radarrHistory: radarrEvent(9001, 1, `${TOKEN} {imdb-tt0009001}`),
       });
       const identity = await identify('radarr', 1, arr);
       expect(identity.status).toBe('recordable');
       expect(drafts(identity).map((d) => d.releaseTitle)).toContain(POSTED(9001));
       expect(drafts(identity).some((d) => /\{(?:tmdb|imdb|tvdb)-/i.test(String(d.releaseTitle)))).toBe(false);
       expect(drafts(identity).every((d) => d.termConfidence === 'verified')).toBe(true);
+    });
+
+    const historyGrab = (id: number, sourceTitle: string, group: string) => ({
+      id,
+      eventType: 'grabbed' as const,
+      date: '2025-01-01T00:00:00Z',
+      sourceTitle,
+      downloadId: `dl-${id}`,
+      episodeId: null,
+      qualityName: 'Bluray-1080p',
+      fileId: null,
+      importedPath: null,
+      releaseGroup: group,
+      indexer: null,
+      releaseSource: null,
+    });
+    /** A grabbed name is termed, or the title is kept. A recordable result with no term for it is a silent drop. */
+    const termedOrKept = (identity: ReleaseIdentity, names: readonly string[]) => {
+      if (identity.status === 'recordable') {
+        const terms = identity.drafts
+          .map((d) => d.term)
+          .filter((term): term is string => typeof term === 'string');
+        for (const name of names) expect(terms.some((term) => termMatchesRaw(term, name)), name).toBe(true);
+      } else {
+        expect(identity.reason).toBe('no_term');
+      }
+    };
+
+    it('a title with only a token-bearing grab is termed for that name or kept', async () => {
+      const grabName = 'Movie.9001.2024.1080p.BluRay.x264-TOKGRP {tmdb-9001}';
+      const { arr } = createStaticReleaseBlockArr({
+        movies: new Map([[1, diskMovie(1, { file: null, history: [historyGrab(1, grabName, 'TOKGRP')] })]]),
+      });
+      termedOrKept(await identify('radarr', 1, arr), [grabName]);
+    });
+
+    it('a file verified by a real name is not deleted without a term for a token-bearing grab', async () => {
+      const historyName = 'Movie.9001.2024.720p.WEB-DL.x264-TOKGRP {imdb-tt0009001}';
+      const ledgerName = 'Movie.9001.2024.1080p.BluRay.x264-LEDGER {tmdb-9001}';
+      const failedName = 'Movie.9001.2024.2160p.BluRay.x265-FAILGRP {tvdb-9001}';
+      const legacyName = 'Movie.9001.2024.1080p.WEB-DL.x264-OLDGRP {tmdb-9001}';
+      const base = diskMovie(1);
+      const { arr } = createStaticReleaseBlockArr({
+        movies: new Map([
+          [
+            1,
+            diskMovie(1, {
+              file: { ...base.file!, sceneName: POSTED(9001) },
+              history: [historyGrab(1, historyName, 'TOKGRP')],
+            }),
+          ],
+        ]),
+      });
+      await ledgerEvent(
+        1,
+        'grabbed',
+        { sourceTitle: ledgerName, downloadId: 'g-token', releaseGroup: 'LEDGER' },
+        'g-token',
+      );
+      await ledgerEvent(1, 'download_failed', { sourceTitle: failedName, releaseGroup: 'FAILGRP' }, 'f-token');
+      await loadLegacy({ radarrHistory: radarrEvent(9001, 1, legacyName, 'OLDGRP') });
+      const identity = await identify('radarr', 1, arr);
+      termedOrKept(identity, [POSTED(9001), historyName, ledgerName, failedName, legacyName]);
     });
 
     it('a grab or a failed download of the title does not name the file on disk', async () => {

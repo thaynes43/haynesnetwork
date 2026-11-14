@@ -12,8 +12,9 @@
 //     name, its own or its grab's (the same `downloadId`); or
 //   • a legacy file record of its TMDB id has the IDENTICAL byte size (`media_items.size_on_disk`, never a ratio)
 //     and an original release name.
-// A name containing `{tmdb-`, `{imdb-` or `{tvdb-` is the library's rename token, not a release name, in either
-// source (the same prefixes as `postedReleaseName`).
+// A name containing `{tmdb-`, `{imdb-` or `{tvdb-` is the library's rename token and does not verify the file,
+// in the import, in the grab joined to that import, or in a legacy file record (the same prefixes
+// `verifiedFileName` rejects).
 // Anything else is `unverified`: only the name Radarr rebuilt when it renamed the file is known. A series is
 // `unchecked` here (it has many files and the database holds no per-file size): the delete path decides it from
 // Sonarr's files (Q-23). Read-only.
@@ -50,7 +51,7 @@ export async function loadReleaseNameStates(input: {
   }
   const db = resolveDb(input.db);
   const grab = alias(ledgerEvents, 'grab');
-  // The same three prefixes `postedReleaseName` rejects. A library id token is a renamed file, not a release name.
+  // The same three prefixes `verifiedFileName` rejects. A library id token is a renamed file, not a release name.
   const noLibraryIdToken = (column: unknown) =>
     sql.join(
       LIBRARY_ID_TOKEN_PREFIXES.map(
