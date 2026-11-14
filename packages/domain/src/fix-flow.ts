@@ -1,3 +1,4 @@
+import { ArrReleaseBlockedError } from '@hnet/arr';
 // DESIGN-005 D-15 — the Fix flow orchestrator (ADR-007, AC-07/AC-08). Lives in
 // packages/domain so the mutating *arr surface (@hnet/arr/write) stays confined to
 // this package (D-12/D-18 guard). Sequence:
@@ -1112,6 +1113,11 @@ async function runLanguageFix(
     await recordFixAction({ db: input.db, fixRequestId, transition: 'failed', actions: [...actions, entry] });
     throw new ArrUpstreamError(err instanceof Error ? err.message : `fix step ${entry.step} failed`, { cause: err });
   };
+  try {
+    await input.arr.write[kind].assertReleaseAllowed(release.title);
+  } catch (error) {
+    await fail(stepFailed('language_grab_guard', `GET ${base}/releaseprofile`, error), error);
+  }
   if (plan.grab) {
     const endpoint = `POST ${base}/history/failed/${plan.grab.grabId}`;
     try {
@@ -1139,7 +1145,9 @@ async function runLanguageFix(
 
   const grabEndpoint = `POST ${base}/release`;
   try {
-    await input.arr.write[kind].grabRelease({ guid: release.guid, indexerId: release.indexerId });
+    await input.arr.write[kind].grabRelease({ guid: release.guid, indexerId: release.indexerId },
+      release.title,
+    );
     forgetReleaseLists([listKey]);
     await recordFixAction({
       db: input.db,
@@ -1156,6 +1164,15 @@ async function runLanguageFix(
     });
     return { id: fixRequestId, status: 'search_triggered', pathTaken, targetLabel, grabbedRelease: release.title };
   } catch (err) {
+    if (err instanceof ArrReleaseBlockedError) {
+      await recordFixAction({
+        db: input.db,
+        fixRequestId,
+        transition: 'failed',
+        actions: [stepFailed('language_grab', grabEndpoint, err)],
+      });
+      throw err;
+    }
     if (!(err instanceof ArrError)) throw err;
     // The *arr refused the grab (the row left its 30-minute cache, the site refused the file): fall back to a search.
     const searchEndpoint = `POST ${base}/command`;

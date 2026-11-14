@@ -68,6 +68,11 @@ export function stubArrBundle(routes: ArrStubRoute[]): StubbedArrBundle {
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
     }
+    if (!route && method === 'GET' && url.pathname === '/api/v3/releaseprofile') {
+      return new Response('[]',
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
     if (!route) {
       return new Response(JSON.stringify({ message: `no stub for ${method} ${url.pathname}` }), {
         status: 404,

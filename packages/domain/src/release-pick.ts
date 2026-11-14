@@ -1,3 +1,4 @@
+import { ArrReleaseBlockedError } from '@hnet/arr';
 // ADR-109 C-02, C-04, C-06 / DESIGN-055 D-06 (PLAN-077 P5) — the RELEASE PICK (T-307): every release for one missing
 // episode or movie, the *arr's reasons in plain words, a grab of an approved one, and the guarded override of a rejected
 // one under the owner's Q-01 ruling (anyone who can use Fix, a missing episode or movie only, within the hourly budget,
@@ -1207,7 +1208,7 @@ export async function sendReleaseGrab(input: {
     languages: offer.languages,
     downloadClientId: null,
     shouldOverride: true,
-  });
+  }, offer.title);
   if (!input.keepList) forgetReleaseLists(staleKeysAfterGrab(input.target, input.episodeIds));
 }
 
@@ -1322,6 +1323,7 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
   const now = input.now ? input.now() : Date.now();
   if (now - list.searchedAt.getTime() > RELEASE_PICK_GRAB_WINDOW_MS) return refuse('list_stale');
   // A list written under older rules is neither shown again nor grabbed from (P5 decision 15).
+  if (list.reasonsVersion === -1) return { ...refuse('list_stale'), message: 'Trash deleted or restored this title. Refresh the release list; releases already blocked by Trash cannot be grabbed.' };
   if (list.reasonsVersion !== RELEASE_REASONS_VERSION) return refuse('list_stale');
   // A list a grab already went out from is spent: what it offered may since have failed and been blocklisted. A grab
   // the site refused (nothing sent to the download client) leaves it usable, so another site can be tried.
@@ -1404,6 +1406,7 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
               shouldOverride: true,
             }
           : { guid: offer.guid, indexerId: offer.indexerId },
+        offer.title,
       );
     } else {
       await input.arr.write.sonarr.grabRelease(
@@ -1419,11 +1422,17 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
               shouldOverride: true,
             }
           : { guid: offer.guid, indexerId: offer.indexerId },
+        offer.title,
       );
     }
   } catch (err) {
     const status = err instanceof ArrHttpError ? err.status : null;
     forgetReleaseLists(staleKeysAfterGrab(target, held));
+    if (err instanceof ArrReleaseBlockedError) {
+      await recordRepairTransition({ db: input.db, repairRequestId, transition: 'failed',
+        actions: [{ step: 'grab', at: at(), ok: false, title: offer.title, error: err.message }] });
+      return { ...refuse('not_allowed', targetLabel), message: err.message, repairRequestId };
+    }
     // A 4xx answer means the *arr refused the grab and sent nothing on: 404 its own cache dropped the row, 409 the site
     // would not hand the file over, any other 4xx the *arr refused the request.
     if (err instanceof ArrHttpError && status !== null && status >= 400 && status < 500) {

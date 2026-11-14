@@ -1,3 +1,7 @@
+## 2026-11-14 — story 843 first adversarial corrections (pending review)
+
+PR [1079](https://github.com/thaynes43/haynesnetwork/pull/1079), source on the assigned session branch. Checkpoint: [correction evidence](context/2026-11-14-story-843-corrections.md). Stable-title keeps and deletion claims, guarded release posts, final bulk checks and fixed Recently deleted controls. Package validation passed; final browser/CI evidence follows in the checkpoint. Nothing deployed, merged or accepted. Coordinator owns Fable review and acceptance; D-32 Q-38/Q-39 remain explicit.
+
 # HANDOFF — cold-start resume point
 
 ## 2026-11-13: story #836 Age Guard library fill (proposed, setting off)

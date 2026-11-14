@@ -188,6 +188,12 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    episodes), deletes the file and grabs, with the plain `{guid, indexerId}` body, the first release the *arr would take
    that it parsed as carrying the language. With no such release nothing is removed. Through `@hnet/arr/write` from
    `packages/domain` only.
+   **ADR-121 / DESIGN-052 D-32** reserves Trash Restore for Admin. Its Restore Keep belongs to the stable
+   Radarr/TMDB or Sonarr/TVDB title, survives ledger replacement, and serializes with durable deletion claims.
+   Bulk recovery refuses Trash history and changed identities under the same title lock. Every Sonarr/Radarr
+   release-post writer checks the release name against current Release Block terms immediately before posting,
+   including approved and override offers and staff/language callers. Restore never removes a term. Permanent term
+   lifetime remains story 845 / PR 1080; this change alone cannot promise the unconditional never-regrab rule.
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see

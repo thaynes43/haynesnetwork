@@ -1,3 +1,4 @@
+import { ArrReleaseBlockedError } from '@hnet/arr';
 import type { WrongContentRetryPlan } from './wrong-content-retry';
 // DESIGN-055 P4 decision 40. Private staff continuation; the original deletion and Carry never repeat.
 import { createHash, randomUUID } from 'node:crypto';
@@ -1019,6 +1020,7 @@ export async function dispatchWrongContentSelectedPart(
   });
   const startedAt = at();
   let accepted = false;
+  let blocked: ArrReleaseBlockedError | null = null;
   try {
     await sendReleaseGrab({
       arr: input.arr,
@@ -1028,7 +1030,8 @@ export async function dispatchWrongContentSelectedPart(
       keepList: true,
     });
     accepted = true;
-  } catch {
+  } catch (error) {
+    if (error instanceof ArrReleaseBlockedError) blocked = error;
     /* A thrown transport remains factual and observe-only. */
   }
   const finishedAt = at();
@@ -1063,6 +1066,7 @@ export async function dispatchWrongContentSelectedPart(
     allowCompleted: true,
     actions: [call, ...actions],
   });
+  if (blocked) throw new FixRefusedError('copy_refused', blocked.message);
   let history: History = [];
   try {
     history = (

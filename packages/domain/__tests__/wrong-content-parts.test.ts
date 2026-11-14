@@ -129,6 +129,7 @@ function world() {
     const u = new URL(String(input)),
       method = init.method ?? 'GET',
       body = init.body ? JSON.parse(String(init.body)) : null;
+    if (method === 'GET' && u.pathname === '/api/v3/releaseprofile') return json([]);
     if (!['GET', 'HEAD'].includes(method)) state.httpWrites.push({ method, path: u.pathname });
     if (method === 'GET' && u.pathname.endsWith('/manualimport')) return json(state.candidates);
     if (method === 'GET' && u.pathname.endsWith('/command')) return json([]);
@@ -360,6 +361,22 @@ describe('multipart original-parent recovery', () => {
     expect(w.state.calls).toEqual([]);
     expect(await t.db.select().from(fixRequests)).toEqual([]);
     expect(await t.db.select().from(watchCarries)).toEqual([]);
+  });
+  it('refuses a currently blocked selected part at the actual release writer', async () => {
+    const w = world();
+    w.arr.write.sonarr.listReleaseProfiles = async () => [
+      {
+        id: 1,
+        name: 'haynesnetwork: deleted releases (managed, do not edit)',
+        enabled: true,
+        required: [],
+        ignored: ['hnet-release-block-sentinel', '/./i'],
+        indexerId: 0,
+        tags: [],
+      },
+    ];
+    await expect(start(w)).rejects.toThrow('already grabbed');
+    expect(w.state.calls).toEqual([]);
   });
   it('deletes one shared original once, claims both pairs, and normally completes only after all four actual imports', async () => {
     const w = world(),

@@ -804,8 +804,8 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
         }),
       );
       void utils.trash.restoreKeeps.invalidate();
-      void utils.trash.recentlyDeleted.invalidate();
     } catch (err) {
+      void utils.trash.restoreKeeps.invalidate();
       setRowStatus((prev) =>
         new Map(prev).set(mediaItemId, { ok: false, text: describeMutationError(err) }),
       );
@@ -813,6 +813,10 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
     }
     return 'ok' as const;
   };
+
+  const pinnedRows = useRef<Array<
+    NonNullable<typeof movies.data>[number] & { media: 'movie' | 'tv' }
+  > | null>(null);
 
   if (movies.isLoading || tv.isLoading) return <p className="muted">Loading recently deleted…</p>;
   const loadError = movies.error ?? tv.error;
@@ -824,7 +828,7 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
     );
   }
 
-  const rows = [
+  const incomingRows = [
     ...(movies.data ?? []).map((r) => ({ ...r, media: 'movie' as const })),
     ...(tv.data ?? []).map((r) => ({ ...r, media: 'tv' as const })),
   ].sort((a, b) => {
@@ -832,6 +836,9 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
     const bx = b.deletedAt === null ? 0 : Date.parse(b.deletedAt);
     return bx - ax;
   });
+
+  if (pinnedRows.current === null) pinnedRows.current = incomingRows;
+  const rows = pinnedRows.current;
 
   if (rows.length === 0) {
     return (
@@ -844,7 +851,6 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
 
   return (
     <>
-      {canRestore ? <RestoreKeeps /> : null}
       <table className="admin-table trash-deleted" data-testid="trash-deleted">
         <thead>
           <tr>
@@ -901,7 +907,7 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
                       data-testid="trash-restore-status"
                       title={
                         status.ok
-                          ? 'Re-added to the manager — this row clears on the next sync.'
+                          ? 'Re-added to the manager and protected by a restore keep.'
                           : status.text
                       }
                     >
@@ -927,6 +933,7 @@ function RecentlyDeletedTab({ access }: { access: TrashAccess }) {
           })}
         </tbody>
       </table>
+      {canRestore ? <RestoreKeeps /> : null}
     </>
   );
 }
@@ -1175,9 +1182,10 @@ function RestoreKeeps() {
       {remove.error ? <p role="alert">{remove.error.message}</p> : null}
       <ul>
         {keeps.data?.map((k) => (
-          <li key={k.mediaItemId}>
+          <li key={k.keepId}>
             {k.title}{' '}
-            <span style={{ display: 'inline-flex', minWidth: '15rem', minHeight: '2.25rem', alignItems: 'center' }}>{k.revokedAt ? (
+            <span style={{ display: 'inline-flex', minWidth: '15rem', minHeight: '2.25rem', alignItems: 'center' }}>
+              {k.revokedAt ? (
               <span className="muted">Restore keep removed</span>
             ) : (
               <ConfirmButton
@@ -1187,11 +1195,12 @@ function RestoreKeeps() {
                 confirmAriaLabel={`Confirm removal of restore keep for ${k.title}`}
                 disabled={remove.isPending}
                 onConfirm={async () => {
-                  await remove.mutateAsync({ mediaItemId: k.mediaItemId });
+                  await remove.mutateAsync({ keepId: k.keepId });
                   return 'ok' as const;
                 }}
               />
-            )}</span>
+            )}
+            </span>
           </li>
         ))}
       </ul>

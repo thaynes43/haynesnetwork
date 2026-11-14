@@ -108,6 +108,7 @@ function stub() {
     const u = new URL(String(input)),
       method = init.method ?? 'GET',
       body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
+    if (method === 'GET' && u.pathname === '/api/v3/releaseprofile') return json([]);
     if (method === 'GET') {
       if (u.pathname.endsWith('/config/downloadclient'))
         return json({ autoRedownloadFailed: false });
@@ -420,6 +421,31 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
     const p = await planWrongContentRetry(input);
     return p.candidates.length ? planWrongContentRetry({ ...input, key: p.candidates[0]!.key }) : p;
   }
+  it('refuses a currently blocked retry release without a release POST or search', async () => {
+    const s = await setup(),
+      p = await selected(s.input);
+    s.arr.write.sonarr.listReleaseProfiles = async () => [
+      {
+        id: 1,
+        name: 'haynesnetwork: deleted releases (managed, do not edit)',
+        enabled: true,
+        required: [],
+        ignored: ['hnet-release-block-sentinel', '/./i'],
+        indexerId: 0,
+        tags: [],
+      },
+    ];
+    await expect(
+      runWrongContentRetry({
+        ...s.input,
+        digest: p.digest,
+        key: p.candidates[0]!.key,
+        evidence,
+        conflictEvidence: 'Physical source proves wrong content.',
+      }),
+    ).rejects.toThrow('already grabbed');
+    expect(s.state.retryGrabbed).toBe(false);
+  });
   function failDownloadedPair(s: ReturnType<typeof stub>) {
     const grabs = s.state.history.filter(
       (h) => h.eventType === 'grabbed' && h.downloadId === s.state.download,

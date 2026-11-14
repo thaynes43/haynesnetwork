@@ -1633,7 +1633,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
       // Sample WITHOUT auto-retrying assertions (a retrying `expect` would simply wait out the
       // request and pass on the reverted state): across the in-flight window neither tile may read as
       // saved and the header may not count either.
-      const seen: Array<{ glyphs: Array<string | null>; pressed: string | null; counts: string | null }> =
+      const seen: Array<{ glyphs: Array<string | null>; pressed: string | null; counts: string | null;
+      }> =
         [];
       for (let i = 0; i < 8; i++) {
         seen.push({
@@ -1778,7 +1779,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
       (c) => c.method === 'POST' && c.path === '/rules' && (c.body as { name?: unknown })?.name === 'Leaving Soon — Movies',
     );
     expect(creates).toHaveLength(1);
-    const shell = creates[0]!.body as Record<string, unknown> & { collection: Record<string, unknown> };
+    const shell = creates[0]!.body as Record<string, unknown> & { collection: Record<string, unknown>;
+    };
     expect(shell).toMatchObject({
       name: 'Leaving Soon — Movies',
       dataType: 'movie',
@@ -2520,4 +2522,125 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('trash-wall')).toBeVisible();
     await resetMaintainerr(page);
   });
+});
+
+// ADR-121 / first adversarial correction: synthetic RPC responses, no external media writes.
+test('Recently deleted keeps neighbouring Restore controls fixed through success, uncertainty and keep removal', async ({
+  page,
+}) => {
+  await signIn(page, 'admin');
+  await page.setViewportSize({ width: 1280, height: 1200 });
+  const ids = [
+    '10000000-0000-4000-8000-000000000001',
+    '10000000-0000-4000-8000-000000000002',
+    '10000000-0000-4000-8000-000000000003',
+  ];
+  const rows = ids.map((mediaItemId, i) => ({
+    mediaItemId,
+    title: `Synthetic deleted ${i}`,
+    arrKind: 'radarr',
+    year: 2024,
+    sizeOnDisk: 0,
+    deletedAt: new Date(Date.UTC(2026, 0, 3 - i)).toISOString(),
+    deletedBy: null,
+    posterUrl: null,
+  }));
+  const keeps: Array<{
+    keepId: string;
+    mediaItemId: string;
+    title: string;
+    revokedAt: string | null;
+  }> = [];
+  await page.route('**/api/trpc/**', async (route) => {
+    const url = new URL(route.request().url());
+    const names = decodeURIComponent(url.pathname.split('/api/trpc/')[1]!).split(',');
+    const controlled = new Set([
+      'trash.recentlyDeleted',
+      'trash.restoreKeeps',
+      'trash.restoreDeleted',
+      'trash.removeRestoreKeep',
+    ]);
+    if (!names.some((n) => controlled.has(n))) {
+      await route.continue();
+      return;
+    }
+    const input =
+      route.request().method() === 'GET'
+        ? JSON.parse(url.searchParams.get('input') ?? '{}')
+        : route.request().postDataJSON();
+    const batched = url.searchParams.get('batch') === '1';
+    let fallback: unknown[] = [];
+    if (names.some((n) => !controlled.has(n))) {
+      const response = await route.fetch();
+      const body = await response.json();
+      fallback = Array.isArray(body) ? body : [body];
+    }
+    const data = names.map((name, i) => {
+      const arg = batched ? input[String(i)] : input;
+      if (name === 'trash.recentlyDeleted')
+        return { result: { data: arg.media === 'movie' ? (keeps.length ? [] : rows) : [] } };
+      if (name === 'trash.restoreKeeps') return { result: { data: keeps } };
+      if (name === 'trash.removeRestoreKeep') {
+        const keep = keeps.find((k) => k.keepId === arg.keepId)!;
+        keep.revokedAt = new Date().toISOString();
+        return { result: { data: { removed: true } } };
+      }
+      if (name === 'trash.restoreDeleted') {
+        const row = rows.find((r) => r.mediaItemId === arg.mediaItemId)!;
+        keeps.push({
+          keepId: row.mediaItemId,
+          mediaItemId: row.mediaItemId,
+          title: row.title,
+          revokedAt: null,
+        });
+        return { result: { data: { runId: ids[0], status: 'completed', successCount: 1 } } };
+      }
+      return fallback[i];
+    });
+    if (names.includes('trash.restoreDeleted') && keeps.at(-1)?.mediaItemId === ids[1]) {
+      await route.fulfill({
+        status: 502,
+        contentType: 'text/plain',
+        body: 'The restore response was lost.',
+      });
+    } else
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(batched ? data : data[0]),
+      });
+  });
+  await page.goto('/trash?tab=deleted');
+  const neighbour = page
+    .getByTestId('trash-deleted-row')
+    .filter({ hasText: 'Synthetic deleted 2' })
+    .getByTestId('trash-restore');
+  await expect(neighbour).toBeVisible();
+  const position = () =>
+    neighbour.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      return { x: box.x, y: box.y, width: box.width, height: box.height };
+    });
+  const before = await position();
+  for (const title of ['Synthetic deleted 0', 'Synthetic deleted 1']) {
+    const row = page.getByTestId('trash-deleted-row').filter({ hasText: title });
+    await armAndConfirm(row.getByTestId('trash-restore'));
+    await expect(row.getByTestId('trash-restore-status')).toBeVisible();
+    await expect(
+      page.getByRole('button', {
+        name: `Remove restore keep for ${title} — click twice to confirm`,
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(await position()).toEqual(before);
+  }
+  await armAndConfirm(
+    page.getByRole('button', {
+      name: 'Remove restore keep for Synthetic deleted 0 — click twice to confirm',
+      exact: true,
+    }),
+  );
+  await expect(page.getByText('Restore keep removed', { exact: true })).toBeVisible();
+  expect(await position()).toEqual(before);
+  await expect(page.getByTestId('trash-deleted-row')).toHaveCount(rows.length);
 });

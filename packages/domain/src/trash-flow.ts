@@ -1,4 +1,10 @@
-import { hasRestoreKeep } from './trash-restore';
+import { hasRestoreKeepForIdentity, invalidateTrashReleaseOffers } from './trash-restore';
+import {
+  lockTrashTitle,
+  trashTitleIdentity,
+  claimTitleDeletion,
+  finishTitleDeletion,
+} from './trash-title-lock';
 // ADR-023 / DESIGN-010 — the Trash section orchestrators over Maintainerr (the deletion system of
 // record). Read-through pending (no mirror table), the preflight SAFETY audit, the confined
 // exclusion/expedite/rules write surface, the cross-server watch guardian, and the recently-deleted
@@ -971,16 +977,12 @@ export async function shapePendingItems(input: {
   // ADR-099 D-4 — which joined titles carry an open save intent (one read; the intent table is small).
   const joinedIds = [...byExtId.values()].map((j) => j.mediaItemId);
   const savedIds = new Set<string>();
-  const restoredIds = new Set<string>();
-  if (joinedIds.length > 0) {
-    const keeps = await db
-      .select({ id: trashRestoreKeeps.mediaItemId })
-      .from(trashRestoreKeeps)
-      .where(
-        and(inArray(trashRestoreKeeps.mediaItemId, joinedIds), isNull(trashRestoreKeeps.revokedAt)),
-      );
-    keeps.forEach((k) => restoredIds.add(k.id));
-  }
+  const restoredIds = new Set<number>();
+  const keeps = await db
+    .select({ externalId: trashRestoreKeeps.externalId })
+    .from(trashRestoreKeeps)
+    .where(and(eq(trashRestoreKeeps.arrKind, arrKind), isNull(trashRestoreKeeps.revokedAt)));
+  keeps.forEach((k) => restoredIds.add(k.externalId));
   if (joinedIds.length > 0) {
     const open = await db
       .select({ mediaItemId: trashSaveIntents.mediaItemId })
@@ -1054,7 +1056,7 @@ export async function shapePendingItems(input: {
       ageGuard: age.ageGuard,
       newestAddedAt: age.newestAddedAt,
       saveIntent: joined !== undefined && savedIds.has(joined.mediaItemId),
-      restoreKeep: joined !== undefined && restoredIds.has(joined.mediaItemId),
+      restoreKeep: ext === null || restoredIds.has(ext),
       releaseName: (joined ? releaseNames.get(joined.mediaItemId) : undefined) ?? 'unchecked',
     };
   });
@@ -2264,7 +2266,7 @@ async function expediteOneSurvivor(
   if (
     survivor.mediaItemId !== null &&
     ((await hasOpenSaveIntent(input.db, survivor.mediaItemId)) ||
-      (await hasRestoreKeep(input.db, survivor.mediaItemId)))
+      (await hasRestoreKeepForIdentity(input.db, trashTitleIdentity(survivor))))
   ) {
     await abandonReleaseRecords({ db: input.db, recordIds: release.recordIds });
     logger.info('[trash] kept', {
@@ -2296,7 +2298,18 @@ async function expediteOneSurvivor(
     });
     return 'watchlisted';
   }
-  await inTransaction(input.db, async (tx) => {
+  const identity = trashTitleIdentity(survivor);
+  const claimId = await inTransaction(input.db, async (tx) => {
+    if (
+      !identity ||
+      !(await lockTrashTitle(tx, identity)) ||
+      (await hasRestoreKeepForIdentity(tx, identity))
+    )
+      return null;
+    const claimId = await claimTitleDeletion(tx, identity);
+    if (!claimId) return null;
+    await invalidateTrashReleaseOffers(tx, identity);
+
     await tx.insert(ledgerEvents).values({
       mediaItemId: survivor.mediaItemId,
       eventType: 'trash_expedited',
@@ -2332,7 +2345,12 @@ async function expediteOneSurvivor(
       imdbRating: survivor.imdbRating,
       tmdbRating: survivor.tmdbRating,
     });
+    return claimId;
   });
+  if (!claimId || !identity) {
+    await abandonReleaseRecords({ db: input.db, recordIds: release.recordIds });
+    return 'saved';
+  }
   // The destructive handle, then the settle of the item's records (DESIGN-052 D-14 step 7 / D-25ax), always by the
   // *arr's answer: a 404 makes them active even when the handle's answer was lost; a present item abandons them after
   // a 2xx or a definitive refusal and leaves them in flight after an ambiguous failure. A failed handle is rethrown.
@@ -2357,6 +2375,7 @@ async function expediteOneSurvivor(
     title: survivor.title,
     logger,
   });
+  if (settled !== 'in_flight') await finishTitleDeletion(input.db, identity, claimId);
   // D-21 / D-25az — one line per delete, after its settle.
   logger.info('[trash] expedited', {
     scope,

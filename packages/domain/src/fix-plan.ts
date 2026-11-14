@@ -246,13 +246,19 @@ export async function readReleaseListCached(input: {
  * DESIGN-055 D-06 — forget the cached lists for these keys: after a grab the *arr's own decisions change (the release is
  * in the queue, a failed one is blocklisted), so the next list must be a fresh search.
  */
+export function forgetAllReleaseLists(): void {
+  releaseCache.clear();
+}
+
 export function forgetReleaseLists(keys: readonly string[]): void {
   for (const key of keys) releaseCache.delete(key);
 }
 
 /** Whether a guarded plan applies at all: a Sonarr or Radarr Fix with a remedy that plans on. */
 export function planApplies(kind: string, remedies: RepairGuideRemedies): boolean {
-  return (kind === 'sonarr' || kind === 'radarr') && (remedies.replacement_preview || remedies.season_guard);
+  return (
+    (kind === 'sonarr' || kind === 'radarr') && (remedies.replacement_preview || remedies.season_guard)
+  );
 }
 
 /** A stable digest of what a plan will DO (marks, deletes, searches), so a changed plan is refused, not run. */

@@ -350,6 +350,7 @@ function stubArr() {
   const fetchImpl = (async (input: unknown, init: RequestInit = {}) => {
     const url = new URL(String(input));
     const method = init.method ?? 'GET';
+    if (method === 'GET' && url.pathname === '/api/v3/releaseprofile') return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
     state.calls.push({ method, path: url.pathname, query: url.searchParams, body });
     const sonarr = url.host.startsWith('sonarr');
@@ -459,6 +460,41 @@ describe('the Release Pick over embedded Postgres (DESIGN-055 D-06)', () => {
     await expect(openReleaseList({ db: t.db, arr: arr.bundle, ...e11(), requesterId: memberId })).rejects.toBeInstanceOf(FixRefusedError);
     expect(arr.releaseSearches()).toHaveLength(0);
   });
+
+  it('a fresh allowed-looking offer cannot override the current Trash release block', async () => {
+    const arr = stubArr();
+    arr.bundle.write.sonarr.listReleaseProfiles = async () => [
+      {
+        id: 1,
+        name: 'haynesnetwork: deleted releases (managed, do not edit)',
+        enabled: true,
+        required: [],
+        ignored: ['hnet-release-block-sentinel', '/./i'],
+        indexerId: 0,
+        tags: [],
+      },
+    ];
+    const list = await openReleaseList({
+      db: t.db,
+      arr: arr.bundle,
+      ...e11(),
+      requesterId: memberId,
+    });
+    expect(list.recommendedKey).toBeTruthy();
+    const result = await grabFromReleaseList({
+      db: t.db,
+      arr: arr.bundle,
+      listId: list.listId!,
+      key: list.recommendedKey!,
+      requesterId: memberId,
+    });
+    expect(result).toMatchObject({
+      outcome: 'not_allowed',
+      message: expect.stringContaining('already grabbed'),
+    });
+    expect(arr.grabs()).toEqual([]);
+  });
+
 
   it('Case A end to end: one season search, a list per episode, the E10-numbered override grabbed for E11', async () => {
     const arr = stubArr();

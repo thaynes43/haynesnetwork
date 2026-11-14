@@ -12,6 +12,13 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 import { NotFoundError } from './errors';
 import { inTransaction } from './db-client';
+import {
+  hasTitleDeleteClaim,
+  lockTrashTitle,
+  trashTitleIdentity,
+  type TrashTitleIdentity,
+} from './trash-title-lock';
+import { invalidateTrashReleaseOffers } from './trash-restore';
 
 export interface StartRestoreRunInput {
   db?: DbClient;
@@ -56,6 +63,7 @@ export async function recordTrashRestoreAttempt(input: {
   db?: DbClient;
   runId: string;
   mediaItemId: string;
+  expectedIdentity?: TrashTitleIdentity;
 }): Promise<void> {
   await inTransaction(input.db, async (tx) => {
     const [run] = await tx
@@ -70,12 +78,40 @@ export async function recordTrashRestoreAttempt(input: {
     ) {
       throw new NotFoundError('Restore attempt must belong to a running approved restore.');
     }
+    const [item] = await tx
+      .select()
+      .from(mediaItems)
+      .where(eq(mediaItems.id, input.mediaItemId))
+      .for('share');
+    const identity = item ? trashTitleIdentity(item) : null;
+    if (
+      input.expectedIdentity &&
+      (!identity ||
+        identity.arrKind !== input.expectedIdentity.arrKind ||
+        identity.externalId !== input.expectedIdentity.externalId)
+    )
+      throw new NotFoundError('Restore title identity changed; refresh the selection.');
+    if (!identity || identity.arrKind !== run.arrKind)
+      throw new NotFoundError('Restore title identity is uncertain; refresh the selection.');
+    if (!(await lockTrashTitle(tx, identity)) || (await hasTitleDeleteClaim(tx, identity)))
+      throw new NotFoundError(
+        'Trash is already deleting this title. Restore is held until that deletion is resolved.',
+      );
+    await invalidateTrashReleaseOffers(tx, identity);
     await tx
       .insert(trashRestoreKeeps)
-      .values({ mediaItemId: input.mediaItemId, restoreRunId: run.id, restoredBy: run.initiatedBy })
+      .values({
+        ...identity,
+        title: item!.title,
+        mediaItemId: input.mediaItemId,
+        restoreRunId: run.id,
+        restoredBy: run.initiatedBy,
+      })
       .onConflictDoUpdate({
-        target: trashRestoreKeeps.mediaItemId,
+        target: [trashRestoreKeeps.arrKind, trashRestoreKeeps.externalId],
         set: {
+          title: item!.title,
+          mediaItemId: input.mediaItemId,
           restoreRunId: run.id,
           restoredBy: run.initiatedBy,
           createdAt: new Date(),
@@ -83,16 +119,14 @@ export async function recordTrashRestoreAttempt(input: {
           revokedBy: null,
         },
       });
-    await tx
-      .insert(ledgerEvents)
-      .values({
-        mediaItemId: input.mediaItemId,
-        eventType: 'trash_excluded',
-        source: 'maintainerr',
-        occurredAt: new Date(),
-        requestedByUserId: run.initiatedBy,
-        payload: { action: 'restore_keep', restoreRunId: run.id },
-      });
+    await tx.insert(ledgerEvents).values({
+      mediaItemId: input.mediaItemId,
+      eventType: 'trash_excluded',
+      source: 'maintainerr',
+      occurredAt: new Date(),
+      requestedByUserId: run.initiatedBy,
+      payload: { action: 'restore_keep', restoreRunId: run.id, ...identity },
+    });
   });
 }
 

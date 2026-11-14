@@ -335,8 +335,9 @@ describe('ADR-121 Trash return routes', () => {
     expect(stub.calls.filter((c) => c.method !== 'GET')).toHaveLength(0);
   });
 
-  it('a Seerr re-request still syncs the same external identity and mediarequests tag without consulting bulk exclusion', async () => {
-    const { item } = await deleted('radarr', 84006);
+  it.each(['radarr', 'sonarr'] as const)(
+    'a Seerr %s request event and tagged sync bypass bulk history exclusion', async (kind) => {
+    const { item } = await deleted(kind, kind === 'radarr' ? 84006 : 84007);
     await ingestLedgerEvents({
       db: t.db,
       source: 'seerr',
@@ -344,20 +345,23 @@ describe('ADR-121 Trash return routes', () => {
         {
           eventType: 'requested',
           source: 'seerr',
-          sourceEventId: '843-request',
+          sourceEventId: `843-request-${kind}`,
           occurredAt: new Date(),
-          payload: { mediaType: 'movie', tmdbId: item.tmdbId },
+          payload: { mediaType: kind === 'radarr' ? 'movie' : 'tv', tmdbId: item.tmdbId,
+              tvdbId: item.tvdbId,
+            },
         },
       ],
       cursor: new Date(),
     });
     await upsertMediaItemsBatch({
       db: t.db,
-      arrKind: 'radarr',
+      arrKind: kind,
       items: [
         {
           arrItemId: 94006,
-          tmdbId: item.tmdbId!,
+          tmdbId: item.tmdbId ?? undefined,
+            tvdbId: item.tvdbId ?? undefined,
           title: item.title,
           sortTitle: item.sortTitle,
           monitored: true,
@@ -371,7 +375,7 @@ describe('ADR-121 Trash return routes', () => {
     const [synced] = await t.db.select().from(mediaItems).where(eq(mediaItems.id, item.id));
     expect(
       (
-        await t.db.select().from(ledgerEvents).where(eq(ledgerEvents.sourceEventId, '843-request'))
+        await t.db.select().from(ledgerEvents).where(eq(ledgerEvents.sourceEventId, `843-request-${kind}`))
       )[0],
     ).toMatchObject({ eventType: 'requested' });
     expect(

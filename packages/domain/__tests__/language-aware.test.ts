@@ -251,6 +251,7 @@ function stubArr(
   const fetchImpl = (async (input: unknown, init: RequestInit = {}) => {
     const url = new URL(String(input));
     const method = init.method ?? 'GET';
+    if (method === 'GET' && url.pathname === '/api/v3/releaseprofile') return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
     calls.push({ method, path: url.pathname, body });
     const p = url.pathname;
@@ -345,6 +346,7 @@ function stubPlex(initial: {
   const fetchImpl = (async (input: unknown, init: RequestInit = {}) => {
     const url = new URL(String(input));
     const method = init.method ?? 'GET';
+    if (method === 'GET' && url.pathname === '/api/v3/releaseprofile') return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
     calls.push({ method, path: url.pathname });
     const host = url.host.startsWith('tower') ? 'tower' : url.host.startsWith('ops') ? 'ops' : 'kube';
     const m = /^\/library\/metadata\/([^/]+)(\/.*)?$/.exec(url.pathname);
@@ -907,6 +909,32 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
         candidate: { title: 'Regular.Show.The.Lost.Tapes.S01E05.Gumball.Machine.1080p.AMZN.WEB-DL.DDP5.1.H.264-Kitsune', languages: ['English'] },
       });
       expect(JSON.stringify(plan)).not.toContain('guid-');
+      expect(arr.writes()).toEqual([]);
+    });
+
+    it('refuses a currently blocked language release before deletion, grab or fallback search', async () => {
+      const arr = stubArr();
+      arr.bundle.write.sonarr.listReleaseProfiles = async () => [
+        {
+          id: 1,
+          name: 'haynesnetwork: deleted releases (managed, do not edit)',
+          enabled: true,
+          required: [],
+          ignored: ['hnet-release-block-sentinel', '/./i'],
+          indexerId: 0,
+          tags: [],
+        },
+      ];
+      await expect(
+        runFixRequest({
+          db: t.db,
+          arr: arr.bundle,
+          requesterId: memberId,
+          ...e05(),
+          reason: 'wrong_language',
+          wantedLanguage: 'eng',
+        }),
+      ).rejects.toThrow('already grabbed');
       expect(arr.writes()).toEqual([]);
     });
 

@@ -1,3 +1,4 @@
+import { lockTrashTitle, hasTitleDeleteClaim, trashTitleIdentity } from './trash-title-lock';
 // DESIGN-005 D-16 — the Restore flow (R-50..R-52, AC-09). Explicitly NOT automatic:
 // only explicit app actions reach this module; sync never writes to an *arr.
 // ADR-121: both bulk paths exclude Trash history; only Admin's single-title Trash Restore bypasses it.
@@ -22,8 +23,12 @@ import {
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { ArrError } from '@hnet/arr';
 import type { ArrTag } from '@hnet/arr';
-import { trashHistoryIds, verifyRestoreReleaseBlock } from './trash-restore';
-import { resolveDb } from './db-client';
+import {
+  hasTrashHistoryForItem,
+  trashHistoryIds,
+  verifyRestoreReleaseBlock,
+} from './trash-restore';
+import { inTransaction, resolveDb } from './db-client';
 import { RestoreProfileUnmappedError, SearchCapExceededError } from './errors';
 import {
   finishRestoreRun,
@@ -506,97 +511,112 @@ export async function executeArrAdd(input: ExecuteArrAddInput): Promise<ExecuteA
     const outcome: 'added' | 'monitored' = action.kind === 'add' ? 'added' : 'monitored';
     let result: ExecuteArrAddResultItem;
     try {
-      // Recheck after target-state reads as well as at selection: a newly recorded Trash deletion
-      // must not turn a stale bulk preview into an add/monitor/search.
-      if (
-        !input.trashRestore &&
-        (await trashHistoryIds(input.db, [action.row.id])).has(action.row.id)
-      ) {
-        const skip: ExecuteArrAddResultItem = {
-          mediaItemId: action.row.id,
-          title: action.row.title,
-          ok: false,
-          skipped: true,
-          skipReason: 'trash_deleted',
-          error: 'skipped: Trash-deleted title — use Seerr or an admin Restore in Trash',
-        };
-        await recordRestoreResult({ db: input.db, runId, result: skip });
-        results.push(skip);
-        continue;
-      }
-      let newArrItemId: number | undefined;
-      let targetArrId: number;
+      let qualityProfileId: number | undefined;
+      let tags: number[] = [];
       if (action.kind === 'add') {
-        if (
-          input.trashRestore &&
-          (await trashHistoryIds(input.db, [action.row.id])).has(action.row.id)
-        ) {
-          await verifyRestoreReleaseBlock({ db: input.db, arr: input.arr, item: action.row });
-        }
         const st = state!;
-        const qualityProfileId = st.profileIdByName.get(action.row.qualityProfileName);
-        if (qualityProfileId === undefined) {
-          // Recorded per item, never a silent default (D-16/D-17).
+        qualityProfileId = st.profileIdByName.get(action.row.qualityProfileName);
+        if (qualityProfileId === undefined)
           throw new RestoreProfileUnmappedError(
             `quality profile '${action.row.qualityProfileName}' not found on the live ${input.arrKind}`,
           );
-        }
-        if (!st.rootFolderPaths.has(action.row.rootFolder)) {
+        if (!st.rootFolderPaths.has(action.row.rootFolder))
           throw new Error(
             `root folder '${action.row.rootFolder}' not found on the live ${input.arrKind}`,
           );
-        }
-        const tags = await resolveTagIds(input.arr, input.arrKind, st, action.row.arrTags);
-        if (input.trashRestore)
-          await recordTrashRestoreAttempt({ db: input.db, runId, mediaItemId: action.row.id });
-        newArrItemId = await addItemToArr(
-          input.arr,
-          input.arrKind,
-          action.row,
-          st,
-          qualityProfileId,
-          tags,
-        );
-        targetArrId = newArrItemId;
-      } else {
-        await setArrMonitored(input.arr, input.arrKind, action.liveArrId!);
-        targetArrId = action.liveArrId!;
-      }
-
-      // Best-effort search — the add/monitor is the durable state change; a failed search
-      // command does NOT fail the item (the *arrs queue search internally; indexers may throttle).
-      let searched = false;
-      let searchError: string | undefined;
-      if (searchOnAdd) {
-        try {
-          await triggerArrSearch(input.arr, input.arrKind, targetArrId);
-          searched = true;
-        } catch (err) {
-          searchError = errMessage(err);
+        tags = await resolveTagIds(input.arr, input.arrKind, st, action.row.arrTags);
+        if (input.trashRestore) {
+          if (await hasTrashHistoryForItem(input.db, action.row))
+            await verifyRestoreReleaseBlock({
+              db: input.db,
+              arr: input.arr,
+              item: action.row,
+            });
+          // This intent commits BEFORE the external call. The next transaction revalidates its binding.
+          await recordTrashRestoreAttempt({
+            db: input.db,
+            runId,
+            mediaItemId: action.row.id,
+            expectedIdentity: trashTitleIdentity(action.row) ?? undefined,
+          });
         }
       }
-
-      result = {
-        mediaItemId: action.row.id,
-        title: action.row.title,
-        ok: true,
-        outcome,
-        ...(newArrItemId !== undefined ? { newArrItemId } : {}),
-        ...(searched ? { searched: true } : {}),
-        ...(searchError !== undefined ? { error: `search failed: ${searchError}` } : {}),
-      };
-      await recordRestoreResult({
-        db: input.db,
-        runId,
-        result: {
+      result = await inTransaction(input.db, async (tx) => {
+        const identity = trashTitleIdentity(action.row);
+        const locked =
+          input.arrKind === 'lidarr' || (identity !== null && (await lockTrashTitle(tx, identity)));
+        const [current] = locked
+          ? await tx.select().from(mediaItems).where(eq(mediaItems.id, action.row.id)).for('update')
+          : [];
+        const history = await hasTrashHistoryForItem(tx, action.row);
+        const changed =
+          !locked ||
+          !current ||
+          current.arrKind !== input.arrKind ||
+          current.arrInstanceId !== arrInstanceId ||
+          externalIdOfRow(input.arrKind, current) !== externalIdOfRow(input.arrKind, action.row);
+        const deleting = identity !== null && (await hasTitleDeleteClaim(tx, identity));
+        if ((!input.trashRestore && history) || changed || deleting) {
+          const skip: ExecuteArrAddResultItem = {
+            mediaItemId: action.row.id,
+            title: action.row.title,
+            ok: false,
+            skipped: true,
+            ...(history && !input.trashRestore ? { skipReason: 'trash_deleted' as const } : {}),
+            error:
+              history && !input.trashRestore
+                ? 'skipped: Trash-deleted title — use Seerr or an admin Restore in Trash'
+                : 'skipped: title identity changed or a Trash action is in progress; refresh the selection',
+          };
+          await recordRestoreResult({ db: tx, runId, result: skip });
+          return skip;
+        }
+        let newArrItemId: number | undefined;
+        let targetArrId: number;
+        if (action.kind === 'add') {
+          newArrItemId = await addItemToArr(
+            input.arr,
+            input.arrKind,
+            action.row,
+            state!,
+            qualityProfileId!,
+            tags,
+          );
+          targetArrId = newArrItemId;
+        } else {
+          await setArrMonitored(input.arr, input.arrKind, action.liveArrId!);
+          targetArrId = action.liveArrId!;
+        }
+        let searched = false;
+        let searchError: string | undefined;
+        if (searchOnAdd) {
+          try {
+            await triggerArrSearch(input.arr, input.arrKind, targetArrId);
+            searched = true;
+          } catch (err) {
+            searchError = errMessage(err);
+          }
+        }
+        const receipt: ExecuteArrAddResultItem = {
           mediaItemId: action.row.id,
+          title: action.row.title,
           ok: true,
           outcome,
-          trashRestore: input.trashRestore,
-          searched,
           ...(newArrItemId !== undefined ? { newArrItemId } : {}),
-          ...(searchError !== undefined ? { searchError } : {}),
-        },
+          ...(searched ? { searched: true } : {}),
+          ...(searchError !== undefined ? { error: `search failed: ${searchError}` } : {}),
+        };
+        await recordRestoreResult({
+          db: tx,
+          runId,
+          result: {
+            ...receipt,
+            trashRestore: input.trashRestore,
+            searched,
+            ...(searchError !== undefined ? { searchError } : {}),
+          },
+        });
+        return receipt;
       });
     } catch (err) {
       const message = errMessage(err);

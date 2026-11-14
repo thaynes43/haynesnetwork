@@ -114,3 +114,13 @@ export class ArrParseError extends ArrError {
     this.issues = safeIssues;
   }
 }
+
+/** ADR-121: no request was sent; never retry through a search or an override. */
+export class ArrReleaseBlockedError extends ArrError {
+  readonly code = 'ARR_RELEASE_BLOCKED' as const;
+  constructor(
+    message = 'Trash blocked this release because it was already grabbed. Choose a different release.',
+  ) {
+    super(message);
+  }
+}

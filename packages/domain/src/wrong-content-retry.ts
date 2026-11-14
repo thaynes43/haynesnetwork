@@ -1,3 +1,4 @@
+import { ArrReleaseBlockedError } from '@hnet/arr';
 // DESIGN-055 P4 decision 39: one staff retry on the original verified Wrong-Content Replace.
 // The caller never supplies episode IDs. Claims precede external writes; uncertain claims are never replayed.
 import {
@@ -1083,6 +1084,7 @@ export async function runWrongContentRetry(
         },
       ],
     });
+    if (grabError instanceof ArrReleaseBlockedError) refuse(grabError.message);
     return {
       outcome: 'observe' as const,
       fixRequestId: p.fix.id,

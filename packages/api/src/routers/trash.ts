@@ -1,5 +1,5 @@
-import { mediaItems, trashRestoreKeeps } from '@hnet/db';
-import { desc, eq } from 'drizzle-orm';
+import { trashRestoreKeeps } from '@hnet/db';
+import { desc } from 'drizzle-orm';
 // ADR-023 / DESIGN-010 — the Trash section's tRPC surface (Maintainerr-backed deletion UI). Access
 // is layered: the coarse `trash` section level gates VIEW (read_only browses pending/collections/
 // rules/recently-deleted/activity), while each destructive/mutating action needs an explicit
@@ -456,17 +456,17 @@ export const trashRouter = router({
   restoreKeeps: adminProcedure.query(async ({ ctx }) => {
     const rows = await ctx.db
       .select({
-        mediaItemId: mediaItems.id,
-        title: mediaItems.title,
+        keepId: trashRestoreKeeps.id,
+        mediaItemId: trashRestoreKeeps.mediaItemId,
+        title: trashRestoreKeeps.title,
         revokedAt: trashRestoreKeeps.revokedAt,
       })
       .from(trashRestoreKeeps)
-      .innerJoin(mediaItems, eq(mediaItems.id, trashRestoreKeeps.mediaItemId))
       .orderBy(desc(trashRestoreKeeps.createdAt));
     return rows.map((r) => ({ ...r, revokedAt: r.revokedAt?.toISOString() ?? null }));
   }),
   removeRestoreKeep: adminProcedure
-    .input(z.object({ mediaItemId: z.uuid() }))
+    .input(z.union([z.object({ keepId: z.uuid() }), z.object({ mediaItemId: z.uuid() })]))
     .mutation(({ ctx, input }) =>
       mapDomainErrors(() => removeRestoreKeep({ db: ctx.db, ...input, actorId: ctx.user.id })),
     ),
