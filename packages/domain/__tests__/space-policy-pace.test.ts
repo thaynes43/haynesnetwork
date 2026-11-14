@@ -1,7 +1,7 @@
 // ADR-120 / DESIGN-014 D-16 — Dynamic Pace is a pure function of the disk, a free-space series,
 // Trash's own recorded deletions, the save rate and the eligible pools. These tests do not boot
 // a database. The setting-off path is in space-policy.test.ts.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   DYNAMIC_PACE_CEILING_BYTES,
   DYNAMIC_PACE_FLOOR_BYTES,
@@ -10,6 +10,11 @@ import {
   dynamicPaceHorizonFitsWindow,
   explainDynamicPace,
   forecastFreeSpace,
+  forecastQueryRange,
+  readArrayFreeSpaceSamples,
+  FORECAST_STEP_SECONDS,
+  FORECAST_WINDOW_SECONDS,
+  FREESPACE_SERIES_QUERY,
   resolveDynamicPace,
   samplesForStorageArray,
   splitPaceAsk,
@@ -65,10 +70,35 @@ describe('resolveDynamicPace', () => {
     const pace = resolveDynamicPace(undefined);
     expect(pace.enabled).toBe(false);
     expect(pace.horizonDays).toBe(DYNAMIC_PACE_HORIZON_DAYS);
-    expect(pace.horizonDays).toBe(60);
+    expect(pace.horizonDays).toBe(30);
+    expect(pace.observeOnly).toBe(false);
+    expect(pace.movieMaxItems).toBe(50);
     expect(pace.floorBytes).toBe(DYNAMIC_PACE_FLOOR_BYTES);
     expect(pace.ceilingBytes).toBe(DYNAMIC_PACE_CEILING_BYTES);
     expect(resolveDynamicPace({ enabled: 'yes' }).enabled).toBe(false);
+  });
+});
+
+describe('active bounds fail closed', () => {
+  const valid = { enabled: true, horizonDays: 30, floorBytes: 1, ceilingBytes: 100 };
+  it.each(['horizonDays', 'floorBytes', 'ceilingBytes'] as const)(
+    'an unreadable %s disables sizing',
+    (key) => {
+      expect(resolveDynamicPace({ ...valid, [key]: 'unreadable' }).enabled).toBe(false);
+      const missing: Record<string, unknown> = { ...valid };
+      delete missing[key];
+      expect(resolveDynamicPace(missing).enabled).toBe(false);
+    },
+  );
+  it('refuses inverted or above-hard-ceiling bounds and preserves valid observation', () => {
+    expect(resolveDynamicPace({ ...valid, floorBytes: 101 }).enabled).toBe(false);
+    expect(
+      resolveDynamicPace({ ...valid, ceilingBytes: DYNAMIC_PACE_CEILING_BYTES + 1 }).enabled,
+    ).toBe(false);
+    expect(resolveDynamicPace({ ...valid, observeOnly: true })).toMatchObject({
+      enabled: false,
+      observeOnly: true,
+    });
   });
 });
 
@@ -103,33 +133,49 @@ describe('explainDynamicPace', () => {
     expect(paced.chosenBytes).toBe(0);
   });
 
-  it('under target keeps a steady pace equal to the intake and does not spend the surplus', () => {
+  it('under target spends the surplus before asking to hold the target', () => {
     const paced = explain({ freeBytes: 300, samples: series(-10) });
     expect(paced.overTarget).toBe(false);
     expect(paced.gapBytes).toBe(0);
     expect(paced.surplusBytes).toBe(100);
     expect(paced.pace).toBe('steady');
-    expect(paced.requiredDeletedBytes).toBeCloseTo(70, 6);
-    expect(paced.chosenBytes).toBe(70);
+    expect(paced.requiredDeletedBytes).toBeCloseTo((500 * 7) / 60, 6);
+    expect(paced.chosenBytes).toBe(58);
   });
 
   it('a zero requirement is not lifted to the floor', () => {
-    const paced = explain({ freeBytes: 300, samples: series(10), floorBytes: 500, ceilingBytes: 1_000 });
+    const paced = explain({
+      freeBytes: 300,
+      samples: series(10),
+      floorBytes: 500,
+      ceilingBytes: 1_000,
+    });
     expect(paced.pace).toBe('none');
     expect(paced.requiredDeletedBytes).toBe(0);
     expect(paced.chosenBytes).toBe(0);
   });
 
-  it('a positive ask below the floor is raised to the floor', () => {
+  it('under target, a positive ask below the floor proposes nothing', () => {
     const paced = explain({
-      freeBytes: 300,
+      freeBytes: 201,
       samples: series(-1),
       floorBytes: 50,
       ceilingBytes: 1_000,
       pools: [{ mediaKind: 'movie', poolBytes: 1_000 }],
     });
-    expect(paced.requiredDeletedBytes).toBeCloseTo(7, 6);
-    expect(paced.chosenBytes).toBe(50);
+    expect(paced.requiredDeletedBytes).toBeCloseTo((59 * 7) / 60, 6);
+    expect(paced.chosenBytes).toBe(0);
+  });
+
+  it('under target, a pool below the floor cannot post a smaller batch', () => {
+    const paced = explain({
+      freeBytes: 201,
+      samples: series(-10),
+      floorBytes: 50,
+      pools: [{ mediaKind: 'movie', poolBytes: 40 }],
+    });
+    expect(paced.unclampedBytes).toBeGreaterThan(50);
+    expect(paced.chosenBytes).toBe(0);
   });
 
   it('an empty pool chooses nothing and reports the whole requirement as a shortfall', () => {
@@ -159,7 +205,7 @@ describe('explainDynamicPace', () => {
   it('a save rate of 1 does not inflate (nothing would be deleted)', () => {
     const paced = explain({ freeBytes: 300, samples: series(-10), saveRate: 1 });
     expect(paced.yieldRate).toBe(1);
-    expect(paced.chosenBytes).toBe(70);
+    expect(paced.chosenBytes).toBe(58);
   });
 
   it('frequent deletions: adding them back makes the sized intake the true fill', () => {
@@ -196,11 +242,11 @@ describe('explainDynamicPace', () => {
     expect(raw.rateBytesPerDay).toBeCloseTo(-1_000, 6);
   });
 
-  it('a flat series omits intake and still closes a measured gap', () => {
+  it('a flat series reports its measured zero intake and still closes a gap', () => {
     const paced = explain({ samples: series(0), floorBytes: 1, ceilingBytes: 1_000_000 });
     expect(paced.applicable).toBe(true);
     expect(paced.forecastReason).toBe('flat');
-    expect(paced.intakeBytesPerDay).toBeNull();
+    expect(paced.intakeBytesPerDay).toBe(0);
     expect(paced.requiredDeletedBytes).toBeCloseTo((100 * 7) / 60, 6);
   });
 
@@ -219,6 +265,52 @@ describe('explainDynamicPace', () => {
     expect(longWindow.requiredDeletedBytes).toBeCloseTo(ratioOne.requiredDeletedBytes, 5);
     expect(longWindow.gapPerWindowBytes).toBeCloseTo(longWindow.gapBytes, 6);
     expect(longWindow.applicable).toBe(true);
+  });
+
+  it.each([
+    { freeBytes: 900, targetPct: 80 },
+    { freeBytes: 100, targetPct: 100 },
+  ])('far under target or target 100 asks for nothing: %j', (input) => {
+    const paced = explain({ ...input, samples: series(-1) });
+    expect(paced.requiredDeletedBytes).toBe(0);
+    expect(paced.chosenBytes).toBe(0);
+  });
+
+  it('reports horizon requirement and its shortfall before the ceiling', () => {
+    const paced = explain({
+      pools: [{ mediaKind: 'movie', poolBytes: 100 }],
+      saveRate: 0.5,
+      ceilingBytes: 10,
+    });
+    expect(paced.horizonRequiredDeletedBytes).toBeCloseTo(700, 6);
+    expect(paced.horizonShortfallBytes).toBeCloseTo(650, 6);
+    expect(paced.poolShortfallBytes).toBe(0);
+  });
+
+  it('a missing newest grid point is stale; normal step-alignment lag is allowed', () => {
+    const fresh = explain({});
+    expect(fresh.applicable).toBe(true);
+    const paced = explain({ samples: series(-10).slice(0, -1) });
+    expect(paced.applicable).toBe(false);
+    expect(paced.inapplicable).toBe('stale_series');
+    expect(paced.chosenBytes).toBe(0);
+  });
+
+  it('flat with a nonzero measured rate retains intake instead of silently omitting it', () => {
+    // The middle half has variance large enough to include zero at two standard errors.
+    let value = 1e9;
+    const noisy = Array.from({ length: 31 }, (_, i) => {
+      if (i > 0) value += (i % 2 === 0 ? 100 : -102) * 3;
+      return { t: START + i * 3 * DAY, freeBytes: value };
+    });
+    const forecast = forecastFreeSpace({ samples: noisy, now: NOW, targetFreeBytes: 200 });
+    expect(forecast.reason).toBe('flat');
+    expect(forecast.rateBytesPerDay).toBeLessThan(0);
+    const paced = explain({ samples: noisy });
+    expect(paced.forecastReason).toBe('flat');
+    expect(paced.rateBytesPerDay).toBe(forecast.rateBytesPerDay);
+    expect(paced.intakeBytesPerDay).toBe(-forecast.rateBytesPerDay!);
+    expect(paced.requiredDeletedBytes).toBeGreaterThan((100 * 7) / 60);
   });
 
   it('a ceiling below the floor does not size a batch', () => {
@@ -289,16 +381,65 @@ describe('samplesForStorageArray', () => {
     const samples = samplesForStorageArray(
       [
         {
-          metric: { __name__: 'sonarr_rootfolder_freespace_bytes', path: '/data/haynestower/Media/TV Shows' },
+          metric: {
+            __name__: 'sonarr_rootfolder_freespace_bytes',
+            path: '/data/haynestower/Media/TV Shows',
+          },
           values: [[START, '1']],
         },
         {
-          metric: { __name__: 'radarr_rootfolder_freespace_bytes', path: '/data/haynestower/Media/Movies' },
+          metric: {
+            __name__: 'radarr_rootfolder_freespace_bytes',
+            path: '/data/haynestower/Media/Movies',
+          },
           values: [[START, '9']],
         },
       ],
       'haynestower',
     );
     expect(samples).toEqual([{ t: START, freeBytes: 9 }]);
+  });
+});
+
+describe('Prometheus range reader', () => {
+  it('requests the exact step-aligned forecast range and the Storage query', async () => {
+    const range = forecastQueryRange(NOW);
+    expect(range.end).toBe(Math.floor(NOW / FORECAST_STEP_SECONDS) * FORECAST_STEP_SECONDS);
+    expect(range.start).toBe(range.end - FORECAST_WINDOW_SECONDS);
+    expect(range.step).toBe(3 * DAY);
+    const queryRange = vi.fn().mockResolvedValue([
+      {
+        metric: {
+          __name__: 'radarr_rootfolder_freespace_bytes',
+          path: '/data/haynestower/Media/Movies',
+        },
+        values: [[range.end, '100']],
+      },
+    ]);
+    expect(await readArrayFreeSpaceSamples({ queryRange }, 'haynestower', NOW)).toEqual([
+      { t: range.end, freeBytes: 100 },
+    ]);
+    expect(queryRange).toHaveBeenCalledExactlyOnceWith(
+      FREESPACE_SERIES_QUERY,
+      range.start,
+      range.end,
+      range.step,
+    );
+  });
+  it('empty and failed reads are unavailable, never a guessed series', async () => {
+    expect(
+      await readArrayFreeSpaceSamples({ queryRange: async () => [] }, 'haynestower', NOW),
+    ).toBeNull();
+    expect(
+      await readArrayFreeSpaceSamples(
+        {
+          queryRange: async () => {
+            throw new Error('down');
+          },
+        },
+        'haynestower',
+        NOW,
+      ),
+    ).toBeNull();
   });
 });

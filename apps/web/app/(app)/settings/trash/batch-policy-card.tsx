@@ -11,7 +11,13 @@ import { useState } from 'react';
 import type { SpacePolicy, SpacePolicyMode } from '@hnet/domain';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
-import { BYTES_PER_GB } from '@/lib/trash-batches';
+import {
+  toDraft,
+  draftValid,
+  draftToPolicy,
+  type KindCapsDraft,
+  type PolicyDraft,
+} from '@/lib/batch-policy-form';
 
 const POLICY_MODES = ['over-target', 'continuous'] as const;
 const MODE_LABELS: Record<SpacePolicyMode, string> = {
@@ -24,84 +30,6 @@ const MODE_HELP: Record<SpacePolicyMode, string> = {
   continuous:
     'Propose whenever there are at least the minimum candidates and no batch is open — the disk target is NOT required. Utilization is still read for reporting.',
 };
-
-interface KindCapsDraft {
-  maxItems: { enabled: boolean; value: string };
-  targetGb: { enabled: boolean; value: string };
-}
-interface PolicyDraft {
-  mode: SpacePolicyMode;
-  minCandidates: string;
-  perKind: Record<'movie' | 'tv', KindCapsDraft>;
-}
-
-const gbFromBytes = (bytes: number): string => String(Math.round((bytes / BYTES_PER_GB) * 10) / 10);
-
-function kindToDraft(caps: SpacePolicy['perKind']['movie']): KindCapsDraft {
-  return {
-    maxItems: { enabled: caps.maxItems.enabled, value: String(caps.maxItems.value) },
-    targetGb: { enabled: caps.targetBytes.enabled, value: gbFromBytes(caps.targetBytes.value) },
-  };
-}
-
-function toDraft(policy: SpacePolicy): PolicyDraft {
-  return {
-    mode: policy.mode,
-    minCandidates: String(policy.minCandidates),
-    perKind: { movie: kindToDraft(policy.perKind.movie), tv: kindToDraft(policy.perKind.tv) },
-  };
-}
-
-const intOrNaN = (s: string): number => (/^-?\d+$/.test(s.trim()) ? Number(s) : NaN);
-
-function draftValid(d: PolicyDraft): boolean {
-  const min = intOrNaN(d.minCandidates);
-  if (!(min >= 0 && min <= 100000)) return false;
-  for (const kind of ['movie', 'tv'] as const) {
-    const k = d.perKind[kind];
-    if (k.maxItems.enabled) {
-      const v = intOrNaN(k.maxItems.value);
-      if (!(v >= 1 && v <= 100000)) return false;
-    }
-    if (k.targetGb.enabled) {
-      const v = Number(k.targetGb.value);
-      if (!(Number.isFinite(v) && v > 0)) return false;
-    }
-  }
-  return true;
-}
-
-function draftToPolicy(d: PolicyDraft, base: SpacePolicy): SpacePolicy {
-  const kindFromDraft = (
-    k: KindCapsDraft,
-    baseCaps: SpacePolicy['perKind']['movie'],
-  ): SpacePolicy['perKind']['movie'] => ({
-    maxItems: {
-      enabled: k.maxItems.enabled,
-      value: Number.isFinite(intOrNaN(k.maxItems.value))
-        ? intOrNaN(k.maxItems.value)
-        : baseCaps.maxItems.value,
-    },
-    targetBytes: {
-      enabled: k.targetGb.enabled,
-      value: Number.isFinite(Number(k.targetGb.value))
-        ? Math.round(Number(k.targetGb.value) * BYTES_PER_GB)
-        : baseCaps.targetBytes.value,
-    },
-    // The ranking has no control on this card — carry the configured one through so saving the caps
-    // can't silently reset a kind to the default strategy.
-    ...(baseCaps.strategy !== undefined ? { strategy: baseCaps.strategy } : {}),
-  });
-  return {
-    ...base,
-    mode: d.mode,
-    minCandidates: intOrNaN(d.minCandidates),
-    perKind: {
-      movie: kindFromDraft(d.perKind.movie, base.perKind.movie),
-      tv: kindFromDraft(d.perKind.tv, base.perKind.tv),
-    },
-  };
-}
 
 function KindCapsRow({
   kind,
@@ -223,9 +151,9 @@ export function BatchPolicyCard() {
 
       <div className="batch-policy" data-testid="batch-policy">
         <p className="muted">
-          How the automatic space policy proposes batches. When it proposes, it posts the batch straight
-          to Leaving Soon with the save window — the cycle runs unattended; only the windowed sweep
-          deletes. These caps also pre-fill the manual “Start a batch” picker.
+          How the automatic space policy proposes batches. When it proposes, it posts the batch
+          straight to Leaving Soon with the save window — the cycle runs unattended; only the
+          windowed sweep deletes. These caps also pre-fill the manual “Start a batch” picker.
         </p>
 
         <div className="batch-settings__row">

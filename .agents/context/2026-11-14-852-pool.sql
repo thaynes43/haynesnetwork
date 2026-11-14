@@ -1,0 +1,18 @@
+WITH candidates AS (
+ SELECT DISTINCT ON (c.media_kind,c.maintainerr_media_id) c.*, m.id media_id,m.arr_kind,m.root_folder,m.arr_tags,m.on_disk_file_count,m.size_on_disk
+ FROM trash_candidates c LEFT JOIN media_items m ON m.deleted_from_arr_at IS NULL AND ((c.media_kind='movie' AND m.arr_kind='radarr' AND m.tmdb_id=c.tmdb_id) OR (c.media_kind='tv' AND m.arr_kind='sonarr' AND m.tvdb_id=c.tvdb_id))
+ WHERE c.maintainerr_media_id IS NOT NULL
+ ORDER BY c.media_kind,c.maintainerr_media_id,c.size_bytes DESC
+), judged AS (
+ SELECT c.*,
+ EXISTS(SELECT 1 FROM trash_save_intents s WHERE s.media_item_id=c.media_id AND s.revoked_at IS NULL) saved,
+ coalesce(c.arr_tags ?| ARRAY['dnd','mediarequests'],false) tagged,
+ EXISTS(SELECT 1 FROM ledger_events e WHERE e.media_item_id=c.media_id AND e.event_type='imported' AND e.payload->>'rawEventType'='downloadFolderImported' AND e.occurred_at > now()-interval '180 days') OR EXISTS(SELECT 1 FROM media_plex_matches p WHERE p.media_item_id=c.media_id AND p.plex_added_at > now()-interval '180 days') recent,
+ EXISTS(SELECT 1 FROM watchlist_registry_items w LEFT JOIN plex_discover_ids d ON d.discover_id=w.discover_id WHERE w.kind=CASE c.media_kind WHEN 'movie' THEN 'movie' ELSE 'show' END AND (coalesce(w.tmdb_id,d.tmdb_id)=c.tmdb_id OR coalesce(w.tvdb_id,d.tvdb_id)=c.tvdb_id OR c.plex_guid=concat('plex://',w.kind,'/',w.discover_id))) watchlisted,
+ EXISTS(SELECT 1 FROM trash_batches b JOIN trash_batch_items i ON i.batch_id=b.id WHERE b.state IN ('draft','admin_review','leaving_soon') AND b.media_kind=c.media_kind AND i.maintainerr_media_id=c.maintainerr_media_id) posted,
+ c.media_kind='tv' OR c.media_id IS NULL OR c.on_disk_file_count=0 OR EXISTS(SELECT 1 FROM legacy_release_names l WHERE l.arr_kind='radarr' AND l.record_kind='file' AND l.external_id=c.tmdb_id AND l.size_bytes=c.size_on_disk AND c.size_on_disk>0 AND lower(l.release_name) !~ '\{(tmdb|tvdb|imdb)-') OR coalesce((
+ SELECT (btrim(coalesce(e.payload->>'sourceTitle',''))<>'' AND position('://' IN coalesce(e.payload->>'sourceTitle',''))=0 AND lower(coalesce(e.payload->>'sourceTitle','')) !~ '\{(tmdb|tvdb|imdb)-') OR EXISTS(SELECT 1 FROM ledger_events g WHERE g.media_item_id=c.media_id AND g.event_type='grabbed' AND g.payload->>'downloadId'=e.payload->>'downloadId' AND btrim(coalesce(g.payload->>'sourceTitle',''))<>'' AND position('://' IN coalesce(g.payload->>'sourceTitle',''))=0 AND lower(coalesce(g.payload->>'sourceTitle','')) !~ '\{(tmdb|tvdb|imdb)-')
+ FROM ledger_events e WHERE e.media_item_id=c.media_id AND e.event_type='imported' AND coalesce(e.payload->>'rawEventType','') NOT IN ('movieFolderImported','seriesFolderImported') ORDER BY e.occurred_at DESC,e.id DESC LIMIT 1),false) named
+ FROM candidates c
+), eligible AS (SELECT * FROM judged WHERE NOT saved AND NOT tagged AND NOT recent AND NOT watchlisted AND named)
+SELECT json_build_object('measuredAt',now(),'registryFinishedAt',(SELECT max(finished_at) FROM watchlist_registry_runs WHERE status='ok'),'pool', (SELECT json_agg(x) FROM (SELECT media_kind,count(*) titles,sum(size_bytes) bytes, count(*) FILTER(WHERE posted) posted_titles,coalesce(sum(size_bytes) FILTER(WHERE posted),0) posted_bytes,coalesce(json_agg(size_bytes ORDER BY size_bytes DESC) FILTER(WHERE NOT posted),'[]') unposted_sizes FROM eligible GROUP BY media_kind LIMIT 2) x),'filters',(SELECT row_to_json(x) FROM (SELECT count(*) snapshot,count(*) FILTER(WHERE recent) recent,count(*) FILTER(WHERE watchlisted) watchlisted,count(*) FILTER(WHERE NOT named) unnamed,count(*) FILTER(WHERE saved) saved,count(*) FILTER(WHERE tagged) tagged FROM judged) x));

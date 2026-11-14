@@ -1,10 +1,10 @@
 // ADR-030 / DESIGN-013 (PLAN-013) — the Storage tRPC surface. Proves the v1 admin gate (a member is
 // FORBIDDEN on every procedure before any logic), the utilization read merges the *arr /diskspace + the
 // space_targets, reclaim returns a well-formed (empty) report, and targets.set is zod-validated + audited.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { permissionAudit, type users } from '@hnet/db';
-import { setAppSetting } from '@hnet/domain';
+import { ingestLedgerEvents, setAppSetting } from '@hnet/domain';
 import {
   bootMigratedDb,
   caller,
@@ -14,6 +14,7 @@ import {
   type Caller,
   type TestDb,
 } from './helpers';
+import { SpacePolicyInput } from '../src/routers/storage';
 import { stubArrBundle } from './arr-stubs';
 
 const TB = 1_000_000_000_000;
@@ -30,8 +31,14 @@ beforeAll(async () => {
   member = await createUser(testDb.db, { displayName: 'Member Mia' });
   const stub = stubArrBundle([
     // v3 → HaynesTower (radarr + sonarr share it); v1 → CephFS music (lidarr).
-    { path: '/api/v3/diskspace', body: [{ path: '/data/haynestower', freeSpace: 112.4304 * TB, totalSpace: 529.96 * TB }] },
-    { path: '/api/v1/diskspace', body: [{ path: '/data/cephfs-hdd', freeSpace: 130.45 * TB, totalSpace: 174.84 * TB }] },
+    {
+      path: '/api/v3/diskspace',
+      body: [{ path: '/data/haynestower', freeSpace: 112.4304 * TB, totalSpace: 529.96 * TB }],
+    },
+    {
+      path: '/api/v1/diskspace',
+      body: [{ path: '/data/cephfs-hdd', freeSpace: 130.45 * TB, totalSpace: 174.84 * TB }],
+    },
   ]);
   adminCaller = caller(makeCtx(testDb.db, sessionUser(admin), stub.bundle));
   memberCaller = caller(makeCtx(testDb.db, sessionUser(member), stub.bundle));
@@ -44,7 +51,9 @@ afterAll(async () => {
 describe('storage admin gate — every procedure is adminProcedure (v1)', () => {
   it('a member is FORBIDDEN on utilization / reclaim / targets.get / targets.set', async () => {
     await expect(memberCaller.storage.utilization()).rejects.toMatchObject({ code: 'FORBIDDEN' });
-    await expect(memberCaller.storage.reclaim({ window: '90d' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(memberCaller.storage.reclaim({ window: '90d' })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
     await expect(memberCaller.storage.targets.get()).rejects.toMatchObject({ code: 'FORBIDDEN' });
     await expect(
       memberCaller.storage.targets.set({ targets: { haynestower: 80 } }),
@@ -64,8 +73,14 @@ describe('storage admin gate — every procedure is adminProcedure (v1)', () => 
         minCandidates: 1,
         perArray: {},
         perKind: {
-          movie: { maxItems: { enabled: false, value: 25 }, targetBytes: { enabled: false, value: 1 } },
-          tv: { maxItems: { enabled: false, value: 25 }, targetBytes: { enabled: false, value: 1 } },
+          movie: {
+            maxItems: { enabled: false, value: 25 },
+            targetBytes: { enabled: false, value: 1 },
+          },
+          tv: {
+            maxItems: { enabled: false, value: 25 },
+            targetBytes: { enabled: false, value: 1 },
+          },
         },
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -164,4 +179,116 @@ describe('storage.policy — a legacy row round-trips through get → set (ADR-0
     expect(after.perKind.movie.strategy).toBe('worst-rated');
     expect(after.perKind.movie.maxItems).toEqual({ enabled: true, value: 50 });
   });
+});
+
+describe('storage.policy — Dynamic Pace contract (ADR-124)', () => {
+  it('schema and audited get/set preserve both new fields', async () => {
+    const loaded = await adminCaller.storage.policy.get();
+    const dynamicPace = {
+      enabled: false,
+      observeOnly: true,
+      movieMaxItems: 50,
+      horizonDays: 30,
+      floorBytes: 130_604_353_957,
+      ceilingBytes: 3_591_025_375_575,
+    };
+    const input = { ...loaded, dynamicPace };
+    expect(SpacePolicyInput.parse(input).dynamicPace).toEqual(dynamicPace);
+    await adminCaller.storage.policy.set(input);
+    expect((await adminCaller.storage.policy.get()).dynamicPace).toEqual(dynamicPace);
+    const audits = await testDb.db
+      .select()
+      .from(permissionAudit)
+      .where(eq(permissionAudit.action, 'update_app_setting'));
+    expect(audits.at(-1)!.actorId).toBe(admin.id);
+  });
+
+  it('refuses contradictory modes, inverted bounds and a ceiling above the measured hard cap', async () => {
+    const loaded = await adminCaller.storage.policy.get();
+    for (const patch of [
+      { enabled: true, observeOnly: true },
+      { floorBytes: 4e12 },
+      { ceilingBytes: 3_591_025_375_576 },
+    ]) {
+      await expect(
+        adminCaller.storage.policy.set({
+          ...loaded,
+          dynamicPace: { ...loaded.dynamicPace!, ...patch },
+        }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    }
+  });
+
+  it('refuses a horizon shorter than the saved window at the settings edge', async () => {
+    await setAppSetting({
+      db: testDb.db,
+      key: 'trash_default_window_days',
+      value: 7,
+      actorId: admin.id,
+    });
+    const loaded = await adminCaller.storage.policy.get();
+    await expect(
+      adminCaller.storage.policy.set({
+        ...loaded,
+        dynamicPace: { ...loaded.dynamicPace!, horizonDays: 6 },
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
+  it.each([false, true])(
+    'status reads only stored job data, including with enabled=%s',
+    async (enabled) => {
+      const loaded = await adminCaller.storage.policy.get();
+      await adminCaller.storage.policy.set({
+        ...loaded,
+        dynamicPace: { ...loaded.dynamicPace!, enabled, observeOnly: false },
+      });
+      const queryRange = vi.fn(async () => {
+        throw new Error('status must not query Prometheus');
+      });
+      const diskspace = vi.fn(async () => {
+        throw new Error('status must not read diskspace');
+      });
+      const arr = stubArrBundle([]).bundle;
+      arr.read.radarr.getDiskSpace = diskspace;
+      arr.read.sonarr.getDiskSpace = diskspace;
+      arr.read.lidarr.getDiskSpace = diskspace;
+      const ctx = makeCtx(testDb.db, sessionUser(admin), arr, undefined, undefined, { queryRange });
+      const evaluatedAt = new Date('2026-11-14T07:00:00Z');
+      const pace = {
+        mode: 'observe-only',
+        applied: false,
+        fallbackReason: 'stale_series',
+        explanation: null,
+        selectedBytes: 0,
+      };
+      await ingestLedgerEvents({
+        db: testDb.db,
+        source: 'radarr',
+        events: [
+          {
+            eventType: 'trash_space_policy',
+            source: 'maintainerr',
+            occurredAt: evaluatedAt,
+            payload: {
+              array: 'haynestower',
+              mediaKind: 'movie',
+              batchId: null,
+              outcome: 'skipped_under_target',
+              pace,
+            },
+          },
+        ],
+      });
+      const status = await caller(ctx).storage.policy.status();
+      expect(queryRange).not.toHaveBeenCalled();
+      expect(diskspace).not.toHaveBeenCalled();
+      expect(status.pace!.arrays[0]!.decisions[0]).toMatchObject({
+        ...pace,
+        evaluatedAt: evaluatedAt.toISOString(),
+        outcome: 'skipped_under_target',
+      });
+      expect(status.recentProposals).toEqual([]);
+    },
+  );
 });
